@@ -161,8 +161,29 @@ model User {
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
   updatedSettings    SystemSetting[]     @relation("SettingsUpdatedBy")
+  refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+/**
+ * Refresh Token
+ */
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("refresh_tokens")
 }
 
 /**
