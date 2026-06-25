@@ -1,0 +1,473 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * ENUMS
+ */
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  NORMAL
+  PREMIUM
+}
+
+enum PaymentMethod {
+  CARD
+  PAYPAL
+  PALPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PaymentPurpose {
+  BUY_CREDITS
+  DIRECT_UNLOCK
+}
+
+enum CreditTransactionType {
+  PURCHASE
+  BONUS
+  DEDUCTION_GENERATION
+  REFUND
+  ADMIN_ADJUSTMENT
+}
+
+enum IdeaGenerationType {
+  GUEST_FREE
+  NORMAL_FREE
+  PREMIUM_CREDIT
+}
+
+enum UnlockMethod {
+  NONE
+  DIRECT_PAYMENT
+  CREDIT_GENERATION
+}
+
+enum ChatSender {
+  USER
+  AI
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AlertType {
+  SYSTEM
+  PAYMENT
+  CREDIT_LOW
+  CREDIT_EXHAUSTED
+  ADMIN
+}
+
+enum ApiProvider {
+  OPENAI
+  STRIPE
+  PAYPAL
+  PALPAY
+  REDDIT
+  FACEBOOK
+  GOOGLE_MAPS
+  OTHER
+}
+
+enum ApiRequestType {
+  DATA_COLLECTION
+  COMMENT_ANALYSIS
+  IDEA_GENERATION
+  AI_CHAT
+  PAYMENT
+  OTHER
+}
+
+enum GeneratedOutputType {
+  FULL_ABSTRACT
+  TECHNOLOGY_STACK
+  SYSTEM_ARCHITECTURE
+  DATABASE_DESIGN
+  COMMENT_ANALYSIS
+  SAMPLE_COMMENTS
+  NLP_ANALYSIS
+  RECURRING_PROBLEMS
+  EXTRACTED_KEYWORDS
+  LOCAL_REGULATIONS
+  BUDGET_ESTIMATION
+  BUSINESS_MODEL
+  TARGET_USERS
+  VALUE_PROPOSITION
+  REVENUE_MODEL
+  FEASIBILITY_ASSESSMENT
+  IMPLEMENTATION_TIMELINE
+  MARKET_POTENTIAL
+}
+
+/**
+ * USERS
+ */
+
+model User {
+  id            String        @id @default(uuid())
+  fullName      String        @map("full_name")
+  email         String        @unique
+  passwordHash  String        @map("password_hash")
+  role          UserRole      @default(USER)
+  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+
+  freeGenerationLimit Int @default(3) @map("free_generation_limit")
+  freeGenerationsUsed Int @default(0) @map("free_generations_used")
+  creditBalance       Int @default(0) @map("credit_balance")
+
+  isActive   Boolean @default(true) @map("is_active")
+  isVerified Boolean @default(false) @map("is_verified")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ideas              Idea[]
+  payments           Payment[]
+  creditTransactions CreditTransaction[]
+  chatSessions       ChatSession[]
+  alerts             Alert[]
+  complaints         Complaint[]
+  externalApiLogs    ExternalApiLog[]
+  updatedSettings    SystemSetting[]     @relation("SettingsUpdatedBy")
+
+  @@map("users")
+}
+
+/**
+ * SYSTEM SETTINGS
+ */
+
+model SystemSetting {
+  id String @id @default(uuid())
+
+  creditPrice    Decimal @map("credit_price") @db.Decimal(10, 2)
+  bonusThreshold Int     @default(0) @map("bonus_threshold")
+  bonusCredits   Int     @default(0) @map("bonus_credits")
+
+  updatedById String? @map("updated_by")
+  updatedBy   User?   @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+/**
+ * GUEST SESSIONS
+ */
+
+model GuestSession {
+  id           String  @id @default(uuid())
+  sessionToken String  @unique @map("session_token")
+  hasGenerated Boolean @default(false) @map("has_generated")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+
+  ideas Idea[]
+
+  @@map("guest_sessions")
+}
+
+/**
+ * IDEAS
+ */
+
+model Idea {
+  id String @id @default(uuid())
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  guestSessionId String?       @map("guest_session_id")
+  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+
+  title  String
+  domain String
+
+  limitedAbstract String? @map("limited_abstract")
+  partialAbstract String? @map("partial_abstract")
+  fullAbstract    String? @map("full_abstract")
+
+  problemStatement String? @map("problem_statement")
+  objectives       String?
+  targetUsers      String? @map("target_users")
+
+  generationType IdeaGenerationType @map("generation_type")
+  isUnlocked     Boolean            @default(false) @map("is_unlocked")
+  unlockMethod   UnlockMethod       @default(NONE) @map("unlock_method")
+  unlockedAt     DateTime?          @map("unlocked_at")
+
+  commentsCount Int @default(0) @map("comments_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  payments           Payment[]
+  creditTransactions CreditTransaction[]
+  chatSessions       ChatSession[]
+  ideaComments       IdeaComment[]
+  generatedOutputs   GeneratedOutput[]
+  complaints         Complaint[]
+  externalApiLogs    ExternalApiLog[]
+
+  @@map("ideas")
+}
+
+/**
+ * PAYMENTS
+ */
+
+model Payment {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideaId String? @map("idea_id")
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String        @default("USD")
+  paymentMethod PaymentMethod @map("payment_method")
+  status        PaymentStatus @default(PENDING)
+
+  paymentPurpose PaymentPurpose @map("payment_purpose")
+
+  creditsAmount         Int      @default(0) @map("credits_amount")
+  creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
+
+  transactionReference String? @map("transaction_reference")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  creditTransactions CreditTransaction[]
+
+  @@map("payments")
+}
+
+/**
+ * CREDIT TRANSACTIONS
+ */
+
+model CreditTransaction {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  paymentId String?  @map("payment_id")
+  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  ideaId String? @map("idea_id")
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  type         CreditTransactionType
+  amount       Int
+  balanceAfter Int                   @map("balance_after")
+  description  String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("credit_transactions")
+}
+
+/**
+ * COMMENTS
+ */
+
+model Comment {
+  id             String  @id @default(uuid())
+  content        String
+  sourcePlatform String? @map("source_platform")
+  sentiment      String?
+  language       String?
+
+  sourceUrl   String?   @map("source_url")
+  region      String?
+  collectedAt DateTime? @map("collected_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ideaComments IdeaComment[]
+
+  @@map("comments")
+}
+
+model IdeaComment {
+  id String @id @default(uuid())
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  commentId String  @map("comment_id")
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, commentId])
+  @@map("idea_comments")
+}
+
+/**
+ * GENERATED OUTPUTS
+ */
+
+model GeneratedOutput {
+  id String @id @default(uuid())
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  outputType GeneratedOutputType @map("output_type")
+  content    String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("generated_outputs")
+}
+
+/**
+ * CHAT
+ */
+
+model ChatSession {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  title String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  messages ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id String @id @default(uuid())
+
+  sessionId String      @map("session_id")
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  sender  ChatSender
+  message String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("chat_messages")
+}
+
+/**
+ * ALERTS
+ */
+
+model Alert {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title   String
+  message String
+  type    AlertType @default(SYSTEM)
+  isRead  Boolean   @default(false) @map("is_read")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("alerts")
+}
+
+/**
+ * COMPLAINTS
+ */
+
+model Complaint {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideaId String? @map("idea_id")
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  subject  String
+  message  String
+  status   ComplaintStatus   @default(OPEN)
+  priority ComplaintPriority @default(MEDIUM)
+
+  adminReply String? @map("admin_reply")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  @@map("complaints")
+}
+
+/**
+ * EXTERNAL API LOGS
+ */
+
+model ExternalApiLog {
+  id String @id @default(uuid())
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  ideaId String? @map("idea_id")
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  provider    ApiProvider
+  endpoint    String?
+  requestType ApiRequestType @map("request_type")
+
+  statusCode Int?    @map("status_code")
+  isSuccess  Boolean @default(false) @map("is_success")
+
+  responseTimeMs Int?     @map("response_time_ms")
+  errorMessage   String?  @map("error_message")
+  costEstimate   Decimal? @map("cost_estimate") @db.Decimal(10, 4)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("external_api_logs")
+}
