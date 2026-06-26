@@ -162,7 +162,7 @@ model User {
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
   updatedSettings    SystemSetting[]     @relation("SettingsUpdatedBy")
-  refreshTokens RefreshToken[]
+  refreshTokens      RefreshToken[]
 
   @@map("users")
 }
@@ -194,9 +194,10 @@ model RefreshToken {
 model SystemSetting {
   id String @id @default(uuid())
 
-  creditPrice    Decimal @map("credit_price") @db.Decimal(10, 2)
-  bonusThreshold Int     @default(0) @map("bonus_threshold")
-  bonusCredits   Int     @default(0) @map("bonus_credits")
+  creditPrice        Decimal @map("credit_price") @db.Decimal(10, 2)
+  bonusThreshold     Int     @default(0) @map("bonus_threshold")
+  bonusCredits       Int     @default(0) @map("bonus_credits")
+  ideaPromptTemplate String? @map("idea_prompt_template")
 
   updatedById String? @map("updated_by")
   updatedBy   User?   @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
@@ -236,9 +237,13 @@ model Idea {
   guestSessionId String?       @map("guest_session_id")
   guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
 
-  title  String
-  domain String
-  selectedRegion String? @map("selected_region")
+  title    String
+  domainId String @map("domain_id")
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
+  selectedPlatformId String?   @map("selected_platform_id")
+  selectedPlatform   Platform? @relation(fields: [selectedPlatformId], references: [id], onDelete: SetNull)
+  selectedRegion     String?   @map("selected_region")
 
   limitedAbstract String? @map("limited_abstract")
   partialAbstract String? @map("partial_abstract")
@@ -333,11 +338,12 @@ model CreditTransaction {
  */
 
 model Comment {
-  id             String  @id @default(uuid())
-  content        String
-  sourcePlatform String? @map("source_platform")
-  sentiment      String?
-  language       String?
+  id         String    @id @default(uuid())
+  content    String
+  sentiment  String?
+  language   String?
+  platformId String?   @map("platform_id")
+  platform   Platform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
 
   sourceUrl   String?   @map("source_url")
   region      String?
@@ -481,7 +487,7 @@ model ExternalApiLog {
 
   provider    ApiProvider
   endpoint    String?
-  requestId String? @map("request_id")
+  requestId   String?        @map("request_id")
   requestType ApiRequestType @map("request_type")
 
   statusCode Int?    @map("status_code")
@@ -494,4 +500,39 @@ model ExternalApiLog {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("external_api_logs")
+}
+
+/**
+ * Domain
+ */
+
+model Domain {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ideas Idea[]
+
+  @@map("domains")
+}
+
+/**
+ * Platform
+ */
+
+model Platform {
+  id       String  @id @default(uuid())
+  name     String  @unique
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  ideas    Idea[]
+  comments Comment[]
+
+  @@map("platforms")
 }
