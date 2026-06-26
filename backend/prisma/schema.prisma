@@ -129,6 +129,7 @@ enum GeneratedOutputType {
   FEASIBILITY_ASSESSMENT
   IMPLEMENTATION_TIMELINE
   MARKET_POTENTIAL
+  AI_PROMPT
 }
 
 /**
@@ -237,6 +238,7 @@ model Idea {
 
   title  String
   domain String
+  selectedRegion String? @map("selected_region")
 
   limitedAbstract String? @map("limited_abstract")
   partialAbstract String? @map("partial_abstract")
@@ -479,6 +481,7 @@ model ExternalApiLog {
 
   provider    ApiProvider
   endpoint    String?
+  requestId String? @map("request_id")
   requestType ApiRequestType @map("request_type")
 
   statusCode Int?    @map("status_code")
