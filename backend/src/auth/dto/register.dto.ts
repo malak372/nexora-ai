@@ -1,4 +1,10 @@
-import { IsEmail, IsString, Matches, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+} from 'class-validator';
 
 /**
  * Data Transfer Object (DTO) used for user registration.
@@ -22,4 +28,15 @@ export class RegisterDto {
     message: 'Password must contain at least one letter and one number',
   })
   password!: string;
+
+  /**
+   * Optional guest session token.
+   *
+   * If the user generated an idea as a Guest before registering,
+   * this token is used to transfer the guest-generated ideas
+   * to the newly created user account.
+   */
+  @IsOptional()
+  @IsString()
+  guestSessionToken?: string;
 }
