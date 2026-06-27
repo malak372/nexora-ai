@@ -2,6 +2,14 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
+/**
+ * Bootstraps the NestJS application.
+ *
+ * Creates the application instance, configures global
+ * validation pipes, and starts listening for incoming requests.
+ *
+ * @author Eman
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

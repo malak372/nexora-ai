@@ -10,6 +10,15 @@ import { RolesGuard } from './guards/roles.guard';
 
 import { PrismaModule } from '../prisma/prisma.module';
 
+/**
+ * Authentication module.
+ *
+ * Configures authentication-related components, including
+ * JWT authentication, Passport integration, controllers,
+ * services, guards, and strategies.
+ *
+ * @author Eman
+ */
 @Module({
   imports: [
     PrismaModule,
