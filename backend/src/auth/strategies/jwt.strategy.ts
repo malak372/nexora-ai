@@ -17,7 +17,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const secret = process.env.JWT_ACCESS_SECRET;
 
     if (!secret) {
-throw new UnauthorizedException('JWT_ACCESS_SECRET is not configured');    }
+throw new Error('JWT_ACCESS_SECRET is not configured');
+    }
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
