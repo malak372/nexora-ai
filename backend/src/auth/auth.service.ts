@@ -14,6 +14,15 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 
+/**
+ * Service responsible for handling authentication logic.
+ *
+ * This service manages user registration, login, JWT access token
+ * generation, refresh token generation and validation, logout,
+ * and retrieving the authenticated user's profile.
+ *
+ * @author Eman
+ */
 @Injectable()
 export class AuthService {
   constructor(
@@ -21,10 +30,16 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  /**
+   * Hashes a refresh token before storing or comparing it.
+   */
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /**
+   * Generates a JWT access token for the authenticated user.
+   */
   private async generateAccessToken(user: {
     id: string;
     email: string;
@@ -45,6 +60,9 @@ export class AuthService {
     );
   }
 
+  /**
+   * Generates and stores a new refresh token for a user.
+   */
   private async generateRefreshToken(userId: string) {
     const refreshToken = randomBytes(64).toString('hex');
     const tokenHash = this.hashToken(refreshToken);
@@ -63,6 +81,9 @@ export class AuthService {
     return refreshToken;
   }
 
+  /**
+   * Registers a new user and returns authentication tokens.
+   */
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -107,6 +128,9 @@ export class AuthService {
     };
   }
 
+  /**
+   * Authenticates a user and returns authentication tokens.
+   */
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -149,46 +173,52 @@ export class AuthService {
     };
   }
 
-async refresh(dto: RefreshDto) {
-  const tokenHash = this.hashToken(dto.refreshToken);
+  /**
+   * Refreshes authentication tokens using a valid refresh token.
+   */
+  async refresh(dto: RefreshDto) {
+    const tokenHash = this.hashToken(dto.refreshToken);
 
-  const storedToken = await this.prisma.refreshToken.findUnique({
-    where: { tokenHash },
-    include: { user: true },
-  });
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
 
-  if (!storedToken) {
-    throw new UnauthorizedException('Invalid refresh token');
+    if (!storedToken) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (storedToken.revokedAt) {
+      throw new UnauthorizedException('Refresh token revoked');
+    }
+
+    if (storedToken.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    if (!storedToken.user.isActive) {
+      throw new UnauthorizedException('Account is inactive');
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { id: storedToken.id },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    const accessToken = await this.generateAccessToken(storedToken.user);
+    const refreshToken = await this.generateRefreshToken(storedToken.user.id);
+
+    return {
+      accessToken,
+      refreshToken,
+    };
   }
 
-  if (storedToken.revokedAt) {
-    throw new UnauthorizedException('Refresh token revoked');
-  }
-
-  if (storedToken.expiresAt < new Date()) {
-    throw new UnauthorizedException('Refresh token expired');
-  }
-
-  if (!storedToken.user.isActive) {
-    throw new UnauthorizedException('Account is inactive');
-  }
-
-  await this.prisma.refreshToken.update({
-    where: { id: storedToken.id },
-    data: {
-      revokedAt: new Date(),
-    },
-  });
-
-  const accessToken = await this.generateAccessToken(storedToken.user);
-  const refreshToken = await this.generateRefreshToken(storedToken.user.id);
-
-  return {
-    accessToken,
-    refreshToken,
-  };
-}
-
+  /**
+   * Logs out a user by revoking the provided refresh token.
+   */
   async logout(dto: RefreshDto) {
     const tokenHash = this.hashToken(dto.refreshToken);
 
@@ -207,6 +237,9 @@ async refresh(dto: RefreshDto) {
     };
   }
 
+  /**
+   * Retrieves the authenticated user's profile.
+   */
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

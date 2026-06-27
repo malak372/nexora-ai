@@ -11,13 +11,21 @@ type JwtPayload = {
   accountStatus: AccountStatus;
 };
 
+/**
+ * JWT authentication strategy.
+ *
+ * Validates access tokens extracted from the Authorization header
+ * and attaches the authenticated user information to the request.
+ *
+ * @author Eman
+ */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
     const secret = process.env.JWT_ACCESS_SECRET;
 
     if (!secret) {
-throw new Error('JWT_ACCESS_SECRET is not configured');
+      throw new Error('JWT_ACCESS_SECRET is not configured');
     }
 
     super({
@@ -27,6 +35,9 @@ throw new Error('JWT_ACCESS_SECRET is not configured');
     });
   }
 
+  /**
+   * Validates the decoded JWT payload and returns the authenticated user.
+   */
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
@@ -45,14 +56,14 @@ throw new Error('JWT_ACCESS_SECRET is not configured');
       throw new UnauthorizedException('User is not active or does not exist');
     }
 
-return {
-  userId: user.id,
-  email: user.email,
-  fullName: user.fullName,
-  role: user.role,
-  accountStatus: user.accountStatus,
-  isActive: user.isActive,
-  isVerified: user.isVerified,
-};
+    return {
+      userId: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      accountStatus: user.accountStatus,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+    };
   }
 }
