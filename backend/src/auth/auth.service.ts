@@ -149,32 +149,45 @@ export class AuthService {
     };
   }
 
-  async refresh(dto: RefreshDto) {
-    const tokenHash = this.hashToken(dto.refreshToken);
+async refresh(dto: RefreshDto) {
+  const tokenHash = this.hashToken(dto.refreshToken);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash },
-      include: { user: true },
-    });
+  const storedToken = await this.prisma.refreshToken.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  });
 
-    if (!storedToken) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    if (storedToken.revokedAt) {
-      throw new UnauthorizedException('Refresh token revoked');
-    }
-
-    if (storedToken.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token expired');
-    }
-
-    const accessToken = await this.generateAccessToken(storedToken.user);
-
-    return {
-      accessToken,
-    };
+  if (!storedToken) {
+    throw new UnauthorizedException('Invalid refresh token');
   }
+
+  if (storedToken.revokedAt) {
+    throw new UnauthorizedException('Refresh token revoked');
+  }
+
+  if (storedToken.expiresAt < new Date()) {
+    throw new UnauthorizedException('Refresh token expired');
+  }
+
+  if (!storedToken.user.isActive) {
+    throw new UnauthorizedException('Account is inactive');
+  }
+
+  await this.prisma.refreshToken.update({
+    where: { id: storedToken.id },
+    data: {
+      revokedAt: new Date(),
+    },
+  });
+
+  const accessToken = await this.generateAccessToken(storedToken.user);
+  const refreshToken = await this.generateRefreshToken(storedToken.user.id);
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+}
 
   async logout(dto: RefreshDto) {
     const tokenHash = this.hashToken(dto.refreshToken);
