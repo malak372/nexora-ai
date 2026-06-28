@@ -15,10 +15,13 @@ import { CurrentUser } from './decorators/current-user.decorator';
  */
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   /**
-   * Registers a new user.
+   * Registers a new user account.
+   *
+   * @param dto - User registration data.
+   * @returns Newly registered user with authentication tokens.
    */
   @Post('register')
   register(@Body() dto: RegisterDto) {
@@ -26,7 +29,10 @@ export class AuthController {
   }
 
   /**
-   * Authenticates a user and returns JWT tokens.
+   * Authenticates a user.
+   *
+   * @param dto - User login credentials.
+   * @returns Access and refresh tokens.
    */
   @Post('login')
   login(@Body() dto: LoginDto) {
@@ -34,7 +40,10 @@ export class AuthController {
   }
 
   /**
-   * Generates a new access token using a refresh token.
+   * Generates a new access token using a valid refresh token.
+   *
+   * @param dto - Refresh token request.
+   * @returns New access token and refresh token.
    */
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
@@ -42,7 +51,12 @@ export class AuthController {
   }
 
   /**
-   * Logs out the current user.
+   * Logs out the authenticated user.
+   *
+   * Invalidates the provided refresh token.
+   *
+   * @param dto - Refresh token to revoke.
+   * @returns Logout confirmation.
    */
   @Post('logout')
   logout(@Body() dto: RefreshDto) {
@@ -51,10 +65,13 @@ export class AuthController {
 
   /**
    * Returns the authenticated user's information.
+   *
+   * @param user - Authenticated user extracted from the JWT token.
+   * @returns Authenticated user profile.
    */
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  me(@CurrentUser() user: { userId: string }) {
-    return this.authService.me(user.userId);
+  me(@CurrentUser() user: { id: string }) {
+    return this.authService.me(user.id);
   }
 }

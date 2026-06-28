@@ -4,8 +4,9 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
  * Custom parameter decorator that retrieves the authenticated user
  * from the current HTTP request.
  *
- * This decorator is used in protected routes to access the user object
- * that has been attached to the request after successful JWT authentication.
+ * This decorator is used with JwtAuthGuard in protected routes
+ * to access the authenticated user object attached to the request
+ * after successful JWT authentication.
  *
  * @param _data - Reserved parameter for future customization (unused).
  * @param ctx - The current execution context.

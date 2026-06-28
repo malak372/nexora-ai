@@ -15,11 +15,14 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 
 /**
- * Service responsible for handling authentication logic.
+ * Service responsible for authentication and session management.
  *
- * This service manages user registration, login, JWT access token
- * generation, refresh token generation and validation, logout,
- * and retrieving the authenticated user's profile.
+ * Handles user registration, login, JWT access token generation,
+ * refresh token creation and rotation, logout, and retrieving
+ * the authenticated user's profile.
+ *
+ * It also supports transferring guest-generated ideas to a newly
+ * registered user account when a valid guest session token is provided.
  *
  * @author Eman
  */
@@ -28,17 +31,24 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
   /**
-   * Hashes a refresh token before storing or comparing it.
+   * Hashes a plain refresh token using SHA-256 before storing
+   * or comparing it in the database.
+   *
+   * @param token - Plain refresh token.
+   * @returns Hashed refresh token.
    */
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
 
   /**
-   * Generates a JWT access token for the authenticated user.
+   * Generates a signed JWT access token for the authenticated user.
+   *
+   * @param user - Authenticated user data required in the JWT payload.
+   * @returns Signed access token.
    */
   private async generateAccessToken(user: {
     id: string;
@@ -54,14 +64,18 @@ export class AuthService {
         accountStatus: user.accountStatus,
       },
       {
-        secret: process.env.JWT_ACCESS_SECRET || 'access_secret_nexora',
+        secret: process.env.JWT_ACCESS_SECRET,
         expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
       },
     );
   }
 
   /**
-   * Generates and stores a new refresh token for a user.
+   * Generates a secure refresh token, stores its hash in the database,
+   * and returns the plain token to the client.
+   *
+   * @param userId - ID of the user who owns the refresh token.
+   * @returns Plain refresh token.
    */
   private async generateRefreshToken(userId: string) {
     const refreshToken = randomBytes(64).toString('hex');
@@ -82,7 +96,89 @@ export class AuthService {
   }
 
   /**
-   * Registers a new user and returns authentication tokens.
+   * Transfers ideas generated as a Guest to a newly registered user.
+   *
+   * If a guest generated an idea before creating an account, this method:
+   * - Finds the guest session by its session token.
+   * - Attaches the guest-generated ideas to the new user account.
+   * - Removes the guest session relation from the transferred ideas.
+   * - Increments the user's used free generations count.
+   * - Marks the guest session as having generated an idea.
+   *
+   * @param guestSessionToken - Optional guest session token sent during registration.
+   * @param userId - Newly registered user ID.
+   * @returns Number of guest ideas transferred to the user account.
+   */
+  private async attachGuestIdeasToUser(
+    guestSessionToken: string | undefined,
+    userId: string,
+  ) {
+    if (!guestSessionToken) {
+      return 0;
+    }
+
+    const guestSession = await this.prisma.guestSession.findUnique({
+      where: {
+        sessionToken: guestSessionToken,
+      },
+      include: {
+        ideas: true,
+      },
+    });
+
+    if (!guestSession || guestSession.ideas.length === 0) {
+      return 0;
+    }
+
+    const guestIdeasCount = guestSession.ideas.length;
+
+    await this.prisma.$transaction([
+      this.prisma.idea.updateMany({
+        where: {
+          guestSessionId: guestSession.id,
+          userId: null,
+        },
+        data: {
+          userId,
+          guestSessionId: null,
+        },
+      }),
+
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          freeGenerationsUsed: {
+            increment: guestIdeasCount,
+          },
+        },
+      }),
+
+      this.prisma.guestSession.update({
+        where: {
+          id: guestSession.id,
+        },
+        data: {
+          hasGenerated: true,
+        },
+      }),
+    ]);
+
+    return guestIdeasCount;
+  }
+
+  /**
+   * Registers a new user account.
+   *
+   * The method checks if the email is already used, hashes the password,
+   * creates a USER account with NORMAL status, attaches any guest-generated
+   * ideas if a guest session token is provided, then returns authentication
+   * tokens and the registered user data.
+   *
+   * @param dto - Registration request data.
+   * @returns Registration message, access token, refresh token, transferred guest ideas count, and user data.
+   *
+   * @throws BadRequestException if the email already exists.
+   * @throws UnauthorizedException if the newly created user cannot be found.
    */
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
@@ -108,28 +204,50 @@ export class AuthService {
       },
     });
 
-    const accessToken = await this.generateAccessToken(user);
-    const refreshToken = await this.generateRefreshToken(user.id);
+    const attachedGuestIdeasCount = await this.attachGuestIdeasToUser(
+      dto.guestSessionToken,
+      user.id,
+    );
+
+    const updatedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+    });
+
+    if (!updatedUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const accessToken = await this.generateAccessToken(updatedUser);
+    const refreshToken = await this.generateRefreshToken(updatedUser.id);
 
     return {
       message: 'Registered successfully',
       accessToken,
       refreshToken,
+      attachedGuestIdeasCount,
       user: {
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-        accountStatus: user.accountStatus,
-        freeGenerationLimit: user.freeGenerationLimit,
-        freeGenerationsUsed: user.freeGenerationsUsed,
-        creditBalance: user.creditBalance,
+        id: updatedUser.id,
+        fullName: updatedUser.fullName,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        accountStatus: updatedUser.accountStatus,
+        freeGenerationLimit: updatedUser.freeGenerationLimit,
+        freeGenerationsUsed: updatedUser.freeGenerationsUsed,
+        creditBalance: updatedUser.creditBalance,
       },
     };
   }
 
   /**
-   * Authenticates a user and returns authentication tokens.
+   * Authenticates a registered user.
+   *
+   * The method validates the email, account status, and password,
+   * then returns a new access token and refresh token.
+   *
+   * @param dto - Login request data.
+   * @returns Login message, access token, refresh token, and user data.
+   *
+   * @throws UnauthorizedException if the credentials are invalid or the account is inactive.
    */
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
@@ -174,7 +292,16 @@ export class AuthService {
   }
 
   /**
-   * Refreshes authentication tokens using a valid refresh token.
+   * Refreshes authentication tokens.
+   *
+   * This method validates the provided refresh token, checks that it is not
+   * revoked or expired, revokes the old token, and issues a new access token
+   * and refresh token.
+   *
+   * @param dto - Refresh token request data.
+   * @returns New access token and refresh token.
+   *
+   * @throws UnauthorizedException if the refresh token is invalid, revoked, expired, or belongs to an inactive account.
    */
   async refresh(dto: RefreshDto) {
     const tokenHash = this.hashToken(dto.refreshToken);
@@ -217,7 +344,13 @@ export class AuthService {
   }
 
   /**
-   * Logs out a user by revoking the provided refresh token.
+   * Logs out the authenticated user.
+   *
+   * Revokes the provided refresh token to prevent
+   * any future token refresh operations.
+   *
+   * @param dto - Logout request containing the refresh token.
+   * @returns Logout confirmation message.
    */
   async logout(dto: RefreshDto) {
     const tokenHash = this.hashToken(dto.refreshToken);
@@ -239,6 +372,11 @@ export class AuthService {
 
   /**
    * Retrieves the authenticated user's profile.
+   *
+   * @param userId - Authenticated user ID.
+   * @returns Authenticated user's profile data.
+   *
+   * @throws UnauthorizedException if the user cannot be found.
    */
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({

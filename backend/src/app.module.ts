@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module';
  * controllers, and services.
  */
 @Module({
+  imports: [AuthModule, PrismaModule, UsersModule],
   imports: [
     AuthModule,
     PrismaModule,
