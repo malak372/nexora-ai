@@ -67,14 +67,4 @@ export class GetPaymentsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   method?: PaymentMethod;
-
-  /**
-   * Optional search keyword.
-   *
-   * Used to search payment records by
-   * the user's full name or email address.
-   */
-  @IsOptional()
-  @IsString()
-  search?: string;
 }

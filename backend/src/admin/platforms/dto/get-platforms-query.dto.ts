@@ -10,7 +10,14 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Malak
  */
 export class GetPlatformsQueryDto extends ListQueryDto {
-  @IsOptional()
-  @IsString()
-  isActive?: string;
+    /**
+    * Optional active status filter.
+    *
+    * Accepted values:
+    * - "true"
+    * - "false"
+    */
+    @IsOptional()
+    @IsString()
+    isActive?: string;
 }

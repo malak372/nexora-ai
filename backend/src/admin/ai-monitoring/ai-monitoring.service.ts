@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
+
 import {
   buildPagination,
   buildDateFilter,
@@ -11,41 +12,42 @@ import {
 } from '../../utilities/base-query/builder';
 
 /**
- * Provides administrative operations for monitoring
- * AI and external API requests.
+ * Service responsible for monitoring AI and external API logs.
  *
- * This service allows administrators to retrieve
- * paginated API request logs with support for
- * filtering, searching, and sorting.
+ * Provides:
+ * - Pagination
+ * - Filtering (provider, request type, success status)
+ * - Search (endpoint, requestId, errorMessage)
+ * - Sorting (whitelisted fields only)
+ *
+ * This is an admin-only monitoring module used for
+ * debugging, analytics, and system observability.
  *
  * @author Malak
  */
 @Injectable()
 export class AiMonitoringService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Retrieves AI and external API request logs.
+   * Retrieves AI / External API logs with:
+   * - pagination
+   * - filtering
+   * - search
+   * - sorting
    *
-   * Supports pagination, filtering by provider,
-   * request type, success status, and creation date,
-   * as well as keyword search and customizable sorting.
+   * Query transformation is handled through reusable
+   * global query builder utilities.
    *
-   * @param query Query parameters containing pagination,
-   * filtering, searching, and sorting options.
-   * @returns Paginated list of API request logs with
-   * metadata including page information and total count.
-   *
-   * @author Malak
+   * @param query - DTO containing filters & pagination options
+   * @returns paginated logs with metadata
    */
   async getAiLogs(query: GetAiLogsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
 
-    const isSuccess =
-      query.isSuccess !== undefined
-        ? query.isSuccess === 'true'
-        : undefined;
-
+    /**
+     * Build Prisma WHERE filter using reusable builders
+     */
     const where: Prisma.ExternalApiLogWhereInput = {
       ...buildDateFilter(query),
 
@@ -56,9 +58,12 @@ export class AiMonitoringService {
 
       ...buildExactFilter('provider', query.provider),
       ...buildExactFilter('requestType', query.requestType),
-      ...buildExactFilter('isSuccess', isSuccess),
+      ...buildExactFilter('isSuccess', query.isSuccess),
     };
 
+    /**
+     * Build safe ORDER BY using whitelist
+     */
     const orderBy = buildOrderBy(
       query,
       [
@@ -73,6 +78,9 @@ export class AiMonitoringService {
       'createdAt',
     );
 
+    /**
+     * Execute queries in parallel for performance
+     */
     const [logs, total] = await Promise.all([
       this.prisma.externalApiLog.findMany({
         where,
@@ -91,6 +99,7 @@ export class AiMonitoringService {
           errorMessage: true,
           costEstimate: true,
           createdAt: true,
+
           user: {
             select: {
               id: true,
@@ -98,6 +107,7 @@ export class AiMonitoringService {
               email: true,
             },
           },
+
           idea: {
             select: {
               id: true,
@@ -106,9 +116,13 @@ export class AiMonitoringService {
           },
         },
       }),
+
       this.prisma.externalApiLog.count({ where }),
     ]);
 
+    /**
+     * Final response with pagination metadata
+     */
     return {
       data: logs,
       meta: {

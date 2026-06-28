@@ -1,66 +1,61 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { ApiProvider, ApiRequestType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
  * DTO for filtering, searching, and paginating external AI API logs.
  *
- * This DTO is used with the GET /admin/ai/logs endpoint.
- * It represents the optional query parameters that an administrator
- * can use to retrieve external AI/API request logs.
+ * Used in:
+ * GET /admin/ai/logs
  *
- * Supported features:
- * - Pagination.
- * - Filter by AI provider.
- * - Filter by API request type.
- * - Filter by request success status.
+ * Supports:
+ * - Pagination (page, limit)
+ * - Sorting (sortBy, sortOrder)
+ * - Date filtering (fromDate, toDate)
+ * - Provider filtering (OPENAI, etc.)
+ * - Request type filtering
+ * - Boolean filtering (isSuccess)
  *
- * All properties are optional, allowing the administrator to
- * retrieve all logs or apply one or more filters.
- *
- * Example:
- * GET /admin/ai/logs?page=1&limit=10&provider=OPENAI&requestType=IDEA_GENERATION&isSuccess=true
+ * This DTO ensures that query parameters are automatically
+ * validated and transformed before reaching the service layer.
  *
  * @author Malak
  */
 export class GetAiLogsQueryDto extends ListQueryDto {
   /**
-   * Optional AI provider filter.
+   * AI provider filter.
    *
-   * Must be one of the values defined in the
-   * ApiProvider enum.
-   *
-   * Example:
-   * OPENAI
+   * Example: OPENAI, GEMINI, etc.
    */
   @IsOptional()
   @IsEnum(ApiProvider)
   provider?: ApiProvider;
 
   /**
-   * Optional API request type filter.
+   * API request type filter.
    *
-   * Must be one of the values defined in the
-   * ApiRequestType enum.
-   *
-   * Example:
-   * IDEA_GENERATION
+   * Example: IDEA_GENERATION, ANALYSIS, etc.
    */
   @IsOptional()
   @IsEnum(ApiRequestType)
   requestType?: ApiRequestType;
 
   /**
-   * Optional request success status filter.
+   * Success status filter for API requests.
    *
-   * Filters logs based on whether the external
-   * API request completed successfully.
+   * Before: string ("true" | "false")
+   * After: boolean (true | false)
    *
-   * Accepted values:
-   * - "true"
-   * - "false"
+   * Query example:
+   * ?isSuccess=true → true
+   * ?isSuccess=false → false
    */
   @IsOptional()
-  @IsString()
-  isSuccess?: string;
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return undefined;
+  }) @IsBoolean()
+  isSuccess?: boolean;
 }

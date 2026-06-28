@@ -13,22 +13,30 @@ import {
 /**
  * Service responsible for Admin comment management operations.
  *
- * This service allows administrators to view, search,
- * filter, sort, and paginate collected comments.
+ * Provides:
+ * - Pagination
+ * - Filtering (platform, language, region)
+ * - Full-text search (content)
+ * - Sorting (whitelisted fields only)
+ *
+ * Used for analytics and comment intelligence system.
  *
  * @author Malak
  */
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Retrieves collected comments with optional filtering,
-   * searching, sorting, and pagination.
+   * Retrieves comments with filtering, search, sorting, and pagination.
    *
-   * @param query Query parameters used for pagination,
-   * filtering, searching, and sorting comments.
-   * @returns Paginated comments list with metadata.
+   * Supports:
+   * - platformId filtering
+   * - language filtering
+   * - region filtering (case-insensitive)
+   * - content search
+   * - date filtering
+   * - pagination
    */
   async getComments(query: GetCommentsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -75,12 +83,14 @@ export class CommentsService {
           sourceUrl: true,
           collectedAt: true,
           createdAt: true,
+
           platform: {
             select: {
               id: true,
               name: true,
             },
           },
+
           _count: {
             select: {
               ideaComments: true,
@@ -88,6 +98,7 @@ export class CommentsService {
           },
         },
       }),
+
       this.prisma.comment.count({ where }),
     ]);
 
@@ -101,4 +112,37 @@ export class CommentsService {
       },
     };
   }
+}
+/**
+ * Builds a case-insensitive string filter for Prisma.
+ *
+ * Used for partial matching (LIKE %value%) on string fields.
+ *
+ * Example:
+ * buildStringFilter('region', 'Palestine')
+ *
+ * Output:
+ * {
+ *   region: {
+ *     contains: 'Palestine',
+ *     mode: 'insensitive'
+ *   }
+ * }
+ *
+ * @param field - Prisma field name
+ * @param value - search value
+ * @returns Prisma filter or undefined
+ */
+export function buildStringFilter(
+  field: string,
+  value?: string,
+) {
+  if (!value) return undefined;
+
+  return {
+    [field]: {
+      contains: value,
+      mode: 'insensitive',
+    },
+  };
 }

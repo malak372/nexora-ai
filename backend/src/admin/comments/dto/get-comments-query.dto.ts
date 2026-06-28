@@ -57,12 +57,4 @@ export class GetCommentsQueryDto extends ListQueryDto {
   @IsString()
   region?: string;
 
-  /**
-   * Optional search keyword.
-   *
-   * Used to search within the collected comment content.
-   */
-  @IsOptional()
-  @IsString()
-  search?: string;
 }

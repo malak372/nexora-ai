@@ -26,17 +26,6 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Malak
  */
 export class GetUsersQueryDto extends ListQueryDto {
-  /**
-   * Optional search keyword.
-   *
-   * Used to search users by full name or email address.
-   *
-   * Example:
-   * malak
-   */
-  @IsOptional()
-  @IsString()
-  search?: string;
 
   /**
    * Optional user role filter.

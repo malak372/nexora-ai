@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AccountStatus,
   AdminAction,
@@ -6,6 +10,7 @@ import {
   CreditTransactionType,
   Prisma,
 } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetCreditHistoryQueryDto } from './dto/get-credit-history-query.dto';
 import { AdjustUserCreditsDto } from './dto/adjust-user-credits.dto';
@@ -16,14 +21,20 @@ import {
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildSearchFilter,
+  buildRelationSearchFilter,
 } from '../../utilities/base-query/builder';
 
 /**
- * Service responsible for administrative credit management.
+ * Service responsible for managing user credit operations
+ * in the admin panel.
  *
- * This service allows administrators to retrieve, filter,
- * sort, export, and manually adjust user credit transactions.
+ * Features:
+ * - View credit transaction history.
+ * - Filter, search, sort, and paginate transactions.
+ * - Export credit history as CSV.
+ * - Adjust user credit balance.
+ * - Update user account status automatically.
+ * - Record audit logs for admin credit adjustments.
  *
  * @author Malak
  */
@@ -32,30 +43,26 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) { }
+  ) {}
 
   /**
-   * Builds the WHERE filter for credit transaction queries.
+   * Builds the Prisma where filter for credit history queries.
    *
-   * Supports:
-   * - Date filtering (createdAt range)
-   * - Exact match filtering for transaction type
-   * - Search inside related user entity (fullName, email)
+   * Supported filters:
+   * - Date range
+   * - Transaction type
+   * - User full name or email search
    *
-   * @param query - Credit history query DTO
-   * @returns Prisma CreditTransactionWhereInput
+   * @param query Credit history query parameters.
+   * @returns Prisma where filter object.
    */
   private buildCreditHistoryWhere(query: GetCreditHistoryQueryDto) {
+    const search = query.search?.trim();
+
     return {
       ...buildDateFilter(query),
       ...buildExactFilter('type', query.type),
-
-      ...(query.search && {
-        user: buildSearchFilter(
-          ['fullName', 'email'],
-          query.search,
-        ),
-      }),
+      ...buildRelationSearchFilter('user', ['fullName', 'email'], search),
     };
   }
 
@@ -64,12 +71,15 @@ export class CreditsService {
    *
    * Supports:
    * - Pagination
-   * - Sorting
+   * - Searching
    * - Filtering
-   * - User search
+   * - Sorting
    *
-   * @param query - Query parameters for filtering and pagination
-   * @returns Paginated list of credit transactions
+   * Each transaction includes its related user,
+   * payment, and generated idea (if available).
+   *
+   * @param query Credit history query parameters.
+   * @returns Paginated credit transaction list with metadata.
    */
   async getCreditHistory(query: GetCreditHistoryQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -95,7 +105,6 @@ export class CreditsService {
           balanceAfter: true,
           description: true,
           createdAt: true,
-
           user: {
             select: {
               id: true,
@@ -103,7 +112,6 @@ export class CreditsService {
               email: true,
             },
           },
-
           payment: {
             select: {
               id: true,
@@ -112,7 +120,6 @@ export class CreditsService {
               status: true,
             },
           },
-
           idea: {
             select: {
               id: true,
@@ -121,7 +128,6 @@ export class CreditsService {
           },
         },
       }),
-
       this.prisma.creditTransaction.count({ where }),
     ]);
 
@@ -137,12 +143,19 @@ export class CreditsService {
   }
 
   /**
-   * Exports credit transactions as CSV format.
+   * Exports credit transaction history as a CSV file.
    *
-   * Uses same filters and sorting as listing endpoint.
+   * The exported data includes:
+   * - Transaction information
+   * - User details
+   * - Payment details
+   * - Related idea information
+   * - Transaction creation date
    *
-   * @param query - Query filters
-   * @returns CSV string of credit transactions
+   * Values are escaped to ensure valid CSV formatting.
+   *
+   * @param query Credit history query parameters.
+   * @returns CSV formatted string.
    */
   async exportCreditsCsv(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
@@ -163,7 +176,6 @@ export class CreditsService {
         balanceAfter: true,
         description: true,
         createdAt: true,
-
         user: {
           select: {
             id: true,
@@ -171,7 +183,6 @@ export class CreditsService {
             email: true,
           },
         },
-
         payment: {
           select: {
             id: true,
@@ -180,7 +191,6 @@ export class CreditsService {
             status: true,
           },
         },
-
         idea: {
           select: {
             id: true,
@@ -228,25 +238,34 @@ export class CreditsService {
 
     return [header, ...rows]
       .map((row) =>
-        row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')
+        row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','),
       )
       .join('\n');
   }
 
   /**
-   * Adjusts a user's credit balance manually (Admin action).
+   * Adjusts a user's credit balance.
    *
-   * Steps:
-   * - Validate user exists
-   * - Calculate new balance
-   * - Prevent negative balance
-   * - Update user account status
-   * - Create credit transaction record
-   * - Log admin action in audit logs
+   * Validation:
+   * - User must exist.
+   * - Amount cannot be zero.
+   * - Credit balance cannot become negative.
    *
-   * @param body - Adjustment data
-   * @param adminId - ID of admin performing action
-   * @returns Updated user + transaction record
+   * Business rules:
+   * - Users with a balance greater than zero become PREMIUM.
+   * - Users with zero balance become NORMAL.
+   *
+   * The update and transaction creation are executed
+   * atomically using a database transaction.
+   *
+   * An audit log is created after the adjustment.
+   *
+   * @param body Credit adjustment request.
+   * @param adminId ID of the administrator performing the action.
+   * @returns Updated user and created credit transaction.
+   *
+   * @throws NotFoundException If the user does not exist.
+   * @throws BadRequestException If the amount is zero or the balance becomes negative.
    */
   async adjustUserCredits(body: AdjustUserCreditsDto, adminId: string) {
     const user = await this.prisma.user.findUnique({
@@ -257,14 +276,23 @@ export class CreditsService {
       throw new NotFoundException('User not found');
     }
 
+    if (body.amount === 0) {
+      throw new BadRequestException('Amount cannot be zero');
+    }
+
     const newBalance = user.creditBalance + body.amount;
 
     if (newBalance < 0) {
       throw new BadRequestException('Credit balance cannot be negative');
     }
 
-    const newStatus =
-      newBalance > 0 ? AccountStatus.PREMIUM : AccountStatus.NORMAL;
+    let newStatus: AccountStatus;
+
+    if (newBalance <= 0) {
+      newStatus = AccountStatus.NORMAL;
+    } else {
+      newStatus = AccountStatus.PREMIUM;
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const updatedUser = await tx.user.update({
