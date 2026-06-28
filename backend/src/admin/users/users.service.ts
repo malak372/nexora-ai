@@ -9,6 +9,13 @@ import {
   Prisma,
   UserRole,
 } from '@prisma/client';
+import {
+  buildDateFilter,
+  buildExactFilter,
+  buildOrderBy,
+  buildPagination,
+  buildSearchFilter,
+} from '../../utilities/base-query/builder';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -41,54 +48,42 @@ export class UsersService {
    * @returns Paginated users list with metadata.
    */
   async getUsers(query: GetUsersQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 10;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = buildPagination(query);
 
-    const where: Prisma.UserWhereInput = {};
+    const isActive =
+      query.isActive !== undefined
+        ? query.isActive === 'true'
+        : undefined;
 
-    if (query.fromDate || query.toDate) {
-      where.createdAt = {
-        ...(query.fromDate && {
-          gte: new Date(query.fromDate),
-        }),
-        ...(query.toDate && {
-          lte: new Date(query.toDate),
-        }),
-      };
-    }
+    const where: Prisma.UserWhereInput = {
+      ...buildDateFilter(query),
+      ...buildSearchFilter(['fullName', 'email'], query.search),
+      ...buildExactFilter('role', query.role),
+      ...buildExactFilter('accountStatus', query.accountStatus),
+      ...buildExactFilter('isActive', isActive),
+    };
 
-    if (query.search) {
-      where.OR = [
-        { fullName: { contains: query.search, mode: 'insensitive' } },
-        { email: { contains: query.search, mode: 'insensitive' } },
-      ];
-    }
-
-    if (query.role) {
-      where.role = query.role;
-    }
-
-    if (query.accountStatus) {
-      where.accountStatus = query.accountStatus;
-    }
-
-    if (query.isActive === 'true') {
-      where.isActive = true;
-    }
-
-    if (query.isActive === 'false') {
-      where.isActive = false;
-    }
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'fullName',
+        'email',
+        'role',
+        'accountStatus',
+        'creditBalance',
+        'isActive',
+        'isVerified',
+        'createdAt',
+      ] as const,
+      'createdAt',
+    );
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
         skip,
         take: limit,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy,
         select: {
           id: true,
           fullName: true,
@@ -110,10 +105,7 @@ export class UsersService {
           },
         },
       }),
-
-      this.prisma.user.count({
-        where,
-      }),
+      this.prisma.user.count({ where }),
     ]);
 
     return {

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
 
 /**
  * Controller responsible for platform management.
@@ -41,16 +43,18 @@ export class PlatformsController {
   constructor(private readonly platformsService: PlatformsService) { }
 
   /**
-   * Retrieves all configured platforms.
+   * Retrieves platforms with optional pagination,
+   * searching, filtering, and sorting.
    *
    * Endpoint:
    * GET /admin/platforms
    *
-   * @returns A list of available platforms.
+   * @param query Query parameters used to filter and paginate platforms.
+   * @returns Paginated platforms list with metadata.
    */
   @Get()
-  getPlatforms() {
-    return this.platformsService.getPlatforms();
+  getPlatforms(@Query() query: GetPlatformsQueryDto) {
+    return this.platformsService.getPlatforms(query);
   }
 
   /**

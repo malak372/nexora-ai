@@ -9,16 +9,19 @@ import { CreateDomainDto } from './dto/create-domain.dto';
 import { UpdateDomainDto } from './dto/update-domain.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
+import {
+  buildDateFilter,
+  buildOrderBy,
+  buildPagination,
+  buildExactFilter,
+  buildSearchFilter,
+} from '../../utilities/base-query/builder';
 
 /**
  * Service responsible for Admin domain management operations.
  *
- * This service allows administrators to:
- * - Retrieve all domains.
- * - Register new domains.
- * - Update existing domain information.
- * - Deactivate domains.
- * - Record audit logs for domain changes.
+ * This service allows administrators to retrieve, search,
+ * filter, sort, create, update, and deactivate domains.
  *
  * @author Malak
  */
@@ -28,68 +31,41 @@ export class DomainsService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
   ) { }
-  
-  /**
-   * Builds the Prisma sorting configuration for domain queries.
-   *
-   * Maps the requested sorting field and direction
-   * from the query parameters into a Prisma-compatible
-   * orderBy object.
-   *
-   * If no sorting field is provided, domains are
-   * sorted by creation date in descending order.
-   *
-   * @param query - Query parameters containing the optional
-   * sorting field and sorting direction.
-   * @returns Prisma orderBy object used when retrieving domains.
-   *
-   * @author Malak
-   */
-  private buildDomainsOrderBy(query: GetDomainsQueryDto) {
-    const sortOrder: Prisma.SortOrder = query.sortOrder ?? 'desc';
-
-    switch (query.sortBy) {
-      case 'name':
-        return { name: sortOrder };
-
-      case 'isActive':
-        return { isActive: sortOrder };
-
-      case 'updatedAt':
-        return { updatedAt: sortOrder };
-
-      case 'createdAt':
-      default:
-        return { createdAt: sortOrder };
-    }
-  }
 
   /**
-   * Retrieves domains with optional date filtering, sorting, and pagination.
+   * Retrieves domains with optional searching, date filtering,
+   * sorting, and pagination.
    *
-   * @param query - Query parameters used for pagination, filtering, and sorting domains.
+   * @param query Query parameters used for pagination,
+   * searching, filtering, and sorting domains.
    * @returns Paginated domains list with metadata.
    */
   async getDomains(query: GetDomainsQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 10;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = buildPagination(query);
 
-    const where: Prisma.DomainWhereInput = {};
+    const isActive =
+      query.isActive !== undefined
+        ? query.isActive === 'true'
+        : undefined;
 
-    if (query.fromDate || query.toDate) {
-      where.createdAt = {
-        ...(query.fromDate && { gte: new Date(query.fromDate) }),
-        ...(query.toDate && { lte: new Date(query.toDate) }),
-      };
-    }
+    const where: Prisma.DomainWhereInput = {
+      ...buildDateFilter(query),
+      ...buildSearchFilter(['name'], query.search),
+      ...buildExactFilter('isActive', isActive),
+    };
+
+    const orderBy = buildOrderBy(
+      query,
+      ['name', 'isActive', 'updatedAt', 'createdAt'] as const,
+      'createdAt',
+    );
 
     const [domains, total] = await Promise.all([
       this.prisma.domain.findMany({
         where,
         skip,
         take: limit,
-        orderBy: this.buildDomainsOrderBy(query),
+        orderBy,
         select: {
           id: true,
           name: true,
@@ -103,10 +79,7 @@ export class DomainsService {
           },
         },
       }),
-
-      this.prisma.domain.count({
-        where,
-      }),
+      this.prisma.domain.count({ where }),
     ]);
 
     return {

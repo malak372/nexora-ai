@@ -28,18 +28,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Malak
  */
 export class GetIdeasQueryDto extends ListQueryDto {
-  /**
-   * Optional search keyword.
-   *
-   * Used to search project ideas by title.
-   *
-   * Example:
-   * health
-   */
-  @IsOptional()
-  @IsString()
-  search?: string;
-
+  
   /**
    * Optional domain identifier.
    *

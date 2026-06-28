@@ -35,14 +35,4 @@ export class GetCreditHistoryQueryDto extends ListQueryDto {
   @IsOptional()
   @IsEnum(CreditTransactionType)
   type?: CreditTransactionType;
-
-  /**
-   * Optional search keyword.
-   *
-   * Used to search credit transaction records
-   * by the user's full name or email address.
-   */
-  @IsOptional()
-  @IsString()
-  search?: string;
 }

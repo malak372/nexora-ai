@@ -3,18 +3,17 @@ import { Prisma } from '@prisma/client';
 /**
  * Builds pagination values for paginated queries.
  *
- * Calculates the current page, page size, and the
- * number of records to skip based on the provided
- * pagination parameters.
+ * Calculates:
+ * - current page
+ * - page size (limit)
+ * - number of records to skip
  *
  * Default values:
- * - page: 1
- * - limit: 10
+ * - page = 1
+ * - limit = 10
  *
- * @param query Query object containing the optional
- * page number and page size.
- * @returns Pagination values including page, limit,
- * and skip.
+ * @param query Pagination query parameters
+ * @returns Object containing page, limit, skip
  *
  * @author Malak
  */
@@ -30,16 +29,16 @@ export function buildPagination(query: {
 }
 
 /**
- * Builds a Prisma createdAt date filter.
+ * Builds a Prisma date range filter (createdAt).
  *
- * Creates a date range filter using the optional
- * start and end dates. If no dates are provided,
- * no filter is returned.
+ * Supports:
+ * - fromDate (gte)
+ * - toDate (lte)
  *
- * @param query Query object containing the optional
- * fromDate and toDate values.
- * @returns Prisma createdAt filter or undefined
- * when no date filters are provided.
+ * Returns undefined if no dates provided.
+ *
+ * @param query Date filter parameters
+ * @returns Prisma date filter or undefined
  *
  * @author Malak
  */
@@ -49,25 +48,28 @@ export function buildDateFilter(query: {
 }) {
   if (!query.fromDate && !query.toDate) return undefined;
 
+  const from = query.fromDate ? new Date(query.fromDate) : undefined;
+  const to = query.toDate ? new Date(query.toDate) : undefined;
+
   return {
     createdAt: {
-      ...(query.fromDate && { gte: new Date(query.fromDate) }),
-      ...(query.toDate && { lte: new Date(query.toDate) }),
+      ...(from && { gte: from }),
+      ...(to && { lte: to }),
     },
   };
 }
 
 /**
- * Builds a case-insensitive Prisma search filter.
+ * Builds a case-insensitive search filter.
  *
- * Creates an OR condition that searches the provided
- * value across multiple fields using partial,
- * case-insensitive matching.
+ * Searches across multiple fields using OR condition.
  *
- * @param fields List of searchable fields.
- * @param search Search keyword.
- * @returns Prisma OR filter or undefined when
- * no search keyword is provided.
+ * Example:
+ * fields = ['name', 'email']
+ *
+ * @param fields Fields to search in
+ * @param search Search keyword
+ * @returns Prisma OR filter or undefined
  *
  * @author Malak
  */
@@ -75,7 +77,7 @@ export function buildSearchFilter(
   fields: string[],
   search?: string,
 ) {
-  if (!search) return undefined;
+  if (!search?.trim()) return undefined;
 
   return {
     OR: fields.map((field) => ({
@@ -88,19 +90,17 @@ export function buildSearchFilter(
 }
 
 /**
- * Builds a validated Prisma orderBy object.
+ * Builds a safe Prisma orderBy object.
  *
- * Ensures that only allowed sorting fields are used.
- * If an invalid or missing field is provided, the
- * default field is used instead.
+ * Ensures only allowed fields are used for sorting.
+ * Prevents invalid sorting and injection issues.
  *
- * The sorting direction defaults to descending.
+ * Default sort direction: desc
  *
- * @param query Query object containing the optional
- * sorting field and sorting direction.
- * @param allowedFields List of supported sorting fields.
- * @param defaultField Default sorting field.
- * @returns Prisma orderBy object.
+ * @param query Sorting parameters
+ * @param allowedFields Allowed sortable fields
+ * @param defaultField Default sorting field
+ * @returns Prisma orderBy object
  *
  * @author Malak
  */
@@ -126,15 +126,19 @@ export function buildOrderBy<T extends string>(
 }
 
 /**
- * Builds a Prisma exact-match filter.
+ * Builds an exact match filter.
  *
- * Creates an exact-match filter for the specified field.
- * Supports enum, string, number, boolean, and other scalar values.
+ * Supports:
+ * - string
+ * - number
+ * - boolean
+ * - enum values
  *
- * @param field Name of the field to filter.
- * @param value Value to match.
- * @returns Prisma filter object, or undefined if
- * no value is provided.
+ * Returns undefined if value is not provided.
+ *
+ * @param field Field name
+ * @param value Value to match
+ * @returns Prisma filter or undefined
  *
  * @author Malak
  */
@@ -142,9 +146,78 @@ export function buildExactFilter<T>(
   field: string,
   value?: T,
 ) {
-  if (value === undefined || value === null) return undefined;
+  if (value === undefined) return undefined;
 
   return {
     [field]: value,
+  };
+}
+
+/**
+ * Builds a relational search filter.
+ *
+ * Used to search inside related models (relations)
+ * using nested OR conditions.
+ *
+ * Example:
+ * relation = 'user'
+ * fields = ['fullName', 'email']
+ *
+ * @param relation Relation name
+ * @param fields Fields inside relation
+ * @param search Search keyword
+ * @returns Prisma relational filter or undefined
+ *
+ * @author Malak
+ */
+export function buildRelationSearchFilter(
+  relation: string,
+  fields: string[],
+  search?: string,
+) {
+  if (!search?.trim()) return undefined;
+
+  return {
+    [relation]: {
+      OR: fields.map((field) => ({
+        [field]: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      })),
+    },
+  };
+}
+/**
+ * Builds a case-insensitive string filter for Prisma.
+ *
+ * Used for partial matching (LIKE %value%) on string fields.
+ *
+ * Example:
+ * buildStringFilter('region', 'Palestine')
+ *
+ * Output:
+ * {
+ *   region: {
+ *     contains: 'Palestine',
+ *     mode: 'insensitive'
+ *   }
+ * }
+ *
+ * @param field - Prisma field name
+ * @param value - search value
+ * @returns Prisma filter or undefined
+ */
+export function buildStringFilter(
+  field: string,
+  value?: string,
+) {
+  if (!value) return undefined;
+
+  return {
+    [field]: {
+      contains: value,
+      mode: 'insensitive',
+    },
   };
 }

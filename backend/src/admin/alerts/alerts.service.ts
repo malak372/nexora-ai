@@ -10,6 +10,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAlertDto } from './dto/create-alert.dto';
 import { GetAlertsQueryDto } from './dto/get-alerts-query.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import {
+  buildDateFilter,
+  buildExactFilter,
+  buildOrderBy,
+  buildPagination,
+  buildSearchFilter,
+  buildRelationSearchFilter,
+} from '../../utilities/base-query/builder';
 
 /**
  * Service responsible for Admin alert management operations.
@@ -27,127 +35,48 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
  */
 @Injectable()
 export class AlertsService {
-  /**
-   * Creates an instance of AlertsService.
-   *
-   * @param prisma - Prisma service used to access the database.
-   * @param auditLogsService - Service used to record admin audit logs.
-   */
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
   ) { }
-  /**
-  * Builds the Prisma sorting configuration for alert queries.
-  *
-  * Maps the requested sorting field and direction
-  * from the query parameters into a Prisma-compatible
-  * orderBy object.
-  *
-  * If no sorting field is provided, alerts are
-  * sorted by creation date in descending order.
-  *
-  * @param query Query parameters containing the optional
-  * sorting field and sorting direction.
-  * @returns Prisma orderBy object used when retrieving alerts.
-  *
-  * @author Malak
-  */
-  private buildAlertsOrderBy(query: GetAlertsQueryDto) {
-    const sortOrder: Prisma.SortOrder = query.sortOrder ?? 'desc';
-
-    switch (query.sortBy) {
-      case 'title':
-        return { title: sortOrder };
-
-      case 'type':
-        return { type: sortOrder };
-
-      case 'isRead':
-        return { isRead: sortOrder };
-
-      case 'createdAt':
-      default:
-        return { createdAt: sortOrder };
-    }
-  }
 
   /**
-   * Retrieves alerts with optional filtering, searching, and pagination.
+   * Retrieves alerts with optional filtering, searching,
+   * sorting, and pagination.
    *
-   * @param query - Query parameters used for pagination, searching, and filtering alerts.
+   * @param query Query parameters used for pagination,
+   * filtering, searching, and sorting alerts.
    * @returns Paginated alerts list with metadata.
    */
   async getAlerts(query: GetAlertsQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 10;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = buildPagination(query);
 
-    const where: Prisma.AlertWhereInput = {};
 
-    if (query.fromDate || query.toDate) {
-      where.createdAt = {
-        ...(query.fromDate && {
-          gte: new Date(query.fromDate),
-        }),
-        ...(query.toDate && {
-          lte: new Date(query.toDate),
-        }),
-      };
-    }
 
-    if (query.type) {
-      where.type = query.type;
-    }
+    const where: Prisma.AlertWhereInput = {
+      ...buildDateFilter(query),
+      ...buildExactFilter('type', query.type),
+      ...buildExactFilter('isRead', query.isRead),
+      ...buildSearchFilter(['title', 'message'], query.search),
+      ...buildRelationSearchFilter(
+        'user',
+        ['fullName', 'email'],
+        query.search,
+      ),
+    };
 
-    if (query.isRead === 'true') {
-      where.isRead = true;
-    }
-
-    if (query.isRead === 'false') {
-      where.isRead = false;
-    }
-
-    if (query.search) {
-      where.OR = [
-        {
-          title: {
-            contains: query.search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          message: {
-            contains: query.search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          user: {
-            fullName: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-        },
-        {
-          user: {
-            email: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-        },
-      ];
-    }
-
+    const orderBy = buildOrderBy(
+      query,
+      ['title', 'type', 'isRead', 'createdAt'] as const,
+      'createdAt',
+    );
 
     const [alerts, total] = await Promise.all([
       this.prisma.alert.findMany({
         where,
         skip,
         take: limit,
-        orderBy: this.buildAlertsOrderBy(query),
+        orderBy,
         select: {
           id: true,
           title: true,
@@ -164,10 +93,7 @@ export class AlertsService {
           },
         },
       }),
-
-      this.prisma.alert.count({
-        where,
-      }),
+      this.prisma.alert.count({ where }),
     ]);
 
     return {
@@ -187,9 +113,10 @@ export class AlertsService {
    * If userId is provided, the alert is sent to that specific user.
    * If userId is not provided, the alert is broadcast to all active users.
    *
-   * @param body - DTO containing the alert information.
-   * @param adminId - ID of the admin who created the alert.
-   * @returns A success message and the created alert, or the broadcast count.
+   * @param body DTO containing the alert information.
+   * @param adminId ID of the admin who created the alert.
+   * @returns A success message and the created alert,
+   * or the broadcast count.
    *
    * @throws NotFoundException if the specified user does not exist.
    */
