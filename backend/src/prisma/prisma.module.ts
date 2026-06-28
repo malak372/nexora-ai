@@ -4,8 +4,9 @@ import { PrismaService } from './prisma.service';
 /**
  * Prisma module.
  *
- * Provides the PrismaService for database access
- * and makes it available to other application modules.
+ * Registers and exports PrismaService,
+ * providing a shared database access layer
+ * for all application modules.
  *
  * @author Eman
  */
@@ -13,4 +14,4 @@ import { PrismaService } from './prisma.service';
   providers: [PrismaService],
   exports: [PrismaService],
 })
-export class PrismaModule {}
+export class PrismaModule { }

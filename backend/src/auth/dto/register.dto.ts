@@ -32,9 +32,12 @@ export class RegisterDto {
   /**
    * Optional guest session token.
    *
-   * If the user generated an idea as a Guest before registering,
-   * this token is used to transfer the guest-generated ideas
-   * to the newly created user account.
+   * If provided, the system transfers any
+   * guest-generated ideas associated with
+   * the session to the newly registered user.
+   *
+   * This field is ignored when no guest
+   * session exists.
    */
   @IsOptional()
   @IsString()

@@ -31,7 +31,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
   /**
    * Hashes a plain refresh token using SHA-256 before storing
@@ -64,7 +64,7 @@ export class AuthService {
         accountStatus: user.accountStatus,
       },
       {
-        secret: process.env.JWT_ACCESS_SECRET || 'access_secret_nexora',
+        secret: process.env.JWT_ACCESS_SECRET,
         expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
       },
     );
@@ -344,10 +344,13 @@ export class AuthService {
   }
 
   /**
-   * Logs out a user by revoking the provided refresh token.
+   * Logs out the authenticated user.
+   *
+   * Revokes the provided refresh token to prevent
+   * any future token refresh operations.
    *
    * @param dto - Logout request containing the refresh token.
-   * @returns Logout success message.
+   * @returns Logout confirmation message.
    */
   async logout(dto: RefreshDto) {
     const tokenHash = this.hashToken(dto.refreshToken);

@@ -4,16 +4,17 @@ import { PrismaClient } from '@prisma/client';
 /**
  * Prisma service.
  *
- * Extends the Prisma Client and manages the database
- * connection during the application lifecycle.
+ * Extends PrismaClient and manages the database
+ * connection lifecycle by automatically connecting
+ * when the application starts and disconnecting
+ * when it shuts down.
  *
  * @author Eman
  */
 @Injectable()
 export class PrismaService
   extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+  implements OnModuleInit, OnModuleDestroy {
   /**
    * Establishes the database connection when the module is initialized.
    */

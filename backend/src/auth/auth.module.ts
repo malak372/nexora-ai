@@ -24,7 +24,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_ACCESS_SECRET || 'access_secret_nexora',
+      secret: process.env.JWT_ACCESS_SECRET,
       signOptions: {
         expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
       },
@@ -34,4 +34,4 @@ import { PrismaModule } from '../prisma/prisma.module';
   providers: [AuthService, JwtStrategy, RolesGuard],
   exports: [AuthService, RolesGuard],
 })
-export class AuthModule {}
+export class AuthModule { }
