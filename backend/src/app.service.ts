@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
  *
  * Provides the default response for the application.
  *
- * @author Eman
+ * 
  */
 @Injectable()
 export class AppService {
