@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "AdminAction" ADD VALUE 'ADMIN_ADJUST_USER_CREDITS';
+
+-- AlterEnum
+ALTER TYPE "AdminTargetType" ADD VALUE 'CREDIT_TRANSACTION';

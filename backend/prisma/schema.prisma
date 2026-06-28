@@ -132,6 +132,38 @@ enum GeneratedOutputType {
   AI_PROMPT
 }
 
+enum AdminAction {
+  ADMIN_UPDATE_USER_STATUS
+  ADMIN_SOFT_DELETE_USER
+  ADMIN_UPDATE_SETTINGS
+  ADMIN_UPDATE_PROMPT
+  ADMIN_CREATE_ALERT
+  ADMIN_CREATE_PLATFORM
+  ADMIN_UPDATE_PLATFORM
+  ADMIN_DEACTIVATE_PLATFORM
+  ADMIN_CREATE_DOMAIN
+  ADMIN_UPDATE_DOMAIN
+  ADMIN_DEACTIVATE_DOMAIN
+  ADMIN_UPDATE_COMPLAINT
+  ADMIN_RUN_DATA_COLLECTION
+  ADMIN_STOP_DATA_COLLECTION
+  ADMIN_ADJUST_USER_CREDITS
+}
+
+enum AdminTargetType {
+  USER
+  IDEA
+  PAYMENT
+  DOMAIN
+  PLATFORM
+  SYSTEM_SETTING
+  PROMPT
+  COMPLAINT
+  ALERT
+  CREDIT_TRANSACTION
+  DATA_COLLECTION
+}
+
 /**
  * USERS
  */
@@ -161,6 +193,7 @@ model User {
   alerts             Alert[]
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
+  adminAuditLogs     AdminAuditLog[]     @relation("AdminAuditLogs")
   updatedSettings    SystemSetting[]     @relation("SettingsUpdatedBy")
   refreshTokens      RefreshToken[]
 
@@ -205,6 +238,33 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+}
+
+/**
+ * Admin Audit Log
+ */
+
+model AdminAuditLog {
+  id String @id @default(uuid())
+
+  adminId String? @map("admin_id")
+  admin   User?   @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+
+  action AdminAction
+
+  targetType AdminTargetType @map("target_type")
+  targetId   String?         @map("target_id")
+
+  oldValue Json? @map("old_value")
+  newValue Json? @map("new_value")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([adminId])
+  @@index([action])
+  @@index([targetType])
+  @@index([createdAt])
+  @@map("admin_audit_logs")
 }
 
 /**
