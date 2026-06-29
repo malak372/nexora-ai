@@ -1,5 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GetUserNotificationsQueryDto } from '../dto/get-user-notifications-query.dto';
+import {
+    buildDateFilter,
+    buildExactFilter,
+    buildOrderBy,
+    buildPagination,
+    buildSearchFilter,
+} from '../../utilities/base-query/builder';
 import { UserCommonService } from './user-common.service';
 
 /**
@@ -7,6 +16,9 @@ import { UserCommonService } from './user-common.service';
  *
  * This service handles retrieving notifications and
  * marking notifications as read for the authenticated user.
+ *
+ * It supports pagination, filtering, searching,
+ * and sorting for user notifications.
  *
  * It uses UserCommonService for shared user validation logic.
  *
@@ -22,30 +34,64 @@ export class UserNotificationsService {
     /**
      * Retrieves the authenticated user's notifications.
      *
-     * Returns notifications ordered from newest to oldest.
+     * Supports pagination, date filtering, searching,
+     * filtering by read status and notification type, and sorting.
      *
      * @param userId - Authenticated user ID.
-     * @returns List of user notifications.
+     * @param query - Query parameters for listing notifications.
+     * @returns Paginated user notifications with pagination metadata.
      *
      * @throws NotFoundException if the user does not exist.
      */
-    async getNotifications(userId: string) {
+    async getNotifications(userId: string, query: GetUserNotificationsQueryDto) {
         await this.userCommonService.findUserOrThrow(userId);
 
-        return this.prisma.alert.findMany({
-            where: { userId },
-            orderBy: {
-                createdAt: 'desc',
+        const { page, limit, skip } = buildPagination(query);
+
+        const where: Prisma.AlertWhereInput = {
+            userId,
+
+            ...buildDateFilter(query),
+
+            ...buildSearchFilter(['title', 'message'], query.search),
+
+            ...buildExactFilter('isRead', query.isRead),
+            ...buildExactFilter('type', query.type),
+        };
+
+        const orderBy = buildOrderBy(
+            query,
+            ['createdAt', 'title', 'type'] as const,
+            'createdAt',
+        );
+
+        const [notifications, total] = await Promise.all([
+            this.prisma.alert.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy,
+                select: {
+                    id: true,
+                    title: true,
+                    message: true,
+                    type: true,
+                    isRead: true,
+                    createdAt: true,
+                },
+            }),
+            this.prisma.alert.count({ where }),
+        ]);
+
+        return {
+            data: notifications,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
             },
-            select: {
-                id: true,
-                title: true,
-                message: true,
-                type: true,
-                isRead: true,
-                createdAt: true,
-            },
-        });
+        };
     }
 
     /**
