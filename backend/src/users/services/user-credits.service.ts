@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GetUserCreditHistoryQueryDto } from '../dto/get-user-credit-history-query.dto';
+import {
+  buildDateFilter,
+  buildExactFilter,
+  buildOrderBy,
+  buildPagination,
+  buildSearchFilter,
+} from '../../utilities/base-query/builder';
 import { UserCommonService } from './user-common.service';
 
 /**
@@ -7,6 +16,9 @@ import { UserCommonService } from './user-common.service';
  *
  * This service handles the authenticated user's credit
  * balance and credit transaction history.
+ *
+ * It supports pagination, filtering, searching,
+ * and sorting for credit transaction history.
  *
  * It uses UserCommonService for shared user validation logic.
  *
@@ -43,32 +55,67 @@ export class UserCreditsService {
   /**
    * Retrieves the authenticated user's credit transaction history.
    *
-   * Returns all credit transactions ordered
-   * from newest to oldest.
+   * Supports pagination, date filtering, searching,
+   * filtering by transaction type, and sorting.
    *
    * @param userId - Authenticated user ID.
-   * @returns Credit transaction history.
+   * @param query - Query parameters for listing credit transactions.
+   * @returns Paginated credit transaction history with pagination metadata.
    *
    * @throws NotFoundException if the user does not exist.
    */
-  async getCreditHistory(userId: string) {
+  async getCreditHistory(
+    userId: string,
+    query: GetUserCreditHistoryQueryDto,
+  ) {
     await this.userCommonService.findUserOrThrow(userId);
 
-    return this.prisma.creditTransaction.findMany({
-      where: { userId },
-      orderBy: {
-        createdAt: 'desc',
+    const { page, limit, skip } = buildPagination(query);
+
+    const where: Prisma.CreditTransactionWhereInput = {
+      userId,
+
+      ...buildDateFilter(query),
+
+      ...buildSearchFilter(['description'], query.search),
+
+      ...buildExactFilter('type', query.type),
+    };
+
+    const orderBy = buildOrderBy(
+      query,
+      ['createdAt', 'amount', 'type'] as const,
+      'createdAt',
+    );
+
+    const [transactions, total] = await Promise.all([
+      this.prisma.creditTransaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          createdAt: true,
+          ideaId: true,
+          paymentId: true,
+        },
+      }),
+      this.prisma.creditTransaction.count({ where }),
+    ]);
+
+    return {
+      data: transactions,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-      select: {
-        id: true,
-        type: true,
-        amount: true,
-        balanceAfter: true,
-        description: true,
-        createdAt: true,
-        ideaId: true,
-        paymentId: true,
-      },
-    });
+    };
   }
 }
