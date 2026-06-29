@@ -55,7 +55,7 @@ export class UsersController {
     private readonly userNotificationsService: UserNotificationsService,
     private readonly userSummaryService: UserSummaryService,
     private readonly userActivityService: UserActivityService,
-  ) {}
+  ) { }
 
   /**
    * Retrieves the authenticated user's profile.

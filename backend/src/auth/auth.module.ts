@@ -9,6 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 
 import { PrismaModule } from '../prisma/prisma.module';
+import { MailModule } from '../mail/mail.module';
 
 /**
  * Authentication module.
@@ -29,9 +30,16 @@ import { PrismaModule } from '../prisma/prisma.module';
         expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
       },
     }),
+    MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
-  exports: [AuthService, RolesGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+  ],
+  exports: [
+    AuthService,
+    RolesGuard],
 })
 export class AuthModule { }
