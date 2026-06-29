@@ -1,31 +1,27 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { DashboardResponseDto } from './dto/dashboard-response.dto';
+import { CacheInterceptor } from '@nestjs/cache-manager';
+import { ApiOkResponse } from '@nestjs/swagger';
 
 /**
- * Controller responsible for the administrative dashboard.
+ * Administrative Dashboard Controller
  *
- * This controller provides endpoints that allow administrators
- * to retrieve the overall dashboard statistics and system overview.
+ * Provides aggregated analytics for system monitoring:
+ * users, ideas, payments, comments, AI usage, revenue.
  *
- * The dashboard summarizes key information such as:
- * - Total users.
- * - Total generated ideas.
- * - Total payments.
- * - Total collected comments.
- * - Credits sold.
- * - AI requests.
- * - OpenAI usage cost.
- * - Average AI response time.
+ * Access restricted to ADMIN role only.
  *
- * All endpoints are protected by JWT authentication and
- * can only be accessed by users with the ADMIN role.
- *
- * Base route:
- * /admin/dashboard
+ * Base route: /admin/dashboard
  *
  * @author Malak
  */
@@ -33,28 +29,19 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DashboardController {
-  /**
-   * Creates an instance of DashboardController.
-   *
-   * @param dashboardService - Service responsible for retrieving
-   * dashboard statistics and analytics.
-   */
-  constructor(private readonly dashboardService: DashboardService) { }
+  constructor(private readonly dashboardService: DashboardService) {}
 
   /**
-   * Retrieves the administrative dashboard summary.
+   * Returns dashboard analytics summary.
    *
-   * Endpoint:
-   * GET /admin/dashboard
+   * Cached for performance optimization.
    *
-   * Returns an overview of the platform including
-   * users, ideas, payments, comments, AI usage,
-   * credits sold, and other system statistics.
-   *
-   * @returns A dashboard summary containing key platform metrics.
+   * @route GET /admin/dashboard
    */
   @Get()
-  getDashboard() {
+  @UseInterceptors(CacheInterceptor)
+  @ApiOkResponse({ type: DashboardResponseDto })
+  getDashboard(): Promise<DashboardResponseDto> {
     return this.dashboardService.getDashboard();
   }
 }

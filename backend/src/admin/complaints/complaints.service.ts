@@ -133,7 +133,8 @@ export class ComplaintsService {
     if (!hasChanges) {
       return {
         message: 'No changes detected',
-        complaint: complaint,
+        complaint,
+        updated: false,
       };
     }
 

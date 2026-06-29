@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { ComplaintStatus, ComplaintPriority } from '@prisma/client';
 
 /**
@@ -60,5 +60,6 @@ export class UpdateComplaintDto {
    */
   @IsOptional()
   @IsString()
+  @MinLength(5)
   adminReply?: string;
 }

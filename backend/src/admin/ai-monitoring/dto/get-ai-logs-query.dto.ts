@@ -26,7 +26,7 @@ export class GetAiLogsQueryDto extends ListQueryDto {
   /**
    * AI provider filter.
    *
-   * Example: OPENAI, GEMINI, etc.
+   * Example: OPENAI, REDDIT, etc.
    */
   @IsOptional()
   @IsEnum(ApiProvider)
@@ -35,7 +35,7 @@ export class GetAiLogsQueryDto extends ListQueryDto {
   /**
    * API request type filter.
    *
-   * Example: IDEA_GENERATION, ANALYSIS, etc.
+   * Example: IDEA_GENERATION, COMMENT_ANALYSIS, AI_CHAT, etc.
    */
   @IsOptional()
   @IsEnum(ApiRequestType)
@@ -44,8 +44,12 @@ export class GetAiLogsQueryDto extends ListQueryDto {
   /**
    * Success status filter for API requests.
    *
-   * Before: string ("true" | "false")
-   * After: boolean (true | false)
+   * Accepts:
+   * ?isSuccess=true
+   * ?isSuccess=false
+   *
+   * Automatically transforms the query value
+   * into a boolean before validation.
    *
    * Query example:
    * ?isSuccess=true → true
@@ -53,9 +57,20 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    */
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return undefined;
-  }) @IsBoolean()
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+
+      if (normalized === 'true') {
+        return true;
+      }
+
+      if (normalized === 'false') {
+        return false;
+      }
+    }
+
+    return value;
+  })
+  @IsBoolean()
   isSuccess?: boolean;
 }

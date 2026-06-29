@@ -1,4 +1,4 @@
-import { IsInt, IsString, MinLength, NotEquals } from 'class-validator';
+import { IsInt, IsString, IsUUID, MinLength, NotEquals } from 'class-validator';
 
 /**
  * DTO for adjusting a user's credit balance.
@@ -30,7 +30,7 @@ import { IsInt, IsString, MinLength, NotEquals } from 'class-validator';
  * @author Malak
  */
 export class AdjustUserCreditsDto {
-  @IsString()
+  @IsUUID()
   userId!: string;
 
   @IsInt()

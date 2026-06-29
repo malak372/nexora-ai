@@ -43,7 +43,7 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) {}
+  ) { }
 
   /**
    * Builds the Prisma where filter for credit history queries.
@@ -57,7 +57,14 @@ export class CreditsService {
    * @returns Prisma where filter object.
    */
   private buildCreditHistoryWhere(query: GetCreditHistoryQueryDto) {
-    const search = query.search?.trim();
+    const search = query.search?.trim() || undefined;
+
+    if (!search) {
+      return {
+        ...buildDateFilter(query),
+        ...buildExactFilter('type', query.type),
+      };
+    }
 
     return {
       ...buildDateFilter(query),
@@ -280,7 +287,7 @@ export class CreditsService {
       throw new BadRequestException('Amount cannot be zero');
     }
 
-    const newBalance = user.creditBalance + body.amount;
+    const newBalance = Number(user.creditBalance) + Number(body.amount);
 
     if (newBalance < 0) {
       throw new BadRequestException('Credit balance cannot be negative');

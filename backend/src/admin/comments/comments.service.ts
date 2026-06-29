@@ -8,35 +8,35 @@ import {
   buildOrderBy,
   buildPagination,
   buildSearchFilter,
+  buildStringFilter,
 } from '../../utilities/base-query/builder';
 
 /**
  * Service responsible for Admin comment management operations.
  *
  * Provides:
- * - Pagination
- * - Filtering (platform, language, region)
- * - Full-text search (content)
- * - Sorting (whitelisted fields only)
+ * - Paginated comments list.
+ * - Filtering by platform, language, region, and date range.
+ * - Search within comment content.
+ * - Safe sorting using whitelisted fields.
+ * - Summary reports for collected comments.
+ * - Chart-ready analytics data.
  *
- * Used for analytics and comment intelligence system.
+ * Used by the Admin panel to monitor collected community feedback
+ * and support comment-based idea generation analytics.
  *
  * @author Malak
  */
 @Injectable()
 export class CommentsService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves comments with filtering, search, sorting, and pagination.
+   * Retrieves collected comments with filtering, searching,
+   * sorting, and pagination.
    *
-   * Supports:
-   * - platformId filtering
-   * - language filtering
-   * - region filtering (case-insensitive)
-   * - content search
-   * - date filtering
-   * - pagination
+   * @param query - Query parameters for pagination, filtering, searching, and sorting.
+   * @returns Paginated comments list with metadata.
    */
   async getComments(query: GetCommentsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -45,14 +45,7 @@ export class CommentsService {
       ...buildDateFilter(query),
       ...buildExactFilter('platformId', query.platformId),
       ...buildExactFilter('language', query.language),
-
-      ...(query.region && {
-        region: {
-          contains: query.region,
-          mode: 'insensitive',
-        },
-      }),
-
+      ...buildStringFilter('region', query.region),
       ...buildSearchFilter(['content'], query.search),
     };
 
@@ -112,37 +105,213 @@ export class CommentsService {
       },
     };
   }
-}
-/**
- * Builds a case-insensitive string filter for Prisma.
- *
- * Used for partial matching (LIKE %value%) on string fields.
- *
- * Example:
- * buildStringFilter('region', 'Palestine')
- *
- * Output:
- * {
- *   region: {
- *     contains: 'Palestine',
- *     mode: 'insensitive'
- *   }
- * }
- *
- * @param field - Prisma field name
- * @param value - search value
- * @returns Prisma filter or undefined
- */
-export function buildStringFilter(
-  field: string,
-  value?: string,
-) {
-  if (!value) return undefined;
 
-  return {
-    [field]: {
-      contains: value,
-      mode: 'insensitive',
-    },
-  };
+  /**
+   * Retrieves summary statistics for collected comments.
+   *
+   * Used by:
+   * GET /admin/comments/summary
+   *
+   * Summary includes:
+   * - Total comments.
+   * - Comments created today.
+   * - Comments created this month.
+   * - Number of platforms that have comments.
+   * - Number of detected languages.
+   * - Number of detected regions.
+   *
+   * @returns Comment summary statistics.
+   */
+  async getCommentsSummary() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalComments,
+      todayComments,
+      thisMonthComments,
+      platformsGroup,
+      languagesGroup,
+      regionsGroup,
+    ] = await Promise.all([
+      this.prisma.comment.count(),
+
+      this.prisma.comment.count({
+        where: {
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      }),
+
+      this.prisma.comment.count({
+        where: {
+          createdAt: {
+            gte: monthStart,
+          },
+        },
+      }),
+
+      this.prisma.comment.groupBy({
+        by: ['platformId'],
+        where: {
+          platformId: {
+            not: null,
+          },
+        },
+        _count: {
+          platformId: true,
+        },
+      }),
+
+      this.prisma.comment.groupBy({
+        by: ['language'],
+        where: {
+          language: {
+            not: null,
+          },
+        },
+        _count: {
+          language: true,
+        },
+      }),
+
+      this.prisma.comment.groupBy({
+        by: ['region'],
+        where: {
+          region: {
+            not: null,
+          },
+        },
+        _count: {
+          region: true,
+        },
+      }),
+    ]);
+
+    return {
+      totalComments,
+      todayComments,
+      thisMonthComments,
+      platformsCount: platformsGroup.length,
+      languagesCount: languagesGroup.length,
+      regionsCount: regionsGroup.length,
+    };
+  }
+
+  /**
+   * Retrieves chart-ready analytics for collected comments.
+   *
+   * Used by:
+   * GET /admin/comments/charts
+   *
+   * Charts include:
+   * - Comments grouped by platform.
+   * - Comments grouped by language.
+   * - Comments grouped by region.
+   *
+   * @returns Chart-ready comment analytics.
+   */
+  async getCommentsCharts() {
+    const [
+      commentsByPlatformGroup,
+      commentsByLanguageGroup,
+      commentsByRegionGroup,
+    ] = await Promise.all([
+      this.prisma.comment.groupBy({
+        by: ['platformId'],
+        where: {
+          platformId: {
+            not: null,
+          },
+        },
+        _count: {
+          platformId: true,
+        },
+        orderBy: {
+          _count: {
+            platformId: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.comment.groupBy({
+        by: ['language'],
+        where: {
+          language: {
+            not: null,
+          },
+        },
+        _count: {
+          language: true,
+        },
+        orderBy: {
+          _count: {
+            language: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.comment.groupBy({
+        by: ['region'],
+        where: {
+          region: {
+            not: null,
+          },
+        },
+        _count: {
+          region: true,
+        },
+        orderBy: {
+          _count: {
+            region: 'desc',
+          },
+        },
+      }),
+    ]);
+
+    const platformIds = commentsByPlatformGroup
+      .map((item) => item.platformId)
+      .filter((id): id is string => Boolean(id));
+
+    const platforms = await this.prisma.platform.findMany({
+      where: {
+        id: {
+          in: platformIds,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    const platformNameMap = new Map(
+      platforms.map((platform) => [platform.id, platform.name]),
+    );
+
+    return {
+      commentsByPlatform: commentsByPlatformGroup.map((item) => ({
+        platformId: item.platformId,
+        platformName: item.platformId
+          ? platformNameMap.get(item.platformId) ?? 'Unknown Platform'
+          : 'Unknown Platform',
+        count: item._count.platformId,
+      })),
+
+      commentsByLanguage: commentsByLanguageGroup.map((item) => ({
+        language: item.language,
+        count: item._count.language,
+      })),
+
+      commentsByRegion: commentsByRegionGroup.map((item) => ({
+        region: item.region,
+        count: item._count.region,
+      })),
+    };
+  }
 }

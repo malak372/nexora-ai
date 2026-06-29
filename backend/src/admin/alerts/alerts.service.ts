@@ -15,8 +15,6 @@ import {
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildSearchFilter,
-  buildRelationSearchFilter,
 } from '../../utilities/base-query/builder';
 
 /**
@@ -51,19 +49,49 @@ export class AlertsService {
   async getAlerts(query: GetAlertsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
 
-
+    const searchFilter = query.search?.trim()
+      ? {
+        OR: [
+          {
+            title: {
+              contains: query.search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            message: {
+              contains: query.search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            user: {
+              fullName: {
+                contains: query.search,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+          {
+            user: {
+              email: {
+                contains: query.search,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        ],
+      }
+      : {};
 
     const where: Prisma.AlertWhereInput = {
       ...buildDateFilter(query),
       ...buildExactFilter('type', query.type),
       ...buildExactFilter('isRead', query.isRead),
-      ...buildSearchFilter(['title', 'message'], query.search),
-      ...buildRelationSearchFilter(
-        'user',
-        ['fullName', 'email'],
-        query.search,
-      ),
+      ...searchFilter,
     };
+
+
 
     const orderBy = buildOrderBy(
       query,
