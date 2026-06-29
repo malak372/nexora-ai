@@ -4,32 +4,39 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+
 import { DomainsService } from './domains.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { UpdateDomainDto } from './dto/update-domain.dto';
+import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
+
+type AuthenticatedAdmin = {
+  id: string;
+  role: UserRole;
+};
 
 /**
- * Controller responsible for application domain management.
+ * Controller responsible for managing software project domains.
  *
- * This controller provides endpoints that allow administrators to:
- * - Retrieve all available domains.
- * - Create new domains.
- * - Update existing domains.
- * - Deactivate domains.
- *
- * All endpoints are protected by JWT authentication and
- * can only be accessed by users with the ADMIN role.
+ * Provides admin-only endpoints for:
+ * - Listing domains.
+ * - Creating domains.
+ * - Updating domains.
+ * - Deactivating domains.
+ * - Viewing domain summary reports.
+ * - Viewing chart-ready domain analytics.
  *
  * Base route:
  * /admin/domains
@@ -40,15 +47,13 @@ import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DomainsController {
-  constructor(private readonly domainsService: DomainsService) { }
+  constructor(private readonly domainsService: DomainsService) {}
 
   /**
-   * Retrieves all configured domains.
+   * Retrieves configured domains.
    *
    * Endpoint:
    * GET /admin/domains
-   *
-   * @returns A list of application domains.
    */
   @Get()
   getDomains(@Query() query: GetDomainsQueryDto) {
@@ -56,19 +61,37 @@ export class DomainsController {
   }
 
   /**
+   * Retrieves domain summary statistics.
+   *
+   * Endpoint:
+   * GET /admin/domains/summary
+   */
+  @Get('summary')
+  getDomainsSummary(@Query() query: GetDomainsQueryDto) {
+    return this.domainsService.getDomainsSummary(query);
+  }
+
+  /**
+   * Retrieves chart-ready domain analytics.
+   *
+   * Endpoint:
+   * GET /admin/domains/charts
+   */
+  @Get('charts')
+  getDomainsCharts(@Query() query: GetDomainsQueryDto) {
+    return this.domainsService.getDomainsCharts(query);
+  }
+
+  /**
    * Creates a new domain.
    *
    * Endpoint:
    * POST /admin/domains
-   *
-   * @param body - DTO containing the new domain information.
-   * @param currentUser - The authenticated admin creating the domain.
-   * @returns A success message and the newly created domain.
    */
   @Post()
   createDomain(
     @Body() body: CreateDomainDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.domainsService.createDomain(body, currentUser.id);
   }
@@ -78,35 +101,26 @@ export class DomainsController {
    *
    * Endpoint:
    * PATCH /admin/domains/:id
-   *
-   * @param id - The unique identifier of the domain.
-   * @param body - DTO containing the updated domain information.
-   * @param currentUser - The authenticated admin updating the domain.
-   * @returns A success message and the updated domain.
    */
   @Patch(':id')
   updateDomain(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateDomainDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.domainsService.updateDomain(id, body, currentUser.id);
   }
 
   /**
-   * Deactivates a domain.
+   * Deactivates an existing domain.
    *
    * Endpoint:
    * DELETE /admin/domains/:id
-   *
-   * @param id - The unique identifier of the domain.
-   * @param currentUser - The authenticated admin deactivating the domain.
-   * @returns A success message and the updated domain information.
    */
   @Delete(':id')
-  deleteDomain(
-    @Param('id') id: string,
-    @CurrentUser() currentUser: any,
+  deactivateDomain(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.domainsService.deactivateDomain(id, currentUser.id);
   }

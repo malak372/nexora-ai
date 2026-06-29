@@ -4,31 +4,42 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+
 import { UsersService } from './users.service';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 
+type AuthenticatedAdmin = {
+  id: string;
+  role: UserRole;
+};
+
 /**
  * Controller responsible for administrative user management.
  *
  * This controller provides endpoints that allow administrators to:
- * - Retrieve all users.
- * - Search and filter users.
- * - View detailed information about a specific user.
+ * - Retrieve users with filtering, searching, sorting, and pagination.
+ * - View user summary statistics.
+ * - Retrieve user analytics for charts.
+ * - Retrieve a single user by ID.
  * - Activate or deactivate user accounts.
+ * - Send password reset emails.
  * - Soft delete user accounts.
  *
- * All endpoints are protected by JWT authentication and
- * can only be accessed by users with the ADMIN role.
+ * All endpoints are protected by JWT authentication
+ * and require the ADMIN role.
  *
  * Base route:
  * /admin/users
@@ -39,18 +50,24 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   /**
-   * Retrieves all users with optional search and filtering.
+   * Retrieves a paginated list of users.
    *
-   * Endpoint:
+   * Supports:
+   * - Pagination.
+   * - Searching.
+   * - Sorting.
+   * - Date filtering.
+   * - Role filtering.
+   * - Account status filtering.
+   * - Active status filtering.
+   *
    * GET /admin/users
    *
-   * This read-only endpoint is not recorded in audit logs.
-   *
-   * @param query - Query parameters used for searching and filtering users.
-   * @returns A list of users with summary information and related statistics.
+   * @param query User filtering and pagination options.
+   * @returns Paginated list of users.
    */
   @Get()
   getUsers(@Query() query: GetUsersQueryDto) {
@@ -58,37 +75,68 @@ export class UsersController {
   }
 
   /**
-   * Retrieves detailed information about a specific user.
+   * Retrieves summary statistics for users.
    *
-   * Endpoint:
+   * The same filters used by the users list
+   * can also be applied to the summary.
+   *
+   * GET /admin/users/summary
+   *
+   * @param query Optional filtering parameters.
+   * @returns User summary statistics.
+   */
+  @Get('summary')
+  getUsersSummary(@Query() query: GetUsersQueryDto) {
+    return this.usersService.getUsersSummary(query);
+  }
+
+  /**
+   * Retrieves analytics data used by dashboard charts.
+   *
+   * The returned statistics respect the same
+   * filtering options available for the users list.
+   *
+   * GET /admin/users/charts
+   *
+   * @param query Optional filtering parameters.
+   * @returns User analytics for charts.
+   */
+  @Get('charts')
+  getUsersCharts(@Query() query: GetUsersQueryDto) {
+    return this.usersService.getUsersCharts(query);
+  }
+
+  /**
+   * Retrieves a specific user by ID.
+   *
    * GET /admin/users/:id
    *
-   * This read-only endpoint is not recorded in audit logs.
-   *
-   * @param id - The unique identifier of the user.
-   * @returns The selected user's complete information.
+   * @param id User unique identifier.
+   * @returns User details.
    */
   @Get(':id')
-  getUserById(@Param('id') id: string) {
+  getUserById(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.getUserById(id);
   }
 
   /**
-   * Updates the active status of a user account.
+   * Updates a user's active status.
    *
-   * Endpoint:
+   * Allows administrators to activate
+   * or deactivate user accounts.
+   *
    * PATCH /admin/users/:id/status
    *
-   * @param id - The unique identifier of the user.
-   * @param body - DTO containing the new active status.
-   * @param currentUser - The authenticated administrator.
-   * @returns A success message and the updated user information.
+   * @param id User unique identifier.
+   * @param body Active status request body.
+   * @param currentUser Authenticated administrator.
+   * @returns Updated user information.
    */
   @Patch(':id/status')
   updateUserStatus(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateUserStatusDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.usersService.updateUserStatus(
       id,
@@ -98,22 +146,44 @@ export class UsersController {
   }
 
   /**
+   * Sends a password reset email to a user.
+   *
+   * The email contains a secure password reset link
+   * allowing the user to create a new password.
+   *
+   * POST /admin/users/:id/send-password-reset-email
+   *
+   * @param id User unique identifier.
+   * @param currentUser Authenticated administrator.
+   * @returns Success confirmation.
+   */
+  @Post(':id/send-password-reset-email')
+  sendPasswordResetEmail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
+  ) {
+    return this.usersService.sendPasswordResetEmail(
+      id,
+      currentUser.id,
+    );
+  }
+
+  /**
    * Soft deletes a user account.
    *
-   * Endpoint:
+   * The user record remains in the database,
+   * but is marked as deleted and becomes inactive.
+   *
    * DELETE /admin/users/:id
    *
-   * This operation deactivates the user without permanently
-   * removing the record from the database.
-   *
-   * @param id - The unique identifier of the user.
-   * @param currentUser - The authenticated administrator.
-   * @returns A success message and the updated user information.
+   * @param id User unique identifier.
+   * @param currentUser Authenticated administrator.
+   * @returns Success confirmation.
    */
   @Delete(':id')
   softDeleteUser(
-    @Param('id') id: string,
-    @CurrentUser() currentUser: any,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.usersService.softDeleteUser(id, currentUser.id);
   }

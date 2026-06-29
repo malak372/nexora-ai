@@ -1,39 +1,51 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBooleanString, IsEnum, IsOptional } from 'class-validator';
 import { AccountStatus, UserRole } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * DTO for filtering, searching, and paginating users
- * in the Admin User Management module.
+ * DTO for filtering, searching, sorting, and paginating users.
  *
- * This DTO is used with the GET /admin/users endpoint.
- * It extends PaginationQueryDto to support pagination
- * while providing additional filtering and searching options.
+ * This DTO is used by the Admin User Management module to retrieve
+ * user records with optional filtering capabilities.
  *
- * Supported features:
+ * It extends ListQueryDto to inherit:
  * - Pagination.
- * - Search by user name or email.
- * - Filter by user role.
- * - Filter by account status.
- * - Filter by active/inactive state.
+ * - Search.
+ * - Date range filtering.
+ * - Sorting.
  *
- * All filter properties are optional, allowing the administrator
- * to retrieve all users or apply one or more filters.
+ * Supported filters:
+ * - User role.
+ * - Account status.
+ * - Active/inactive state.
+ *
+ * Used by:
+ * - GET /admin/users
+ * - GET /admin/users/summary
+ * - GET /admin/users/charts
  *
  * Example:
- * GET /admin/users?page=1&limit=10&search=malak&role=USER&accountStatus=NORMAL&isActive=true
+ * GET /admin/users?page=1
+ *   &limit=10
+ *   &search=malak
+ *   &role=USER
+ *   &accountStatus=NORMAL
+ *   &isActive=true
+ *   &sortBy=createdAt
+ *   &sortOrder=desc
  *
  * @author Malak
  */
 export class GetUsersQueryDto extends ListQueryDto {
-
   /**
    * Optional user role filter.
    *
-   * Must be one of the values defined in the UserRole enum.
+   * When provided, only users with the specified role
+   * are included in the results.
    *
-   * Example:
-   * USER
+   * Accepted values:
+   * - USER
+   * - ADMIN
    */
   @IsOptional()
   @IsEnum(UserRole)
@@ -42,10 +54,8 @@ export class GetUsersQueryDto extends ListQueryDto {
   /**
    * Optional account status filter.
    *
-   * Must be one of the values defined in the AccountStatus enum.
-   *
-   * Example:
-   * NORMAL
+   * Returns only users whose account matches
+   * the specified account status.
    */
   @IsOptional()
   @IsEnum(AccountStatus)
@@ -54,12 +64,14 @@ export class GetUsersQueryDto extends ListQueryDto {
   /**
    * Optional active status filter.
    *
-   * Since query parameters are received as strings,
-   * accepted values are:
-   * - "true"  -> Active users.
-   * - "false" -> Inactive users.
+   * Accepted values:
+   * - true
+   * - false
+   *
+   * Because query parameters are received as strings,
+   * this property is validated using IsBooleanString().
    */
   @IsOptional()
-  @IsString()
+  @IsBooleanString()
   isActive?: string;
 }

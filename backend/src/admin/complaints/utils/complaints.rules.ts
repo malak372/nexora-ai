@@ -1,18 +1,21 @@
 import { ComplaintStatus } from '@prisma/client';
 
 /**
- * Returns resolvedAt value if status is RESOLVED.
+ * Determines the resolvedAt timestamp for a complaint update.
  *
- * Used to keep business logic consistent across services.
+ * Rules:
+ * - If the complaint changes to RESOLVED for the first time,
+ *   resolvedAt is set to the current date.
+ * - If the complaint is already resolved, the existing resolvedAt is preserved.
+ * - If the status changes to a non-resolved status, the existing value is preserved.
  *
- * @param status Complaint status
- * @param currentValue existing resolvedAt value
+ * @author Malak
  */
 export function buildResolvedAt(
   newStatus?: ComplaintStatus,
   oldStatus?: ComplaintStatus,
   currentValue?: Date | null,
-) {
+): Date | null | undefined {
   if (
     newStatus === ComplaintStatus.RESOLVED &&
     oldStatus !== ComplaintStatus.RESOLVED

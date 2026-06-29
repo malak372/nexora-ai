@@ -1,106 +1,228 @@
-import { Decimal } from '@prisma/client/runtime/library';
+import {
+  AccountStatus,
+  ComplaintPriority,
+  ComplaintStatus,
+  IdeaGenerationType,
+  PaymentMethod,
+  PaymentPurpose,
+  PaymentStatus,
+  UserRole,
+} from '@prisma/client';
 
 /**
- * DTO representing the Admin dashboard response.
+ * Represents user growth chart item.
  *
- * This DTO must match DashboardService output exactly.
+ * @author Malak
+ */
+export class DashboardUserGrowthChartDto {
+  /** Date grouped by day in YYYY-MM-DD format. */
+  date!: string;
+
+  /** Number of users registered on that date. */
+  count!: number;
+}
+
+/**
+ * Represents a dashboard chart item for domains.
  *
- * It contains:
- * - General platform statistics.
- * - Payment and revenue summaries.
- * - AI usage analytics.
- * - Domain and platform status counts.
- * - Daily and monthly statistics.
- * - Chart-ready analytics data.
- * - Recent admin dashboard activity.
+ * @author Malak
+ */
+export class DashboardDomainChartDto {
+  /** Display label used by frontend charts. */
+  label!: string;
+
+  /** Domain identifier. */
+  domainId!: string;
+
+  /** Domain display name. */
+  domainName!: string | null;
+
+  /** Number of generated ideas for this domain. */
+  count!: number;
+}
+
+/**
+ * Represents a dashboard chart item for regions.
+ *
+ * @author Malak
+ */
+export class DashboardRegionChartDto {
+  /** Display label used by frontend charts. */
+  label!: string;
+
+  /** Selected region name. */
+  region!: string | null;
+
+  /** Number of generated ideas for this region. */
+  count!: number;
+}
+
+/**
+ * Represents a dashboard chart item for platforms.
+ *
+ * @author Malak
+ */
+export class DashboardPlatformChartDto {
+  /** Display label used by frontend charts. */
+  label!: string;
+
+  /** Platform identifier. */
+  platformId!: string | null;
+
+  /** Platform display name. */
+  platformName!: string | null;
+
+  /** Number of generated ideas for this platform. */
+  count!: number;
+}
+
+/**
+ * Represents a recently registered user item.
+ *
+ * @author Malak
+ */
+export class DashboardRecentUserDto {
+  id!: string;
+  fullName!: string;
+  email!: string;
+  role!: UserRole;
+  accountStatus!: AccountStatus;
+  isActive!: boolean;
+  createdAt!: Date;
+}
+
+/**
+ * Represents a recent payment item.
+ *
+ * @author Malak
+ */
+export class DashboardRecentPaymentDto {
+  id!: string;
+  amount!: number;
+  currency!: string;
+  paymentMethod!: PaymentMethod;
+  paymentPurpose!: PaymentPurpose;
+  status!: PaymentStatus;
+  creditsAmount!: number;
+  createdAt!: Date;
+
+  user!: {
+    id: string;
+    fullName: string;
+    email: string;
+  };
+}
+
+/**
+ * Represents a recent generated idea item.
+ *
+ * @author Malak
+ */
+export class DashboardRecentIdeaDto {
+  id!: string;
+  title!: string;
+  generationType!: IdeaGenerationType;
+  isUnlocked!: boolean;
+  selectedRegion!: string | null;
+  createdAt!: Date;
+
+  user!: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+
+  domain!: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+/**
+ * Represents a recent complaint item.
+ *
+ * @author Malak
+ */
+export class DashboardRecentComplaintDto {
+  id!: string;
+  subject!: string;
+  status!: ComplaintStatus;
+  priority!: ComplaintPriority;
+  createdAt!: Date;
+
+  user!: {
+    id: string;
+    fullName: string;
+    email: string;
+  };
+}
+
+/**
+ * Represents recent dashboard activity.
+ *
+ * @author Malak
+ */
+export class DashboardRecentActivityDto {
+  recentUsers!: DashboardRecentUserDto[];
+  recentPayments!: DashboardRecentPaymentDto[];
+  recentIdeas!: DashboardRecentIdeaDto[];
+  recentComplaints!: DashboardRecentComplaintDto[];
+}
+
+/**
+ * DTO representing the Admin Dashboard response.
+ *
+ * This DTO matches DashboardService output exactly.
+ * All financial and Decimal-based values are returned as plain numbers.
  *
  * @author Malak
  */
 export class DashboardResponseDto {
-  /** Total number of users in the system. */
   users!: number;
-
-  /** Total number of generated ideas. */
   ideas!: number;
-
-  /** Total number of payment records. */
   payments!: number;
-
-  /** Total number of collected comments. */
   comments!: number;
 
-  /** Total number of credits sold through successful payments. */
   creditsSold!: number;
 
-  /** Total successful revenue amount. */
-  revenueTotal!: number | Decimal;
-
-  /** Total refunded payment amount. */
-  refundsTotal!: number | Decimal;
-
-  /** Total number of failed payments. */
+  revenueTotal!: number;
+  refundsTotal!: number;
   failedPaymentsCount!: number;
 
-  /** Total number of external AI API requests. */
   aiRequests!: number;
-
-  /** Total number of failed AI API requests. */
   failedAiRequests!: number;
-
-  /** AI request failure percentage. */
   aiErrorRate!: number;
-
-  /** Average AI API response time in milliseconds. */
   averageResponseTime!: number;
+  openAiCost!: number;
 
-  /** Estimated total OpenAI API cost. */
-  openAiCost!: number | Decimal;
-
-  /** Active and inactive domain counts. */
   domainsStatus!: {
     active: number;
     inactive: number;
   };
 
-  /** Active and inactive platform counts. */
   platformsStatus!: {
     active: number;
     inactive: number;
   };
 
-  /** Dashboard statistics for the current day. */
   todayStats!: {
     users: number;
     ideas: number;
     payments: number;
-    revenue: number | Decimal;
+    revenue: number;
   };
 
-  /** Dashboard statistics for the current month. */
   monthlyStats!: {
     users: number;
     ideas: number;
     payments: number;
-    revenue: number | Decimal;
+    revenue: number;
   };
 
-  /** Chart-ready user growth data grouped by date. */
-  usersGrowthChart!: any[];
+  usersGrowthChart!: DashboardUserGrowthChartDto[];
+  mostSelectedDomains!: DashboardDomainChartDto[];
+  mostRequestedRegions!: DashboardRegionChartDto[];
+  mostUsedPlatforms!: DashboardPlatformChartDto[];
 
-  /** Top selected domains with usage count. */
-  mostSelectedDomains!: any[];
-
-  /** Top requested regions with usage count. */
-  mostRequestedRegions!: any[];
-
-  /** Top used platforms with usage count. */
-  mostUsedPlatforms!: any[];
-
-  /** Recent dashboard activity records. */
-  recentActivity!: {
-    recentUsers: any[];
-    recentPayments: any[];
-    recentIdeas: any[];
-    recentComplaints: any[];
-  };
+  recentActivity!: DashboardRecentActivityDto;
 }

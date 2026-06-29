@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
+
 import {
   buildDateFilter,
   buildExactFilter,
@@ -10,6 +12,8 @@ import {
   buildSearchFilter,
   buildStringFilter,
 } from '../../utilities/base-query/builder';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin comment management operations.
@@ -32,22 +36,39 @@ export class CommentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Builds the shared Prisma where filter for comments.
+   *
+   * This method keeps the comments list, summary, and charts
+   * consistent when the same query filters are applied.
+   *
+   * @param query - Query parameters used for filtering comments.
+   * @returns Prisma CommentWhereInput object.
+   */
+  private buildCommentsWhere(
+    query: GetCommentsQueryDto,
+  ): Prisma.CommentWhereInput {
+    return {
+      ...buildDateFilter(query),
+      ...buildExactFilter('platformId', query.platformId),
+      ...buildStringFilter('language', query.language),
+      ...buildStringFilter('region', query.region),
+      ...buildSearchFilter(['content'], query.search),
+    };
+  }
+
+  /**
    * Retrieves collected comments with filtering, searching,
    * sorting, and pagination.
+   *
+   * Endpoint:
+   * GET /admin/comments
    *
    * @param query - Query parameters for pagination, filtering, searching, and sorting.
    * @returns Paginated comments list with metadata.
    */
   async getComments(query: GetCommentsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
-
-    const where: Prisma.CommentWhereInput = {
-      ...buildDateFilter(query),
-      ...buildExactFilter('platformId', query.platformId),
-      ...buildExactFilter('language', query.language),
-      ...buildStringFilter('region', query.region),
-      ...buildSearchFilter(['content'], query.search),
-    };
+    const where = this.buildCommentsWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -101,7 +122,7 @@ export class CommentsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -109,7 +130,7 @@ export class CommentsService {
   /**
    * Retrieves summary statistics for collected comments.
    *
-   * Used by:
+   * Endpoint:
    * GET /admin/comments/summary
    *
    * Summary includes:
@@ -120,9 +141,12 @@ export class CommentsService {
    * - Number of detected languages.
    * - Number of detected regions.
    *
+   * @param query - Optional filters used to scope the summary.
    * @returns Comment summary statistics.
    */
-  async getCommentsSummary() {
+  async getCommentsSummary(query: GetCommentsQueryDto) {
+    const where = this.buildCommentsWhere(query);
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -138,10 +162,11 @@ export class CommentsService {
       languagesGroup,
       regionsGroup,
     ] = await Promise.all([
-      this.prisma.comment.count(),
+      this.prisma.comment.count({ where }),
 
       this.prisma.comment.count({
         where: {
+          ...where,
           createdAt: {
             gte: todayStart,
           },
@@ -150,6 +175,7 @@ export class CommentsService {
 
       this.prisma.comment.count({
         where: {
+          ...where,
           createdAt: {
             gte: monthStart,
           },
@@ -159,6 +185,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['platformId'],
         where: {
+          ...where,
           platformId: {
             not: null,
           },
@@ -171,6 +198,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['language'],
         where: {
+          ...where,
           language: {
             not: null,
           },
@@ -183,6 +211,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['region'],
         where: {
+          ...where,
           region: {
             not: null,
           },
@@ -206,7 +235,7 @@ export class CommentsService {
   /**
    * Retrieves chart-ready analytics for collected comments.
    *
-   * Used by:
+   * Endpoint:
    * GET /admin/comments/charts
    *
    * Charts include:
@@ -214,9 +243,12 @@ export class CommentsService {
    * - Comments grouped by language.
    * - Comments grouped by region.
    *
+   * @param query - Optional filters used to scope the charts.
    * @returns Chart-ready comment analytics.
    */
-  async getCommentsCharts() {
+  async getCommentsCharts(query: GetCommentsQueryDto) {
+    const where = this.buildCommentsWhere(query);
+
     const [
       commentsByPlatformGroup,
       commentsByLanguageGroup,
@@ -225,6 +257,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['platformId'],
         where: {
+          ...where,
           platformId: {
             not: null,
           },
@@ -242,6 +275,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['language'],
         where: {
+          ...where,
           language: {
             not: null,
           },
@@ -259,6 +293,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['region'],
         where: {
+          ...where,
           region: {
             not: null,
           },
@@ -296,19 +331,21 @@ export class CommentsService {
 
     return {
       commentsByPlatform: commentsByPlatformGroup.map((item) => ({
-        platformId: item.platformId,
-        platformName: item.platformId
+        label: item.platformId
           ? platformNameMap.get(item.platformId) ?? 'Unknown Platform'
           : 'Unknown Platform',
+        platformId: item.platformId,
         count: item._count.platformId,
       })),
 
       commentsByLanguage: commentsByLanguageGroup.map((item) => ({
+        label: item.language ?? 'Unknown Language',
         language: item.language,
         count: item._count.language,
       })),
 
       commentsByRegion: commentsByRegionGroup.map((item) => ({
+        label: item.region ?? 'Unknown Region',
         region: item.region,
         count: item._count.region,
       })),
