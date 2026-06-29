@@ -4,11 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AdminAction, AdminTargetType, Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlatformDto } from './dto/create-platform.dto';
 import { UpdatePlatformDto } from './dto/update-platform.dto';
 import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
 import {
   buildDateFilter,
   buildExactFilter,
@@ -17,11 +19,22 @@ import {
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+
 /**
  * Service responsible for Admin platform management operations.
  *
- * This service allows administrators to retrieve, search,
- * filter, sort, create, update, and deactivate platforms.
+ * Provides:
+ * - Paginated platform listing.
+ * - Search by platform name.
+ * - Filtering by active status and date range.
+ * - Safe sorting using whitelisted fields.
+ * - Platform summary reports.
+ * - Chart-ready platform analytics.
+ * - Platform creation.
+ * - Platform update.
+ * - Soft deactivation.
+ * - Audit logging for admin actions.
  *
  * @author Malak
  */
@@ -33,26 +46,34 @@ export class PlatformsService {
   ) {}
 
   /**
-   * Retrieves platforms with optional searching, date filtering,
-   * active status filtering, sorting, and pagination.
-   *
-   * @param query Query parameters used for pagination,
-   * searching, filtering, and sorting platforms.
-   * @returns Paginated platforms list with metadata.
+   * Builds the shared Prisma where filter for platform list,
+   * summary, and chart queries.
    */
-  async getPlatforms(query: GetPlatformsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
+  private buildPlatformsWhere(
+    query: GetPlatformsQueryDto,
+  ): Prisma.PlatformWhereInput {
     const isActive =
       query.isActive !== undefined
         ? query.isActive === 'true'
         : undefined;
 
-    const where: Prisma.PlatformWhereInput = {
+    return {
       ...buildDateFilter(query),
       ...buildSearchFilter(['name'], query.search),
       ...buildExactFilter('isActive', isActive),
     };
+  }
+
+  /**
+   * Retrieves platforms with optional searching, date filtering,
+   * active status filtering, sorting, and pagination.
+   *
+   * Endpoint:
+   * GET /admin/platforms
+   */
+  async getPlatforms(query: GetPlatformsQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildPlatformsWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -80,6 +101,7 @@ export class PlatformsService {
           },
         },
       }),
+
       this.prisma.platform.count({ where }),
     ]);
 
@@ -89,19 +111,203 @@ export class PlatformsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
+    };
+  }
+
+  /**
+   * Retrieves platform summary statistics.
+   *
+   * Endpoint:
+   * GET /admin/platforms/summary
+   */
+  async getPlatformsSummary(query: GetPlatformsQueryDto) {
+    const where = this.buildPlatformsWhere(query);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalPlatforms,
+      activePlatforms,
+      inactivePlatforms,
+      todayPlatforms,
+      thisMonthPlatforms,
+      platformsWithComments,
+      platformsWithIdeas,
+    ] = await Promise.all([
+      this.prisma.platform.count({ where }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          isActive: true,
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          isActive: false,
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          createdAt: {
+            gte: monthStart,
+          },
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          comments: {
+            some: {},
+          },
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          ideas: {
+            some: {},
+          },
+        },
+      }),
+    ]);
+
+    return {
+      totalPlatforms,
+      activePlatforms,
+      inactivePlatforms,
+      todayPlatforms,
+      thisMonthPlatforms,
+      platformsWithComments,
+      platformsWithIdeas,
+    };
+  }
+
+  /**
+   * Retrieves chart-ready platform analytics.
+   *
+   * Endpoint:
+   * GET /admin/platforms/charts
+   *
+   * Charts include:
+   * - Platforms grouped by active status.
+   * - Top platforms by collected comments.
+   * - Top platforms by generated ideas.
+   */
+  async getPlatformsCharts(query: GetPlatformsQueryDto) {
+    const where = this.buildPlatformsWhere(query);
+
+    const [
+      platformsByStatus,
+      topPlatformsByComments,
+      topPlatformsByIdeas,
+    ] = await Promise.all([
+      this.prisma.platform.groupBy({
+        by: ['isActive'],
+        where,
+        _count: {
+          isActive: true,
+        },
+        orderBy: {
+          _count: {
+            isActive: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.platform.findMany({
+        where,
+        orderBy: {
+          comments: {
+            _count: 'desc',
+          },
+        },
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          _count: {
+            select: {
+              comments: true,
+            },
+          },
+        },
+      }),
+
+      this.prisma.platform.findMany({
+        where,
+        orderBy: {
+          ideas: {
+            _count: 'desc',
+          },
+        },
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          _count: {
+            select: {
+              ideas: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      platformsByStatus: platformsByStatus.map((item) => ({
+        label: item.isActive ? 'ACTIVE' : 'INACTIVE',
+        isActive: item.isActive,
+        count: item._count.isActive,
+      })),
+
+      platformsByComments: topPlatformsByComments.map((platform) => ({
+        label: platform.name,
+        platformId: platform.id,
+        platformName: platform.name,
+        isActive: platform.isActive,
+        count: platform._count.comments,
+      })),
+
+      platformsByIdeas: topPlatformsByIdeas.map((platform) => ({
+        label: platform.name,
+        platformId: platform.id,
+        platformName: platform.name,
+        isActive: platform.isActive,
+        count: platform._count.ideas,
+      })),
     };
   }
 
   /**
    * Creates a new platform and records the action in audit logs.
    *
-   * @param body DTO containing the platform information.
-   * @param adminId ID of the authenticated admin creating the platform.
-   * @returns A success message and the newly created platform.
-   *
-   * @throws ConflictException if a platform with the same name already exists.
+   * Endpoint:
+   * POST /admin/platforms
    */
   async createPlatform(body: CreatePlatformDto, adminId: string) {
     const existingPlatform = await this.prisma.platform.findUnique({
@@ -142,12 +348,8 @@ export class PlatformsService {
   /**
    * Updates an existing platform and records the change in audit logs.
    *
-   * @param id ID of the platform to update.
-   * @param body DTO containing the updated platform information.
-   * @param adminId ID of the authenticated admin updating the platform.
-   * @returns A success message and the updated platform.
-   *
-   * @throws NotFoundException if the platform does not exist.
+   * Endpoint:
+   * PATCH /admin/platforms/:id
    */
   async updatePlatform(
     id: string,
@@ -162,6 +364,31 @@ export class PlatformsService {
 
     if (!platform) {
       throw new NotFoundException('Platform not found');
+    }
+
+    if (body.name !== undefined && body.name !== platform.name) {
+      const duplicatePlatform = await this.prisma.platform.findUnique({
+        where: {
+          name: body.name,
+        },
+      });
+
+      if (duplicatePlatform) {
+        throw new ConflictException('Platform name already exists');
+      }
+    }
+
+    const hasChanges =
+      (body.name !== undefined && body.name !== platform.name) ||
+      (body.isActive !== undefined &&
+        body.isActive !== platform.isActive);
+
+    if (!hasChanges) {
+      return {
+        message: 'No changes detected',
+        platform,
+        updated: false,
+      };
     }
 
     const updatedPlatform = await this.prisma.platform.update({
@@ -196,20 +423,17 @@ export class PlatformsService {
     return {
       message: 'Platform updated successfully',
       platform: updatedPlatform,
+      updated: true,
     };
   }
 
   /**
    * Deactivates a platform and records the action in audit logs.
    *
-   * This operation performs a soft deactivation by setting
-   * the platform's active status to false.
+   * This performs a soft deactivation by setting isActive to false.
    *
-   * @param id ID of the platform to deactivate.
-   * @param adminId ID of the authenticated admin deactivating the platform.
-   * @returns A success message and the updated platform.
-   *
-   * @throws NotFoundException if the platform does not exist.
+   * Endpoint:
+   * DELETE /admin/platforms/:id
    */
   async deactivatePlatform(id: string, adminId: string) {
     const platform = await this.prisma.platform.findUnique({
@@ -220,6 +444,14 @@ export class PlatformsService {
 
     if (!platform) {
       throw new NotFoundException('Platform not found');
+    }
+
+    if (!platform.isActive) {
+      return {
+        message: 'Platform is already inactive',
+        platform,
+        updated: false,
+      };
     }
 
     const updatedPlatform = await this.prisma.platform.update({
@@ -249,6 +481,7 @@ export class PlatformsService {
     return {
       message: 'Platform deactivated successfully',
       platform: updatedPlatform,
+      updated: true,
     };
   }
 }

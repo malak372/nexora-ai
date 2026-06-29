@@ -6,6 +6,8 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  *
  * Used with:
  * GET /admin/comments
+ * GET /admin/comments/summary
+ * GET /admin/comments/charts
  *
  * Supports:
  * - Pagination through page and limit.
@@ -16,16 +18,13 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * - Filter by language.
  * - Filter by region.
  *
- * Example:
- * GET /admin/comments?page=1&limit=10&platformId=PLATFORM_ID&language=en&region=Palestine&search=AI
- *
  * @author Malak
  */
 export class GetCommentsQueryDto extends ListQueryDto {
   /**
    * Optional platform identifier.
    *
-   * Filters comments collected from a specific platform.
+   * Filters comments collected from a specific supported platform.
    *
    * Must be a valid UUID.
    */
@@ -36,22 +35,30 @@ export class GetCommentsQueryDto extends ListQueryDto {
   /**
    * Optional language filter.
    *
-   * Example:
-   * ar, en
+   * Supports values such as:
+   * - ar
+   * - en
+   *
+   * The service applies this filter as a case-insensitive
+   * string filter.
    */
   @IsOptional()
-  @MaxLength(20)
   @IsString()
+  @MaxLength(20)
   language?: string;
 
   /**
    * Optional region filter.
    *
-   * Example:
-   * Palestine, Jordan
+   * Examples:
+   * - Palestine
+   * - Jordan
+   *
+   * The service applies this filter as a case-insensitive
+   * string filter.
    */
   @IsOptional()
-  @MaxLength(100)
   @IsString()
+  @MaxLength(100)
   region?: string;
 }

@@ -4,24 +4,37 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AdminAction, AdminTargetType, Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { UpdateDomainDto } from './dto/update-domain.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
 import {
   buildDateFilter,
+  buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildExactFilter,
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin domain management operations.
  *
- * This service allows administrators to retrieve, search,
- * filter, sort, create, update, and deactivate domains.
+ * Provides:
+ * - Paginated domain listing.
+ * - Search by domain name.
+ * - Filtering by active status and date range.
+ * - Safe sorting using whitelisted fields.
+ * - Domain summary reports.
+ * - Chart-ready domain analytics.
+ * - Domain creation.
+ * - Domain update.
+ * - Soft deactivation.
+ * - Audit logging for admin actions.
  *
  * @author Malak
  */
@@ -30,29 +43,37 @@ export class DomainsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) { }
+  ) {}
 
   /**
-   * Retrieves domains with optional searching, date filtering,
-   * sorting, and pagination.
-   *
-   * @param query Query parameters used for pagination,
-   * searching, filtering, and sorting domains.
-   * @returns Paginated domains list with metadata.
+   * Builds the shared Prisma where filter for domain list,
+   * summary, and chart queries.
    */
-  async getDomains(query: GetDomainsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
+  private buildDomainsWhere(
+    query: GetDomainsQueryDto,
+  ): Prisma.DomainWhereInput {
     const isActive =
       query.isActive !== undefined
         ? query.isActive === 'true'
         : undefined;
 
-    const where: Prisma.DomainWhereInput = {
+    return {
       ...buildDateFilter(query),
       ...buildSearchFilter(['name'], query.search),
       ...buildExactFilter('isActive', isActive),
     };
+  }
+
+  /**
+   * Retrieves domains with optional searching, date filtering,
+   * active status filtering, sorting, and pagination.
+   *
+   * Endpoint:
+   * GET /admin/domains
+   */
+  async getDomains(query: GetDomainsQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildDomainsWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -79,6 +100,7 @@ export class DomainsService {
           },
         },
       }),
+
       this.prisma.domain.count({ where }),
     ]);
 
@@ -88,19 +110,160 @@ export class DomainsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
+    };
+  }
+
+  /**
+   * Retrieves domain summary statistics.
+   *
+   * Endpoint:
+   * GET /admin/domains/summary
+   */
+  async getDomainsSummary(query: GetDomainsQueryDto) {
+    const where = this.buildDomainsWhere(query);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalDomains,
+      activeDomains,
+      inactiveDomains,
+      todayDomains,
+      thisMonthDomains,
+      domainsWithIdeas,
+    ] = await Promise.all([
+      this.prisma.domain.count({ where }),
+
+      this.prisma.domain.count({
+        where: {
+          ...where,
+          isActive: true,
+        },
+      }),
+
+      this.prisma.domain.count({
+        where: {
+          ...where,
+          isActive: false,
+        },
+      }),
+
+      this.prisma.domain.count({
+        where: {
+          ...where,
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      }),
+
+      this.prisma.domain.count({
+        where: {
+          ...where,
+          createdAt: {
+            gte: monthStart,
+          },
+        },
+      }),
+
+      this.prisma.domain.count({
+        where: {
+          ...where,
+          ideas: {
+            some: {},
+          },
+        },
+      }),
+    ]);
+
+    return {
+      totalDomains,
+      activeDomains,
+      inactiveDomains,
+      todayDomains,
+      thisMonthDomains,
+      domainsWithIdeas,
+    };
+  }
+
+  /**
+   * Retrieves chart-ready domain analytics.
+   *
+   * Endpoint:
+   * GET /admin/domains/charts
+   *
+   * Charts include:
+   * - Domains grouped by active status.
+   * - Top domains by generated ideas count.
+   */
+  async getDomainsCharts(query: GetDomainsQueryDto) {
+    const where = this.buildDomainsWhere(query);
+
+    const [domainsStatusGroup, domainsWithIdeaCounts] =
+      await Promise.all([
+        this.prisma.domain.groupBy({
+          by: ['isActive'],
+          where,
+          _count: {
+            isActive: true,
+          },
+          orderBy: {
+            _count: {
+              isActive: 'desc',
+            },
+          },
+        }),
+
+        this.prisma.domain.findMany({
+          where,
+          orderBy: {
+            ideas: {
+              _count: 'desc',
+            },
+          },
+          take: 10,
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            _count: {
+              select: {
+                ideas: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+    return {
+      domainsByStatus: domainsStatusGroup.map((item) => ({
+        label: item.isActive ? 'ACTIVE' : 'INACTIVE',
+        isActive: item.isActive,
+        count: item._count.isActive,
+      })),
+
+      domainsByIdeas: domainsWithIdeaCounts.map((domain) => ({
+        label: domain.name,
+        domainId: domain.id,
+        domainName: domain.name,
+        isActive: domain.isActive,
+        count: domain._count.ideas,
+      })),
     };
   }
 
   /**
    * Creates a new domain and records the action in audit logs.
    *
-   * @param body - DTO containing the domain information.
-   * @param adminId - ID of the authenticated admin creating the domain.
-   * @returns A success message and the newly created domain.
-   *
-   * @throws ConflictException if a domain with the same name already exists.
+   * Endpoint:
+   * POST /admin/domains
    */
   async createDomain(body: CreateDomainDto, adminId: string) {
     const existingDomain = await this.prisma.domain.findUnique({
@@ -141,12 +304,8 @@ export class DomainsService {
   /**
    * Updates an existing domain and records the change in audit logs.
    *
-   * @param id - ID of the domain to update.
-   * @param body - DTO containing the updated domain information.
-   * @param adminId - ID of the authenticated admin updating the domain.
-   * @returns A success message and the updated domain.
-   *
-   * @throws NotFoundException if the domain does not exist.
+   * Endpoint:
+   * PATCH /admin/domains/:id
    */
   async updateDomain(
     id: string,
@@ -161,6 +320,31 @@ export class DomainsService {
 
     if (!domain) {
       throw new NotFoundException('Domain not found');
+    }
+
+    if (body.name !== undefined && body.name !== domain.name) {
+      const duplicateDomain = await this.prisma.domain.findUnique({
+        where: {
+          name: body.name,
+        },
+      });
+
+      if (duplicateDomain) {
+        throw new ConflictException('Domain name already exists');
+      }
+    }
+
+    const hasChanges =
+      (body.name !== undefined && body.name !== domain.name) ||
+      (body.isActive !== undefined &&
+        body.isActive !== domain.isActive);
+
+    if (!hasChanges) {
+      return {
+        message: 'No changes detected',
+        domain,
+        updated: false,
+      };
     }
 
     const updatedDomain = await this.prisma.domain.update({
@@ -195,20 +379,17 @@ export class DomainsService {
     return {
       message: 'Domain updated successfully',
       domain: updatedDomain,
+      updated: true,
     };
   }
 
   /**
    * Deactivates a domain and records the action in audit logs.
    *
-   * This operation performs a soft deactivation by setting
-   * the domain's active status to false.
+   * This performs a soft deactivation by setting isActive to false.
    *
-   * @param id - ID of the domain to deactivate.
-   * @param adminId - ID of the authenticated admin deactivating the domain.
-   * @returns A success message and the updated domain.
-   *
-   * @throws NotFoundException if the domain does not exist.
+   * Endpoint:
+   * DELETE /admin/domains/:id
    */
   async deactivateDomain(id: string, adminId: string) {
     const domain = await this.prisma.domain.findUnique({
@@ -219,6 +400,14 @@ export class DomainsService {
 
     if (!domain) {
       throw new NotFoundException('Domain not found');
+    }
+
+    if (!domain.isActive) {
+      return {
+        message: 'Domain is already inactive',
+        domain,
+        updated: false,
+      };
     }
 
     const updatedDomain = await this.prisma.domain.update({
@@ -248,6 +437,7 @@ export class DomainsService {
     return {
       message: 'Domain deactivated successfully',
       domain: updatedDomain,
+      updated: true,
     };
   }
 }

@@ -4,128 +4,56 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
 
 import {
-  buildPagination,
   buildDateFilter,
-  buildSearchFilter,
-  buildOrderBy,
   buildExactFilter,
+  buildOrderBy,
+  buildPagination,
+  buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
 import {
   calculateSuccessRate,
+  calculateTotalPages,
   toNumber,
 } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for monitoring AI and external API logs.
  *
- * Provides:
- * - Paginated AI/API logs.
- * - Filtering by provider, request type, success status, and date range.
- * - Search by endpoint, request ID, and error message.
- * - Safe sorting using whitelisted fields.
- * - AI monitoring summary reports.
+ * Provides admin-only functionality for:
+ * - Viewing paginated AI/API logs.
+ * - Filtering logs by provider, request type, success status, and date range.
+ * - Searching logs by endpoint, request ID, and error message.
+ * - Sorting logs safely using whitelisted fields.
+ * - Generating summary reports.
+ * - Generating chart-ready analytics.
  *
- * This is an admin-only monitoring module used for debugging,
- * analytics, performance tracking, cost monitoring, and system observability.
+ * This service supports the Admin requirement for monitoring:
+ * - Total AI requests.
+ * - Request success and failure.
+ * - API response times.
+ * - Estimated AI costs.
+ * - AI logs filtered by provider and request type.
  *
  * @author Malak
  */
 @Injectable()
 export class AiMonitoringService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
- * Retrieves chart-ready AI monitoring analytics.
- *
- * This method is used by:
- * GET /admin/ai/charts
- *
- * Charts include:
- * - Requests by provider.
- * - Requests by request type.
- * - Success vs failed requests.
- *
- * @returns Chart-ready AI monitoring data.
- */
-  async getAiCharts() {
-    const [
-      requestsByProvider,
-      requestsByType,
-      successCount,
-      failedCount,
-    ] = await Promise.all([
-      this.prisma.externalApiLog.groupBy({
-        by: ['provider'],
-        _count: {
-          provider: true,
-        },
-        orderBy: {
-          _count: {
-            provider: 'desc',
-          },
-        },
-      }),
-
-      this.prisma.externalApiLog.groupBy({
-        by: ['requestType'],
-        _count: {
-          requestType: true,
-        },
-        orderBy: {
-          _count: {
-            requestType: 'desc',
-          },
-        },
-      }),
-
-      this.prisma.externalApiLog.count({
-        where: { isSuccess: true },
-      }),
-
-      this.prisma.externalApiLog.count({
-        where: { isSuccess: false },
-      }),
-    ]);
-
-    return {
-      requestsByProvider: requestsByProvider.map((item) => ({
-        provider: item.provider,
-        count: item._count.provider,
-      })),
-
-      requestsByType: requestsByType.map((item) => ({
-        requestType: item.requestType,
-        count: item._count.requestType,
-      })),
-
-      successFailureChart: [
-        {
-          status: 'SUCCESS',
-          count: successCount,
-        },
-        {
-          status: 'FAILED',
-          count: failedCount,
-        },
-      ],
-    };
-  }
-
-  /**
-   * Retrieves AI / External API logs with:
-   * - Pagination
-   * - Filtering
-   * - Search
-   * - Sorting
+   * Builds the shared Prisma where filter for AI monitoring.
    *
-   * @param query - DTO containing filters and pagination options.
-   * @returns Paginated AI/API logs with metadata.
+   * This keeps logs, summary, and charts consistent
+   * when filters are applied.
+   *
+   * @param query - AI logs query filters.
+   * @returns Prisma ExternalApiLog where input.
    */
-  async getAiLogs(query: GetAiLogsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
-    const where: Prisma.ExternalApiLogWhereInput = {
+  private buildAiLogsWhere(
+    query: GetAiLogsQueryDto,
+  ): Prisma.ExternalApiLogWhereInput {
+    return {
       ...buildDateFilter(query),
 
       ...buildSearchFilter(
@@ -137,6 +65,24 @@ export class AiMonitoringService {
       ...buildExactFilter('requestType', query.requestType),
       ...buildExactFilter('isSuccess', query.isSuccess),
     };
+  }
+
+  /**
+   * Retrieves AI / External API logs with:
+   * - Pagination.
+   * - Filtering.
+   * - Search.
+   * - Sorting.
+   *
+   * Endpoint:
+   * GET /admin/ai/logs
+   *
+   * @param query - DTO containing filters and pagination options.
+   * @returns Paginated AI/API logs with metadata.
+   */
+  async getAiLogs(query: GetAiLogsQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildAiLogsWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -197,7 +143,7 @@ export class AiMonitoringService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -205,7 +151,7 @@ export class AiMonitoringService {
   /**
    * Retrieves a summary report for AI and external API usage.
    *
-   * This method is used by:
+   * Endpoint:
    * GET /admin/ai/summary
    *
    * Summary includes:
@@ -217,9 +163,12 @@ export class AiMonitoringService {
    * - Average response time.
    * - Estimated total API cost.
    *
+   * @param query - Optional filters used to scope the summary.
    * @returns AI monitoring summary statistics.
    */
-  async getAiSummary() {
+  async getAiSummary(query: GetAiLogsQueryDto) {
+    const where = this.buildAiLogsWhere(query);
+
     const [
       totalRequests,
       successfulRequests,
@@ -227,49 +176,141 @@ export class AiMonitoringService {
       responseTimeAggregate,
       costAggregate,
     ] = await Promise.all([
-      this.prisma.externalApiLog.count(),
+      this.prisma.externalApiLog.count({ where }),
 
       this.prisma.externalApiLog.count({
-        where: { isSuccess: true },
+        where: {
+          ...where,
+          isSuccess: true,
+        },
       }),
 
       this.prisma.externalApiLog.count({
-        where: { isSuccess: false },
+        where: {
+          ...where,
+          isSuccess: false,
+        },
       }),
 
       this.prisma.externalApiLog.aggregate({
+        where,
         _avg: {
           responseTimeMs: true,
         },
       }),
 
       this.prisma.externalApiLog.aggregate({
+        where,
         _sum: {
           costEstimate: true,
         },
       }),
     ]);
 
-    const successRate = calculateSuccessRate(
-      successfulRequests,
-      totalRequests,
-    );
-
-    const errorRate = calculateSuccessRate(
-      failedRequests,
-      totalRequests,
-    );
-
     return {
       totalRequests,
       successfulRequests,
       failedRequests,
-      successRate,
-      errorRate,
+      successRate: calculateSuccessRate(
+        successfulRequests,
+        totalRequests,
+      ),
+      errorRate: calculateSuccessRate(
+        failedRequests,
+        totalRequests,
+      ),
       averageResponseTime: toNumber(
         responseTimeAggregate._avg.responseTimeMs,
       ),
       totalCost: toNumber(costAggregate._sum.costEstimate),
+    };
+  }
+
+  /**
+   * Retrieves chart-ready AI monitoring analytics.
+   *
+   * Endpoint:
+   * GET /admin/ai/charts
+   *
+   * Charts include:
+   * - Requests by provider.
+   * - Requests by request type.
+   * - Success vs failed requests.
+   *
+   * @param query - Optional filters used to scope the charts.
+   * @returns Chart-ready AI monitoring data.
+   */
+  async getAiCharts(query: GetAiLogsQueryDto) {
+    const where = this.buildAiLogsWhere(query);
+
+    const [
+      requestsByProvider,
+      requestsByType,
+      successCount,
+      failedCount,
+    ] = await Promise.all([
+      this.prisma.externalApiLog.groupBy({
+        by: ['provider'],
+        where,
+        _count: {
+          provider: true,
+        },
+        orderBy: {
+          _count: {
+            provider: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.externalApiLog.groupBy({
+        by: ['requestType'],
+        where,
+        _count: {
+          requestType: true,
+        },
+        orderBy: {
+          _count: {
+            requestType: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.externalApiLog.count({
+        where: {
+          ...where,
+          isSuccess: true,
+        },
+      }),
+
+      this.prisma.externalApiLog.count({
+        where: {
+          ...where,
+          isSuccess: false,
+        },
+      }),
+    ]);
+
+    return {
+      requestsByProvider: requestsByProvider.map((item) => ({
+        label: item.provider,
+        count: item._count.provider,
+      })),
+
+      requestsByType: requestsByType.map((item) => ({
+        label: item.requestType,
+        count: item._count.requestType,
+      })),
+
+      successFailureChart: [
+        {
+          label: 'SUCCESS',
+          count: successCount,
+        },
+        {
+          label: 'FAILED',
+          count: failedCount,
+        },
+      ],
     };
   }
 }

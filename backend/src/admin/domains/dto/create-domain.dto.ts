@@ -2,19 +2,35 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
 /**
  * DTO for creating a new project domain.
  *
- * This DTO is used with the POST /admin/domains endpoint.
- * It defines the required and optional data needed to create
- * a new project domain that users can select during idea generation.
+ * This DTO is used by the Admin module when creating
+ * a new software project domain.
  *
- * Validation Rules:
- * - Domain name must be a string with a minimum length of 2 characters.
- * - Domain active status is optional and must be a boolean if provided.
+ * Domains are displayed to users during idea generation,
+ * allowing them to select the software field they want
+ * the generated project idea to belong to.
+ *
+ * Endpoint:
+ * POST /admin/domains
+ *
+ * Validation rules:
+ * - name is required.
+ * - name must be a string.
+ * - name must contain at least 2 characters.
+ * - name must not exceed 100 characters.
+ * - isActive is optional.
+ * - isActive must be a boolean when provided.
+ *
+ * Notes:
+ * - Reports and charts should not be handled inside this DTO.
+ * - Domain analytics such as most selected domains should be
+ *   handled in the service/report layer using the Idea and Domain tables.
  *
  * Example:
  * {
@@ -26,25 +42,25 @@ import {
  */
 export class CreateDomainDto {
   /**
-   * The name of the project domain.
+   * Name of the software project domain.
    *
-   * Must be a string containing at least two characters.
+   * This value represents a selectable category for idea generation.
    *
-   * Example:
-   * Healthcare
+   * Examples:
+   * - Healthcare
+   * - Education
+   * - E-Commerce
    */
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   name!: string;
 
   /**
-   * Indicates whether the domain is active.
+   * Indicates whether the domain is active and available
+   * for users during idea generation.
    *
-   * If omitted, the default value defined in the database
-   * will be used.
-   *
-   * Example:
-   * true
+   * If omitted, the database default value will be used.
    */
   @IsOptional()
   @IsBoolean()

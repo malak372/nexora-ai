@@ -10,9 +10,6 @@ import { UsersService } from './users/users.service';
 import { SettingsController } from './settings/settings.controller';
 import { SettingsService } from './settings/settings.service';
 
-import { PaymentsController } from './payments/payments.controller';
-import { PaymentsService } from './payments/payments.service';
-
 import { CreditsController } from './credits/credits.controller';
 import { CreditsService } from './credits/credits.service';
 
@@ -31,9 +28,6 @@ import { DomainsService } from './domains/domains.service';
 import { PromptsController } from './prompts/prompts.controller';
 import { PromptsService } from './prompts/prompts.service';
 
-import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
-import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
-
 import { ComplaintsController } from './complaints/complaints.controller';
 import { ComplaintsService } from './complaints/complaints.service';
 
@@ -45,6 +39,7 @@ import { IdeasService } from './ideas/ideas.service';
 
 import { AuditLogsController } from './audit-logs/audit-logs.controller';
 import { AuditLogsService } from './audit-logs/audit-logs.service';
+import { MailModule } from '../../mail/mail.module';
 
 @Module({
   imports: [PrismaModule],

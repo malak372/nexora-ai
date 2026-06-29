@@ -1,6 +1,6 @@
 import {
-  Injectable,
   BadRequestException,
+  Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -24,17 +24,23 @@ import {
   buildRelationSearchFilter,
 } from '../../utilities/base-query/builder';
 
+import {
+  buildCsv,
+  calculateTotalPages,
+} from '../../utilities/analytics/analytics.helper';
+
 /**
  * Service responsible for managing user credit operations
  * in the admin panel.
  *
- * Features:
- * - View credit transaction history.
- * - Filter, search, sort, and paginate transactions.
- * - Export credit history as CSV.
- * - Adjust user credit balance.
- * - Update user account status automatically.
- * - Record audit logs for admin credit adjustments.
+ * Provides:
+ * - Credit transaction history.
+ * - Credit summary reports.
+ * - Credit chart analytics.
+ * - CSV export.
+ * - Manual credit adjustments.
+ * - Automatic account status updates.
+ * - Audit logging for admin adjustments.
  *
  * @author Malak
  */
@@ -43,54 +49,34 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) { }
+  ) {}
 
   /**
-   * Builds the Prisma where filter for credit history queries.
-   *
-   * Supported filters:
-   * - Date range
-   * - Transaction type
-   * - User full name or email search
-   *
-   * @param query Credit history query parameters.
-   * @returns Prisma where filter object.
+   * Builds the shared Prisma where filter for credit reports.
    */
-  private buildCreditHistoryWhere(query: GetCreditHistoryQueryDto) {
-    const search = query.search?.trim() || undefined;
-
-    if (!search) {
-      return {
-        ...buildDateFilter(query),
-        ...buildExactFilter('type', query.type),
-      };
-    }
-
+  private buildCreditHistoryWhere(
+    query: GetCreditHistoryQueryDto,
+  ): Prisma.CreditTransactionWhereInput {
     return {
       ...buildDateFilter(query),
       ...buildExactFilter('type', query.type),
-      ...buildRelationSearchFilter('user', ['fullName', 'email'], search),
+
+      ...buildRelationSearchFilter(
+        'user',
+        ['fullName', 'email'],
+        query.search,
+      ),
     };
   }
 
   /**
    * Retrieves paginated credit transaction history.
    *
-   * Supports:
-   * - Pagination
-   * - Searching
-   * - Filtering
-   * - Sorting
-   *
-   * Each transaction includes its related user,
-   * payment, and generated idea (if available).
-   *
-   * @param query Credit history query parameters.
-   * @returns Paginated credit transaction list with metadata.
+   * Endpoint:
+   * GET /admin/credits/history
    */
   async getCreditHistory(query: GetCreditHistoryQueryDto) {
     const { page, limit, skip } = buildPagination(query);
-
     const where = this.buildCreditHistoryWhere(query);
 
     const orderBy = buildOrderBy(
@@ -112,6 +98,7 @@ export class CreditsService {
           balanceAfter: true,
           description: true,
           createdAt: true,
+
           user: {
             select: {
               id: true,
@@ -119,6 +106,7 @@ export class CreditsService {
               email: true,
             },
           },
+
           payment: {
             select: {
               id: true,
@@ -127,6 +115,7 @@ export class CreditsService {
               status: true,
             },
           },
+
           idea: {
             select: {
               id: true,
@@ -135,6 +124,7 @@ export class CreditsService {
           },
         },
       }),
+
       this.prisma.creditTransaction.count({ where }),
     ]);
 
@@ -144,25 +134,122 @@ export class CreditsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
 
   /**
-   * Exports credit transaction history as a CSV file.
+   * Retrieves credit summary statistics.
    *
-   * The exported data includes:
-   * - Transaction information
-   * - User details
-   * - Payment details
-   * - Related idea information
-   * - Transaction creation date
+   * Endpoint:
+   * GET /admin/credits/summary
+   */
+  async getCreditsSummary(query: GetCreditHistoryQueryDto) {
+    const where = this.buildCreditHistoryWhere(query);
+
+    const [
+      totalTransactions,
+      purchasedCredits,
+      bonusCredits,
+      deductedCredits,
+      refundedCredits,
+      adminAdjustments,
+    ] = await Promise.all([
+      this.prisma.creditTransaction.count({ where }),
+
+      this.prisma.creditTransaction.aggregate({
+        where: {
+          ...where,
+          type: CreditTransactionType.PURCHASE,
+        },
+        _sum: { amount: true },
+      }),
+
+      this.prisma.creditTransaction.aggregate({
+        where: {
+          ...where,
+          type: CreditTransactionType.BONUS,
+        },
+        _sum: { amount: true },
+      }),
+
+      this.prisma.creditTransaction.aggregate({
+        where: {
+          ...where,
+          type: CreditTransactionType.DEDUCTION_GENERATION,
+        },
+        _sum: { amount: true },
+      }),
+
+      this.prisma.creditTransaction.aggregate({
+        where: {
+          ...where,
+          type: CreditTransactionType.REFUND,
+        },
+        _sum: { amount: true },
+      }),
+
+      this.prisma.creditTransaction.aggregate({
+        where: {
+          ...where,
+          type: CreditTransactionType.ADMIN_ADJUSTMENT,
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      totalTransactions,
+      purchasedCredits: purchasedCredits._sum.amount ?? 0,
+      bonusCredits: bonusCredits._sum.amount ?? 0,
+      deductedCredits: Math.abs(deductedCredits._sum.amount ?? 0),
+      refundedCredits: refundedCredits._sum.amount ?? 0,
+      adminAdjustments: adminAdjustments._sum.amount ?? 0,
+    };
+  }
+
+  /**
+   * Retrieves chart-ready credit analytics.
    *
-   * Values are escaped to ensure valid CSV formatting.
+   * Endpoint:
+   * GET /admin/credits/charts
+   */
+  async getCreditsCharts(query: GetCreditHistoryQueryDto) {
+    const where = this.buildCreditHistoryWhere(query);
+
+    const transactionsByType =
+      await this.prisma.creditTransaction.groupBy({
+        by: ['type'],
+        where,
+        _count: {
+          type: true,
+        },
+        _sum: {
+          amount: true,
+        },
+        orderBy: {
+          _count: {
+            type: 'desc',
+          },
+        },
+      });
+
+    return {
+      transactionsByType: transactionsByType.map((item) => ({
+        label: item.type,
+        type: item.type,
+        count: item._count.type,
+        totalAmount: item._sum.amount ?? 0,
+      })),
+    };
+  }
+
+  /**
+   * Exports filtered credit transaction history as CSV.
    *
-   * @param query Credit history query parameters.
-   * @returns CSV formatted string.
+   * Endpoint:
+   * GET /admin/credits/export/csv
    */
   async exportCreditsCsv(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
@@ -183,6 +270,7 @@ export class CreditsService {
         balanceAfter: true,
         description: true,
         createdAt: true,
+
         user: {
           select: {
             id: true,
@@ -190,6 +278,7 @@ export class CreditsService {
             email: true,
           },
         },
+
         payment: {
           select: {
             id: true,
@@ -198,6 +287,7 @@ export class CreditsService {
             status: true,
           },
         },
+
         idea: {
           select: {
             id: true,
@@ -207,7 +297,7 @@ export class CreditsService {
       },
     });
 
-    const header = [
+    const headers = [
       'Transaction ID',
       'User ID',
       'User Name',
@@ -225,85 +315,71 @@ export class CreditsService {
       'Created At',
     ];
 
-    const rows = transactions.map((t) => [
-      t.id,
-      t.user.id,
-      t.user.fullName,
-      t.user.email,
-      t.type,
-      t.amount,
-      t.balanceAfter,
-      t.description ?? '',
-      t.payment?.id ?? '',
-      t.payment?.amount ?? '',
-      t.payment?.paymentMethod ?? '',
-      t.payment?.status ?? '',
-      t.idea?.id ?? '',
-      t.idea?.title ?? '',
-      t.createdAt.toISOString(),
+    const rows = transactions.map((transaction) => [
+      transaction.id,
+      transaction.user.id,
+      transaction.user.fullName,
+      transaction.user.email,
+      transaction.type,
+      transaction.amount,
+      transaction.balanceAfter,
+      transaction.description ?? '',
+      transaction.payment?.id ?? '',
+      transaction.payment?.amount ?? '',
+      transaction.payment?.paymentMethod ?? '',
+      transaction.payment?.status ?? '',
+      transaction.idea?.id ?? '',
+      transaction.idea?.title ?? '',
+      transaction.createdAt.toISOString(),
     ]);
 
-    return [header, ...rows]
-      .map((row) =>
-        row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','),
-      )
-      .join('\n');
+    return buildCsv(headers, rows);
   }
 
   /**
-   * Adjusts a user's credit balance.
+   * Manually adjusts a user's credit balance.
    *
-   * Validation:
-   * - User must exist.
-   * - Amount cannot be zero.
-   * - Credit balance cannot become negative.
+   * Rules:
+   * - Positive amount adds credits.
+   * - Negative amount deducts credits.
+   * - Final balance cannot be negative.
+   * - Account status becomes PREMIUM when balance > 0.
+   * - Account status becomes NORMAL when balance = 0.
    *
-   * Business rules:
-   * - Users with a balance greater than zero become PREMIUM.
-   * - Users with zero balance become NORMAL.
-   *
-   * The update and transaction creation are executed
-   * atomically using a database transaction.
-   *
-   * An audit log is created after the adjustment.
-   *
-   * @param body Credit adjustment request.
-   * @param adminId ID of the administrator performing the action.
-   * @returns Updated user and created credit transaction.
-   *
-   * @throws NotFoundException If the user does not exist.
-   * @throws BadRequestException If the amount is zero or the balance becomes negative.
+   * Endpoint:
+   * POST /admin/credits/adjust
    */
   async adjustUserCredits(body: AdjustUserCreditsDto, adminId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: body.userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
     if (body.amount === 0) {
       throw new BadRequestException('Amount cannot be zero');
     }
 
-    const newBalance = Number(user.creditBalance) + Number(body.amount);
-
-    if (newBalance < 0) {
-      throw new BadRequestException('Credit balance cannot be negative');
-    }
-
-    let newStatus: AccountStatus;
-
-    if (newBalance <= 0) {
-      newStatus = AccountStatus.NORMAL;
-    } else {
-      newStatus = AccountStatus.PREMIUM;
-    }
-
     const result = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: {
+          id: body.userId,
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const newBalance = user.creditBalance + body.amount;
+
+      if (newBalance < 0) {
+        throw new BadRequestException('Credit balance cannot be negative');
+      }
+
+      const newStatus =
+        newBalance > 0
+          ? AccountStatus.PREMIUM
+          : AccountStatus.NORMAL;
+
       const updatedUser = await tx.user.update({
-        where: { id: body.userId },
+        where: {
+          id: body.userId,
+        },
         data: {
           creditBalance: newBalance,
           accountStatus: newStatus,
@@ -320,7 +396,11 @@ export class CreditsService {
         },
       });
 
-      return { updatedUser, creditTransaction };
+      return {
+        oldUser: user,
+        updatedUser,
+        creditTransaction,
+      };
     });
 
     await this.auditLogsService.createLog({
@@ -329,15 +409,16 @@ export class CreditsService {
       targetType: AdminTargetType.CREDIT_TRANSACTION,
       targetId: result.creditTransaction.id,
       oldValue: {
-        userId: user.id,
-        creditBalance: user.creditBalance,
-        accountStatus: user.accountStatus,
+        userId: result.oldUser.id,
+        creditBalance: result.oldUser.creditBalance,
+        accountStatus: result.oldUser.accountStatus,
       },
       newValue: {
         userId: result.updatedUser.id,
         creditBalance: result.updatedUser.creditBalance,
         accountStatus: result.updatedUser.accountStatus,
         amount: body.amount,
+        description: body.description,
       },
     });
 

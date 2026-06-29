@@ -1,102 +1,128 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import {
+  IsBooleanString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { IdeaGenerationType, UnlockMethod } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * DTO for filtering, searching, and paginating generated project ideas.
+ * DTO for filtering, searching, sorting, and paginating generated ideas.
  *
- * This DTO is used with the GET /admin/ideas endpoint.
- * It extends PaginationQueryDto to support pagination
- * while providing additional filtering and searching options.
+ * Used with:
+ * GET /admin/ideas
+ * GET /admin/ideas/summary
+ * GET /admin/ideas/charts
  *
- * Supported features:
- * - Pagination.
- * - Search by project title.
+ * Supports:
+ * - Pagination through page and limit.
+ * - Sorting through sortBy and sortOrder.
+ * - Date filtering through fromDate and toDate.
+ * - Search by idea title and problem statement.
  * - Filter by domain.
- * - Filter by platform.
- * - Filter by region.
- * - Filter by generation type.
+ * - Filter by selected platform.
+ * - Filter by selected region.
+ * - Filter by idea generation type.
  * - Filter by unlock method.
  * - Filter by unlock status.
  *
- * All filter properties are optional, allowing the administrator
- * to retrieve all ideas or apply one or more filters.
- *
  * Example:
- * GET /admin/ideas?page=1&limit=10&search=health&domainId=123&generationType=PREMIUM_CREDIT&isUnlocked=true
+ * GET /admin/ideas?page=1&limit=10&search=health&generationType=PREMIUM_CREDIT&isUnlocked=true
  *
  * @author Malak
  */
 export class GetIdeasQueryDto extends ListQueryDto {
-  
   /**
    * Optional domain identifier.
    *
-   * Filters ideas belonging to a specific domain.
+   * Filters ideas that belong to a specific software domain.
+   *
+   * Must be a valid UUID.
+   *
+   * Example:
+   * ?domainId=8a4d4fd1-8d2e-4f89-a7c6-2c28a6e4e6a1
    */
   @IsOptional()
-  @IsString()
+  @IsUUID()
   domainId?: string;
 
   /**
-   * Optional platform identifier.
+   * Optional selected platform identifier.
    *
-   * Filters ideas generated using comments
-   * collected from a specific platform.
+   * Filters ideas generated using comments collected
+   * from a specific supported platform.
+   *
+   * Must be a valid UUID.
+   *
+   * Example:
+   * ?platformId=92d64c18-9fa7-42ec-b39d-02d9cfb3de47
    */
   @IsOptional()
-  @IsString()
+  @IsUUID()
   platformId?: string;
 
   /**
-   * Optional region filter.
+   * Optional selected region filter.
    *
-   * Filters ideas based on the selected region.
+   * Filters ideas based on the region selected during
+   * idea generation.
+   *
+   * The service applies this filter as a case-insensitive
+   * string search.
    *
    * Example:
-   * Palestine
+   * ?region=Palestine
    */
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   region?: string;
 
   /**
-   * Optional generation type.
+   * Optional idea generation type filter.
    *
-   * Must be one of the values defined in the
-   * IdeaGenerationType enum.
+   * Must be one of the values defined in IdeaGenerationType enum.
    *
-   * Example:
-   * PREMIUM_CREDIT
+   * Examples:
+   * - GUEST_FREE
+   * - NORMAL_FREE
+   * - PREMIUM_CREDIT
    */
   @IsOptional()
   @IsEnum(IdeaGenerationType)
   generationType?: IdeaGenerationType;
 
   /**
-   * Optional unlock method.
+   * Optional unlock method filter.
    *
-   * Must be one of the values defined in the
-   * UnlockMethod enum.
+   * Must be one of the values defined in UnlockMethod enum.
    *
-   * Example:
-   * CREDIT_GENERATION
+   * Examples:
+   * - NONE
+   * - DIRECT_PAYMENT
+   * - CREDIT_GENERATION
    */
   @IsOptional()
   @IsEnum(UnlockMethod)
   unlockMethod?: UnlockMethod;
 
   /**
-   * Optional unlock status.
-   *
-   * Filters ideas based on whether they are
-   * unlocked or still locked.
+   * Optional unlock status filter.
    *
    * Accepted values:
    * - "true"
    * - "false"
+   *
+   * The value is received as a query string and converted
+   * inside the service into a boolean.
+   *
+   * Example:
+   * ?isUnlocked=true
    */
   @IsOptional()
-  @IsString()
+  @IsBooleanString()
   isUnlocked?: string;
 }

@@ -4,11 +4,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AccountStatus,
   AdminAction,
   AdminTargetType,
   Prisma,
   UserRole,
 } from '@prisma/client';
+import * as crypto from 'crypto';
+
+import { PrismaService } from '../../prisma/prisma.service';
+import { GetUsersQueryDto } from './dto/get-users-query.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { MailService } from '../../mail/mail.service';
+
 import {
   buildDateFilter,
   buildExactFilter,
@@ -16,19 +24,21 @@ import {
   buildPagination,
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
-import { PrismaService } from '../../prisma/prisma.service';
-import { GetUsersQueryDto } from './dto/get-users-query.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin user management operations.
  *
- * This service allows administrators to:
- * - View, search, and filter users.
- * - View detailed user information.
- * - Activate or deactivate user accounts.
- * - Soft delete user accounts.
- * - Record audit logs for sensitive user changes.
+ * Provides:
+ * - Paginated users list.
+ * - User details.
+ * - User summary reports.
+ * - Chart-ready user analytics.
+ * - Activate/deactivate users.
+ * - Soft delete users.
+ * - Send password reset emails.
+ * - Audit logging for sensitive actions.
  *
  * @author Malak
  */
@@ -37,31 +47,45 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly mailService: MailService,
   ) { }
 
   /**
-   * Retrieves users with optional search, filtering, and pagination.
+   * Builds the Prisma where filter for user queries.
    *
-   * Read-only operation, so it is not recorded in audit logs.
+   * Converts query parameters into Prisma-compatible filters,
+   * including search, date range, role, account status,
+   * and active status.
    *
-   * @param query - Query parameters used for pagination, searching, and filtering users.
-   * @returns Paginated users list with metadata.
+   * @param query User query filters.
+   * @returns Prisma user where input.
    */
-  async getUsers(query: GetUsersQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
+  private buildUsersWhere(query: GetUsersQueryDto): Prisma.UserWhereInput {
     const isActive =
       query.isActive !== undefined
         ? query.isActive === 'true'
         : undefined;
 
-    const where: Prisma.UserWhereInput = {
+    return {
       ...buildDateFilter(query),
       ...buildSearchFilter(['fullName', 'email'], query.search),
       ...buildExactFilter('role', query.role),
       ...buildExactFilter('accountStatus', query.accountStatus),
       ...buildExactFilter('isActive', isActive),
     };
+  }
+  /**
+   * Retrieves a paginated list of users.
+   *
+   * Supports filtering, searching, sorting,
+   * pagination, and relation counts.
+   *
+   * @param query User filtering and pagination options.
+   * @returns Paginated users list with metadata.
+   */
+  async getUsers(query: GetUsersQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildUsersWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -96,6 +120,7 @@ export class UsersService {
           isActive: true,
           isVerified: true,
           createdAt: true,
+          updatedAt: true,
           _count: {
             select: {
               ideas: true,
@@ -105,6 +130,7 @@ export class UsersService {
           },
         },
       }),
+
       this.prisma.user.count({ where }),
     ]);
 
@@ -114,26 +140,241 @@ export class UsersService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
+  /**
+   * Retrieves summary statistics for users.
+   *
+   * Includes total users, active/inactive users,
+   * verified/unverified users, account status counts,
+   * admin users, today's users, and this month's users.
+   *
+   * @param query Optional user filters.
+   * @returns User summary statistics.
+   */
+  async getUsersSummary(query: GetUsersQueryDto) {
+    const where = this.buildUsersWhere(query);
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      verifiedUsers,
+      unverifiedUsers,
+      normalUsers,
+      premiumUsers,
+      adminUsers,
+      todayUsers,
+      thisMonthUsers,
+    ] = await Promise.all([
+      this.prisma.user.count({ where }),
+
+      this.prisma.user.count({
+        where: { ...where, isActive: true },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, isActive: false },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, isVerified: true },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, isVerified: false },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, accountStatus: AccountStatus.NORMAL },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, accountStatus: AccountStatus.PREMIUM },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, role: UserRole.ADMIN },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, createdAt: { gte: todayStart } },
+      }),
+
+      this.prisma.user.count({
+        where: { ...where, createdAt: { gte: monthStart } },
+      }),
+    ]);
+
+    return {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      verifiedUsers,
+      unverifiedUsers,
+      normalUsers,
+      premiumUsers,
+      adminUsers,
+      todayUsers,
+      thisMonthUsers,
+    };
+  }
+  /**
+   * Retrieves chart-ready user analytics.
+   *
+   * Includes grouped user statistics by role,
+   * account status, active status, verification status,
+   * and top users by ideas and payments.
+   *
+   * @param query Optional user filters.
+   * @returns User analytics formatted for charts.
+   */
+  async getUsersCharts(query: GetUsersQueryDto) {
+    const where = this.buildUsersWhere(query);
+
+    const [
+      usersByRole,
+      usersByAccountStatus,
+      usersByActiveStatus,
+      usersByVerificationStatus,
+      topUsersByIdeas,
+      topUsersByPayments,
+    ] = await Promise.all([
+      this.prisma.user.groupBy({
+        by: ['role'],
+        where,
+        _count: { role: true },
+        orderBy: { _count: { role: 'desc' } },
+      }),
+
+      this.prisma.user.groupBy({
+        by: ['accountStatus'],
+        where,
+        _count: { accountStatus: true },
+        orderBy: { _count: { accountStatus: 'desc' } },
+      }),
+
+      this.prisma.user.groupBy({
+        by: ['isActive'],
+        where,
+        _count: { isActive: true },
+        orderBy: { _count: { isActive: 'desc' } },
+      }),
+
+      this.prisma.user.groupBy({
+        by: ['isVerified'],
+        where,
+        _count: { isVerified: true },
+        orderBy: { _count: { isVerified: 'desc' } },
+      }),
+
+      this.prisma.user.findMany({
+        where,
+        orderBy: {
+          ideas: {
+            _count: 'desc',
+          },
+        },
+        take: 10,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          _count: {
+            select: {
+              ideas: true,
+            },
+          },
+        },
+      }),
+
+      this.prisma.user.findMany({
+        where,
+        orderBy: {
+          payments: {
+            _count: 'desc',
+          },
+        },
+        take: 10,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          _count: {
+            select: {
+              payments: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      usersByRole: usersByRole.map((item) => ({
+        label: item.role,
+        role: item.role,
+        count: item._count.role,
+      })),
+
+      usersByAccountStatus: usersByAccountStatus.map((item) => ({
+        label: item.accountStatus,
+        accountStatus: item.accountStatus,
+        count: item._count.accountStatus,
+      })),
+
+      usersByActiveStatus: usersByActiveStatus.map((item) => ({
+        label: item.isActive ? 'ACTIVE' : 'INACTIVE',
+        isActive: item.isActive,
+        count: item._count.isActive,
+      })),
+
+      usersByVerificationStatus: usersByVerificationStatus.map((item) => ({
+        label: item.isVerified ? 'VERIFIED' : 'UNVERIFIED',
+        isVerified: item.isVerified,
+        count: item._count.isVerified,
+      })),
+
+      topUsersByIdeas: topUsersByIdeas.map((user) => ({
+        label: user.fullName ?? user.email,
+        userId: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        count: user._count.ideas,
+      })),
+
+      topUsersByPayments: topUsersByPayments.map((user) => ({
+        label: user.fullName ?? user.email,
+        userId: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        count: user._count.payments,
+      })),
+    };
+  }
   /**
    * Retrieves detailed information for a specific user.
    *
-   * Read-only operation, so it is not recorded in audit logs.
+   * Includes basic user information, recent ideas,
+   * payments, credit transactions, complaints,
+   * and related record counts.
    *
-   * @param id - ID of the user to retrieve.
-   * @returns Detailed user information.
+   * @param id User unique identifier.
+   * @returns User details.
    *
-   * @throws NotFoundException if the user does not exist.
+   * @throws NotFoundException If the user does not exist.
    */
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
-      where: {
-        id,
-      },
+      where: { id },
       select: {
         id: true,
         fullName: true,
@@ -147,7 +388,10 @@ export class UsersService {
         isVerified: true,
         createdAt: true,
         updatedAt: true,
+
         ideas: {
+          take: 20,
+          orderBy: { createdAt: 'desc' },
           select: {
             id: true,
             title: true,
@@ -156,11 +400,11 @@ export class UsersService {
             unlockMethod: true,
             createdAt: true,
           },
-          orderBy: {
-            createdAt: 'desc',
-          },
         },
+
         payments: {
+          take: 20,
+          orderBy: { createdAt: 'desc' },
           select: {
             id: true,
             amount: true,
@@ -171,11 +415,11 @@ export class UsersService {
             creditsAmount: true,
             createdAt: true,
           },
-          orderBy: {
-            createdAt: 'desc',
-          },
         },
+
         creditTransactions: {
+          take: 20,
+          orderBy: { createdAt: 'desc' },
           select: {
             id: true,
             type: true,
@@ -184,8 +428,26 @@ export class UsersService {
             description: true,
             createdAt: true,
           },
-          orderBy: {
-            createdAt: 'desc',
+        },
+
+        complaints: {
+          take: 20,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            subject: true,
+            status: true,
+            priority: true,
+            createdAt: true,
+          },
+        },
+
+        _count: {
+          select: {
+            ideas: true,
+            payments: true,
+            creditTransactions: true,
+            complaints: true,
           },
         },
       },
@@ -199,20 +461,18 @@ export class UsersService {
   }
 
   /**
-   * Activates or deactivates a user account and records the action
-   * in audit logs.
+   * Updates a user's active status.
    *
-   * Business rules:
-   * - An admin cannot change their own status.
-   * - An admin cannot modify another admin account.
+   * Allows administrators to activate
+   * or deactivate user accounts.
    *
-   * @param userId - ID of the user whose status will be updated.
-   * @param isActive - New active status of the user.
-   * @param currentAdminId - ID of the authenticated admin.
-   * @returns The updated user status.
+   * @param userId User unique identifier.
+   * @param isActive New active status.
+   * @param currentAdminId ID of the authenticated administrator.
+   * @returns Updated user information.
    *
-   * @throws BadRequestException if the action is not allowed.
-   * @throws NotFoundException if the user does not exist.
+   * @throws NotFoundException If the user does not exist.
+   * @throws BadRequestException If the admin tries to modify their own status or another admin's account.
    */
   async updateUserStatus(
     userId: string,
@@ -224,9 +484,7 @@ export class UsersService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
+      where: { id: userId },
     });
 
     if (!user) {
@@ -237,13 +495,17 @@ export class UsersService {
       throw new BadRequestException('Cannot modify another admin account');
     }
 
+    if (user.isActive === isActive) {
+      return {
+        message: 'No changes detected',
+        user,
+        updated: false,
+      };
+    }
+
     const updatedUser = await this.prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        isActive,
-      },
+      where: { id: userId },
+      data: { isActive },
       select: {
         id: true,
         fullName: true,
@@ -273,23 +535,123 @@ export class UsersService {
         ? 'User activated successfully'
         : 'User deactivated successfully',
       user: updatedUser,
+      updated: true,
     };
   }
 
   /**
-   * Soft deletes a user account by deactivating it and records
-   * the action in audit logs.
+   * Sends a password reset email to a user.
    *
-   * Business rules:
-   * - An admin cannot delete their own account.
-   * - An admin cannot delete another admin account.
+   * Generates a secure reset token, stores its hashed value,
+   * sets an expiration time, sends the reset email,
+   * and records the action in audit logs.
    *
-   * @param userId - ID of the user to soft delete.
-   * @param currentAdminId - ID of the authenticated admin.
-   * @returns The deactivated user account.
+   * @param userId Target user unique identifier.
+   * @param currentAdminId Authenticated admin unique identifier.
+   * @returns Success message with basic user information.
    *
-   * @throws BadRequestException if the action is not allowed.
-   * @throws NotFoundException if the user does not exist.
+   * @throws BadRequestException If the admin targets own account, another admin, or an inactive user.
+   * @throws NotFoundException If the user does not exist.
+   */
+  async sendPasswordResetEmail(userId: string, currentAdminId: string) {
+    if (userId === currentAdminId) {
+      throw new BadRequestException(
+        'Admin cannot send password reset email to own account from admin panel',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new BadRequestException(
+        'Cannot send password reset email to another admin account',
+      );
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'Cannot send password reset email to inactive user',
+      );
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordResetToken: hashedToken,
+        passwordResetExpires: expiresAt,
+      },
+    });
+
+    const frontendUrl =
+      process.env.FRONTEND_URL ?? 'http://localhost:3000';
+
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+
+    await this.mailService.sendPasswordResetEmail(
+      user.email,
+      resetLink,
+    );
+
+    await this.auditLogsService.createLog({
+      adminId: currentAdminId,
+      action: AdminAction.ADMIN_SEND_PASSWORD_RESET_EMAIL,
+      targetType: AdminTargetType.USER,
+      targetId: user.id,
+      newValue: {
+        userId: user.id,
+        email: user.email,
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
+
+    return {
+      message: 'Password reset email sent successfully',
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+      },
+    };
+  }
+  /**
+   * Soft deletes a user account.
+   *
+   * The user is not removed from the database.
+   * Instead, the account is marked as inactive.
+   *
+   * Prevents administrators from deleting their own account
+   * or another admin account.
+   *
+   * Creates an audit log when the account is deactivated.
+   *
+   * @param userId Target user unique identifier.
+   * @param currentAdminId Authenticated admin unique identifier.
+   * @returns Soft delete result with user information.
+   *
+   * @throws BadRequestException If the admin tries to delete own account or another admin.
+   * @throws NotFoundException If the user does not exist.
    */
   async softDeleteUser(userId: string, currentAdminId: string) {
     if (userId === currentAdminId) {
@@ -297,9 +659,7 @@ export class UsersService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
+      where: { id: userId },
     });
 
     if (!user) {
@@ -310,10 +670,16 @@ export class UsersService {
       throw new BadRequestException('Cannot delete another admin account');
     }
 
+    if (!user.isActive) {
+      return {
+        message: 'User is already inactive',
+        user,
+        updated: false,
+      };
+    }
+
     const deletedUser = await this.prisma.user.update({
-      where: {
-        id: userId,
-      },
+      where: { id: userId },
       data: {
         isActive: false,
       },
@@ -342,6 +708,7 @@ export class UsersService {
     return {
       message: 'User soft deleted successfully',
       user: deletedUser,
+      updated: true,
     };
   }
 }

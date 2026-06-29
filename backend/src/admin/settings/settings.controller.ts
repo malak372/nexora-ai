@@ -1,26 +1,25 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+
 import { SettingsService } from './settings.service';
 import { UpdateSystemSettingsDto } from './dto/update-system-settings.dto';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 
+type AuthenticatedAdmin = {
+  id: string;
+  role: UserRole;
+};
+
 /**
  * Controller responsible for managing system settings.
  *
- * This controller provides endpoints that allow administrators to:
- * - Retrieve the current system settings.
- * - Update global system configuration values.
- *
- * The managed settings include values such as:
- * - Credit price.
- * - Bonus credit threshold.
- * - Bonus credits awarded.
- *
- * All endpoints are protected by JWT authentication and
- * can only be accessed by users with the ADMIN role.
+ * Provides admin-only endpoints for:
+ * - Retrieving current system settings.
+ * - Updating credit price and bonus credit rules.
  *
  * Base route:
  * /admin/settings
@@ -31,12 +30,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class SettingsController {
-  /**
-   * Creates an instance of SettingsController.
-   *
-   * @param settingsService - Service responsible for system settings management.
-   */
-  constructor(private readonly settingsService: SettingsService) { }
+  constructor(private readonly settingsService: SettingsService) {}
 
   /**
    * Retrieves the current system settings.
@@ -44,9 +38,7 @@ export class SettingsController {
    * Endpoint:
    * GET /admin/settings
    *
-   * Returns the latest system configuration stored in the database.
-   *
-   * @returns The current system settings.
+   * @returns Current system settings.
    */
   @Get()
   getSystemSettings() {
@@ -59,24 +51,14 @@ export class SettingsController {
    * Endpoint:
    * PATCH /admin/settings
    *
-   * Request body example:
-   * {
-   *   "creditPrice": 15,
-   *   "bonusThreshold": 10,
-   *   "bonusCredits": 1
-   * }
-   *
-   * The authenticated administrator's ID is passed to the
-   * service layer to record who performed the update.
-   *
-   * @param body - DTO containing the updated system settings.
-   * @param currentUser - The currently authenticated administrator.
-   * @returns A success message and the updated system settings.
+   * @param body - DTO containing updated system settings.
+   * @param currentUser - Authenticated administrator.
+   * @returns Updated system settings or no-change result.
    */
   @Patch()
   updateSystemSettings(
     @Body() body: UpdateSystemSettingsDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.settingsService.updateSystemSettings(currentUser.id, body);
   }
