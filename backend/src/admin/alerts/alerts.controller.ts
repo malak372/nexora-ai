@@ -39,8 +39,14 @@ export class AlertsController {
    * Endpoint:
    * POST /admin/alerts
    *
+   * If userId is provided in the body, the alert is sent to one user.
+   * If userId is omitted, the alert is broadcast to all active users.
+   *
+   * The authenticated admin ID is passed to the service for audit logging.
+   *
    * @param body - DTO containing the alert information.
-   * @returns A success message and the created alert, or the number of users who received the alert.
+   * @param currentUser - Authenticated admin user.
+   * @returns Created alert or broadcast result.
    */
   @Post()
   createAlert(

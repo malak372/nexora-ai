@@ -19,7 +19,7 @@ import {
  */
 @Injectable()
 export class AuditLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Retrieves admin audit logs with optional filtering,
@@ -31,15 +31,42 @@ export class AuditLogsService {
    */
   async getAuditLogs(query: GetAuditLogsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
-
+    const searchFilter = query.search?.trim()
+      ? {
+        OR: [
+          {
+            targetId: {
+              contains: query.search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          },
+          {
+            admin: {
+              fullName: {
+                contains: query.search,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+          {
+            admin: {
+              email: {
+                contains: query.search,
+                mode: Prisma.QueryMode.insensitive,
+              },
+            },
+          },
+        ],
+      }
+      : {};
     const where: Prisma.AdminAuditLogWhereInput = {
       ...buildDateFilter(query),
       ...buildExactFilter('adminId', query.adminId),
       ...buildExactFilter('action', query.action),
       ...buildExactFilter('targetType', query.targetType),
       ...buildExactFilter('targetId', query.targetId),
+      ...searchFilter,
     };
-
     const orderBy = buildOrderBy(
       query,
       ['action', 'targetType', 'targetId', 'createdAt'] as const,
@@ -81,6 +108,115 @@ export class AuditLogsService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  /**
+   * Retrieves audit log summary reports.
+   *
+   * This method is used by:
+   * GET /admin/audit-logs/summary
+   *
+   * Summary includes:
+   * - Total audit logs.
+   * - Logs created today.
+   * - Logs created during the current month.
+   * - Number of admins who performed actions.
+   * - Most common admin action.
+   * - Most affected target type.
+   *
+   * @returns Audit log summary statistics.
+   */
+  async getAuditLogsSummary() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalLogs,
+      todayLogs,
+      thisMonthLogs,
+      activeAdmins,
+      actionsGroup,
+      targetsGroup,
+    ] = await Promise.all([
+      this.prisma.adminAuditLog.count(),
+
+      this.prisma.adminAuditLog.count({
+        where: {
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      }),
+
+      this.prisma.adminAuditLog.count({
+        where: {
+          createdAt: {
+            gte: monthStart,
+          },
+        },
+      }),
+
+      this.prisma.adminAuditLog.groupBy({
+        by: ['adminId'],
+        where: {
+          adminId: {
+            not: null,
+          },
+        },
+        _count: {
+          adminId: true,
+        },
+      }),
+
+      this.prisma.adminAuditLog.groupBy({
+        by: ['action'],
+        _count: {
+          action: true,
+        },
+        orderBy: {
+          _count: {
+            action: 'desc',
+          },
+        },
+        take: 1,
+      }),
+
+      this.prisma.adminAuditLog.groupBy({
+        by: ['targetType'],
+        _count: {
+          targetType: true,
+        },
+        orderBy: {
+          _count: {
+            targetType: 'desc',
+          },
+        },
+        take: 1,
+      }),
+    ]);
+
+    return {
+      totalLogs,
+      todayLogs,
+      thisMonthLogs,
+      activeAdmins: activeAdmins.length,
+      mostCommonAction: actionsGroup[0]
+        ? {
+          action: actionsGroup[0].action,
+          count: actionsGroup[0]._count.action,
+        }
+        : null,
+      mostAffectedTarget: targetsGroup[0]
+        ? {
+          targetType: targetsGroup[0].targetType,
+          count: targetsGroup[0]._count.targetType,
+        }
+        : null,
     };
   }
 

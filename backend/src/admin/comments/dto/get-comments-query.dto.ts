@@ -1,22 +1,20 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * DTO for filtering, searching, and paginating collected comments.
+ * DTO for filtering, searching, sorting, and paginating collected comments.
  *
- * This DTO is used with the GET /admin/comments endpoint.
- * It defines the optional query parameters that an administrator
- * can use to search, filter, and paginate collected comments.
+ * Used with:
+ * GET /admin/comments
  *
- * Supported features:
- * - Pagination.
+ * Supports:
+ * - Pagination through page and limit.
+ * - Sorting through sortBy and sortOrder.
+ * - Date filtering through fromDate and toDate.
+ * - Search within comment content.
  * - Filter by platform.
  * - Filter by language.
  * - Filter by region.
- * - Search within comment content.
- *
- * All properties are optional, allowing the administrator
- * to retrieve all comments or apply one or more filters.
  *
  * Example:
  * GET /admin/comments?page=1&limit=10&platformId=PLATFORM_ID&language=en&region=Palestine&search=AI
@@ -28,33 +26,32 @@ export class GetCommentsQueryDto extends ListQueryDto {
    * Optional platform identifier.
    *
    * Filters comments collected from a specific platform.
+   *
+   * Must be a valid UUID.
    */
   @IsOptional()
-  @IsString()
+  @IsUUID()
   platformId?: string;
 
   /**
    * Optional language filter.
    *
-   * Filters comments by their detected language.
-   *
    * Example:
    * ar, en
    */
   @IsOptional()
+  @MaxLength(20)
   @IsString()
   language?: string;
 
   /**
    * Optional region filter.
    *
-   * Filters comments based on the detected region.
-   *
    * Example:
    * Palestine, Jordan
    */
   @IsOptional()
+  @MaxLength(100)
   @IsString()
   region?: string;
-
 }

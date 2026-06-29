@@ -4,40 +4,65 @@ import { AlertType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * DTO for filtering, searching, and paginating system alerts.
+ * DTO for filtering, searching, sorting, and paginating system alerts.
  *
- * This DTO is used with the GET /admin/alerts endpoint.
- * It represents the optional query parameters that an administrator
- * can use to retrieve and filter alert notifications.
+ * Used with:
+ * GET /admin/alerts
  *
- * Supported features:
- * - Pagination.
- * - Filter by alert type.
- * - Filter by read/unread status.
+ * Supports:
+ * - Pagination through page and limit.
+ * - Sorting through sortBy and sortOrder.
+ * - Date filtering through fromDate and toDate.
  * - Search by alert title or message.
- *
- * All properties are optional, allowing the administrator to
- * retrieve all alerts or apply one or more filters.
- *
- * Example:
- * GET /admin/alerts?page=1&limit=10&type=SYSTEM&isRead=false&search=maintenance
+ * - Filter by alert type.
+ * - Filter by read or unread status.
  *
  * @author Malak
  */
-
 export class GetAlertsQueryDto extends ListQueryDto {
+  /**
+   * Alert type filter.
+   *
+   * Must be one of the values defined in AlertType enum.
+   *
+   * Example:
+   * SYSTEM
+   * PAYMENT
+   * ADMIN
+   */
   @IsOptional()
   @IsEnum(AlertType)
   type?: AlertType;
 
   /**
-   * Read status filter (clean boolean version)
+   * Read status filter.
+   *
+   * Accepts:
+   * ?isRead=true
+   * ?isRead=false
+   *
+   * Automatically transforms the query value
+   * into a boolean before validation.
+   *
+   * Query examples:
+   * ?isRead=true → true
+   * ?isRead=false → false
    */
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return undefined;
+    if (typeof value === 'string') {
+      const normalized = value.toLowerCase();
+
+      if (normalized === 'true') {
+        return true;
+      }
+
+      if (normalized === 'false') {
+        return false;
+      }
+    }
+
+    return value;
   })
   @IsBoolean()
   isRead?: boolean;

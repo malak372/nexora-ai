@@ -1,34 +1,90 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DashboardResponseDto } from './dto/dashboard-response.dto';
+
+/**
+ * Represents one row returned from the raw SQL query
+ * used to build the users growth chart.
+ *
+ * The raw query groups users by creation date.
+ */
+type UsersGrowthRow = {
+  /** User creation date grouped by day. */
+  date: Date;
+
+  /** Number of users created on that date. */
+  count: number;
+};
 
 /**
  * Service responsible for providing Admin dashboard analytics.
  *
  * This service collects high-level platform metrics, recent activity,
- * financial summaries, AI usage statistics, and chart-ready data
- * for the Admin dashboard.
+ * financial summaries, AI usage statistics, domain/platform statistics,
+ * and chart-ready data for the Admin dashboard.
  *
  * @author Malak
  */
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves summarized dashboard analytics for the Admin panel.
+   * Retrieves summarized analytics for the Admin dashboard.
    *
-   * @returns Dashboard statistics, analytics summary, recent activity,
-   * and chart-ready data.
+   * The returned dashboard data includes:
+   * - Total users, ideas, payments, and comments.
+   * - Total credits sold.
+   * - Total revenue, refunds, and failed payments.
+   * - AI API request statistics.
+   * - AI error rate, average response time, and estimated OpenAI cost.
+   * - Active and inactive domains.
+   * - Active and inactive platforms.
+   * - Today statistics.
+   * - Monthly statistics.
+   * - Most selected domains.
+   * - Most requested regions.
+   * - Most used platforms.
+   * - User growth chart for the last 30 days.
+   * - Recent users, payments, ideas, and complaints.
+   *
+   * @returns Admin dashboard response data.
    */
-  async getDashboard() {
+  async getDashboard(): Promise<DashboardResponseDto> {
     const now = new Date();
 
+    /**
+     * Start of the current day.
+     *
+     * Used to calculate today's users, ideas, payments,
+     * and successful payment revenue.
+     */
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
+    /**
+     * Start of the current month.
+     *
+     * Used to calculate monthly users, ideas, payments,
+     * and successful payment revenue.
+     */
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    /**
+     * Start date for the user growth chart.
+     *
+     * The chart only displays the last 30 days to keep
+     * the dashboard lightweight and focused.
+     */
+    const startOfLast30Days = new Date(now);
+    startOfLast30Days.setDate(now.getDate() - 30);
+    startOfLast30Days.setHours(0, 0, 0, 0);
+
+    /**
+     * Executes independent dashboard queries in parallel
+     * to improve dashboard response time.
+     */
     const [
       users,
       ideas,
@@ -68,215 +124,123 @@ export class DashboardService {
       this.prisma.comment.count(),
 
       this.prisma.payment.aggregate({
-        where: {
-          status: PaymentStatus.SUCCESS,
-        },
-        _sum: {
-          creditsAmount: true,
-        },
+        where: { status: PaymentStatus.SUCCESS },
+        _sum: { creditsAmount: true },
       }),
 
       this.prisma.externalApiLog.count(),
 
       this.prisma.externalApiLog.aggregate({
-        _avg: {
-          responseTimeMs: true,
-        },
-        _sum: {
-          costEstimate: true,
-        },
+        _avg: { responseTimeMs: true },
+        _sum: { costEstimate: true },
       }),
 
       this.prisma.externalApiLog.count({
-        where: {
-          isSuccess: false,
-        },
+        where: { isSuccess: false },
       }),
 
       this.prisma.payment.count({
-        where: {
-          status: PaymentStatus.FAILED,
-        },
+        where: { status: PaymentStatus.FAILED },
       }),
 
       this.prisma.payment.aggregate({
-        where: {
-          status: PaymentStatus.SUCCESS,
-        },
-        _sum: {
-          amount: true,
-        },
+        where: { status: PaymentStatus.SUCCESS },
+        _sum: { amount: true },
       }),
 
       this.prisma.payment.aggregate({
-        where: {
-          status: PaymentStatus.REFUNDED,
-        },
-        _sum: {
-          amount: true,
-        },
+        where: { status: PaymentStatus.REFUNDED },
+        _sum: { amount: true },
       }),
 
-      this.prisma.domain.count({
-        where: {
-          isActive: true,
-        },
-      }),
+      this.prisma.domain.count({ where: { isActive: true } }),
+      this.prisma.domain.count({ where: { isActive: false } }),
 
-      this.prisma.domain.count({
-        where: {
-          isActive: false,
-        },
-      }),
-
-      this.prisma.platform.count({
-        where: {
-          isActive: true,
-        },
-      }),
-
-      this.prisma.platform.count({
-        where: {
-          isActive: false,
-        },
-      }),
+      this.prisma.platform.count({ where: { isActive: true } }),
+      this.prisma.platform.count({ where: { isActive: false } }),
 
       this.prisma.user.count({
-        where: {
-          createdAt: {
-            gte: startOfToday,
-          },
-        },
+        where: { createdAt: { gte: startOfToday } },
       }),
 
       this.prisma.idea.count({
-        where: {
-          createdAt: {
-            gte: startOfToday,
-          },
-        },
+        where: { createdAt: { gte: startOfToday } },
       }),
 
       this.prisma.payment.count({
-        where: {
-          createdAt: {
-            gte: startOfToday,
-          },
-        },
+        where: { createdAt: { gte: startOfToday } },
       }),
 
       this.prisma.payment.aggregate({
         where: {
           status: PaymentStatus.SUCCESS,
-          createdAt: {
-            gte: startOfToday,
-          },
+          createdAt: { gte: startOfToday },
         },
-        _sum: {
-          amount: true,
-        },
+        _sum: { amount: true },
       }),
 
       this.prisma.user.count({
-        where: {
-          createdAt: {
-            gte: startOfMonth,
-          },
-        },
+        where: { createdAt: { gte: startOfMonth } },
       }),
 
       this.prisma.idea.count({
-        where: {
-          createdAt: {
-            gte: startOfMonth,
-          },
-        },
+        where: { createdAt: { gte: startOfMonth } },
       }),
 
       this.prisma.payment.count({
-        where: {
-          createdAt: {
-            gte: startOfMonth,
-          },
-        },
+        where: { createdAt: { gte: startOfMonth } },
       }),
 
       this.prisma.payment.aggregate({
         where: {
           status: PaymentStatus.SUCCESS,
-          createdAt: {
-            gte: startOfMonth,
-          },
+          createdAt: { gte: startOfMonth },
         },
-        _sum: {
-          amount: true,
-        },
+        _sum: { amount: true },
       }),
 
       this.prisma.idea.groupBy({
         by: ['domainId'],
-        _count: {
-          domainId: true,
-        },
-        orderBy: {
-          _count: {
-            domainId: 'desc',
-          },
-        },
+        _count: { domainId: true },
+        orderBy: { _count: { domainId: 'desc' } },
         take: 5,
       }),
 
       this.prisma.idea.groupBy({
         by: ['selectedRegion'],
-        where: {
-          selectedRegion: {
-            not: null,
-          },
-        },
-        _count: {
-          selectedRegion: true,
-        },
-        orderBy: {
-          _count: {
-            selectedRegion: 'desc',
-          },
-        },
+        where: { selectedRegion: { not: null } },
+        _count: { selectedRegion: true },
+        orderBy: { _count: { selectedRegion: 'desc' } },
         take: 5,
       }),
 
       this.prisma.idea.groupBy({
         by: ['selectedPlatformId'],
-        where: {
-          selectedPlatformId: {
-            not: null,
-          },
-        },
-        _count: {
-          selectedPlatformId: true,
-        },
-        orderBy: {
-          _count: {
-            selectedPlatformId: 'desc',
-          },
-        },
+        where: { selectedPlatformId: { not: null } },
+        _count: { selectedPlatformId: true },
+        orderBy: { _count: { selectedPlatformId: 'desc' } },
         take: 5,
       }),
 
-      this.prisma.user.groupBy({
-        by: ['createdAt'],
-        _count: {
-          id: true,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-      }),
+      /**
+       * Raw PostgreSQL query used for accurate daily grouping.
+       *
+       * Prisma groupBy on createdAt groups by the full timestamp,
+       * while the dashboard needs grouping by day only.
+       */
+      this.prisma.$queryRaw<UsersGrowthRow[]>(Prisma.sql`
+        SELECT 
+          DATE(created_at) AS date,
+          COUNT(*)::int AS count
+        FROM users
+        WHERE created_at >= ${startOfLast30Days}
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at) ASC
+      `),
 
       this.prisma.user.findMany({
         take: 5,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           fullName: true,
@@ -290,9 +254,7 @@ export class DashboardService {
 
       this.prisma.payment.findMany({
         take: 5,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           amount: true,
@@ -314,9 +276,7 @@ export class DashboardService {
 
       this.prisma.idea.findMany({
         take: 5,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           title: true,
@@ -342,9 +302,7 @@ export class DashboardService {
 
       this.prisma.complaint.findMany({
         take: 5,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           subject: true,
@@ -362,50 +320,74 @@ export class DashboardService {
       }),
     ]);
 
+    /**
+     * Extracts the domain IDs from the top selected domains
+     * in order to fetch their readable names.
+     */
     const domainIds = mostSelectedDomains.map((item) => item.domainId);
+
+    /**
+     * Extracts non-null platform IDs from the top used platforms
+     * in order to fetch their readable names.
+     */
     const platformIds = mostUsedPlatforms
       .map((item) => item.selectedPlatformId)
       .filter((id): id is string => id !== null);
 
+    /**
+     * Fetches domain and platform names in parallel.
+     */
     const [domains, platforms] = await Promise.all([
       this.prisma.domain.findMany({
-        where: {
-          id: {
-            in: domainIds,
-          },
-        },
-        select: {
-          id: true,
-          name: true,
-        },
+        where: { id: { in: domainIds } },
+        select: { id: true, name: true },
       }),
 
       this.prisma.platform.findMany({
-        where: {
-          id: {
-            in: platformIds,
-          },
-        },
-        select: {
-          id: true,
-          name: true,
-        },
+        where: { id: { in: platformIds } },
+        select: { id: true, name: true },
       }),
     ]);
 
+    /**
+     * Maps domain IDs to domain names for fast lookup.
+     */
+    const domainMap = new Map(
+      domains.map((domain) => [domain.id, domain.name]),
+    );
+
+    /**
+     * Maps platform IDs to platform names for fast lookup.
+     */
+    const platformMap = new Map(
+      platforms.map((platform) => [platform.id, platform.name]),
+    );
+
+    /**
+     * Formats raw user growth rows into chart-ready data.
+     */
     const usersGrowthChart = usersGrowthRaw.map((item) => ({
-      date: item.createdAt.toISOString().split('T')[0],
-      count: item._count.id,
+      date: item.date.toISOString().split('T')[0],
+      count: item.count,
     }));
 
+    /**
+     * Calculates the AI API error rate as a percentage.
+     *
+     * If there are no AI requests, the error rate is returned as 0
+     * to avoid division by zero.
+     */
     const aiErrorRate =
-      aiRequests > 0 ? (failedAiRequests / aiRequests) * 100 : 0;
+      aiRequests > 0
+        ? Number(((failedAiRequests / aiRequests) * 100).toFixed(2))
+        : 0;
 
     return {
       users,
       ideas,
       payments,
       comments,
+
       creditsSold: creditsSold._sum.creditsAmount ?? 0,
 
       revenueTotal: revenueTotal._sum.amount ?? 0,
@@ -446,8 +428,7 @@ export class DashboardService {
 
       mostSelectedDomains: mostSelectedDomains.map((item) => ({
         domainId: item.domainId,
-        domainName:
-          domains.find((domain) => domain.id === item.domainId)?.name ?? null,
+        domainName: domainMap.get(item.domainId) ?? null,
         count: item._count.domainId,
       })),
 
@@ -459,9 +440,9 @@ export class DashboardService {
       mostUsedPlatforms: mostUsedPlatforms.map((item) => ({
         platformId: item.selectedPlatformId,
         platformName:
-          platforms.find(
-            (platform) => platform.id === item.selectedPlatformId,
-          )?.name ?? null,
+          item.selectedPlatformId !== null
+            ? platformMap.get(item.selectedPlatformId) ?? null
+            : null,
         count: item._count.selectedPlatformId,
       })),
 
