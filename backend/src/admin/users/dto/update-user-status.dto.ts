@@ -1,11 +1,13 @@
 import { IsBoolean } from 'class-validator';
 
 /**
- * DTO for updating a user's account status.
+ * DTO for updating a user's active status.
  *
- * This DTO is used by administrators to activate or deactivate
- * a user account. The request body must contain a boolean value
- * indicating whether the account should remain active.
+ * This DTO is used by administrators to enable
+ * or disable a user account.
+ *
+ * Used with:
+ * PATCH /admin/users/:id/status
  *
  * Validation Rules:
  * - isActive must be a boolean value.
@@ -15,16 +17,15 @@ import { IsBoolean } from 'class-validator';
  *   "isActive": false
  * }
  *
- * Result:
- * - true  -> User account is activated.
- * - false -> User account is deactivated.
  * @author Malak
  */
 export class UpdateUserStatusDto {
   /**
-   * Indicates whether the user account is active.
-   * - true: Active account.
-   * - false: Deactivated account.
+   * Indicates whether the user account should be active.
+   *
+   * Accepted values:
+   * - true: Activate the user account.
+   * - false: Deactivate the user account.
    */
   @IsBoolean()
   isActive!: boolean;

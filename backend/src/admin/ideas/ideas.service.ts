@@ -1,21 +1,35 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  IdeaGenerationType,
+  Prisma,
+  UnlockMethod,
+} from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetIdeasQueryDto } from './dto/get-ideas-query.dto';
+
 import {
   buildDateFilter,
   buildExactFilter,
   buildOrderBy,
   buildPagination,
   buildSearchFilter,
+  buildStringFilter,
 } from '../../utilities/base-query/builder';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for administrative idea management.
  *
- * This service allows administrators to retrieve, search,
- * filter, sort, paginate, and view generated software
- * project ideas.
+ * Provides:
+ * - Paginated ideas list.
+ * - Filtering by domain, platform, region, generation type, unlock method, and unlock status.
+ * - Search by title and problem statement.
+ * - Safe sorting using whitelisted fields.
+ * - Idea summary reports.
+ * - Chart-ready idea analytics.
+ * - Detailed idea inspection.
  *
  * @author Malak
  */
@@ -24,42 +38,64 @@ export class IdeasService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves generated project ideas with optional filtering,
-   * searching, sorting, and pagination.
-   *
-   * @param query Query parameters used for pagination,
-   * searching, filtering, and sorting ideas.
-   * @returns Paginated ideas list with metadata.
+   * Builds the shared Prisma where filter used by
+   * idea listing, summaries, charts, and reports.
    */
-  async getIdeas(query: GetIdeasQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
+  private buildIdeasWhere(
+    query: GetIdeasQueryDto,
+  ): Prisma.IdeaWhereInput {
     const isUnlocked =
       query.isUnlocked !== undefined
         ? query.isUnlocked === 'true'
         : undefined;
 
-    const where: Prisma.IdeaWhereInput = {
+    return {
       ...buildDateFilter(query),
-
-      ...buildSearchFilter(
-        ['title', 'problemStatement'],
-        query.search,
-      ),
-
+      ...buildSearchFilter(['title', 'problemStatement'], query.search),
       ...buildExactFilter('domainId', query.domainId),
       ...buildExactFilter('selectedPlatformId', query.platformId),
       ...buildExactFilter('generationType', query.generationType),
       ...buildExactFilter('unlockMethod', query.unlockMethod),
       ...buildExactFilter('isUnlocked', isUnlocked),
-
-      ...(query.region && {
-        selectedRegion: {
-          contains: query.region,
-          mode: 'insensitive',
-        },
-      }),
+      ...buildStringFilter('selectedRegion', query.region),
     };
+  }
+
+  /**
+   * Adds a minimum createdAt date while preserving existing date filters.
+   *
+   * Used for calculating:
+   * - Ideas created today.
+   * - Ideas created this month.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.IdeaWhereInput,
+    gte: Date,
+  ): Prisma.IdeaWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
+   * Retrieves generated project ideas with filtering,
+   * searching, sorting, and pagination.
+   *
+   * Endpoint:
+   * GET /admin/ideas
+   */
+  async getIdeas(query: GetIdeasQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildIdeasWhere(query);
 
     const orderBy = buildOrderBy(
       query,
@@ -89,6 +125,7 @@ export class IdeasService {
           selectedRegion: true,
           commentsCount: true,
           createdAt: true,
+
           user: {
             select: {
               id: true,
@@ -96,12 +133,14 @@ export class IdeasService {
               email: true,
             },
           },
+
           domain: {
             select: {
               id: true,
               name: true,
             },
           },
+
           selectedPlatform: {
             select: {
               id: true,
@@ -110,6 +149,7 @@ export class IdeasService {
           },
         },
       }),
+
       this.prisma.idea.count({ where }),
     ]);
 
@@ -119,45 +159,411 @@ export class IdeasService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
+    };
+  }
+
+  /**
+   * Retrieves idea summary statistics.
+   *
+   * Endpoint:
+   * GET /admin/ideas/summary
+   */
+  async getIdeasSummary(query: GetIdeasQueryDto) {
+    const where = this.buildIdeasWhere(query);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
+
+    const [
+      totalIdeas,
+      todayIdeas,
+      thisMonthIdeas,
+      unlockedIdeas,
+      lockedIdeas,
+      guestFreeIdeas,
+      normalFreeIdeas,
+      premiumCreditIdeas,
+      directPaymentUnlocks,
+      creditGenerationUnlocks,
+    ] = await Promise.all([
+      this.prisma.idea.count({ where }),
+      this.prisma.idea.count({ where: todayWhere }),
+      this.prisma.idea.count({ where: monthWhere }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          isUnlocked: true,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          isUnlocked: false,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          generationType: IdeaGenerationType.GUEST_FREE,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          generationType: IdeaGenerationType.NORMAL_FREE,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          generationType: IdeaGenerationType.PREMIUM_CREDIT,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          unlockMethod: UnlockMethod.DIRECT_PAYMENT,
+        },
+      }),
+
+      this.prisma.idea.count({
+        where: {
+          ...where,
+          unlockMethod: UnlockMethod.CREDIT_GENERATION,
+        },
+      }),
+    ]);
+
+    return {
+      totalIdeas,
+      todayIdeas,
+      thisMonthIdeas,
+      unlockedIdeas,
+      lockedIdeas,
+      guestFreeIdeas,
+      normalFreeIdeas,
+      premiumCreditIdeas,
+      directPaymentUnlocks,
+      creditGenerationUnlocks,
+    };
+  }
+
+  /**
+   * Retrieves chart-ready idea analytics.
+   *
+   * Endpoint:
+   * GET /admin/ideas/charts
+   */
+  async getIdeasCharts(query: GetIdeasQueryDto) {
+    const where = this.buildIdeasWhere(query);
+
+    const [
+      ideasByGenerationType,
+      ideasByUnlockMethod,
+      ideasByUnlockStatus,
+      ideasByDomain,
+      ideasByPlatform,
+      ideasByRegion,
+    ] = await Promise.all([
+      this.prisma.idea.groupBy({
+        by: ['generationType'],
+        where,
+        _count: { generationType: true },
+        orderBy: { _count: { generationType: 'desc' } },
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['unlockMethod'],
+        where,
+        _count: { unlockMethod: true },
+        orderBy: { _count: { unlockMethod: 'desc' } },
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['isUnlocked'],
+        where,
+        _count: { isUnlocked: true },
+        orderBy: { _count: { isUnlocked: 'desc' } },
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['domainId'],
+        where,
+        _count: { domainId: true },
+        orderBy: { _count: { domainId: 'desc' } },
+        take: 10,
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['selectedPlatformId'],
+        where: {
+          ...where,
+          selectedPlatformId: { not: null },
+        },
+        _count: { selectedPlatformId: true },
+        orderBy: { _count: { selectedPlatformId: 'desc' } },
+        take: 10,
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['selectedRegion'],
+        where: {
+          ...where,
+          selectedRegion: { not: null },
+        },
+        _count: { selectedRegion: true },
+        orderBy: { _count: { selectedRegion: 'desc' } },
+        take: 10,
+      }),
+    ]);
+
+    const domainIds = ideasByDomain.map((item) => item.domainId);
+
+    const platformIds = ideasByPlatform
+      .map((item) => item.selectedPlatformId)
+      .filter((id): id is string => Boolean(id));
+
+    const [domains, platforms] = await Promise.all([
+      this.prisma.domain.findMany({
+        where: { id: { in: domainIds } },
+        select: { id: true, name: true },
+      }),
+
+      this.prisma.platform.findMany({
+        where: { id: { in: platformIds } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const domainMap = new Map(
+      domains.map((domain) => [domain.id, domain.name]),
+    );
+
+    const platformMap = new Map(
+      platforms.map((platform) => [platform.id, platform.name]),
+    );
+
+    return {
+      ideasByGenerationType: ideasByGenerationType.map((item) => ({
+        label: item.generationType,
+        generationType: item.generationType,
+        count: item._count.generationType,
+      })),
+
+      ideasByUnlockMethod: ideasByUnlockMethod.map((item) => ({
+        label: item.unlockMethod,
+        unlockMethod: item.unlockMethod,
+        count: item._count.unlockMethod,
+      })),
+
+      ideasByUnlockStatus: ideasByUnlockStatus.map((item) => ({
+        label: item.isUnlocked ? 'UNLOCKED' : 'LOCKED',
+        isUnlocked: item.isUnlocked,
+        count: item._count.isUnlocked,
+      })),
+
+      ideasByDomain: ideasByDomain.map((item) => {
+        const domainName = domainMap.get(item.domainId) ?? null;
+
+        return {
+          label: domainName ?? 'Unknown Domain',
+          domainId: item.domainId,
+          domainName,
+          count: item._count.domainId,
+        };
+      }),
+
+      ideasByPlatform: ideasByPlatform.map((item) => {
+        const platformName = item.selectedPlatformId
+          ? platformMap.get(item.selectedPlatformId) ?? null
+          : null;
+
+        return {
+          label: platformName ?? 'Unknown Platform',
+          platformId: item.selectedPlatformId,
+          platformName,
+          count: item._count.selectedPlatformId,
+        };
+      }),
+
+      ideasByRegion: ideasByRegion.map((item) => ({
+        label: item.selectedRegion ?? 'Unknown Region',
+        region: item.selectedRegion,
+        count: item._count.selectedRegion,
+      })),
     };
   }
 
   /**
    * Retrieves detailed information about a specific project idea.
    *
-   * @param id Unique identifier of the project idea.
-   * @returns Complete project idea information.
-   *
-   * @throws NotFoundException if the specified idea does not exist.
+   * Endpoint:
+   * GET /admin/ideas/:id
    */
   async getIdeaById(id: string) {
     const idea = await this.prisma.idea.findUnique({
-      where: {
-        id,
-      },
-      include: {
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        limitedAbstract: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
+
         user: {
           select: {
             id: true,
             fullName: true,
             email: true,
+            role: true,
+            accountStatus: true,
+            creditBalance: true,
+            isActive: true,
           },
         },
-        domain: true,
-        selectedPlatform: true,
-        payments: true,
-        creditTransactions: true,
-        generatedOutputs: true,
+
+        guestSession: {
+          select: {
+            id: true,
+            sessionToken: true,
+            hasGenerated: true,
+            createdAt: true,
+            expiresAt: true,
+          },
+        },
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+          },
+        },
+
+        selectedPlatform: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+          },
+        },
+
+        payments: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            status: true,
+            paymentPurpose: true,
+            creditsAmount: true,
+            transactionReference: true,
+            createdAt: true,
+          },
+        },
+
+        creditTransactions: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            balanceAfter: true,
+            description: true,
+            createdAt: true,
+          },
+        },
+
+        generatedOutputs: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          select: {
+            id: true,
+            outputType: true,
+            content: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+
         ideaComments: {
-          include: {
-            comment: true,
+          take: 20,
+          select: {
+            id: true,
+            comment: {
+              select: {
+                id: true,
+                content: true,
+                sentiment: true,
+                language: true,
+                region: true,
+                sourceUrl: true,
+                collectedAt: true,
+                createdAt: true,
+                platform: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
           },
         },
+
         chatSessions: {
-          include: {
-            messages: true,
+          orderBy: {
+            updatedAt: 'desc',
+          },
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            updatedAt: true,
+            messages: {
+              take: 20,
+              orderBy: {
+                createdAt: 'desc',
+              },
+              select: {
+                id: true,
+                sender: true,
+                message: true,
+                createdAt: true,
+              },
+            },
           },
         },
       },

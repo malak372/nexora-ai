@@ -1,28 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { PaymentStatus, Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
+
+import {
+  calculateSuccessRate,
+  toNumber,
+} from '../../utilities/analytics/analytics.helper';
 
 /**
  * Represents one row returned from the raw SQL query
  * used to build the users growth chart.
- *
- * The raw query groups users by creation date.
  */
 type UsersGrowthRow = {
-  /** User creation date grouped by day. */
   date: Date;
-
-  /** Number of users created on that date. */
   count: number;
 };
 
 /**
  * Service responsible for providing Admin dashboard analytics.
  *
- * This service collects high-level platform metrics, recent activity,
- * financial summaries, AI usage statistics, domain/platform statistics,
- * and chart-ready data for the Admin dashboard.
+ * Collects high-level platform metrics, financial summaries,
+ * AI usage statistics, domain/platform statistics, chart-ready data,
+ * and recent activity for the Admin dashboard.
  *
  * @author Malak
  */
@@ -33,58 +34,27 @@ export class DashboardService {
   /**
    * Retrieves summarized analytics for the Admin dashboard.
    *
-   * The returned dashboard data includes:
-   * - Total users, ideas, payments, and comments.
-   * - Total credits sold.
-   * - Total revenue, refunds, and failed payments.
-   * - AI API request statistics.
-   * - AI error rate, average response time, and estimated OpenAI cost.
-   * - Active and inactive domains.
-   * - Active and inactive platforms.
-   * - Today statistics.
-   * - Monthly statistics.
-   * - Most selected domains.
-   * - Most requested regions.
-   * - Most used platforms.
-   * - User growth chart for the last 30 days.
-   * - Recent users, payments, ideas, and complaints.
+   * Endpoint:
+   * GET /admin/dashboard
    *
    * @returns Admin dashboard response data.
    */
   async getDashboard(): Promise<DashboardResponseDto> {
     const now = new Date();
 
-    /**
-     * Start of the current day.
-     *
-     * Used to calculate today's users, ideas, payments,
-     * and successful payment revenue.
-     */
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
-    /**
-     * Start of the current month.
-     *
-     * Used to calculate monthly users, ideas, payments,
-     * and successful payment revenue.
-     */
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+    );
 
-    /**
-     * Start date for the user growth chart.
-     *
-     * The chart only displays the last 30 days to keep
-     * the dashboard lightweight and focused.
-     */
     const startOfLast30Days = new Date(now);
     startOfLast30Days.setDate(now.getDate() - 30);
     startOfLast30Days.setHours(0, 0, 0, 0);
 
-    /**
-     * Executes independent dashboard queries in parallel
-     * to improve dashboard response time.
-     */
     const [
       users,
       ideas,
@@ -114,7 +84,7 @@ export class DashboardService {
       mostUsedPlatforms,
       usersGrowthRaw,
       recentUsers,
-      recentPayments,
+      recentPaymentsRaw,
       recentIdeas,
       recentComplaints,
     ] = await Promise.all([
@@ -222,14 +192,8 @@ export class DashboardService {
         take: 5,
       }),
 
-      /**
-       * Raw PostgreSQL query used for accurate daily grouping.
-       *
-       * Prisma groupBy on createdAt groups by the full timestamp,
-       * while the dashboard needs grouping by day only.
-       */
       this.prisma.$queryRaw<UsersGrowthRow[]>(Prisma.sql`
-        SELECT 
+        SELECT
           DATE(created_at) AS date,
           COUNT(*)::int AS count
         FROM users
@@ -320,23 +284,12 @@ export class DashboardService {
       }),
     ]);
 
-    /**
-     * Extracts the domain IDs from the top selected domains
-     * in order to fetch their readable names.
-     */
     const domainIds = mostSelectedDomains.map((item) => item.domainId);
 
-    /**
-     * Extracts non-null platform IDs from the top used platforms
-     * in order to fetch their readable names.
-     */
     const platformIds = mostUsedPlatforms
       .map((item) => item.selectedPlatformId)
-      .filter((id): id is string => id !== null);
+      .filter((id): id is string => Boolean(id));
 
-    /**
-     * Fetches domain and platform names in parallel.
-     */
     const [domains, platforms] = await Promise.all([
       this.prisma.domain.findMany({
         where: { id: { in: domainIds } },
@@ -349,38 +302,28 @@ export class DashboardService {
       }),
     ]);
 
-    /**
-     * Maps domain IDs to domain names for fast lookup.
-     */
     const domainMap = new Map(
       domains.map((domain) => [domain.id, domain.name]),
     );
 
-    /**
-     * Maps platform IDs to platform names for fast lookup.
-     */
     const platformMap = new Map(
       platforms.map((platform) => [platform.id, platform.name]),
     );
 
-    /**
-     * Formats raw user growth rows into chart-ready data.
-     */
     const usersGrowthChart = usersGrowthRaw.map((item) => ({
       date: item.date.toISOString().split('T')[0],
       count: item.count,
     }));
 
-    /**
-     * Calculates the AI API error rate as a percentage.
-     *
-     * If there are no AI requests, the error rate is returned as 0
-     * to avoid division by zero.
-     */
-    const aiErrorRate =
-      aiRequests > 0
-        ? Number(((failedAiRequests / aiRequests) * 100).toFixed(2))
-        : 0;
+    const aiErrorRate = calculateSuccessRate(
+      failedAiRequests,
+      aiRequests,
+    );
+
+    const recentPayments = recentPaymentsRaw.map((payment) => ({
+      ...payment,
+      amount: toNumber(payment.amount),
+    }));
 
     return {
       users,
@@ -390,15 +333,15 @@ export class DashboardService {
 
       creditsSold: creditsSold._sum.creditsAmount ?? 0,
 
-      revenueTotal: revenueTotal._sum.amount ?? 0,
-      refundsTotal: refundsTotal._sum.amount ?? 0,
+      revenueTotal: toNumber(revenueTotal._sum.amount),
+      refundsTotal: toNumber(refundsTotal._sum.amount),
       failedPaymentsCount,
 
       aiRequests,
       failedAiRequests,
       aiErrorRate,
-      averageResponseTime: aiStats._avg.responseTimeMs ?? 0,
-      openAiCost: aiStats._sum.costEstimate ?? 0,
+      averageResponseTime: toNumber(aiStats._avg.responseTimeMs),
+      aiCost: toNumber(aiStats._sum.costEstimate),
 
       domainsStatus: {
         active: activeDomainsCount,
@@ -414,37 +357,48 @@ export class DashboardService {
         users: todayUsers,
         ideas: todayIdeas,
         payments: todayPayments,
-        revenue: todayRevenue._sum.amount ?? 0,
+        revenue: toNumber(todayRevenue._sum.amount),
       },
 
       monthlyStats: {
         users: monthlyUsers,
         ideas: monthlyIdeas,
         payments: monthlyPayments,
-        revenue: monthlyRevenue._sum.amount ?? 0,
+        revenue: toNumber(monthlyRevenue._sum.amount),
       },
 
       usersGrowthChart,
 
-      mostSelectedDomains: mostSelectedDomains.map((item) => ({
-        domainId: item.domainId,
-        domainName: domainMap.get(item.domainId) ?? null,
-        count: item._count.domainId,
-      })),
+      mostSelectedDomains: mostSelectedDomains.map((item) => {
+        const domainName = domainMap.get(item.domainId) ?? null;
+
+        return {
+          label: domainName ?? 'Unknown Domain',
+          domainId: item.domainId,
+          domainName,
+          count: item._count.domainId,
+        };
+      }),
 
       mostRequestedRegions: mostRequestedRegions.map((item) => ({
+        label: item.selectedRegion ?? 'Unknown Region',
         region: item.selectedRegion,
         count: item._count.selectedRegion,
       })),
 
-      mostUsedPlatforms: mostUsedPlatforms.map((item) => ({
-        platformId: item.selectedPlatformId,
-        platformName:
+      mostUsedPlatforms: mostUsedPlatforms.map((item) => {
+        const platformName =
           item.selectedPlatformId !== null
             ? platformMap.get(item.selectedPlatformId) ?? null
-            : null,
-        count: item._count.selectedPlatformId,
-      })),
+            : null;
+
+        return {
+          label: platformName ?? 'Unknown Platform',
+          platformId: item.selectedPlatformId,
+          platformName,
+          count: item._count.selectedPlatformId,
+        };
+      }),
 
       recentActivity: {
         recentUsers,

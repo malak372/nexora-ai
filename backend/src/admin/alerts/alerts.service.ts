@@ -6,28 +6,34 @@ import {
   AdminAction,
   AdminTargetType,
 } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAlertDto } from './dto/create-alert.dto';
+import { CreateEmailAlertDto } from './dto/create-email-alert.dto';
 import { GetAlertsQueryDto } from './dto/get-alerts-query.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { MailService } from '../../mail/mail.service';
+
 import {
   buildDateFilter,
   buildExactFilter,
   buildOrderBy,
   buildPagination,
+  buildRelationSearchFilter,
+  buildSearchFilter,
 } from '../../utilities/base-query/builder';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin alert management operations.
  *
- * This service allows administrators to:
- * - View alerts.
- * - Search and filter alerts.
- * - Send notifications to a specific user.
- * - Broadcast notifications to all active users.
- *
- * Alerts are stored in the database and can later be
- * displayed to users inside the application.
+ * Supports:
+ * - In-app alerts.
+ * - Email alerts.
+ * - Single user alerts.
+ * - Broadcast alerts.
+ * - Audit logging.
  *
  * @author Malak
  */
@@ -36,62 +42,33 @@ export class AlertsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly mailService: MailService,
   ) { }
 
   /**
    * Retrieves alerts with optional filtering, searching,
    * sorting, and pagination.
    *
-   * @param query Query parameters used for pagination,
-   * filtering, searching, and sorting alerts.
+   * @param query Query parameters.
    * @returns Paginated alerts list with metadata.
    */
   async getAlerts(query: GetAlertsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
 
-    const searchFilter = query.search?.trim()
-      ? {
-        OR: [
-          {
-            title: {
-              contains: query.search,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          },
-          {
-            message: {
-              contains: query.search,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          },
-          {
-            user: {
-              fullName: {
-                contains: query.search,
-                mode: Prisma.QueryMode.insensitive,
-              },
-            },
-          },
-          {
-            user: {
-              email: {
-                contains: query.search,
-                mode: Prisma.QueryMode.insensitive,
-              },
-            },
-          },
-        ],
-      }
-      : {};
-
     const where: Prisma.AlertWhereInput = {
       ...buildDateFilter(query),
+
+      ...buildSearchFilter(['title', 'message'], query.search),
+
+      ...buildRelationSearchFilter(
+        'user',
+        ['fullName', 'email'],
+        query.search,
+      ),
+
       ...buildExactFilter('type', query.type),
       ...buildExactFilter('isRead', query.isRead),
-      ...searchFilter,
     };
-
-
 
     const orderBy = buildOrderBy(
       query,
@@ -121,6 +98,7 @@ export class AlertsService {
           },
         },
       }),
+
       this.prisma.alert.count({ where }),
     ]);
 
@@ -130,69 +108,116 @@ export class AlertsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
 
   /**
-   * Creates and sends a new alert.
+   * Creates and sends an in-app alert.
    *
-   * If userId is provided, the alert is sent to that specific user.
-   * If userId is not provided, the alert is broadcast to all active users.
-   *
-   * @param body DTO containing the alert information.
-   * @param adminId ID of the admin who created the alert.
-   * @returns A success message and the created alert,
-   * or the broadcast count.
-   *
-   * @throws NotFoundException if the specified user does not exist.
+   * @param body Alert creation DTO.
+   * @param adminId Authenticated admin ID.
+   * @returns Created alert or broadcast result.
    */
   async createAlert(body: CreateAlertDto, adminId: string) {
     const alertType = body.type ?? AlertType.SYSTEM;
 
     if (body.userId) {
-      const user = await this.prisma.user.findUnique({
-        where: {
-          id: body.userId,
-        },
-      });
-
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-
-      const alert = await this.prisma.alert.create({
-        data: {
-          userId: body.userId,
-          title: body.title,
-          message: body.message,
-          type: alertType,
-        },
-      });
-
-      await this.auditLogsService.createLog({
-        adminId,
-        action: AdminAction.ADMIN_CREATE_ALERT,
-        targetType: AdminTargetType.ALERT,
-        targetId: alert.id,
-        newValue: {
-          id: alert.id,
-          userId: alert.userId,
-          title: alert.title,
-          message: alert.message,
-          type: alert.type,
-          isRead: alert.isRead,
-          createdAt: alert.createdAt.toISOString(),
-        },
-      });
-
-      return {
-        message: 'Alert sent successfully',
-        alert,
-      };
+      return this.createSingleUserAlert(body, adminId, alertType);
     }
 
+    return this.createBroadcastAlert(body, adminId, alertType);
+  }
+
+  /**
+   * Sends an email alert separately from in-app alerts.
+   *
+   * This method does not create alert records in the database.
+   *
+   * @param body Email alert DTO.
+   * @param adminId Authenticated admin ID.
+   * @returns Email sending result.
+   */
+  async sendEmailAlert(body: CreateEmailAlertDto, adminId: string) {
+    if (body.userId) {
+      return this.sendSingleUserEmailAlert(body, adminId);
+    }
+
+    return this.sendBroadcastEmailAlert(body, adminId);
+  }
+
+  /**
+  * Creates an in-app alert for a specific active user.
+  *
+  * @param body Alert creation DTO.
+  * @param adminId Authenticated admin ID.
+  * @param alertType Final alert type.
+  * @returns Created alert response.
+  */
+  private async createSingleUserAlert(
+    body: CreateAlertDto,
+    adminId: string,
+    alertType: AlertType,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: body.userId,
+      },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive || user.role !== UserRole.USER) {
+      throw new NotFoundException('Active user not found');
+    }
+
+    const alert = await this.prisma.alert.create({
+      data: {
+        userId: user.id,
+        title: body.title,
+        message: body.message,
+        type: alertType,
+      },
+    });
+
+    await this.auditLogsService.createLog({
+      adminId,
+      action: AdminAction.ADMIN_CREATE_ALERT,
+      targetType: AdminTargetType.ALERT,
+      targetId: alert.id,
+      newValue: {
+        id: alert.id,
+        userId: alert.userId,
+        title: alert.title,
+        message: alert.message,
+        type: alert.type,
+        isRead: alert.isRead,
+        createdAt: alert.createdAt.toISOString(),
+      },
+    });
+
+    return {
+      message: 'Alert sent successfully',
+      alert,
+    };
+  }
+  /**
+   * Broadcasts an in-app alert to all active users.
+   *
+   * @param body Alert creation DTO.
+   * @param adminId Authenticated admin ID.
+   * @param alertType Final alert type.
+   * @returns Broadcast result.
+   */
+  private async createBroadcastAlert(
+    body: CreateAlertDto,
+    adminId: string,
+    alertType: AlertType,
+  ) {
     const users = await this.prisma.user.findMany({
       where: {
         role: UserRole.USER,
@@ -210,9 +235,11 @@ export class AlertsService {
       type: alertType,
     }));
 
-    await this.prisma.alert.createMany({
-      data: alertsData,
-    });
+    if (alertsData.length > 0) {
+      await this.prisma.alert.createMany({
+        data: alertsData,
+      });
+    }
 
     await this.auditLogsService.createLog({
       adminId,
@@ -231,6 +258,133 @@ export class AlertsService {
     return {
       message: 'Alert sent to all active users successfully',
       sentCount: alertsData.length,
+    };
+  }
+
+  /**
+  * Sends an email alert to one active user.
+  *
+  * @param body Email alert DTO.
+  * @param adminId Authenticated admin ID.
+  * @returns Email sending result.
+  */
+  private async sendSingleUserEmailAlert(
+    body: CreateEmailAlertDto,
+    adminId: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: body.userId,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        isActive: true,
+        role: true,
+      },
+    });
+
+    if (!user || !user.isActive || user.role !== UserRole.USER) {
+      throw new NotFoundException('Active user not found');
+    }
+
+    await this.mailService.sendAdminAlertEmail(
+      user.email,
+      body.subject,
+      body.message,
+      user.fullName,
+    );
+
+    await this.auditLogsService.createLog({
+      adminId,
+      action: AdminAction.ADMIN_CREATE_ALERT,
+      targetType: AdminTargetType.ALERT,
+      targetId: user.id,
+      newValue: {
+        emailAlert: true,
+        broadcast: false,
+        userId: user.id,
+        email: user.email,
+        subject: body.subject,
+        message: body.message,
+      },
+    });
+
+    return {
+      message: 'Email alert sent successfully',
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+      },
+    };
+  }
+  /**
+   * Sends an email alert to all active users.
+   *
+   * Emails are sent in batches to avoid overloading
+   * the SMTP provider.
+   *
+   * @param body Email alert DTO.
+   * @param adminId Authenticated admin ID.
+   * @returns Broadcast email result.
+   */
+  private async sendBroadcastEmailAlert(
+    body: CreateEmailAlertDto,
+    adminId: string,
+  ) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: UserRole.USER,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+      },
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (const user of users) {
+      try {
+        await this.mailService.sendAdminAlertEmail(
+          user.email,
+          body.subject,
+          body.message,
+          user.fullName,
+        );
+
+        sentCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+
+    await this.auditLogsService.createLog({
+      adminId,
+      action: AdminAction.ADMIN_CREATE_ALERT,
+      targetType: AdminTargetType.ALERT,
+      targetId: 'BROADCAST_EMAIL',
+      newValue: {
+        emailAlert: true,
+        broadcast: true,
+        totalUsers: users.length,
+        sentCount,
+        failedCount,
+        subject: body.subject,
+        message: body.message,
+      },
+    });
+
+    return {
+      message: 'Email alert broadcast completed',
+      totalUsers: users.length,
+      sentCount,
+      failedCount,
     };
   }
 }

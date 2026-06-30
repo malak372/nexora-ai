@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
+
 import {
   buildDateFilter,
   buildExactFilter,
@@ -10,6 +12,8 @@ import {
   buildSearchFilter,
   buildStringFilter,
 } from '../../utilities/base-query/builder';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin comment management operations.
@@ -22,9 +26,6 @@ import {
  * - Summary reports for collected comments.
  * - Chart-ready analytics data.
  *
- * Used by the Admin panel to monitor collected community feedback
- * and support comment-based idea generation analytics.
- *
  * @author Malak
  */
 @Injectable()
@@ -32,32 +33,52 @@ export class CommentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves collected comments with filtering, searching,
-   * sorting, and pagination.
-   *
-   * @param query - Query parameters for pagination, filtering, searching, and sorting.
-   * @returns Paginated comments list with metadata.
+   * Builds the shared Prisma where filter for comments.
    */
-  async getComments(query: GetCommentsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
-    const where: Prisma.CommentWhereInput = {
+  private buildCommentsWhere(
+    query: GetCommentsQueryDto,
+  ): Prisma.CommentWhereInput {
+    return {
       ...buildDateFilter(query),
       ...buildExactFilter('platformId', query.platformId),
-      ...buildExactFilter('language', query.language),
+      ...buildStringFilter('language', query.language),
       ...buildStringFilter('region', query.region),
       ...buildSearchFilter(['content'], query.search),
     };
+  }
+
+  /**
+   * Adds a minimum createdAt date while preserving existing date filters.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.CommentWhereInput,
+    gte: Date,
+  ): Prisma.CommentWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
+   * Retrieves collected comments with filtering, searching,
+   * sorting, and pagination.
+   */
+  async getComments(query: GetCommentsQueryDto) {
+    const { page, limit, skip } = buildPagination(query);
+    const where = this.buildCommentsWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'collectedAt',
-        'language',
-        'region',
-        'sentiment',
-        'createdAt',
-      ] as const,
+      ['collectedAt', 'language', 'region', 'sentiment', 'createdAt'] as const,
       'createdAt',
     );
 
@@ -101,34 +122,26 @@ export class CommentsService {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
 
   /**
    * Retrieves summary statistics for collected comments.
-   *
-   * Used by:
-   * GET /admin/comments/summary
-   *
-   * Summary includes:
-   * - Total comments.
-   * - Comments created today.
-   * - Comments created this month.
-   * - Number of platforms that have comments.
-   * - Number of detected languages.
-   * - Number of detected regions.
-   *
-   * @returns Comment summary statistics.
    */
-  async getCommentsSummary() {
+  async getCommentsSummary(query: GetCommentsQueryDto) {
+    const where = this.buildCommentsWhere(query);
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
+
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalComments,
@@ -138,27 +151,14 @@ export class CommentsService {
       languagesGroup,
       regionsGroup,
     ] = await Promise.all([
-      this.prisma.comment.count(),
-
-      this.prisma.comment.count({
-        where: {
-          createdAt: {
-            gte: todayStart,
-          },
-        },
-      }),
-
-      this.prisma.comment.count({
-        where: {
-          createdAt: {
-            gte: monthStart,
-          },
-        },
-      }),
+      this.prisma.comment.count({ where }),
+      this.prisma.comment.count({ where: todayWhere }),
+      this.prisma.comment.count({ where: monthWhere }),
 
       this.prisma.comment.groupBy({
         by: ['platformId'],
         where: {
+          ...where,
           platformId: {
             not: null,
           },
@@ -171,6 +171,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['language'],
         where: {
+          ...where,
           language: {
             not: null,
           },
@@ -183,6 +184,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['region'],
         where: {
+          ...where,
           region: {
             not: null,
           },
@@ -205,18 +207,10 @@ export class CommentsService {
 
   /**
    * Retrieves chart-ready analytics for collected comments.
-   *
-   * Used by:
-   * GET /admin/comments/charts
-   *
-   * Charts include:
-   * - Comments grouped by platform.
-   * - Comments grouped by language.
-   * - Comments grouped by region.
-   *
-   * @returns Chart-ready comment analytics.
    */
-  async getCommentsCharts() {
+  async getCommentsCharts(query: GetCommentsQueryDto) {
+    const where = this.buildCommentsWhere(query);
+
     const [
       commentsByPlatformGroup,
       commentsByLanguageGroup,
@@ -225,6 +219,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['platformId'],
         where: {
+          ...where,
           platformId: {
             not: null,
           },
@@ -242,6 +237,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['language'],
         where: {
+          ...where,
           language: {
             not: null,
           },
@@ -259,6 +255,7 @@ export class CommentsService {
       this.prisma.comment.groupBy({
         by: ['region'],
         where: {
+          ...where,
           region: {
             not: null,
           },
@@ -296,19 +293,21 @@ export class CommentsService {
 
     return {
       commentsByPlatform: commentsByPlatformGroup.map((item) => ({
-        platformId: item.platformId,
-        platformName: item.platformId
+        label: item.platformId
           ? platformNameMap.get(item.platformId) ?? 'Unknown Platform'
           : 'Unknown Platform',
+        platformId: item.platformId,
         count: item._count.platformId,
       })),
 
       commentsByLanguage: commentsByLanguageGroup.map((item) => ({
+        label: item.language ?? 'Unknown Language',
         language: item.language,
         count: item._count.language,
       })),
 
       commentsByRegion: commentsByRegionGroup.map((item) => ({
+        label: item.region ?? 'Unknown Region',
         region: item.region,
         count: item._count.region,
       })),

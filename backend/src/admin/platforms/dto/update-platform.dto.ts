@@ -2,28 +2,17 @@ import {
   IsBoolean,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
 /**
  * DTO for updating an existing platform.
  *
- * This DTO is used with the PATCH /admin/platforms/:id endpoint.
- * It defines the optional fields that an administrator can modify
- * for an existing platform.
+ * Used with:
+ * PATCH /admin/platforms/:id
  *
- * All properties are optional, allowing the admin to update
- * one or more fields without affecting the remaining data.
- *
- * Validation Rules:
- * - Platform name must be a string with a minimum length of 2 characters.
- * - Platform active status must be a boolean if provided.
- *
- * Example:
- * {
- *   "name": "Facebook",
- *   "isActive": false
- * }
+ * All fields are optional to support partial updates.
  *
  * @author Malak
  */
@@ -31,24 +20,19 @@ export class UpdatePlatformDto {
   /**
    * Updated platform name.
    *
-   * Must be a string containing at least two characters.
-   *
-   * Example:
-   * Facebook
+   * Must contain between 2 and 100 characters.
    */
   @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(100)
   name?: string;
 
   /**
-   * Updated platform active status.
+   * Updated active status.
    *
-   * Indicates whether the platform is enabled
-   * for collecting comments.
-   *
-   * Example:
-   * false
+   * Indicates whether the platform is enabled for
+   * comment collection and user idea generation.
    */
   @IsOptional()
   @IsBoolean()

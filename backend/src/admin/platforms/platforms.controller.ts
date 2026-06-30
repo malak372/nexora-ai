@@ -4,32 +4,39 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+
 import { PlatformsService } from './platforms.service';
 import { CreatePlatformDto } from './dto/create-platform.dto';
 import { UpdatePlatformDto } from './dto/update-platform.dto';
+import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
+
+type AuthenticatedAdmin = {
+  id: string;
+  role: UserRole;
+};
 
 /**
- * Controller responsible for platform management.
+ * Controller responsible for managing supported platforms.
  *
- * This controller provides endpoints that allow administrators to:
- * - Retrieve all available platforms.
- * - Create new platforms.
- * - Update existing platforms.
- * - Deactivate platforms.
- *
- * All endpoints are protected by JWT authentication and
- * can only be accessed by users with the ADMIN role.
+ * Provides admin-only endpoints for:
+ * - Listing platforms.
+ * - Viewing platform summary reports.
+ * - Viewing chart-ready platform analytics.
+ * - Creating platforms.
+ * - Updating platforms.
+ * - Deactivating platforms.
  *
  * Base route:
  * /admin/platforms
@@ -40,17 +47,14 @@ import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class PlatformsController {
-  constructor(private readonly platformsService: PlatformsService) { }
+  constructor(private readonly platformsService: PlatformsService) {}
 
   /**
-   * Retrieves platforms with optional pagination,
-   * searching, filtering, and sorting.
+   * Retrieves platforms with filtering, searching,
+   * sorting, and pagination.
    *
    * Endpoint:
    * GET /admin/platforms
-   *
-   * @param query Query parameters used to filter and paginate platforms.
-   * @returns Paginated platforms list with metadata.
    */
   @Get()
   getPlatforms(@Query() query: GetPlatformsQueryDto) {
@@ -58,19 +62,37 @@ export class PlatformsController {
   }
 
   /**
+   * Retrieves platform summary statistics.
+   *
+   * Endpoint:
+   * GET /admin/platforms/summary
+   */
+  @Get('summary')
+  getPlatformsSummary(@Query() query: GetPlatformsQueryDto) {
+    return this.platformsService.getPlatformsSummary(query);
+  }
+
+  /**
+   * Retrieves chart-ready platform analytics.
+   *
+   * Endpoint:
+   * GET /admin/platforms/charts
+   */
+  @Get('charts')
+  getPlatformsCharts(@Query() query: GetPlatformsQueryDto) {
+    return this.platformsService.getPlatformsCharts(query);
+  }
+
+  /**
    * Creates a new platform.
    *
    * Endpoint:
    * POST /admin/platforms
-   *
-   * @param body - DTO containing the platform information.
-   * @param currentUser - The authenticated admin creating the platform.
-   * @returns A success message and the newly created platform.
    */
   @Post()
   createPlatform(
     @Body() body: CreatePlatformDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
     return this.platformsService.createPlatform(body, currentUser.id);
   }
@@ -80,39 +102,34 @@ export class PlatformsController {
    *
    * Endpoint:
    * PATCH /admin/platforms/:id
-   *
-   * @param id - The unique identifier of the platform.
-   * @param body - DTO containing the updated platform information.
-   * @param currentUser - The authenticated admin updating the platform.
-   * @returns A success message and the updated platform.
    */
   @Patch(':id')
   updatePlatform(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdatePlatformDto,
-    @CurrentUser() currentUser: any,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.platformsService.updatePlatform(id, body, currentUser.id);
+    return this.platformsService.updatePlatform(
+      id,
+      body,
+      currentUser.id,
+    );
   }
 
   /**
-   * Deactivates a platform.
+   * Deactivates an existing platform.
    *
    * Endpoint:
    * DELETE /admin/platforms/:id
-   *
-   * This operation performs a soft deactivation by marking
-   * the platform as inactive instead of permanently removing it.
-   *
-   * @param id - The unique identifier of the platform.
-   * @param currentUser - The authenticated admin deactivating the platform.
-   * @returns A success message and the updated platform information.
    */
   @Delete(':id')
-  deletePlatform(
-    @Param('id') id: string,
-    @CurrentUser() currentUser: any,
+  deactivatePlatform(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.platformsService.deactivatePlatform(id, currentUser.id);
+    return this.platformsService.deactivatePlatform(
+      id,
+      currentUser.id,
+    );
   }
 }

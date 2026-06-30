@@ -1,23 +1,40 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsBooleanString, IsOptional } from 'class-validator';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * DTO for querying domains.
+ * DTO for querying project domains.
  *
- * Supports pagination, date range filtering,
- * searching, sorting, and filtering by active status.
+ * Extends the shared ListQueryDto to provide:
+ * - Pagination.
+ * - Date range filtering.
+ * - Search.
+ * - Sorting.
+ *
+ * Additionally supports filtering domains
+ * by their active status.
+ *
+ * Endpoint:
+ * GET /admin/domains
+ *
+ * Notes:
+ * - This DTO is intended for administrative list endpoints.
+ * - It can also be reused by reports and dashboard tables
+ *   that display project domains.
  *
  * @author Malak
  */
 export class GetDomainsQueryDto extends ListQueryDto {
   /**
-   * Optional active status filter.
+   * Optional domain active status filter.
    *
    * Accepted values:
    * - "true"
    * - "false"
+   *
+   * Example:
+   * GET /admin/domains?isActive=true
    */
   @IsOptional()
-  @IsString()
+  @IsBooleanString()
   isActive?: string;
 }

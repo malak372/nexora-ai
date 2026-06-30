@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { MailModule } from '../mail/mail.module';
 
 import { DashboardController } from './dashboard/dashboard.controller';
 import { DashboardService } from './dashboard/dashboard.service';
@@ -9,9 +10,6 @@ import { UsersService } from './users/users.service';
 
 import { SettingsController } from './settings/settings.controller';
 import { SettingsService } from './settings/settings.service';
-
-import { PaymentsController } from './payments/payments.controller';
-import { PaymentsService } from './payments/payments.service';
 
 import { CreditsController } from './credits/credits.controller';
 import { CreditsService } from './credits/credits.service';
@@ -31,9 +29,6 @@ import { DomainsService } from './domains/domains.service';
 import { PromptsController } from './prompts/prompts.controller';
 import { PromptsService } from './prompts/prompts.service';
 
-import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
-import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
-
 import { ComplaintsController } from './complaints/complaints.controller';
 import { ComplaintsService } from './complaints/complaints.service';
 
@@ -46,39 +41,66 @@ import { IdeasService } from './ideas/ideas.service';
 import { AuditLogsController } from './audit-logs/audit-logs.controller';
 import { AuditLogsService } from './audit-logs/audit-logs.service';
 
+import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
+import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
+
+/**
+ * Admin module.
+ *
+ * Groups all administrative functionality including:
+ * - Dashboard analytics
+ * - User management
+ * - AI monitoring
+ * - Credit management
+ * - Payment monitoring
+ * - Comments
+ * - Data collection
+ * - Domains
+ * - Platforms
+ * - Prompt management
+ * - Alerts
+ * - Complaints
+ * - Audit logs
+ * - System settings
+ *
+ * @author Malak
+ */
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    MailModule,
+  ],
+
   controllers: [
     DashboardController,
     AuditLogsController,
+    AiMonitoringController,
     IdeasController,
     UsersController,
     SettingsController,
-    PaymentsController,
     CreditsController,
     CommentsController,
     DataCollectionController,
     PlatformsController,
     DomainsController,
     PromptsController,
-    AiMonitoringController,
     ComplaintsController,
     AlertsController,
   ],
+
   providers: [
     DashboardService,
     AuditLogsService,
+    AiMonitoringService,
     IdeasService,
     UsersService,
     SettingsService,
-    PaymentsService,
     CreditsService,
     CommentsService,
     DataCollectionService,
     PlatformsService,
     DomainsService,
     PromptsService,
-    AiMonitoringService,
     ComplaintsService,
     AlertsService,
   ],

@@ -4,24 +4,30 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { CacheInterceptor } from '@nestjs/cache-manager';
+import { ApiOkResponse } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+
 import { DashboardService } from './dashboard.service';
+import { DashboardResponseDto } from './dto/dashboard-response.dto';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
-import { DashboardResponseDto } from './dto/dashboard-response.dto';
-import { CacheInterceptor } from '@nestjs/cache-manager';
-import { ApiOkResponse } from '@nestjs/swagger';
 
 /**
- * Administrative Dashboard Controller
+ * Administrative Dashboard Controller.
  *
- * Provides aggregated analytics for system monitoring:
- * users, ideas, payments, comments, AI usage, revenue.
+ * Provides aggregated analytics for system monitoring,
+ * including users, ideas, payments, comments, AI usage,
+ * revenue, domains, platforms, charts, and recent activity.
  *
- * Access restricted to ADMIN role only.
+ * Security:
+ * - Requires JWT authentication.
+ * - Restricted to ADMIN role only.
  *
- * Base route: /admin/dashboard
+ * Base route:
+ * /admin/dashboard
  *
  * @author Malak
  */
@@ -32,11 +38,16 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   /**
-   * Returns dashboard analytics summary.
+   * Returns the Admin dashboard analytics summary.
    *
-   * Cached for performance optimization.
+   * Endpoint:
+   * GET /admin/dashboard
    *
-   * @route GET /admin/dashboard
+   * Notes:
+   * - Uses cache interceptor for performance optimization.
+   * - Make sure CacheModule is registered in the module.
+   *
+   * @returns Dashboard analytics response.
    */
   @Get()
   @UseInterceptors(CacheInterceptor)
