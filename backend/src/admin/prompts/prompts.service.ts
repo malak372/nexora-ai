@@ -75,7 +75,7 @@ export class PromptsService {
     const settings = await this.getSystemSettings();
 
     const oldPrompt = settings.ideaPromptTemplate;
-    const newPrompt = body.ideaPromptTemplate.trim();
+    const newPrompt = body.ideaPromptTemplate;
 
     if (oldPrompt === newPrompt) {
       return {

@@ -16,17 +16,11 @@ type AuthenticatedAdmin = {
 /**
  * Controller responsible for managing the data collection process.
  *
- * Allows administrators to:
- * - Start the data collection process.
- * - Stop an active data collection process.
- * - Monitor the current data collection status.
- *
- * Security:
- * - Requires JWT authentication.
- * - Restricted to ADMIN role only.
- *
  * Base route:
  * /admin/data-collection
+ *
+ * Access:
+ * Admin only.
  *
  * @author Malak
  */
@@ -50,7 +44,7 @@ export class DataCollectionController {
   }
 
   /**
-   * Stops the currently running data collection process.
+   * Stops the current data collection process.
    *
    * Endpoint:
    * POST /admin/data-collection/stop
@@ -61,7 +55,7 @@ export class DataCollectionController {
   }
 
   /**
-   * Retrieves the current status of the data collection process.
+   * Returns the current data collection status.
    *
    * Endpoint:
    * GET /admin/data-collection/status

@@ -28,13 +28,13 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  * - Paginated domain listing.
  * - Search by domain name.
  * - Filtering by active status and date range.
- * - Safe sorting using whitelisted fields.
- * - Domain summary reports.
- * - Chart-ready domain analytics.
+ * - Safe sorting.
+ * - Summary reports.
+ * - Chart-ready analytics.
  * - Domain creation.
  * - Domain update.
  * - Soft deactivation.
- * - Audit logging for admin actions.
+ * - Audit logging.
  *
  * @author Malak
  */
@@ -65,11 +65,28 @@ export class DomainsService {
   }
 
   /**
-   * Retrieves domains with optional searching, date filtering,
-   * active status filtering, sorting, and pagination.
-   *
-   * Endpoint:
-   * GET /admin/domains
+   * Adds a minimum createdAt date while preserving existing date filters.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.DomainWhereInput,
+    gte: Date,
+  ): Prisma.DomainWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
+   * Retrieves domains with searching, filtering, sorting, and pagination.
    */
   async getDomains(query: GetDomainsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -117,9 +134,6 @@ export class DomainsService {
 
   /**
    * Retrieves domain summary statistics.
-   *
-   * Endpoint:
-   * GET /admin/domains/summary
    */
   async getDomainsSummary(query: GetDomainsQueryDto) {
     const where = this.buildDomainsWhere(query);
@@ -130,6 +144,9 @@ export class DomainsService {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
+
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalDomains,
@@ -155,23 +172,9 @@ export class DomainsService {
         },
       }),
 
-      this.prisma.domain.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: todayStart,
-          },
-        },
-      }),
+      this.prisma.domain.count({ where: todayWhere }),
 
-      this.prisma.domain.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: monthStart,
-          },
-        },
-      }),
+      this.prisma.domain.count({ where: monthWhere }),
 
       this.prisma.domain.count({
         where: {
@@ -195,13 +198,6 @@ export class DomainsService {
 
   /**
    * Retrieves chart-ready domain analytics.
-   *
-   * Endpoint:
-   * GET /admin/domains/charts
-   *
-   * Charts include:
-   * - Domains grouped by active status.
-   * - Top domains by generated ideas count.
    */
   async getDomainsCharts(query: GetDomainsQueryDto) {
     const where = this.buildDomainsWhere(query);
@@ -261,9 +257,6 @@ export class DomainsService {
 
   /**
    * Creates a new domain and records the action in audit logs.
-   *
-   * Endpoint:
-   * POST /admin/domains
    */
   async createDomain(body: CreateDomainDto, adminId: string) {
     const existingDomain = await this.prisma.domain.findUnique({
@@ -303,9 +296,6 @@ export class DomainsService {
 
   /**
    * Updates an existing domain and records the change in audit logs.
-   *
-   * Endpoint:
-   * PATCH /admin/domains/:id
    */
   async updateDomain(
     id: string,
@@ -352,12 +342,8 @@ export class DomainsService {
         id,
       },
       data: {
-        ...(body.name !== undefined && {
-          name: body.name,
-        }),
-        ...(body.isActive !== undefined && {
-          isActive: body.isActive,
-        }),
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.isActive !== undefined && { isActive: body.isActive }),
       },
     });
 
@@ -384,12 +370,7 @@ export class DomainsService {
   }
 
   /**
-   * Deactivates a domain and records the action in audit logs.
-   *
-   * This performs a soft deactivation by setting isActive to false.
-   *
-   * Endpoint:
-   * DELETE /admin/domains/:id
+   * Deactivates a domain using soft deactivation.
    */
   async deactivateDomain(id: string, adminId: string) {
     const domain = await this.prisma.domain.findUnique({

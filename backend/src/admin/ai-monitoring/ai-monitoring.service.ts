@@ -21,19 +21,12 @@ import {
  * Service responsible for monitoring AI and external API logs.
  *
  * Provides admin-only functionality for:
- * - Viewing paginated AI/API logs.
+ * - Viewing paginated API logs.
  * - Filtering logs by provider, request type, success status, and date range.
  * - Searching logs by endpoint, request ID, and error message.
  * - Sorting logs safely using whitelisted fields.
  * - Generating summary reports.
  * - Generating chart-ready analytics.
- *
- * This service supports the Admin requirement for monitoring:
- * - Total AI requests.
- * - Request success and failure.
- * - API response times.
- * - Estimated AI costs.
- * - AI logs filtered by provider and request type.
  *
  * @author Malak
  */
@@ -42,12 +35,11 @@ export class AiMonitoringService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Builds the shared Prisma where filter for AI monitoring.
+   * Builds a shared Prisma where filter for AI monitoring endpoints.
    *
-   * This keeps logs, summary, and charts consistent
-   * when filters are applied.
+   * This keeps logs, summary, and charts consistent when filters are applied.
    *
-   * @param query - AI logs query filters.
+   * @param query - AI monitoring filters.
    * @returns Prisma ExternalApiLog where input.
    */
   private buildAiLogsWhere(
@@ -68,17 +60,19 @@ export class AiMonitoringService {
   }
 
   /**
-   * Retrieves AI / External API logs with:
+   * Retrieves paginated external API logs.
+   *
+   * Supports:
    * - Pagination.
    * - Filtering.
-   * - Search.
-   * - Sorting.
+   * - Searching.
+   * - Safe sorting.
    *
    * Endpoint:
-   * GET /admin/ai/logs
+   * GET /admin/ai-monitoring/logs
    *
-   * @param query - DTO containing filters and pagination options.
-   * @returns Paginated AI/API logs with metadata.
+   * @param query - Query filters and pagination options.
+   * @returns Paginated API logs with metadata.
    */
   async getAiLogs(query: GetAiLogsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -149,22 +143,13 @@ export class AiMonitoringService {
   }
 
   /**
-   * Retrieves a summary report for AI and external API usage.
+   * Retrieves a summary report for external API usage.
    *
    * Endpoint:
-   * GET /admin/ai/summary
-   *
-   * Summary includes:
-   * - Total API requests.
-   * - Successful API requests.
-   * - Failed API requests.
-   * - Success rate.
-   * - Error rate.
-   * - Average response time.
-   * - Estimated total API cost.
+   * GET /admin/ai-monitoring/summary
    *
    * @param query - Optional filters used to scope the summary.
-   * @returns AI monitoring summary statistics.
+   * @returns Summary statistics.
    */
   async getAiSummary(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
@@ -211,14 +196,8 @@ export class AiMonitoringService {
       totalRequests,
       successfulRequests,
       failedRequests,
-      successRate: calculateSuccessRate(
-        successfulRequests,
-        totalRequests,
-      ),
-      errorRate: calculateSuccessRate(
-        failedRequests,
-        totalRequests,
-      ),
+      successRate: calculateSuccessRate(successfulRequests, totalRequests),
+      errorRate: calculateSuccessRate(failedRequests, totalRequests),
       averageResponseTime: toNumber(
         responseTimeAggregate._avg.responseTimeMs,
       ),
@@ -227,68 +206,59 @@ export class AiMonitoringService {
   }
 
   /**
-   * Retrieves chart-ready AI monitoring analytics.
+   * Retrieves chart-ready external API monitoring analytics.
    *
    * Endpoint:
-   * GET /admin/ai/charts
-   *
-   * Charts include:
-   * - Requests by provider.
-   * - Requests by request type.
-   * - Success vs failed requests.
+   * GET /admin/ai-monitoring/charts
    *
    * @param query - Optional filters used to scope the charts.
-   * @returns Chart-ready AI monitoring data.
+   * @returns Chart-ready analytics data.
    */
   async getAiCharts(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
 
-    const [
-      requestsByProvider,
-      requestsByType,
-      successCount,
-      failedCount,
-    ] = await Promise.all([
-      this.prisma.externalApiLog.groupBy({
-        by: ['provider'],
-        where,
-        _count: {
-          provider: true,
-        },
-        orderBy: {
+    const [requestsByProvider, requestsByType, successCount, failedCount] =
+      await Promise.all([
+        this.prisma.externalApiLog.groupBy({
+          by: ['provider'],
+          where,
           _count: {
-            provider: 'desc',
+            provider: true,
           },
-        },
-      }),
+          orderBy: {
+            _count: {
+              provider: 'desc',
+            },
+          },
+        }),
 
-      this.prisma.externalApiLog.groupBy({
-        by: ['requestType'],
-        where,
-        _count: {
-          requestType: true,
-        },
-        orderBy: {
+        this.prisma.externalApiLog.groupBy({
+          by: ['requestType'],
+          where,
           _count: {
-            requestType: 'desc',
+            requestType: true,
           },
-        },
-      }),
+          orderBy: {
+            _count: {
+              requestType: 'desc',
+            },
+          },
+        }),
 
-      this.prisma.externalApiLog.count({
-        where: {
-          ...where,
-          isSuccess: true,
-        },
-      }),
+        this.prisma.externalApiLog.count({
+          where: {
+            ...where,
+            isSuccess: true,
+          },
+        }),
 
-      this.prisma.externalApiLog.count({
-        where: {
-          ...where,
-          isSuccess: false,
-        },
-      }),
-    ]);
+        this.prisma.externalApiLog.count({
+          where: {
+            ...where,
+            isSuccess: false,
+          },
+        }),
+      ]);
 
     return {
       requestsByProvider: requestsByProvider.map((item) => ({
@@ -303,7 +273,7 @@ export class AiMonitoringService {
 
       successFailureChart: [
         {
-          label: 'SUCCESS',
+          label: 'SUCCESSFUL',
           count: successCount,
         },
         {

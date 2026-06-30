@@ -14,10 +14,7 @@ import {
  * used to build the users growth chart.
  */
 type UsersGrowthRow = {
-  /** User creation date grouped by day. */
   date: Date;
-
-  /** Number of users created on that date. */
   count: number;
 };
 
@@ -48,7 +45,11 @@ export class DashboardService {
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+    );
 
     const startOfLast30Days = new Date(now);
     startOfLast30Days.setDate(now.getDate() - 30);
@@ -340,7 +341,7 @@ export class DashboardService {
       failedAiRequests,
       aiErrorRate,
       averageResponseTime: toNumber(aiStats._avg.responseTimeMs),
-      openAiCost: toNumber(aiStats._sum.costEstimate),
+      aiCost: toNumber(aiStats._sum.costEstimate),
 
       domainsStatus: {
         active: activeDomainsCount,
