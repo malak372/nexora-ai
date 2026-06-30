@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsInt,
   IsString,
@@ -13,22 +14,8 @@ import {
  * Used with:
  * POST /admin/credits/adjust
  *
- * This DTO allows administrators to manually
- * add or deduct credits from a user's account.
- *
- * Validation Rules:
- * - userId must be a valid UUID.
- * - amount must be a non-zero integer.
- *   - Positive values add credits.
- *   - Negative values deduct credits.
- * - description must contain between 5 and 500 characters.
- *
- * Example:
- * {
- *   "userId": "c9d7b1a6-8d4e-4d15-b6a2-91f6d5f3a8b2",
- *   "amount": 10,
- *   "description": "Compensation for system issue"
- * }
+ * Positive amount adds credits.
+ * Negative amount deducts credits.
  *
  * @author Malak
  */
@@ -42,10 +29,9 @@ export class AdjustUserCreditsDto {
   /**
    * Credit adjustment amount.
    *
-   * Positive values add credits.
-   * Negative values deduct credits.
-   * Zero is not allowed.
+   * Must be a non-zero integer.
    */
+  @Type(() => Number)
   @IsInt()
   @NotEquals(0)
   amount!: number;

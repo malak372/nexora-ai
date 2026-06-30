@@ -1,199 +1,60 @@
-
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { AiMonitoringService } from './ai-monitoring.service';
 import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
-
-import {
-  buildPagination,
-  buildDateFilter,
-  buildSearchFilter,
-  buildOrderBy,
-  buildExactFilter,
-} from '../../utilities/base-query/builder';
-
-import {
-  calculateSuccessRate,
-  toNumber,
-} from '../../utilities/analytics/analytics.helper';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 /**
- * Service responsible for monitoring AI and external API logs.
+ * Controller responsible for AI and external API monitoring.
  *
- * Provides:
- * - Paginated AI/API logs.
- * - Filtering by provider, request type, success status, and date range.
- * - Search by endpoint, request ID, and error message.
- * - Safe sorting using whitelisted fields.
- * - AI monitoring summary reports.
+ * Base route:
+ * /admin/ai-monitoring
  *
- * This is an admin-only monitoring module used for debugging,
- * analytics, performance tracking, cost monitoring, and system observability.
+ * Access:
+ * Admin only.
  *
  * @author Malak
  */
-@Injectable()
-export class AiMonitoringService {
-  constructor(private readonly prisma: PrismaService) { }
+@Controller('admin/ai-monitoring')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
+export class AiMonitoringController {
+  constructor(
+    private readonly aiMonitoringService: AiMonitoringService,
+  ) {}
 
   /**
-   * Retrieves AI / External API logs with:
-   * - Pagination
-   * - Filtering
-   * - Search
-   * - Sorting
+   * Retrieves paginated external API logs.
    *
-   * @param query - DTO containing filters and pagination options.
-   * @returns Paginated AI/API logs with metadata.
+   * Endpoint:
+   * GET /admin/ai-monitoring/logs
    */
-  async getAiLogs(query: GetAiLogsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
-
-    const where: Prisma.ExternalApiLogWhereInput = {
-      ...buildDateFilter(query),
-
-      ...buildSearchFilter(
-        ['endpoint', 'requestId', 'errorMessage'],
-        query.search,
-      ),
-
-      ...buildExactFilter('provider', query.provider),
-      ...buildExactFilter('requestType', query.requestType),
-      ...buildExactFilter('isSuccess', query.isSuccess),
-    };
-
-    const orderBy = buildOrderBy(
-      query,
-      [
-        'provider',
-        'requestType',
-        'isSuccess',
-        'statusCode',
-        'responseTimeMs',
-        'costEstimate',
-        'createdAt',
-      ] as const,
-      'createdAt',
-    );
-
-    const [logs, total] = await Promise.all([
-      this.prisma.externalApiLog.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        select: {
-          id: true,
-          provider: true,
-          endpoint: true,
-          requestId: true,
-          requestType: true,
-          statusCode: true,
-          isSuccess: true,
-          responseTimeMs: true,
-          errorMessage: true,
-          costEstimate: true,
-          createdAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          idea: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-      }),
-
-      this.prisma.externalApiLog.count({ where }),
-    ]);
-
-    return {
-      data: logs,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+  @Get('logs')
+  getAiLogs(@Query() query: GetAiLogsQueryDto) {
+    return this.aiMonitoringService.getAiLogs(query);
   }
 
   /**
-   * Retrieves a summary report for AI and external API usage.
+   * Retrieves external API usage summary.
    *
-   * This method is used by:
-   * GET /admin/ai/summary
-   *
-   * Summary includes:
-   * - Total API requests.
-   * - Successful API requests.
-   * - Failed API requests.
-   * - Success rate.
-   * - Error rate.
-   * - Average response time.
-   * - Estimated total API cost.
-   *
-   * @returns AI monitoring summary statistics.
+   * Endpoint:
+   * GET /admin/ai-monitoring/summary
    */
-  async getAiSummary() {
-    const [
-      totalRequests,
-      successfulRequests,
-      failedRequests,
-      responseTimeAggregate,
-      costAggregate,
-    ] = await Promise.all([
-      this.prisma.externalApiLog.count(),
+  @Get('summary')
+  getAiSummary(@Query() query: GetAiLogsQueryDto) {
+    return this.aiMonitoringService.getAiSummary(query);
+  }
 
-      this.prisma.externalApiLog.count({
-        where: { isSuccess: true },
-      }),
-
-      this.prisma.externalApiLog.count({
-        where: { isSuccess: false },
-      }),
-
-      this.prisma.externalApiLog.aggregate({
-        _avg: {
-          responseTimeMs: true,
-        },
-      }),
-
-      this.prisma.externalApiLog.aggregate({
-        _sum: {
-          costEstimate: true,
-        },
-      }),
-    ]);
-
-    const successRate = calculateSuccessRate(
-      successfulRequests,
-      totalRequests,
-    );
-
-    const errorRate = calculateSuccessRate(
-      failedRequests,
-      totalRequests,
-    );
-
-    return {
-      totalRequests,
-      successfulRequests,
-      failedRequests,
-      successRate,
-      errorRate,
-      averageResponseTime: toNumber(
-        responseTimeAggregate._avg.responseTimeMs,
-      ),
-      totalCost: toNumber(costAggregate._sum.costEstimate),
-    };
+  /**
+   * Retrieves chart-ready external API analytics.
+   *
+   * Endpoint:
+   * GET /admin/ai-monitoring/charts
+   */
+  @Get('charts')
+  getAiCharts(@Query() query: GetAiLogsQueryDto) {
+    return this.aiMonitoringService.getAiCharts(query);
   }
 }

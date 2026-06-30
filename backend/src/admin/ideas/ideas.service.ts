@@ -35,10 +35,11 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class IdeasService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Builds the shared Prisma where filter for ideas.
+   * Builds the shared Prisma where filter used by
+   * idea listing, summaries, charts, and reports.
    */
   private buildIdeasWhere(
     query: GetIdeasQueryDto,
@@ -57,6 +58,31 @@ export class IdeasService {
       ...buildExactFilter('unlockMethod', query.unlockMethod),
       ...buildExactFilter('isUnlocked', isUnlocked),
       ...buildStringFilter('selectedRegion', query.region),
+    };
+  }
+
+  /**
+   * Adds a minimum createdAt date while preserving existing date filters.
+   *
+   * Used for calculating:
+   * - Ideas created today.
+   * - Ideas created this month.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.IdeaWhereInput,
+    gte: Date,
+  ): Prisma.IdeaWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
     };
   }
 
@@ -154,6 +180,9 @@ export class IdeasService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
+
     const [
       totalIdeas,
       todayIdeas,
@@ -167,20 +196,8 @@ export class IdeasService {
       creditGenerationUnlocks,
     ] = await Promise.all([
       this.prisma.idea.count({ where }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          createdAt: { gte: todayStart },
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          createdAt: { gte: monthStart },
-        },
-      }),
+      this.prisma.idea.count({ where: todayWhere }),
+      this.prisma.idea.count({ where: monthWhere }),
 
       this.prisma.idea.count({
         where: {
@@ -393,29 +410,11 @@ export class IdeasService {
   }
 
   /**
-  * Retrieves detailed information about a specific project idea.
-  *
-  * Endpoint:
-  * GET /admin/ideas/:id
-  *
-  * Returns:
-  * - Basic idea information.
-  * - User information.
-  * - Domain and platform information.
-  * - Related payments.
-  * - Related credit transactions.
-  * - Generated outputs.
-  * - Linked comments.
-  * - Chat sessions and messages.
-  *
-  * Uses select instead of broad include:true to avoid returning
-  * unnecessary database fields.
-  *
-  * @param id - Unique idea identifier.
-  * @returns Detailed idea information.
-  *
-  * @throws NotFoundException if the idea does not exist.
-  */
+   * Retrieves detailed information about a specific project idea.
+   *
+   * Endpoint:
+   * GET /admin/ideas/:id
+   */
   async getIdeaById(id: string) {
     const idea = await this.prisma.idea.findUnique({
       where: { id },

@@ -65,6 +65,31 @@ export class PlatformsService {
   }
 
   /**
+   * Adds a minimum createdAt date while preserving existing date filters.
+   *
+   * Used for:
+   * - Platforms created today.
+   * - Platforms created this month.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.PlatformWhereInput,
+    gte: Date,
+  ): Prisma.PlatformWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
    * Retrieves platforms with optional searching, date filtering,
    * active status filtering, sorting, and pagination.
    *
@@ -132,6 +157,9 @@ export class PlatformsService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
+
     const [
       totalPlatforms,
       activePlatforms,
@@ -157,23 +185,9 @@ export class PlatformsService {
         },
       }),
 
-      this.prisma.platform.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: todayStart,
-          },
-        },
-      }),
+      this.prisma.platform.count({ where: todayWhere }),
 
-      this.prisma.platform.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: monthStart,
-          },
-        },
-      }),
+      this.prisma.platform.count({ where: monthWhere }),
 
       this.prisma.platform.count({
         where: {
@@ -210,11 +224,6 @@ export class PlatformsService {
    *
    * Endpoint:
    * GET /admin/platforms/charts
-   *
-   * Charts include:
-   * - Platforms grouped by active status.
-   * - Top platforms by collected comments.
-   * - Top platforms by generated ideas.
    */
   async getPlatformsCharts(query: GetPlatformsQueryDto) {
     const where = this.buildPlatformsWhere(query);

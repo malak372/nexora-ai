@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+} from '@nestjs/common';
 import {
   AdminAction,
   AdminTargetType,
@@ -25,32 +29,27 @@ export type DataCollectionState = {
 /**
  * Service responsible for managing manual data collection operations.
  *
- * This service currently acts as a manual trigger placeholder for
- * the future real data collection job.
- *
  * Current behavior:
+ * - Starts data collection as a background task.
  * - Prevents duplicate running jobs.
- * - Marks the process as RUNNING.
- * - Creates an ExternalApiLog entry for monitoring.
- * - Marks the process as FINISHED immediately.
- * - Records admin actions in audit logs.
- *
- * Future behavior:
- * - Replace the placeholder section with real platform data collection.
- * - Collect comments/posts from supported public sources.
- * - Store comments with platform, language, region, and source metadata.
- * - Run NLP analysis when needed.
+ * - Allows stopping a running job.
+ * - Tracks in-memory collection status.
+ * - Creates External API logs.
+ * - Creates Admin Audit Logs.
  *
  * Note:
- * The status is stored in memory and resets when the backend restarts.
- * For production-level job tracking, store job status in the database.
+ * This is still a prepared placeholder for the future real data collection job.
+ * For production-level tracking, data collection jobs should be stored
+ * in the database instead of memory.
  *
  * @author Malak
  */
 @Injectable()
 export class DataCollectionService {
   /**
-   * Current in-memory status of the data collection process.
+   * Current in-memory collection state.
+   *
+   * This value resets when the backend restarts.
    */
   private dataCollectionStatus: DataCollectionState = {
     status: 'IDLE',
@@ -58,43 +57,96 @@ export class DataCollectionService {
     message: 'Data collection has not started yet',
   };
 
+  /**
+   * Indicates whether the current running job was requested to stop.
+   */
+  private shouldStop = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
   /**
+   * Updates the in-memory data collection status.
+   *
+   * @param status New collection status.
+   * @param message Human-readable status message.
+   */
+  private updateStatus(
+    status: DataCollectionStatus,
+    message: string,
+  ): void {
+    this.dataCollectionStatus = {
+      status,
+      lastRun: new Date(),
+      message,
+    };
+  }
+
+  /**
    * Starts the data collection process manually.
+   *
+   * This method starts a background task and returns immediately,
+   * which allows the status endpoint to show RUNNING
+   * and the stop endpoint to work correctly.
    *
    * Endpoint:
    * POST /admin/data-collection/run
    *
-   * @param adminId - ID of the administrator who started the collection.
-   * @returns Updated data collection status.
+   * @param adminId ID of the admin who started the process.
+   * @returns Current collection status after starting.
    */
   async runDataCollection(adminId: string) {
     if (this.dataCollectionStatus.status === 'RUNNING') {
       throw new BadRequestException('Data collection is already running');
     }
 
-    const startTime = Date.now();
+    this.shouldStop = false;
 
-    this.dataCollectionStatus = {
-      status: 'RUNNING',
-      lastRun: new Date(),
-      message: 'Data collection started',
+    this.updateStatus(
+      'RUNNING',
+      'Data collection started in the background',
+    );
+
+    void this.executeDataCollection(adminId);
+
+    return {
+      message: 'Data collection started successfully',
+      status: this.dataCollectionStatus,
     };
+  }
+
+  /**
+   * Executes the actual data collection process in the background.
+   *
+   * Current placeholder behavior:
+   * - Simulates future collection steps.
+   * - Checks if stop was requested.
+   * - Logs successful or failed execution.
+   *
+   * Future real implementation:
+   * - Load active platforms.
+   * - Fetch public posts/comments where permitted.
+   * - Store comments with platform, language, region, and source URL.
+   * - Trigger NLP preprocessing or analysis.
+   *
+   * @param adminId ID of the admin who started the process.
+   */
+  private async executeDataCollection(adminId: string): Promise<void> {
+    const startTime = Date.now();
 
     try {
       /**
-       * Placeholder for future real collection logic.
-       *
-       * Future steps:
-       * - Fetch comments from configured platforms.
-       * - Store collected comments.
-       * - Run NLP preprocessing or analysis.
-       * - Update collection statistics.
+       * Placeholder delay to simulate a long-running collection job.
+       * Replace this block with real collection logic later.
        */
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      if (this.shouldStop) {
+        await this.logStoppedCollection(adminId, startTime);
+        return;
+      }
 
       const responseTimeMs = Date.now() - startTime;
 
@@ -110,11 +162,10 @@ export class DataCollectionService {
         },
       });
 
-      this.dataCollectionStatus = {
-        status: 'FINISHED',
-        lastRun: new Date(),
-        message: 'Data collection placeholder finished successfully',
-      };
+      this.updateStatus(
+        'FINISHED',
+        'Data collection placeholder finished successfully',
+      );
 
       await this.auditLogsService.createLog({
         adminId,
@@ -128,19 +179,10 @@ export class DataCollectionService {
           externalApiLogId: apiLog.id,
         },
       });
-
-      return {
-        message: 'Data collection finished successfully',
-        status: this.dataCollectionStatus,
-      };
     } catch (error) {
       const responseTimeMs = Date.now() - startTime;
 
-      this.dataCollectionStatus = {
-        status: 'FAILED',
-        lastRun: new Date(),
-        message: 'Data collection failed',
-      };
+      this.updateStatus('FAILED', 'Data collection failed');
 
       const apiLog = await this.prisma.externalApiLog.create({
         data: {
@@ -149,7 +191,7 @@ export class DataCollectionService {
           requestType: ApiRequestType.DATA_COLLECTION,
           endpoint: '/admin/data-collection/run',
           isSuccess: false,
-          statusCode: 500,
+          statusCode: error instanceof HttpException ? error.getStatus() : 500,
           responseTimeMs,
           errorMessage:
             error instanceof Error
@@ -168,38 +210,43 @@ export class DataCollectionService {
           message: this.dataCollectionStatus.message,
           responseTimeMs,
           externalApiLogId: apiLog.id,
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : 'Unknown data collection error',
         },
       });
-
-      throw error;
     }
   }
 
   /**
    * Stops the currently running data collection process.
    *
+   * The actual background job checks the shouldStop flag and
+   * then records the stop action safely.
+   *
    * Endpoint:
    * POST /admin/data-collection/stop
    *
-   * In the placeholder version, runDataCollection finishes immediately,
-   * so this endpoint is mainly prepared for future long-running jobs.
+   * @param adminId ID of the admin who requested stopping the process.
+   * @returns Current collection status.
    */
   async stopDataCollection(adminId: string) {
     if (this.dataCollectionStatus.status !== 'RUNNING') {
       throw new BadRequestException('Data collection is not running');
     }
 
-    this.dataCollectionStatus = {
-      status: 'STOPPED',
-      lastRun: new Date(),
-      message: 'Data collection stopped by admin',
-    };
+    this.shouldStop = true;
+
+    this.updateStatus(
+      'STOPPED',
+      'Data collection stop request received',
+    );
 
     await this.auditLogsService.createLog({
       adminId,
       action: AdminAction.ADMIN_STOP_DATA_COLLECTION,
       targetType: AdminTargetType.DATA_COLLECTION,
-      targetId: 'DATA_COLLECTION',
       newValue: {
         status: this.dataCollectionStatus.status,
         message: this.dataCollectionStatus.message,
@@ -208,9 +255,54 @@ export class DataCollectionService {
     });
 
     return {
-      message: 'Data collection stopped successfully',
+      message: 'Data collection stop request submitted successfully',
       status: this.dataCollectionStatus,
     };
+  }
+
+  /**
+   * Logs a stopped data collection job after the background task
+   * detects that stop was requested.
+   *
+   * @param adminId ID of the admin who started the process.
+   * @param startTime Timestamp when the process started.
+   */
+  private async logStoppedCollection(
+    adminId: string,
+    startTime: number,
+  ): Promise<void> {
+    const responseTimeMs = Date.now() - startTime;
+
+    const apiLog = await this.prisma.externalApiLog.create({
+      data: {
+        userId: adminId,
+        provider: ApiProvider.OTHER,
+        requestType: ApiRequestType.DATA_COLLECTION,
+        endpoint: '/admin/data-collection/run',
+        isSuccess: false,
+        statusCode: 499,
+        responseTimeMs,
+        errorMessage: 'Data collection stopped by admin',
+      },
+    });
+
+    this.updateStatus(
+      'STOPPED',
+      'Data collection stopped by admin',
+    );
+
+    await this.auditLogsService.createLog({
+      adminId,
+      action: AdminAction.ADMIN_STOP_DATA_COLLECTION,
+      targetType: AdminTargetType.DATA_COLLECTION,
+      targetId: apiLog.id,
+      newValue: {
+        status: this.dataCollectionStatus.status,
+        message: this.dataCollectionStatus.message,
+        responseTimeMs,
+        externalApiLogId: apiLog.id,
+      },
+    });
   }
 
   /**
@@ -218,6 +310,8 @@ export class DataCollectionService {
    *
    * Endpoint:
    * GET /admin/data-collection/status
+   *
+   * @returns Current collection state.
    */
   getDataCollectionStatus(): DataCollectionState {
     return this.dataCollectionStatus;

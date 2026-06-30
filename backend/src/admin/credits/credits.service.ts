@@ -9,6 +9,7 @@ import {
   AdminTargetType,
   CreditTransactionType,
   Prisma,
+  UserRole,
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -71,9 +72,6 @@ export class CreditsService {
 
   /**
    * Retrieves paginated credit transaction history.
-   *
-   * Endpoint:
-   * GET /admin/credits/history
    */
   async getCreditHistory(query: GetCreditHistoryQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -141,9 +139,6 @@ export class CreditsService {
 
   /**
    * Retrieves credit summary statistics.
-   *
-   * Endpoint:
-   * GET /admin/credits/summary
    */
   async getCreditsSummary(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
@@ -211,9 +206,6 @@ export class CreditsService {
 
   /**
    * Retrieves chart-ready credit analytics.
-   *
-   * Endpoint:
-   * GET /admin/credits/charts
    */
   async getCreditsCharts(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
@@ -247,9 +239,6 @@ export class CreditsService {
 
   /**
    * Exports filtered credit transaction history as CSV.
-   *
-   * Endpoint:
-   * GET /admin/credits/export/csv
    */
   async exportCreditsCsv(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
@@ -340,20 +329,14 @@ export class CreditsService {
    * Manually adjusts a user's credit balance.
    *
    * Rules:
+   * - Only USER accounts can have credits adjusted.
    * - Positive amount adds credits.
    * - Negative amount deducts credits.
    * - Final balance cannot be negative.
    * - Account status becomes PREMIUM when balance > 0.
    * - Account status becomes NORMAL when balance = 0.
-   *
-   * Endpoint:
-   * POST /admin/credits/adjust
    */
   async adjustUserCredits(body: AdjustUserCreditsDto, adminId: string) {
-    if (body.amount === 0) {
-      throw new BadRequestException('Amount cannot be zero');
-    }
-
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: {
@@ -363,6 +346,12 @@ export class CreditsService {
 
       if (!user) {
         throw new NotFoundException('User not found');
+      }
+
+      if (user.role !== UserRole.USER) {
+        throw new BadRequestException(
+          'Credits can only be adjusted for normal users',
+        );
       }
 
       const newBalance = user.creditBalance + body.amount;

@@ -18,14 +18,8 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 /**
  * Service responsible for Admin audit log management.
  *
- * This service allows the system to:
- * - Retrieve audit logs.
- * - Search audit logs.
- * - Filter audit logs by admin, action, target type, target ID, and date.
- * - Sort and paginate audit log records.
- * - Generate audit log summary reports.
- * - Generate chart-ready audit log analytics.
- * - Create audit log records for sensitive admin actions.
+ * Supports retrieving, filtering, searching, sorting,
+ * paginating, summarizing, charting, and creating audit logs.
  *
  * @author Malak
  */
@@ -35,9 +29,6 @@ export class AuditLogsService {
 
   /**
    * Builds the shared Prisma where filter for audit logs.
-   *
-   * This keeps list, summary, and charts consistent
-   * when the same query filters are applied.
    */
   private buildAuditLogsWhere(
     query: GetAuditLogsQueryDto,
@@ -61,11 +52,29 @@ export class AuditLogsService {
   }
 
   /**
-   * Retrieves admin audit logs with optional filtering,
-   * searching, sorting, and pagination.
-   *
-   * Endpoint:
-   * GET /admin/audit-logs
+   * Adds a minimum createdAt date while preserving existing date filters.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.AdminAuditLogWhereInput,
+    gte: Date,
+  ): Prisma.AdminAuditLogWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
+   * Retrieves admin audit logs with filtering, searching,
+   * sorting, and pagination.
    */
   async getAuditLogs(query: GetAuditLogsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -118,9 +127,6 @@ export class AuditLogsService {
 
   /**
    * Retrieves audit log summary reports.
-   *
-   * Endpoint:
-   * GET /admin/audit-logs/summary
    */
   async getAuditLogsSummary(query: GetAuditLogsQueryDto) {
     const where = this.buildAuditLogsWhere(query);
@@ -131,6 +137,9 @@ export class AuditLogsService {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
+
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalLogs,
@@ -143,21 +152,11 @@ export class AuditLogsService {
       this.prisma.adminAuditLog.count({ where }),
 
       this.prisma.adminAuditLog.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: todayStart,
-          },
-        },
+        where: todayWhere,
       }),
 
       this.prisma.adminAuditLog.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: monthStart,
-          },
-        },
+        where: monthWhere,
       }),
 
       this.prisma.adminAuditLog.groupBy({
@@ -224,14 +223,6 @@ export class AuditLogsService {
 
   /**
    * Retrieves chart-ready audit log analytics.
-   *
-   * Endpoint:
-   * GET /admin/audit-logs/charts
-   *
-   * Charts include:
-   * - Logs by action.
-   * - Logs by target type.
-   * - Logs by admin.
    */
   async getAuditLogsCharts(query: GetAuditLogsQueryDto) {
     const where = this.buildAuditLogsWhere(query);
@@ -300,9 +291,7 @@ export class AuditLogsService {
       },
     });
 
-    const adminMap = new Map(
-      admins.map((admin) => [admin.id, admin]),
-    );
+    const adminMap = new Map(admins.map((admin) => [admin.id, admin]));
 
     return {
       logsByAction: logsByAction.map((item) => ({
@@ -316,9 +305,7 @@ export class AuditLogsService {
       })),
 
       logsByAdmin: logsByAdmin.map((item) => {
-        const admin = item.adminId
-          ? adminMap.get(item.adminId)
-          : null;
+        const admin = item.adminId ? adminMap.get(item.adminId) : null;
 
         return {
           label: admin?.fullName ?? admin?.email ?? 'Unknown Admin',
@@ -331,9 +318,6 @@ export class AuditLogsService {
 
   /**
    * Creates a new audit log record.
-   *
-   * This method is called by admin services when an
-   * administrator performs an important action.
    */
   async createLog(data: {
     adminId?: string;

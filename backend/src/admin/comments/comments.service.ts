@@ -26,9 +26,6 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  * - Summary reports for collected comments.
  * - Chart-ready analytics data.
  *
- * Used by the Admin panel to monitor collected community feedback
- * and support comment-based idea generation analytics.
- *
  * @author Malak
  */
 @Injectable()
@@ -37,12 +34,6 @@ export class CommentsService {
 
   /**
    * Builds the shared Prisma where filter for comments.
-   *
-   * This method keeps the comments list, summary, and charts
-   * consistent when the same query filters are applied.
-   *
-   * @param query - Query parameters used for filtering comments.
-   * @returns Prisma CommentWhereInput object.
    */
   private buildCommentsWhere(
     query: GetCommentsQueryDto,
@@ -57,14 +48,29 @@ export class CommentsService {
   }
 
   /**
+   * Adds a minimum createdAt date while preserving existing date filters.
+   */
+  private mergeCreatedAtGte(
+    where: Prisma.CommentWhereInput,
+    gte: Date,
+  ): Prisma.CommentWhereInput {
+    const existingCreatedAt =
+      typeof where.createdAt === 'object' && where.createdAt !== null
+        ? where.createdAt
+        : {};
+
+    return {
+      ...where,
+      createdAt: {
+        ...existingCreatedAt,
+        gte,
+      },
+    };
+  }
+
+  /**
    * Retrieves collected comments with filtering, searching,
    * sorting, and pagination.
-   *
-   * Endpoint:
-   * GET /admin/comments
-   *
-   * @param query - Query parameters for pagination, filtering, searching, and sorting.
-   * @returns Paginated comments list with metadata.
    */
   async getComments(query: GetCommentsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -72,13 +78,7 @@ export class CommentsService {
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'collectedAt',
-        'language',
-        'region',
-        'sentiment',
-        'createdAt',
-      ] as const,
+      ['collectedAt', 'language', 'region', 'sentiment', 'createdAt'] as const,
       'createdAt',
     );
 
@@ -129,20 +129,6 @@ export class CommentsService {
 
   /**
    * Retrieves summary statistics for collected comments.
-   *
-   * Endpoint:
-   * GET /admin/comments/summary
-   *
-   * Summary includes:
-   * - Total comments.
-   * - Comments created today.
-   * - Comments created this month.
-   * - Number of platforms that have comments.
-   * - Number of detected languages.
-   * - Number of detected regions.
-   *
-   * @param query - Optional filters used to scope the summary.
-   * @returns Comment summary statistics.
    */
   async getCommentsSummary(query: GetCommentsQueryDto) {
     const where = this.buildCommentsWhere(query);
@@ -154,6 +140,9 @@ export class CommentsService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
+
     const [
       totalComments,
       todayComments,
@@ -163,24 +152,8 @@ export class CommentsService {
       regionsGroup,
     ] = await Promise.all([
       this.prisma.comment.count({ where }),
-
-      this.prisma.comment.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: todayStart,
-          },
-        },
-      }),
-
-      this.prisma.comment.count({
-        where: {
-          ...where,
-          createdAt: {
-            gte: monthStart,
-          },
-        },
-      }),
+      this.prisma.comment.count({ where: todayWhere }),
+      this.prisma.comment.count({ where: monthWhere }),
 
       this.prisma.comment.groupBy({
         by: ['platformId'],
@@ -234,17 +207,6 @@ export class CommentsService {
 
   /**
    * Retrieves chart-ready analytics for collected comments.
-   *
-   * Endpoint:
-   * GET /admin/comments/charts
-   *
-   * Charts include:
-   * - Comments grouped by platform.
-   * - Comments grouped by language.
-   * - Comments grouped by region.
-   *
-   * @param query - Optional filters used to scope the charts.
-   * @returns Chart-ready comment analytics.
    */
   async getCommentsCharts(query: GetCommentsQueryDto) {
     const where = this.buildCommentsWhere(query);

@@ -10,76 +10,44 @@ import {
 } from '@prisma/client';
 
 /**
- * Represents user growth chart item.
- *
- * @author Malak
+ * DTO representing user growth chart data.
  */
 export class DashboardUserGrowthChartDto {
-  /** Date grouped by day in YYYY-MM-DD format. */
   date!: string;
-
-  /** Number of users registered on that date. */
   count!: number;
 }
 
 /**
- * Represents a dashboard chart item for domains.
- *
- * @author Malak
+ * DTO representing most selected domains chart data.
  */
 export class DashboardDomainChartDto {
-  /** Display label used by frontend charts. */
   label!: string;
-
-  /** Domain identifier. */
   domainId!: string;
-
-  /** Domain display name. */
   domainName!: string | null;
-
-  /** Number of generated ideas for this domain. */
   count!: number;
 }
 
 /**
- * Represents a dashboard chart item for regions.
- *
- * @author Malak
+ * DTO representing most requested regions chart data.
  */
 export class DashboardRegionChartDto {
-  /** Display label used by frontend charts. */
   label!: string;
-
-  /** Selected region name. */
   region!: string | null;
-
-  /** Number of generated ideas for this region. */
   count!: number;
 }
 
 /**
- * Represents a dashboard chart item for platforms.
- *
- * @author Malak
+ * DTO representing most used platforms chart data.
  */
 export class DashboardPlatformChartDto {
-  /** Display label used by frontend charts. */
   label!: string;
-
-  /** Platform identifier. */
   platformId!: string | null;
-
-  /** Platform display name. */
   platformName!: string | null;
-
-  /** Number of generated ideas for this platform. */
   count!: number;
 }
 
 /**
- * Represents a recently registered user item.
- *
- * @author Malak
+ * DTO representing recently registered users.
  */
 export class DashboardRecentUserDto {
   id!: string;
@@ -92,9 +60,7 @@ export class DashboardRecentUserDto {
 }
 
 /**
- * Represents a recent payment item.
- *
- * @author Malak
+ * DTO representing recent payments.
  */
 export class DashboardRecentPaymentDto {
   id!: string;
@@ -114,9 +80,7 @@ export class DashboardRecentPaymentDto {
 }
 
 /**
- * Represents a recent generated idea item.
- *
- * @author Malak
+ * DTO representing recently generated ideas.
  */
 export class DashboardRecentIdeaDto {
   id!: string;
@@ -135,13 +99,11 @@ export class DashboardRecentIdeaDto {
   domain!: {
     id: string;
     name: string;
-  } | null;
+  };
 }
 
 /**
- * Represents a recent complaint item.
- *
- * @author Malak
+ * DTO representing recent complaints.
  */
 export class DashboardRecentComplaintDto {
   id!: string;
@@ -158,9 +120,7 @@ export class DashboardRecentComplaintDto {
 }
 
 /**
- * Represents recent dashboard activity.
- *
- * @author Malak
+ * DTO representing all recent dashboard activity sections.
  */
 export class DashboardRecentActivityDto {
   recentUsers!: DashboardRecentUserDto[];
@@ -170,10 +130,16 @@ export class DashboardRecentActivityDto {
 }
 
 /**
- * DTO representing the Admin Dashboard response.
+ * Main DTO representing the complete admin dashboard response.
  *
- * This DTO matches DashboardService output exactly.
- * All financial and Decimal-based values are returned as plain numbers.
+ * Includes:
+ * - Main system counters.
+ * - Payment and revenue statistics.
+ * - AI usage statistics.
+ * - Domain and platform status summaries.
+ * - Today and monthly statistics.
+ * - Chart-ready analytics.
+ * - Recent platform activity.
  *
  * @author Malak
  */
@@ -193,7 +159,7 @@ export class DashboardResponseDto {
   failedAiRequests!: number;
   aiErrorRate!: number;
   averageResponseTime!: number;
-  openAiCost!: number;
+  aiCost!: number;
 
   domainsStatus!: {
     active: number;
