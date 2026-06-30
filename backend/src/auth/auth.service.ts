@@ -34,6 +34,8 @@ import { MailService } from '../mail/mail.service';
 const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_BYTES = 32;
 const PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = 15;
+const EMAIL_VERIFICATION_TOKEN_BYTES = 32;
+const EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS = 24;
 @Injectable()
 export class AuthService {
   constructor(
@@ -102,6 +104,56 @@ export class AuthService {
     });
 
     return refreshToken;
+  }
+
+  /**
+   * Creates an email verification token and sends
+   * a verification link to the user's email.
+   *
+   * @param userId - User ID.
+   * @param email - User email address.
+   */
+  private async sendEmailVerificationLink(
+    userId: string,
+    email: string,
+  ): Promise<void> {
+    await this.prisma.emailVerificationToken.updateMany({
+      where: {
+        userId,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
+
+    const verificationToken = randomBytes(
+      EMAIL_VERIFICATION_TOKEN_BYTES,
+    ).toString('hex');
+
+    const tokenHash = this.hashToken(verificationToken);
+
+    const expiresAt = new Date();
+    expiresAt.setHours(
+      expiresAt.getHours() + EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS,
+    );
+
+    await this.prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    const frontendUrl =
+      process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
+
+    const verificationLink =
+      `${frontendUrl}/verify-email?email=${encodeURIComponent(email)}` +
+      `&token=${verificationToken}`;
+
+    await this.mailService.sendVerificationEmail(email, verificationLink);
   }
 
   /**
@@ -225,6 +277,11 @@ export class AuthService {
     if (!updatedUser) {
       throw new UnauthorizedException('User not found');
     }
+
+    await this.sendEmailVerificationLink(
+      updatedUser.id,
+      updatedUser.email,
+    );
 
     const accessToken = await this.generateAccessToken(updatedUser);
     const refreshToken = await this.generateRefreshToken(updatedUser.id);
@@ -411,22 +468,22 @@ export class AuthService {
 
     return user;
   }
-/**
- * Changes the authenticated user's password.
- *
- * The current password must be valid, and the new password
- * must be different from the existing one.
- *
- * @param userId - Authenticated user ID.
- * @param dto - Current and new password data.
- * @returns Password change confirmation message.
- *
- * @throws UnauthorizedException if the user does not exist
- * or the account is inactive.
- *
- * @throws BadRequestException if the current password is
- * incorrect or the new password matches the current password.
- */
+  /**
+   * Changes the authenticated user's password.
+   *
+   * The current password must be valid, and the new password
+   * must be different from the existing one.
+   *
+   * @param userId - Authenticated user ID.
+   * @param dto - Current and new password data.
+   * @returns Password change confirmation message.
+   *
+   * @throws UnauthorizedException if the user does not exist
+   * or the account is inactive.
+   *
+   * @throws BadRequestException if the current password is
+   * incorrect or the new password matches the current password.
+   */
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -474,16 +531,16 @@ export class AuthService {
       message: 'Password changed successfully',
     };
   }
-/**
- * Sends a password reset email if the provided email belongs
- * to an active account.
- *
- * For security reasons, this method always returns the same
- * response message whether the email exists or not.
- *
- * @param dto - Forgot password request data.
- * @returns Password reset email confirmation message.
- */
+  /**
+   * Sends a password reset email if the provided email belongs
+   * to an active account.
+   *
+   * For security reasons, this method always returns the same
+   * response message whether the email exists or not.
+   *
+   * @param dto - Forgot password request data.
+   * @returns Password reset email confirmation message.
+   */
   async forgotPassword(dto: ForgotPasswordDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -539,20 +596,20 @@ export class AuthService {
     return response;
   }
 
-/**
- * Resets a user's password using a valid password reset token.
- *
- * The reset token must be valid, unused, and not expired.
- * After a successful password reset, all active refresh tokens
- * are revoked.
- *
- * @param dto - Reset password request data.
- * @returns Password reset confirmation message.
- *
- * @throws BadRequestException if the reset token is invalid,
- * expired, already used, or the new password matches the
- * current password.
- */
+  /**
+   * Resets a user's password using a valid password reset token.
+   *
+   * The reset token must be valid, unused, and not expired.
+   * After a successful password reset, all active refresh tokens
+   * are revoked.
+   *
+   * @param dto - Reset password request data.
+   * @returns Password reset confirmation message.
+   *
+   * @throws BadRequestException if the reset token is invalid,
+   * expired, already used, or the new password matches the
+   * current password.
+   */
   async resetPassword(dto: ResetPasswordDto) {
     const tokenHash = this.hashToken(dto.token);
 
@@ -616,6 +673,80 @@ export class AuthService {
 
     return {
       message: 'Password reset successfully',
+    };
+  }
+/**
+ * Verifies a user's email using a valid verification token.
+ *
+ * The verification token must be valid, unused, and not expired.
+ *
+ * @param email - User email address.
+ * @param token - Plain verification token.
+ * @returns Email verification confirmation message.
+ *
+ * @throws BadRequestException if the request is invalid
+ * or the verification token is expired or already used.
+ */
+  async verifyEmail(email: string, token: string) {
+    if (!email || !token) {
+      throw new BadRequestException('Email and token are required');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        isVerified: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new BadRequestException('Invalid verification request');
+    }
+
+    if (user.isVerified) {
+      return {
+        message: 'Email is already verified',
+      };
+    }
+
+    const tokenHash = this.hashToken(token);
+
+    const storedToken =
+      await this.prisma.emailVerificationToken.findUnique({
+        where: { tokenHash },
+      });
+
+    if (
+      !storedToken ||
+      storedToken.userId !== user.id ||
+      storedToken.usedAt ||
+      storedToken.expiresAt < new Date()
+    ) {
+      throw new BadRequestException(
+        'Invalid or expired verification token',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          isVerified: true,
+        },
+      }),
+
+      this.prisma.emailVerificationToken.update({
+        where: { id: storedToken.id },
+        data: {
+          usedAt: new Date(),
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Email verified successfully',
     };
   }
 }

@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
@@ -26,7 +27,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
  */
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   /**
    * Registers a new user account.
@@ -101,7 +102,7 @@ export class AuthController {
   me(@CurrentUser() user: { id: string }) {
     return this.authService.me(user.id);
   }
-    /**
+  /**
    * Sends a password reset link to the user's email.
    *
    * @param dto - User email.
@@ -121,5 +122,20 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  /**
+   * Verifies a user's email using a verification token.
+   *
+   * @param email - User email address.
+   * @param token - Email verification token.
+   * @returns Email verification confirmation.
+   */
+  @Get('verify-email')
+  verifyEmail(
+    @Query('email') email: string,
+    @Query('token') token: string,
+  ) {
+    return this.authService.verifyEmail(email, token);
   }
 }

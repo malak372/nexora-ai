@@ -20,7 +20,7 @@ import { UserIdeasService } from './services/user-ideas.service';
 import { UserNotificationsService } from './services/user-notifications.service';
 import { UserPaymentsService } from './services/user-payments.service';
 import { UserProfileService } from './services/user-profile.service';
-import { UserSummaryService } from './services/user-summary.service';
+import { UserSummaryService } from './services/user-dashboard.service';
 
 /**
  * Controller responsible for authenticated user management operations.

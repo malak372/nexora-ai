@@ -7,7 +7,7 @@ import { UserPaymentsService } from './services/user-payments.service';
 import { UserIdeasService } from './services/user-ideas.service';
 import { UserCommonService } from './services/user-common.service';
 import { UserNotificationsService } from './services/user-notifications.service';
-import { UserSummaryService } from './services/user-summary.service';
+import { UserSummaryService } from './services/user-dashboard.service';
 import { UserActivityService } from './services/user-activity.service';
 
 /**
