@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -17,23 +18,36 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ResendVerificationEmailDto } from './dto/resend-verification-email.dto';
 
 /**
- * Handles authentication operations such as registration,
- * login, token refresh, logout, password changes,
- * and retrieving the current user.
+ * Controller responsible for authentication endpoints.
+ *
+ * Provides APIs for:
+ * - User registration and login.
+ * - JWT refresh and logout.
+ * - Authenticated user profile retrieval.
+ * - Password change and password reset flows.
+ * - Email verification and verification email resend.
+ *
+ * Sensitive endpoints such as login, forgot password,
+ * and resend verification are rate-limited to reduce abuse.
+ *
+ * Base route:
+ * /auth
  *
  * @author Eman
  */
-@Controller('api/v1/auth')
+@Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
 
   /**
-   * Registers a new user account.
+   * Registers a new user account and sends an email verification link.
    *
    * @param dto - User registration data.
-   * @returns Newly registered user with authentication tokens.
+   * @returns Registered user data, authentication tokens,
+   * and transferred guest ideas count.
    */
   @Post('register')
   register(@Body() dto: RegisterDto) {
@@ -41,20 +55,24 @@ export class AuthController {
   }
 
   /**
-   * Authenticates a user.
+   * Authenticates an active and verified user.
+   *
+   * Rate limit:
+   * - 5 requests per minute.
    *
    * @param dto - User login credentials.
-   * @returns Access and refresh tokens.
+   * @returns Access token, refresh token, and user data.
    */
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
   /**
-   * Generates a new access token using a valid refresh token.
+   * Refreshes authentication tokens using a valid refresh token.
    *
-   * @param dto - Refresh token request.
+   * @param dto - Refresh token request data.
    * @returns New access token and refresh token.
    */
   @Post('refresh')
@@ -63,12 +81,10 @@ export class AuthController {
   }
 
   /**
-   * Logs out the authenticated user.
-   *
-   * Invalidates the provided refresh token.
+   * Logs out the user by revoking the provided refresh token.
    *
    * @param dto - Refresh token to revoke.
-   * @returns Logout confirmation.
+   * @returns Logout confirmation message.
    */
   @Post('logout')
   logout(@Body() dto: RefreshDto) {
@@ -78,9 +94,11 @@ export class AuthController {
   /**
    * Changes the authenticated user's password.
    *
-   * @param user - Authenticated user extracted from the JWT token.
+   * Requires JWT authentication.
+   *
+   * @param user - Authenticated user extracted from JWT.
    * @param dto - Current and new password data.
-   * @returns Password change confirmation.
+   * @returns Password change confirmation message.
    */
   @UseGuards(JwtAuthGuard)
   @Patch('change-password')
@@ -92,22 +110,29 @@ export class AuthController {
   }
 
   /**
-   * Returns the authenticated user's information.
+   * Returns the authenticated user's profile.
    *
-   * @param user - Authenticated user extracted from the JWT token.
-   * @returns Authenticated user profile.
+   * Requires JWT authentication.
+   *
+   * @param user - Authenticated user extracted from JWT.
+   * @returns Authenticated user profile data.
    */
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@CurrentUser() user: { id: string }) {
     return this.authService.me(user.id);
   }
+
   /**
    * Sends a password reset link to the user's email.
    *
-   * @param dto - User email.
-   * @returns Password reset request confirmation.
+   * Rate limit:
+   * - 3 requests per minute.
+   *
+   * @param dto - User email address.
+   * @returns Password reset request confirmation message.
    */
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
@@ -116,8 +141,8 @@ export class AuthController {
   /**
    * Resets the user's password using a valid reset token.
    *
-   * @param dto - Reset token and new password.
-   * @returns Password reset confirmation.
+   * @param dto - Reset token and new password data.
+   * @returns Password reset confirmation message.
    */
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
@@ -129,7 +154,7 @@ export class AuthController {
    *
    * @param email - User email address.
    * @param token - Email verification token.
-   * @returns Email verification confirmation.
+   * @returns Email verification confirmation message.
    */
   @Get('verify-email')
   verifyEmail(
@@ -137,5 +162,22 @@ export class AuthController {
     @Query('token') token: string,
   ) {
     return this.authService.verifyEmail(email, token);
+  }
+
+  /**
+   * Resends an email verification link to an unverified user.
+   *
+   * Rate limit:
+   * - 3 requests per minute.
+   *
+   * @param dto - User email address.
+   * @returns Verification email resend confirmation message.
+   */
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('resend-verification')
+  resendVerificationEmail(
+    @Body() dto: ResendVerificationEmailDto,
+  ) {
+    return this.authService.resendVerificationEmail(dto.email);
   }
 }
