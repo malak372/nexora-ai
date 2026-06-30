@@ -75,6 +75,13 @@ enum ComplaintStatus {
   RESOLVED
   REJECTED
 }
+enum UserType {
+  STUDENT
+  DEVELOPER
+  COMPANY
+  RESEARCHER
+  OTHER
+}
 
 enum ComplaintPriority {
   LOW
@@ -189,6 +196,7 @@ model User {
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  userType UserType? @map("user_type")
 
   ideas               Idea[]
   payments            Payment[]
