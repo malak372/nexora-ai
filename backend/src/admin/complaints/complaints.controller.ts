@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -46,7 +47,7 @@ type AuthenticatedAdmin = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class ComplaintsController {
-  constructor(private readonly complaintsService: ComplaintsService) {}
+  constructor(private readonly complaintsService: ComplaintsService) { }
 
   /**
    * Retrieves submitted complaints.
@@ -84,7 +85,18 @@ export class ComplaintsController {
   getComplaintsCharts(@Query() query: GetComplaintsQueryDto) {
     return this.complaintsService.getComplaintsCharts(query);
   }
-
+  /**
+   * Exports filtered complaints as CSV.
+   *
+   * Endpoint:
+   * GET /admin/complaints/export/csv
+   */
+  @Get('export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="complaints.csv"')
+  exportComplaintsCsv(@Query() query: GetComplaintsQueryDto) {
+    return this.complaintsService.exportComplaintsCsv(query);
+  }
   /**
    * Updates an existing complaint.
    *

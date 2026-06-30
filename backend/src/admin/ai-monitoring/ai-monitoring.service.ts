@@ -12,6 +12,7 @@ import {
 } from '../../utilities/base-query/builder';
 
 import {
+  buildCsv,
   calculateSuccessRate,
   calculateTotalPages,
   toNumber,
@@ -32,7 +33,7 @@ import {
  */
 @Injectable()
 export class AiMonitoringService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Builds a shared Prisma where filter for AI monitoring endpoints.
@@ -140,6 +141,106 @@ export class AiMonitoringService {
         totalPages: calculateTotalPages(total, limit),
       },
     };
+  }
+
+  /**
+ * Exports filtered external API logs as CSV.
+ *
+ * Uses the same filters and sorting rules
+ * as the logs list endpoint.
+ *
+ * Endpoint:
+ * GET /admin/ai-monitoring/logs/export/csv
+ */
+  async exportAiLogsCsv(query: GetAiLogsQueryDto) {
+    const where = this.buildAiLogsWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'provider',
+        'requestType',
+        'isSuccess',
+        'statusCode',
+        'responseTimeMs',
+        'costEstimate',
+        'createdAt',
+      ] as const,
+      'createdAt',
+    );
+
+    const logs = await this.prisma.externalApiLog.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        provider: true,
+        endpoint: true,
+        requestId: true,
+        requestType: true,
+        statusCode: true,
+        isSuccess: true,
+        responseTimeMs: true,
+        errorMessage: true,
+        costEstimate: true,
+        createdAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+
+        idea: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Log ID',
+      'Provider',
+      'Endpoint',
+      'Request ID',
+      'Request Type',
+      'Status Code',
+      'Is Success',
+      'Response Time Ms',
+      'Error Message',
+      'Cost Estimate',
+      'User ID',
+      'User Name',
+      'User Email',
+      'Idea ID',
+      'Idea Title',
+      'Created At',
+    ];
+
+    const rows = logs.map((log) => [
+      log.id,
+      log.provider,
+      log.endpoint,
+      log.requestId ?? '',
+      log.requestType,
+      log.statusCode ?? '',
+      log.isSuccess,
+      log.responseTimeMs ?? '',
+      log.errorMessage ?? '',
+      toNumber(log.costEstimate),
+      log.user?.id ?? '',
+      log.user?.fullName ?? '',
+      log.user?.email ?? '',
+      log.idea?.id ?? '',
+      log.idea?.title ?? '',
+      log.createdAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
   }
 
   /**

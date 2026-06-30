@@ -1,65 +1,95 @@
-import { IsEnum, IsOptional } from 'class-validator';
 import {
-  PaymentMethod,
-  PaymentPurpose,
-  PaymentStatus,
-} from '@prisma/client';
-import { ListQueryDto } from '../../utilities/dto/list-query.dto';
+  Controller,
+  Get,
+  Header,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+
+import { PaymentsService } from './payments.service';
+import { GetPaymentsQueryDto } from './dto/get-payments-query.dto';
+
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 /**
- * DTO for filtering, searching, sorting, and paginating payment records.
+ * Controller responsible for Admin payment management.
  *
- * Used with:
- * GET /admin/payments
- * GET /admin/payments/summary
- * GET /admin/payments/charts
- * GET /admin/payments/export/csv
+ * Base route:
+ * /admin/payments
  *
- * Supports:
- * - Pagination.
- * - Sorting.
- * - Date range filtering.
- * - Search by user full name or email.
- * - Filter by payment status.
- * - Filter by payment purpose.
- * - Filter by payment method.
+ * Access:
+ * Admin only.
+ *
+ * Provides:
+ * - Paginated payments list.
+ * - Payment summary statistics.
+ * - Chart-ready payment analytics.
+ * - CSV export for payments.
  *
  * @author Malak
  */
-export class GetPaymentsQueryDto extends ListQueryDto {
-  /**
-   * Optional payment status filter.
-   *
-   * Examples:
-   * - PENDING
-   * - SUCCESS
-   * - FAILED
-   * - REFUNDED
-   */
-  @IsOptional()
-  @IsEnum(PaymentStatus)
-  status?: PaymentStatus;
+@Controller('admin/payments')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
+export class PaymentsController {
+  constructor(private readonly paymentsService: PaymentsService) {}
 
   /**
-   * Optional payment purpose filter.
+   * Retrieves paginated payment records.
    *
-   * Examples:
-   * - BUY_CREDITS
-   * - DIRECT_UNLOCK
+   * Supports:
+   * - Pagination.
+   * - Sorting.
+   * - Date range filtering.
+   * - Search by user full name or email.
+   * - Filter by status, purpose, and method.
+   *
+   * Endpoint:
+   * GET /admin/payments
    */
-  @IsOptional()
-  @IsEnum(PaymentPurpose)
-  purpose?: PaymentPurpose;
+  @Get()
+  getPayments(@Query() query: GetPaymentsQueryDto) {
+    return this.paymentsService.getPayments(query);
+  }
 
   /**
-   * Optional payment method filter.
+   * Retrieves payment summary statistics.
    *
-   * Examples:
-   * - CARD
-   * - PAYPAL
-   * - PALPAY
+   * Endpoint:
+   * GET /admin/payments/summary
    */
-  @IsOptional()
-  @IsEnum(PaymentMethod)
-  method?: PaymentMethod;
+  @Get('summary')
+  getPaymentsSummary(@Query() query: GetPaymentsQueryDto) {
+    return this.paymentsService.getPaymentsSummary(query);
+  }
+
+  /**
+   * Retrieves chart-ready payment analytics.
+   *
+   * Endpoint:
+   * GET /admin/payments/charts
+   */
+  @Get('charts')
+  getPaymentsCharts(@Query() query: GetPaymentsQueryDto) {
+    return this.paymentsService.getPaymentsCharts(query);
+  }
+
+  /**
+   * Exports filtered payment records as CSV.
+   *
+   * Endpoint:
+   * GET /admin/payments/export/csv
+   */
+  @Get('export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="payments-report.csv"',
+  )
+  exportPaymentsCsv(@Query() query: GetPaymentsQueryDto) {
+    return this.paymentsService.exportPaymentsCsv(query);
+  }
 }

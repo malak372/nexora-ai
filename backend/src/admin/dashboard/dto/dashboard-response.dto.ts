@@ -99,7 +99,7 @@ export class DashboardRecentIdeaDto {
   domain!: {
     id: string;
     name: string;
-  };
+  }| null;
 }
 
 /**

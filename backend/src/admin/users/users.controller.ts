@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -50,7 +51,7 @@ type AuthenticatedAdmin = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   /**
    * Retrieves a paginated list of users.
@@ -106,6 +107,18 @@ export class UsersController {
     return this.usersService.getUsersCharts(query);
   }
 
+  /**
+ * Exports filtered users as CSV.
+ *
+ * Endpoint:
+ * GET /admin/users/export/csv
+ */
+  @Get('export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="users.csv"')
+  exportUsersCsv(@Query() query: GetUsersQueryDto) {
+    return this.usersService.exportUsersCsv(query);
+  }
   /**
    * Retrieves a specific user by ID.
    *

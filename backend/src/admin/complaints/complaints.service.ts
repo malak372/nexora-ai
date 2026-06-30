@@ -21,7 +21,7 @@ import {
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import { buildCsv, calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 import { buildResolvedAt } from './utils/complaints.rules';
 
 /**
@@ -44,7 +44,7 @@ export class ComplaintsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) {}
+  ) { }
 
   /**
    * Builds the Prisma where filter used for complaints queries.
@@ -342,6 +342,90 @@ export class ComplaintsService {
         count: item._count.priority,
       })),
     };
+  }
+
+  /**
+   * Exports filtered complaints as CSV.
+   *
+   * Uses the same filters and sorting rules
+   * as the complaints list endpoint.
+   *
+   * Endpoint:
+   * GET /admin/complaints/export/csv
+   */
+  async exportComplaintsCsv(query: GetComplaintsQueryDto) {
+    const where = this.buildComplaintsWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      ['updatedAt', 'resolvedAt', 'status', 'priority', 'createdAt'] as const,
+      'createdAt',
+    );
+
+    const complaints = await this.prisma.complaint.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        subject: true,
+        message: true,
+        status: true,
+        priority: true,
+        adminReply: true,
+        createdAt: true,
+        updatedAt: true,
+        resolvedAt: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        idea: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Complaint ID',
+      'Subject',
+      'Message',
+      'Status',
+      'Priority',
+      'Admin Reply',
+      'User ID',
+      'User Name',
+      'User Email',
+      'Idea ID',
+      'Idea Title',
+      'Created At',
+      'Updated At',
+      'Resolved At',
+    ];
+
+    const rows = complaints.map((complaint) => [
+      complaint.id,
+      complaint.subject,
+      complaint.message,
+      complaint.status,
+      complaint.priority,
+      complaint.adminReply ?? '',
+      complaint.user.id,
+      complaint.user.fullName,
+      complaint.user.email,
+      complaint.idea?.id ?? '',
+      complaint.idea?.title ?? '',
+      complaint.createdAt.toISOString(),
+      complaint.updatedAt.toISOString(),
+      complaint.resolvedAt?.toISOString() ?? '',
+    ]);
+
+    return buildCsv(headers, rows);
   }
 
   /**

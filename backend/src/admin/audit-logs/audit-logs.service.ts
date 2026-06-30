@@ -13,7 +13,7 @@ import {
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import { buildCsv, calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for Admin audit log management.
@@ -25,7 +25,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class AuditLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Builds the shared Prisma where filter for audit logs.
@@ -208,15 +208,15 @@ export class AuditLogsService {
       activeAdmins: activeAdmins.length,
       mostCommonAction: actionsGroup[0]
         ? {
-            action: actionsGroup[0].action,
-            count: actionsGroup[0]._count.action,
-          }
+          action: actionsGroup[0].action,
+          count: actionsGroup[0]._count.action,
+        }
         : null,
       mostAffectedTarget: targetsGroup[0]
         ? {
-            targetType: targetsGroup[0].targetType,
-            count: targetsGroup[0]._count.targetType,
-          }
+          targetType: targetsGroup[0].targetType,
+          count: targetsGroup[0]._count.targetType,
+        }
         : null,
     };
   }
@@ -314,6 +314,70 @@ export class AuditLogsService {
         };
       }),
     };
+  }
+  /**
+   * Exports filtered audit logs as CSV.
+   */
+  async exportAuditLogsCsv(query: GetAuditLogsQueryDto) {
+    const where = this.buildAuditLogsWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      ['action', 'targetType', 'targetId', 'createdAt'] as const,
+      'createdAt',
+    );
+
+    const logs = await this.prisma.adminAuditLog.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        action: true,
+        targetType: true,
+        targetId: true,
+        oldValue: true,
+        newValue: true,
+        createdAt: true,
+        admin: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Log ID',
+      'Admin ID',
+      'Admin Name',
+      'Admin Email',
+      'Admin Role',
+      'Action',
+      'Target Type',
+      'Target ID',
+      'Old Value',
+      'New Value',
+      'Created At',
+    ];
+
+    const rows = logs.map((log) => [
+      log.id,
+      log.admin?.id ?? '',
+      log.admin?.fullName ?? '',
+      log.admin?.email ?? '',
+      log.admin?.role ?? '',
+      log.action,
+      log.targetType,
+      log.targetId ?? '',
+      JSON.stringify(log.oldValue ?? ''),
+      JSON.stringify(log.newValue ?? ''),
+      log.createdAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
   }
 
   /**
