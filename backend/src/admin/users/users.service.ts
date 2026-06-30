@@ -26,6 +26,7 @@ import {
 } from '../../utilities/base-query/builder';
 
 import {
+  buildCsv,
   calculateTotalPages,
   toNumber,
 } from '../../utilities/analytics/analytics.helper';
@@ -51,7 +52,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   /**
    * Builds the shared Prisma where filter for users.
@@ -456,7 +457,103 @@ export class UsersService {
       })),
     };
   }
+  /**
+   * Exports filtered users as CSV.
+   *
+   * Uses the same filters and sorting rules
+   * as the users list endpoint.
+   *
+   * Endpoint:
+   * GET /admin/users/export/csv
+   *
+   * @param query User filtering and sorting options.
+   * @returns CSV string containing filtered users.
+   */
+  async exportUsersCsv(query: GetUsersQueryDto) {
+    const where = this.buildUsersWhere(query);
 
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'fullName',
+        'email',
+        'role',
+        'accountStatus',
+        'creditBalance',
+        'isActive',
+        'isVerified',
+        'createdAt',
+      ] as const,
+      'createdAt',
+    );
+
+    const users = await this.prisma.user.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        accountStatus: true,
+        creditBalance: true,
+        freeGenerationsUsed: true,
+        freeGenerationLimit: true,
+        isActive: true,
+        isVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            ideas: true,
+            payments: true,
+            creditTransactions: true,
+            complaints: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'User ID',
+      'Full Name',
+      'Email',
+      'Role',
+      'Account Status',
+      'Credit Balance',
+      'Free Generations Used',
+      'Free Generation Limit',
+      'Is Active',
+      'Is Verified',
+      'Ideas Count',
+      'Payments Count',
+      'Credit Transactions Count',
+      'Complaints Count',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = users.map((user) => [
+      user.id,
+      user.fullName,
+      user.email,
+      user.role,
+      user.accountStatus,
+      user.creditBalance,
+      user.freeGenerationsUsed,
+      user.freeGenerationLimit,
+      user.isActive,
+      user.isVerified,
+      user._count.ideas,
+      user._count.payments,
+      user._count.creditTransactions,
+      user._count.complaints,
+      user.createdAt.toISOString(),
+      user.updatedAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
+  }
   /**
    * Updates a user's active status.
    */

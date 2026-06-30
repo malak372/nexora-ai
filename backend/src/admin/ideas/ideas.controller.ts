@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Query,
@@ -34,7 +35,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class IdeasController {
-  constructor(private readonly ideasService: IdeasService) {}
+  constructor(private readonly ideasService: IdeasService) { }
 
   /**
    * Retrieves generated project ideas.
@@ -68,7 +69,18 @@ export class IdeasController {
   getIdeasCharts(@Query() query: GetIdeasQueryDto) {
     return this.ideasService.getIdeasCharts(query);
   }
-
+  /**
+   * Exports filtered ideas as CSV.
+   *
+   * Endpoint:
+   * GET /admin/ideas/export/csv
+   */
+  @Get('export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="ideas.csv"')
+  exportIdeasCsv(@Query() query: GetIdeasQueryDto) {
+    return this.ideasService.exportIdeasCsv(query);
+  }
   /**
    * Retrieves detailed information about a specific project idea.
    *

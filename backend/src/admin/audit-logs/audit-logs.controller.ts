@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 import { AuditLogsService } from './audit-logs.service';
@@ -33,7 +33,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AuditLogsController {
-  constructor(private readonly auditLogsService: AuditLogsService) {}
+  constructor(private readonly auditLogsService: AuditLogsService) { }
 
   /**
    * Retrieves administrative audit logs.
@@ -66,5 +66,18 @@ export class AuditLogsController {
   @Get('charts')
   getAuditLogsCharts(@Query() query: GetAuditLogsQueryDto) {
     return this.auditLogsService.getAuditLogsCharts(query);
+  }
+
+  /**
+   * Exports filtered audit logs as CSV.
+   *
+   * Endpoint:
+   * GET /admin/audit-logs/export/csv
+   */
+  @Get('export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="audit-logs.csv"')
+  exportAuditLogsCsv(@Query() query: GetAuditLogsQueryDto) {
+    return this.auditLogsService.exportAuditLogsCsv(query);
   }
 }

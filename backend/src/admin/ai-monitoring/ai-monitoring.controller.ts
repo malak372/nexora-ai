@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { AiMonitoringService } from './ai-monitoring.service';
 import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
@@ -23,7 +23,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 export class AiMonitoringController {
   constructor(
     private readonly aiMonitoringService: AiMonitoringService,
-  ) {}
+  ) { }
 
   /**
    * Retrieves paginated external API logs.
@@ -34,6 +34,19 @@ export class AiMonitoringController {
   @Get('logs')
   getAiLogs(@Query() query: GetAiLogsQueryDto) {
     return this.aiMonitoringService.getAiLogs(query);
+  }
+
+  /**
+   * Exports filtered external API logs as CSV.
+   *
+   * Endpoint:
+   * GET /admin/ai-monitoring/logs/export/csv
+   */
+  @Get('logs/export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="ai-logs.csv"')
+  exportAiLogsCsv(@Query() query: GetAiLogsQueryDto) {
+    return this.aiMonitoringService.exportAiLogsCsv(query);
   }
 
   /**

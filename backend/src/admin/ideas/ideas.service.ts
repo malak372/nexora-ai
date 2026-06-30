@@ -17,7 +17,10 @@ import {
   buildStringFilter,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import {
+  buildCsv,
+  calculateTotalPages,
+} from '../../utilities/analytics/analytics.helper';
 
 /**
  * Service responsible for administrative idea management.
@@ -35,7 +38,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class IdeasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Builds the shared Prisma where filter used by
@@ -85,7 +88,112 @@ export class IdeasService {
       },
     };
   }
+  /**
+   * Exports filtered ideas as CSV.
+   *
+   * Uses the same filters and sorting rules
+   * as the ideas list endpoint.
+   *
+   * Endpoint:
+   * GET /admin/ideas/export/csv
+   */
+  async exportIdeasCsv(query: GetIdeasQueryDto) {
+    const where = this.buildIdeasWhere(query);
 
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'title',
+        'generationType',
+        'isUnlocked',
+        'unlockMethod',
+        'commentsCount',
+        'createdAt',
+      ] as const,
+      'createdAt',
+    );
+
+    const ideas = await this.prisma.idea.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        selectedPlatform: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Idea ID',
+      'Title',
+      'User ID',
+      'User Name',
+      'User Email',
+      'Domain ID',
+      'Domain Name',
+      'Platform ID',
+      'Platform Name',
+      'Selected Region',
+      'Generation Type',
+      'Is Unlocked',
+      'Unlock Method',
+      'Unlocked At',
+      'Comments Count',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = ideas.map((idea) => [
+      idea.id,
+      idea.title,
+      idea.user?.id ?? '',
+      idea.user?.fullName ?? '',
+      idea.user?.email ?? '',
+      idea.domain?.id ?? '',
+      idea.domain?.name ?? '',
+      idea.selectedPlatform?.id ?? '',
+      idea.selectedPlatform?.name ?? '',
+      idea.selectedRegion ?? '',
+      idea.generationType,
+      idea.isUnlocked,
+      idea.unlockMethod,
+      idea.unlockedAt?.toISOString() ?? '',
+      idea.commentsCount,
+      idea.createdAt.toISOString(),
+      idea.updatedAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
+  }
   /**
    * Retrieves generated project ideas with filtering,
    * searching, sorting, and pagination.

@@ -44,6 +44,9 @@ import { AuditLogsService } from './audit-logs/audit-logs.service';
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 
+import { PaymentsService } from './payments/payments.service';
+import { PaymentsController } from './payments/payments.controller';
+
 /**
  * Admin module.
  *
@@ -75,6 +78,7 @@ import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
     DashboardController,
     AuditLogsController,
     AiMonitoringController,
+    PaymentsController,
     IdeasController,
     UsersController,
     SettingsController,
@@ -97,6 +101,7 @@ import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
     SettingsService,
     CreditsService,
     CommentsService,
+    PaymentsService,
     DataCollectionService,
     PlatformsService,
     DomainsService,
