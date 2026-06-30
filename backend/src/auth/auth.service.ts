@@ -327,6 +327,11 @@ export class AuthService {
     if (!user.isActive) {
       throw new UnauthorizedException('Account is inactive');
     }
+    if (!user.isVerified) {
+      throw new UnauthorizedException(
+        'Please verify your email before logging in',
+      );
+    }
 
     const isPasswordValid = await bcrypt.compare(
       dto.password,
@@ -531,6 +536,7 @@ export class AuthService {
       message: 'Password changed successfully',
     };
   }
+
   /**
    * Sends a password reset email if the provided email belongs
    * to an active account.
@@ -675,18 +681,19 @@ export class AuthService {
       message: 'Password reset successfully',
     };
   }
-/**
- * Verifies a user's email using a valid verification token.
- *
- * The verification token must be valid, unused, and not expired.
- *
- * @param email - User email address.
- * @param token - Plain verification token.
- * @returns Email verification confirmation message.
- *
- * @throws BadRequestException if the request is invalid
- * or the verification token is expired or already used.
- */
+
+  /**
+   * Verifies a user's email using a valid verification token.
+   *
+   * The verification token must be valid, unused, and not expired.
+   *
+   * @param email - User email address.
+   * @param token - Plain verification token.
+   * @returns Email verification confirmation message.
+   *
+   * @throws BadRequestException if the request is invalid
+   * or the verification token is expired or already used.
+   */
   async verifyEmail(email: string, token: string) {
     if (!email || !token) {
       throw new BadRequestException('Email and token are required');
@@ -744,6 +751,20 @@ export class AuthService {
         },
       }),
     ]);
+    const verifiedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        email: true,
+        fullName: true,
+      },
+    });
+
+    if (verifiedUser) {
+      await this.mailService.sendWelcomeEmail(
+        verifiedUser.email,
+        verifiedUser.fullName,
+      );
+    }
 
     return {
       message: 'Email verified successfully',
