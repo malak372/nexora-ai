@@ -668,11 +668,18 @@ export class UsersService {
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    await this.prisma.user.update({
-      where: { id: userId },
+    await this.prisma.passwordResetToken.deleteMany({
+      where: {
+        userId,
+        usedAt: null,
+      },
+    });
+
+    await this.prisma.passwordResetToken.create({
       data: {
-        passwordResetToken: hashedToken,
-        passwordResetExpires: expiresAt,
+        userId,
+        tokenHash: hashedToken,
+        expiresAt,
       },
     });
 
