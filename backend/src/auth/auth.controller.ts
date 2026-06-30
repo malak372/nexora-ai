@@ -1,21 +1,32 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 /**
  * Handles authentication operations such as registration,
- * login, token refresh, logout, and retrieving the current user.
+ * login, token refresh, logout, password changes,
+ * and retrieving the current user.
  *
  * @author Eman
  */
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   /**
    * Registers a new user account.
@@ -64,6 +75,22 @@ export class AuthController {
   }
 
   /**
+   * Changes the authenticated user's password.
+   *
+   * @param user - Authenticated user extracted from the JWT token.
+   * @param dto - Current and new password data.
+   * @returns Password change confirmation.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-password')
+  changePassword(
+    @CurrentUser() user: { id: string },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.id, dto);
+  }
+
+  /**
    * Returns the authenticated user's information.
    *
    * @param user - Authenticated user extracted from the JWT token.
@@ -73,5 +100,26 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: { id: string }) {
     return this.authService.me(user.id);
+  }
+    /**
+   * Sends a password reset link to the user's email.
+   *
+   * @param dto - User email.
+   * @returns Password reset request confirmation.
+   */
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  /**
+   * Resets the user's password using a valid reset token.
+   *
+   * @param dto - Reset token and new password.
+   * @returns Password reset confirmation.
+   */
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 }

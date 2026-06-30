@@ -13,24 +13,33 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { MailService } from '../mail/mail.service';
 
 /**
  * Service responsible for authentication and session management.
  *
- * Handles user registration, login, JWT access token generation,
- * refresh token creation and rotation, logout, and retrieving
- * the authenticated user's profile.
+ * Handles user registration, login, password changes,
+ * JWT access token generation, refresh token creation
+ * and rotation, logout, and retrieving the authenticated
+ * user's profile.
  *
  * It also supports transferring guest-generated ideas to a newly
  * registered user account when a valid guest session token is provided.
  *
  * @author Eman
  */
+const SALT_ROUNDS = 10;
+const PASSWORD_RESET_TOKEN_BYTES = 32;
+const PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = 15;
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly mailService: MailService,
   ) { }
 
   /**
@@ -189,7 +198,7 @@ export class AuthService {
       throw new BadRequestException('Email already exists');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
 
     const user = await this.prisma.user.create({
       data: {
@@ -401,5 +410,212 @@ export class AuthService {
     }
 
     return user;
+  }
+/**
+ * Changes the authenticated user's password.
+ *
+ * The current password must be valid, and the new password
+ * must be different from the existing one.
+ *
+ * @param userId - Authenticated user ID.
+ * @param dto - Current and new password data.
+ * @returns Password change confirmation message.
+ *
+ * @throws UnauthorizedException if the user does not exist
+ * or the account is inactive.
+ *
+ * @throws BadRequestException if the current password is
+ * incorrect or the new password matches the current password.
+ */
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        passwordHash: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User is not active or does not exist');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const isSamePassword = await bcrypt.compare(
+      dto.newPassword,
+      user.passwordHash,
+    );
+
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: newPasswordHash,
+      },
+    });
+
+    return {
+      message: 'Password changed successfully',
+    };
+  }
+/**
+ * Sends a password reset email if the provided email belongs
+ * to an active account.
+ *
+ * For security reasons, this method always returns the same
+ * response message whether the email exists or not.
+ *
+ * @param dto - Forgot password request data.
+ * @returns Password reset email confirmation message.
+ */
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+      },
+    });
+
+    const response = {
+      message:
+        'If this email exists, a password reset link has been sent',
+    };
+
+    if (!user || !user.isActive) {
+      return response;
+    }
+
+    await this.prisma.passwordResetToken.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
+
+    const resetToken = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString('hex');
+    const tokenHash = this.hashToken(resetToken);
+
+    const expiresAt = new Date();
+    expiresAt.setMinutes(
+      expiresAt.getMinutes() + PASSWORD_RESET_TOKEN_EXPIRES_MINUTES,
+    );
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    const frontendUrl =
+      process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
+
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    await this.mailService.sendPasswordResetEmail(user.email, resetLink);
+
+    return response;
+  }
+
+/**
+ * Resets a user's password using a valid password reset token.
+ *
+ * The reset token must be valid, unused, and not expired.
+ * After a successful password reset, all active refresh tokens
+ * are revoked.
+ *
+ * @param dto - Reset password request data.
+ * @returns Password reset confirmation message.
+ *
+ * @throws BadRequestException if the reset token is invalid,
+ * expired, already used, or the new password matches the
+ * current password.
+ */
+  async resetPassword(dto: ResetPasswordDto) {
+    const tokenHash = this.hashToken(dto.token);
+
+    const storedToken = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: true,
+      },
+    });
+
+    if (
+      !storedToken ||
+      storedToken.usedAt ||
+      storedToken.expiresAt < new Date() ||
+      !storedToken.user.isActive
+    ) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const isSamePassword = await bcrypt.compare(
+      dto.newPassword,
+      storedToken.user.passwordHash,
+    );
+
+    if (isSamePassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const newPasswordHash = await bcrypt.hash(
+      dto.newPassword,
+      SALT_ROUNDS,
+    );
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: storedToken.userId },
+        data: {
+          passwordHash: newPasswordHash,
+        },
+      }),
+
+      this.prisma.passwordResetToken.update({
+        where: { id: storedToken.id },
+        data: {
+          usedAt: new Date(),
+        },
+      }),
+
+      this.prisma.refreshToken.updateMany({
+        where: {
+          userId: storedToken.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Password reset successfully',
+    };
   }
 }
