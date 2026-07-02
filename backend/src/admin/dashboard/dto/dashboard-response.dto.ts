@@ -2,24 +2,26 @@ import {
   AccountStatus,
   ComplaintPriority,
   ComplaintStatus,
+  GeneratedOutputType,
   IdeaGenerationType,
   PaymentMethod,
   PaymentPurpose,
   PaymentStatus,
   UserRole,
+  UserType,
 } from '@prisma/client';
 
-/**
- * DTO representing user growth chart data.
- */
 export class DashboardUserGrowthChartDto {
   date!: string;
   count!: number;
 }
 
-/**
- * DTO representing most selected domains chart data.
- */
+export class DashboardUserTypeChartDto {
+  label!: string;
+  userType!: UserType | null;
+  count!: number;
+}
+
 export class DashboardDomainChartDto {
   label!: string;
   domainId!: string;
@@ -27,18 +29,12 @@ export class DashboardDomainChartDto {
   count!: number;
 }
 
-/**
- * DTO representing most requested regions chart data.
- */
 export class DashboardRegionChartDto {
   label!: string;
   region!: string | null;
   count!: number;
 }
 
-/**
- * DTO representing most used platforms chart data.
- */
 export class DashboardPlatformChartDto {
   label!: string;
   platformId!: string | null;
@@ -46,22 +42,24 @@ export class DashboardPlatformChartDto {
   count!: number;
 }
 
-/**
- * DTO representing recently registered users.
- */
+export class DashboardGeneratedOutputTypeDto {
+  label!: string;
+  outputType!: GeneratedOutputType;
+  count!: number;
+}
+
 export class DashboardRecentUserDto {
   id!: string;
   fullName!: string;
   email!: string;
   role!: UserRole;
   accountStatus!: AccountStatus;
+  userType!: UserType | null;
   isActive!: boolean;
+  isVerified!: boolean;
   createdAt!: Date;
 }
 
-/**
- * DTO representing recent payments.
- */
 export class DashboardRecentPaymentDto {
   id!: string;
   amount!: number;
@@ -79,9 +77,6 @@ export class DashboardRecentPaymentDto {
   };
 }
 
-/**
- * DTO representing recently generated ideas.
- */
 export class DashboardRecentIdeaDto {
   id!: string;
   title!: string;
@@ -94,17 +89,15 @@ export class DashboardRecentIdeaDto {
     id: string;
     fullName: string;
     email: string;
+    userType: UserType | null;
   } | null;
 
   domain!: {
     id: string;
     name: string;
-  }| null;
+  } | null;
 }
 
-/**
- * DTO representing recent complaints.
- */
 export class DashboardRecentComplaintDto {
   id!: string;
   subject!: string;
@@ -119,9 +112,6 @@ export class DashboardRecentComplaintDto {
   };
 }
 
-/**
- * DTO representing all recent dashboard activity sections.
- */
 export class DashboardRecentActivityDto {
   recentUsers!: DashboardRecentUserDto[];
   recentPayments!: DashboardRecentPaymentDto[];
@@ -130,36 +120,60 @@ export class DashboardRecentActivityDto {
 }
 
 /**
- * Main DTO representing the complete admin dashboard response.
- *
- * Includes:
- * - Main system counters.
- * - Payment and revenue statistics.
- * - AI usage statistics.
- * - Domain and platform status summaries.
- * - Today and monthly statistics.
- * - Chart-ready analytics.
- * - Recent platform activity.
+ * Main DTO representing the complete Admin dashboard response.
  *
  * @author Malak
  */
 export class DashboardResponseDto {
   users!: number;
+  normalUsers!: number;
+  premiumUsers!: number;
+  activeUsers!: number;
+  inactiveUsers!: number;
+  verifiedUsers!: number;
+  unverifiedUsers!: number;
+
   ideas!: number;
+  guestIdeas!: number;
+  normalFreeIdeas!: number;
+  premiumCreditIdeas!: number;
+  unlockedIdeas!: number;
+  lockedIdeas!: number;
+
   payments!: number;
+  successfulPaymentsCount!: number;
+  pendingPaymentsCount!: number;
+  failedPaymentsCount!: number;
+  refundedPaymentsCount!: number;
+  directUnlockPaymentsCount!: number;
+  creditPurchasePaymentsCount!: number;
+
   comments!: number;
 
   creditsSold!: number;
+  creditPurchases!: number;
+  creditRefunds!: number;
+  manualCreditAdjustments!: number;
+  averageCreditsPerPremiumUser!: number;
 
   revenueTotal!: number;
   refundsTotal!: number;
-  failedPaymentsCount!: number;
 
   aiRequests!: number;
   failedAiRequests!: number;
+  aiSuccessRate!: number;
   aiErrorRate!: number;
   averageResponseTime!: number;
   aiCost!: number;
+  averageAiCostPerRequest!: number;
+
+  openComplaints!: number;
+  inProgressComplaints!: number;
+  resolvedComplaints!: number;
+  rejectedComplaints!: number;
+
+  generatedOutputs!: number;
+  generatedOutputsByType!: DashboardGeneratedOutputTypeDto[];
 
   domainsStatus!: {
     active: number;
@@ -186,6 +200,8 @@ export class DashboardResponseDto {
   };
 
   usersGrowthChart!: DashboardUserGrowthChartDto[];
+  usersByType!: DashboardUserTypeChartDto[];
+
   mostSelectedDomains!: DashboardDomainChartDto[];
   mostRequestedRegions!: DashboardRegionChartDto[];
   mostUsedPlatforms!: DashboardPlatformChartDto[];

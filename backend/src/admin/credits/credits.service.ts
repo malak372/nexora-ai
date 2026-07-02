@@ -50,7 +50,7 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditLogsService,
-  ) {}
+  ) { }
 
   /**
    * Builds the shared Prisma where filter for credit reports.
@@ -372,6 +372,19 @@ export class CreditsService {
         data: {
           creditBalance: newBalance,
           accountStatus: newStatus,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          creditBalance: true,
+          isActive: true,
+          isVerified: true,
+          userType: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 

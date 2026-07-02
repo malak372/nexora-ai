@@ -17,9 +17,6 @@ import { CreditsService } from './credits/credits.service';
 import { CommentsController } from './comments/comments.controller';
 import { CommentsService } from './comments/comments.service';
 
-import { DataCollectionController } from './data-collection/data-collection.controller';
-import { DataCollectionService } from './data-collection/data-collection.service';
-
 import { PlatformsController } from './platforms/platforms.controller';
 import { PlatformsService } from './platforms/platforms.service';
 
@@ -84,7 +81,6 @@ import { PaymentsController } from './payments/payments.controller';
     SettingsController,
     CreditsController,
     CommentsController,
-    DataCollectionController,
     PlatformsController,
     DomainsController,
     PromptsController,
@@ -102,7 +98,6 @@ import { PaymentsController } from './payments/payments.controller';
     CreditsService,
     CommentsService,
     PaymentsService,
-    DataCollectionService,
     PlatformsService,
     DomainsService,
     PromptsService,
@@ -111,3 +106,5 @@ import { PaymentsController } from './payments/payments.controller';
   ],
 })
 export class AdminModule { }
+
+export { MailModule };

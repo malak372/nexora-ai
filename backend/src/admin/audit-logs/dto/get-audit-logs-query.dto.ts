@@ -6,7 +6,10 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * DTO for filtering, searching, sorting, and paginating admin audit logs.
  *
  * Used with:
- * GET /admin/audit-logs
+ * - GET /admin/audit-logs
+ * - GET /admin/audit-logs/export/csv
+ * - GET /admin/audit-logs/summary
+ * - GET /admin/audit-logs/charts
  *
  * Supports:
  * - Pagination through page and limit.

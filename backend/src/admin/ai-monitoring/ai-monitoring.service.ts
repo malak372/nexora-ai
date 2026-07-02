@@ -8,7 +8,6 @@ import {
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
 import {
@@ -46,14 +45,58 @@ export class AiMonitoringService {
   private buildAiLogsWhere(
     query: GetAiLogsQueryDto,
   ): Prisma.ExternalApiLogWhereInput {
+    const searchFilter: Prisma.ExternalApiLogWhereInput = query.search
+      ? {
+        OR: [
+          {
+            endpoint: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            requestId: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            errorMessage: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            user: {
+              fullName: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            user: {
+              email: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            idea: {
+              title: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      }
+      : {};
+
     return {
       ...buildDateFilter(query),
-
-      ...buildSearchFilter(
-        ['endpoint', 'requestId', 'errorMessage'],
-        query.search,
-      ),
-
+      ...searchFilter,
       ...buildExactFilter('provider', query.provider),
       ...buildExactFilter('requestType', query.requestType),
       ...buildExactFilter('isSuccess', query.isSuccess),
@@ -144,14 +187,14 @@ export class AiMonitoringService {
   }
 
   /**
- * Exports filtered external API logs as CSV.
- *
- * Uses the same filters and sorting rules
- * as the logs list endpoint.
- *
- * Endpoint:
- * GET /admin/ai-monitoring/logs/export/csv
- */
+   * Exports filtered external API logs as CSV.
+   *
+   * Uses the same filters and sorting rules
+   * as the logs list endpoint.
+   *
+   * Endpoint:
+   * GET /admin/ai-monitoring/logs/export/csv
+   */
   async exportAiLogsCsv(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
 

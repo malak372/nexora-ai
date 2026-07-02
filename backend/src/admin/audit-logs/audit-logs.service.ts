@@ -9,8 +9,6 @@ import {
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildRelationSearchFilter,
-  buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
 import { buildCsv, calculateTotalPages } from '../../utilities/analytics/analytics.helper';
@@ -33,17 +31,38 @@ export class AuditLogsService {
   private buildAuditLogsWhere(
     query: GetAuditLogsQueryDto,
   ): Prisma.AdminAuditLogWhereInput {
+    const searchFilter: Prisma.AdminAuditLogWhereInput = query.search
+      ? {
+        OR: [
+          {
+            targetId: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            admin: {
+              fullName: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            admin: {
+              email: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      }
+      : {};
+
     return {
       ...buildDateFilter(query),
-
-      ...buildSearchFilter(['targetId'], query.search),
-
-      ...buildRelationSearchFilter(
-        'admin',
-        ['fullName', 'email'],
-        query.search,
-      ),
-
+      ...searchFilter,
       ...buildExactFilter('adminId', query.adminId),
       ...buildExactFilter('action', query.action),
       ...buildExactFilter('targetType', query.targetType),

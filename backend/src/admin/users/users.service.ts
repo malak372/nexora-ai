@@ -9,6 +9,7 @@ import {
   AdminTargetType,
   Prisma,
   UserRole,
+  UserType,
 } from '@prisma/client';
 import * as crypto from 'crypto';
 
@@ -39,9 +40,11 @@ import {
  * - User details.
  * - User summary reports.
  * - Chart-ready user analytics.
+ * - User type filtering and analytics.
  * - Activate/deactivate users.
  * - Soft delete users.
  * - Send password reset emails.
+ * - CSV export.
  * - Audit logging for sensitive actions.
  *
  * @author Malak
@@ -56,6 +59,14 @@ export class UsersService {
 
   /**
    * Builds the shared Prisma where filter for users.
+   *
+   * Applies:
+   * - Date range filters.
+   * - Search by full name or email.
+   * - Role filter.
+   * - Account status filter.
+   * - User type filter.
+   * - Active status filter.
    */
   private buildUsersWhere(query: GetUsersQueryDto): Prisma.UserWhereInput {
     const isActive =
@@ -68,12 +79,17 @@ export class UsersService {
       ...buildSearchFilter(['fullName', 'email'], query.search),
       ...buildExactFilter('role', query.role),
       ...buildExactFilter('accountStatus', query.accountStatus),
+      ...buildExactFilter('userType', query.userType),
       ...buildExactFilter('isActive', isActive),
     };
   }
 
   /**
    * Adds a minimum createdAt date while preserving existing date filters.
+   *
+   * Used for:
+   * - Users created today.
+   * - Users created this month.
    */
   private mergeCreatedAtGte(
     where: Prisma.UserWhereInput,
@@ -95,6 +111,9 @@ export class UsersService {
 
   /**
    * Retrieves a paginated list of users.
+   *
+   * Endpoint:
+   * GET /admin/users
    */
   async getUsers(query: GetUsersQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -107,6 +126,7 @@ export class UsersService {
         'email',
         'role',
         'accountStatus',
+        'userType',
         'creditBalance',
         'isActive',
         'isVerified',
@@ -127,6 +147,7 @@ export class UsersService {
           email: true,
           role: true,
           accountStatus: true,
+          userType: true,
           creditBalance: true,
           freeGenerationsUsed: true,
           freeGenerationLimit: true,
@@ -139,6 +160,7 @@ export class UsersService {
               ideas: true,
               payments: true,
               creditTransactions: true,
+              complaints: true,
             },
           },
         },
@@ -160,6 +182,9 @@ export class UsersService {
 
   /**
    * Retrieves summary statistics for users.
+   *
+   * Endpoint:
+   * GET /admin/users/summary
    */
   async getUsersSummary(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -185,6 +210,7 @@ export class UsersService {
       adminUsers,
       todayUsers,
       thisMonthUsers,
+      userTypesGroup,
     ] = await Promise.all([
       this.prisma.user.count({ where }),
 
@@ -219,7 +245,19 @@ export class UsersService {
       this.prisma.user.count({ where: todayWhere }),
 
       this.prisma.user.count({ where: monthWhere }),
+
+      this.prisma.user.groupBy({
+        by: ['userType'],
+        where,
+        _count: {
+          userType: true,
+        },
+      }),
     ]);
+
+    const getUserTypeCount = (userType: UserType | null) =>
+      userTypesGroup.find((item) => item.userType === userType)?._count
+        .userType ?? 0;
 
     return {
       totalUsers,
@@ -232,11 +270,22 @@ export class UsersService {
       adminUsers,
       todayUsers,
       thisMonthUsers,
+      userTypes: {
+        studentUsers: getUserTypeCount(UserType.STUDENT),
+        developerUsers: getUserTypeCount(UserType.DEVELOPER),
+        companyUsers: getUserTypeCount(UserType.COMPANY),
+        researcherUsers: getUserTypeCount(UserType.RESEARCHER),
+        otherUsers: getUserTypeCount(UserType.OTHER),
+        unknownTypeUsers: getUserTypeCount(null),
+      },
     };
   }
 
   /**
    * Retrieves chart-ready user analytics.
+   *
+   * Endpoint:
+   * GET /admin/users/charts
    */
   async getUsersCharts(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -244,6 +293,7 @@ export class UsersService {
     const [
       usersByRole,
       usersByAccountStatus,
+      usersByType,
       usersByActiveStatus,
       usersByVerificationStatus,
       topUsersByIdeas,
@@ -261,6 +311,18 @@ export class UsersService {
         where,
         _count: { accountStatus: true },
         orderBy: { _count: { accountStatus: 'desc' } },
+      }),
+
+      this.prisma.user.groupBy({
+        by: ['userType'],
+        where: {
+          ...where,
+          userType: {
+            not: null,
+          },
+        },
+        _count: { userType: true },
+        orderBy: { _count: { userType: 'desc' } },
       }),
 
       this.prisma.user.groupBy({
@@ -289,6 +351,7 @@ export class UsersService {
           id: true,
           fullName: true,
           email: true,
+          userType: true,
           _count: {
             select: {
               ideas: true,
@@ -309,6 +372,7 @@ export class UsersService {
           id: true,
           fullName: true,
           email: true,
+          userType: true,
           _count: {
             select: {
               payments: true,
@@ -331,6 +395,12 @@ export class UsersService {
         count: item._count.accountStatus,
       })),
 
+      usersByType: usersByType.map((item) => ({
+        label: item.userType ?? 'UNKNOWN',
+        userType: item.userType,
+        count: item._count.userType,
+      })),
+
       usersByActiveStatus: usersByActiveStatus.map((item) => ({
         label: item.isActive ? 'ACTIVE' : 'INACTIVE',
         isActive: item.isActive,
@@ -348,6 +418,7 @@ export class UsersService {
         userId: user.id,
         fullName: user.fullName,
         email: user.email,
+        userType: user.userType,
         count: user._count.ideas,
       })),
 
@@ -356,6 +427,7 @@ export class UsersService {
         userId: user.id,
         fullName: user.fullName,
         email: user.email,
+        userType: user.userType,
         count: user._count.payments,
       })),
     };
@@ -363,6 +435,9 @@ export class UsersService {
 
   /**
    * Retrieves detailed information for a specific user.
+   *
+   * Endpoint:
+   * GET /admin/users/:id
    */
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -373,6 +448,7 @@ export class UsersService {
         email: true,
         role: true,
         accountStatus: true,
+        userType: true,
         creditBalance: true,
         freeGenerationsUsed: true,
         freeGenerationLimit: true,
@@ -457,17 +533,12 @@ export class UsersService {
       })),
     };
   }
+
   /**
    * Exports filtered users as CSV.
    *
-   * Uses the same filters and sorting rules
-   * as the users list endpoint.
-   *
    * Endpoint:
    * GET /admin/users/export/csv
-   *
-   * @param query User filtering and sorting options.
-   * @returns CSV string containing filtered users.
    */
   async exportUsersCsv(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -479,6 +550,7 @@ export class UsersService {
         'email',
         'role',
         'accountStatus',
+        'userType',
         'creditBalance',
         'isActive',
         'isVerified',
@@ -496,6 +568,7 @@ export class UsersService {
         email: true,
         role: true,
         accountStatus: true,
+        userType: true,
         creditBalance: true,
         freeGenerationsUsed: true,
         freeGenerationLimit: true,
@@ -520,6 +593,7 @@ export class UsersService {
       'Email',
       'Role',
       'Account Status',
+      'User Type',
       'Credit Balance',
       'Free Generations Used',
       'Free Generation Limit',
@@ -539,6 +613,7 @@ export class UsersService {
       user.email,
       user.role,
       user.accountStatus,
+      user.userType ?? '',
       user.creditBalance,
       user.freeGenerationsUsed,
       user.freeGenerationLimit,
@@ -554,8 +629,12 @@ export class UsersService {
 
     return buildCsv(headers, rows);
   }
+
   /**
    * Updates a user's active status.
+   *
+   * Prevents admins from changing their own status
+   * or modifying another admin account.
    */
   async updateUserStatus(
     userId: string,
@@ -595,6 +674,7 @@ export class UsersService {
         email: true,
         role: true,
         accountStatus: true,
+        userType: true,
         isActive: true,
         updatedAt: true,
       },
@@ -624,6 +704,9 @@ export class UsersService {
 
   /**
    * Sends a password reset email to a user.
+   *
+   * Uses the PasswordResetToken table instead of storing
+   * reset token fields directly on the User table.
    */
   async sendPasswordResetEmail(userId: string, currentAdminId: string) {
     if (userId === currentAdminId) {
@@ -717,6 +800,12 @@ export class UsersService {
 
   /**
    * Soft deletes a user account.
+   *
+   * The user is not removed from the database.
+   * Instead, the account is marked as inactive.
+   *
+   * Prevents admins from deleting their own account
+   * or deleting another admin account.
    */
   async softDeleteUser(userId: string, currentAdminId: string) {
     if (userId === currentAdminId) {
@@ -752,6 +841,9 @@ export class UsersService {
         id: true,
         fullName: true,
         email: true,
+        role: true,
+        accountStatus: true,
+        userType: true,
         isActive: true,
         updatedAt: true,
       },
