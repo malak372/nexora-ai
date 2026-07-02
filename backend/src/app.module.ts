@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,15 +21,24 @@ import { AdminModule } from './admin/admin.module';
  * - Users management module
  * - Admin panel module
  * - Global caching layer
+ * - Global rate limiting layer
  *
  * Cache is configured globally with TTL for performance optimization.
+ * Rate limiting is configured globally to protect sensitive endpoints
+ * from excessive requests.
  */
 @Module({
   imports: [
     CacheModule.register({
       isGlobal: true,
-      ttl: 10, 
+      ttl: 10,
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     AuthModule,
     PrismaModule,
     UsersModule,
@@ -37,4 +47,4 @@ import { AdminModule } from './admin/admin.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
