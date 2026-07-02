@@ -3,6 +3,7 @@ import {
     Injectable,
     UnauthorizedException,
 } from '@nestjs/common';
+import { AuthAction } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 
@@ -11,7 +12,11 @@ import { MailService } from '../../mail/mail.service';
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
-import { AuthTokenService } from './auth-token.service';
+import { AuthTokenService } from '../token/token.service';
+import {
+    AuthAuditService,
+    AuthRequestMeta,
+} from '../audit/audit.service';
 
 const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -21,11 +26,14 @@ const PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = 15;
  * Service responsible for password-related authentication operations.
  *
  * Handles:
- * - Changing the authenticated user's password.
+ * - Changing passwords for authenticated users.
+ * - Validating current passwords before updates.
  * - Creating secure password reset tokens.
+ * - Invalidating old unused password reset tokens.
  * - Sending password reset emails.
  * - Resetting forgotten passwords.
- * - Revoking active refresh tokens after password reset.
+ * - Revoking active refresh tokens after password change or password reset.
+ * - Recording authentication audit logs for password events.
  *
  * @author Eman
  */
@@ -35,28 +43,37 @@ export class AuthPasswordService {
         private readonly prisma: PrismaService,
         private readonly mailService: MailService,
         private readonly authTokenService: AuthTokenService,
+        private readonly authAuditService: AuthAuditService,
     ) { }
 
     /**
-     * Changes the password of an authenticated user.
+     * Changes the password of an authenticated and active user.
      *
-     * The method verifies that the user exists, the account is active,
-     * the current password is correct, and the new password is different
-     * from the current password.
+     * The current password must be valid, and the new password
+     * must be different from the existing password. After a
+     * successful update, all active refresh tokens are revoked
+     * to force re-authentication, and a password change audit
+     * log is recorded.
      *
-     * @param userId - Authenticated user ID.
-     * @param dto - Current and new password data.
+     * @param userId Authenticated user ID.
+     * @param dto Current and new password data.
+     * @param meta Optional request metadata such as IP address and user agent.
      * @returns Password change confirmation message.
      *
      * @throws UnauthorizedException if the user does not exist or is inactive.
      * @throws BadRequestException if the current password is incorrect
      * or the new password matches the current password.
      */
-    async changePassword(userId: string, dto: ChangePasswordDto) {
+    async changePassword(
+        userId: string,
+        dto: ChangePasswordDto,
+        meta?: AuthRequestMeta,
+    ) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,
+                email: true,
                 passwordHash: true,
                 isActive: true,
             },
@@ -88,11 +105,32 @@ export class AuthPasswordService {
 
         const newPasswordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
 
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                passwordHash: newPasswordHash,
-            },
+        await this.prisma.$transaction([
+            this.prisma.user.update({
+                where: { id: userId },
+                data: {
+                    passwordHash: newPasswordHash,
+                },
+            }),
+
+            this.prisma.refreshToken.updateMany({
+                where: {
+                    userId,
+                    revokedAt: null,
+                },
+                data: {
+                    revokedAt: new Date(),
+                },
+            }),
+        ]);
+
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.CHANGE_PASSWORD,
+            isSuccess: true,
+            message: 'Password changed successfully',
+            ...meta,
         });
 
         return {
@@ -103,15 +141,23 @@ export class AuthPasswordService {
     /**
      * Sends a password reset email for active accounts.
      *
-     * For security reasons, this method always returns the same response
-     * whether the email exists or not. If the account exists and is active,
-     * any previous unused reset tokens are invalidated, a new secure token
-     * is created, and a password reset link is emailed to the user.
+     * For security reasons, this method always returns the same
+     * response whether the email exists or not. If the account
+     * exists and is active, previous unused reset tokens are
+     * invalidated, a new secure reset token is created, and a
+     * password reset email is sent.
      *
-     * @param dto - Forgot password request data.
+     * A forgot password audit log is recorded only when a valid
+     * active account is found and a reset email is generated.
+     *
+     * @param dto Forgot password request data.
+     * @param meta Optional request metadata such as IP address and user agent.
      * @returns Password reset request confirmation message.
      */
-    async forgotPassword(dto: ForgotPasswordDto) {
+    async forgotPassword(
+        dto: ForgotPasswordDto,
+        meta?: AuthRequestMeta,
+    ) {
         const user = await this.prisma.user.findUnique({
             where: { email: dto.email },
             select: {
@@ -122,8 +168,7 @@ export class AuthPasswordService {
         });
 
         const response = {
-            message:
-                'If this email exists, a password reset link has been sent',
+            message: 'If this email exists, a password reset link has been sent',
         };
 
         if (!user || !user.isActive) {
@@ -163,25 +208,43 @@ export class AuthPasswordService {
 
         await this.mailService.sendPasswordResetEmail(user.email, resetLink);
 
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.FORGOT_PASSWORD,
+            isSuccess: true,
+            message: 'Password reset link requested',
+            ...meta,
+        });
+
         return response;
     }
 
     /**
-     * Resets a user's password using a valid reset token.
+     * Resets a user's password using a valid password reset token.
      *
      * The reset token must exist, belong to an active user,
-     * be unused, and not be expired. After a successful reset,
-     * the user's password is updated, the reset token is marked
-     * as used, and all active refresh tokens are revoked to force
-     * re-authentication.
+     * be unused, and not be expired. If validation fails,
+     * a failed password reset audit log is recorded before
+     * rejecting the request.
      *
-     * @param dto - Reset password request data.
+     * After successful validation, the user's password is updated,
+     * the reset token is marked as used, all active refresh tokens
+     * are revoked to force re-authentication, and a successful
+     * password reset audit log is recorded.
+     *
+     * @param dto Reset token and new password data.
+     * @param meta Optional request metadata such as IP address and user agent.
      * @returns Password reset confirmation message.
      *
-     * @throws BadRequestException if the token is invalid, expired,
-     * already used, or the new password matches the current password.
+     * @throws BadRequestException if the reset token is invalid,
+     * expired, already used, or the new password matches the
+     * current password.
      */
-    async resetPassword(dto: ResetPasswordDto) {
+    async resetPassword(
+        dto: ResetPasswordDto,
+        meta?: AuthRequestMeta,
+    ) {
         const tokenHash = this.authTokenService.hashToken(dto.token);
 
         const storedToken = await this.prisma.passwordResetToken.findUnique({
@@ -197,6 +260,15 @@ export class AuthPasswordService {
             storedToken.expiresAt < new Date() ||
             !storedToken.user.isActive
         ) {
+            await this.authAuditService.createLog({
+                userId: storedToken?.userId,
+                email: storedToken?.user?.email,
+                action: AuthAction.RESET_PASSWORD_FAILED,
+                isSuccess: false,
+                message: 'Invalid or expired reset token',
+                ...meta,
+            });
+
             throw new BadRequestException('Invalid or expired reset token');
         }
 
@@ -206,6 +278,15 @@ export class AuthPasswordService {
         );
 
         if (isSamePassword) {
+            await this.authAuditService.createLog({
+                userId: storedToken.userId,
+                email: storedToken.user.email,
+                action: AuthAction.RESET_PASSWORD_FAILED,
+                isSuccess: false,
+                message: 'New password matches the current password',
+                ...meta,
+            });
+
             throw new BadRequestException(
                 'New password must be different from current password',
             );
@@ -241,6 +322,15 @@ export class AuthPasswordService {
                 },
             }),
         ]);
+
+        await this.authAuditService.createLog({
+            userId: storedToken.userId,
+            email: storedToken.user.email,
+            action: AuthAction.RESET_PASSWORD,
+            isSuccess: true,
+            message: 'Password reset successfully',
+            ...meta,
+        });
 
         return {
             message: 'Password reset successfully',

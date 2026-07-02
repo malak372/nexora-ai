@@ -3,7 +3,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { StringValue } from 'ms';
 
-import { AuthController } from './auth.controller';
+import { LoginController } from './login/login.controller';
+import { RegisterController } from './register/register.controller';
+import { RefreshController } from './refresh/refresh.controller';
+import { LogoutController } from './logout/logout.controller';
+import { PasswordController } from './password/password.controller';
+import { EmailController } from './email/email.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
@@ -11,15 +16,15 @@ import { RolesGuard } from './guards/roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { MailModule } from '../mail/mail.module';
 
-import { AuthTokenService } from './services/auth-token.service';
-import { AuthGuestService } from './services/auth-guest.service';
-import { AuthEmailService } from './services/auth-email.service';
-import { AuthPasswordService } from './services/auth-password.service';
-import { AuthRegisterService } from './services/auth-register.service';
-import { AuthLoginService } from './services/auth-login.service';
-import { AuthRefreshService } from './services/auth-refresh.service';
-import { AuthLogoutService } from './services/auth-logout.service';
-import { AuthProfileService } from './services/auth-profile.service';
+import { AuthTokenService } from './token/token.service';
+import { AuthGuestService } from './guest/guest.service';
+import { AuthEmailService } from './email/email.service';
+import { AuthPasswordService } from './password/password.service';
+import { AuthRegisterService } from './register/register.service';
+import { AuthLoginService } from './login/login.service';
+import { AuthRefreshService } from './refresh/refresh.service';
+import { AuthLogoutService } from './logout/logout.service';
+import { AuthAuditService } from './audit/audit.service';
 
 /**
  * Authentication module.
@@ -31,7 +36,9 @@ import { AuthProfileService } from './services/auth-profile.service';
  * - Password change and password reset flows.
  * - Email verification and welcome email flow.
  * - Guest idea transfer after registration.
+ * - Authentication audit logging.
  * - Passport JWT strategy and role-based guards.
+ * - User type support for personalization and analytics.
  *
  * This module imports PrismaModule for database access
  * and MailModule for authentication-related email delivery.
@@ -50,7 +57,14 @@ import { AuthProfileService } from './services/auth-profile.service';
     }),
     MailModule,
   ],
-  controllers: [AuthController],
+  controllers: [
+    LoginController,
+    RegisterController,
+    RefreshController,
+    LogoutController,
+    PasswordController,
+    EmailController,
+  ],
   providers: [
     AuthService,
     AuthTokenService,
@@ -61,13 +75,10 @@ import { AuthProfileService } from './services/auth-profile.service';
     AuthLoginService,
     AuthRefreshService,
     AuthLogoutService,
-    AuthProfileService,
+    AuthAuditService,
     JwtStrategy,
     RolesGuard,
   ],
-  exports: [
-    AuthService,
-    RolesGuard,
-  ],
+  exports: [AuthService, RolesGuard],
 })
 export class AuthModule { }

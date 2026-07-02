@@ -1,11 +1,22 @@
+import { Transform } from 'class-transformer';
 import { IsEmail } from 'class-validator';
 
 /**
- * DTO used to resend an email verification link.
+ * Data Transfer Object (DTO) used to request
+ * a new email verification link.
+ *
+ * The email address is automatically trimmed
+ * and converted to lowercase before validation.
  *
  * @author Eman
  */
 export class ResendVerificationEmailDto {
+    /**
+     * User email address.
+     */
+    @Transform(({ value }) =>
+        typeof value === 'string' ? value.trim().toLowerCase() : value,
+    )
     @IsEmail()
     email!: string;
 }

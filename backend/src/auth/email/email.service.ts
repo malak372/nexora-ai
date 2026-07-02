@@ -1,9 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { AuthAction } from '@prisma/client';
 import { randomBytes } from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
-import { AuthTokenService } from './auth-token.service';
+import { AuthTokenService } from '../token/token.service';
+import {
+    AuthAuditService,
+    AuthRequestMeta,
+} from '../audit/audit.service';
 
 const EMAIL_VERIFICATION_TOKEN_BYTES = 32;
 const EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS = 24;
@@ -11,13 +16,15 @@ const EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS = 24;
 /**
  * Service responsible for email verification operations.
  *
- * This service handles:
+ * Handles:
  * - Creating secure email verification tokens.
  * - Invalidating old unused verification tokens.
- * - Sending verification links to registered users.
+ * - Sending verification emails.
+ * - Resending verification links for unverified users.
  * - Verifying user email addresses.
- * - Marking verified accounts as verified.
- * - Sending a welcome email after successful verification.
+ * - Marking accounts as verified.
+ * - Sending welcome emails after successful verification.
+ * - Recording authentication audit logs for email events.
  *
  * @author Eman
  */
@@ -27,23 +34,23 @@ export class AuthEmailService {
         private readonly prisma: PrismaService,
         private readonly mailService: MailService,
         private readonly authTokenService: AuthTokenService,
+        private readonly authAuditService: AuthAuditService,
     ) { }
 
     /**
      * Generates and sends an email verification link.
      *
-     * Before creating a new verification token, this method
-     * marks any previous unused verification tokens for the same
-     * user as used. This ensures that only the latest verification
-     * link remains valid.
+     * Any previous unused verification tokens for the same user
+     * are invalidated before creating a new token. The plain token
+     * is sent only through email, while its hashed value is stored
+     * in the database for security.
      *
-     * The generated token is hashed before being stored in the
-     * database for security reasons, while the plain token is sent
-     * only through the verification link.
+     * After the verification email is sent, an authentication audit
+     * log is recorded.
      *
-     * @param userId - ID of the user who needs email verification.
-     * @param email - Email address that will receive the verification link.
-     * @returns A promise that resolves when the verification email is sent.
+     * @param userId User ID that requires email verification.
+     * @param email Email address that will receive the verification link.
+     * @returns A promise that resolves after the email is sent.
      */
     async sendEmailVerificationLink(
         userId: string,
@@ -86,18 +93,33 @@ export class AuthEmailService {
             `&token=${verificationToken}`;
 
         await this.mailService.sendVerificationEmail(email, verificationLink);
+
+        await this.authAuditService.createLog({
+            userId,
+            email,
+            action: AuthAction.VERIFICATION_EMAIL_SENT,
+            isSuccess: true,
+            message: 'Verification email sent successfully',
+        });
     }
 
     /**
      * Resends an email verification link for an unverified active user.
      *
-     * @param email - User email address.
+     * The request is rejected if the account does not exist,
+     * is inactive, or is already verified. After a new verification
+     * link is sent, an authentication audit log is recorded.
+     *
+     * @param email User email address.
+     * @param meta Optional request metadata such as IP address and user agent.
      * @returns Verification email resend confirmation message.
      *
-     * @throws BadRequestException if the account does not exist,
-     * is inactive, or is already verified.
+     * @throws BadRequestException if the verification request is invalid.
      */
-    async resendVerificationEmail(email: string) {
+    async resendVerificationEmail(
+        email: string,
+        meta?: AuthRequestMeta,
+    ) {
         const user = await this.prisma.user.findUnique({
             where: { email },
             select: {
@@ -120,6 +142,15 @@ export class AuthEmailService {
 
         await this.sendEmailVerificationLink(user.id, user.email);
 
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.RESEND_VERIFICATION_EMAIL,
+            isSuccess: true,
+            message: 'Verification email resent successfully',
+            ...meta,
+        });
+
         return {
             message: 'Verification email has been resent successfully',
         };
@@ -128,28 +159,40 @@ export class AuthEmailService {
     /**
      * Verifies a user's email address using a verification token.
      *
-     * This method validates that:
-     * - The email and token are provided.
-     * - The user exists and the account is active.
-     * - The email is not already verified.
-     * - The verification token exists.
-     * - The token belongs to the same user.
-     * - The token has not been used before.
-     * - The token has not expired.
+     * The email and token must be provided. The user must exist,
+     * be active, and not already verified. The verification token
+     * must exist, belong to the requested user, be unused, and
+     * not be expired.
      *
-     * After successful verification, the user's `isVerified`
-     * status is updated to true, the token is marked as used,
-     * and a welcome email is sent to the verified user.
+     * Failed verification attempts are recorded in authentication
+     * audit logs before rejecting the request. After successful
+     * verification, the user's account is marked as verified,
+     * the token is marked as used, a welcome email is sent, and
+     * a successful verification audit log is recorded.
      *
-     * @param email - User email address.
-     * @param token - Plain verification token received from the verification link.
+     * @param email User email address.
+     * @param token Plain verification token received from the verification link.
+     * @param meta Optional request metadata such as IP address and user agent.
      * @returns Email verification confirmation message.
      *
-     * @throws BadRequestException if the verification request is invalid,
-     * the account is inactive, or the token is invalid, expired, or already used.
+     * @throws BadRequestException if the email or token is missing,
+     * the request is invalid, or the token is invalid, expired,
+     * or already used.
      */
-    async verifyEmail(email: string, token: string) {
+    async verifyEmail(
+        email: string,
+        token: string,
+        meta?: AuthRequestMeta,
+    ) {
         if (!email || !token) {
+            await this.authAuditService.createLog({
+                email,
+                action: AuthAction.VERIFY_EMAIL_FAILED,
+                isSuccess: false,
+                message: 'Email or verification token is missing',
+                ...meta,
+            });
+
             throw new BadRequestException('Email and token are required');
         }
 
@@ -157,12 +200,22 @@ export class AuthEmailService {
             where: { email },
             select: {
                 id: true,
+                email: true,
                 isVerified: true,
                 isActive: true,
             },
         });
 
         if (!user || !user.isActive) {
+            await this.authAuditService.createLog({
+                userId: user?.id,
+                email,
+                action: AuthAction.VERIFY_EMAIL_FAILED,
+                isSuccess: false,
+                message: 'Invalid verification request',
+                ...meta,
+            });
+
             throw new BadRequestException('Invalid verification request');
         }
 
@@ -185,6 +238,15 @@ export class AuthEmailService {
             storedToken.usedAt ||
             storedToken.expiresAt < new Date()
         ) {
+            await this.authAuditService.createLog({
+                userId: user.id,
+                email: user.email,
+                action: AuthAction.VERIFY_EMAIL_FAILED,
+                isSuccess: false,
+                message: 'Invalid or expired verification token',
+                ...meta,
+            });
+
             throw new BadRequestException(
                 'Invalid or expired verification token',
             );
@@ -220,6 +282,15 @@ export class AuthEmailService {
                 verifiedUser.fullName,
             );
         }
+
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.EMAIL_VERIFIED,
+            isSuccess: true,
+            message: 'Email verified successfully',
+            ...meta,
+        });
 
         return {
             message: 'Email verified successfully',

@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * Service responsible for guest session authentication support.
+ * Service responsible for guest session operations.
  *
  * This service handles transferring guest-generated ideas
  * to a newly registered user account when the user registers
