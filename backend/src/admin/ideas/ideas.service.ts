@@ -33,7 +33,12 @@ import {
  * - Idea summary reports.
  * - Chart-ready idea analytics.
  * - CSV export.
- * - Detailed idea inspection.
+ * - Detailed idea inspection with related collection job, social posts, comments, NLP analysis, prompts, payments, credits, outputs, and chat sessions.
+ *
+ * Notes:
+ * - The old Comment and IdeaComment models were removed.
+ * - Comments used for an idea are now accessed through:
+ *   Idea -> CollectionJob -> SocialPost -> SocialComment
  *
  * @author Malak
  */
@@ -149,6 +154,15 @@ export class IdeasService {
             select: {
               id: true,
               name: true,
+            },
+          },
+
+          collectionJob: {
+            select: {
+              id: true,
+              status: true,
+              totalPosts: true,
+              totalComments: true,
             },
           },
         },
@@ -463,6 +477,15 @@ export class IdeasService {
             name: true,
           },
         },
+
+        collectionJob: {
+          select: {
+            id: true,
+            status: true,
+            totalPosts: true,
+            totalComments: true,
+          },
+        },
       },
     });
 
@@ -483,6 +506,10 @@ export class IdeasService {
       'Unlock Method',
       'Unlocked At',
       'Comments Count',
+      'Collection Job ID',
+      'Collection Job Status',
+      'Total Posts',
+      'Total Comments',
       'Created At',
       'Updated At',
     ];
@@ -504,6 +531,10 @@ export class IdeasService {
       idea.unlockMethod,
       idea.unlockedAt?.toISOString() ?? '',
       idea.commentsCount,
+      idea.collectionJob?.id ?? '',
+      idea.collectionJob?.status ?? '',
+      idea.collectionJob?.totalPosts ?? 0,
+      idea.collectionJob?.totalComments ?? 0,
       idea.createdAt.toISOString(),
       idea.updatedAt.toISOString(),
     ]);
@@ -513,6 +544,18 @@ export class IdeasService {
 
   /**
    * Retrieves detailed information about a specific project idea.
+   *
+   * Includes:
+   * - Basic idea details.
+   * - Owner user or guest session.
+   * - Domain and selected platform.
+   * - Payments and credit transactions.
+   * - Generated AI outputs.
+   * - Collection job details.
+   * - Social posts and collected social comments.
+   * - NLP analysis results.
+   * - Prompt history records.
+   * - Chat sessions and recent messages.
    */
   async getIdeaById(id: string) {
     const idea = await this.prisma.idea.findUnique({
@@ -574,6 +617,117 @@ export class IdeasService {
           },
         },
 
+        collectionJob: {
+          select: {
+            id: true,
+            country: true,
+            city: true,
+            region: true,
+            radiusKm: true,
+            platforms: true,
+            keywords: true,
+            status: true,
+            totalPosts: true,
+            totalComments: true,
+            startedAt: true,
+            completedAt: true,
+            failedReason: true,
+            createdAt: true,
+            updatedAt: true,
+
+            domain: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+
+            posts: {
+              take: 20,
+              orderBy: {
+                collectedAt: 'desc',
+              },
+              select: {
+                id: true,
+                sourceType: true,
+                externalId: true,
+                title: true,
+                content: true,
+                author: true,
+                url: true,
+                country: true,
+                city: true,
+                region: true,
+                language: true,
+                likesCount: true,
+                repliesCount: true,
+                publishedAt: true,
+                collectedAt: true,
+                createdAt: true,
+
+                platform: {
+                  select: {
+                    id: true,
+                    name: true,
+                    isActive: true,
+                  },
+                },
+
+                comments: {
+                  take: 20,
+                  orderBy: {
+                    collectedAt: 'desc',
+                  },
+                  select: {
+                    id: true,
+                    externalId: true,
+                    content: true,
+                    author: true,
+                    language: true,
+                    sentiment: true,
+                    likesCount: true,
+                    publishedAt: true,
+                    collectedAt: true,
+                    createdAt: true,
+                  },
+                },
+              },
+            },
+
+            nlpAnalyses: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 5,
+              select: {
+                id: true,
+                sentimentStats: true,
+                keywords: true,
+                topics: true,
+                recurringProblems: true,
+                extractedNeeds: true,
+                sampleComments: true,
+                statistics: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+
+        promptHistories: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 10,
+          select: {
+            id: true,
+            promptType: true,
+            promptText: true,
+            createdAt: true,
+            collectionJobId: true,
+          },
+        },
+
         payments: {
           orderBy: {
             createdAt: 'desc',
@@ -615,31 +769,6 @@ export class IdeasService {
             content: true,
             createdAt: true,
             updatedAt: true,
-          },
-        },
-
-        ideaComments: {
-          take: 20,
-          select: {
-            id: true,
-            comment: {
-              select: {
-                id: true,
-                content: true,
-                sentiment: true,
-                language: true,
-                region: true,
-                sourceUrl: true,
-                collectedAt: true,
-                createdAt: true,
-                platform: {
-                  select: {
-                    id: true,
-                    name: true,
-                  },
-                },
-              },
-            },
           },
         },
 

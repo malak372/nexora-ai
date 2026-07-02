@@ -6,7 +6,6 @@ import { GetCommentsQueryDto } from './dto/get-comments-query.dto';
 
 import {
   buildDateFilter,
-  buildExactFilter,
   buildOrderBy,
   buildPagination,
   buildSearchFilter,
@@ -16,15 +15,12 @@ import {
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
- * Service responsible for Admin comment management operations.
+ * Service responsible for Admin collected social comments management.
  *
- * Provides:
- * - Paginated comments list.
- * - Filtering by platform, language, region, and date range.
- * - Search within comment content.
- * - Safe sorting using whitelisted fields.
- * - Summary reports for collected comments.
- * - Chart-ready analytics data.
+ * Uses SocialComment instead of the removed Comment model.
+ *
+ * Comments are now connected through:
+ * SocialComment -> SocialPost -> Platform / CollectionJob
  *
  * @author Malak
  */
@@ -33,17 +29,30 @@ export class CommentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Builds the shared Prisma where filter for comments.
+   * Builds the shared Prisma where filter for collected social comments.
    */
   private buildCommentsWhere(
     query: GetCommentsQueryDto,
-  ): Prisma.CommentWhereInput {
+  ): Prisma.SocialCommentWhereInput {
     return {
       ...buildDateFilter(query),
-      ...buildExactFilter('platformId', query.platformId),
       ...buildStringFilter('language', query.language),
-      ...buildStringFilter('region', query.region),
       ...buildSearchFilter(['content'], query.search),
+
+      ...(query.region && {
+        post: {
+          region: {
+            contains: query.region,
+            mode: 'insensitive',
+          },
+        },
+      }),
+
+      ...(query.platformId && {
+        post: {
+          platformId: query.platformId,
+        },
+      }),
     };
   }
 
@@ -51,9 +60,9 @@ export class CommentsService {
    * Adds a minimum createdAt date while preserving existing date filters.
    */
   private mergeCreatedAtGte(
-    where: Prisma.CommentWhereInput,
+    where: Prisma.SocialCommentWhereInput,
     gte: Date,
-  ): Prisma.CommentWhereInput {
+  ): Prisma.SocialCommentWhereInput {
     const existingCreatedAt =
       typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
@@ -69,8 +78,8 @@ export class CommentsService {
   }
 
   /**
-   * Retrieves collected comments with filtering, searching,
-   * sorting, and pagination.
+   * Retrieves collected social comments with filtering,
+   * searching, sorting, and pagination.
    */
   async getComments(query: GetCommentsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -78,42 +87,61 @@ export class CommentsService {
 
     const orderBy = buildOrderBy(
       query,
-      ['collectedAt', 'language', 'region', 'sentiment', 'createdAt'] as const,
+      ['collectedAt', 'language', 'sentiment', 'createdAt'] as const,
       'createdAt',
     );
 
     const [comments, total] = await Promise.all([
-      this.prisma.comment.findMany({
+      this.prisma.socialComment.findMany({
         where,
         skip,
         take: limit,
         orderBy,
         select: {
           id: true,
+          externalId: true,
           content: true,
+          author: true,
           sentiment: true,
           language: true,
-          region: true,
-          sourceUrl: true,
+          likesCount: true,
+          publishedAt: true,
           collectedAt: true,
           createdAt: true,
 
-          platform: {
+          post: {
             select: {
               id: true,
-              name: true,
-            },
-          },
+              title: true,
+              content: true,
+              url: true,
+              sourceType: true,
+              country: true,
+              city: true,
+              region: true,
+              language: true,
 
-          _count: {
-            select: {
-              ideaComments: true,
+              platform: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+
+              collectionJob: {
+                select: {
+                  id: true,
+                  status: true,
+                  totalPosts: true,
+                  totalComments: true,
+                },
+              },
             },
           },
         },
       }),
 
-      this.prisma.comment.count({ where }),
+      this.prisma.socialComment.count({ where }),
     ]);
 
     return {
@@ -128,7 +156,7 @@ export class CommentsService {
   }
 
   /**
-   * Retrieves summary statistics for collected comments.
+   * Retrieves summary statistics for collected social comments.
    */
   async getCommentsSummary(query: GetCommentsQueryDto) {
     const where = this.buildCommentsWhere(query);
@@ -151,47 +179,35 @@ export class CommentsService {
       languagesGroup,
       regionsGroup,
     ] = await Promise.all([
-      this.prisma.comment.count({ where }),
-      this.prisma.comment.count({ where: todayWhere }),
-      this.prisma.comment.count({ where: monthWhere }),
+      this.prisma.socialComment.count({ where }),
+      this.prisma.socialComment.count({ where: todayWhere }),
+      this.prisma.socialComment.count({ where: monthWhere }),
 
-      this.prisma.comment.groupBy({
+      this.prisma.socialPost.groupBy({
         by: ['platformId'],
         where: {
-          ...where,
-          platformId: {
-            not: null,
-          },
+          platformId: { not: null },
+          comments: { some: where },
         },
-        _count: {
-          platformId: true,
-        },
+        _count: { platformId: true },
       }),
 
-      this.prisma.comment.groupBy({
+      this.prisma.socialComment.groupBy({
         by: ['language'],
         where: {
           ...where,
-          language: {
-            not: null,
-          },
+          language: { not: null },
         },
-        _count: {
-          language: true,
-        },
+        _count: { language: true },
       }),
 
-      this.prisma.comment.groupBy({
+      this.prisma.socialPost.groupBy({
         by: ['region'],
         where: {
-          ...where,
-          region: {
-            not: null,
-          },
+          region: { not: null },
+          comments: { some: where },
         },
-        _count: {
-          region: true,
-        },
+        _count: { region: true },
       }),
     ]);
 
@@ -206,7 +222,7 @@ export class CommentsService {
   }
 
   /**
-   * Retrieves chart-ready analytics for collected comments.
+   * Retrieves chart-ready analytics for collected social comments.
    */
   async getCommentsCharts(query: GetCommentsQueryDto) {
     const where = this.buildCommentsWhere(query);
@@ -216,17 +232,13 @@ export class CommentsService {
       commentsByLanguageGroup,
       commentsByRegionGroup,
     ] = await Promise.all([
-      this.prisma.comment.groupBy({
+      this.prisma.socialPost.groupBy({
         by: ['platformId'],
         where: {
-          ...where,
-          platformId: {
-            not: null,
-          },
+          platformId: { not: null },
+          comments: { some: where },
         },
-        _count: {
-          platformId: true,
-        },
+        _count: { platformId: true },
         orderBy: {
           _count: {
             platformId: 'desc',
@@ -234,17 +246,13 @@ export class CommentsService {
         },
       }),
 
-      this.prisma.comment.groupBy({
+      this.prisma.socialComment.groupBy({
         by: ['language'],
         where: {
           ...where,
-          language: {
-            not: null,
-          },
+          language: { not: null },
         },
-        _count: {
-          language: true,
-        },
+        _count: { language: true },
         orderBy: {
           _count: {
             language: 'desc',
@@ -252,17 +260,13 @@ export class CommentsService {
         },
       }),
 
-      this.prisma.comment.groupBy({
+      this.prisma.socialPost.groupBy({
         by: ['region'],
         where: {
-          ...where,
-          region: {
-            not: null,
-          },
+          region: { not: null },
+          comments: { some: where },
         },
-        _count: {
-          region: true,
-        },
+        _count: { region: true },
         orderBy: {
           _count: {
             region: 'desc',

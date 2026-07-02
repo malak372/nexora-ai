@@ -26,7 +26,7 @@ type UsersGrowthRow = {
  */
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Retrieves summarized analytics for the Admin dashboard.
@@ -217,7 +217,7 @@ export class DashboardService {
         where: { paymentPurpose: PaymentPurpose.BUY_CREDITS },
       }),
 
-      this.prisma.comment.count(),
+      this.prisma.socialComment.count(),
 
       this.prisma.payment.aggregate({
         where: { status: PaymentStatus.SUCCESS },
@@ -365,11 +365,11 @@ export class DashboardService {
         take: 5,
       }),
 
-      this.prisma.idea.groupBy({
-        by: ['selectedPlatformId'],
-        where: { selectedPlatformId: { not: null } },
-        _count: { selectedPlatformId: true },
-        orderBy: { _count: { selectedPlatformId: 'desc' } },
+      this.prisma.socialPost.groupBy({
+        by: ['platformId'],
+        where: { platformId: { not: null } },
+        _count: { platformId: true },
+        orderBy: { _count: { platformId: 'desc' } },
         take: 5,
       }),
 
@@ -479,7 +479,7 @@ export class DashboardService {
     const domainIds = mostSelectedDomains.map((item) => item.domainId);
 
     const platformIds = mostUsedPlatforms
-      .map((item) => item.selectedPlatformId)
+      .map((item) => item.platformId)
       .filter((id): id is string => Boolean(id));
 
     const [domains, platforms] = await Promise.all([
@@ -516,11 +516,11 @@ export class DashboardService {
       aiRequests === 0
         ? 0
         : Number(
-            (
-              ((aiRequests - failedAiRequests) / aiRequests) *
-              100
-            ).toFixed(2),
-          );
+          (
+            ((aiRequests - failedAiRequests) / aiRequests) *
+            100
+          ).toFixed(2),
+        );
 
     const averageAiCostPerRequest =
       aiRequests === 0
@@ -531,11 +531,11 @@ export class DashboardService {
       premiumUsers === 0
         ? 0
         : Number(
-            (
-              (totalPremiumCreditBalance._sum.creditBalance ?? 0) /
-              premiumUsers
-            ).toFixed(2),
-          );
+          (
+            (totalPremiumCreditBalance._sum.creditBalance ?? 0) /
+            premiumUsers
+          ).toFixed(2),
+        );
 
     const recentPayments = recentPaymentsRaw.map((payment) => ({
       ...payment,
@@ -648,15 +648,15 @@ export class DashboardService {
 
       mostUsedPlatforms: mostUsedPlatforms.map((item) => {
         const platformName =
-          item.selectedPlatformId !== null
-            ? platformMap.get(item.selectedPlatformId) ?? null
+          item.platformId !== null
+            ? platformMap.get(item.platformId) ?? null
             : null;
 
         return {
           label: platformName ?? 'Unknown Platform',
-          platformId: item.selectedPlatformId,
+          platformId: item.platformId,
           platformName,
-          count: item._count.selectedPlatformId,
+          count: item._count.platformId,
         };
       }),
 
