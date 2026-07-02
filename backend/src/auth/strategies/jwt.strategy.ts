@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { UserRole, AccountStatus } from '@prisma/client';
+import { AccountStatus, UserRole, UserType } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -9,13 +9,16 @@ type JwtPayload = {
   email: string;
   role: UserRole;
   accountStatus: AccountStatus;
+  userType?: UserType | null;
 };
 
 /**
  * JWT authentication strategy.
  *
- * Validates access tokens extracted from the Authorization header
- * and attaches the authenticated user information to the request.
+ * Validates JWT access tokens extracted from the Authorization
+ * header and attaches the authenticated user's identity,
+ * authorization information, and account details to the
+ * current request.
  *
  * @author Eman
  */
@@ -38,14 +41,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   /**
    * Validates the decoded JWT payload.
    *
-   * Retrieves the user from the database and ensures
-   * that the account exists and is active before attaching
-   * the authenticated user data to the request object.
+   * Retrieves the authenticated user from the database and
+   * ensures the account exists and is active before attaching
+   * the authenticated user information to the request object.
    *
-   * @param payload - Decoded JWT payload.
-   * @returns Authenticated user data attached to the request.
+   * The attached user object contains identity information,
+   * authorization data, account status, and user type for use
+   * throughout protected endpoints.
    *
-   * @throws UnauthorizedException if the user does not exist or is inactive.
+   * @param payload Decoded JWT payload.
+   * @returns Authenticated user information attached to the request.
+   *
+   * @throws UnauthorizedException if the user does not exist
+   * or the account is inactive.
    */
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({
@@ -56,6 +64,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         fullName: true,
         role: true,
         accountStatus: true,
+        userType: true,
         isActive: true,
         isVerified: true,
       },
@@ -71,6 +80,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       fullName: user.fullName,
       role: user.role,
       accountStatus: user.accountStatus,
+      userType: user.userType,
       isActive: user.isActive,
       isVerified: user.isVerified,
     };

@@ -75,6 +75,7 @@ enum ComplaintStatus {
   RESOLVED
   REJECTED
 }
+
 enum UserType {
   STUDENT
   DEVELOPER
@@ -172,6 +173,26 @@ enum AdminTargetType {
   DATA_COLLECTION
 }
 
+enum AuthAction {
+  REGISTER
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  REFRESH_TOKEN
+  CHANGE_PASSWORD
+  FORGOT_PASSWORD
+  RESET_PASSWORD
+  EMAIL_VERIFIED
+  RESEND_VERIFICATION_EMAIL
+  ACCOUNT_LOCKED
+  ACCOUNT_DEACTIVATED
+  EMAIL_CHANGED
+  VERIFICATION_EMAIL_SENT
+  VERIFY_EMAIL_FAILED
+  RESET_PASSWORD_FAILED
+  REFRESH_TOKEN_FAILED
+}
+
 /**
  * USERS
  */
@@ -194,22 +215,23 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  userType UserType? @map("user_type")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  userType  UserType? @map("user_type")
 
-  ideas               Idea[]
-  payments            Payment[]
-  creditTransactions  CreditTransaction[]
-  chatSessions        ChatSession[]
-  alerts              Alert[]
-  complaints          Complaint[]
-  externalApiLogs     ExternalApiLog[]
-  adminAuditLogs      AdminAuditLog[]      @relation("AdminAuditLogs")
-  updatedSettings     SystemSetting[]      @relation("SettingsUpdatedBy")
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
+  ideas                   Idea[]
+  payments                Payment[]
+  creditTransactions      CreditTransaction[]
+  chatSessions            ChatSession[]
+  alerts                  Alert[]
+  complaints              Complaint[]
+  externalApiLogs         ExternalApiLog[]
+  adminAuditLogs          AdminAuditLog[]          @relation("AdminAuditLogs")
+  updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  authenticationLogs      AuthenticationLog[]
 
   @@map("users")
 }
@@ -631,6 +653,7 @@ model Platform {
 
   @@map("platforms")
 }
+
 model EmailVerificationToken {
   id        String @id @default(uuid())
   userId    String @map("user_id")
@@ -647,4 +670,28 @@ model EmailVerificationToken {
   @@index([expiresAt])
   @@index([usedAt])
   @@map("email_verification_tokens")
+}
+
+model AuthenticationLog {
+  id String @id @default(uuid())
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action AuthAction
+
+  email     String?
+  isSuccess Boolean @default(true) @map("is_success")
+  message   String?
+
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([email])
+  @@index([createdAt])
+  @@map("authentication_logs")
 }

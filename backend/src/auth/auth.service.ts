@@ -7,20 +7,21 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
-import { AuthRegisterService } from './services/auth-register.service';
-import { AuthLoginService } from './services/auth-login.service';
-import { AuthRefreshService } from './services/auth-refresh.service';
-import { AuthLogoutService } from './services/auth-logout.service';
-import { AuthProfileService } from './services/auth-profile.service';
-import { AuthPasswordService } from './services/auth-password.service';
-import { AuthEmailService } from './services/auth-email.service';
+import { AuthRegisterService } from './register/register.service';
+import { AuthLoginService } from './login/login.service';
+import { AuthRefreshService } from './refresh/refresh.service';
+import { AuthLogoutService } from './logout/logout.service';
+import { AuthPasswordService } from './password/password.service';
+import { AuthEmailService } from './email/email.service';
 
 /**
  * Main authentication facade service.
  *
- * Delegates authentication operations to specialized services
- * to keep authentication logic modular, maintainable, and aligned
- * with single-responsibility principles.
+ * Acts as the central facade for authentication operations by
+ * delegating requests to specialized authentication services.
+ *
+ * This design keeps authentication logic modular, maintainable,
+ * and aligned with the Single Responsibility Principle (SRP).
  *
  * @author Eman
  */
@@ -31,7 +32,6 @@ export class AuthService {
     private readonly authLoginService: AuthLoginService,
     private readonly authRefreshService: AuthRefreshService,
     private readonly authLogoutService: AuthLogoutService,
-    private readonly authProfileService: AuthProfileService,
     private readonly authPasswordService: AuthPasswordService,
     private readonly authEmailService: AuthEmailService,
   ) { }
@@ -62,13 +62,6 @@ export class AuthService {
    */
   logout(dto: RefreshDto) {
     return this.authLogoutService.logout(dto);
-  }
-
-  /**
-   * Delegates authenticated user profile retrieval to AuthProfileService.
-   */
-  me(userId: string) {
-    return this.authProfileService.me(userId);
   }
 
   /**

@@ -41,10 +41,11 @@ export class AuthTokenService {
      * Generates a signed JWT access token.
      *
      * The token includes the user's ID, email, role,
-     * and account status to support authenticated
-     * and role-based access control.
+     * and account status. These claims support authentication
+     * and role-based authorization, while the latest user data
+     * is still reloaded from the database by JwtStrategy.
      *
-     * @param user - User data required for JWT payload.
+     * @param user User data required for JWT payload.
      * @returns Signed JWT access token.
      */
     async generateAccessToken(user: {

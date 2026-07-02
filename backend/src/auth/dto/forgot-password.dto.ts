@@ -1,11 +1,22 @@
+import { Transform } from 'class-transformer';
 import { IsEmail } from 'class-validator';
 
 /**
- * DTO used to request a password reset email.
+ * Data Transfer Object (DTO) used to request
+ * a password reset email.
+ *
+ * The email address is automatically trimmed
+ * and converted to lowercase before validation.
  *
  * @author Eman
  */
 export class ForgotPasswordDto {
+  /**
+   * User email address.
+   */
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   email!: string;
 }
