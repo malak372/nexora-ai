@@ -166,6 +166,14 @@ export class AuthLoginService {
                 data: {
                     failedLoginAttempts: 0,
                     lockedUntil: null,
+                    lastLoginAt: new Date(),
+                },
+            });
+        } else {
+            await this.prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    lastLoginAt: new Date(),
                 },
             });
         }
@@ -174,7 +182,10 @@ export class AuthLoginService {
             await this.authTokenService.generateAccessToken(user);
 
         const refreshToken =
-            await this.authTokenService.generateRefreshToken(user.id);
+            await this.authTokenService.generateRefreshToken(
+                user.id,
+                meta,
+            );
 
         await this.authAuditService.createLog({
             userId: user.id,

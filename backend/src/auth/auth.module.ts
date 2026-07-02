@@ -25,6 +25,8 @@ import { AuthLoginService } from './login/login.service';
 import { AuthRefreshService } from './refresh/refresh.service';
 import { AuthLogoutService } from './logout/logout.service';
 import { AuthAuditService } from './audit/audit.service';
+import { AuthSessionsController } from './sessions/sessions.controller';
+import { AuthSessionsService } from './sessions/sessions.service';
 
 /**
  * Authentication module.
@@ -64,6 +66,7 @@ import { AuthAuditService } from './audit/audit.service';
     LogoutController,
     PasswordController,
     EmailController,
+    AuthSessionsController,
   ],
   providers: [
     AuthService,
@@ -78,6 +81,7 @@ import { AuthAuditService } from './audit/audit.service';
     AuthAuditService,
     JwtStrategy,
     RolesGuard,
+    AuthSessionsService,
   ],
   exports: [AuthService, RolesGuard],
 })

@@ -102,6 +102,7 @@ export class AuthRefreshService {
             where: { id: storedToken.id },
             data: {
                 revokedAt: new Date(),
+                lastUsedAt: new Date(),
             },
         });
 
@@ -109,7 +110,10 @@ export class AuthRefreshService {
             await this.authTokenService.generateAccessToken(storedToken.user);
 
         const refreshToken =
-            await this.authTokenService.generateRefreshToken(storedToken.user.id);
+            await this.authTokenService.generateRefreshToken(
+                storedToken.user.id,
+                meta,
+            );
 
         await this.authAuditService.createLog({
             userId: storedToken.user.id,
