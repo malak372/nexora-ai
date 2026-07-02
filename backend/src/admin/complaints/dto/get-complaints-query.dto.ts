@@ -9,6 +9,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * GET /admin/complaints
  * GET /admin/complaints/summary
  * GET /admin/complaints/charts
+ * GET /admin/complaints/export/csv
  *
  * Supports:
  * - Pagination through page and limit.

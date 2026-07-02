@@ -10,6 +10,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * - GET /admin/ai-monitoring/logs
  * - GET /admin/ai-monitoring/summary
  * - GET /admin/ai-monitoring/charts
+ * - GET /admin/ai-monitoring/logs/export/csv
  *
  * Supports:
  * - Pagination

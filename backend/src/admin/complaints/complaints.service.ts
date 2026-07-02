@@ -63,25 +63,68 @@ export class ComplaintsService {
   private buildComplaintsWhere(
     query: GetComplaintsQueryDto,
   ): Prisma.ComplaintWhereInput {
-    return {
+    const where: Prisma.ComplaintWhereInput = {
       ...buildDateFilter(query),
-
-      ...buildSearchFilter(
-        ['subject', 'message', 'adminReply'],
-        query.search,
-      ),
-
-      ...buildRelationSearchFilter(
-        'user',
-        ['fullName', 'email'],
-        query.search,
-      ),
-
-      ...buildRelationSearchFilter('idea', ['title'], query.search),
-
       ...buildExactFilter('status', query.status),
       ...buildExactFilter('priority', query.priority),
     };
+
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+
+      where.OR = [
+        {
+          subject: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          message: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          adminReply: {
+            contains: search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          user: {
+            is: {
+              OR: [
+                {
+                  fullName: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  email: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            },
+          },
+        },
+        {
+          idea: {
+            is: {
+              title: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    return where;
   }
 
   /**

@@ -32,13 +32,6 @@ export class MailService {
     },
   });
 
-  /**
-   * Sends a password reset email.
-   *
-   * @param email Recipient email address.
-   * @param resetLink Password reset URL.
-   * @author Eman
-   */
   async sendPasswordResetEmail(
     email: string,
     resetLink: string,
@@ -48,34 +41,67 @@ export class MailService {
         from: process.env.SMTP_FROM,
         to: email,
         subject: 'Reset your Nexora AI password',
+        text: `
+Nexora AI Password Reset
+
+Hello,
+
+A password reset request was received for your Nexora AI account.
+
+If you requested this change, open the link below:
+${resetLink}
+
+This link expires in 15 minutes.
+
+If you did not request this password reset, you can safely ignore this email.
+
+This email was sent automatically by Nexora AI. Please do not reply.
+      `,
         html: `
-          <h2>Password Reset Request</h2>
+        <h2>Nexora AI Password Reset</h2>
 
-          <p>We received a request to reset your password.</p>
+        <p>Hello,</p>
 
-          <p>Click the button below to create a new password:</p>
+        <p>
+          A password reset request was received for your Nexora AI account.
+        </p>
 
-          <a
-            href="${resetLink}"
-            style="
-              display:inline-block;
-              padding:12px 24px;
-              background:#2563eb;
-              color:white;
-              text-decoration:none;
-              border-radius:6px;
-            "
-          >
-            Reset Password
-          </a>
+        <p>
+          If you requested this change, click the button below.
+          Otherwise, you can safely ignore this email.
+        </p>
 
-          <p>This link expires in 15 minutes.</p>
+        <a
+          href="${resetLink}"
+          style="
+            display:inline-block;
+            padding:12px 24px;
+            background:#2563eb;
+            color:white;
+            text-decoration:none;
+            border-radius:6px;
+          "
+        >
+          Reset Password
+        </a>
 
-          <p>
-            If you did not request this password reset,
-            you can safely ignore this email.
-          </p>
-        `,
+        <p>This link expires in 15 minutes.</p>
+
+        <p>
+          If the button does not work, copy and paste this link into your browser:
+        </p>
+
+        <p>
+          <a href="${resetLink}">${resetLink}</a>
+        </p>
+
+        <hr />
+
+        <p>
+          This email was sent automatically by Nexora AI.
+          Please do not reply.
+        </p>
+      `,
       });
     } catch {
       throw new InternalServerErrorException(

@@ -10,6 +10,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 
+import { MailModule } from './mail/mail.module';
+
 /**
  * Root application module.
  *
@@ -19,6 +21,7 @@ import { AdminModule } from './admin/admin.module';
  * - Authentication module
  * - Database (Prisma) module
  * - Users management module
+ * - Mail module
  * - Admin panel module
  * - Global caching layer
  * - Global rate limiting layer
@@ -31,7 +34,7 @@ import { AdminModule } from './admin/admin.module';
   imports: [
     CacheModule.register({
       isGlobal: true,
-      ttl: 10,
+      ttl: 100000, 
     }),
     ThrottlerModule.forRoot([
       {
@@ -42,6 +45,7 @@ import { AdminModule } from './admin/admin.module';
     AuthModule,
     PrismaModule,
     UsersModule,
+    MailModule,
     AdminModule,
   ],
   controllers: [AppController],

@@ -19,8 +19,6 @@ import {
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildRelationSearchFilter,
-  buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
@@ -54,18 +52,44 @@ export class AlertsService {
    */
   async getAlerts(query: GetAlertsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
+    const searchFilter: Prisma.AlertWhereInput = query.search
+      ? {
+        OR: [
+          {
+            title: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            message: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            user: {
+              fullName: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            user: {
+              email: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      }
+      : {};
 
     const where: Prisma.AlertWhereInput = {
       ...buildDateFilter(query),
-
-      ...buildSearchFilter(['title', 'message'], query.search),
-
-      ...buildRelationSearchFilter(
-        'user',
-        ['fullName', 'email'],
-        query.search,
-      ),
-
+      ...searchFilter,
       ...buildExactFilter('type', query.type),
       ...buildExactFilter('isRead', query.isRead),
     };
@@ -323,7 +347,7 @@ export class AlertsService {
   /**
    * Sends an email alert to all active users.
    *
-   * Emails are sent in batches to avoid overloading
+   * Emails are sent sequentially to each active user.
    * the SMTP provider.
    *
    * @param body Email alert DTO.

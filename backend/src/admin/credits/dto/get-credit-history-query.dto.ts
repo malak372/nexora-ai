@@ -8,6 +8,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  *
  * Used with:
  * GET /admin/credits/history
+ * GET /admin/credits/export/csv
  *
  * Supports:
  * - Pagination through page and limit.

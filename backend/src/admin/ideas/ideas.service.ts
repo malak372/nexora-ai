@@ -27,22 +27,23 @@ import {
  *
  * Provides:
  * - Paginated ideas list.
- * - Filtering by domain, platform, region, generation type, unlock method, and unlock status.
+ * - Filtering by domain, platform, region, generation type, unlock method, unlock status, and owner user type.
  * - Search by title and problem statement.
  * - Safe sorting using whitelisted fields.
  * - Idea summary reports.
  * - Chart-ready idea analytics.
+ * - CSV export.
  * - Detailed idea inspection.
  *
  * @author Malak
  */
 @Injectable()
 export class IdeasService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Builds the shared Prisma where filter used by
-   * idea listing, summaries, charts, and reports.
+   * idea listing, summaries, charts, and CSV export.
    */
   private buildIdeasWhere(
     query: GetIdeasQueryDto,
@@ -61,15 +62,17 @@ export class IdeasService {
       ...buildExactFilter('unlockMethod', query.unlockMethod),
       ...buildExactFilter('isUnlocked', isUnlocked),
       ...buildStringFilter('selectedRegion', query.region),
+
+      ...(query.userType !== undefined && {
+        user: {
+          userType: query.userType,
+        },
+      }),
     };
   }
 
   /**
    * Adds a minimum createdAt date while preserving existing date filters.
-   *
-   * Used for calculating:
-   * - Ideas created today.
-   * - Ideas created this month.
    */
   private mergeCreatedAtGte(
     where: Prisma.IdeaWhereInput,
@@ -88,118 +91,10 @@ export class IdeasService {
       },
     };
   }
-  /**
-   * Exports filtered ideas as CSV.
-   *
-   * Uses the same filters and sorting rules
-   * as the ideas list endpoint.
-   *
-   * Endpoint:
-   * GET /admin/ideas/export/csv
-   */
-  async exportIdeasCsv(query: GetIdeasQueryDto) {
-    const where = this.buildIdeasWhere(query);
 
-    const orderBy = buildOrderBy(
-      query,
-      [
-        'title',
-        'generationType',
-        'isUnlocked',
-        'unlockMethod',
-        'commentsCount',
-        'createdAt',
-      ] as const,
-      'createdAt',
-    );
-
-    const ideas = await this.prisma.idea.findMany({
-      where,
-      orderBy,
-      select: {
-        id: true,
-        title: true,
-        selectedRegion: true,
-        generationType: true,
-        isUnlocked: true,
-        unlockMethod: true,
-        unlockedAt: true,
-        commentsCount: true,
-        createdAt: true,
-        updatedAt: true,
-
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-
-        domain: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-
-        selectedPlatform: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    const headers = [
-      'Idea ID',
-      'Title',
-      'User ID',
-      'User Name',
-      'User Email',
-      'Domain ID',
-      'Domain Name',
-      'Platform ID',
-      'Platform Name',
-      'Selected Region',
-      'Generation Type',
-      'Is Unlocked',
-      'Unlock Method',
-      'Unlocked At',
-      'Comments Count',
-      'Created At',
-      'Updated At',
-    ];
-
-    const rows = ideas.map((idea) => [
-      idea.id,
-      idea.title,
-      idea.user?.id ?? '',
-      idea.user?.fullName ?? '',
-      idea.user?.email ?? '',
-      idea.domain?.id ?? '',
-      idea.domain?.name ?? '',
-      idea.selectedPlatform?.id ?? '',
-      idea.selectedPlatform?.name ?? '',
-      idea.selectedRegion ?? '',
-      idea.generationType,
-      idea.isUnlocked,
-      idea.unlockMethod,
-      idea.unlockedAt?.toISOString() ?? '',
-      idea.commentsCount,
-      idea.createdAt.toISOString(),
-      idea.updatedAt.toISOString(),
-    ]);
-
-    return buildCsv(headers, rows);
-  }
   /**
    * Retrieves generated project ideas with filtering,
    * searching, sorting, and pagination.
-   *
-   * Endpoint:
-   * GET /admin/ideas
    */
   async getIdeas(query: GetIdeasQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -239,6 +134,7 @@ export class IdeasService {
               id: true,
               fullName: true,
               email: true,
+              userType: true,
             },
           },
 
@@ -274,9 +170,6 @@ export class IdeasService {
 
   /**
    * Retrieves idea summary statistics.
-   *
-   * Endpoint:
-   * GET /admin/ideas/summary
    */
   async getIdeasSummary(query: GetIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
@@ -373,9 +266,6 @@ export class IdeasService {
 
   /**
    * Retrieves chart-ready idea analytics.
-   *
-   * Endpoint:
-   * GET /admin/ideas/charts
    */
   async getIdeasCharts(query: GetIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
@@ -518,10 +408,111 @@ export class IdeasService {
   }
 
   /**
+   * Exports filtered ideas as CSV.
+   */
+  async exportIdeasCsv(query: GetIdeasQueryDto) {
+    const where = this.buildIdeasWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'title',
+        'generationType',
+        'isUnlocked',
+        'unlockMethod',
+        'commentsCount',
+        'createdAt',
+      ] as const,
+      'createdAt',
+    );
+
+    const ideas = await this.prisma.idea.findMany({
+      where,
+      orderBy,
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            userType: true,
+          },
+        },
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        selectedPlatform: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Idea ID',
+      'Title',
+      'User ID',
+      'User Name',
+      'User Email',
+      'User Type',
+      'Domain ID',
+      'Domain Name',
+      'Platform ID',
+      'Platform Name',
+      'Selected Region',
+      'Generation Type',
+      'Is Unlocked',
+      'Unlock Method',
+      'Unlocked At',
+      'Comments Count',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = ideas.map((idea) => [
+      idea.id,
+      idea.title,
+      idea.user?.id ?? '',
+      idea.user?.fullName ?? '',
+      idea.user?.email ?? '',
+      idea.user?.userType ?? '',
+      idea.domain?.id ?? '',
+      idea.domain?.name ?? '',
+      idea.selectedPlatform?.id ?? '',
+      idea.selectedPlatform?.name ?? '',
+      idea.selectedRegion ?? '',
+      idea.generationType,
+      idea.isUnlocked,
+      idea.unlockMethod,
+      idea.unlockedAt?.toISOString() ?? '',
+      idea.commentsCount,
+      idea.createdAt.toISOString(),
+      idea.updatedAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
+  }
+
+  /**
    * Retrieves detailed information about a specific project idea.
-   *
-   * Endpoint:
-   * GET /admin/ideas/:id
    */
   async getIdeaById(id: string) {
     const idea = await this.prisma.idea.findUnique({
@@ -551,6 +542,7 @@ export class IdeasService {
             email: true,
             role: true,
             accountStatus: true,
+            userType: true,
             creditBalance: true,
             isActive: true,
           },

@@ -1,18 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentStatus, Prisma } from '@prisma/client';
+import {
+  AccountStatus,
+  ComplaintStatus,
+  CreditTransactionType,
+  IdeaGenerationType,
+  PaymentPurpose,
+  PaymentStatus,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
+import { toNumber } from '../../utilities/analytics/analytics.helper';
 
-import {
-  calculateSuccessRate,
-  toNumber,
-} from '../../utilities/analytics/analytics.helper';
-
-/**
- * Represents one row returned from the raw SQL query
- * used to build the users growth chart.
- */
 type UsersGrowthRow = {
   date: Date;
   count: number;
@@ -20,10 +21,6 @@ type UsersGrowthRow = {
 
 /**
  * Service responsible for providing Admin dashboard analytics.
- *
- * Collects high-level platform metrics, financial summaries,
- * AI usage statistics, domain/platform statistics, chart-ready data,
- * and recent activity for the Admin dashboard.
  *
  * @author Malak
  */
@@ -34,10 +31,10 @@ export class DashboardService {
   /**
    * Retrieves summarized analytics for the Admin dashboard.
    *
-   * Endpoint:
-   * GET /admin/dashboard
-   *
-   * @returns Admin dashboard response data.
+   * Notes:
+   * - Admin accounts are excluded from platform-user statistics.
+   * - Premium users are USER accounts with PREMIUM account status.
+   * - AI success/error rates are returned as percentages.
    */
   async getDashboard(): Promise<DashboardResponseDto> {
     const now = new Date();
@@ -57,40 +54,169 @@ export class DashboardService {
 
     const [
       users,
+      normalUsers,
+      premiumUsers,
+      activeUsers,
+      inactiveUsers,
+      verifiedUsers,
+      unverifiedUsers,
+
       ideas,
+      guestIdeas,
+      normalFreeIdeas,
+      premiumCreditIdeas,
+      unlockedIdeas,
+      lockedIdeas,
+
       payments,
-      comments,
-      creditsSold,
-      aiRequests,
-      aiStats,
-      failedAiRequests,
+      successfulPaymentsCount,
+      pendingPaymentsCount,
       failedPaymentsCount,
+      refundedPaymentsCount,
+      directUnlockPaymentsCount,
+      creditPurchasePaymentsCount,
+
+      comments,
+
+      creditsSold,
+      totalPremiumCreditBalance,
+      creditPurchases,
+      creditRefunds,
+      manualCreditAdjustments,
+
       revenueTotal,
       refundsTotal,
+
+      aiRequests,
+      failedAiRequests,
+      aiStats,
+
+      openComplaints,
+      inProgressComplaints,
+      resolvedComplaints,
+      rejectedComplaints,
+
+      generatedOutputs,
+      generatedOutputsByType,
+
       activeDomainsCount,
       inactiveDomainsCount,
       activePlatformsCount,
       inactivePlatformsCount,
+
       todayUsers,
       todayIdeas,
       todayPayments,
       todayRevenue,
+
       monthlyUsers,
       monthlyIdeas,
       monthlyPayments,
       monthlyRevenue,
+
       mostSelectedDomains,
       mostRequestedRegions,
       mostUsedPlatforms,
       usersGrowthRaw,
+      usersByType,
+
       recentUsers,
       recentPaymentsRaw,
       recentIdeas,
       recentComplaints,
     ] = await Promise.all([
       this.prisma.user.count(),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          accountStatus: AccountStatus.NORMAL,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          accountStatus: AccountStatus.PREMIUM,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          isActive: true,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          isActive: false,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          isVerified: true,
+        },
+      }),
+
+      this.prisma.user.count({
+        where: {
+          role: UserRole.USER,
+          isVerified: false,
+        },
+      }),
+
       this.prisma.idea.count(),
+
+      this.prisma.idea.count({
+        where: { generationType: IdeaGenerationType.GUEST_FREE },
+      }),
+
+      this.prisma.idea.count({
+        where: { generationType: IdeaGenerationType.NORMAL_FREE },
+      }),
+
+      this.prisma.idea.count({
+        where: { generationType: IdeaGenerationType.PREMIUM_CREDIT },
+      }),
+
+      this.prisma.idea.count({
+        where: { isUnlocked: true },
+      }),
+
+      this.prisma.idea.count({
+        where: { isUnlocked: false },
+      }),
+
       this.prisma.payment.count(),
+
+      this.prisma.payment.count({
+        where: { status: PaymentStatus.SUCCESS },
+      }),
+
+      this.prisma.payment.count({
+        where: { status: PaymentStatus.PENDING },
+      }),
+
+      this.prisma.payment.count({
+        where: { status: PaymentStatus.FAILED },
+      }),
+
+      this.prisma.payment.count({
+        where: { status: PaymentStatus.REFUNDED },
+      }),
+
+      this.prisma.payment.count({
+        where: { paymentPurpose: PaymentPurpose.DIRECT_UNLOCK },
+      }),
+
+      this.prisma.payment.count({
+        where: { paymentPurpose: PaymentPurpose.BUY_CREDITS },
+      }),
+
       this.prisma.comment.count(),
 
       this.prisma.payment.aggregate({
@@ -98,19 +224,24 @@ export class DashboardService {
         _sum: { creditsAmount: true },
       }),
 
-      this.prisma.externalApiLog.count(),
-
-      this.prisma.externalApiLog.aggregate({
-        _avg: { responseTimeMs: true },
-        _sum: { costEstimate: true },
+      this.prisma.user.aggregate({
+        where: {
+          role: UserRole.USER,
+          accountStatus: AccountStatus.PREMIUM,
+        },
+        _sum: { creditBalance: true },
       }),
 
-      this.prisma.externalApiLog.count({
-        where: { isSuccess: false },
+      this.prisma.creditTransaction.count({
+        where: { type: CreditTransactionType.PURCHASE },
       }),
 
-      this.prisma.payment.count({
-        where: { status: PaymentStatus.FAILED },
+      this.prisma.creditTransaction.count({
+        where: { type: CreditTransactionType.REFUND },
+      }),
+
+      this.prisma.creditTransaction.count({
+        where: { type: CreditTransactionType.ADMIN_ADJUSTMENT },
       }),
 
       this.prisma.payment.aggregate({
@@ -123,14 +254,61 @@ export class DashboardService {
         _sum: { amount: true },
       }),
 
-      this.prisma.domain.count({ where: { isActive: true } }),
-      this.prisma.domain.count({ where: { isActive: false } }),
+      this.prisma.externalApiLog.count(),
 
-      this.prisma.platform.count({ where: { isActive: true } }),
-      this.prisma.platform.count({ where: { isActive: false } }),
+      this.prisma.externalApiLog.count({
+        where: { isSuccess: false },
+      }),
+
+      this.prisma.externalApiLog.aggregate({
+        _avg: { responseTimeMs: true },
+        _sum: { costEstimate: true },
+      }),
+
+      this.prisma.complaint.count({
+        where: { status: ComplaintStatus.OPEN },
+      }),
+
+      this.prisma.complaint.count({
+        where: { status: ComplaintStatus.IN_PROGRESS },
+      }),
+
+      this.prisma.complaint.count({
+        where: { status: ComplaintStatus.RESOLVED },
+      }),
+
+      this.prisma.complaint.count({
+        where: { status: ComplaintStatus.REJECTED },
+      }),
+
+      this.prisma.generatedOutput.count(),
+
+      this.prisma.generatedOutput.groupBy({
+        by: ['outputType'],
+        _count: { _all: true },
+      }),
+
+      this.prisma.domain.count({
+        where: { isActive: true },
+      }),
+
+      this.prisma.domain.count({
+        where: { isActive: false },
+      }),
+
+      this.prisma.platform.count({
+        where: { isActive: true },
+      }),
+
+      this.prisma.platform.count({
+        where: { isActive: false },
+      }),
 
       this.prisma.user.count({
-        where: { createdAt: { gte: startOfToday } },
+        where: {
+          role: UserRole.USER,
+          createdAt: { gte: startOfToday },
+        },
       }),
 
       this.prisma.idea.count({
@@ -150,7 +328,10 @@ export class DashboardService {
       }),
 
       this.prisma.user.count({
-        where: { createdAt: { gte: startOfMonth } },
+        where: {
+          role: UserRole.USER,
+          createdAt: { gte: startOfMonth },
+        },
       }),
 
       this.prisma.idea.count({
@@ -198,12 +379,20 @@ export class DashboardService {
           COUNT(*)::int AS count
         FROM users
         WHERE created_at >= ${startOfLast30Days}
+          AND role = 'USER'
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at) ASC
       `),
 
+      this.prisma.user.groupBy({
+        by: ['userType'],
+        where: { role: UserRole.USER },
+        _count: { _all: true },
+      }),
+
       this.prisma.user.findMany({
         take: 5,
+        where: { role: UserRole.USER },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -211,7 +400,9 @@ export class DashboardService {
           email: true,
           role: true,
           accountStatus: true,
+          userType: true,
           isActive: true,
+          isVerified: true,
           createdAt: true,
         },
       }),
@@ -253,6 +444,7 @@ export class DashboardService {
               id: true,
               fullName: true,
               email: true,
+              userType: true,
             },
           },
           domain: {
@@ -315,10 +507,35 @@ export class DashboardService {
       count: item.count,
     }));
 
-    const aiErrorRate = calculateSuccessRate(
-      failedAiRequests,
-      aiRequests,
-    );
+    const aiErrorRate =
+      aiRequests === 0
+        ? 0
+        : Number(((failedAiRequests / aiRequests) * 100).toFixed(2));
+
+    const aiSuccessRate =
+      aiRequests === 0
+        ? 0
+        : Number(
+            (
+              ((aiRequests - failedAiRequests) / aiRequests) *
+              100
+            ).toFixed(2),
+          );
+
+    const averageAiCostPerRequest =
+      aiRequests === 0
+        ? 0
+        : Number((toNumber(aiStats._sum.costEstimate) / aiRequests).toFixed(4));
+
+    const averageCreditsPerPremiumUser =
+      premiumUsers === 0
+        ? 0
+        : Number(
+            (
+              (totalPremiumCreditBalance._sum.creditBalance ?? 0) /
+              premiumUsers
+            ).toFixed(2),
+          );
 
     const recentPayments = recentPaymentsRaw.map((payment) => ({
       ...payment,
@@ -327,21 +544,58 @@ export class DashboardService {
 
     return {
       users,
+      normalUsers,
+      premiumUsers,
+      activeUsers,
+      inactiveUsers,
+      verifiedUsers,
+      unverifiedUsers,
+
       ideas,
+      guestIdeas,
+      normalFreeIdeas,
+      premiumCreditIdeas,
+      unlockedIdeas,
+      lockedIdeas,
+
       payments,
+      successfulPaymentsCount,
+      pendingPaymentsCount,
+      failedPaymentsCount,
+      refundedPaymentsCount,
+      directUnlockPaymentsCount,
+      creditPurchasePaymentsCount,
+
       comments,
 
       creditsSold: creditsSold._sum.creditsAmount ?? 0,
+      creditPurchases,
+      creditRefunds,
+      manualCreditAdjustments,
+      averageCreditsPerPremiumUser,
 
       revenueTotal: toNumber(revenueTotal._sum.amount),
       refundsTotal: toNumber(refundsTotal._sum.amount),
-      failedPaymentsCount,
 
       aiRequests,
       failedAiRequests,
+      aiSuccessRate,
       aiErrorRate,
       averageResponseTime: toNumber(aiStats._avg.responseTimeMs),
       aiCost: toNumber(aiStats._sum.costEstimate),
+      averageAiCostPerRequest,
+
+      openComplaints,
+      inProgressComplaints,
+      resolvedComplaints,
+      rejectedComplaints,
+
+      generatedOutputs,
+      generatedOutputsByType: generatedOutputsByType.map((item) => ({
+        label: item.outputType,
+        outputType: item.outputType,
+        count: item._count._all,
+      })),
 
       domainsStatus: {
         active: activeDomainsCount,
@@ -368,6 +622,12 @@ export class DashboardService {
       },
 
       usersGrowthChart,
+
+      usersByType: usersByType.map((item) => ({
+        label: item.userType ?? 'UNKNOWN',
+        userType: item.userType,
+        count: item._count._all,
+      })),
 
       mostSelectedDomains: mostSelectedDomains.map((item) => {
         const domainName = domainMap.get(item.domainId) ?? null;

@@ -1,47 +1,31 @@
 import { IsBooleanString, IsEnum, IsOptional } from 'class-validator';
-import { AccountStatus, UserRole } from '@prisma/client';
+import { AccountStatus, UserRole, UserType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
  * DTO for filtering, searching, sorting, and paginating users.
  *
- * This DTO is used by the Admin User Management module to retrieve
- * user records with optional filtering capabilities.
- *
- * It extends ListQueryDto to inherit:
- * - Pagination.
- * - Search.
- * - Date range filtering.
- * - Sorting.
- *
- * Supported filters:
- * - User role.
- * - Account status.
- * - Active/inactive state.
- *
  * Used by:
  * - GET /admin/users
  * - GET /admin/users/summary
  * - GET /admin/users/charts
+ * - GET /admin/users/export/csv
  *
- * Example:
- * GET /admin/users?page=1
- *   &limit=10
- *   &search=malak
- *   &role=USER
- *   &accountStatus=NORMAL
- *   &isActive=true
- *   &sortBy=createdAt
- *   &sortOrder=desc
+ * Supports:
+ * - Pagination.
+ * - Search.
+ * - Date range filtering.
+ * - Sorting.
+ * - Filtering by role.
+ * - Filtering by account status.
+ * - Filtering by user type.
+ * - Filtering by active status.
  *
  * @author Malak
  */
 export class GetUsersQueryDto extends ListQueryDto {
   /**
    * Optional user role filter.
-   *
-   * When provided, only users with the specified role
-   * are included in the results.
    *
    * Accepted values:
    * - USER
@@ -54,19 +38,39 @@ export class GetUsersQueryDto extends ListQueryDto {
   /**
    * Optional account status filter.
    *
-   * Returns only users whose account matches
-   * the specified account status.
+   * Accepted values depend on AccountStatus enum.
+   *
+   * Examples:
+   * - NORMAL
+   * - PREMIUM
    */
   @IsOptional()
   @IsEnum(AccountStatus)
   accountStatus?: AccountStatus;
 
   /**
+   * Optional user type filter.
+   *
+   * This helps the admin analyze users based on
+   * their profile type.
+   *
+   * Examples:
+   * - STUDENT
+   * - DEVELOPER
+   * - COMPANY
+   * - RESEARCHER
+   * - OTHER
+   */
+  @IsOptional()
+  @IsEnum(UserType)
+  userType?: UserType;
+
+  /**
    * Optional active status filter.
    *
    * Accepted values:
-   * - true
-   * - false
+   * - "true"
+   * - "false"
    *
    * Because query parameters are received as strings,
    * this property is validated using IsBooleanString().

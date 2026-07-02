@@ -8,6 +8,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * GET /admin/comments
  * GET /admin/comments/summary
  * GET /admin/comments/charts
+ * GET /admin/comments/export/csv
  *
  * Supports:
  * - Pagination through page and limit.
