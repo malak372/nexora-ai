@@ -1,697 +1,427 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file,// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Get a free hosted Postgres database in seconds: npx create-db
 
-generator client {
-  provider = "prisma-client-js"
-}
+generator client {provider = "prisma-client-js"}
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+datasource db {provider = "postgresql"url      = env("DATABASE_URL")}
 
 /**
- * ENUMS
- */
 
-enum UserRole {
-  USER
-  ADMIN
-}
+ENUMS*/
 
-enum AccountStatus {
-  NORMAL
-  PREMIUM
-}
+enum UserRole {USERADMIN}
 
-enum PaymentMethod {
-  CARD
-  PAYPAL
-  PALPAY
-}
+enum AccountStatus {NORMALPREMIUM}
 
-enum PaymentStatus {
-  PENDING
-  SUCCESS
-  FAILED
-  REFUNDED
-}
+enum PaymentMethod {CARDPAYPALPALPAY}
 
-enum PaymentPurpose {
-  BUY_CREDITS
-  DIRECT_UNLOCK
-}
+enum PaymentStatus {PENDINGSUCCESSFAILEDREFUNDED}
 
-enum CreditTransactionType {
-  PURCHASE
-  BONUS
-  DEDUCTION_GENERATION
-  REFUND
-  ADMIN_ADJUSTMENT
-}
+enum PaymentPurpose {BUY_CREDITSDIRECT_UNLOCK}
 
-enum IdeaGenerationType {
-  GUEST_FREE
-  NORMAL_FREE
-  PREMIUM_CREDIT
-}
+enum CreditTransactionType {PURCHASEBONUSDEDUCTION_GENERATIONREFUNDADMIN_ADJUSTMENT}
 
-enum UnlockMethod {
-  NONE
-  DIRECT_PAYMENT
-  CREDIT_GENERATION
-}
+enum IdeaGenerationType {GUEST_FREENORMAL_FREEPREMIUM_CREDIT}
 
-enum ChatSender {
-  USER
-  AI
-}
+enum UnlockMethod {NONEDIRECT_PAYMENTCREDIT_GENERATION}
 
-enum ComplaintStatus {
-  OPEN
-  IN_PROGRESS
-  RESOLVED
-  REJECTED
-}
+enum ChatSender {USERAI}
 
-enum UserType {
-  STUDENT
-  DEVELOPER
-  COMPANY
-  RESEARCHER
-  OTHER
-}
+enum ComplaintStatus {OPENIN_PROGRESSRESOLVEDREJECTED}
 
-enum ComplaintPriority {
-  LOW
-  MEDIUM
-  HIGH
-}
+enum UserType {STUDENTDEVELOPERCOMPANYRESEARCHEROTHER}
 
-enum AlertType {
-  SYSTEM
-  PAYMENT
-  CREDIT_LOW
-  CREDIT_EXHAUSTED
-  ADMIN
-}
+enum ComplaintPriority {LOWMEDIUMHIGH}
 
-enum ApiProvider {
-  OPENAI
-  STRIPE
-  PAYPAL
-  PALPAY
-  REDDIT
-  FACEBOOK
-  GOOGLE_MAPS
-  OTHER
-}
+enum AlertType {SYSTEMPAYMENTCREDIT_LOWCREDIT_EXHAUSTEDADMIN}
 
-enum ApiRequestType {
-  DATA_COLLECTION
-  COMMENT_ANALYSIS
-  IDEA_GENERATION
-  AI_CHAT
-  PAYMENT
-  OTHER
-}
+enum ApiProvider {OPENAISTRIPEPAYPALPALPAYREDDITFACEBOOKGOOGLE_MAPSOTHER}
 
-enum GeneratedOutputType {
-  FULL_ABSTRACT
-  TECHNOLOGY_STACK
-  SYSTEM_ARCHITECTURE
-  DATABASE_DESIGN
-  COMMENT_ANALYSIS
-  SAMPLE_COMMENTS
-  NLP_ANALYSIS
-  RECURRING_PROBLEMS
-  EXTRACTED_KEYWORDS
-  LOCAL_REGULATIONS
-  BUDGET_ESTIMATION
-  BUSINESS_MODEL
-  TARGET_USERS
-  VALUE_PROPOSITION
-  REVENUE_MODEL
-  FEASIBILITY_ASSESSMENT
-  IMPLEMENTATION_TIMELINE
-  MARKET_POTENTIAL
-  AI_PROMPT
-}
+enum ApiRequestType {DATA_COLLECTIONCOMMENT_ANALYSISIDEA_GENERATIONAI_CHATPAYMENTOTHER}
 
-enum AdminAction {
-  ADMIN_UPDATE_USER_STATUS
-  ADMIN_SOFT_DELETE_USER
-  ADMIN_UPDATE_SETTINGS
-  ADMIN_UPDATE_PROMPT
-  ADMIN_CREATE_ALERT
-  ADMIN_CREATE_PLATFORM
-  ADMIN_UPDATE_PLATFORM
-  ADMIN_DEACTIVATE_PLATFORM
-  ADMIN_CREATE_DOMAIN
-  ADMIN_UPDATE_DOMAIN
-  ADMIN_DEACTIVATE_DOMAIN
-  ADMIN_UPDATE_COMPLAINT
-  ADMIN_RUN_DATA_COLLECTION
-  ADMIN_STOP_DATA_COLLECTION
-  ADMIN_ADJUST_USER_CREDITS
-  ADMIN_SEND_PASSWORD_RESET_EMAIL
-}
+enum GeneratedOutputType {FULL_ABSTRACTTECHNOLOGY_STACKSYSTEM_ARCHITECTUREDATABASE_DESIGNCOMMENT_ANALYSISSAMPLE_COMMENTSNLP_ANALYSISRECURRING_PROBLEMSEXTRACTED_KEYWORDSLOCAL_REGULATIONSBUDGET_ESTIMATIONBUSINESS_MODELTARGET_USERSVALUE_PROPOSITIONREVENUE_MODELFEASIBILITY_ASSESSMENTIMPLEMENTATION_TIMELINEMARKET_POTENTIALAI_PROMPT}
 
-enum AdminTargetType {
-  USER
-  IDEA
-  PAYMENT
-  DOMAIN
-  PLATFORM
-  SYSTEM_SETTING
-  PROMPT
-  COMPLAINT
-  ALERT
-  CREDIT_TRANSACTION
-  DATA_COLLECTION
-}
+enum AdminAction {ADMIN_UPDATE_USER_STATUSADMIN_SOFT_DELETE_USERADMIN_UPDATE_SETTINGSADMIN_UPDATE_PROMPTADMIN_CREATE_ALERTADMIN_CREATE_PLATFORMADMIN_UPDATE_PLATFORMADMIN_DEACTIVATE_PLATFORMADMIN_CREATE_DOMAINADMIN_UPDATE_DOMAINADMIN_DEACTIVATE_DOMAINADMIN_UPDATE_COMPLAINTADMIN_RUN_DATA_COLLECTIONADMIN_STOP_DATA_COLLECTIONADMIN_ADJUST_USER_CREDITSADMIN_SEND_PASSWORD_RESET_EMAIL}
 
-enum AuthAction {
-  REGISTER
-  LOGIN_SUCCESS
-  LOGIN_FAILED
-  LOGOUT
-  REFRESH_TOKEN
-  CHANGE_PASSWORD
-  FORGOT_PASSWORD
-  RESET_PASSWORD
-  EMAIL_VERIFIED
-  RESEND_VERIFICATION_EMAIL
-  ACCOUNT_LOCKED
-  ACCOUNT_DEACTIVATED
-  EMAIL_CHANGED
-  VERIFICATION_EMAIL_SENT
-  VERIFY_EMAIL_FAILED
-  RESET_PASSWORD_FAILED
-  REFRESH_TOKEN_FAILED
-}
+enum AdminTargetType {USERIDEAPAYMENTDOMAINPLATFORMSYSTEM_SETTINGPROMPTCOMPLAINTALERTCREDIT_TRANSACTIONDATA_COLLECTION}
+
+enum AuthAction {REGISTERLOGIN_SUCCESSLOGIN_FAILEDLOGOUTREFRESH_TOKENCHANGE_PASSWORDFORGOT_PASSWORDRESET_PASSWORDEMAIL_VERIFIEDRESEND_VERIFICATION_EMAILACCOUNT_LOCKEDACCOUNT_DEACTIVATEDEMAIL_CHANGEDVERIFICATION_EMAIL_SENTVERIFY_EMAIL_FAILEDRESET_PASSWORD_FAILEDREFRESH_TOKEN_FAILED}enum CollectionJobStatus {PENDINGRUNNINGCOMPLETEDFAILEDSTOPPED}
+
+enum CollectionSourceType {MOCKREDDITFACEBOOKYOUTUBELINKEDINFORUMOTHER}
+
+enum PromptType {IDEA_GENERATIONCHAT_RESPONSENLP_ANALYSISABSTRACT_GENERATION}
 
 /**
- * USERS
- */
 
-model User {
-  id            String        @id @default(uuid())
-  fullName      String        @map("full_name")
-  email         String        @unique
-  passwordHash  String        @map("password_hash")
-  role          UserRole      @default(USER)
-  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+USERS*/
 
-  freeGenerationLimit Int @default(3) @map("free_generation_limit")
-  freeGenerationsUsed Int @default(0) @map("free_generations_used")
-  creditBalance       Int @default(0) @map("credit_balance")
+model User {id            String        @id @default(uuid())fullName      String        @map("full_name")email         String        @uniquepasswordHash  String        @map("password_hash")role          UserRole      @default(USER)accountStatus AccountStatus @default(NORMAL) @map("account_status")
 
-  isActive   Boolean @default(true) @map("is_active")
-  isVerified Boolean @default(false) @map("is_verified")
+freeGenerationLimit Int @default(3) @map("free_generation_limit")freeGenerationsUsed Int @default(0) @map("free_generations_used")creditBalance       Int @default(0) @map("credit_balance")
 
-  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime? @map("locked_until")
+isActive   Boolean @default(true) @map("is_active")isVerified Boolean @default(false) @map("is_verified")
 
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  userType  UserType? @map("user_type")
+failedLoginAttempts Int       @default(0) @map("failed_login_attempts")lockedUntil         DateTime? @map("locked_until")
 
-  ideas                   Idea[]
-  payments                Payment[]
-  creditTransactions      CreditTransaction[]
-  chatSessions            ChatSession[]
-  alerts                  Alert[]
-  complaints              Complaint[]
-  externalApiLogs         ExternalApiLog[]
-  adminAuditLogs          AdminAuditLog[]          @relation("AdminAuditLogs")
-  updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")
-  refreshTokens           RefreshToken[]
-  passwordResetTokens     PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  authenticationLogs      AuthenticationLog[]
+createdAt DateTime  @default(now()) @map("created_at")updatedAt DateTime  @updatedAt @map("updated_at")userType  UserType? @map("user_type")
 
-  @@map("users")
-}
+ideas                   Idea[]payments                Payment[]creditTransactions      CreditTransaction[]chatSessions            ChatSession[]alerts                  Alert[]complaints              Complaint[]externalApiLogs         ExternalApiLog[]adminAuditLogs          AdminAuditLog[]          @relation("AdminAuditLogs")updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")refreshTokens           RefreshToken[]passwordResetTokens     PasswordResetToken[]emailVerificationTokens EmailVerificationToken[]authenticationLogs      AuthenticationLog[]
+
+@@map("users")}
 
 /**
- * Refresh Token
- */
 
-model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+Refresh Token*/
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+model RefreshToken {id        String    @id @default(uuid())userId    String    @map("user_id")tokenHash String    @unique @map("token_hash")expiresAt DateTime  @map("expires_at")revokedAt DateTime? @map("revoked_at")createdAt DateTime  @default(now()) @map("created_at")
 
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([revokedAt])
-  @@map("refresh_tokens")
-}
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+@@index([userId])@@index([expiresAt])@@index([revokedAt])@@map("refresh_tokens")}
 
 /**
- * Password Reset Token
- */
-model PasswordResetToken {
-  id        String @id @default(uuid())
-  userId    String @map("user_id")
-  tokenHash String @unique @map("token_hash")
 
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
+Password Reset Token*/model PasswordResetToken {id        String @id @default(uuid())userId    String @map("user_id")tokenHash String @unique @map("token_hash")
 
-  createdAt DateTime @default(now()) @map("created_at")
+expiresAt DateTime  @map("expires_at")usedAt    DateTime? @map("used_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([usedAt])
-  @@map("password_reset_tokens")
-}
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+@@index([userId])@@index([expiresAt])@@index([usedAt])@@map("password_reset_tokens")}
 
 /**
- * SYSTEM SETTINGS
- */
 
-model SystemSetting {
-  id String @id @default(uuid())
+SYSTEM SETTINGS*/
 
-  creditPrice        Decimal @map("credit_price") @db.Decimal(10, 2)
-  bonusThreshold     Int     @default(0) @map("bonus_threshold")
-  bonusCredits       Int     @default(0) @map("bonus_credits")
-  ideaPromptTemplate String? @map("idea_prompt_template")
+model SystemSetting {id String @id @default(uuid())
 
-  updatedById String? @map("updated_by")
-  updatedBy   User?   @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+creditPrice        Decimal @map("credit_price") @db.Decimal(10, 2)bonusThreshold     Int     @default(0) @map("bonus_threshold")bonusCredits       Int     @default(0) @map("bonus_credits")ideaPromptTemplate String? @map("idea_prompt_template")
 
-  updatedAt DateTime @updatedAt @map("updated_at")
+updatedById String? @map("updated_by")updatedBy   User?   @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  @@map("system_settings")
-}
+updatedAt DateTime @updatedAt @map("updated_at")
+
+@@map("system_settings")}
 
 /**
- * Admin Audit Log
- */
 
-model AdminAuditLog {
-  id String @id @default(uuid())
+Admin Audit Log*/
 
-  adminId String? @map("admin_id")
-  admin   User?   @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+model AdminAuditLog {id String @id @default(uuid())
 
-  action AdminAction
+adminId String? @map("admin_id")admin   User?   @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
 
-  targetType AdminTargetType @map("target_type")
-  targetId   String?         @map("target_id")
+action AdminAction
 
-  oldValue Json? @map("old_value")
-  newValue Json? @map("new_value")
+targetType AdminTargetType @map("target_type")targetId   String?         @map("target_id")
 
-  createdAt DateTime @default(now()) @map("created_at")
+oldValue Json? @map("old_value")newValue Json? @map("new_value")
 
-  @@index([adminId])
-  @@index([action])
-  @@index([targetType])
-  @@index([createdAt])
-  @@map("admin_audit_logs")
-}
+createdAt DateTime @default(now()) @map("created_at")
+
+@@index([adminId])@@index([action])@@index([targetType])@@index([createdAt])@@map("admin_audit_logs")}
 
 /**
- * GUEST SESSIONS
- */
 
-model GuestSession {
-  id           String  @id @default(uuid())
-  sessionToken String  @unique @map("session_token")
-  hasGenerated Boolean @default(false) @map("has_generated")
+GUEST SESSIONS*/
 
-  createdAt DateTime  @default(now()) @map("created_at")
-  expiresAt DateTime? @map("expires_at")
+model GuestSession {id           String  @id @default(uuid())sessionToken String  @unique @map("session_token")hasGenerated Boolean @default(false) @map("has_generated")
 
-  ideas Idea[]
+createdAt DateTime  @default(now()) @map("created_at")expiresAt DateTime? @map("expires_at")
 
-  @@map("guest_sessions")
-}
+ideas Idea[]
+
+@@map("guest_sessions")}
 
 /**
- * IDEAS
- */
 
-model Idea {
-  id String @id @default(uuid())
+IDEAS*/
 
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Idea {id String @id @default(uuid())
 
-  guestSessionId String?       @map("guest_session_id")
-  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+userId String? @map("user_id")user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  title    String
-  domainId String @map("domain_id")
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+guestSessionId String?       @map("guest_session_id")guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
 
-  selectedPlatformId String?   @map("selected_platform_id")
-  selectedPlatform   Platform? @relation(fields: [selectedPlatformId], references: [id], onDelete: SetNull)
-  selectedRegion     String?   @map("selected_region")
+title    StringdomainId String @map("domain_id")domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
-  limitedAbstract String? @map("limited_abstract")
-  partialAbstract String? @map("partial_abstract")
-  fullAbstract    String? @map("full_abstract")
+selectedPlatformId String?   @map("selected_platform_id")selectedPlatform   Platform? @relation(fields: [selectedPlatformId], references: [id], onDelete: SetNull)selectedRegion     String?   @map("selected_region")
 
-  problemStatement String? @map("problem_statement")
-  objectives       String?
-  targetUsers      String? @map("target_users")
+limitedAbstract String? @map("limited_abstract")partialAbstract String? @map("partial_abstract")fullAbstract    String? @map("full_abstract")
 
-  generationType IdeaGenerationType @map("generation_type")
-  isUnlocked     Boolean            @default(false) @map("is_unlocked")
-  unlockMethod   UnlockMethod       @default(NONE) @map("unlock_method")
-  unlockedAt     DateTime?          @map("unlocked_at")
+problemStatement String? @map("problem_statement")objectives       String?targetUsers      String? @map("target_users")
 
-  commentsCount Int @default(0) @map("comments_count")
+generationType IdeaGenerationType @map("generation_type")isUnlocked     Boolean            @default(false) @map("is_unlocked")unlockMethod   UnlockMethod       @default(NONE) @map("unlock_method")unlockedAt     DateTime?          @map("unlocked_at")collectionJobId String? @unique @map("collection_job_id")collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+promptHistories PromptHistory[]
 
-  payments           Payment[]
-  creditTransactions CreditTransaction[]
-  chatSessions       ChatSession[]
-  ideaComments       IdeaComment[]
-  generatedOutputs   GeneratedOutput[]
-  complaints         Complaint[]
-  externalApiLogs    ExternalApiLog[]
+commentsCount Int @default(0) @map("comments_count")
 
-  @@map("ideas")
-}
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")
+
+payments           Payment[]creditTransactions CreditTransaction[]chatSessions       ChatSession[]generatedOutputs   GeneratedOutput[]complaints         Complaint[]externalApiLogs    ExternalApiLog[]
+
+@@map("ideas")}
 
 /**
- * PAYMENTS
- */
 
-model Payment {
-  id String @id @default(uuid())
+PAYMENTS*/
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Payment {id String @id @default(uuid())
 
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+userId String @map("user_id")user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  amount        Decimal       @db.Decimal(10, 2)
-  currency      String        @default("USD")
-  paymentMethod PaymentMethod @map("payment_method")
-  status        PaymentStatus @default(PENDING)
+ideaId String? @map("idea_id")idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
-  paymentPurpose PaymentPurpose @map("payment_purpose")
+amount        Decimal       @db.Decimal(10, 2)currency      String        @default("USD")paymentMethod PaymentMethod @map("payment_method")status        PaymentStatus @default(PENDING)
 
-  creditsAmount         Int      @default(0) @map("credits_amount")
-  creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
+paymentPurpose PaymentPurpose @map("payment_purpose")
 
-  transactionReference String? @map("transaction_reference")
+creditsAmount         Int      @default(0) @map("credits_amount")creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+transactionReference String? @map("transaction_reference")
 
-  creditTransactions CreditTransaction[]
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@map("payments")
-}
+creditTransactions CreditTransaction[]
+
+@@map("payments")}
 
 /**
- * CREDIT TRANSACTIONS
- */
 
-model CreditTransaction {
-  id String @id @default(uuid())
+CREDIT TRANSACTIONS*/
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model CreditTransaction {id String @id @default(uuid())
 
-  paymentId String?  @map("payment_id")
-  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+userId String @map("user_id")user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+paymentId String?  @map("payment_id")payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
-  type         CreditTransactionType
-  amount       Int
-  balanceAfter Int                   @map("balance_after")
-  description  String?
+ideaId String? @map("idea_id")idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @map("created_at")
+type         CreditTransactionTypeamount       IntbalanceAfter Int                   @map("balance_after")description  String?
 
-  @@map("credit_transactions")
-}
+createdAt DateTime @default(now()) @map("created_at")
+
+@@map("credit_transactions")}
+
+
 
 /**
- * COMMENTS
- */
 
-model Comment {
-  id         String    @id @default(uuid())
-  content    String
-  sentiment  String?
-  language   String?
-  platformId String?   @map("platform_id")
-  platform   Platform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
+GENERATED OUTPUTS*/
 
-  sourceUrl   String?   @map("source_url")
-  region      String?
-  collectedAt DateTime? @map("collected_at")
+model GeneratedOutput {id String @id @default(uuid())
 
-  createdAt DateTime @default(now()) @map("created_at")
+ideaId String @map("idea_id")idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
 
-  ideaComments IdeaComment[]
+outputType GeneratedOutputType @map("output_type")content    String
 
-  @@map("comments")
-}
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")
 
-model IdeaComment {
-  id String @id @default(uuid())
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  commentId String  @map("comment_id")
-  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
-
-  @@unique([ideaId, commentId])
-  @@map("idea_comments")
-}
+@@map("generated_outputs")}
 
 /**
- * GENERATED OUTPUTS
- */
 
-model GeneratedOutput {
-  id String @id @default(uuid())
+CHAT*/
 
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+model ChatSession {id String @id @default(uuid())
 
-  outputType GeneratedOutputType @map("output_type")
-  content    String
+userId String @map("user_id")user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+ideaId String @map("idea_id")idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
 
-  @@map("generated_outputs")
-}
+title String?
 
-/**
- * CHAT
- */
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")
 
-model ChatSession {
-  id String @id @default(uuid())
+messages ChatMessage[]
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+@@map("chat_sessions")}
 
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+model ChatMessage {id String @id @default(uuid())
 
-  title String?
+sessionId String      @map("session_id")session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+sender  ChatSendermessage String
 
-  messages ChatMessage[]
+createdAt DateTime @default(now()) @map("created_at")
 
-  @@map("chat_sessions")
-}
-
-model ChatMessage {
-  id String @id @default(uuid())
-
-  sessionId String      @map("session_id")
-  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  sender  ChatSender
-  message String
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("chat_messages")
-}
+@@map("chat_messages")}
 
 /**
- * ALERTS
- */
 
-model Alert {
-  id String @id @default(uuid())
+ALERTS*/
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Alert {id String @id @default(uuid())
 
-  title   String
-  message String
-  type    AlertType @default(SYSTEM)
-  isRead  Boolean   @default(false) @map("is_read")
+userId String @map("user_id")user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now()) @map("created_at")
+title   Stringmessage Stringtype    AlertType @default(SYSTEM)isRead  Boolean   @default(false) @map("is_read")
 
-  @@map("alerts")
-}
+createdAt DateTime @default(now()) @map("created_at")
+
+@@map("alerts")}
 
 /**
- * COMPLAINTS
- */
 
-model Complaint {
-  id String @id @default(uuid())
+COMPLAINTS*/
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Complaint {id String @id @default(uuid())
 
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+userId String @map("user_id")user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  subject  String
-  message  String
-  status   ComplaintStatus   @default(OPEN)
-  priority ComplaintPriority @default(MEDIUM)
+ideaId String? @map("idea_id")idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
-  adminReply String? @map("admin_reply")
+subject  Stringmessage  Stringstatus   ComplaintStatus   @default(OPEN)priority ComplaintPriority @default(MEDIUM)
 
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  resolvedAt DateTime? @map("resolved_at")
+adminReply String? @map("admin_reply")
 
-  @@map("complaints")
-}
+createdAt  DateTime  @default(now()) @map("created_at")updatedAt  DateTime  @updatedAt @map("updated_at")resolvedAt DateTime? @map("resolved_at")
+
+@@map("complaints")}
 
 /**
- * EXTERNAL API LOGS
- */
 
-model ExternalApiLog {
-  id String @id @default(uuid())
+EXTERNAL API LOGS*/
 
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+model ExternalApiLog {id String @id @default(uuid())
 
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+userId String? @map("user_id")user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  provider    ApiProvider
-  endpoint    String?
-  requestId   String?        @map("request_id")
-  requestType ApiRequestType @map("request_type")
+ideaId String? @map("idea_id")idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
-  statusCode Int?    @map("status_code")
-  isSuccess  Boolean @default(false) @map("is_success")
+provider    ApiProviderendpoint    String?requestId   String?        @map("request_id")requestType ApiRequestType @map("request_type")
 
-  responseTimeMs Int?     @map("response_time_ms")
-  errorMessage   String?  @map("error_message")
-  costEstimate   Decimal? @map("cost_estimate") @db.Decimal(10, 4)
+statusCode Int?    @map("status_code")isSuccess  Boolean @default(false) @map("is_success")
 
-  createdAt DateTime @default(now()) @map("created_at")
+responseTimeMs Int?     @map("response_time_ms")errorMessage   String?  @map("error_message")costEstimate   Decimal? @map("cost_estimate") @db.Decimal(10, 4)
 
-  @@map("external_api_logs")
-}
+createdAt DateTime @default(now()) @map("created_at")
+
+@@map("external_api_logs")}
 
 /**
- * Domain
- */
 
-model Domain {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  isActive Boolean @default(true) @map("is_active")
+Domain*/
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+model Domain {id       String  @id @default(uuid())name     String  @uniqueisActive Boolean @default(true) @map("is_active")
 
-  ideas Idea[]
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")collectionJobs CollectionJob[]
 
-  @@map("domains")
-}
+ideas Idea[]
+
+@@map("domains")}
 
 /**
- * Platform
- */
 
-model Platform {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  isActive Boolean @default(true) @map("is_active")
+Platform*/
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+model Platform {id       String  @id @default(uuid())name     String  @uniqueisActive Boolean @default(true) @map("is_active")
 
-  ideas    Idea[]
-  comments Comment[]
+createdAt DateTime @default(now()) @map("created_at")socialPosts SocialPost[]updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@map("platforms")
-}
+ideas    Idea[]
 
-model EmailVerificationToken {
-  id        String @id @default(uuid())
-  userId    String @map("user_id")
-  tokenHash String @unique @map("token_hash")
+@@map("platforms")}
 
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
+model EmailVerificationToken {id        String @id @default(uuid())userId    String @map("user_id")tokenHash String @unique @map("token_hash")
 
-  createdAt DateTime @default(now()) @map("created_at")
+expiresAt DateTime  @map("expires_at")usedAt    DateTime? @map("used_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([usedAt])
-  @@map("email_verification_tokens")
-}
+user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-model AuthenticationLog {
-  id String @id @default(uuid())
+@@index([userId])@@index([expiresAt])@@index([usedAt])@@map("email_verification_tokens")}
 
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+model AuthenticationLog {id String @id @default(uuid())
 
-  action AuthAction
+userId String? @map("user_id")user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  email     String?
-  isSuccess Boolean @default(true) @map("is_success")
-  message   String?
+action AuthAction
 
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
+email     String?isSuccess Boolean @default(true) @map("is_success")message   String?
 
-  createdAt DateTime @default(now()) @map("created_at")
+ipAddress String? @map("ip_address")userAgent String? @map("user_agent")
 
-  @@index([userId])
-  @@index([action])
-  @@index([email])
-  @@index([createdAt])
-  @@map("authentication_logs")
-}
+createdAt DateTime @default(now()) @map("created_at")
+
+@@index([userId])@@index([action])@@index([email])@@index([createdAt])@@map("authentication_logs")}
+
+model CollectionJob {id String @id @default(uuid())
+
+domainId String @map("domain_id")domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
+country String?city    String?region  String?promptHistories PromptHistory[]idea            Idea?radiusKm Int? @map("radius_km")
+
+platforms Jsonkeywords  Json?
+
+status CollectionJobStatus @default(PENDING)
+
+totalPosts    Int @default(0) @map("total_posts")totalComments Int @default(0) @map("total_comments")
+
+startedAt   DateTime? @map("started_at")completedAt DateTime? @map("completed_at")failedReason String?  @map("failed_reason")
+
+createdAt DateTime @default(now()) @map("created_at")updatedAt DateTime @updatedAt @map("updated_at")
+
+posts SocialPost[]nlpAnalyses NlpAnalysis[]
+
+@@index([domainId])@@index([status])@@index([createdAt])@@map("collection_jobs")}
+
+model SocialPost {id String @id @default(uuid())
+
+collectionJobId String @map("collection_job_id")collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+
+platformId String? @map("platform_id")platform   Platform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
+
+sourceType CollectionSourceType @map("source_type")
+
+externalId String? @map("external_id")title      String?content    Stringauthor     String?url        String?
+
+country String?city    String?region  String?language String?
+
+likesCount   Int @default(0) @map("likes_count")repliesCount Int @default(0) @map("replies_count")
+
+publishedAt DateTime? @map("published_at")collectedAt DateTime @default(now()) @map("collected_at")createdAt   DateTime @default(now()) @map("created_at")
+
+comments SocialComment[]
+
+@@unique([sourceType, externalId])@@index([collectionJobId])@@index([platformId])@@index([region])@@index([language])@@map("social_posts")}
+
+model SocialComment {id String @id @default(uuid())
+
+postId String @map("post_id")post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+externalId String? @map("external_id")content    Stringauthor     String?language   String?sentiment  String?
+
+likesCount Int @default(0) @map("likes_count")
+
+publishedAt DateTime? @map("published_at")collectedAt DateTime @default(now()) @map("collected_at")createdAt   DateTime @default(now()) @map("created_at")
+
+@@index([postId])@@index([language])@@index([sentiment])@@map("social_comments")}
+
+model NlpAnalysis {id String @id @default(uuid())
+
+collectionJobId String @map("collection_job_id")collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+
+sentimentStats Json @map("sentiment_stats")keywords       Jsontopics         Json?recurringProblems Json @map("recurring_problems")extractedNeeds Json? @map("extracted_needs")sampleComments Json? @map("sample_comments")statistics     Json?
+
+createdAt DateTime @default(now()) @map("created_at")
+
+@@index([collectionJobId])@@map("nlp_analyses")}
+
+model PromptHistory {id String @id @default(uuid())
+
+collectionJobId String? @map("collection_job_id")collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
+
+ideaId String? @map("idea_id")idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+promptType PromptType @map("prompt_type")promptText String @map("prompt_text")
+
+createdAt DateTime @default(now()) @map("created_at")
+
+@@index([collectionJobId])@@index([ideaId])@@map("prompt_histories")}
