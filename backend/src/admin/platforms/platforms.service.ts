@@ -24,6 +24,12 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 /**
  * Service responsible for Admin platform management operations.
  *
+ * Notes:
+ * - The old Comment model was removed.
+ * - Platform is now related to collected data through SocialPost.
+ * - Platform comment analytics are calculated through:
+ *   Platform -> SocialPost -> SocialComment
+ *
  * Provides:
  * - Paginated platform listing.
  * - Search by platform name.
@@ -66,10 +72,6 @@ export class PlatformsService {
 
   /**
    * Adds a minimum createdAt date while preserving existing date filters.
-   *
-   * Used for:
-   * - Platforms created today.
-   * - Platforms created this month.
    */
   private mergeCreatedAtGte(
     where: Prisma.PlatformWhereInput,
@@ -87,6 +89,19 @@ export class PlatformsService {
         gte,
       },
     };
+  }
+
+  /**
+   * Counts collected social comments for a specific platform.
+   */
+  private countCommentsByPlatform(platformId: string) {
+    return this.prisma.socialComment.count({
+      where: {
+        post: {
+          platformId,
+        },
+      },
+    });
   }
 
   /**
@@ -121,7 +136,7 @@ export class PlatformsService {
           _count: {
             select: {
               ideas: true,
-              comments: true,
+              socialPosts: true,
             },
           },
         },
@@ -130,8 +145,18 @@ export class PlatformsService {
       this.prisma.platform.count({ where }),
     ]);
 
+    const data = await Promise.all(
+      platforms.map(async (platform) => ({
+        ...platform,
+        _count: {
+          ...platform._count,
+          socialComments: await this.countCommentsByPlatform(platform.id),
+        },
+      })),
+    );
+
     return {
-      data: platforms,
+      data,
       meta: {
         page,
         limit,
@@ -166,7 +191,8 @@ export class PlatformsService {
       inactivePlatforms,
       todayPlatforms,
       thisMonthPlatforms,
-      platformsWithComments,
+      platformsWithCollectedPosts,
+      platformsWithCollectedComments,
       platformsWithIdeas,
     ] = await Promise.all([
       this.prisma.platform.count({ where }),
@@ -192,8 +218,21 @@ export class PlatformsService {
       this.prisma.platform.count({
         where: {
           ...where,
-          comments: {
+          socialPosts: {
             some: {},
+          },
+        },
+      }),
+
+      this.prisma.platform.count({
+        where: {
+          ...where,
+          socialPosts: {
+            some: {
+              comments: {
+                some: {},
+              },
+            },
           },
         },
       }),
@@ -214,7 +253,8 @@ export class PlatformsService {
       inactivePlatforms,
       todayPlatforms,
       thisMonthPlatforms,
-      platformsWithComments,
+      platformsWithCollectedPosts,
+      platformsWithCollectedComments,
       platformsWithIdeas,
     };
   }
@@ -228,64 +268,67 @@ export class PlatformsService {
   async getPlatformsCharts(query: GetPlatformsQueryDto) {
     const where = this.buildPlatformsWhere(query);
 
-    const [
-      platformsByStatus,
-      topPlatformsByComments,
-      topPlatformsByIdeas,
-    ] = await Promise.all([
-      this.prisma.platform.groupBy({
-        by: ['isActive'],
-        where,
-        _count: {
-          isActive: true,
-        },
-        orderBy: {
+    const [platformsByStatus, platforms, topPlatformsByIdeas] =
+      await Promise.all([
+        this.prisma.platform.groupBy({
+          by: ['isActive'],
+          where,
           _count: {
-            isActive: 'desc',
+            isActive: true,
           },
-        },
-      }),
-
-      this.prisma.platform.findMany({
-        where,
-        orderBy: {
-          comments: {
-            _count: 'desc',
-          },
-        },
-        take: 10,
-        select: {
-          id: true,
-          name: true,
-          isActive: true,
-          _count: {
-            select: {
-              comments: true,
+          orderBy: {
+            _count: {
+              isActive: 'desc',
             },
           },
-        },
-      }),
+        }),
 
-      this.prisma.platform.findMany({
-        where,
-        orderBy: {
-          ideas: {
-            _count: 'desc',
-          },
-        },
-        take: 10,
-        select: {
-          id: true,
-          name: true,
-          isActive: true,
-          _count: {
-            select: {
-              ideas: true,
+        this.prisma.platform.findMany({
+          where,
+          take: 10,
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            _count: {
+              select: {
+                socialPosts: true,
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+
+        this.prisma.platform.findMany({
+          where,
+          orderBy: {
+            ideas: {
+              _count: 'desc',
+            },
+          },
+          take: 10,
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            _count: {
+              select: {
+                ideas: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+    const platformsWithCommentCounts = await Promise.all(
+      platforms.map(async (platform) => ({
+        ...platform,
+        socialCommentsCount: await this.countCommentsByPlatform(platform.id),
+      })),
+    );
+
+    const topPlatformsByComments = platformsWithCommentCounts
+      .sort((a, b) => b.socialCommentsCount - a.socialCommentsCount)
+      .slice(0, 10);
 
     return {
       platformsByStatus: platformsByStatus.map((item) => ({
@@ -294,12 +337,22 @@ export class PlatformsService {
         count: item._count.isActive,
       })),
 
+      platformsByCollectedPosts: platforms
+        .sort((a, b) => b._count.socialPosts - a._count.socialPosts)
+        .map((platform) => ({
+          label: platform.name,
+          platformId: platform.id,
+          platformName: platform.name,
+          isActive: platform.isActive,
+          count: platform._count.socialPosts,
+        })),
+
       platformsByComments: topPlatformsByComments.map((platform) => ({
         label: platform.name,
         platformId: platform.id,
         platformName: platform.name,
         isActive: platform.isActive,
-        count: platform._count.comments,
+        count: platform.socialCommentsCount,
       })),
 
       platformsByIdeas: topPlatformsByIdeas.map((platform) => ({
