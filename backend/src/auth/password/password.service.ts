@@ -110,6 +110,7 @@ export class AuthPasswordService {
                 where: { id: userId },
                 data: {
                     passwordHash: newPasswordHash,
+                    passwordChangedAt: new Date(),
                 },
             }),
 
@@ -302,6 +303,7 @@ export class AuthPasswordService {
                 where: { id: storedToken.userId },
                 data: {
                     passwordHash: newPasswordHash,
+                    passwordChangedAt: new Date(),
                 },
             }),
 

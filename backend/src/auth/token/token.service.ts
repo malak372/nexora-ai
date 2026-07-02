@@ -71,14 +71,27 @@ export class AuthTokenService {
     /**
      * Generates and stores a secure refresh token.
      *
-     * A random refresh token is generated and returned
-     * to the client, while only its hashed value is stored
-     * in the database for security.
+     * A cryptographically secure refresh token is generated
+     * and returned to the client, while only its hashed value
+     * is stored in the database for security.
      *
-     * @param userId - ID of the user who owns the refresh token.
+     * The associated session metadata, including the client's
+     * IP address and user agent when available, is stored to
+     * support session management, device tracking, and future
+     * security analysis.
+     *
+     * @param userId ID of the user who owns the refresh token.
+     * @param meta Optional client session metadata such as IP address
+     * and user agent.
      * @returns Plain refresh token.
      */
-    async generateRefreshToken(userId: string) {
+    async generateRefreshToken(
+        userId: string,
+        meta?: {
+            ipAddress?: string;
+            userAgent?: string;
+        },
+    ) {
         const refreshToken = randomBytes(64).toString('hex');
         const tokenHash = this.hashToken(refreshToken);
 
@@ -90,6 +103,9 @@ export class AuthTokenService {
                 userId,
                 tokenHash,
                 expiresAt,
+                ipAddress: meta?.ipAddress,
+                userAgent: meta?.userAgent,
+                lastUsedAt: new Date(),
             },
         });
 

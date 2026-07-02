@@ -257,6 +257,7 @@ export class AuthEmailService {
                 where: { id: user.id },
                 data: {
                     isVerified: true,
+                    emailVerifiedAt: new Date(),
                 },
             }),
 
