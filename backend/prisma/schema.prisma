@@ -228,9 +228,9 @@ model User {
   email         String        @unique
   passwordHash  String        @map("password_hash")
   role          UserRole      @default(USER)
-  emailVerifiedAt    DateTime?
-  lastLoginAt        DateTime?
-  passwordChangedAt DateTime?
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  lastLoginAt       DateTime? @map("last_login_at")
+  passwordChangedAt DateTime? @map("password_changed_at")
   accountStatus AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
@@ -246,7 +246,7 @@ model User {
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  userType UserType @default(STUDENT) @map("user_type")
+  userType UserType?
 
   ideas                   Idea[]
   payments                Payment[]
@@ -276,9 +276,9 @@ model RefreshToken {
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   createdAt DateTime  @default(now()) @map("created_at")
-  ipAddress  String?
-  userAgent  String?
-  lastUsedAt DateTime?
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  lastUsedAt DateTime? @map("last_used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
