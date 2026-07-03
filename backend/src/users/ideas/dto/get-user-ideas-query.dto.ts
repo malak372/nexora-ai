@@ -1,5 +1,12 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import {
+    IsBoolean,
+    IsEnum,
+    IsOptional,
+    IsUUID,
+} from 'class-validator';
+import { IdeaGenerationType } from '@prisma/client';
+
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
@@ -24,8 +31,8 @@ export class GetUserIdeasQueryDto extends ListQueryDto {
      * Optional idea generation type filter.
      */
     @IsOptional()
-    @IsString()
-    generationType?: string;
+    @IsEnum(IdeaGenerationType)
+    generationType?: IdeaGenerationType;
 
     /**
      * Optional unlock status filter.
@@ -43,13 +50,13 @@ export class GetUserIdeasQueryDto extends ListQueryDto {
      * Optional domain filter.
      */
     @IsOptional()
-    @IsString()
+    @IsUUID()
     domainId?: string;
 
     /**
      * Optional selected platform filter.
      */
     @IsOptional()
-    @IsString()
+    @IsUUID()
     selectedPlatformId?: string;
 }

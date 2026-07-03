@@ -1,7 +1,7 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Get a free hosted Postgres database in seconds: npx create-db
 
 generator client {
   provider = "prisma-client-js"
@@ -103,9 +103,24 @@ enum ApiProvider {
   STRIPE
   PAYPAL
   PALPAY
+
   REDDIT
   FACEBOOK
+  YOUTUBE
+  LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
+
+  GOOGLE_PLAY
+  APP_STORE
   GOOGLE_MAPS
+
   OTHER
 }
 
@@ -140,7 +155,7 @@ enum GeneratedOutputType {
   AI_PROMPT
 }
 
-enum AdminAction {
+enum AuditAction {
   ADMIN_UPDATE_USER_STATUS
   ADMIN_SOFT_DELETE_USER
   ADMIN_UPDATE_SETTINGS
@@ -157,9 +172,19 @@ enum AdminAction {
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
+
+  USER_GENERATE_IDEA
+  USER_UNLOCK_IDEA
+  USER_CREATE_COMPLAINT
+  USER_UPDATE_PROFILE
+  USER_MARK_NOTIFICATION_READ
+  USER_MARK_ALL_NOTIFICATIONS_READ
+  DATA_COLLECTION_RUN
+  DATA_COLLECTION_STOP
+  NLP_ANALYSIS_RUN
 }
 
-enum AdminTargetType {
+enum AuditTargetType {
   USER
   IDEA
   PAYMENT
@@ -171,6 +196,7 @@ enum AdminTargetType {
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
+  NLP_ANALYSIS
 }
 
 enum AuthAction {
@@ -207,7 +233,19 @@ enum CollectionSourceType {
   FACEBOOK
   YOUTUBE
   LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
   FORUM
+  BLOG
+  NEWS
+  APP_STORE
+  GOOGLE_PLAY
   OTHER
 }
 
@@ -223,12 +261,15 @@ enum PromptType {
  */
 
 model User {
-  id            String        @id @default(uuid())
-  fullName      String        @map("full_name")
-  email         String        @unique
-  passwordHash  String        @map("password_hash")
-  role          UserRole      @default(USER)
-  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+  id                String        @id @default(uuid())
+  fullName          String        @map("full_name")
+  email             String        @unique
+  passwordHash      String        @map("password_hash")
+  role              UserRole      @default(USER)
+  emailVerifiedAt   DateTime?     @map("email_verified_at")
+  lastLoginAt       DateTime?     @map("last_login_at")
+  passwordChangedAt DateTime?     @map("password_changed_at")
+  accountStatus     AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
   freeGenerationsUsed Int @default(0) @map("free_generations_used")
@@ -240,10 +281,9 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  userType UserType @default(STUDENT) @map("user_type")
+  userType  UserType?
 
   ideas                   Idea[]
   payments                Payment[]
@@ -252,7 +292,7 @@ model User {
   alerts                  Alert[]
   complaints              Complaint[]
   externalApiLogs         ExternalApiLog[]
-  adminAuditLogs          AdminAuditLog[]          @relation("AdminAuditLogs")
+  auditLogs               AuditLog[]               @relation("AuditLogs")
   updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")
   refreshTokens           RefreshToken[]
   passwordResetTokens     PasswordResetToken[]
@@ -267,12 +307,15 @@ model User {
  */
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  lastUsedAt DateTime? @map("last_used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -323,19 +366,15 @@ model SystemSetting {
   @@map("system_settings")
 }
 
-/**
- * Admin Audit Log
- */
-
-model AdminAuditLog {
+model AuditLog {
   id String @id @default(uuid())
 
-  adminId String? @map("admin_id")
-  admin   User?   @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+  actorId String? @map("actor_id")
+  actor   User?   @relation("AuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
 
-  action AdminAction
+  action AuditAction
 
-  targetType AdminTargetType @map("target_type")
+  targetType AuditTargetType @map("target_type")
   targetId   String?         @map("target_id")
 
   oldValue Json? @map("old_value")
@@ -343,11 +382,11 @@ model AdminAuditLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([adminId])
+  @@index([actorId])
   @@index([action])
   @@index([targetType])
   @@index([createdAt])
-  @@map("admin_audit_logs")
+  @@map("audit_logs")
 }
 
 /**
@@ -784,6 +823,7 @@ model SocialComment {
   collectedAt DateTime  @default(now()) @map("collected_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@unique([postId, externalId])
   @@index([postId])
   @@index([language])
   @@index([sentiment])
