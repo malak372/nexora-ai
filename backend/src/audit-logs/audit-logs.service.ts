@@ -41,7 +41,7 @@ export type CreateAuditLogInput = {
  */
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Creates a new audit log record.
@@ -74,16 +74,18 @@ export class AuditService {
     const { page, limit, skip, take } = buildPagination(query);
     const where = this.buildWhere(query);
 
+    const orderBy = buildOrderBy(
+      query,
+      ['createdAt', 'action', 'targetType', 'targetId'],
+      'createdAt',
+    );
+
     const [data, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
         skip,
         take,
-        orderBy: buildOrderBy(
-          query,
-          ['createdAt', 'action', 'targetType'],
-          'createdAt',
-        ),
+        orderBy,
         include: {
           actor: {
             select: {
@@ -108,7 +110,6 @@ export class AuditService {
       },
     };
   }
-
   /**
    * Returns summary counts for audit logs.
    */
@@ -233,37 +234,37 @@ export class AuditService {
 
     return {
       ...(dateFilter ?? {}),
-      actorId: query.actorId,
-      action: query.action,
-      targetType: query.targetType,
-      targetId: query.targetId,
+      ...(query.actorId && { actorId: query.actorId }),
+      ...(query.action && { action: query.action }),
+      ...(query.targetType && { targetType: query.targetType }),
+      ...(query.targetId && { targetId: query.targetId }),
       ...(query.search?.trim()
         ? {
-            OR: [
-              {
-                targetId: {
+          OR: [
+            {
+              targetId: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              actor: {
+                fullName: {
                   contains: query.search,
                   mode: 'insensitive',
                 },
               },
-              {
-                actor: {
-                  fullName: {
-                    contains: query.search,
-                    mode: 'insensitive',
-                  },
+            },
+            {
+              actor: {
+                email: {
+                  contains: query.search,
+                  mode: 'insensitive',
                 },
               },
-              {
-                actor: {
-                  email: {
-                    contains: query.search,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-            ],
-          }
+            },
+          ],
+        }
         : {}),
     };
   }
