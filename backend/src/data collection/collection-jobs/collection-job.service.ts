@@ -3,11 +3,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CollectionJobStatus, Prisma } from '@prisma/client';
+import {
+  CollectionJobStatus,
+  CollectionSourceType,
+  Prisma,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { RunCollectionDto } from '../dto/run-collection.dto';
 import { GetCollectionJobsQueryDto } from './dto/get-collection-jobs-query.dto';
+import { CollectorsFactory } from '../../collectors/collectors.factory';
 
 import {
   buildOrderBy,
@@ -18,12 +23,25 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 /**
  * Service responsible for CollectionJob persistence and status management.
  *
+ * Responsibilities:
+ * - Validate active domains.
+ * - Validate requested platforms.
+ * - Create running jobs.
+ * - Mark jobs as completed, failed, or stopped.
+ * - Return collection job status and paginated history.
+ *
  * @author Malak
  */
 @Injectable()
 export class CollectionJobService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly collectorsFactory: CollectorsFactory,
+  ) {}
 
+  /**
+   * Validates that the selected domain exists and is active.
+   */
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findUnique({
       where: { id: domainId },
@@ -36,7 +54,27 @@ export class CollectionJobService {
     return domain;
   }
 
-  async createRunningJob(dto: RunCollectionDto) {
+  /**
+   * Validates that all requested platforms have collectors registered.
+   */
+  validateSupportedPlatforms(platforms: CollectionSourceType[]) {
+    const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
+
+    const unsupportedPlatforms = platforms.filter(
+      (platform) => !supportedPlatforms.includes(platform),
+    );
+
+    if (unsupportedPlatforms.length > 0) {
+      throw new BadRequestException(
+        `Unsupported collection platforms: ${unsupportedPlatforms.join(', ')}`,
+      );
+    }
+  }
+
+  /**
+   * Creates a collection job in RUNNING state.
+   */
+  createRunningJob(dto: RunCollectionDto) {
     return this.prisma.collectionJob.create({
       data: {
         domainId: dto.domainId,
@@ -52,6 +90,9 @@ export class CollectionJobService {
     });
   }
 
+  /**
+   * Finds a collection job or throws NotFoundException.
+   */
   async findJobOrThrow(id: string) {
     const job = await this.prisma.collectionJob.findUnique({
       where: { id },
@@ -64,7 +105,10 @@ export class CollectionJobService {
     return job;
   }
 
-  async completeJob(
+  /**
+   * Marks a collection job as completed.
+   */
+  completeJob(
     id: string,
     totals: {
       totalPosts: number;
@@ -90,7 +134,10 @@ export class CollectionJobService {
     });
   }
 
-  async failJob(id: string, error: unknown) {
+  /**
+   * Marks a collection job as failed and stores the failure reason.
+   */
+  failJob(id: string, error: unknown) {
     return this.prisma.collectionJob.update({
       where: { id },
       data: {
@@ -102,6 +149,9 @@ export class CollectionJobService {
     });
   }
 
+  /**
+   * Stops a currently running collection job.
+   */
   async stopJob(id: string) {
     const job = await this.findJobOrThrow(id);
 
@@ -120,6 +170,9 @@ export class CollectionJobService {
     });
   }
 
+  /**
+   * Returns collection jobs summary status.
+   */
   async getStatus() {
     const [runningJobs, completedJobs, failedJobs, stoppedJobs] =
       await Promise.all([
@@ -146,13 +199,16 @@ export class CollectionJobService {
     };
   }
 
+  /**
+   * Returns paginated collection jobs with filtering and sorting.
+   */
   async findJobs(query: GetCollectionJobsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
     const where: Prisma.CollectionJobWhereInput = {
-      domainId: query.domainId,
-      status: query.status,
-      region: query.region,
+      ...(query.domainId && { domainId: query.domainId }),
+      ...(query.status && { status: query.status }),
+      ...(query.region && { region: query.region }),
     };
 
     const [data, total] = await Promise.all([
@@ -162,7 +218,14 @@ export class CollectionJobService {
         take,
         orderBy: buildOrderBy(
           query,
-          ['createdAt', 'collectedAt', 'likesCount'] as const,
+          [
+            'createdAt',
+            'updatedAt',
+            'startedAt',
+            'completedAt',
+            'totalPosts',
+            'totalComments',
+          ] as const,
           'createdAt',
         ),
         include: {

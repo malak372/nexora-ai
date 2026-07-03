@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { CollectionSourceType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { RunCollectionDto } from '../dto/run-collection.dto';
+import { CollectorPost } from '../../collectors/base/collector.types';
 import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
 
 import {
@@ -11,88 +11,127 @@ import {
 } from '../../utilities/base-query/builder';
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
-type MockCollectedPost = {
-  externalId?: string;
-  title?: string;
-  content: string;
-  author?: string;
-  url?: string | null;
-  language?: string;
-  likesCount?: number;
-  comments: {
-    externalId?: string;
-    content: string;
-    author?: string;
-    language?: string;
-    likesCount?: number;
-  }[];
-};
-
 /**
- * Service responsible for SocialPost operations.
+ * Service responsible for storing and listing collected social posts.
+ *
+ * Responsibilities:
+ * - Store collected posts.
+ * - Store collected comments.
+ * - Avoid duplicate posts using sourceType + externalId.
+ * - Avoid duplicate comments using postId + externalId.
+ * - Return paginated posts for admin review.
  *
  * @author Malak
  */
 @Injectable()
-export class SocialPostsService {
-  constructor(private readonly prisma: PrismaService) { }
+export class SocialPostService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async createManyWithComments(
-    collectionJobId: string,
-    posts: MockCollectedPost[],
-    dto: RunCollectionDto,
-  ) {
+  /**
+   * Stores posts and their comments.
+   *
+   * Uses upsert to avoid crashing when the same external post/comment
+   * is collected more than once.
+   */
+  async createManyWithComments(collectionJobId: string, posts: CollectorPost[]) {
+    let totalPosts = 0;
     let totalComments = 0;
 
     for (const post of posts) {
-      const createdPost = await this.prisma.socialPost.create({
-        data: {
+      const platform = await this.findPlatformByName(post.platformName);
+
+      const createdPost = await this.prisma.socialPost.upsert({
+        where: {
+          sourceType_externalId: {
+            sourceType: post.sourceType,
+            externalId: post.externalId,
+          },
+        },
+        update: {
           collectionJobId,
-          sourceType: CollectionSourceType.MOCK,
+          platformId: platform?.id,
+          title: post.title,
+          content: post.content,
+          author: post.author,
+          url: post.url,
+          country: post.country,
+          city: post.city,
+          region: post.region,
+          language: post.language,
+          likesCount: post.likesCount ?? 0,
+          repliesCount: post.repliesCount ?? post.comments.length,
+          publishedAt: post.publishedAt,
+          collectedAt: new Date(),
+        },
+        create: {
+          collectionJobId,
+          platformId: platform?.id,
+          sourceType: post.sourceType,
           externalId: post.externalId,
           title: post.title,
           content: post.content,
           author: post.author,
           url: post.url,
-          country: dto.country,
-          city: dto.city,
-          region: dto.region,
+          country: post.country,
+          city: post.city,
+          region: post.region,
           language: post.language,
           likesCount: post.likesCount ?? 0,
-          repliesCount: post.comments.length,
+          repliesCount: post.repliesCount ?? post.comments.length,
+          publishedAt: post.publishedAt,
         },
       });
 
-      if (post.comments.length > 0) {
-        await this.prisma.socialComment.createMany({
-          data: post.comments.map((comment) => ({
+      totalPosts++;
+
+      for (const comment of post.comments) {
+        await this.prisma.socialComment.upsert({
+          where: {
+            postId_externalId: {
+              postId: createdPost.id,
+              externalId: comment.externalId,
+            },
+          },
+          update: {
+            content: comment.content,
+            author: comment.author,
+            language: comment.language,
+            likesCount: comment.likesCount ?? 0,
+            publishedAt: comment.publishedAt,
+            collectedAt: new Date(),
+          },
+          create: {
             postId: createdPost.id,
             externalId: comment.externalId,
             content: comment.content,
             author: comment.author,
             language: comment.language,
             likesCount: comment.likesCount ?? 0,
-          })),
+            publishedAt: comment.publishedAt,
+          },
         });
 
-        totalComments += post.comments.length;
+        totalComments++;
       }
     }
 
     return {
-      totalPosts: posts.length,
+      totalPosts,
       totalComments,
     };
   }
 
+  /**
+   * Returns paginated collected posts.
+   */
   async findPosts(query: GetSocialPostsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
     const where: Prisma.SocialPostWhereInput = {
-      collectionJobId: query.collectionJobId,
-      platformId: query.platformId,
-      language: query.language,
-      region: query.region,
+      ...(query.collectionJobId && { collectionJobId: query.collectionJobId }),
+      ...(query.platformId && { platformId: query.platformId }),
+      ...(query.language && { language: query.language }),
+      ...(query.region && { region: query.region }),
     };
 
     const [data, total] = await Promise.all([
@@ -143,5 +182,20 @@ export class SocialPostsService {
         totalPages: calculateTotalPages(total, limit),
       },
     };
+  }
+
+  /**
+   * Finds an active platform record by platform display name.
+   */
+  private findPlatformByName(name: string) {
+    return this.prisma.platform.findFirst({
+      where: {
+        name: {
+          equals: name,
+          mode: 'insensitive',
+        },
+        isActive: true,
+      },
+    });
   }
 }

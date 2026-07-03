@@ -103,9 +103,24 @@ enum ApiProvider {
   STRIPE
   PAYPAL
   PALPAY
+
   REDDIT
   FACEBOOK
+  YOUTUBE
+  LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
+
+  GOOGLE_PLAY
+  APP_STORE
   GOOGLE_MAPS
+
   OTHER
 }
 
@@ -215,7 +230,19 @@ enum CollectionSourceType {
   FACEBOOK
   YOUTUBE
   LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
   FORUM
+  BLOG
+  NEWS
+  APP_STORE
+  GOOGLE_PLAY
   OTHER
 }
 
@@ -231,15 +258,15 @@ enum PromptType {
  */
 
 model User {
-  id            String        @id @default(uuid())
-  fullName      String        @map("full_name")
-  email         String        @unique
-  passwordHash  String        @map("password_hash")
-  role          UserRole      @default(USER)
-  emailVerifiedAt   DateTime? @map("email_verified_at")
-  lastLoginAt       DateTime? @map("last_login_at")
-  passwordChangedAt DateTime? @map("password_changed_at")
-  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+  id                String        @id @default(uuid())
+  fullName          String        @map("full_name")
+  email             String        @unique
+  passwordHash      String        @map("password_hash")
+  role              UserRole      @default(USER)
+  emailVerifiedAt   DateTime?     @map("email_verified_at")
+  lastLoginAt       DateTime?     @map("last_login_at")
+  passwordChangedAt DateTime?     @map("password_changed_at")
+  accountStatus     AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
   freeGenerationsUsed Int @default(0) @map("free_generations_used")
@@ -251,10 +278,9 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  userType UserType?
+  userType  UserType?
 
   ideas                   Idea[]
   payments                Payment[]
@@ -278,14 +304,14 @@ model User {
  */
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  ipAddress String?   @map("ip_address")
-  userAgent String?   @map("user_agent")
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
   lastUsedAt DateTime? @map("last_used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -794,6 +820,7 @@ model SocialComment {
   collectedAt DateTime  @default(now()) @map("collected_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@unique([postId, externalId])
   @@index([postId])
   @@index([language])
   @@index([sentiment])
