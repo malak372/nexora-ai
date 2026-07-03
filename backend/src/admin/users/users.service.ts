@@ -5,8 +5,8 @@ import {
 } from '@nestjs/common';
 import {
   AccountStatus,
-  AdminAction,
-  AdminTargetType,
+  AuditAction,
+  AuditTargetType,
   Prisma,
   UserRole,
   UserType,
@@ -15,7 +15,7 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 import { MailService } from '../../mail/mail.service';
 
 import {
@@ -53,7 +53,7 @@ import {
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
     private readonly mailService: MailService,
   ) { }
 
@@ -681,9 +681,9 @@ export class UsersService {
     });
 
     await this.auditLogsService.createLog({
-      adminId: currentAdminId,
-      action: AdminAction.ADMIN_UPDATE_USER_STATUS,
-      targetType: AdminTargetType.USER,
+      actorId: currentAdminId,
+      action: AuditAction.ADMIN_UPDATE_USER_STATUS,
+      targetType: AuditTargetType.USER,
       targetId: userId,
       oldValue: {
         isActive: user.isActive,
@@ -777,9 +777,9 @@ export class UsersService {
     );
 
     await this.auditLogsService.createLog({
-      adminId: currentAdminId,
-      action: AdminAction.ADMIN_SEND_PASSWORD_RESET_EMAIL,
-      targetType: AdminTargetType.USER,
+      actorId: currentAdminId,
+      action: AuditAction.ADMIN_SEND_PASSWORD_RESET_EMAIL,
+      targetType: AuditTargetType.USER,
       targetId: user.id,
       newValue: {
         userId: user.id,
@@ -850,9 +850,9 @@ export class UsersService {
     });
 
     await this.auditLogsService.createLog({
-      adminId: currentAdminId,
-      action: AdminAction.ADMIN_SOFT_DELETE_USER,
-      targetType: AdminTargetType.USER,
+      actorId: currentAdminId,
+      action: AuditAction.ADMIN_SOFT_DELETE_USER,
+      targetType: AuditTargetType.USER,
       targetId: userId,
       oldValue: {
         isActive: user.isActive,

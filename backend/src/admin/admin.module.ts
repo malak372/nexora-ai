@@ -35,14 +35,13 @@ import { AlertsService } from './alerts/alerts.service';
 import { IdeasController } from './ideas/ideas.controller';
 import { IdeasService } from './ideas/ideas.service';
 
-import { AuditLogsController } from './audit-logs/audit-logs.controller';
-import { AuditLogsService } from './audit-logs/audit-logs.service';
 
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
+import { AuditModule } from '../audit-logs/audit-logs.module';
 
 /**
  * Admin module.
@@ -69,11 +68,11 @@ import { PaymentsController } from './payments/payments.controller';
   imports: [
     PrismaModule,
     MailModule,
+    AuditModule
   ],
 
   controllers: [
     DashboardController,
-    AuditLogsController,
     AiMonitoringController,
     PaymentsController,
     IdeasController,
@@ -90,7 +89,6 @@ import { PaymentsController } from './payments/payments.controller';
 
   providers: [
     DashboardService,
-    AuditLogsService,
     AiMonitoringService,
     IdeasService,
     UsersService,

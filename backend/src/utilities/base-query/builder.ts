@@ -28,8 +28,9 @@ export function buildPagination(query: {
   const page = query.page ?? 1;
   const limit = query.limit ?? 10;
   const skip = (page - 1) * limit;
+  const take = limit;
 
-  return { page, limit, skip };
+  return { page, limit, skip, take };
 }
 
 /**

@@ -140,7 +140,7 @@ enum GeneratedOutputType {
   AI_PROMPT
 }
 
-enum AdminAction {
+enum AuditAction {
   ADMIN_UPDATE_USER_STATUS
   ADMIN_SOFT_DELETE_USER
   ADMIN_UPDATE_SETTINGS
@@ -157,9 +157,16 @@ enum AdminAction {
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
+
+  USER_GENERATE_IDEA
+  USER_UNLOCK_IDEA
+  USER_CREATE_COMPLAINT
+  DATA_COLLECTION_RUN
+  DATA_COLLECTION_STOP
+  NLP_ANALYSIS_RUN
 }
 
-enum AdminTargetType {
+enum AuditTargetType {
   USER
   IDEA
   PAYMENT
@@ -171,6 +178,7 @@ enum AdminTargetType {
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
+  NLP_ANALYSIS
 }
 
 enum AuthAction {
@@ -223,15 +231,15 @@ enum PromptType {
  */
 
 model User {
-  id            String        @id @default(uuid())
-  fullName      String        @map("full_name")
-  email         String        @unique
-  passwordHash  String        @map("password_hash")
-  role          UserRole      @default(USER)
-  emailVerifiedAt    DateTime?
-  lastLoginAt        DateTime?
+  id                String        @id @default(uuid())
+  fullName          String        @map("full_name")
+  email             String        @unique
+  passwordHash      String        @map("password_hash")
+  role              UserRole      @default(USER)
+  emailVerifiedAt   DateTime?
+  lastLoginAt       DateTime?
   passwordChangedAt DateTime?
-  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+  accountStatus     AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
   freeGenerationsUsed Int @default(0) @map("free_generations_used")
@@ -254,7 +262,7 @@ model User {
   alerts                  Alert[]
   complaints              Complaint[]
   externalApiLogs         ExternalApiLog[]
-  adminAuditLogs          AdminAuditLog[]          @relation("AdminAuditLogs")
+  auditLogs               AuditLog[]               @relation("AuditLogs")
   updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")
   refreshTokens           RefreshToken[]
   passwordResetTokens     PasswordResetToken[]
@@ -269,12 +277,12 @@ model User {
  */
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
   ipAddress  String?
   userAgent  String?
   lastUsedAt DateTime?
@@ -328,19 +336,15 @@ model SystemSetting {
   @@map("system_settings")
 }
 
-/**
- * Admin Audit Log
- */
-
-model AdminAuditLog {
+model AuditLog {
   id String @id @default(uuid())
 
-  adminId String? @map("admin_id")
-  admin   User?   @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: SetNull)
+  actorId String? @map("actor_id")
+  actor   User?   @relation("AuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
 
-  action AdminAction
+  action AuditAction
 
-  targetType AdminTargetType @map("target_type")
+  targetType AuditTargetType @map("target_type")
   targetId   String?         @map("target_id")
 
   oldValue Json? @map("old_value")
@@ -348,11 +352,11 @@ model AdminAuditLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([adminId])
+  @@index([actorId])
   @@index([action])
   @@index([targetType])
   @@index([createdAt])
-  @@map("admin_audit_logs")
+  @@map("audit_logs")
 }
 
 /**

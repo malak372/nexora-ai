@@ -3,13 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AdminAction, AdminTargetType, Prisma } from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
 import { UpdateDomainDto } from './dto/update-domain.dto';
 import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 import {
   buildDateFilter,
@@ -42,7 +42,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 export class DomainsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
   ) {}
 
   /**
@@ -277,9 +277,9 @@ export class DomainsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_DOMAIN,
-      targetType: AdminTargetType.DOMAIN,
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_DOMAIN,
+      targetType: AuditTargetType.DOMAIN,
       targetId: domain.id,
       newValue: {
         id: domain.id,
@@ -348,9 +348,9 @@ export class DomainsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_UPDATE_DOMAIN,
-      targetType: AdminTargetType.DOMAIN,
+      actorId: adminId,
+      action: AuditAction.ADMIN_UPDATE_DOMAIN,
+      targetType: AuditTargetType.DOMAIN,
       targetId: id,
       oldValue: {
         name: domain.name,
@@ -401,9 +401,9 @@ export class DomainsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_DEACTIVATE_DOMAIN,
-      targetType: AdminTargetType.DOMAIN,
+      actorId: adminId,
+      action: AuditAction.ADMIN_DEACTIVATE_DOMAIN,
+      targetType: AuditTargetType.DOMAIN,
       targetId: id,
       oldValue: {
         name: domain.name,
