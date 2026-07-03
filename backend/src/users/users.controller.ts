@@ -9,18 +9,18 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UpdateProfileDto } from './dto/update-profile.dto';
-import { GetUserCreditHistoryQueryDto } from './dto/get-user-credit-history-query.dto';
-import { GetUserIdeasQueryDto } from './dto/get-user-ideas-query.dto';
-import { GetUserNotificationsQueryDto } from './dto/get-user-notifications-query.dto';
-import { GetUserPaymentsQueryDto } from './dto/get-user-payments-query.dto';
-import { UserActivityService } from './services/user-activity.service';
-import { UserCreditsService } from './services/user-credits.service';
-import { UserIdeasService } from './services/user-ideas.service';
-import { UserNotificationsService } from './services/user-notifications.service';
-import { UserPaymentsService } from './services/user-payments.service';
-import { UserProfileService } from './services/user-profile.service';
-import { UserSummaryService } from './services/user-dashboard.service';
+import { UpdateProfileDto } from './profile/dto/update-profile.dto';
+import { GetUserCreditHistoryQueryDto } from './credits/dto/get-user-credit-history-query.dto';
+import { GetUserIdeasQueryDto } from './ideas/dto/get-user-ideas-query.dto';
+import { GetUserNotificationsQueryDto } from './notifications/dto/get-user-notifications-query.dto';
+import { GetUserPaymentsQueryDto } from './payments/dto/get-user-payments-query.dto';
+import { UserActivityService } from './activity/activity.service';
+import { UserCreditsService } from './credits/credits.service';
+import { UserIdeasService } from './ideas/ideas.service';
+import { UserNotificationsService } from './notifications/notifications.service';
+import { UserPaymentsService } from './payments/payments.service';
+import { UserProfileService } from './profile/profile.service';
+import { UserSummaryService } from './dashboard/dashboard.service';
 
 /**
  * Controller responsible for authenticated user management operations.

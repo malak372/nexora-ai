@@ -10,7 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
  * @author Eman
  */
 @Injectable()
-export class UserCommonService {
+export class UserValidationService {
     constructor(private readonly prisma: PrismaService) { }
 
     /**

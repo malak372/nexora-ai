@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserCommonService } from './user-common.service';
+import { UserValidationService } from '../validation/Validation.service';
 
 /**
  * Service responsible for user summary operations.
@@ -9,7 +9,7 @@ import { UserCommonService } from './user-common.service';
  * for the authenticated user using existing user,
  * idea, and notification data.
  *
- * It uses UserCommonService for shared user validation logic.
+ * It uses UserValidationService for shared user validation logic.
  *
  * @author Eman
  */
@@ -17,7 +17,7 @@ import { UserCommonService } from './user-common.service';
 export class UserSummaryService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly userCommonService: UserCommonService,
+        private readonly userCommonService: UserValidationService,
     ) { }
 
     /**

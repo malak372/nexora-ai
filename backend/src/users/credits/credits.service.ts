@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GetUserCreditHistoryQueryDto } from '../dto/get-user-credit-history-query.dto';
+import { GetUserCreditHistoryQueryDto } from './dto/get-user-credit-history-query.dto';
 import {
   buildDateFilter,
   buildExactFilter,
@@ -9,7 +9,7 @@ import {
   buildPagination,
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
-import { UserCommonService } from './user-common.service';
+import { UserValidationService } from '../validation/Validation.service';
 
 /**
  * Service responsible for user credit operations.
@@ -20,7 +20,7 @@ import { UserCommonService } from './user-common.service';
  * It supports pagination, filtering, searching,
  * and sorting for credit transaction history.
  *
- * It uses UserCommonService for shared user validation logic.
+ * It uses UserValidationService for shared user validation logic.
  *
  * @author Eman
  */
@@ -28,7 +28,7 @@ import { UserCommonService } from './user-common.service';
 export class UserCreditsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly userCommonService: UserCommonService,
+    private readonly userCommonService: UserValidationService,
   ) { }
 
   /**

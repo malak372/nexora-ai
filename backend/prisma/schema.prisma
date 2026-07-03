@@ -243,9 +243,10 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  userType  UserType? @map("user_type")
+  userType UserType @default(STUDENT) @map("user_type")
 
   ideas                   Idea[]
   payments                Payment[]
