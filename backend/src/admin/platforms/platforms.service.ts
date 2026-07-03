@@ -3,13 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AdminAction, AdminTargetType, Prisma } from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePlatformDto } from './dto/create-platform.dto';
 import { UpdatePlatformDto } from './dto/update-platform.dto';
 import { GetPlatformsQueryDto } from './dto/get-platforms-query.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 import {
   buildDateFilter,
@@ -48,7 +48,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 export class PlatformsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
   ) {}
 
   /**
@@ -390,9 +390,9 @@ export class PlatformsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_PLATFORM,
-      targetType: AdminTargetType.PLATFORM,
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_PLATFORM,
+      targetType: AuditTargetType.PLATFORM,
       targetId: platform.id,
       newValue: {
         id: platform.id,
@@ -468,9 +468,9 @@ export class PlatformsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_UPDATE_PLATFORM,
-      targetType: AdminTargetType.PLATFORM,
+      actorId: adminId,
+      action: AuditAction.ADMIN_UPDATE_PLATFORM,
+      targetType: AuditTargetType.PLATFORM,
       targetId: id,
       oldValue: {
         name: platform.name,
@@ -526,9 +526,9 @@ export class PlatformsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_DEACTIVATE_PLATFORM,
-      targetType: AdminTargetType.PLATFORM,
+      actorId: adminId,
+      action: AuditAction.ADMIN_DEACTIVATE_PLATFORM,
+      targetType: AuditTargetType.PLATFORM,
       targetId: id,
       oldValue: {
         name: platform.name,

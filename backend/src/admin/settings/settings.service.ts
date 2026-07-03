@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { AdminAction, AdminTargetType } from '@prisma/client';
+import { AuditAction, AuditTargetType } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateSystemSettingsDto } from './dto/update-system-settings.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 import { toNumber } from '../../utilities/analytics/analytics.helper';
 
 /**
@@ -21,7 +21,7 @@ import { toNumber } from '../../utilities/analytics/analytics.helper';
 export class SettingsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
   ) {}
 
   /**
@@ -151,9 +151,9 @@ export class SettingsService {
     };
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_UPDATE_SETTINGS,
-      targetType: AdminTargetType.SYSTEM_SETTING,
+      actorId: adminId,
+      action: AuditAction.ADMIN_UPDATE_SETTINGS,
+      targetType: AuditTargetType.SYSTEM_SETTING,
       targetId: updatedSettings.id,
       oldValue: {
         creditPrice: currentSettings.creditPrice,

@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
+import { AuditModule } from './audit-logs/audit-logs.module';
 
 import { MailModule } from './mail/mail.module';
 
@@ -39,6 +40,7 @@ import { MailModule } from './mail/mail.module';
     PrismaModule,
     UsersModule,
     MailModule,
+    AuditModule,
     AdminModule,
   ],
   controllers: [AppController],

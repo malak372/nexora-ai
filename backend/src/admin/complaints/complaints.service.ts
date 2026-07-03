@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
-  AdminAction,
-  AdminTargetType,
+  AuditAction,
+  AuditTargetType,
   ComplaintPriority,
   ComplaintStatus,
   Prisma,
@@ -10,18 +10,20 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetComplaintsQueryDto } from './dto/get-complaints-query.dto';
 import { UpdateComplaintDto } from './dto/update-complaint.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 import {
   buildDateFilter,
   buildExactFilter,
   buildOrderBy,
   buildPagination,
-  buildRelationSearchFilter,
-  buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
-import { buildCsv, calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import {
+  buildCsv,
+  calculateTotalPages,
+} from '../../utilities/analytics/analytics.helper';
+
 import { buildResolvedAt } from './utils/complaints.rules';
 
 /**
@@ -43,23 +45,9 @@ import { buildResolvedAt } from './utils/complaints.rules';
 export class ComplaintsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
-  ) { }
+    private readonly auditLogsService: AuditService,
+  ) {}
 
-  /**
-   * Builds the Prisma where filter used for complaints queries.
-   *
-   * Supports:
-   * - Date filtering using fromDate and toDate.
-   * - Search by complaint subject, message, and admin reply.
-   * - Search by related user full name and email.
-   * - Search by related idea title.
-   * - Exact filtering by complaint status.
-   * - Exact filtering by complaint priority.
-   *
-   * @param query Query parameters received from the request.
-   * @returns Prisma complaint where input.
-   */
   private buildComplaintsWhere(
     query: GetComplaintsQueryDto,
   ): Prisma.ComplaintWhereInput {
@@ -127,19 +115,6 @@ export class ComplaintsService {
     return where;
   }
 
-  /**
-   * Merges a minimum createdAt date into an existing complaint where filter.
-   *
-   * This helper is used to calculate:
-   * - Complaints created today.
-   * - Complaints created this month.
-   *
-   * It keeps any existing createdAt filters and adds or overrides the gte value.
-   *
-   * @param where Existing Prisma complaint where input.
-   * @param gte Minimum createdAt date.
-   * @returns Updated Prisma complaint where input.
-   */
   private mergeCreatedAtGte(
     where: Prisma.ComplaintWhereInput,
     gte: Date,
@@ -158,26 +133,6 @@ export class ComplaintsService {
     };
   }
 
-  /**
-   * Retrieves complaints for the admin panel.
-   *
-   * Supports:
-   * - Pagination.
-   * - Sorting.
-   * - Date filtering.
-   * - Search.
-   * - Status filtering.
-   * - Priority filtering.
-   *
-   * Returned data includes:
-   * - Complaint basic information.
-   * - Related user information.
-   * - Related idea information.
-   * - Pagination metadata.
-   *
-   * @param query Query parameters for filtering, sorting, and pagination.
-   * @returns Paginated list of complaints with metadata.
-   */
   async getComplaints(query: GetComplaintsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
     const where = this.buildComplaintsWhere(query);
@@ -204,7 +159,6 @@ export class ComplaintsService {
           createdAt: true,
           updatedAt: true,
           resolvedAt: true,
-
           user: {
             select: {
               id: true,
@@ -212,7 +166,6 @@ export class ComplaintsService {
               email: true,
             },
           },
-
           idea: {
             select: {
               id: true,
@@ -221,7 +174,6 @@ export class ComplaintsService {
           },
         },
       }),
-
       this.prisma.complaint.count({ where }),
     ]);
 
@@ -236,24 +188,6 @@ export class ComplaintsService {
     };
   }
 
-  /**
-   * Retrieves summary statistics for complaints.
-   *
-   * Summary includes:
-   * - Total complaints.
-   * - Complaints created today.
-   * - Complaints created this month.
-   * - Open complaints.
-   * - In-progress complaints.
-   * - Resolved complaints.
-   * - Rejected complaints.
-   * - High-priority complaints.
-   *
-   * The same filters and search options from the query are applied.
-   *
-   * @param query Query parameters used to filter the summary.
-   * @returns Complaint summary statistics.
-   */
   async getComplaintsSummary(query: GetComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
@@ -280,35 +214,30 @@ export class ComplaintsService {
       this.prisma.complaint.count({ where }),
       this.prisma.complaint.count({ where: todayWhere }),
       this.prisma.complaint.count({ where: monthWhere }),
-
       this.prisma.complaint.count({
         where: {
           ...where,
           status: ComplaintStatus.OPEN,
         },
       }),
-
       this.prisma.complaint.count({
         where: {
           ...where,
           status: ComplaintStatus.IN_PROGRESS,
         },
       }),
-
       this.prisma.complaint.count({
         where: {
           ...where,
           status: ComplaintStatus.RESOLVED,
         },
       }),
-
       this.prisma.complaint.count({
         where: {
           ...where,
           status: ComplaintStatus.REJECTED,
         },
       }),
-
       this.prisma.complaint.count({
         where: {
           ...where,
@@ -329,18 +258,6 @@ export class ComplaintsService {
     };
   }
 
-  /**
-   * Retrieves chart-ready complaints statistics.
-   *
-   * Chart data includes:
-   * - Complaints grouped by status.
-   * - Complaints grouped by priority.
-   *
-   * The same filters and search options from the query are applied.
-   *
-   * @param query Query parameters used to filter chart data.
-   * @returns Complaint chart data grouped by status and priority.
-   */
   async getComplaintsCharts(query: GetComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
@@ -357,7 +274,6 @@ export class ComplaintsService {
           },
         },
       }),
-
       this.prisma.complaint.groupBy({
         by: ['priority'],
         where,
@@ -378,7 +294,6 @@ export class ComplaintsService {
         status: item.status,
         count: item._count.status,
       })),
-
       complaintsByPriority: complaintsByPriority.map((item) => ({
         label: item.priority,
         priority: item.priority,
@@ -387,15 +302,6 @@ export class ComplaintsService {
     };
   }
 
-  /**
-   * Exports filtered complaints as CSV.
-   *
-   * Uses the same filters and sorting rules
-   * as the complaints list endpoint.
-   *
-   * Endpoint:
-   * GET /admin/complaints/export/csv
-   */
   async exportComplaintsCsv(query: GetComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
@@ -471,32 +377,6 @@ export class ComplaintsService {
     return buildCsv(headers, rows);
   }
 
-  /**
-   * Updates a complaint by admin.
-   *
-   * Allows updating:
-   * - Complaint status.
-   * - Complaint priority.
-   * - Admin reply.
-   *
-   * If the complaint status changes to a resolved state,
-   * the resolvedAt value is calculated using complaint rules.
-   *
-   * If no actual changes are detected, the complaint is returned without update.
-   *
-   * After a successful update, an audit log is created to track:
-   * - Admin ID.
-   * - Action type.
-   * - Target complaint ID.
-   * - Old values.
-   * - New values.
-   *
-   * @param id Complaint ID.
-   * @param body Update complaint DTO.
-   * @param adminId ID of the admin performing the update.
-   * @throws NotFoundException If the complaint does not exist.
-   * @returns Updated complaint response.
-   */
   async updateComplaint(
     id: string,
     body: UpdateComplaintDto,
@@ -512,8 +392,7 @@ export class ComplaintsService {
 
     const hasChanges =
       (body.status !== undefined && body.status !== complaint.status) ||
-      (body.priority !== undefined &&
-        body.priority !== complaint.priority) ||
+      (body.priority !== undefined && body.priority !== complaint.priority) ||
       (body.adminReply !== undefined &&
         body.adminReply !== complaint.adminReply);
 
@@ -557,9 +436,9 @@ export class ComplaintsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_UPDATE_COMPLAINT,
-      targetType: AdminTargetType.COMPLAINT,
+      actorId: adminId,
+      action: AuditAction.ADMIN_UPDATE_COMPLAINT,
+      targetType: AuditTargetType.COMPLAINT,
       targetId: id,
       oldValue: {
         status: complaint.status,
