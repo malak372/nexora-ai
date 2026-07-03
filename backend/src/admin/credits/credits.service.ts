@@ -5,8 +5,8 @@ import {
 } from '@nestjs/common';
 import {
   AccountStatus,
-  AdminAction,
-  AdminTargetType,
+  AuditAction,
+  AuditTargetType,
   CreditTransactionType,
   Prisma,
   UserRole,
@@ -15,7 +15,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetCreditHistoryQueryDto } from './dto/get-credit-history-query.dto';
 import { AdjustUserCreditsDto } from './dto/adjust-user-credits.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 import {
   buildDateFilter,
@@ -49,7 +49,7 @@ import {
 export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
   ) { }
 
   /**
@@ -350,7 +350,7 @@ export class CreditsService {
 
       if (user.role !== UserRole.USER) {
         throw new BadRequestException(
-          'Credits can only be adjusted for normal users',
+          'Credits can only be adjusted for user accounts',
         );
       }
 
@@ -406,9 +406,9 @@ export class CreditsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_ADJUST_USER_CREDITS,
-      targetType: AdminTargetType.CREDIT_TRANSACTION,
+      actorId: adminId,
+      action: AuditAction.ADMIN_ADJUST_USER_CREDITS,
+      targetType: AuditTargetType.CREDIT_TRANSACTION,
       targetId: result.creditTransaction.id,
       oldValue: {
         userId: result.oldUser.id,

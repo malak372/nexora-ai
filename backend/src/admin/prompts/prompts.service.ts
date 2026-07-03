@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { AdminAction, AdminTargetType } from '@prisma/client';
+import { AuditAction, AuditTargetType } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdatePromptDto } from './dto/update-prompt.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 /**
  * Service responsible for managing the AI prompt template.
@@ -20,7 +20,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 export class PromptsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditLogsService: AuditService,
   ) {}
 
   /**
@@ -112,9 +112,9 @@ export class PromptsService {
     });
 
     await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_UPDATE_PROMPT,
-      targetType: AdminTargetType.PROMPT,
+      actorId: adminId,
+      action: AuditAction.ADMIN_UPDATE_PROMPT,
+      targetType: AuditTargetType.PROMPT,
       targetId: updatedSettings.id,
       oldValue: {
         ideaPromptTemplate: oldPrompt,
