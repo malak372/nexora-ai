@@ -1,18 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   AlertType,
-  UserRole,
+  AuditAction,
+  AuditTargetType,
   Prisma,
-  AdminAction,
-  AdminTargetType,
+  UserRole,
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
+import { MailService } from '../../mail/mail.service';
+
 import { CreateAlertDto } from './dto/create-alert.dto';
 import { CreateEmailAlertDto } from './dto/create-email-alert.dto';
 import { GetAlertsQueryDto } from './dto/get-alerts-query.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { MailService } from '../../mail/mail.service';
 
 import {
   buildDateFilter,
@@ -24,14 +25,14 @@ import {
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
- * Service responsible for Admin alert management operations.
+ * Service responsible for admin alert management operations.
  *
  * Supports:
  * - In-app alerts.
  * - Email alerts.
  * - Single user alerts.
  * - Broadcast alerts.
- * - Audit logging.
+ * - General audit logging through AuditService.
  *
  * @author Malak
  */
@@ -39,52 +40,50 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 export class AlertsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogsService: AuditLogsService,
+    private readonly auditService: AuditService,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
 
   /**
    * Retrieves alerts with optional filtering, searching,
    * sorting, and pagination.
-   *
-   * @param query Query parameters.
-   * @returns Paginated alerts list with metadata.
    */
   async getAlerts(query: GetAlertsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
+
     const searchFilter: Prisma.AlertWhereInput = query.search
       ? {
-        OR: [
-          {
-            title: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            message: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            user: {
-              fullName: {
+          OR: [
+            {
+              title: {
                 contains: query.search,
                 mode: 'insensitive',
               },
             },
-          },
-          {
-            user: {
-              email: {
+            {
+              message: {
                 contains: query.search,
                 mode: 'insensitive',
               },
             },
-          },
-        ],
-      }
+            {
+              user: {
+                fullName: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              user: {
+                email: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }
       : {};
 
     const where: Prisma.AlertWhereInput = {
@@ -94,18 +93,16 @@ export class AlertsService {
       ...buildExactFilter('isRead', query.isRead),
     };
 
-    const orderBy = buildOrderBy(
-      query,
-      ['title', 'type', 'isRead', 'createdAt'] as const,
-      'createdAt',
-    );
-
     const [alerts, total] = await Promise.all([
       this.prisma.alert.findMany({
         where,
         skip,
-        take: limit,
-        orderBy,
+        take,
+        orderBy: buildOrderBy(
+          query,
+          ['title', 'type', 'isRead', 'createdAt'],
+          'createdAt',
+        ),
         select: {
           id: true,
           title: true,
@@ -122,7 +119,6 @@ export class AlertsService {
           },
         },
       }),
-
       this.prisma.alert.count({ where }),
     ]);
 
@@ -139,10 +135,6 @@ export class AlertsService {
 
   /**
    * Creates and sends an in-app alert.
-   *
-   * @param body Alert creation DTO.
-   * @param adminId Authenticated admin ID.
-   * @returns Created alert or broadcast result.
    */
   async createAlert(body: CreateAlertDto, adminId: string) {
     const alertType = body.type ?? AlertType.SYSTEM;
@@ -156,12 +148,6 @@ export class AlertsService {
 
   /**
    * Sends an email alert separately from in-app alerts.
-   *
-   * This method does not create alert records in the database.
-   *
-   * @param body Email alert DTO.
-   * @param adminId Authenticated admin ID.
-   * @returns Email sending result.
    */
   async sendEmailAlert(body: CreateEmailAlertDto, adminId: string) {
     if (body.userId) {
@@ -172,22 +158,15 @@ export class AlertsService {
   }
 
   /**
-  * Creates an in-app alert for a specific active user.
-  *
-  * @param body Alert creation DTO.
-  * @param adminId Authenticated admin ID.
-  * @param alertType Final alert type.
-  * @returns Created alert response.
-  */
+   * Creates an in-app alert for a specific active user.
+   */
   private async createSingleUserAlert(
     body: CreateAlertDto,
     adminId: string,
     alertType: AlertType,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: body.userId,
-      },
+      where: { id: body.userId },
       select: {
         id: true,
         role: true,
@@ -208,10 +187,10 @@ export class AlertsService {
       },
     });
 
-    await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_ALERT,
-      targetType: AdminTargetType.ALERT,
+    await this.auditService.createLog({
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_ALERT,
+      targetType: AuditTargetType.ALERT,
       targetId: alert.id,
       newValue: {
         id: alert.id,
@@ -229,13 +208,9 @@ export class AlertsService {
       alert,
     };
   }
+
   /**
    * Broadcasts an in-app alert to all active users.
-   *
-   * @param body Alert creation DTO.
-   * @param adminId Authenticated admin ID.
-   * @param alertType Final alert type.
-   * @returns Broadcast result.
    */
   private async createBroadcastAlert(
     body: CreateAlertDto,
@@ -265,10 +240,10 @@ export class AlertsService {
       });
     }
 
-    await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_ALERT,
-      targetType: AdminTargetType.ALERT,
+    await this.auditService.createLog({
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_ALERT,
+      targetType: AuditTargetType.ALERT,
       targetId: 'BROADCAST',
       newValue: {
         broadcast: true,
@@ -286,20 +261,14 @@ export class AlertsService {
   }
 
   /**
-  * Sends an email alert to one active user.
-  *
-  * @param body Email alert DTO.
-  * @param adminId Authenticated admin ID.
-  * @returns Email sending result.
-  */
+   * Sends an email alert to one active user.
+   */
   private async sendSingleUserEmailAlert(
     body: CreateEmailAlertDto,
     adminId: string,
   ) {
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: body.userId,
-      },
+      where: { id: body.userId },
       select: {
         id: true,
         fullName: true,
@@ -320,10 +289,10 @@ export class AlertsService {
       user.fullName,
     );
 
-    await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_ALERT,
-      targetType: AdminTargetType.ALERT,
+    await this.auditService.createLog({
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_ALERT,
+      targetType: AuditTargetType.ALERT,
       targetId: user.id,
       newValue: {
         emailAlert: true,
@@ -344,15 +313,9 @@ export class AlertsService {
       },
     };
   }
+
   /**
    * Sends an email alert to all active users.
-   *
-   * Emails are sent sequentially to each active user.
-   * the SMTP provider.
-   *
-   * @param body Email alert DTO.
-   * @param adminId Authenticated admin ID.
-   * @returns Broadcast email result.
    */
   private async sendBroadcastEmailAlert(
     body: CreateEmailAlertDto,
@@ -388,10 +351,10 @@ export class AlertsService {
       }
     }
 
-    await this.auditLogsService.createLog({
-      adminId,
-      action: AdminAction.ADMIN_CREATE_ALERT,
-      targetType: AdminTargetType.ALERT,
+    await this.auditService.createLog({
+      actorId: adminId,
+      action: AuditAction.ADMIN_CREATE_ALERT,
+      targetType: AuditTargetType.ALERT,
       targetId: 'BROADCAST_EMAIL',
       newValue: {
         emailAlert: true,
