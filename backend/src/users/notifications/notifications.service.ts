@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { GetUserNotificationsQueryDto } from '../dto/get-user-notifications-query.dto';
+import { GetUserNotificationsQueryDto } from './dto/get-user-notifications-query.dto';
 import {
     buildDateFilter,
     buildExactFilter,
@@ -9,7 +9,7 @@ import {
     buildPagination,
     buildSearchFilter,
 } from '../../utilities/base-query/builder';
-import { UserCommonService } from './user-common.service';
+import { UserValidationService } from '../validation/Validation.service';
 
 /**
  * Service responsible for user notification operations.
@@ -20,7 +20,7 @@ import { UserCommonService } from './user-common.service';
  * It supports pagination, filtering, searching,
  * and sorting for user notifications.
  *
- * It uses UserCommonService for shared user validation logic.
+ * It uses UserValidation Service for shared user validation logic.
  *
  * @author Eman
  */
@@ -28,7 +28,7 @@ import { UserCommonService } from './user-common.service';
 export class UserNotificationsService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly userCommonService: UserCommonService,
+        private readonly userCommonService: UserValidationService,
     ) { }
 
     /**

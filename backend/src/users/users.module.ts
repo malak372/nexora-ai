@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { UsersController } from './users.controller';
-import { UserProfileService } from './services/user-profile.service';
-import { UserCreditsService } from './services/user-credits.service';
-import { UserPaymentsService } from './services/user-payments.service';
-import { UserIdeasService } from './services/user-ideas.service';
-import { UserCommonService } from './services/user-common.service';
-import { UserNotificationsService } from './services/user-notifications.service';
-import { UserSummaryService } from './services/user-dashboard.service';
-import { UserActivityService } from './services/user-activity.service';
+import { UserProfileService } from './profile/profile.service';
+import { UserCreditsService } from './credits/credits.service';
+import { UserPaymentsService } from './payments/payments.service';
+import { UserIdeasService } from './ideas/ideas.service';
+import { UserValidationService } from './validation/Validation.service';
+import { UserNotificationsService } from './notifications/notifications.service';
+import { UserSummaryService } from './dashboard/dashboard.service';
+import { UserActivityService } from './activity/activity.service';
 
 /**
  * User management module.
@@ -35,7 +35,7 @@ import { UserActivityService } from './services/user-activity.service';
   imports: [PrismaModule],
   controllers: [UsersController],
   providers: [
-    UserCommonService,
+    UserValidationService,
     UserProfileService,
     UserCreditsService,
     UserPaymentsService,
@@ -45,7 +45,7 @@ import { UserActivityService } from './services/user-activity.service';
     UserActivityService,
   ],
   exports: [
-    UserCommonService,
+    UserValidationService,
     UserProfileService,
     UserCreditsService,
     UserPaymentsService,

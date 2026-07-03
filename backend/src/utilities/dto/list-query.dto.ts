@@ -24,4 +24,4 @@ export class ListQueryDto extends IntersectionType(
   DateRangeQueryDto,
   SearchQueryDto,
   SortingQueryDto,
-) {}
+) { }

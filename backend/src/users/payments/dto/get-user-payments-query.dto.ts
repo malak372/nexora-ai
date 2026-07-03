@@ -1,5 +1,5 @@
 import { IsOptional, IsString } from 'class-validator';
-import { ListQueryDto } from '../../utilities/dto/list-query.dto';
+import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
  * DTO for retrieving the authenticated user's payment history.
