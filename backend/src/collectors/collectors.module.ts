@@ -20,6 +20,7 @@ import { TelegramCollector } from './telegram/telegram.collector';
 import { TikTokCollector } from './tiktok/tiktok.collector';
 import { XCollector } from './x/x.collector';
 import { YouTubeCollector } from './youtube/youtube.collector';
+import { CollectorQueueService } from './base/collector-queue.service';
 
 /**
  * Module that groups all platform collectors.
@@ -51,7 +52,11 @@ import { YouTubeCollector } from './youtube/youtube.collector';
     NewsCollector,
     AppStoreCollector,
     GooglePlayCollector,
+    CollectorQueueService,
   ],
-  exports: [CollectorsFactory],
+    exports: [
+    CollectorsFactory,
+    CollectorQueueService,
+  ],
 })
 export class CollectorsModule {}

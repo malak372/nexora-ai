@@ -17,16 +17,22 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class SocialCommentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Returns paginated collected comments with optional filters.
    */
   async findComments(query: GetSocialCommentsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
-
     const where: Prisma.SocialCommentWhereInput = {
       ...(query.postId && { postId: query.postId }),
+
+      ...(query.collectionJobId && {
+        post: {
+          collectionJobId: query.collectionJobId,
+        },
+      }),
+
       ...(query.language && { language: query.language }),
       ...(query.sentiment && { sentiment: query.sentiment }),
     };
