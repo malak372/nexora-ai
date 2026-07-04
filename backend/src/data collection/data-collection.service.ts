@@ -11,6 +11,7 @@ import { SocialPostService } from './social-posts/social-post.service';
 import { SocialCommentService } from './social-comments/social-comment.service';
 import { CollectorsFactory } from '../collectors/collectors.factory';
 import { AuditService } from '../audit-logs/audit-logs.service';
+import { CollectorQueueService } from '../collectors/base/collector-queue.service';
 
 /**
  * Main orchestration service for the data collection pipeline.
@@ -34,8 +35,9 @@ export class DataCollectionService {
     private readonly socialPostService: SocialPostService,
     private readonly socialCommentService: SocialCommentService,
     private readonly collectorsFactory: CollectorsFactory,
+    private readonly collectorQueueService: CollectorQueueService,
     private readonly auditService: AuditService,
-  ) {}
+  ) { }
 
   /**
    * Starts a new data collection job.
@@ -95,16 +97,18 @@ export class DataCollectionService {
       for (const platform of dto.platforms) {
         const collector = this.collectorsFactory.getCollector(platform);
 
-        const posts = await collector.collect({
-          domainName: domain.name,
-          domainKeywords,
-          country: dto.country,
-          city: dto.city,
-          region: dto.region,
-          language: dto.language,
-          radiusKm: dto.radiusKm,
-          keywords: userKeywords,
-        });
+        const posts = await this.collectorQueueService.run(() =>
+          collector.collect({
+            domainName: domain.name,
+            domainKeywords,
+            country: dto.country,
+            city: dto.city,
+            region: dto.region,
+            language: dto.language,
+            radiusKm: dto.radiusKm,
+            keywords: userKeywords,
+          }),
+        );
 
         const totals = await this.socialPostService.createManyWithComments(
           job.id,
@@ -129,9 +133,19 @@ export class DataCollectionService {
    * Returns collection jobs summary status.
    */
   getStatus() {
-    return this.collectionJobService.getStatus();
+    return {
+      service: 'Data Collection',
+      status: 'RUNNING',
+      queue: this.collectorQueueService.getStatus(),
+      jobs: this.collectionJobService.getStatus(),
+      supportedPlatforms: this.collectorsFactory.getSupportedPlatforms(),
+      notes: {
+        github: 'Public issues and comments are supported.',
+        youtube: 'Public videos and top-level comments are supported.',
+        x: 'Implemented, but live access depends on X API credits and plan.',
+      },
+    };
   }
-
   /**
    * Returns paginated collection jobs.
    */
