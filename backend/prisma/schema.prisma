@@ -181,7 +181,7 @@ enum AuditAction {
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
-  
+
   USER_GENERATE_IDEA
   USER_UNLOCK_IDEA
   USER_CREATE_COMPLAINT
@@ -309,6 +309,9 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   authenticationLogs      AuthenticationLog[]
   favoriteIdeas           FavoriteIdea[]
+  preference              UserPreference?
+  ideaFeedback            IdeaFeedback[]
+  savedGenerationSearches SavedGenerationSearch[]
 
   @@map("users")
 }
@@ -467,6 +470,7 @@ model Idea {
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
   favoriteIdeas      FavoriteIdea[]
+  feedback           IdeaFeedback[]
 
   @@map("ideas")
 }
@@ -668,16 +672,17 @@ model ExternalApiLog {
  */
 
 model Domain {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  isActive Boolean @default(true) @map("is_active")
+  id             String          @id @default(uuid())
+  name           String          @unique
+  isActive       Boolean         @default(true) @map("is_active")
   domainKeywords DomainKeyword[]
 
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
   collectionJobs CollectionJob[]
 
-  ideas Idea[]
+  ideas                   Idea[]
+  savedGenerationSearches SavedGenerationSearch[]
 
   @@map("domains")
 }
@@ -698,6 +703,7 @@ model DomainKeyword {
   @@index([language])
   @@map("domain_keywords")
 }
+
 /**
  * Platform
  */
@@ -761,9 +767,9 @@ model AuthenticationLog {
 model CollectionJob {
   id String @id @default(uuid())
 
-  domainId String @map("domain_id")
+  domainId String        @map("domain_id")
   language LanguageCode?
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+  domain   Domain        @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   country         String?
   city            String?
@@ -807,7 +813,7 @@ model SocialPost {
 
   sourceType CollectionSourceType @map("source_type")
 
-  externalId String @map("external_id")
+  externalId String  @map("external_id")
   title      String?
   content    String
   author     String?
@@ -841,7 +847,7 @@ model SocialComment {
   postId String     @map("post_id")
   post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  externalId String @map("external_id")
+  externalId String  @map("external_id")
   content    String
   author     String?
   language   String?
@@ -905,10 +911,80 @@ model FavoriteIdea {
   userId String
   ideaId String
 
-  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
-  idea Idea @relation(fields:[ideaId], references:[id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
   @@unique([userId, ideaId])
+}
+
+model UserPreference {
+  id String @id @default(uuid())
+
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  preferredCountry  String? @map("preferred_country")
+  preferredCity     String? @map("preferred_city")
+  preferredRegion   String? @map("preferred_region")
+  preferredLanguage String? @map("preferred_language")
+
+  preferredDomains      Json? @map("preferred_domains")
+  preferredPlatforms    Json? @map("preferred_platforms")
+  preferredTechnologies Json? @map("preferred_technologies")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("user_preferences")
+}
+
+model IdeaFeedback {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  rating  Int
+  comment String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, ideaId])
+  @@index([ideaId])
+  @@map("idea_feedback")
+}
+
+model SavedGenerationSearch {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String?
+
+  domainId String? @map("domain_id")
+  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
+
+  country  String?
+  city     String?
+  region   String?
+  language String?
+
+  platforms Json?
+  keywords  Json?
+
+  lastUsedAt DateTime? @map("last_used_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([domainId])
+  @@map("saved_generation_searches")
 }

@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { AccountStatus, Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetUserCreditHistoryQueryDto } from './dto/get-user-credit-history-query.dto';
 import {
@@ -10,17 +13,20 @@ import {
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
 import { UserValidationService } from '../validation/validation.service';
+import { userCacheKeys } from '../cache/user-cache.keys';
 
 /**
  * Service responsible for user credit operations.
  *
- * This service handles the authenticated user's credit
- * balance and credit transaction history.
+ * Handles the authenticated user's credit balance,
+ * premium credit-based access status, and credit
+ * transaction history.
  *
- * It supports pagination, filtering, searching,
- * and sorting for credit transaction history.
+ * Frequently requested credit summary data is cached to reduce
+ * repeated database queries and improve response time.
  *
- * It uses UserValidationService for shared user validation logic.
+ * Credit transaction history remains uncached because it supports
+ * dynamic filtering, searching, sorting, and pagination.
  *
  * @author Eman
  */
@@ -29,14 +35,16 @@ export class UserCreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userCommonService: UserValidationService,
+
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) { }
 
   /**
    * Retrieves the authenticated user's credit information.
    *
-   * Returns the current credit balance,
-   * account status, and whether the user currently has
-   * premium credit-based access.
+   * Returns the current credit balance, account status,
+   * and whether the user currently has premium credit-based access.
    *
    * @param userId - Authenticated user ID.
    * @returns User credit information.
@@ -44,13 +52,24 @@ export class UserCreditsService {
    * @throws NotFoundException if the user does not exist.
    */
   async getCredits(userId: string) {
+    const cacheKey = userCacheKeys.credits(userId);
+    const cachedCredits = await this.cacheManager.get(cacheKey);
+
+    if (cachedCredits) {
+      return cachedCredits;
+    }
+
     const user = await this.userCommonService.findUserOrThrow(userId);
 
-    return {
+    const credits = {
       creditBalance: user.creditBalance,
       accountStatus: user.accountStatus,
       isPremium: user.accountStatus === AccountStatus.PREMIUM,
     };
+
+    await this.cacheManager.set(cacheKey, credits);
+
+    return credits;
   }
 
   /**
