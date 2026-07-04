@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CollectionSourceType } from '@prisma/client';
+import { CollectionSourceType, LanguageCode } from '@prisma/client';
 
 /**
  * DTO used by admins to start a new data collection job.
@@ -47,8 +47,8 @@ export class RunCollectionDto {
   region?: string;
 
   @IsOptional()
-  @IsString()
-  language?: string;
+  @IsEnum(LanguageCode)
+  language?: LanguageCode;
 
   @IsOptional()
   @Type(() => Number)

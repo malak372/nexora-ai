@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
+import {
+  AuditAction,
+  AuditTargetType,
+  LanguageCode,
+  Prisma,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateDomainDto } from './dto/create-domain.dto';
@@ -21,20 +26,13 @@ import {
 
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
+type NormalizedDomainKeyword = {
+  keyword: string;
+  language: LanguageCode;
+};
+
 /**
  * Service responsible for Admin domain management operations.
- *
- * Provides:
- * - Paginated domain listing.
- * - Search by domain name.
- * - Filtering by active status and date range.
- * - Safe sorting.
- * - Summary reports.
- * - Chart-ready analytics.
- * - Domain creation.
- * - Domain update.
- * - Soft deactivation.
- * - Audit logging.
  *
  * @author Malak
  */
@@ -45,10 +43,6 @@ export class DomainsService {
     private readonly auditLogsService: AuditService,
   ) {}
 
-  /**
-   * Builds the shared Prisma where filter for domain list,
-   * summary, and chart queries.
-   */
   private buildDomainsWhere(
     query: GetDomainsQueryDto,
   ): Prisma.DomainWhereInput {
@@ -64,9 +58,6 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Adds a minimum createdAt date while preserving existing date filters.
-   */
   private mergeCreatedAtGte(
     where: Prisma.DomainWhereInput,
     gte: Date,
@@ -85,9 +76,6 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Retrieves domains with searching, filtering, sorting, and pagination.
-   */
   async getDomains(query: GetDomainsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
     const where = this.buildDomainsWhere(query);
@@ -110,6 +98,13 @@ export class DomainsService {
           isActive: true,
           createdAt: true,
           updatedAt: true,
+          domainKeywords: {
+            select: {
+              id: true,
+              keyword: true,
+              language: true,
+            },
+          },
           _count: {
             select: {
               ideas: true,
@@ -117,7 +112,6 @@ export class DomainsService {
           },
         },
       }),
-
       this.prisma.domain.count({ where }),
     ]);
 
@@ -132,9 +126,6 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Retrieves domain summary statistics.
-   */
   async getDomainsSummary(query: GetDomainsQueryDto) {
     const where = this.buildDomainsWhere(query);
 
@@ -157,25 +148,10 @@ export class DomainsService {
       domainsWithIdeas,
     ] = await Promise.all([
       this.prisma.domain.count({ where }),
-
-      this.prisma.domain.count({
-        where: {
-          ...where,
-          isActive: true,
-        },
-      }),
-
-      this.prisma.domain.count({
-        where: {
-          ...where,
-          isActive: false,
-        },
-      }),
-
+      this.prisma.domain.count({ where: { ...where, isActive: true } }),
+      this.prisma.domain.count({ where: { ...where, isActive: false } }),
       this.prisma.domain.count({ where: todayWhere }),
-
       this.prisma.domain.count({ where: monthWhere }),
-
       this.prisma.domain.count({
         where: {
           ...where,
@@ -196,47 +172,43 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Retrieves chart-ready domain analytics.
-   */
   async getDomainsCharts(query: GetDomainsQueryDto) {
     const where = this.buildDomainsWhere(query);
 
-    const [domainsStatusGroup, domainsWithIdeaCounts] =
-      await Promise.all([
-        this.prisma.domain.groupBy({
-          by: ['isActive'],
-          where,
+    const [domainsStatusGroup, domainsWithIdeaCounts] = await Promise.all([
+      this.prisma.domain.groupBy({
+        by: ['isActive'],
+        where,
+        _count: {
+          isActive: true,
+        },
+        orderBy: {
           _count: {
-            isActive: true,
+            isActive: 'desc',
           },
-          orderBy: {
-            _count: {
-              isActive: 'desc',
-            },
-          },
-        }),
+        },
+      }),
 
-        this.prisma.domain.findMany({
-          where,
-          orderBy: {
-            ideas: {
-              _count: 'desc',
+      this.prisma.domain.findMany({
+        where,
+        orderBy: {
+          ideas: {
+            _count: 'desc',
+          },
+        },
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          _count: {
+            select: {
+              ideas: true,
             },
           },
-          take: 10,
-          select: {
-            id: true,
-            name: true,
-            isActive: true,
-            _count: {
-              select: {
-                ideas: true,
-              },
-            },
-          },
-        }),
-      ]);
+        },
+      }),
+    ]);
 
     return {
       domainsByStatus: domainsStatusGroup.map((item) => ({
@@ -255,9 +227,6 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Creates a new domain and records the action in audit logs.
-   */
   async createDomain(body: CreateDomainDto, adminId: string) {
     const existingDomain = await this.prisma.domain.findUnique({
       where: {
@@ -269,10 +238,21 @@ export class DomainsService {
       throw new ConflictException('Domain already exists');
     }
 
+    const keywords = this.normalizeKeywords(body.keywords);
+
     const domain = await this.prisma.domain.create({
       data: {
         name: body.name,
         isActive: body.isActive ?? true,
+        domainKeywords: {
+          create: keywords.map((item) => ({
+            keyword: item.keyword,
+            language: item.language,
+          })),
+        },
+      },
+      include: {
+        domainKeywords: true,
       },
     });
 
@@ -285,6 +265,7 @@ export class DomainsService {
         id: domain.id,
         name: domain.name,
         isActive: domain.isActive,
+        keywords,
       },
     });
 
@@ -294,17 +275,13 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Updates an existing domain and records the change in audit logs.
-   */
-  async updateDomain(
-    id: string,
-    body: UpdateDomainDto,
-    adminId: string,
-  ) {
+  async updateDomain(id: string, body: UpdateDomainDto, adminId: string) {
     const domain = await this.prisma.domain.findUnique({
       where: {
         id,
+      },
+      include: {
+        domainKeywords: true,
       },
     });
 
@@ -324,18 +301,8 @@ export class DomainsService {
       }
     }
 
-    const hasChanges =
-      (body.name !== undefined && body.name !== domain.name) ||
-      (body.isActive !== undefined &&
-        body.isActive !== domain.isActive);
-
-    if (!hasChanges) {
-      return {
-        message: 'No changes detected',
-        domain,
-        updated: false,
-      };
-    }
+    const keywordsProvided = body.keywords !== undefined;
+    const keywords = this.normalizeKeywords(body.keywords);
 
     const updatedDomain = await this.prisma.domain.update({
       where: {
@@ -344,6 +311,18 @@ export class DomainsService {
       data: {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
+        ...(keywordsProvided && {
+          domainKeywords: {
+            deleteMany: {},
+            create: keywords.map((item) => ({
+              keyword: item.keyword,
+              language: item.language,
+            })),
+          },
+        }),
+      },
+      include: {
+        domainKeywords: true,
       },
     });
 
@@ -355,10 +334,18 @@ export class DomainsService {
       oldValue: {
         name: domain.name,
         isActive: domain.isActive,
+        keywords: domain.domainKeywords.map((item) => ({
+          keyword: item.keyword,
+          language: item.language,
+        })),
       },
       newValue: {
         name: updatedDomain.name,
         isActive: updatedDomain.isActive,
+        keywords: updatedDomain.domainKeywords.map((item) => ({
+          keyword: item.keyword,
+          language: item.language,
+        })),
       },
     });
 
@@ -369,9 +356,6 @@ export class DomainsService {
     };
   }
 
-  /**
-   * Deactivates a domain using soft deactivation.
-   */
   async deactivateDomain(id: string, adminId: string) {
     const domain = await this.prisma.domain.findUnique({
       where: {
@@ -420,5 +404,27 @@ export class DomainsService {
       domain: updatedDomain,
       updated: true,
     };
+  }
+
+  private normalizeKeywords(
+    keywords?: { keyword: string; language?: LanguageCode }[],
+  ): NormalizedDomainKeyword[] {
+    const map = new Map<string, NormalizedDomainKeyword>();
+
+    for (const item of keywords ?? []) {
+      const keyword = item.keyword.trim().toLowerCase();
+      const language = item.language ?? LanguageCode.ANY;
+
+      if (!keyword) {
+        continue;
+      }
+
+      map.set(`${keyword}-${language}`, {
+        keyword,
+        language,
+      });
+    }
+
+    return Array.from(map.values());
   }
 }
