@@ -1,5 +1,7 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
+import { CreditTransactionType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
+
 /**
  * DTO for retrieving the authenticated user's credit transaction history.
  *
@@ -19,6 +21,6 @@ export class GetUserCreditHistoryQueryDto extends ListQueryDto {
      * Optional credit transaction type filter.
      */
     @IsOptional()
-    @IsString()
-    type?: string;
+    @IsEnum(CreditTransactionType)
+    type?: CreditTransactionType;
 }

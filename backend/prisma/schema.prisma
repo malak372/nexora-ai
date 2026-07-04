@@ -1,7 +1,7 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Get a free hosted Postgres database in seconds: npx create-db
 
 generator client {
   provider = "prisma-client-js"
@@ -181,13 +181,17 @@ enum AuditAction {
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
-
+  
   USER_GENERATE_IDEA
   USER_UNLOCK_IDEA
   USER_CREATE_COMPLAINT
   DATA_COLLECTION_RUN
   DATA_COLLECTION_STOP
   NLP_ANALYSIS_RUN
+
+  USER_UPDATE_PROFILE
+  USER_MARK_NOTIFICATION_READ
+  USER_MARK_ALL_NOTIFICATIONS_READ
 }
 
 enum AuditTargetType {
@@ -304,6 +308,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   authenticationLogs      AuthenticationLog[]
+  favoriteIdeas           FavoriteIdea[]
 
   @@map("users")
 }
@@ -461,6 +466,7 @@ model Idea {
   generatedOutputs   GeneratedOutput[]
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
+  favoriteIdeas      FavoriteIdea[]
 
   @@map("ideas")
 }
@@ -891,4 +897,18 @@ model PromptHistory {
   @@index([collectionJobId])
   @@index([ideaId])
   @@map("prompt_histories")
+}
+
+model FavoriteIdea {
+  id String @id @default(uuid())
+
+  userId String
+  ideaId String
+
+  user User @relation(fields:[userId], references:[id], onDelete: Cascade)
+  idea Idea @relation(fields:[ideaId], references:[id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, ideaId])
 }

@@ -1,5 +1,11 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import {
+    IsBoolean,
+    IsEnum,
+    IsOptional,
+} from 'class-validator';
+import { AlertType } from '@prisma/client';
+
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
@@ -30,6 +36,6 @@ export class GetUserNotificationsQueryDto extends ListQueryDto {
      * Optional notification type filter.
      */
     @IsOptional()
-    @IsString()
-    type?: string;
+    @IsEnum(AlertType)
+    type?: AlertType;
 }

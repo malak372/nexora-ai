@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { AuditAction, AuditTargetType } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { UserValidationService } from '../validation/Validation.service';
+import { UserValidationService } from '../validation/validation.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
 
 /**
  * Service responsible for managing the authenticated user's profile.
@@ -11,12 +14,14 @@ import { UserValidationService } from '../validation/Validation.service';
  * - Retrieving full user profile information
  * - Updating editable profile fields
  * - Tracking free generation usage limits
+ * - Recording audit logs for profile updates
  *
  * Business rules:
  * - Users can only modify allowed profile fields (fullName, userType)
  * - System-managed fields such as role, accountStatus, and creditBalance
  *   cannot be modified through this service
  * - Premium status is derived automatically from creditBalance
+ * - Profile update operations are audited for traceability
  *
  * The service ensures consistency between user identity,
  * generation limits, and system-defined account state.
@@ -28,6 +33,7 @@ export class UserProfileService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
+        private readonly auditService: AuditService,
     ) { }
 
     /**
@@ -90,6 +96,10 @@ export class UserProfileService {
      *
      * All other fields are strictly controlled by the system.
      *
+     * The old and new editable profile values are recorded
+     * in the shared audit log to support traceability and
+     * administrative review.
+     *
      * @param userId - Authenticated user ID
      * @param dto - Profile update payload
      * @returns Updated user profile snapshot
@@ -97,7 +107,7 @@ export class UserProfileService {
      * @throws NotFoundException if user does not exist
      */
     async updateProfile(userId: string, dto: UpdateProfileDto) {
-        await this.userCommonService.findUserOrThrow(userId);
+        const oldUser = await this.userCommonService.findUserOrThrow(userId);
 
         const updatedUser = await this.prisma.user.update({
             where: { id: userId },
@@ -108,6 +118,21 @@ export class UserProfileService {
                 ...(dto.userType !== undefined && {
                     userType: dto.userType,
                 }),
+            },
+        });
+
+        await this.auditService.createLog({
+            actorId: userId,
+            action: AuditAction.USER_UPDATE_PROFILE,
+            targetType: AuditTargetType.USER,
+            targetId: userId,
+            oldValue: {
+                fullName: oldUser.fullName,
+                userType: oldUser.userType,
+            },
+            newValue: {
+                fullName: updatedUser.fullName,
+                userType: updatedUser.userType,
             },
         });
 
