@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import {
     AuditAction,
     AuditTargetType,
@@ -10,6 +12,7 @@ import { AuditService } from '../../audit-logs/audit-logs.service';
 import { UserValidationService } from '../validation/validation.service';
 import { CreateUserComplaintDto } from './dto/create-user-complaint.dto';
 import { GetUserComplaintsQueryDto } from './dto/get-user-complaints-query.dto';
+import { userCacheKeys } from '../cache/user-cache.keys';
 
 import {
     buildDateFilter,
@@ -37,6 +40,12 @@ import {
  * - Admin-only complaint management is handled separately
  *   by the admin complaint module.
  *
+ * Cache behavior:
+ * - Creating a complaint invalidates the cached dashboard summary,
+ *   because complaint counters are displayed there.
+ * - Creating a complaint also invalidates the cached recent activity
+ *   because the user's latest complaint becomes part of the activity feed.
+ *
  * @author Eman
  */
 @Injectable()
@@ -45,6 +54,9 @@ export class UserComplaintsService {
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
         private readonly auditService: AuditService,
+
+        @Inject(CACHE_MANAGER)
+        private readonly cacheManager: Cache,
     ) { }
 
     /**
@@ -55,6 +67,9 @@ export class UserComplaintsService {
      *
      * Created complaints start with the default status and priority
      * defined in the Prisma schema.
+     *
+     * After creation, the user's cached dashboard summary is invalidated
+     * so complaint counters remain accurate.
      */
     async createComplaint(userId: string, dto: CreateUserComplaintDto) {
         await this.userCommonService.findUserOrThrow(userId);
@@ -94,6 +109,9 @@ export class UserComplaintsService {
                 status: complaint.status,
             },
         });
+
+        await this.cacheManager.del(userCacheKeys.summary(userId));
+        await this.cacheManager.del(userCacheKeys.activity(userId));
 
         return complaint;
     }

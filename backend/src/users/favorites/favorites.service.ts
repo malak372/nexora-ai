@@ -1,12 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserValidationService } from '../validation/validation.service';
+import { userCacheKeys } from '../cache/user-cache.keys';
 
 /**
  * Service responsible for authenticated user favorite ideas.
  *
- * Users can only favorite and view ideas that belong to them.
+ * Users can only favorite, remove, and view ideas that belong to them.
+ *
+ * Cache behavior:
+ * - Adding or removing a favorite idea invalidates the cached dashboard
+ *   summary because favoriteIdeasCount is displayed there.
  *
  * @author Eman
  */
@@ -15,6 +22,9 @@ export class UserFavoritesService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
+
+        @Inject(CACHE_MANAGER)
+        private readonly cacheManager: Cache,
     ) { }
 
     /**
@@ -35,7 +45,7 @@ export class UserFavoritesService {
             throw new NotFoundException('Idea not found');
         }
 
-        return this.prisma.favoriteIdea.upsert({
+        const favorite = await this.prisma.favoriteIdea.upsert({
             where: {
                 userId_ideaId: {
                     userId,
@@ -54,6 +64,10 @@ export class UserFavoritesService {
                 createdAt: true,
             },
         });
+
+        await this.cacheManager.del(userCacheKeys.summary(userId));
+
+        return favorite;
     }
 
     /**
@@ -83,6 +97,8 @@ export class UserFavoritesService {
                 },
             },
         });
+
+        await this.cacheManager.del(userCacheKeys.summary(userId));
 
         return {
             message: 'Idea removed from favorites',

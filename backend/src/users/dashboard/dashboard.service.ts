@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import {
     AccountStatus,
     ComplaintStatus,
@@ -8,14 +10,18 @@ import {
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserValidationService } from '../validation/validation.service';
+import { userCacheKeys } from '../cache/user-cache.keys';
 
 /**
  * Service responsible for authenticated user dashboard operations.
  *
- * Provides an account-level overview for the authenticated user,
- * including profile basics, credit status, free generation usage,
- * idea statistics, complaint counters, notifications, recent activity,
- * and payment data.
+ * Provides a cached account-level overview for the authenticated user.
+ *
+ * Frequently requested dashboard data is cached to reduce
+ * repeated database queries and improve response time,
+ * including profile information, credit status, free generation usage,
+ * idea statistics, favorite ideas, complaint counters,
+ * notifications, payment statistics, and recent account activity.
  *
  * Advanced paid idea features such as comment analysis, architecture,
  * database design, and feasibility reports are intentionally not exposed here.
@@ -27,21 +33,35 @@ export class UserDashboardService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
+
+        @Inject(CACHE_MANAGER)
+        private readonly cacheManager: Cache,
     ) { }
 
     /**
      * Retrieves the authenticated user's dashboard summary.
      *
+     * Uses cache to reduce repeated database reads for frequently
+     * requested dashboard data.
+     *
      * @param userId - Authenticated user ID.
      * @returns Account-level dashboard summary.
      */
     async getSummary(userId: string) {
+        const cacheKey = userCacheKeys.summary(userId);
+        const cachedSummary = await this.cacheManager.get(cacheKey);
+
+        if (cachedSummary) {
+            return cachedSummary;
+        }
+
         const user = await this.userCommonService.findUserOrThrow(userId);
 
         const [
             ideasCount,
             freeIdeasCount,
             premiumIdeasCount,
+            favoriteIdeasCount,
             unreadNotificationsCount,
             openComplaintsCount,
             resolvedComplaintsCount,
@@ -65,6 +85,10 @@ export class UserDashboardService {
                     userId,
                     generationType: IdeaGenerationType.PREMIUM_CREDIT,
                 },
+            }),
+
+            this.prisma.favoriteIdea.count({
+                where: { userId },
             }),
 
             this.prisma.alert.count({
@@ -134,7 +158,7 @@ export class UserDashboardService {
             }),
         ]);
 
-        return {
+        const summary = {
             id: user.id,
             fullName: user.fullName,
             email: user.email,
@@ -154,6 +178,7 @@ export class UserDashboardService {
             ideasCount,
             freeIdeasCount,
             premiumIdeasCount,
+            favoriteIdeasCount,
 
             unreadNotificationsCount,
 
@@ -168,5 +193,9 @@ export class UserDashboardService {
             latestIdea,
             latestPayment,
         };
+
+        await this.cacheManager.set(cacheKey, summary);
+
+        return summary;
     }
 }

@@ -12,6 +12,9 @@ import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
 import { UserComplaintsController } from './complaints/complaints.controller';
 import { UserFavoritesController } from './favorites/favorites.controller';
+import { UserPreferencesController } from './preferences/preferences.controller';
+import { UserFeedbackController } from './feedback/feedback.controller';
+import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
 
 import { UserProfileService } from './profile/profile.service';
 import { UserCreditsService } from './credits/credits.service';
@@ -24,6 +27,9 @@ import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
 import { UserComplaintsService } from './complaints/complaints.service';
 import { UserFavoritesService } from './favorites/favorites.service';
+import { UserPreferencesService } from './preferences/preferences.service';
+import { UserFeedbackService } from './feedback/feedback.service';
+import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
 
 
 /**
@@ -66,6 +72,9 @@ import { UserFavoritesService } from './favorites/favorites.service';
     UserActivityController,
     UserComplaintsController,
     UserFavoritesController,
+    UserPreferencesController,
+    UserFeedbackController,
+    UserSavedSearchesController,
   ],
   providers: [
     UserValidationService,
@@ -78,7 +87,10 @@ import { UserFavoritesService } from './favorites/favorites.service';
     UserDashboardService,
     UserActivityService,
     UserComplaintsService,
-    UserFavoritesController,
+    UserFavoritesService,
+    UserPreferencesService,
+    UserFeedbackService,
+    UserSavedSearchesService,
   ],
   exports: [
     UserValidationService,
@@ -91,7 +103,10 @@ import { UserFavoritesService } from './favorites/favorites.service';
     UserDashboardService,
     UserActivityService,
     UserComplaintsService,
-    UserFavoritesController,
+    UserFavoritesService,
+    UserPreferencesService,
+    UserFeedbackService,
+    UserSavedSearchesService,
   ],
 })
 export class UsersModule { }
