@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserValidationService } from '../validation/Validation.service';
+import { UserValidationService } from '../validation/validation.service';
 
 /**
  * Service responsible for user activity operations.

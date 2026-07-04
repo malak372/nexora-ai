@@ -1,58 +1,97 @@
 import { Module } from '@nestjs/common';
+
 import { PrismaModule } from '../prisma/prisma.module';
-import { UsersController } from './users.controller';
+import { AuditModule } from '../audit-logs/audit-logs.module';
+
+import { UserProfileController } from './profile/profile.controller';
+import { UserCreditsController } from './credits/credits.controller';
+import { UserPaymentsController } from './payments/payments.controller';
+import { UserIdeasController } from './ideas/ideas.controller';
+import { UserNotificationsController } from './notifications/notifications.controller';
+import { UserDashboardController } from './dashboard/dashboard.controller';
+import { UserActivityController } from './activity/activity.controller';
+import { UserComplaintsController } from './complaints/complaints.controller';
+import { UserFavoritesController } from './favorites/favorites.controller';
+
 import { UserProfileService } from './profile/profile.service';
 import { UserCreditsService } from './credits/credits.service';
 import { UserPaymentsService } from './payments/payments.service';
 import { UserIdeasService } from './ideas/ideas.service';
-import { UserValidationService } from './validation/Validation.service';
+import { UserValidationService } from './validation/validation.service';
 import { UserNotificationsService } from './notifications/notifications.service';
-import { UserSummaryService } from './dashboard/dashboard.service';
+import { UserDashboardService } from './dashboard/dashboard.service';
 import { UserActivityService } from './activity/activity.service';
+import { UserPermissionsService } from './permissions/permissions.service';
+import { UserComplaintsService } from './complaints/complaints.service';
+import { UserFavoritesService } from './favorites/favorites.service';
+
 
 /**
  * User management module.
  *
- * This module groups together all components responsible
- * for authenticated user management, including:
+ * Groups all authenticated user-facing features in Nexora AI.
  *
- * - User profile management
- * - Free generation tracking
- * - Credit management
- * - Payment history
- * - Generated ideas
- * - Notifications
- * - User summary
- * - Recent activity
+ * Responsibilities:
+ * - Manage user profile data.
+ * - Track free generation usage.
+ * - Display credit balance and credit history.
+ * - Display payment history and payment reports.
+ * - Display generated ideas with access-aware responses.
+ * - Manage user notifications.
+ * - Provide dashboard summary and recent activity.
  *
- * The module imports PrismaModule to provide database
- * access through PrismaService and registers the
- * user-related controllers and services.
+ * Integrations:
+ * - PrismaModule provides database access.
+ * - AuditModule records user-related activities such as
+ *   profile updates and notification read operations.
+ *
+ * Business rules:
+ * - Users cannot modify system-controlled fields such as role,
+ *   account status, credit balance, or free generation counters.
+ * - Premium access is derived from available credits.
+ * - Advanced idea features are exposed only when the idea is
+ *   unlocked or generated through the premium credit flow.
  *
  * @author Eman
  */
 @Module({
-  imports: [PrismaModule],
-  controllers: [UsersController],
+  imports: [PrismaModule, AuditModule],
+  controllers: [
+    UserProfileController,
+    UserCreditsController,
+    UserPaymentsController,
+    UserIdeasController,
+    UserNotificationsController,
+    UserDashboardController,
+    UserActivityController,
+    UserComplaintsController,
+    UserFavoritesController,
+  ],
   providers: [
     UserValidationService,
+    UserPermissionsService,
     UserProfileService,
     UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
     UserNotificationsService,
-    UserSummaryService,
+    UserDashboardService,
     UserActivityService,
+    UserComplaintsService,
+    UserFavoritesController,
   ],
   exports: [
     UserValidationService,
+    UserPermissionsService,
     UserProfileService,
     UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
     UserNotificationsService,
-    UserSummaryService,
+    UserDashboardService,
     UserActivityService,
+    UserComplaintsService,
+    UserFavoritesController,
   ],
 })
 export class UsersModule { }

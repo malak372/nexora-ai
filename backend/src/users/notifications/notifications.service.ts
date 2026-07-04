@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetUserNotificationsQueryDto } from './dto/get-user-notifications-query.dto';
+import { UserValidationService } from '../validation/validation.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
+
 import {
     buildDateFilter,
     buildExactFilter,
@@ -9,7 +13,6 @@ import {
     buildPagination,
     buildSearchFilter,
 } from '../../utilities/base-query/builder';
-import { UserValidationService } from '../validation/Validation.service';
 
 /**
  * Service responsible for user notification operations.
@@ -20,6 +23,9 @@ import { UserValidationService } from '../validation/Validation.service';
  * It supports pagination, filtering, searching,
  * and sorting for user notifications.
  *
+ * Notification read operations are recorded in the shared
+ * audit log to support traceability and administrative review.
+ *
  * It uses UserValidation Service for shared user validation logic.
  *
  * @author Eman
@@ -29,6 +35,7 @@ export class UserNotificationsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
+        private readonly auditService: AuditService,
     ) { }
 
     /**
@@ -99,6 +106,10 @@ export class UserNotificationsService {
      *
      * The notification must belong to the authenticated user.
      *
+     * The operation is recorded in the shared audit log using:
+     * - USER_MARK_NOTIFICATION_READ
+     * - ALERT target type
+     *
      * @param userId - Authenticated user ID.
      * @param notificationId - Notification ID.
      * @returns Updated notification.
@@ -113,13 +124,21 @@ export class UserNotificationsService {
                 id: notificationId,
                 userId,
             },
+            select: {
+                id: true,
+                title: true,
+                message: true,
+                type: true,
+                isRead: true,
+                createdAt: true,
+            },
         });
 
         if (!notification) {
             throw new NotFoundException('Notification not found');
         }
 
-        return this.prisma.alert.update({
+        const updatedNotification = await this.prisma.alert.update({
             where: { id: notificationId },
             data: {
                 isRead: true,
@@ -133,10 +152,29 @@ export class UserNotificationsService {
                 createdAt: true,
             },
         });
+
+        await this.auditService.createLog({
+            actorId: userId,
+            action: AuditAction.USER_MARK_NOTIFICATION_READ,
+            targetType: AuditTargetType.ALERT,
+            targetId: notificationId,
+            oldValue: {
+                isRead: notification.isRead,
+            },
+            newValue: {
+                isRead: updatedNotification.isRead,
+            },
+        });
+
+        return updatedNotification;
     }
 
     /**
      * Marks all notifications as read for the authenticated user.
+     *
+     * The operation is recorded in the shared audit log using:
+     * - USER_MARK_ALL_NOTIFICATIONS_READ
+     * - ALERT target type
      *
      * @param userId - Authenticated user ID.
      * @returns Success message and number of updated notifications.
@@ -146,6 +184,13 @@ export class UserNotificationsService {
     async markAllNotificationsAsRead(userId: string) {
         await this.userCommonService.findUserOrThrow(userId);
 
+        const unreadNotificationsCount = await this.prisma.alert.count({
+            where: {
+                userId,
+                isRead: false,
+            },
+        });
+
         const result = await this.prisma.alert.updateMany({
             where: {
                 userId,
@@ -153,6 +198,19 @@ export class UserNotificationsService {
             },
             data: {
                 isRead: true,
+            },
+        });
+
+        await this.auditService.createLog({
+            actorId: userId,
+            action: AuditAction.USER_MARK_ALL_NOTIFICATIONS_READ,
+            targetType: AuditTargetType.ALERT,
+            targetId: userId,
+            oldValue: {
+                unreadNotificationsCount,
+            },
+            newValue: {
+                updatedCount: result.count,
             },
         });
 

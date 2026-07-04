@@ -1,65 +1,172 @@
 import { Injectable } from '@nestjs/common';
+import {
+    AccountStatus,
+    ComplaintStatus,
+    IdeaGenerationType,
+    PaymentStatus,
+} from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserValidationService } from '../validation/Validation.service';
+import { UserValidationService } from '../validation/validation.service';
 
 /**
- * Service responsible for user summary operations.
+ * Service responsible for authenticated user dashboard operations.
  *
- * This service provides a dashboard-style summary
- * for the authenticated user using existing user,
- * idea, and notification data.
+ * Provides an account-level overview for the authenticated user,
+ * including profile basics, credit status, free generation usage,
+ * idea statistics, complaint counters, notifications, recent activity,
+ * and payment data.
  *
- * It uses UserValidationService for shared user validation logic.
+ * Advanced paid idea features such as comment analysis, architecture,
+ * database design, and feasibility reports are intentionally not exposed here.
  *
  * @author Eman
  */
 @Injectable()
-export class UserSummaryService {
+export class UserDashboardService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
     ) { }
 
     /**
-     * Retrieves a summary of the authenticated user's account.
-     *
-     * The summary includes profile basics, credit balance,
-     * free generation usage, generated ideas count,
-     * and unread notifications count.
+     * Retrieves the authenticated user's dashboard summary.
      *
      * @param userId - Authenticated user ID.
-     * @returns User account summary.
-     *
-     * @throws NotFoundException if the user does not exist.
+     * @returns Account-level dashboard summary.
      */
     async getSummary(userId: string) {
         const user = await this.userCommonService.findUserOrThrow(userId);
 
-        const ideasCount = await this.prisma.idea.count({
-            where: { userId },
-        });
+        const [
+            ideasCount,
+            freeIdeasCount,
+            premiumIdeasCount,
+            unreadNotificationsCount,
+            openComplaintsCount,
+            resolvedComplaintsCount,
+            totalPayments,
+            successfulPayments,
+            totalCreditsPurchased,
+            latestIdea,
+            latestPayment,
+        ] = await Promise.all([
+            this.prisma.idea.count({ where: { userId } }),
 
-        const unreadNotificationsCount = await this.prisma.alert.count({
-            where: {
-                userId,
-                isRead: false,
-            },
-        });
+            this.prisma.idea.count({
+                where: {
+                    userId,
+                    generationType: IdeaGenerationType.NORMAL_FREE,
+                },
+            }),
+
+            this.prisma.idea.count({
+                where: {
+                    userId,
+                    generationType: IdeaGenerationType.PREMIUM_CREDIT,
+                },
+            }),
+
+            this.prisma.alert.count({
+                where: {
+                    userId,
+                    isRead: false,
+                },
+            }),
+
+            this.prisma.complaint.count({
+                where: {
+                    userId,
+                    status: ComplaintStatus.OPEN,
+                },
+            }),
+
+            this.prisma.complaint.count({
+                where: {
+                    userId,
+                    status: ComplaintStatus.RESOLVED,
+                },
+            }),
+
+            this.prisma.payment.count({ where: { userId } }),
+
+            this.prisma.payment.count({
+                where: {
+                    userId,
+                    status: PaymentStatus.SUCCESS,
+                },
+            }),
+
+            this.prisma.payment.aggregate({
+                where: {
+                    userId,
+                    status: PaymentStatus.SUCCESS,
+                },
+                _sum: {
+                    creditsAmount: true,
+                },
+            }),
+
+            this.prisma.idea.findFirst({
+                where: { userId },
+                orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    title: true,
+                    generationType: true,
+                    isUnlocked: true,
+                    createdAt: true,
+                },
+            }),
+
+            this.prisma.payment.findFirst({
+                where: { userId },
+                orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    amount: true,
+                    currency: true,
+                    paymentMethod: true,
+                    status: true,
+                    paymentPurpose: true,
+                    createdAt: true,
+                },
+            }),
+        ]);
 
         return {
             id: user.id,
             fullName: user.fullName,
             email: user.email,
+            userType: user.userType,
+
             accountStatus: user.accountStatus,
             creditBalance: user.creditBalance,
+            isPremium: user.accountStatus === AccountStatus.PREMIUM,
+
             freeGenerationLimit: user.freeGenerationLimit,
             freeGenerationsUsed: user.freeGenerationsUsed,
             remainingFreeGenerations: Math.max(
                 0,
                 user.freeGenerationLimit - user.freeGenerationsUsed,
             ),
+
             ideasCount,
+            freeIdeasCount,
+            premiumIdeasCount,
+
             unreadNotificationsCount,
+
+            openComplaintsCount,
+            resolvedComplaintsCount,
+
+            totalPayments,
+            successfulPayments,
+            totalCreditsPurchased:
+                totalCreditsPurchased._sum.creditsAmount ?? 0,
+
+            latestIdea,
+            latestPayment,
         };
     }
 }

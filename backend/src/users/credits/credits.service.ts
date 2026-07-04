@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AccountStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetUserCreditHistoryQueryDto } from './dto/get-user-credit-history-query.dto';
 import {
@@ -9,7 +9,7 @@ import {
   buildPagination,
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
-import { UserValidationService } from '../validation/Validation.service';
+import { UserValidationService } from '../validation/validation.service';
 
 /**
  * Service responsible for user credit operations.
@@ -35,7 +35,8 @@ export class UserCreditsService {
    * Retrieves the authenticated user's credit information.
    *
    * Returns the current credit balance,
-   * account status, and premium status.
+   * account status, and whether the user currently has
+   * premium credit-based access.
    *
    * @param userId - Authenticated user ID.
    * @returns User credit information.
@@ -48,7 +49,7 @@ export class UserCreditsService {
     return {
       creditBalance: user.creditBalance,
       accountStatus: user.accountStatus,
-      isPremium: user.creditBalance > 0,
+      isPremium: user.accountStatus === AccountStatus.PREMIUM,
     };
   }
 
