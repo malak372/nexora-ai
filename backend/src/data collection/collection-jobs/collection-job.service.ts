@@ -6,6 +6,7 @@ import {
 import {
   CollectionJobStatus,
   CollectionSourceType,
+  LanguageCode,
   Prisma,
 } from '@prisma/client';
 
@@ -28,7 +29,9 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  * - Validate requested platforms.
  * - Create running jobs.
  * - Mark jobs as completed, failed, or stopped.
- * - Return collection job status and paginated history.
+ * - Return collection job status.
+ * - Return paginated job history.
+ * - Return detailed job information with domain and user keywords.
  *
  * @author Malak
  */
@@ -37,18 +40,27 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
-  ) {}
+  ) { }
 
   /**
    * Validates that the selected domain exists and is active.
+   *
+   * Domain keywords are included because collectors depend on them
+   * to build search queries.
    */
   async validateActiveDomain(domainId: string) {
-    const domain = await this.prisma.domain.findUnique({
-      where: { id: domainId },
+    const domain = await this.prisma.domain.findFirst({
+      where: {
+        id: domainId,
+        isActive: true,
+      },
+      include: {
+        domainKeywords: true,
+      },
     });
 
-    if (!domain || !domain.isActive) {
-      throw new NotFoundException('Active domain was not found.');
+    if (!domain) {
+      throw new NotFoundException('Domain not found or inactive');
     }
 
     return domain;
@@ -73,16 +85,20 @@ export class CollectionJobService {
 
   /**
    * Creates a collection job in RUNNING state.
+   *
+   * The keywords field stores user-provided keywords only.
+   * Domain keywords remain stored in the DomainKeyword table.
    */
   createRunningJob(dto: RunCollectionDto) {
     return this.prisma.collectionJob.create({
       data: {
         domainId: dto.domainId,
+        platforms: dto.platforms,
+        language: dto.language,
         country: dto.country,
         city: dto.city,
         region: dto.region,
         radiusKm: dto.radiusKm,
-        platforms: dto.platforms,
         keywords: dto.keywords ?? [],
         status: CollectionJobStatus.RUNNING,
         startedAt: new Date(),
@@ -106,7 +122,88 @@ export class CollectionJobService {
   }
 
   /**
+   * Returns detailed information about one collection job.
+   *
+   * Response includes:
+   * - Job metadata.
+   * - Domain information.
+   * - Domain keywords filtered by job language.
+   * - User keywords stored on the job.
+   * - Posts and NLP analysis counts.
+   */
+  async findJobDetails(id: string) {
+    const job = await this.prisma.collectionJob.findUnique({
+      where: { id },
+      include: {
+        domain: {
+          select: {
+            id: true,
+            name: true,
+            domainKeywords: {
+              select: {
+                id: true,
+                keyword: true,
+                language: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            posts: true,
+            nlpAnalyses: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      throw new NotFoundException('Collection job was not found.');
+    }
+
+    const domainKeywords = this.getDomainKeywordsByLanguage(
+      job.domain.domainKeywords,
+      job.language ?? undefined,
+    );
+
+    return {
+      id: job.id,
+      domainId: job.domainId,
+      country: job.country,
+      city: job.city,
+      region: job.region,
+      radiusKm: job.radiusKm,
+      platforms: job.platforms,
+      language: job.language,
+      status: job.status,
+      totalPosts: job.totalPosts,
+      totalComments: job.totalComments,
+      failedReason: job.failedReason,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+
+      domain: {
+        id: job.domain.id,
+        name: job.domain.name,
+      },
+
+      /**
+       * Keywords actually used or available for this job context.
+       */
+      domainKeywords,
+      userKeywords: job.keywords,
+
+      _count: job._count,
+    };
+  }
+
+  /**
    * Marks a collection job as completed.
+   *
+   * POST /data-collection/run response intentionally returns job result only,
+   * without domainKeywords or userKeywords.
    */
   completeJob(
     id: string,
@@ -201,6 +298,9 @@ export class CollectionJobService {
 
   /**
    * Returns paginated collection jobs with filtering and sorting.
+   *
+   * This endpoint returns summary data only.
+   * For domainKeywords and userKeywords, use findJobDetails.
    */
   async findJobs(query: GetCollectionJobsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
@@ -255,5 +355,30 @@ export class CollectionJobService {
         totalPages: calculateTotalPages(total, limit),
       },
     };
+  }
+
+  /**
+   * Filters domain keywords according to a selected job language.
+   */
+  private getDomainKeywordsByLanguage(
+    domainKeywords: { keyword: string; language: LanguageCode }[],
+    language?: string,
+  ): string[] {
+    const requestedLanguage = language?.toUpperCase() as
+      | LanguageCode
+      | undefined;
+
+    return domainKeywords
+      .filter((item) => {
+        if (!requestedLanguage || requestedLanguage === LanguageCode.ANY) {
+          return true;
+        }
+
+        return (
+          item.language === LanguageCode.ANY ||
+          item.language === requestedLanguage
+        );
+      })
+      .map((item) => item.keyword);
   }
 }

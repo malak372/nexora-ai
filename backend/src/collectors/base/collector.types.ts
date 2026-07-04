@@ -7,11 +7,14 @@ import { CollectionSourceType } from '@prisma/client';
  */
 export type CollectorInput = {
   domainName: string;
+  domainKeywords?: string[];
+
   country?: string;
   city?: string;
   region?: string;
-  language?: string;
   radiusKm?: number;
+
+  language?: string;
   keywords?: string[];
 };
 

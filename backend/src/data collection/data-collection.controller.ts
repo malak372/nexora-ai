@@ -40,7 +40,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DataCollectionController {
-  constructor(private readonly dataCollectionService: DataCollectionService) {}
+  constructor(private readonly dataCollectionService: DataCollectionService) { }
 
   /**
    * Starts a new data collection job.
@@ -94,5 +94,13 @@ export class DataCollectionController {
     @CurrentUser() admin: { id: string },
   ) {
     return this.dataCollectionService.stop(id, admin.id);
+  }
+
+  /**
+   * Returns detailed information about one collection job.
+   */
+  @Get('jobs/:id')
+  getJobDetails(@Param('id') id: string) {
+    return this.dataCollectionService.getJobDetails(id);
   }
 }

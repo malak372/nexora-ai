@@ -1,15 +1,19 @@
 import {
+  IsArray,
   IsBoolean,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { DomainKeywordDto } from './domain-keyword.dto';
+import { Type } from 'class-transformer';
 
 /**
- * DTO for creating a new project domain.
+ * DTO for creating a new software project domain.
  *
- * This DTO is used by the Admin module when creating
+ * This DTO is used by the Admin module to create
  * a new software project domain.
  *
  * Domains are displayed to users during idea generation,
@@ -26,43 +30,52 @@ import {
  * - name must not exceed 100 characters.
  * - isActive is optional.
  * - isActive must be a boolean when provided.
+ * - keywords are optional.
+ * - keywords must be an array of strings when provided.
  *
  * Notes:
  * - Reports and charts should not be handled inside this DTO.
- * - Domain analytics such as most selected domains should be
- *   handled in the service/report layer using the Idea and Domain tables.
+ * - Domain analytics, such as the most selected domains,
+ *   should be handled in the service/report layer using
+ *   the Idea and Domain tables.
  *
  * Example:
  * {
  *   "name": "Healthcare",
- *   "isActive": true
+ *   "isActive": true,
+ *   "keywords": [
+ *     "hospital",
+ *     "doctor",
+ *     "patient",
+ *     "clinic"
+ *   ]
  * }
  *
  * @author Malak
  */
 export class CreateDomainDto {
-  /**
-   * Name of the software project domain.
-   *
-   * This value represents a selectable category for idea generation.
-   *
-   * Examples:
-   * - Healthcare
-   * - Education
-   * - E-Commerce
-   */
   @IsString()
   @MinLength(2)
   @MaxLength(100)
   name!: string;
 
-  /**
-   * Indicates whether the domain is active and available
-   * for users during idea generation.
-   *
-   * If omitted, the database default value will be used.
-   */
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /**
+   * Optional discovery keywords associated with this domain.
+   *
+   * These keywords are used by data collectors to search
+   * social platforms and community discussions for
+   * domain-related problems and needs.
+   *
+   * Example:
+   * ["student", "school", "teacher", "learning"]
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DomainKeywordDto)
+  keywords?: DomainKeywordDto[];
 }

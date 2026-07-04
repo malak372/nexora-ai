@@ -124,6 +124,15 @@ enum ApiProvider {
   OTHER
 }
 
+enum LanguageCode {
+  ANY
+  EN
+  AR
+  FR
+  ES
+  DE
+}
+
 enum ApiRequestType {
   DATA_COLLECTION
   COMMENT_ANALYSIS
@@ -168,7 +177,7 @@ enum AuditAction {
   ADMIN_UPDATE_DOMAIN
   ADMIN_DEACTIVATE_DOMAIN
   ADMIN_UPDATE_COMPLAINT
-  ADMIN_RUN_DATA_COLLECTION
+  RUN_DATA_COLLECTION
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
@@ -656,6 +665,7 @@ model Domain {
   id       String  @id @default(uuid())
   name     String  @unique
   isActive Boolean @default(true) @map("is_active")
+  domainKeywords DomainKeyword[]
 
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
@@ -666,6 +676,22 @@ model Domain {
   @@map("domains")
 }
 
+model DomainKeyword {
+  id String @id @default(uuid())
+
+  domainId String @map("domain_id")
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  keyword  String
+  language LanguageCode @default(ANY)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([domainId, keyword, language])
+  @@index([domainId])
+  @@index([language])
+  @@map("domain_keywords")
+}
 /**
  * Platform
  */
@@ -730,6 +756,7 @@ model CollectionJob {
   id String @id @default(uuid())
 
   domainId String @map("domain_id")
+  language LanguageCode?
   domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   country         String?
@@ -774,7 +801,7 @@ model SocialPost {
 
   sourceType CollectionSourceType @map("source_type")
 
-  externalId String? @map("external_id")
+  externalId String @map("external_id")
   title      String?
   content    String
   author     String?
@@ -808,7 +835,7 @@ model SocialComment {
   postId String     @map("post_id")
   post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  externalId String? @map("external_id")
+  externalId String @map("external_id")
   content    String
   author     String?
   language   String?
