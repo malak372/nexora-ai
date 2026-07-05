@@ -18,23 +18,23 @@ import {
 const SALT_ROUNDS = 10;
 
 /**
- * Service responsible for user registration operations.
+ * Service responsible for user registration operations in Nexora AI.
  *
- * Handles the creation of registered user accounts in Nexora AI.
- * Newly registered users are created as normal users with:
+ * This service handles the complete registration flow, including:
+ * - Creating new registered user accounts.
+ * - Enforcing the default USER role to prevent privilege escalation.
+ * - Initializing the free-tier idea generation limits.
+ * - Supporting optional user type classification for analytics.
+ * - Transferring guest-generated ideas to the new registered account.
+ * - Sending email verification links after successful registration.
+ * - Recording successful and failed registration events in authentication logs.
+ *
+ * New users are created with:
  * - USER role.
  * - NORMAL account status.
  * - Three free idea generation attempts.
  * - Zero used free generations.
  * - Zero credit balance.
- * - Optional user type for personalization and analytics.
- *
- * This service also supports transferring guest-generated ideas
- * to the newly registered account when a valid guest session token
- * is provided.
- *
- * After successful registration, the system sends an email verification
- * link and records the registration event in the authentication audit log.
  *
  * Access and refresh tokens are not issued during registration because
  * the user must verify their email before logging in.
@@ -53,27 +53,20 @@ export class AuthRegisterService {
     /**
      * Registers a new user account.
      *
-     * The created account is initialized according to Nexora AI's
-     * free-tier access model. Each registered user starts with three
-     * free idea generation attempts and no credits.
+     * If the email is already registered, the failed registration attempt
+     * is recorded in the authentication audit log before rejecting the request.
      *
-     * If the user previously generated an idea as a guest, the provided
-     * guest session token is used to transfer guest-generated ideas to
-     * the newly created account and update the used free generation count.
+     * If a guest session token is provided, any guest-generated ideas linked
+     * to that session are transferred to the newly registered user account.
      *
-     * The user's role is always assigned internally as USER to prevent
-     * privilege escalation. The user type, if provided, is used only for
-     * analytics and personalization, not for authorization.
-     *
-     * After registration, an email verification link is sent. The user
-     * must verify their email before logging in and receiving authentication
-     * tokens.
+     * After successful registration, an email verification link is sent and
+     * a successful registration audit log is recorded.
      *
      * @param dto Registration request data including full name, email,
      * password, optional user type, and optional guest session token.
      * @param meta Optional request metadata such as IP address and user agent.
      *
-     * @returns Registered user data and the number of transferred guest ideas.
+     * @returns Registered user data and number of transferred guest ideas.
      *
      * @throws BadRequestException if the email address is already registered.
      * @throws UnauthorizedException if the newly created user cannot be retrieved.
@@ -84,9 +77,22 @@ export class AuthRegisterService {
     ) {
         const existingUser = await this.prisma.user.findUnique({
             where: { email: dto.email },
+            select: {
+                id: true,
+                email: true,
+            },
         });
 
         if (existingUser) {
+            await this.authAuditService.createLog({
+                userId: existingUser.id,
+                email: dto.email,
+                action: AuthAction.REGISTER,
+                isSuccess: false,
+                message: 'Registration failed because email already exists',
+                ...meta,
+            });
+
             throw new BadRequestException('Email already exists');
         }
 

@@ -3,18 +3,22 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { StringValue } from 'ms';
 
+import { PrismaModule } from '../prisma/prisma.module';
+import { MailModule } from '../mail/mail.module';
+
+import { AuthService } from './auth.service';
+
 import { LoginController } from './login/login.controller';
 import { RegisterController } from './register/register.controller';
 import { RefreshController } from './refresh/refresh.controller';
 import { LogoutController } from './logout/logout.controller';
 import { PasswordController } from './password/password.controller';
 import { EmailController } from './email/email.controller';
-import { AuthService } from './auth.service';
+import { AuthSessionsController } from './sessions/sessions.controller';
+import { AuthAuditController } from './audit/audit.controller';
+
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
-
-import { PrismaModule } from '../prisma/prisma.module';
-import { MailModule } from '../mail/mail.module';
 
 import { AuthTokenService } from './token/token.service';
 import { AuthGuestService } from './guest/guest.service';
@@ -25,25 +29,34 @@ import { AuthLoginService } from './login/login.service';
 import { AuthRefreshService } from './refresh/refresh.service';
 import { AuthLogoutService } from './logout/logout.service';
 import { AuthAuditService } from './audit/audit.service';
-import { AuthSessionsController } from './sessions/sessions.controller';
 import { AuthSessionsService } from './sessions/sessions.service';
 
 /**
  * Authentication module.
  *
- * Configures all authentication-related components, including:
- * - User registration and verified login.
- * - Failed login attempt tracking and temporary account lock.
- * - JWT access and refresh token management.
- * - Password change and password reset flows.
- * - Email verification and welcome email flow.
+ * Centralizes all authentication-related controllers, services,
+ * guards, and strategies used by Nexora AI.
+ *
+ * This module supports:
+ * - User registration with email verification.
+ * - Verified login using JWT access tokens.
+ * - Refresh token generation, rotation, and revocation.
+ * - Logout and session invalidation.
+ * - Password change, forgot password, and reset password flows.
  * - Guest idea transfer after registration.
  * - Authentication audit logging.
- * - Passport JWT strategy and role-based guards.
- * - User type support for personalization and analytics.
+ * - Active session management across devices.
+ * - Role-based authorization using RolesGuard.
  *
- * This module imports PrismaModule for database access
- * and MailModule for authentication-related email delivery.
+ * Imported modules:
+ * - PrismaModule: provides database access.
+ * - PassportModule: enables Passport authentication strategies.
+ * - JwtModule: signs and validates JWT access tokens.
+ * - MailModule: sends authentication-related emails.
+ *
+ * Exported providers:
+ * - AuthService: main authentication facade service.
+ * - RolesGuard: reusable role-based authorization guard.
  *
  * @author Eman
  */
@@ -60,29 +73,35 @@ import { AuthSessionsService } from './sessions/sessions.service';
     MailModule,
   ],
   controllers: [
-    LoginController,
     RegisterController,
+    LoginController,
     RefreshController,
     LogoutController,
     PasswordController,
     EmailController,
     AuthSessionsController,
+    AuthAuditController,
   ],
   providers: [
     AuthService,
-    AuthTokenService,
-    AuthGuestService,
-    AuthEmailService,
-    AuthPasswordService,
+
     AuthRegisterService,
     AuthLoginService,
     AuthRefreshService,
     AuthLogoutService,
+    AuthPasswordService,
+    AuthEmailService,
+    AuthGuestService,
+    AuthTokenService,
     AuthAuditService,
+    AuthSessionsService,
+
     JwtStrategy,
     RolesGuard,
-    AuthSessionsService,
   ],
-  exports: [AuthService, RolesGuard],
+  exports: [
+    AuthService,
+    RolesGuard,
+  ],
 })
 export class AuthModule { }

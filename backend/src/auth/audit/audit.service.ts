@@ -70,4 +70,21 @@ export class AuthAuditService {
             },
         });
     }
+    /**
+ * Retrieves authentication audit logs ordered from newest to oldest.
+ *
+ * This method is intended for admin monitoring screens to review
+ * authentication-related events such as login attempts, password
+ * changes, token refreshes, logouts, and email verification actions.
+ *
+ * @returns List of authentication audit logs.
+ */
+    async getLogs() {
+        return this.prisma.authenticationLog.findMany({
+            orderBy: {
+                createdAt: 'desc',
+            },
+            take: 100,
+        });
+    }
 }

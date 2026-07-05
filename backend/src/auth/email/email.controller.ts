@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    HttpCode,
+    HttpStatus,
+    Post,
+    Query,
+    Req,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
@@ -52,12 +61,18 @@ export class EmailController {
      * Endpoint:
      * POST /auth/email/resend-verification
      *
+     * Returns:
+     * - 200 OK when the request is processed successfully,
+     *   regardless of whether a new verification email is sent
+     *   or the email is already verified.
+     *
      * @param dto User email address.
      * @param req HTTP request metadata.
      * @returns Verification email resend confirmation message.
      */
     @Throttle({ default: { limit: 3, ttl: 60000 } })
     @Post('resend-verification')
+    @HttpCode(HttpStatus.OK)
     resendVerificationEmail(
         @Body() dto: ResendVerificationEmailDto,
         @Req() req: Request,

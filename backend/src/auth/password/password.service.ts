@@ -26,14 +26,19 @@ const PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = 15;
  * Service responsible for password-related authentication operations.
  *
  * Handles:
- * - Changing passwords for authenticated users.
- * - Validating current passwords before updates.
- * - Creating secure password reset tokens.
+ * - Password changes for authenticated users.
+ * - Current password validation before updates.
+ * - Secure password reset token generation.
  * - Invalidating old unused password reset tokens.
  * - Sending password reset emails.
  * - Resetting forgotten passwords.
- * - Revoking active refresh tokens after password change or password reset.
- * - Recording authentication audit logs for password events.
+ * - Revoking active refresh tokens after password updates.
+ * - Recording successful and failed password-related audit logs.
+ *
+ * This service supports Nexora AI security requirements by ensuring
+ * sensitive password operations are traceable, token-based flows are
+ * time-limited, and users are forced to re-authenticate after password
+ * changes or resets.
  *
  * @author Eman
  */
@@ -49,11 +54,15 @@ export class AuthPasswordService {
     /**
      * Changes the password of an authenticated and active user.
      *
-     * The current password must be valid, and the new password
-     * must be different from the existing password. After a
-     * successful update, all active refresh tokens are revoked
-     * to force re-authentication, and a password change audit
-     * log is recorded.
+     * The current password must be valid, and the new password must be
+     * different from the existing password. Failed attempts are recorded
+     * in authentication audit logs for security monitoring.
+     *
+     * After a successful password change:
+     * - The password hash is updated.
+     * - The passwordChangedAt timestamp is updated.
+     * - All active refresh tokens are revoked.
+     * - A successful password change audit log is recorded.
      *
      * @param userId Authenticated user ID.
      * @param dto Current and new password data.
@@ -80,6 +89,14 @@ export class AuthPasswordService {
         });
 
         if (!user || !user.isActive) {
+            await this.authAuditService.createLog({
+                userId,
+                action: AuthAction.CHANGE_PASSWORD,
+                isSuccess: false,
+                message: 'Password change failed because account is inactive or missing',
+                ...meta,
+            });
+
             throw new UnauthorizedException('User is not active or does not exist');
         }
 
@@ -89,6 +106,15 @@ export class AuthPasswordService {
         );
 
         if (!isCurrentPasswordValid) {
+            await this.authAuditService.createLog({
+                userId: user.id,
+                email: user.email,
+                action: AuthAction.CHANGE_PASSWORD,
+                isSuccess: false,
+                message: 'Password change failed because current password is incorrect',
+                ...meta,
+            });
+
             throw new BadRequestException('Current password is incorrect');
         }
 
@@ -98,6 +124,15 @@ export class AuthPasswordService {
         );
 
         if (isSamePassword) {
+            await this.authAuditService.createLog({
+                userId: user.id,
+                email: user.email,
+                action: AuthAction.CHANGE_PASSWORD,
+                isSuccess: false,
+                message: 'Password change failed because new password matches current password',
+                ...meta,
+            });
+
             throw new BadRequestException(
                 'New password must be different from current password',
             );
@@ -142,14 +177,14 @@ export class AuthPasswordService {
     /**
      * Sends a password reset email for active accounts.
      *
-     * For security reasons, this method always returns the same
-     * response whether the email exists or not. If the account
-     * exists and is active, previous unused reset tokens are
-     * invalidated, a new secure reset token is created, and a
-     * password reset email is sent.
+     * For security reasons, this method always returns the same response
+     * whether the email exists or not. This prevents user enumeration.
      *
-     * A forgot password audit log is recorded only when a valid
-     * active account is found and a reset email is generated.
+     * If the account exists and is active:
+     * - Previous unused reset tokens are invalidated.
+     * - A new secure reset token is created.
+     * - A password reset email is sent.
+     * - A forgot password audit log is recorded.
      *
      * @param dto Forgot password request data.
      * @param meta Optional request metadata such as IP address and user agent.
@@ -224,23 +259,26 @@ export class AuthPasswordService {
     /**
      * Resets a user's password using a valid password reset token.
      *
-     * The reset token must exist, belong to an active user,
-     * be unused, and not be expired. If validation fails,
-     * a failed password reset audit log is recorded before
-     * rejecting the request.
+     * The reset token must:
+     * - Exist in the database.
+     * - Belong to an active user.
+     * - Be unused.
+     * - Not be expired.
      *
-     * After successful validation, the user's password is updated,
-     * the reset token is marked as used, all active refresh tokens
-     * are revoked to force re-authentication, and a successful
-     * password reset audit log is recorded.
+     * Failed reset attempts are recorded before rejecting the request.
+     *
+     * After successful validation:
+     * - The user's password is updated.
+     * - The reset token is marked as used.
+     * - All active refresh tokens are revoked.
+     * - A successful password reset audit log is recorded.
      *
      * @param dto Reset token and new password data.
      * @param meta Optional request metadata such as IP address and user agent.
      * @returns Password reset confirmation message.
      *
      * @throws BadRequestException if the reset token is invalid,
-     * expired, already used, or the new password matches the
-     * current password.
+     * expired, already used, or the new password matches the current password.
      */
     async resetPassword(
         dto: ResetPasswordDto,

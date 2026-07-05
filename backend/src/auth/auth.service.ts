@@ -13,15 +13,30 @@ import { AuthRefreshService } from './refresh/refresh.service';
 import { AuthLogoutService } from './logout/logout.service';
 import { AuthPasswordService } from './password/password.service';
 import { AuthEmailService } from './email/email.service';
+import { AuthRequestMeta } from './audit/audit.service';
 
 /**
  * Main authentication facade service.
  *
- * Acts as the central facade for authentication operations by
- * delegating requests to specialized authentication services.
+ * Provides a single entry point for authentication operations in Nexora AI.
+ * This service delegates authentication requests to specialized services,
+ * keeping the authentication module modular, maintainable, and aligned
+ * with the Single Responsibility Principle.
  *
- * This design keeps authentication logic modular, maintainable,
- * and aligned with the Single Responsibility Principle (SRP).
+ * Supported operations include:
+ * - User registration.
+ * - Verified user login.
+ * - Access token refresh.
+ * - Logout and refresh token revocation.
+ * - Password change.
+ * - Forgot password flow.
+ * - Password reset flow.
+ * - Email verification.
+ * - Resending email verification links.
+ *
+ * Request metadata such as IP address and user agent can be passed to
+ * the delegated services to support authentication audit logging and
+ * security monitoring.
  *
  * @author Eman
  */
@@ -37,65 +52,69 @@ export class AuthService {
   ) { }
 
   /**
-   * Delegates user registration to AuthRegisterService.
+   * Registers a new user account.
    */
-  register(dto: RegisterDto) {
-    return this.authRegisterService.register(dto);
+  register(dto: RegisterDto, meta?: AuthRequestMeta) {
+    return this.authRegisterService.register(dto, meta);
   }
 
   /**
-   * Delegates user login and failed login protection to AuthLoginService.
+   * Authenticates a verified user and issues tokens.
    */
-  login(dto: LoginDto) {
-    return this.authLoginService.login(dto);
+  login(dto: LoginDto, meta?: AuthRequestMeta) {
+    return this.authLoginService.login(dto, meta);
   }
 
   /**
-   * Delegates refresh token rotation to AuthRefreshService.
+   * Rotates a refresh token and issues a new access token.
    */
-  refresh(dto: RefreshDto) {
-    return this.authRefreshService.refresh(dto);
+  refresh(dto: RefreshDto, meta?: AuthRequestMeta) {
+    return this.authRefreshService.refresh(dto, meta);
   }
 
   /**
-   * Delegates logout and refresh token revocation to AuthLogoutService.
+   * Logs out the user by revoking the provided refresh token.
    */
-  logout(dto: RefreshDto) {
-    return this.authLogoutService.logout(dto);
+  logout(dto: RefreshDto, meta?: AuthRequestMeta) {
+    return this.authLogoutService.logout(dto, meta);
   }
 
   /**
-   * Delegates password change to AuthPasswordService.
+   * Changes the authenticated user's password.
    */
-  changePassword(userId: string, dto: ChangePasswordDto) {
-    return this.authPasswordService.changePassword(userId, dto);
+  changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+    meta?: AuthRequestMeta,
+  ) {
+    return this.authPasswordService.changePassword(userId, dto, meta);
   }
 
   /**
-   * Delegates forgot password flow to AuthPasswordService.
+   * Starts the forgot password flow.
    */
-  forgotPassword(dto: ForgotPasswordDto) {
-    return this.authPasswordService.forgotPassword(dto);
+  forgotPassword(dto: ForgotPasswordDto, meta?: AuthRequestMeta) {
+    return this.authPasswordService.forgotPassword(dto, meta);
   }
 
   /**
-   * Delegates password reset flow to AuthPasswordService.
+   * Resets the user's password using a valid reset token.
    */
-  resetPassword(dto: ResetPasswordDto) {
-    return this.authPasswordService.resetPassword(dto);
+  resetPassword(dto: ResetPasswordDto, meta?: AuthRequestMeta) {
+    return this.authPasswordService.resetPassword(dto, meta);
   }
 
   /**
-   * Delegates email verification flow to AuthEmailService.
+   * Verifies a user's email address.
    */
-  verifyEmail(email: string, token: string) {
-    return this.authEmailService.verifyEmail(email, token);
+  verifyEmail(email: string, token: string, meta?: AuthRequestMeta) {
+    return this.authEmailService.verifyEmail(email, token, meta);
   }
 
   /**
-   * Delegates resend verification email flow to AuthEmailService.
+   * Resends the email verification link.
    */
-  resendVerificationEmail(email: string) {
-    return this.authEmailService.resendVerificationEmail(email);
+  resendVerificationEmail(email: string, meta?: AuthRequestMeta) {
+    return this.authEmailService.resendVerificationEmail(email, meta);
   }
 }

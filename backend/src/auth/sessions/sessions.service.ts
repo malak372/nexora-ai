@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { AuthAction } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthAuditService } from '../audit/audit.service';
 
 /**
  * Service responsible for authenticated session management.
@@ -18,21 +20,20 @@ import { PrismaService } from '../../prisma/prisma.service';
  * Revoking a session invalidates its refresh token and prevents it from
  * being used to generate new access tokens.
  *
+ * Session revocation actions are recorded in authentication audit logs
+ * to support security monitoring and account activity traceability.
+ *
  * @author Eman
  */
 @Injectable()
 export class AuthSessionsService {
     constructor(
         private readonly prisma: PrismaService,
+        private readonly authAuditService: AuthAuditService,
     ) { }
 
     /**
      * Retrieves all active authentication sessions for a user.
-     *
-     * A session is considered active only if:
-     * - It belongs to the authenticated user.
-     * - It has not been revoked.
-     * - Its refresh token has not expired.
      *
      * @param userId Authenticated user identifier.
      * @returns List of active sessions with device and expiration metadata.
@@ -72,15 +73,7 @@ export class AuthSessionsService {
     /**
      * Revokes a specific active session owned by the authenticated user.
      *
-     * The session must:
-     * - Exist.
-     * - Belong to the authenticated user.
-     * - Not already be revoked.
-     * - Not be expired.
-     *
-     * If no matching active session is found, a NotFoundException is thrown.
-     * This prevents the API from returning a misleading success response
-     * when the requested session does not exist or is no longer active.
+     * After successful revocation, an authentication audit log is recorded.
      *
      * @param userId Authenticated user identifier.
      * @param sessionId Session identifier to revoke.
@@ -104,6 +97,12 @@ export class AuthSessionsService {
             },
             select: {
                 id: true,
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
             },
         });
 
@@ -120,6 +119,14 @@ export class AuthSessionsService {
             },
         });
 
+        await this.authAuditService.createLog({
+            userId: session.user.id,
+            email: session.user.email,
+            action: AuthAction.LOGOUT,
+            isSuccess: true,
+            message: 'Authentication session revoked successfully',
+        });
+
         return {
             message: 'Authentication session revoked successfully',
         };
@@ -131,14 +138,20 @@ export class AuthSessionsService {
      * This operation signs the user out from all active devices by
      * marking all non-revoked refresh tokens as revoked.
      *
-     * After this operation, existing refresh tokens can no longer be used
-     * to obtain new access tokens. The user must log in again to create
-     * a new session.
+     * After successful revocation, an authentication audit log is recorded.
      *
      * @param userId Authenticated user identifier.
      * @returns Confirmation message after revoking all active sessions.
      */
     async revokeAllSessions(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+            },
+        });
+
         await this.prisma.refreshToken.updateMany({
             where: {
                 userId,
@@ -147,6 +160,14 @@ export class AuthSessionsService {
             data: {
                 revokedAt: new Date(),
             },
+        });
+
+        await this.authAuditService.createLog({
+            userId,
+            email: user?.email,
+            action: AuthAction.LOGOUT,
+            isSuccess: true,
+            message: 'All active authentication sessions revoked successfully',
         });
 
         return {
