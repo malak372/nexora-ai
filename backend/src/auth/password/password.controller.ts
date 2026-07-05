@@ -1,4 +1,13 @@
-import { Body, Controller, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    HttpCode,
+    HttpStatus,
+    Patch,
+    Post,
+    Req,
+    UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
@@ -49,13 +58,18 @@ export class PasswordController {
     }
 
     /**
-     * Sends a password reset link to the user's email.
+     * Sends a password reset link to the provided email address.
+     *
+     * For security reasons, this endpoint always returns the same
+     * success response regardless of whether the email exists,
+     * preventing user enumeration attacks.
      *
      * Endpoint:
      * POST /auth/password/forgot
      */
     @Throttle({ default: { limit: 3, ttl: 60000 } })
     @Post('forgot')
+    @HttpCode(HttpStatus.OK)
     forgotPassword(
         @Body() dto: ForgotPasswordDto,
         @Req() req: Request,
@@ -67,12 +81,13 @@ export class PasswordController {
     }
 
     /**
-     * Resets the user's password using a valid reset token.
+     * Resets the user's password using a valid password reset token.
      *
      * Endpoint:
      * POST /auth/password/reset
      */
     @Post('reset')
+    @HttpCode(HttpStatus.OK)
     resetPassword(
         @Body() dto: ResetPasswordDto,
         @Req() req: Request,

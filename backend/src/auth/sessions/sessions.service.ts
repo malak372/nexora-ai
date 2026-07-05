@@ -1,12 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { AuthAction } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthAuditService } from '../audit/audit.service';
 
 /**
- * Service responsible for authentication session management.
+ * Service responsible for authenticated session management.
  *
- * Provides operations for retrieving and revoking the
- * authenticated user's active sessions across devices.
+ * This service manages refresh-token based user sessions in Nexora AI.
+ * Each successful login or token refresh creates an active session
+ * represented by a stored refresh token record.
+ *
+ * It allows authenticated users to:
+ * - View their active sessions across devices.
+ * - Revoke a specific active session.
+ * - Revoke all active sessions.
+ *
+ * Revoked or expired sessions are excluded from active session results.
+ * Revoking a session invalidates its refresh token and prevents it from
+ * being used to generate new access tokens.
+ *
+ * Session revocation actions are recorded in authentication audit logs
+ * to support security monitoring and account activity traceability.
  *
  * @author Eman
  */
@@ -14,15 +29,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class AuthSessionsService {
     constructor(
         private readonly prisma: PrismaService,
+        private readonly authAuditService: AuthAuditService,
     ) { }
 
     /**
-     * Returns all active sessions for the authenticated user.
-     *
-     * Revoked and expired sessions are excluded from the response.
+     * Retrieves all active authentication sessions for a user.
      *
      * @param userId Authenticated user identifier.
-     * @returns List of active authentication sessions.
+     * @returns List of active sessions with device and expiration metadata.
      */
     async getSessions(userId: string) {
         const sessions = await this.prisma.refreshToken.findMany({
@@ -57,31 +71,60 @@ export class AuthSessionsService {
     }
 
     /**
-     * Revokes a specific active authentication session
-     * belonging to the authenticated user.
+     * Revokes a specific active session owned by the authenticated user.
      *
-     * The session is invalidated by marking its refresh
-     * token as revoked. If the session does not exist,
-     * belongs to another user, or has already been revoked,
-     * no changes are applied.
+     * After successful revocation, an authentication audit log is recorded.
      *
      * @param userId Authenticated user identifier.
-     * @param sessionId Authentication session identifier.
-     * @returns Confirmation message after revoking the session.
+     * @param sessionId Session identifier to revoke.
+     * @returns Confirmation message after successful revocation.
+     *
+     * @throws NotFoundException when the session does not exist,
+     * does not belong to the user, is expired, or was already revoked.
      */
     async revokeSession(
         userId: string,
         sessionId: string,
     ) {
-        await this.prisma.refreshToken.updateMany({
+        const session = await this.prisma.refreshToken.findFirst({
             where: {
                 id: sessionId,
                 userId,
                 revokedAt: null,
+                expiresAt: {
+                    gt: new Date(),
+                },
+            },
+            select: {
+                id: true,
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
+            },
+        });
+
+        if (!session) {
+            throw new NotFoundException('Session not found');
+        }
+
+        await this.prisma.refreshToken.update({
+            where: {
+                id: session.id,
             },
             data: {
                 revokedAt: new Date(),
             },
+        });
+
+        await this.authAuditService.createLog({
+            userId: session.user.id,
+            email: session.user.email,
+            action: AuthAction.LOGOUT,
+            isSuccess: true,
+            message: 'Authentication session revoked successfully',
         });
 
         return {
@@ -90,17 +133,25 @@ export class AuthSessionsService {
     }
 
     /**
-     * Revokes all active authentication sessions
-     * belonging to the authenticated user.
+     * Revokes all active sessions owned by the authenticated user.
      *
-     * All active refresh tokens are invalidated,
-     * forcing the user to authenticate again on
-     * every device.
+     * This operation signs the user out from all active devices by
+     * marking all non-revoked refresh tokens as revoked.
+     *
+     * After successful revocation, an authentication audit log is recorded.
      *
      * @param userId Authenticated user identifier.
-     * @returns Confirmation message after revoking all sessions.
+     * @returns Confirmation message after revoking all active sessions.
      */
     async revokeAllSessions(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+            },
+        });
+
         await this.prisma.refreshToken.updateMany({
             where: {
                 userId,
@@ -109,6 +160,14 @@ export class AuthSessionsService {
             data: {
                 revokedAt: new Date(),
             },
+        });
+
+        await this.authAuditService.createLog({
+            userId,
+            email: user?.email,
+            action: AuthAction.LOGOUT,
+            isSuccess: true,
+            message: 'All active authentication sessions revoked successfully',
         });
 
         return {

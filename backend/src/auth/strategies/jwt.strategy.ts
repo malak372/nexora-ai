@@ -71,7 +71,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user || !user.isActive || !user.isVerified) {
-      throw new UnauthorizedException('User is not active, verified, or does not exist');
+      throw new UnauthorizedException('Unauthorized');
     }
 
     return {
