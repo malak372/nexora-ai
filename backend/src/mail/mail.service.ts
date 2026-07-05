@@ -65,7 +65,9 @@ export class MailService {
         text: options.text,
         html: options.html,
       });
-    } catch {
+    } catch (error) {
+      console.error('SMTP Error:', error);
+
       throw new InternalServerErrorException('Failed to send email');
     }
   }
