@@ -11,7 +11,7 @@ import {
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 /**
- * Service responsible for SocialComment operations.
+ * Service responsible for listing collected social comments.
  *
  * @author Malak
  */
@@ -19,13 +19,16 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 export class SocialCommentService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Returns paginated collected comments with optional filters.
+   */
   async findComments(query: GetSocialCommentsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
     const where: Prisma.SocialCommentWhereInput = {
-      postId: query.postId,
-      language: query.language,
-      sentiment: query.sentiment,
+      ...(query.postId && { postId: query.postId }),
+      ...(query.language && { language: query.language }),
+      ...(query.sentiment && { sentiment: query.sentiment }),
     };
 
     const [data, total] = await Promise.all([

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { CollectionSourceType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { RunCollectionDto } from '../dto/run-collection.dto';
+import { CollectorPost } from '../../collectors/base/collector.types';
 import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
 
 import {
@@ -11,88 +11,162 @@ import {
 } from '../../utilities/base-query/builder';
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
-type MockCollectedPost = {
-  externalId?: string;
-  title?: string;
-  content: string;
-  author?: string;
-  url?: string | null;
-  language?: string;
-  likesCount?: number;
-  comments: {
-    externalId?: string;
-    content: string;
-    author?: string;
-    language?: string;
-    likesCount?: number;
-  }[];
-};
-
 /**
- * Service responsible for SocialPost operations.
+ * Service responsible for storing and listing collected social posts.
+ *
+ * Responsibilities:
+ * - Store collected social posts.
+ * - Store collected comments related to each post.
+ * - Link each post to its platform record.
+ * - Create the platform automatically if it does not exist.
+ * - Avoid duplicate posts using sourceType + externalId.
+ * - Avoid duplicate comments using postId + externalId.
+ * - Return paginated posts for admin review.
  *
  * @author Malak
  */
 @Injectable()
-export class SocialPostsService {
-  constructor(private readonly prisma: PrismaService) { }
+export class SocialPostService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async createManyWithComments(
-    collectionJobId: string,
-    posts: MockCollectedPost[],
-    dto: RunCollectionDto,
-  ) {
+  /**
+   * Stores collected posts and their related comments.
+   *
+   * Uses upsert to:
+   * - Update an existing post if it was already collected.
+   * - Create a new post if it does not exist.
+   * - Update or create comments without causing duplicate errors.
+   *
+   * @param collectionJobId The collection job that produced these posts.
+   * @param posts The posts returned from the selected collector.
+   *
+   * @returns Total number of stored posts and comments.
+   */
+  async createManyWithComments(collectionJobId: string, posts: CollectorPost[]) {
+    let totalPosts = 0;
     let totalComments = 0;
 
     for (const post of posts) {
-      const createdPost = await this.prisma.socialPost.create({
-        data: {
+      if (!post.externalId) {
+        continue;
+      }
+
+      const comments = post.comments ?? [];
+
+      const platform = await this.findOrCreatePlatformByName(post.platformName);
+
+      const savedPost = await this.prisma.socialPost.upsert({
+        where: {
+          sourceType_externalId: {
+            sourceType: post.sourceType,
+            externalId: post.externalId,
+          },
+        },
+        update: {
           collectionJobId,
-          sourceType: CollectionSourceType.MOCK,
+          platformId: platform?.id,
+          title: post.title,
+          content: post.content,
+          author: post.author,
+          url: post.url,
+          country: post.country,
+          city: post.city,
+          region: post.region,
+          language: post.language,
+          likesCount: post.likesCount ?? 0,
+          repliesCount: post.repliesCount ?? comments.length,
+          publishedAt: post.publishedAt,
+          collectedAt: new Date(),
+        },
+        create: {
+          collectionJobId,
+          platformId: platform?.id,
+          sourceType: post.sourceType,
           externalId: post.externalId,
           title: post.title,
           content: post.content,
           author: post.author,
           url: post.url,
-          country: dto.country,
-          city: dto.city,
-          region: dto.region,
+          country: post.country,
+          city: post.city,
+          region: post.region,
           language: post.language,
           likesCount: post.likesCount ?? 0,
-          repliesCount: post.comments.length,
+          repliesCount: post.repliesCount ?? comments.length,
+          publishedAt: post.publishedAt,
         },
       });
 
-      if (post.comments.length > 0) {
-        await this.prisma.socialComment.createMany({
-          data: post.comments.map((comment) => ({
-            postId: createdPost.id,
+      totalPosts++;
+
+      for (const comment of comments) {
+        if (!comment.externalId) {
+          continue;
+        }
+
+        await this.prisma.socialComment.upsert({
+          where: {
+            postId_externalId: {
+              postId: savedPost.id,
+              externalId: comment.externalId,
+            },
+          },
+          update: {
+            content: comment.content,
+            author: comment.author,
+            language: comment.language,
+            likesCount: comment.likesCount ?? 0,
+            publishedAt: comment.publishedAt,
+            collectedAt: new Date(),
+          },
+          create: {
+            postId: savedPost.id,
             externalId: comment.externalId,
             content: comment.content,
             author: comment.author,
             language: comment.language,
             likesCount: comment.likesCount ?? 0,
-          })),
+            publishedAt: comment.publishedAt,
+          },
         });
 
-        totalComments += post.comments.length;
+        totalComments++;
       }
     }
 
     return {
-      totalPosts: posts.length,
+      totalPosts,
       totalComments,
     };
   }
 
+  /**
+   * Returns paginated collected posts with optional filters.
+   *
+   * Supported filters:
+   * - collectionJobId
+   * - platformId
+   * - language
+   * - region
+   *
+   * Includes:
+   * - Platform basic information.
+   * - Collection job basic information.
+   * - Domain basic information.
+   * - Number of related comments.
+   *
+   * @param query Filtering, sorting, and pagination options.
+   *
+   * @returns Paginated social posts response.
+   */
   async findPosts(query: GetSocialPostsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
     const where: Prisma.SocialPostWhereInput = {
-      collectionJobId: query.collectionJobId,
-      platformId: query.platformId,
-      language: query.language,
-      region: query.region,
+      ...(query.collectionJobId && { collectionJobId: query.collectionJobId }),
+      ...(query.platformId && { platformId: query.platformId }),
+      ...(query.language && { language: query.language }),
+      ...(query.region && { region: query.region }),
     };
 
     const [data, total] = await Promise.all([
@@ -143,5 +217,36 @@ export class SocialPostsService {
         totalPages: calculateTotalPages(total, limit),
       },
     };
+  }
+
+  /**
+   * Finds a platform by name or creates it if it does not exist.
+   *
+   * This guarantees that collected posts are linked to their source platform,
+   * such as GitHub, Reddit, YouTube, or other supported collectors.
+   *
+   * If the platform already exists but is inactive, it will be reactivated.
+   *
+   * @param name Platform display name returned by the collector.
+   *
+   * @returns Existing or newly created platform, or null if no name is provided.
+   */
+  private async findOrCreatePlatformByName(name?: string) {
+    if (!name) {
+      return null;
+    }
+
+    return this.prisma.platform.upsert({
+      where: {
+        name,
+      },
+      update: {
+        isActive: true,
+      },
+      create: {
+        name,
+        isActive: true,
+      },
+    });
   }
 }

@@ -14,6 +14,9 @@ import { AuditModule } from './audit-logs/audit-logs.module';
 
 import { MailModule } from './mail/mail.module';
 
+import { CollectorsModule } from './collectors/collectors.module';
+import { DataCollectionModule } from './data collection/data-collection.module';
+
 /**
  * Root application module.
  */
@@ -42,6 +45,8 @@ import { MailModule } from './mail/mail.module';
     MailModule,
     AuditModule,
     AdminModule,
+    DataCollectionModule,
+    CollectorsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

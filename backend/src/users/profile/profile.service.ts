@@ -1,25 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { AuditAction, AuditTargetType } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { UserValidationService } from '../validation/Validation.service';
+import { UserValidationService } from '../validation/validation.service';
+import { AuditService } from '../../audit-logs/audit-logs.service';
+import { userCacheKeys } from '../cache/user-cache.keys';
 
 /**
  * Service responsible for managing the authenticated user's profile.
  *
- * This service handles all profile-related operations including:
- *
- * - Retrieving full user profile information
- * - Updating editable profile fields
- * - Tracking free generation usage limits
+ * Handles profile retrieval, editable profile updates,
+ * free generation usage tracking, and cache invalidation
+ * for profile-related user data.
  *
  * Business rules:
- * - Users can only modify allowed profile fields (fullName, userType)
- * - System-managed fields such as role, accountStatus, and creditBalance
- *   cannot be modified through this service
- * - Premium status is derived automatically from creditBalance
- *
- * The service ensures consistency between user identity,
- * generation limits, and system-defined account state.
+ * - Users can only modify allowed profile fields: fullName and userType.
+ * - System-managed fields such as role, accountStatus, creditBalance,
+ *   and free generation counters cannot be modified here.
+ * - Premium access is represented by the user's account status.
+ * - Profile updates are audited for traceability.
  *
  * @author Eman
  */
@@ -28,18 +30,12 @@ export class UserProfileService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userCommonService: UserValidationService,
+        private readonly auditService: AuditService,
+
+        @Inject(CACHE_MANAGER)
+        private readonly cacheManager: Cache,
     ) { }
 
-    /**
-     * Calculates remaining free generations for the user.
-     *
-     * Ensures the value never becomes negative even if
-     * inconsistent data exists in the database.
-     *
-     * @param limit - Maximum allowed free generations
-     * @param used - Number of already consumed free generations
-     * @returns Remaining available free generations
-     */
     private calculateRemainingFreeGenerations(limit: number, used: number) {
         return Math.max(0, limit - used);
     }
@@ -47,21 +43,20 @@ export class UserProfileService {
     /**
      * Retrieves the authenticated user's profile information.
      *
-     * This includes:
-     * - Basic identity (id, fullName, email)
-     * - Role and user classification (userType)
-     * - Account state (accountStatus, isActive, isVerified)
-     * - Credit and generation limits
-     *
-     * @param userId - Authenticated user ID
-     * @returns Complete user profile snapshot
-     *
-     * @throws NotFoundException if user does not exist
+     * Uses cache to reduce repeated database reads for frequently
+     * requested profile data.
      */
     async getProfile(userId: string) {
+        const cacheKey = userCacheKeys.profile(userId);
+        const cachedProfile = await this.cacheManager.get(cacheKey);
+
+        if (cachedProfile) {
+            return cachedProfile;
+        }
+
         const user = await this.userCommonService.findUserOrThrow(userId);
 
-        return {
+        const profile = {
             id: user.id,
             fullName: user.fullName,
             email: user.email,
@@ -79,25 +74,20 @@ export class UserProfileService {
             isVerified: user.isVerified,
             createdAt: user.createdAt,
         };
+
+        await this.cacheManager.set(cacheKey, profile);
+
+        return profile;
     }
 
     /**
-     * Updates the authenticated user's profile.
+     * Updates the authenticated user's editable profile fields.
      *
-     * Only explicitly allowed fields can be updated:
-     * - fullName
-     * - userType
-     *
-     * All other fields are strictly controlled by the system.
-     *
-     * @param userId - Authenticated user ID
-     * @param dto - Profile update payload
-     * @returns Updated user profile snapshot
-     *
-     * @throws NotFoundException if user does not exist
+     * Invalidates cached profile and dashboard summary data
+     * because these responses may contain profile fields.
      */
     async updateProfile(userId: string, dto: UpdateProfileDto) {
-        await this.userCommonService.findUserOrThrow(userId);
+        const oldUser = await this.userCommonService.findUserOrThrow(userId);
 
         const updatedUser = await this.prisma.user.update({
             where: { id: userId },
@@ -108,6 +98,24 @@ export class UserProfileService {
                 ...(dto.userType !== undefined && {
                     userType: dto.userType,
                 }),
+            },
+        });
+
+        await this.cacheManager.del(userCacheKeys.profile(userId));
+        await this.cacheManager.del(userCacheKeys.summary(userId));
+
+        await this.auditService.createLog({
+            actorId: userId,
+            action: AuditAction.USER_UPDATE_PROFILE,
+            targetType: AuditTargetType.USER,
+            targetId: userId,
+            oldValue: {
+                fullName: oldUser.fullName,
+                userType: oldUser.userType,
+            },
+            newValue: {
+                fullName: updatedUser.fullName,
+                userType: updatedUser.userType,
             },
         });
 
@@ -131,16 +139,6 @@ export class UserProfileService {
 
     /**
      * Retrieves free generation usage statistics.
-     *
-     * Useful for:
-     * - UI usage tracking
-     * - enforcing free tier limits
-     * - guiding upgrade to credit system
-     *
-     * @param userId - Authenticated user ID
-     * @returns Free generation quota information
-     *
-     * @throws NotFoundException if user does not exist
      */
     async getFreeGenerations(userId: string) {
         const user = await this.userCommonService.findUserOrThrow(userId);

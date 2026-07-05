@@ -26,15 +26,21 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
  * Base route:
  * /data-collection
  *
+ * Available endpoints:
+ * - POST /data-collection/run
+ * - GET /data-collection/status
+ * - GET /data-collection/jobs
+ * - GET /data-collection/posts
+ * - GET /data-collection/comments
+ * - POST /data-collection/:id/stop
+ *
  * @author Malak
  */
 @Controller('data-collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DataCollectionController {
-  constructor(
-    private readonly dataCollectionService: DataCollectionService,
-  ) {}
+  constructor(private readonly dataCollectionService: DataCollectionService) { }
 
   /**
    * Starts a new data collection job.
@@ -82,11 +88,19 @@ export class DataCollectionController {
   /**
    * Stops a running collection job.
    */
-  @Post('stop/:id')
+  @Post(':id/stop')
   stop(
     @Param('id') id: string,
     @CurrentUser() admin: { id: string },
   ) {
     return this.dataCollectionService.stop(id, admin.id);
+  }
+
+  /**
+   * Returns detailed information about one collection job.
+   */
+  @Get('jobs/:id')
+  getJobDetails(@Param('id') id: string) {
+    return this.dataCollectionService.getJobDetails(id);
   }
 }

@@ -1,0 +1,50 @@
+/*
+  Warnings:
+
+  - The values [ADMIN_RUN_DATA_COLLECTION] on the enum `AuditAction` will be removed. If these variants are still used in the database, this will fail.
+
+*/
+-- AlterEnum
+
+BEGIN;
+
+CREATE TYPE "AuditAction_new" AS ENUM (
+  'ADMIN_UPDATE_USER_STATUS',
+  'ADMIN_SOFT_DELETE_USER',
+  'ADMIN_UPDATE_SETTINGS',
+  'ADMIN_UPDATE_PROMPT',
+  'ADMIN_CREATE_ALERT',
+  'ADMIN_CREATE_PLATFORM',
+  'ADMIN_UPDATE_PLATFORM',
+  'ADMIN_DEACTIVATE_PLATFORM',
+  'ADMIN_CREATE_DOMAIN',
+  'ADMIN_UPDATE_DOMAIN',
+  'ADMIN_DEACTIVATE_DOMAIN',
+  'ADMIN_UPDATE_COMPLAINT',
+  'ADMIN_RUN_DATA_COLLECTION',
+  'RUN_DATA_COLLECTION',
+  'ADMIN_STOP_DATA_COLLECTION',
+  'ADMIN_ADJUST_USER_CREDITS',
+  'ADMIN_SEND_PASSWORD_RESET_EMAIL',
+  'USER_GENERATE_IDEA',
+  'USER_UNLOCK_IDEA',
+  'USER_CREATE_COMPLAINT',
+  'DATA_COLLECTION_RUN',
+  'DATA_COLLECTION_STOP',
+  'NLP_ANALYSIS_RUN'
+);
+
+ALTER TABLE "audit_logs"
+ALTER COLUMN "action" TYPE "AuditAction_new"
+USING ("action"::text::"AuditAction_new");
+
+UPDATE "audit_logs"
+SET "action" = 'RUN_DATA_COLLECTION'
+WHERE "action" = 'ADMIN_RUN_DATA_COLLECTION';
+
+ALTER TYPE "AuditAction" RENAME TO "AuditAction_old";
+ALTER TYPE "AuditAction_new" RENAME TO "AuditAction";
+
+DROP TYPE "AuditAction_old";
+
+COMMIT;

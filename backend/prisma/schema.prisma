@@ -1,7 +1,7 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Get a free hosted Postgres database in seconds: npx create-db
 
 generator client {
   provider = "prisma-client-js"
@@ -103,10 +103,34 @@ enum ApiProvider {
   STRIPE
   PAYPAL
   PALPAY
+
   REDDIT
   FACEBOOK
+  YOUTUBE
+  LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
+
+  GOOGLE_PLAY
+  APP_STORE
   GOOGLE_MAPS
+
   OTHER
+}
+
+enum LanguageCode {
+  ANY
+  EN
+  AR
+  FR
+  ES
+  DE
 }
 
 enum ApiRequestType {
@@ -153,7 +177,7 @@ enum AuditAction {
   ADMIN_UPDATE_DOMAIN
   ADMIN_DEACTIVATE_DOMAIN
   ADMIN_UPDATE_COMPLAINT
-  ADMIN_RUN_DATA_COLLECTION
+  RUN_DATA_COLLECTION
   ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
@@ -164,6 +188,10 @@ enum AuditAction {
   DATA_COLLECTION_RUN
   DATA_COLLECTION_STOP
   NLP_ANALYSIS_RUN
+
+  USER_UPDATE_PROFILE
+  USER_MARK_NOTIFICATION_READ
+  USER_MARK_ALL_NOTIFICATIONS_READ
 }
 
 enum AuditTargetType {
@@ -215,7 +243,19 @@ enum CollectionSourceType {
   FACEBOOK
   YOUTUBE
   LINKEDIN
+  X
+  INSTAGRAM
+  TELEGRAM
+  TIKTOK
+  GITHUB
+  STACKOVERFLOW
+  DISCORD
+  QUORA
   FORUM
+  BLOG
+  NEWS
+  APP_STORE
+  GOOGLE_PLAY
   OTHER
 }
 
@@ -231,15 +271,15 @@ enum PromptType {
  */
 
 model User {
-  id            String        @id @default(uuid())
-  fullName      String        @map("full_name")
-  email         String        @unique
-  passwordHash  String        @map("password_hash")
-  role          UserRole      @default(USER)
-  emailVerifiedAt   DateTime? @map("email_verified_at")
-  lastLoginAt       DateTime? @map("last_login_at")
-  passwordChangedAt DateTime? @map("password_changed_at")
-  accountStatus AccountStatus @default(NORMAL) @map("account_status")
+  id                String        @id @default(uuid())
+  fullName          String        @map("full_name")
+  email             String        @unique
+  passwordHash      String        @map("password_hash")
+  role              UserRole      @default(USER)
+  emailVerifiedAt   DateTime?     @map("email_verified_at")
+  lastLoginAt       DateTime?     @map("last_login_at")
+  passwordChangedAt DateTime?     @map("password_changed_at")
+  accountStatus     AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
   freeGenerationsUsed Int @default(0) @map("free_generations_used")
@@ -251,10 +291,9 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
 
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
-  userType UserType?
+  userType  UserType?
 
   ideas                   Idea[]
   payments                Payment[]
@@ -269,6 +308,10 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   authenticationLogs      AuthenticationLog[]
+  favoriteIdeas           FavoriteIdea[]
+  preference              UserPreference?
+  ideaFeedback            IdeaFeedback[]
+  savedGenerationSearches SavedGenerationSearch[]
 
   @@map("users")
 }
@@ -278,14 +321,14 @@ model User {
  */
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  revokedAt DateTime? @map("revoked_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  ipAddress String?   @map("ip_address")
-  userAgent String?   @map("user_agent")
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
   lastUsedAt DateTime? @map("last_used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -426,6 +469,8 @@ model Idea {
   generatedOutputs   GeneratedOutput[]
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
+  favoriteIdeas      FavoriteIdea[]
+  feedback           IdeaFeedback[]
 
   @@map("ideas")
 }
@@ -627,17 +672,36 @@ model ExternalApiLog {
  */
 
 model Domain {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  isActive Boolean @default(true) @map("is_active")
+  id             String          @id @default(uuid())
+  name           String          @unique
+  isActive       Boolean         @default(true) @map("is_active")
+  domainKeywords DomainKeyword[]
 
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
   collectionJobs CollectionJob[]
 
-  ideas Idea[]
+  ideas                   Idea[]
+  savedGenerationSearches SavedGenerationSearch[]
 
   @@map("domains")
+}
+
+model DomainKeyword {
+  id String @id @default(uuid())
+
+  domainId String @map("domain_id")
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  keyword  String
+  language LanguageCode @default(ANY)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([domainId, keyword, language])
+  @@index([domainId])
+  @@index([language])
+  @@map("domain_keywords")
 }
 
 /**
@@ -703,8 +767,9 @@ model AuthenticationLog {
 model CollectionJob {
   id String @id @default(uuid())
 
-  domainId String @map("domain_id")
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+  domainId String        @map("domain_id")
+  language LanguageCode?
+  domain   Domain        @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   country         String?
   city            String?
@@ -748,7 +813,7 @@ model SocialPost {
 
   sourceType CollectionSourceType @map("source_type")
 
-  externalId String? @map("external_id")
+  externalId String  @map("external_id")
   title      String?
   content    String
   author     String?
@@ -782,7 +847,7 @@ model SocialComment {
   postId String     @map("post_id")
   post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  externalId String? @map("external_id")
+  externalId String  @map("external_id")
   content    String
   author     String?
   language   String?
@@ -794,6 +859,7 @@ model SocialComment {
   collectedAt DateTime  @default(now()) @map("collected_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@unique([postId, externalId])
   @@index([postId])
   @@index([language])
   @@index([sentiment])
@@ -837,4 +903,88 @@ model PromptHistory {
   @@index([collectionJobId])
   @@index([ideaId])
   @@map("prompt_histories")
+}
+
+model FavoriteIdea {
+  id String @id @default(uuid())
+
+  userId String
+  ideaId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, ideaId])
+}
+
+model UserPreference {
+  id String @id @default(uuid())
+
+  userId String @unique @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  preferredCountry  String? @map("preferred_country")
+  preferredCity     String? @map("preferred_city")
+  preferredRegion   String? @map("preferred_region")
+  preferredLanguage String? @map("preferred_language")
+
+  preferredDomains      Json? @map("preferred_domains")
+  preferredPlatforms    Json? @map("preferred_platforms")
+  preferredTechnologies Json? @map("preferred_technologies")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("user_preferences")
+}
+
+model IdeaFeedback {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  rating  Int
+  comment String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, ideaId])
+  @@index([ideaId])
+  @@map("idea_feedback")
+}
+
+model SavedGenerationSearch {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String?
+
+  domainId String? @map("domain_id")
+  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
+
+  country  String?
+  city     String?
+  region   String?
+  language String?
+
+  platforms Json?
+  keywords  Json?
+
+  lastUsedAt DateTime? @map("last_used_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([domainId])
+  @@map("saved_generation_searches")
 }
