@@ -20,6 +20,7 @@ import {
   buildPagination,
 } from '../../utilities/base-query/builder';
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import { PLATFORM_NAMES } from '../../collectors/base/platform-name.constant';
 
 /**
  * Service responsible for CollectionJob persistence and status management.
@@ -380,5 +381,27 @@ export class CollectionJobService {
         );
       })
       .map((item) => item.keyword);
+  }
+
+  /**
+   * Validates that the selected platform exists and is active.
+   */ 
+  async validateActivePlatform(sourceType: CollectionSourceType) {
+    const platformName = PLATFORM_NAMES[sourceType];
+
+    const platform = await this.prisma.platform.findFirst({
+      where: {
+        name: platformName,
+        isActive: true,
+      },
+    });
+
+    if (!platform) {
+      throw new BadRequestException(
+        `Platform ${platformName} is inactive or not found.`,
+      );
+    }
+
+    return platform;
   }
 }

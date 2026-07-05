@@ -21,6 +21,10 @@ import { TikTokCollector } from './tiktok/tiktok.collector';
 import { XCollector } from './x/x.collector';
 import { YouTubeCollector } from './youtube/youtube.collector';
 import { CollectorQueueService } from './base/collector-queue.service';
+import { DiscourseForumAdapter } from './forum/adapters/discourse-forum.adapter';
+import { HackerNewsCollector } from './hacker-news/hacker-news.collector';
+import { ProductHuntCollector } from './product-hunt/product-hunt.collector';
+import { DevToCollector } from './dev-to/dev-to.collector';
 
 /**
  * Module that groups all platform collectors.
@@ -52,7 +56,11 @@ import { CollectorQueueService } from './base/collector-queue.service';
     NewsCollector,
     AppStoreCollector,
     GooglePlayCollector,
+    DiscourseForumAdapter,
     CollectorQueueService,
+    HackerNewsCollector,
+    ProductHuntCollector,
+    DevToCollector,
   ],
     exports: [
     CollectorsFactory,

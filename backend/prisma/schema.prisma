@@ -256,6 +256,11 @@ enum CollectionSourceType {
   NEWS
   APP_STORE
   GOOGLE_PLAY
+
+  HACKER_NEWS
+  PRODUCT_HUNT
+  DEV_TO
+
   OTHER
 }
 

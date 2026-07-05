@@ -2,7 +2,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import axios, { AxiosRequestConfig } from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 
 type CacheEntry<T> = {
   data: T;
@@ -10,57 +10,39 @@ type CacheEntry<T> = {
 };
 
 /**
+ * HTTP response wrapper used when collectors need both:
+ * - Response body data.
+ * - Response headers such as ETag and rate limit headers.
+ */
+export type CollectorHttpResponse<T> = {
+  data: T;
+  headers: Record<string, any>;
+  status: number;
+};
+
+/**
  * Shared HTTP utility for all data collectors.
  *
  * Provides:
  * - HTTP GET requests using Axios.
- * - Automatic retry for temporary failures.
- * - Exponential backoff between retries.
- * - Support for Retry-After headers when rate limited.
- * - Simple in-memory response caching.
- * - Logging for requests, retries, cache hits, and failures.
- *
- * This utility helps reduce duplicated HTTP logic across collectors
- * such as GitHub, Reddit, YouTube, X, and other external providers.
- *
- * The cache is process-local and intended for development and
- * graduation-project usage. It is not distributed across multiple
- * application instances.
+ * - Retry for temporary failures.
+ * - Exponential backoff.
+ * - Retry-After support.
+ * - Simple in-memory caching.
+ * - Optional ETag / If-None-Match support.
+ * - Response headers access for rate-limit monitoring.
  *
  * @author Malak
  */
 export class CollectorHttpUtil {
-  /**
-   * Shared logger for collector HTTP operations.
-   */
   private static readonly logger = new Logger(CollectorHttpUtil.name);
 
-  /**
-   * In-memory cache for HTTP responses.
-   *
-   * Key: custom cache key.
-   * Value: cached response with expiration timestamp.
-   */
   private static readonly cache = new Map<string, CacheEntry<any>>();
 
   /**
-   * Executes an HTTP GET request with caching and retry support.
+   * Old method kept for backward compatibility.
    *
-   * Workflow:
-   * 1. Returns cached data if available and still valid.
-   * 2. Executes the HTTP request.
-   * 3. Stores successful responses in cache.
-   * 4. Retries temporary failures using exponential backoff.
-   * 5. Honors Retry-After headers when provided.
-   *
-   * @template T Response type.
-   * @param url Target request URL.
-   * @param config Axios request configuration.
-   * @param options Request behavior options.
-   * @returns Parsed response data.
-   * @throws ServiceUnavailableException When the external API
-   * requires payment or available credits have been exhausted.
-   * @throws AxiosError When the request ultimately fails.
+   * Existing collectors can still use this without changes.
    */
   static async getWithRetryAndCache<T>(
     url: string,
@@ -72,12 +54,71 @@ export class CollectorHttpUtil {
       retryDelayMs: number;
     },
   ): Promise<T> {
-    const cached = this.cache.get(options.cacheKey);
+    const response = await this.getWithRetryCacheAndHeaders<T>(
+      url,
+      config,
+      options,
+    );
 
-    if (cached && cached.expiresAt > Date.now()) {
+    return response.data;
+  }
+
+  /**
+   * Executes an HTTP GET request with:
+   * - Cache.
+   * - Retry.
+   * - Exponential backoff.
+   * - Optional ETag support.
+   * - Response headers return.
+   *
+   * This is useful for APIs like GitHub where we need:
+   * - ETag to reduce API usage.
+   * - X-RateLimit headers to monitor remaining requests.
+   *
+   * @template T Response type.
+   * @param url Target URL.
+   * @param config Axios request config.
+   * @param options Cache, retry, and optional ETag options.
+   * @returns Data, headers, and status code.
+   */
+  static async getWithRetryCacheAndHeaders<T>(
+    url: string,
+    config: AxiosRequestConfig,
+    options: {
+      cacheKey: string;
+      cacheTtlMs: number;
+      retryAttempts: number;
+      retryDelayMs: number;
+      etagCacheKey?: string;
+    },
+  ): Promise<CollectorHttpResponse<T>> {
+    const cachedData = this.cache.get(options.cacheKey);
+
+    if (cachedData && cachedData.expiresAt > Date.now()) {
       this.logger.log(`Cache hit: ${options.cacheKey}`);
-      return cached.data as T;
+
+      return {
+        data: cachedData.data as T,
+        headers: {},
+        status: 200,
+      };
     }
+
+    const cachedEtag = options.etagCacheKey
+      ? this.cache.get(options.etagCacheKey)
+      : undefined;
+
+    const requestConfig: AxiosRequestConfig = {
+      ...config,
+      headers: {
+        ...(config.headers ?? {}),
+        ...(cachedEtag?.data
+          ? { 'If-None-Match': cachedEtag.data }
+          : {}),
+      },
+      validateStatus: (status: number) =>
+        (status >= 200 && status < 300) || status === 304,
+    };
 
     let lastError: any;
 
@@ -85,14 +126,40 @@ export class CollectorHttpUtil {
       try {
         this.logger.log(`HTTP GET attempt ${attempt}: ${url}`);
 
-        const response = await axios.get<T>(url, config);
+        const response: AxiosResponse<T> = await axios.get<T>(
+          url,
+          requestConfig,
+        );
+
+        if (response.status === 304 && cachedData) {
+          this.logger.log(`ETag not modified: ${options.cacheKey}`);
+
+          return {
+            data: cachedData.data as T,
+            headers: response.headers,
+            status: response.status,
+          };
+        }
 
         this.cache.set(options.cacheKey, {
           data: response.data,
           expiresAt: Date.now() + options.cacheTtlMs,
         });
 
-        return response.data;
+        const etag = response.headers?.etag;
+
+        if (etag && options.etagCacheKey) {
+          this.cache.set(options.etagCacheKey, {
+            data: etag,
+            expiresAt: Date.now() + options.cacheTtlMs,
+          });
+        }
+
+        return {
+          data: response.data,
+          headers: response.headers,
+          status: response.status,
+        };
       } catch (error: any) {
         lastError = error;
 
@@ -126,6 +193,18 @@ export class CollectorHttpUtil {
             error.response?.data ?? error.message,
           );
 
+          if (cachedData) {
+            this.logger.warn(
+              `Returning stale cached data after request failure: ${options.cacheKey}`,
+            );
+
+            return {
+              data: cachedData.data as T,
+              headers: error.response?.headers ?? {},
+              status: status ?? 0,
+            };
+          }
+
           throw error;
         }
 
@@ -144,26 +223,6 @@ export class CollectorHttpUtil {
     throw lastError;
   }
 
-  /**
-   * Calculates the retry delay.
-   *
-   * If the external API provides a Retry-After header,
-   * that value is used directly.
-   *
-   * Otherwise, exponential backoff is applied:
-   * baseDelay × 2^(attempt - 1)
-   *
-   * Example:
-   * - Attempt 1 → 1000 ms
-   * - Attempt 2 → 2000 ms
-   * - Attempt 3 → 4000 ms
-   * - Attempt 4 → 8000 ms
-   *
-   * @param baseDelayMs Initial retry delay.
-   * @param attempt Current retry attempt.
-   * @param retryAfterSeconds Retry-After value returned by the API.
-   * @returns Delay in milliseconds.
-   */
   private static calculateBackoffDelay(
     baseDelayMs: number,
     attempt: number,
@@ -176,11 +235,6 @@ export class CollectorHttpUtil {
     return baseDelayMs * Math.pow(2, attempt - 1);
   }
 
-  /**
-   * Waits for the specified duration.
-   *
-   * @param ms Delay in milliseconds.
-   */
   private static sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
