@@ -23,4 +23,5 @@ export class GetSocialPostsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsString()
   region?: string;
+
 }

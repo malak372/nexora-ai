@@ -1,8 +1,8 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CollectionSourceType } from '@prisma/client';
-import axios from 'axios';
 
+import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
   CollectorInput,
@@ -10,177 +10,169 @@ import {
   CollectorComment,
 } from '../base/collector.types';
 
+import { CollectorHttpUtil } from '../base/collector-http.util';
+import { CollectorCacheUtil } from '../base/collector-cache.util';
+import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
 /**
  * GitHub collector.
  *
  * Collects public GitHub issues and issue comments using GitHub REST API.
  *
- * Strategy:
- * - User selects a domain, not a problem.
- * - Collector uses domain keywords to discover possible problems.
- * - User keywords are optional advanced filters.
- * - GitHub does not support real country/city/region filtering.
+ * Supports:
+ * - Domain-based issue search.
+ * - Optional user keywords.
+ * - Pull request exclusion.
+ * - General discussion and contribution-noise filtering.
+ * - Spam, jobs, bots, and low-value comments filtering.
+ * - Lightweight relevance scoring.
+ * - Deduplication.
+ * - Retry with exponential backoff.
+ * - In-memory caching.
+ * - GitHub ETag / If-None-Match support.
+ * - GitHub rate-limit monitoring.
+ *
+ * Notes:
+ * - GitHub does not support real country/city filtering for public issues.
+ * - country/city/region/language are stored as request metadata only.
  *
  * @author Malak
  */
 @Injectable()
-export class GitHubCollector implements SocialCollector {
+export class GitHubCollector extends BaseCollector implements SocialCollector {
   readonly sourceType = CollectionSourceType.GITHUB;
 
   private readonly platformName = 'GitHub';
   private readonly apiBaseUrl = 'https://api.github.com';
 
-  private readonly maxFetchedIssues = 50;
-  private readonly maxSavedPosts = 10;
-  private readonly maxCommentsPerPost = 10;
-
-  constructor(private readonly configService: ConfigService) { }
+  constructor(configService: ConfigService) {
+    super(configService, GitHubCollector.name);
+  }
 
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const response = await axios.get(`${this.apiBaseUrl}/search/issues`, {
-        headers: this.buildHeaders(),
-        params: {
-          q: this.buildSearchQuery(input),
-          sort: 'updated',
-          order: 'desc',
-          per_page: this.maxFetchedIssues,
+      const searchQuery = this.buildSearchQuery(input);
+
+      if (!searchQuery) {
+        this.logger.warn(
+          'GitHub collection skipped because no domain keywords exist.',
+        );
+        return [];
+      }
+
+      const cacheKey = CollectorCacheUtil.build('github', 'issues', [
+        searchQuery,
+        input.country,
+        input.language,
+      ]);
+
+      const response = await CollectorHttpUtil.getWithRetryCacheAndHeaders<any>(
+        `${this.apiBaseUrl}/search/issues`,
+        {
+          headers: this.buildHeaders(),
+          params: {
+            q: searchQuery,
+            sort: 'updated',
+            order: 'desc',
+            per_page: Math.min(this.maxFetchedPosts, 100),
+          },
+          timeout: 10000,
         },
-        timeout: 10000,
-      });
+        {
+          cacheKey,
+          etagCacheKey: `${cacheKey}:etag`,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
+
+      this.monitorGitHubRateLimit(response.headers);
 
       const issues = response.data?.items ?? [];
+      const seenIssueIds = new Set<string>();
 
-      const filteredIssues = issues
+      const rankedIssues = issues
         .filter((issue: any) => this.isValidIssue(issue))
-        .filter((issue: any) => this.matchesInputContext(issue, input))
+        .filter((issue: any) => {
+          const id = issue?.id?.toString();
+
+          if (!id || seenIssueIds.has(id)) {
+            return false;
+          }
+
+          seenIssueIds.add(id);
+          return true;
+        })
+        .map((issue: any) => ({
+          issue,
+          score: this.calculateIssueRelevanceScore(issue, input),
+        }))
+        .filter((item: any) => item.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
-      return Promise.all(
-        filteredIssues.map((issue: any) =>
-          this.mapIssueToCollectorPost(issue, input),
+      const posts = await Promise.all(
+        rankedIssues.map((item: any) =>
+          this.mapIssueToCollectorPost(item.issue, input),
         ),
       );
-    } catch {
+
+      this.logger.log(`GitHub collection completed. Posts: ${posts.length}`);
+
+      return posts;
+    } catch (error: any) {
+      this.logger.error(
+        'GitHub collection failed',
+        error.response?.data ?? error.message,
+      );
+
       throw new ServiceUnavailableException(
-        'GitHub collection failed. Check GitHub token, API limits, or network connection.',
+        'GitHub collection failed. Check GitHub token, collector limits, API limits, or network connection.',
       );
     }
   }
 
   private buildSearchQuery(input: CollectorInput): string {
-    const terms = this.getSearchTerms(input).slice(0, 6);
+    const domainKeywords = this.getDomainKeywords(input);
 
-    const searchTerms =
-      terms.length > 0 ? terms.join(' OR ') : 'software OR app OR feature OR bug';
+    if (!domainKeywords.length) {
+      return '';
+    }
+
+    const userQueries = (input.keywords ?? [])
+      .map((keyword) => this.normalizeText(keyword))
+      .filter(Boolean);
+
+    const domainName = input.domainName
+      ? this.normalizeText(input.domainName)
+      : '';
+
+    const terms = this.unique([
+      domainName,
+      ...domainKeywords,
+      ...userQueries,
+    ])
+      .filter((term) => term.length >= 3)
+      .slice(0, 5);
+
+    const searchTerms = terms.map((term) => `"${term}"`).join(' OR ');
 
     return [
-      searchTerms,
+      `(${searchTerms})`,
+      'in:title,body',
       'is:issue',
       '-is:pr',
-      'comments:>0',
-      'updated:>2024-01-01',
+      'state:open',
+      'comments:>1',
+      'updated:>2025-01-01',
+      '-label:discussion',
+      '-label:question',
+      '-label:documentation',
+      '-label:"good first issue"',
+      '-label:"help wanted"',
     ].join(' ');
-  }
-
-  private getSearchTerms(input: CollectorInput): string[] {
-    const domainTerms =
-      input.domainKeywords?.length
-        ? input.domainKeywords
-        : this.getFallbackDomainTerms(input.domainName);
-
-    return [...domainTerms, ...(input.keywords ?? [])]
-      .map((term) => term.trim().toLowerCase())
-      .filter(Boolean);
-  }
-
-  private getFallbackDomainTerms(domainName?: string): string[] {
-    const domain = domainName?.toLowerCase();
-
-    const dictionary: Record<string, string[]> = {
-      education: [
-        'education',
-        'student',
-        'school',
-        'teacher',
-        'learning',
-        'course',
-        'assignment',
-        'exam',
-        'classroom',
-        'lms',
-      ],
-      healthcare: [
-        'healthcare',
-        'patient',
-        'clinic',
-        'hospital',
-        'doctor',
-        'appointment',
-        'medical',
-        'health',
-      ],
-      finance: [
-        'finance',
-        'payment',
-        'banking',
-        'wallet',
-        'invoice',
-        'transaction',
-        'budget',
-      ],
-      agriculture: [
-        'agriculture',
-        'farm',
-        'crop',
-        'irrigation',
-        'soil',
-        'harvest',
-      ],
-      tourism: [
-        'tourism',
-        'travel',
-        'booking',
-        'hotel',
-        'tourist',
-        'trip',
-      ],
-      'e-commerce': [
-        'ecommerce',
-        'e-commerce',
-        'cart',
-        'checkout',
-        'order',
-        'payment',
-        'delivery',
-      ],
-      cybersecurity: [
-        'cybersecurity',
-        'security',
-        'vulnerability',
-        'authentication',
-        'privacy',
-        'threat',
-      ],
-      'artificial intelligence': [
-        'ai',
-        'artificial intelligence',
-        'machine learning',
-        'model',
-        'automation',
-      ],
-      'legal technology': [
-        'legal',
-        'law',
-        'contract',
-        'compliance',
-        'regulation',
-        'case management',
-      ],
-      other: ['software', 'app', 'platform', 'feature', 'bug', 'problem'],
-    };
-
-    return dictionary[domain ?? ''] ?? (domainName ? [domainName] : []);
   }
 
   private isValidIssue(issue: any): boolean {
@@ -188,58 +180,70 @@ export class GitHubCollector implements SocialCollector {
     const body = issue?.body ?? '';
     const author = issue?.user?.login ?? '';
     const url = issue?.html_url ?? '';
-    const content = `${title} ${body}`.toLowerCase();
 
-    const blockedWords = [
-      'screenplay',
-      'fiction',
-      'roleplay',
-      'we are hiring',
-      "we're hiring",
-      'hiring',
-      'job',
-      'jobs',
-      'career',
-      'employment',
-      'team status',
-      'status report',
-      'ai-generated content',
-      '/claim',
-      'assigned!',
-      'auto-assigned',
-      'stale assignment cleanup',
-    ];
+    const normalizedTitle = this.normalizeText(title);
+    const content = this.normalizeText(`${title} ${body}`);
+    const labels = this.getIssueLabelsText(issue);
+    const blockedWords = this.getBlockedWords();
 
-    return (
-      issue?.id &&
-      title &&
-      !issue?.pull_request &&
-      issue.comments > 0 &&
-      !author.includes('[bot]') &&
-      !url.includes('/jobs/') &&
-      !blockedWords.some((word) => content.includes(word))
-    );
+    if (
+      !issue?.id ||
+      !title ||
+      !url ||
+      issue?.pull_request ||
+      issue.comments <= 1 ||
+      author.includes('[bot]') ||
+      url.includes('/jobs/') ||
+      content.length < 80
+    ) {
+      return false;
+    }
+
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
+
+    if (!cleaned) {
+      return false;
+    }
+
+    if (blockedWords.some((word) => content.includes(word))) {
+      return false;
+    }
+
+    if (this.hasBlockedIssueLabel(labels)) {
+      return false;
+    }
+
+    if (this.isGeneralDiscussionIssue(issue)) {
+      return false;
+    }
+
+    if (this.hasIgnoredIssueTitle(normalizedTitle)) {
+      return false;
+    }
+
+    return true;
   }
 
-  private matchesInputContext(issue: any, input: CollectorInput): boolean {
-    const title = issue?.title ?? '';
-    const body = issue?.body ?? '';
-    const content = `${title} ${body}`.toLowerCase();
-
-    const terms = this.getSearchTerms(input);
-
-    const matchedTermsCount = terms.filter((term) =>
-      content.includes(term),
-    ).length;
-
-    return matchedTermsCount >= 2;
+  private calculateIssueRelevanceScore(
+    issue: any,
+    input: CollectorInput,
+  ): number {
+    return RelevanceScoreUtil.scoreText({
+      title: issue?.title ?? '',
+      body: issue?.body ?? '',
+      domainTerms: this.getDomainKeywords(input),
+      problemTerms: this.getProblemWords(),
+      likes: issue.reactions?.total_count ?? 0,
+      replies: issue.comments ?? 0,
+      publishedAt: issue.created_at ? new Date(issue.created_at) : undefined,
+    });
   }
 
   private async mapIssueToCollectorPost(
     issue: any,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments = await this.collectIssueComments(issue);
+    const comments = await this.collectIssueComments(issue, input);
 
     return {
       sourceType: CollectionSourceType.GITHUB,
@@ -250,7 +254,6 @@ export class GitHubCollector implements SocialCollector {
       author: issue.user?.login,
       url: issue.html_url,
 
-      // Metadata from user request, not real GitHub location.
       country: input.country,
       city: input.city,
       region: input.region,
@@ -263,24 +266,61 @@ export class GitHubCollector implements SocialCollector {
     };
   }
 
-  private async collectIssueComments(issue: any): Promise<CollectorComment[]> {
+  private async collectIssueComments(
+    issue: any,
+    input: CollectorInput,
+  ): Promise<CollectorComment[]> {
     if (!issue?.comments_url || !issue.comments) {
       return [];
     }
 
     try {
-      const response = await axios.get(issue.comments_url, {
-        headers: this.buildHeaders(),
-        params: {
-          per_page: this.maxCommentsPerPost,
-        },
-        timeout: 10000,
-      });
+      const cacheKey = CollectorCacheUtil.build('github', 'comments', [
+        issue.id,
+      ]);
 
-      const comments = response.data ?? [];
+      const response =
+        await CollectorHttpUtil.getWithRetryCacheAndHeaders<any[]>(
+          issue.comments_url,
+          {
+            headers: this.buildHeaders(),
+            params: {
+              per_page: Math.min(this.maxFetchedComments, 100),
+            },
+            timeout: 10000,
+          },
+          {
+            cacheKey,
+            etagCacheKey: `${cacheKey}:etag`,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
-      return comments
-        .filter((comment: any) => this.isUsefulComment(comment))
+      this.monitorGitHubRateLimit(response.headers);
+
+      const data = response.data;
+      const seenCommentIds = new Set<string>();
+
+      return (data ?? [])
+        .filter((comment: any) => this.isUsefulComment(comment, input))
+        .filter((comment: any) => {
+          const id = comment?.id?.toString();
+
+          if (!id || seenCommentIds.has(id)) {
+            return false;
+          }
+
+          seenCommentIds.add(id);
+          return true;
+        })
+        .sort(
+          (a: any, b: any) =>
+            (b.reactions?.total_count ?? 0) -
+            (a.reactions?.total_count ?? 0),
+        )
+        .slice(0, this.maxSavedComments)
         .map((comment: any): CollectorComment => ({
           externalId: comment.id.toString(),
           content: comment.body,
@@ -290,40 +330,170 @@ export class GitHubCollector implements SocialCollector {
             ? new Date(comment.created_at)
             : undefined,
         }));
-    } catch {
+    } catch (error: any) {
+      this.logger.warn(
+        `GitHub comments collection failed for issue ${issue?.id}`,
+        error.response?.data ?? error.message,
+      );
+
       return [];
     }
   }
 
-  private isUsefulComment(comment: any): boolean {
+  private isUsefulComment(comment: any, input: CollectorInput): boolean {
     const author = comment?.user?.login ?? '';
-    const content = (comment?.body ?? '').trim().toLowerCase();
+    const content = this.normalizeText(comment?.body ?? '');
 
-    return (
-      comment?.id &&
-      content.length >= 40 &&
-      !author.includes('[bot]') &&
-      !content.startsWith('/claim') &&
-      !content.startsWith('/assign') &&
-      !content.includes('assigned!') &&
-      !content.includes('auto-assigned') &&
-      !content.includes('stale assignment cleanup')
-    );
+    if (!comment?.id || content.length < 50 || author.includes('[bot]')) {
+      return false;
+    }
+
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
+
+    if (!cleaned) {
+      return false;
+    }
+
+    if (this.isLowValueComment(comment?.body ?? content)) {
+      return false;
+    }
+
+    const blockedWords = this.getBlockedWords();
+
+    return !blockedWords.some((word) => content.includes(word));
+  }
+
+  private isLowValueComment(content: string): boolean {
+    const patterns = [
+      /\bthanks\b/i,
+      /\bthank you\b/i,
+      /\bgreat\b/i,
+      /\bgood\b/i,
+      /\bnice\b/i,
+      /^\+1$/i,
+      /\bsame\b/i,
+      /\bme too\b/i,
+      /\bworks\b/i,
+      /\bfixed\b/i,
+      /\bsolved\b/i,
+      /\bresolved\b/i,
+      /\bclosed\b/i,
+      /\bclosing\b/i,
+      /\bmerged\b/i,
+      /\bapproved\b/i,
+      /\bduplicate\b/i,
+      /\bin review\b/i,
+      /\bstarting work\b/i,
+      /\bwork submitted\b/i,
+      /\bpost-merge\b/i,
+      /\bplease assign\b/i,
+      /\bassign it to me\b/i,
+      /\bassign me\b/i,
+      /\bcan you assign\b/i,
+      /\bi would like to work\b/i,
+      /\bunder gssoc\b/i,
+      /\bunder gsoc\b/i,
+      /\bunder ecsoc\b/i,
+      /\bunder ssoc\b/i,
+      /\/assign/i,
+      /\bstart_work\.sh\b/i,
+      /\breview_work\.sh\b/i,
+    ];
+
+    return patterns.some((pattern) => pattern.test(content));
+  }
+
+  private hasBlockedIssueLabel(labels: string): boolean {
+    const blockedLabels = [
+      'good first issue',
+      'first timers only',
+      'help wanted',
+      'gssoc',
+      'gsoc',
+      'ecsoc',
+      'ssoc',
+      'hacktoberfest',
+      'documentation',
+      'question',
+      'discussion',
+    ];
+
+    return blockedLabels.some((word) => labels.includes(word));
+  }
+
+  private hasIgnoredIssueTitle(title: string): boolean {
+    const ignoredTitleTerms = [
+      'general discussion',
+      'discussion',
+      'chat',
+      'random',
+      'off topic',
+      'off-topic',
+      'announcement',
+      'show and tell',
+      'paper note',
+      'post-merge',
+      'release',
+      'chore',
+      'docs:',
+      'doc:',
+    ];
+
+    return ignoredTitleTerms.some((word) => title.includes(word));
+  }
+
+  private isGeneralDiscussionIssue(issue: any): boolean {
+    const title = this.normalizeText(issue?.title ?? '');
+    const labels = this.getIssueLabelsText(issue);
+    const text = `${title} ${labels}`;
+
+    const generalDiscussionTerms = [
+      'general discussion',
+      'discussion',
+      'chat',
+      'random',
+      'off topic',
+      'off-topic',
+      'announcement',
+      'show and tell',
+    ];
+
+    return generalDiscussionTerms.some((term) => text.includes(term));
+  }
+
+  private getIssueLabelsText(issue: any): string {
+    return (issue?.labels ?? [])
+      .map((label: any) => this.normalizeText(label?.name ?? ''))
+      .join(' ');
+  }
+
+  private monitorGitHubRateLimit(headers: Record<string, any>): void {
+    const remaining = Number(headers?.['x-ratelimit-remaining']);
+    const limit = Number(headers?.['x-ratelimit-limit']);
+    const reset = Number(headers?.['x-ratelimit-reset']);
+
+    if (Number.isNaN(remaining)) {
+      return;
+    }
+
+    if (remaining <= 10) {
+      const resetDate = reset
+        ? new Date(reset * 1000).toISOString()
+        : 'unknown';
+
+      this.logger.warn(
+        `GitHub rate limit is low. Remaining: ${remaining}/${limit || 'unknown'}. Reset: ${resetDate}`,
+      );
+    }
+  }
+
+  protected getBlockedWords(): string[] {
+    return super.getBlockedWords('GITHUB_BLOCKED_WORDS');
   }
 
   private buildHeaders(): Record<string, string> {
     const token = this.configService.get<string>('GITHUB_TOKEN');
 
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'NexoraAI-Graduation-Project',
-    };
-
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    return headers;
+    return CollectorHeaderUtil.github(token);
   }
 }
