@@ -1,4 +1,11 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    HttpCode,
+    HttpStatus,
+    Post,
+    Req,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
@@ -36,6 +43,7 @@ export class LoginController {
      * @returns Access token, refresh token, and authenticated user data.
      */
     @Throttle({ default: { limit: 5, ttl: 60000 } })
+    @HttpCode(HttpStatus.OK)
     @Post()
     login(
         @Body() dto: LoginDto,

@@ -1,4 +1,11 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    HttpCode,
+    HttpStatus,
+    Post,
+    Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 
 import { RefreshDto } from '../dto/refresh.dto';
@@ -24,6 +31,9 @@ export class RefreshController {
     /**
      * Refreshes authentication tokens using a valid refresh token.
      *
+     * Returns 200 OK because this operation rotates tokens
+     * without creating a new API resource.
+     *
      * Endpoint:
      * POST /auth/refresh
      *
@@ -32,6 +42,7 @@ export class RefreshController {
      * @returns New access token and refresh token.
      */
     @Post()
+    @HttpCode(HttpStatus.OK)
     refresh(
         @Body() dto: RefreshDto,
         @Req() req: Request,

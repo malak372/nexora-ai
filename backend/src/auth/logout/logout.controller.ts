@@ -1,4 +1,11 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    HttpCode,
+    HttpStatus,
+    Post,
+    Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 
 import { RefreshDto } from '../dto/refresh.dto';
@@ -24,6 +31,9 @@ export class LogoutController {
     /**
      * Logs out the user by revoking the provided refresh token.
      *
+     * Returns 200 OK because logout revokes an existing session
+     * without creating a new API resource.
+     *
      * Endpoint:
      * POST /auth/logout
      *
@@ -32,6 +42,7 @@ export class LogoutController {
      * @returns Logout confirmation message.
      */
     @Post()
+    @HttpCode(HttpStatus.OK)
     logout(
         @Body() dto: RefreshDto,
         @Req() req: Request,
