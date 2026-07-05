@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CollectionSourceType } from '@prisma/client';
-import axios from 'axios';
 
+import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
   CollectorInput,
@@ -9,184 +10,152 @@ import {
   CollectorComment,
 } from '../base/collector.types';
 
+import { CollectorHttpUtil } from '../base/collector-http.util';
+import { CollectorCacheUtil } from '../base/collector-cache.util';
+import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
 /**
- * Reddit public JSON collector.
+ * Reddit collector.
  *
- * Collects public Reddit posts and comments using Reddit JSON endpoints.
+ * Collects public Reddit posts and comments using Reddit public JSON endpoints.
  *
- * Strategy:
- * - Uses domain keywords as the main discovery source.
- * - Uses user keywords as optional filters.
- * - Searches globally and inside relevant subreddits.
- * - Removes deleted, removed, promotional, and low-quality content.
- * - Does not fail the full pipeline if Reddit blocks or rate-limits requests.
- *
- * Limitations:
- * - Does not use Reddit OAuth.
+ * Notes:
+ * - Does not require OAuth.
  * - Works only with public Reddit content.
- * - Reddit public JSON endpoints can return 0 results or rate-limit requests.
- * - Reddit does not provide accurate country/city/region filtering.
+ * - Reddit does not support accurate country/city filtering.
  *
  * @author Malak
  */
 @Injectable()
-export class RedditCollector implements SocialCollector {
+export class RedditCollector extends BaseCollector implements SocialCollector {
   readonly sourceType = CollectionSourceType.REDDIT;
 
   private readonly platformName = 'Reddit';
-  private readonly baseUrl = 'https://old.reddit.com';
-  private readonly userAgent =
-    process.env.REDDIT_USER_AGENT ??
-    'NexoraAI:graduation-project:v1.0.0 (by /u/Master-Food8668)';
+  private readonly baseUrl = 'https://www.reddit.com';
 
-  private readonly maxPosts = 10;
-  private readonly maxCommentsPerPost = 10;
-  private readonly requestTimeoutMs = 15000;
+  constructor(configService: ConfigService) {
+    super(configService, RedditCollector.name);
+  }
 
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
-    const collectedPosts = new Map<string, CollectorPost>();
+    try {
+      const searchQuery = this.buildSearchQuery(input);
 
-    const searchUrls = this.buildSearchUrls(input);
+      if (!searchQuery) {
+        this.logger.warn(
+          'Reddit collection skipped because no search keywords exist.',
+        );
+        return [];
+      }
 
-    console.log('SEARCH URLS');
-    console.log(searchUrls);
+      const urls = this.buildSearchUrls(input, searchQuery);
+      const collectedPosts = new Map<string, CollectorPost>();
 
-    for (const url of searchUrls) {
-      const posts = await this.collectFromUrl(url, input);
+      for (const url of urls) {
+        const posts = await this.collectFromUrl(url, input);
 
-      for (const post of posts) {
-        if (collectedPosts.size >= this.maxPosts) {
-          break;
+        for (const post of posts) {
+          if (collectedPosts.size >= this.maxSavedPosts) break;
+          collectedPosts.set(post.externalId, post);
         }
 
-        collectedPosts.set(post.externalId, post);
+        if (collectedPosts.size >= this.maxSavedPosts) break;
+
+        await this.delay(700);
       }
 
-      if (collectedPosts.size >= this.maxPosts) {
-        break;
-      }
+      const result = Array.from(collectedPosts.values());
 
-      await this.delay(700);
+      this.logger.log(`Reddit collection completed. Posts: ${result.length}`);
+
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        'Reddit collection failed',
+        error.response?.data ?? error.message,
+      );
+
+      return [];
     }
-
-    return Array.from(collectedPosts.values());
   }
 
   private async collectFromUrl(
     url: string,
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
-    console.log('TRY REDDIT URL:', url);
-
     try {
-      const response = await axios.get(url, {
-        headers: this.buildHeaders(),
-        timeout: this.requestTimeoutMs,
-        validateStatus: () => true,
-      });
+      const cacheKey = CollectorCacheUtil.build('reddit', 'posts', [
+        url,
+        input.country,
+        input.language,
+      ]);
 
-      console.log('REDDIT STATUS:', response.status);
+      const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+        url,
+        {
+          headers: this.buildHeaders(),
+          timeout: 10000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
-      const children = response.data?.data?.children ?? [];
+      const children = data?.data?.children ?? [];
+      const seenPostIds = new Set<string>();
 
-      console.log('REDDIT CHILDREN:', children.length);
-
-      const posts: CollectorPost[] = [];
-
-      for (const child of children) {
-        const redditPost = child?.data;
-
-        console.log('POST TITLE:', redditPost?.title);
-
-        if (!this.isValidPost(redditPost)) {
-          console.log('Rejected by isValidPost');
-          continue;
-        }
-
-        if (!this.matchesInputContext(redditPost, input)) {
-          console.log('Rejected by matchesInputContext');
-          continue;
-        }
-
-        const comments = await this.collectPostComments(
-          redditPost.permalink,
-          input.language,
-        );
-
-        posts.push({
-          sourceType: CollectionSourceType.REDDIT,
-          platformName: this.platformName,
-          externalId: redditPost.id,
-          title: redditPost.title,
-          content: this.buildPostContent(redditPost),
-          author: redditPost.author,
-          url: `${this.baseUrl}${redditPost.permalink}`,
-          country: input.country,
-          city: input.city,
-          region: input.region,
-          language: input.language,
-          likesCount: redditPost.ups ?? redditPost.score ?? 0,
-          repliesCount: redditPost.num_comments ?? comments.length,
-          publishedAt: redditPost.created_utc
-            ? new Date(redditPost.created_utc * 1000)
-            : undefined,
-          comments,
-        });
-      }
-
-      return posts;
-    } catch (error: any) {
-      console.log('REDDIT FAILED URL:', url);
-      console.log('REDDIT ERROR STATUS:', error?.response?.status);
-      console.log('REDDIT ERROR MESSAGE:', error?.message);
-      return [];
-    }
-  }
-  private async collectPostComments(
-    permalink: string,
-    language?: string,
-  ): Promise<CollectorComment[]> {
-    const commentsUrl = `${this.baseUrl}${permalink}.json?limit=${this.maxCommentsPerPost}`;
-
-    try {
-      const response = await axios.get(commentsUrl, {
-        headers: this.buildHeaders(),
-        timeout: this.requestTimeoutMs,
-        validateStatus: (status) => status >= 200 && status < 300,
-      });
-
-      const commentChildren = response.data?.[1]?.data?.children ?? [];
-
-      return commentChildren
+      const rankedPosts = children
         .map((child: any) => child?.data)
-        .filter((comment: any) => this.isValidComment(comment))
-        .slice(0, this.maxCommentsPerPost)
-        .map((comment: any): CollectorComment => ({
-          externalId: comment.id,
-          content: comment.body,
-          author: comment.author,
-          language,
-          likesCount: comment.ups ?? comment.score ?? 0,
-          publishedAt: comment.created_utc
-            ? new Date(comment.created_utc * 1000)
-            : undefined,
-        }));
-    } catch {
+        .filter((post: any) => this.isValidPost(post))
+        .filter((post: any) => {
+          const id = post?.id?.toString();
+
+          if (!id || seenPostIds.has(id)) return false;
+
+          seenPostIds.add(id);
+          return true;
+        })
+        .map((post: any) => ({
+          post,
+          score: this.calculatePostRelevanceScore(post, input),
+        }))
+        //.filter((item: any) => item.score > 0)
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, this.maxSavedPosts);
+
+      return Promise.all(
+        rankedPosts.map((item: any) =>
+          this.mapRedditPostToCollectorPost(item.post, input),
+        ),
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `Reddit URL skipped: ${url} - ${error.response?.status ?? error.message}`,
+      );
+
       return [];
     }
   }
 
-  private buildSearchUrls(input: CollectorInput): string[] {
-    const query = this.buildSearchQuery(input);
-    const encodedQuery = encodeURIComponent(query);
+  private buildSearchUrls(
+    input: CollectorInput,
+    searchQuery: string,
+  ): string[] {
+    const encodedQuery = encodeURIComponent(searchQuery);
+    const urls: string[] = [];
 
-    const urls: string[] = [
-      `${this.baseUrl}/search.json?q=${encodedQuery}&sort=relevance&limit=${this.maxPosts}`,
-    ];
+    urls.push(
+      `${this.baseUrl}/search.json?q=${encodedQuery}&sort=relevance&limit=${this.maxFetchedPosts}`,
+    );
 
-    for (const subreddit of this.getSubredditsForDomain(input.domainName)) {
+    const subreddits = this.getSubredditsForDomain(input.domainName);
+
+    for (const subreddit of subreddits.slice(0, 5)) {
       urls.push(
-        `${this.baseUrl}/r/${subreddit}/search.json?q=${encodedQuery}&restrict_sr=1&sort=relevance&limit=${this.maxPosts}`,
+        `${this.baseUrl}/r/${subreddit}/search.json?q=${encodedQuery}&restrict_sr=1&sort=relevance&limit=${this.maxFetchedPosts}`,
       );
     }
 
@@ -194,107 +163,169 @@ export class RedditCollector implements SocialCollector {
   }
 
   private buildSearchQuery(input: CollectorInput): string {
-    const terms = this.getSearchTerms(input).slice(0, 2);
+    const domainKeywords = this.getDomainKeywords(input);
 
-    return terms.length > 0
-      ? terms.join(' OR ')
-      : 'software OR app OR problem';
-  }
+    const fallbackDomain = input.domainName
+      ? [this.normalizeText(input.domainName)]
+      : [];
 
-  private getSearchTerms(input: CollectorInput): string[] {
-    const domainTerms =
-      input.domainKeywords?.length
-        ? input.domainKeywords
-        : this.getFallbackDomainTerms(input.domainName);
-
-    return [...domainTerms, ...(input.keywords ?? [])]
-      .map((term) => term.trim().toLowerCase())
+    const userKeywords = (input.keywords ?? [])
+      .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
+
+    return this.unique([...domainKeywords, ...fallbackDomain, ...userKeywords])
+      .slice(0, 4)
+      .join(' ');
   }
 
-  private getFallbackDomainTerms(domainName?: string): string[] {
-    const domain = domainName?.toLowerCase();
+  private isValidPost(post: any): boolean {
+    const title = post?.title ?? '';
+    const body = post?.selftext ?? '';
+    const author = post?.author ?? '';
+    const content = this.normalizeText(`${title} ${body}`);
+    const blockedWords = this.getBlockedWords();
 
-    const dictionary: Record<string, string[]> = {
-      education: [
-        'education',
-        'student',
-        'school',
-        'teacher',
-        'learning',
-        'course',
-        'exam',
-        'homework',
-        'classroom',
-        'edtech',
-      ],
-      healthcare: [
-        'healthcare',
-        'patient',
-        'clinic',
-        'hospital',
-        'doctor',
-        'appointment',
-        'medical',
-        'health',
-      ],
-      finance: [
-        'finance',
-        'payment',
-        'banking',
-        'wallet',
-        'invoice',
-        'transaction',
-        'budget',
-      ],
-      agriculture: [
-        'agriculture',
-        'farm',
-        'crop',
-        'irrigation',
-        'soil',
-        'harvest',
-      ],
-      tourism: [
-        'tourism',
-        'travel',
-        'booking',
-        'hotel',
-        'tourist',
-        'trip',
-      ],
-      'e-commerce': [
-        'ecommerce',
-        'e-commerce',
-        'cart',
-        'checkout',
-        'order',
-        'payment',
-        'delivery',
-      ],
-      cybersecurity: [
-        'cybersecurity',
-        'security',
-        'privacy',
-        'authentication',
-        'vulnerability',
-        'threat',
-      ],
-      'artificial intelligence': [
-        'ai',
-        'artificial intelligence',
-        'machine learning',
-        'automation',
-        'model',
-      ],
-      other: ['software', 'app', 'platform', 'feature', 'bug', 'problem'],
+    return (
+      Boolean(post?.id) &&
+      Boolean(post?.title) &&
+      Boolean(post?.permalink) &&
+      author !== '[deleted]' &&
+      post.removed_by_category == null &&
+      post.over_18 !== true &&
+      !blockedWords.some((word) => content.includes(word))
+    );
+  }
+
+  private calculatePostRelevanceScore(
+    post: any,
+    input: CollectorInput,
+  ): number {
+    return RelevanceScoreUtil.scoreText({
+      title: post?.title ?? '',
+      body: post?.selftext ?? '',
+      domainTerms: this.getDomainKeywords(input),
+      problemTerms: this.getProblemWords(),
+      likes: post.ups ?? post.score ?? 0,
+      replies: post.num_comments ?? 0,
+      publishedAt: post.created_utc
+        ? new Date(post.created_utc * 1000)
+        : undefined,
+    });
+  }
+
+  private async mapRedditPostToCollectorPost(
+    post: any,
+    input: CollectorInput,
+  ): Promise<CollectorPost> {
+    const comments = await this.collectPostComments(post);
+
+    return {
+      sourceType: CollectionSourceType.REDDIT,
+      platformName: this.platformName,
+      externalId: post.id.toString(),
+      title: post.title,
+      content: this.buildPostContent(post),
+      author: post.author,
+      url: `${this.baseUrl}${post.permalink}`,
+
+      country: input.country,
+      city: input.city,
+      region: input.region,
+
+      language: input.language,
+      likesCount: post.ups ?? post.score ?? 0,
+      repliesCount: post.num_comments ?? comments.length,
+      publishedAt: post.created_utc
+        ? new Date(post.created_utc * 1000)
+        : undefined,
+      comments,
     };
+  }
 
-    return dictionary[domain ?? ''] ?? (domainName ? [domainName] : []);
+  private async collectPostComments(post: any): Promise<CollectorComment[]> {
+    if (!post?.permalink) return [];
+
+    try {
+      const commentsUrl = `${this.baseUrl}${post.permalink}.json?limit=${this.maxFetchedComments}`;
+
+      const cacheKey = CollectorCacheUtil.build('reddit', 'comments', [
+        post.id,
+      ]);
+
+      const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+        commentsUrl,
+        {
+          headers: this.buildHeaders(),
+          timeout: 10000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
+
+      const commentChildren = data?.[1]?.data?.children ?? [];
+      const seenCommentIds = new Set<string>();
+
+      return commentChildren
+        .map((child: any) => child?.data)
+        .filter((comment: any) => this.isUsefulComment(comment))
+        .filter((comment: any) => {
+          const id = comment?.id?.toString();
+
+          if (!id || seenCommentIds.has(id)) return false;
+
+          seenCommentIds.add(id);
+          return true;
+        })
+        .slice(0, this.maxSavedComments)
+        .map((comment: any): CollectorComment => ({
+          externalId: comment.id.toString(),
+          content: comment.body,
+          author: comment.author,
+          likesCount: comment.ups ?? comment.score ?? 0,
+          publishedAt: comment.created_utc
+            ? new Date(comment.created_utc * 1000)
+            : undefined,
+        }));
+    } catch (error: any) {
+  this.logger.warn(
+    `Reddit comments skipped for post ${post.id} - ${
+      error.response?.status ?? error.message
+    }`,
+  );
+
+  return [];
+}
+  }
+
+  private isUsefulComment(comment: any): boolean {
+    const author = comment?.author ?? '';
+    const content = this.normalizeText(comment?.body ?? '');
+
+    if (
+      !comment?.id ||
+      content.length < 20 ||
+      content === '[deleted]' ||
+      content === '[removed]' ||
+      author === '[deleted]'
+    ) {
+      return false;
+    }
+
+    const blockedWords = this.getBlockedWords();
+
+    return !blockedWords.some((word) => content.includes(word));
+  }
+
+  private buildPostContent(post: any): string {
+    return [post.title, post.selftext].filter(Boolean).join('\n\n');
   }
 
   private getSubredditsForDomain(domainName?: string): string[] {
-    const domain = domainName?.toLowerCase();
+    const domain = this.normalizeText(domainName ?? '');
 
     const dictionary: Record<string, string[]> = {
       education: [
@@ -319,77 +350,18 @@ export class RedditCollector implements SocialCollector {
       other: ['technology', 'software', 'programming'],
     };
 
-    return dictionary[domain ?? ''] ?? ['technology', 'software', 'programming'];
+    return dictionary[domain] ?? ['technology', 'software', 'programming'];
   }
 
-  private matchesInputContext(post: any, input: CollectorInput): boolean {
-    const content = [post?.title, post?.selftext, post?.subreddit]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    const userKeywords = input.keywords ?? [];
-
-    if (!userKeywords.length) {
-      return true;
-    }
-
-    return userKeywords.some((term) =>
-      content.includes(term.trim().toLowerCase()),
-    );
-  }
-
-  private isValidPost(post: any): boolean {
-    const title = post?.title ?? '';
-    const body = post?.selftext ?? '';
-    const author = post?.author ?? '';
-    const content = `${title} ${body}`.toLowerCase();
-
-    const blockedWords = [
-      '[deleted]',
-      '[removed]',
-      'hiring',
-      'job',
-      'jobs',
-      'career',
-      'advertisement',
-      'promo',
-      'giveaway',
-      'self promotion',
-      'nsfw',
-    ];
-
-    return (
-      post?.id &&
-      post?.title &&
-      post?.permalink &&
-      author !== '[deleted]' &&
-      post.removed_by_category == null &&
-      post.over_18 !== true &&
-      !blockedWords.some((word) => content.includes(word))
-    );
-  }
-
-  private isValidComment(comment: any): boolean {
-    const author = comment?.author ?? '';
-    const content = (comment?.body ?? '').trim().toLowerCase();
-
-    return (
-      comment?.id &&
-      content.length >= 20 &&
-      content !== '[deleted]' &&
-      content !== '[removed]' &&
-      author !== '[deleted]'
-    );
-  }
-
-  private buildPostContent(post: any): string {
-    return [post.title, post.selftext].filter(Boolean).join('\n\n');
+  protected getBlockedWords(): string[] {
+    return super.getBlockedWords('REDDIT_BLOCKED_WORDS');
   }
 
   private buildHeaders(): Record<string, string> {
     return {
-      'User-Agent': this.userAgent,
+      'User-Agent':
+        this.configService.get<string>('REDDIT_USER_AGENT') ??
+        'NexoraAI/1.0.0 academic-project by Malak',
       Accept: 'application/json',
     };
   }

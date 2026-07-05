@@ -13,43 +13,25 @@ import {
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
-import { CollectorQueryBuilderUtil } from '../base/collector-query-builder.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
  * Stack Overflow collector.
  *
- * Collects public Stack Overflow questions and comments using
- * Stack Exchange API.
+ * Collects public programming-related questions and comments
+ * from Stack Overflow using Stack Exchange API.
  *
- * Strategy:
- * - Uses domainKeywords from the database as the main search context.
- * - Uses problem words to enrich the search query and relevance ranking.
- * - Keeps country, city, region, and language as request metadata only.
- * - Leaves deeper problem/need/sentiment detection to the NLP pipeline.
- *
- * Supports:
- * - Domain-based question search.
- * - Optional user keywords.
- * - Question and comment collection.
- * - Spam and irrelevant content filtering.
- * - Lightweight relevance ordering before storage limits.
- * - Deduplication inside the same collection run.
- * - Retry with exponential backoff.
- * - In-memory caching.
- * - Centralized JSON headers through CollectorHeaderUtil.
- *
- * Notes:
- * - Stack Exchange API does not support real country/city filtering.
- * - Language filtering is not enforced here to avoid changing existing logic.
+ * Note:
+ * Stack Overflow is a technical platform, so results are expected
+ * to be stronger for software, programming, AI, databases, security,
+ * education technology, healthcare software, and finance software topics.
  *
  * @author Malak
  */
 @Injectable()
 export class StackOverflowCollector
   extends BaseCollector
-  implements SocialCollector
-{
+  implements SocialCollector {
   readonly sourceType = CollectionSourceType.STACKOVERFLOW;
 
   private readonly platformName = 'Stack Overflow';
@@ -59,58 +41,59 @@ export class StackOverflowCollector
     super(configService, StackOverflowCollector.name);
   }
 
-  /**
-   * Collects public Stack Overflow questions and their useful comments.
-   *
-   * @param input Collection request context.
-   * @returns A list of normalized collector posts.
-   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchQuery = this.buildSearchQuery(input);
+      const queries = this.buildSearchQueries(input);
 
-      if (!searchQuery) {
+      if (!queries.length) {
         this.logger.warn(
-          'Stack Overflow collection skipped because no domain keywords exist.',
+          'Stack Overflow collection skipped because no search keywords exist.',
         );
         return [];
       }
 
-      const cacheKey = CollectorCacheUtil.build('stackoverflow', 'questions', [
-        searchQuery,
-        input.country,
-        input.language,
-      ]);
+      const allQuestions: any[] = [];
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
-        `${this.apiBaseUrl}/search/advanced`,
-        {
-          headers: this.buildHeaders(),
-          params: {
-            q: searchQuery,
-            site: this.getSite(),
-            sort: 'activity',
-            order: 'desc',
-            pagesize: Math.min(this.maxFetchedPosts, 100),
-            filter: 'withbody',
-            ...this.buildApiKeyParam(),
+      for (const query of queries) {
+        const cacheKey = CollectorCacheUtil.build('stackoverflow', 'questions', [
+          query.q,
+          query.title,
+          query.body,
+          query.tagged,
+          input.country,
+          input.language,
+        ]);
+
+        const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+          `${this.apiBaseUrl}/search/advanced`,
+          {
+            headers: this.buildHeaders(),
+            params: {
+              site: this.getSite(),
+              sort: 'activity',
+              order: 'desc',
+              pagesize: Math.min(this.maxFetchedPosts, 100),
+              filter: 'withbody',
+              ...query,
+              ...this.buildApiKeyParam(),
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+          {
+            cacheKey,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
-      const questions = data?.items ?? [];
+        allQuestions.push(...(data?.items ?? []));
+      }
+
       const seenQuestionIds = new Set<string>();
 
-      const rankedQuestions = questions
+      const rankedQuestions = allQuestions
         .filter((question: any) => this.isValidQuestion(question))
-        .filter((question: any) => this.matchesInputContext(question, input))
         .filter((question: any) => {
           const id = question?.question_id?.toString();
 
@@ -150,88 +133,100 @@ export class StackOverflowCollector
     }
   }
 
-  /**
-   * Builds a Stack Overflow search query using domain keywords,
-   * optional user keywords, and problem-related generated queries.
-   *
-   * @param input Collection request context.
-   * @returns Search query string.
-   */
-  private buildSearchQuery(input: CollectorInput): string {
+  private buildSearchQueries(input: CollectorInput): Record<string, string>[] {
     const domainKeywords = this.getDomainKeywords(input);
 
-    if (!domainKeywords.length) return '';
-
-    const problemWords = this.getProblemWords();
-
-    const problemQueries = CollectorQueryBuilderUtil.buildProblemQueries(
-      domainKeywords,
-      problemWords,
-    );
-
-    const userQueries = (input.keywords ?? [])
+    const userKeywords = (input.keywords ?? [])
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...domainKeywords,
-      ...userQueries,
-      ...problemQueries,
-    ])
-      .slice(0, 8)
-      .join(' ');
+    const keywords = this.unique([...domainKeywords, ...userKeywords]).slice(
+      0,
+      8,
+    );
+
+    if (!keywords.length) return [];
+
+    const mainQuery = keywords.join(' ');
+    const tags = this.buildTags(keywords);
+
+    return [
+      {
+        q: mainQuery,
+      },
+      {
+        title: mainQuery,
+      },
+      {
+        body: mainQuery,
+      },
+      ...(tags
+        ? [
+          {
+            tagged: tags,
+          },
+        ]
+        : []),
+    ];
   }
 
-  /**
-   * Performs lightweight validation before mapping questions.
-   *
-   * @param question Raw Stack Overflow question object.
-   * @returns True if the question is valid for collection.
-   */
+  private buildTags(keywords: string[]): string {
+    const tagMap: Record<string, string> = {
+      ai: 'artificial-intelligence',
+      ml: 'machine-learning',
+      machine: 'machine-learning',
+      learning: 'machine-learning',
+      database: 'database',
+      db: 'database',
+      sql: 'sql',
+      postgres: 'postgresql',
+      postgresql: 'postgresql',
+      backend: 'backend',
+      frontend: 'frontend',
+      web: 'web',
+      mobile: 'mobile',
+      flutter: 'flutter',
+      react: 'reactjs',
+      node: 'node.js',
+      nest: 'nestjs',
+      nestjs: 'nestjs',
+      education: 'education',
+      healthcare: 'healthcare',
+      finance: 'finance',
+      security: 'security',
+      authentication: 'authentication',
+      payment: 'payment',
+      api: 'api',
+    };
+
+    const tags = keywords
+      .map((keyword) => tagMap[keyword] ?? keyword)
+      .map((tag) => tag.replace(/\s+/g, '-'))
+      .filter((tag) => tag.length >= 2)
+      .slice(0, 5);
+
+    return this.unique(tags).join(';');
+  }
+
   private isValidQuestion(question: any): boolean {
     const title = question?.title ?? '';
     const body = question?.body ?? '';
     const content = this.normalizeText(`${title} ${this.stripHtml(body)}`);
 
+    if (
+      !question?.question_id ||
+      !title ||
+      !question?.link ||
+      content.length < 50
+    ) {
+      return false;
+    }
+
     const blockedWords = this.getBlockedWords();
 
-    return (
-      Boolean(question?.question_id) &&
-      Boolean(title) &&
-      Boolean(question?.link) &&
-      !blockedWords.some((word) => content.includes(word))
-    );
+    return !blockedWords.some((word) => content.includes(word));
   }
 
-  /**
-   * Checks whether the question belongs to the selected domain/context.
-   *
-   * @param question Raw Stack Overflow question object.
-   * @param input Collection request context.
-   * @returns True if the question text matches the requested context.
-   */
-  private matchesInputContext(question: any, input: CollectorInput): boolean {
-    const content = this.normalizeText(
-      `${question?.title ?? ''} ${this.stripHtml(question?.body ?? '')}`,
-    );
-
-    const domainKeywords = this.getDomainKeywords(input);
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
-
-    const contextTerms = this.unique([...domainKeywords, ...userKeywords]);
-
-    return contextTerms.some((term) => content.includes(term));
-  }
-
-  /**
-   * Calculates a lightweight relevance score before applying storage limits.
-   *
-   * @param question Raw Stack Overflow question object.
-   * @param input Collection request context.
-   * @returns Numeric relevance score.
-   */
   private calculateQuestionRelevanceScore(
     question: any,
     input: CollectorInput,
@@ -249,18 +244,11 @@ export class StackOverflowCollector
     });
   }
 
-  /**
-   * Maps a Stack Overflow question into the common CollectorPost format.
-   *
-   * @param question Raw Stack Overflow question object.
-   * @param input Collection request context.
-   * @returns Normalized collector post.
-   */
   private async mapQuestionToCollectorPost(
     question: any,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments = await this.collectQuestionComments(question, input);
+    const comments = await this.collectQuestionComments(question);
 
     return {
       sourceType: CollectionSourceType.STACKOVERFLOW,
@@ -278,7 +266,8 @@ export class StackOverflowCollector
       language: input.language,
       likesCount: question.score ?? 0,
       repliesCount:
-        question.answer_count ?? question.comment_count ?? comments.length,
+        (question.answer_count ?? 0) +
+        (question.comment_count ?? comments.length),
       publishedAt: question.creation_date
         ? new Date(question.creation_date * 1000)
         : undefined,
@@ -286,18 +275,8 @@ export class StackOverflowCollector
     };
   }
 
-  /**
-   * Collects and maps useful comments for a Stack Overflow question.
-   *
-   * If comment collection fails, the question is still kept without comments.
-   *
-   * @param question Raw Stack Overflow question object.
-   * @param input Collection request context.
-   * @returns Normalized collector comments.
-   */
   private async collectQuestionComments(
     question: any,
-    input: CollectorInput,
   ): Promise<CollectorComment[]> {
     if (!question?.question_id) return [];
 
@@ -331,7 +310,7 @@ export class StackOverflowCollector
       const seenCommentIds = new Set<string>();
 
       return (data?.items ?? [])
-        .filter((comment: any) => this.isUsefulComment(comment, input))
+        .filter((comment: any) => this.isUsefulComment(comment))
         .filter((comment: any) => {
           const id = comment?.comment_id?.toString();
 
@@ -355,72 +334,58 @@ export class StackOverflowCollector
     }
   }
 
-  /**
-   * Filters comments before storage.
-   *
-   * @param comment Raw Stack Overflow comment object.
-   * @param input Collection request context.
-   * @returns True if the comment is useful for the NLP pipeline.
-   */
-  private isUsefulComment(comment: any, input: CollectorInput): boolean {
+  private isUsefulComment(comment: any): boolean {
     const content = this.normalizeText(this.stripHtml(comment?.body ?? ''));
 
-    if (!comment?.comment_id || content.length < 20) return false;
+    if (!comment?.comment_id || content.length < 30) {
+      return false;
+    }
+
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
+
+    if (!cleaned) {
+      return false;
+    }
+
+    const lowValueComments = new Set([
+      'thanks',
+      'thank you',
+      'great',
+      'good',
+      'nice',
+      '+1',
+      'same',
+      'me too',
+      'works',
+      'fixed',
+      'solved',
+    ]);
+
+    if (lowValueComments.has(content)) {
+      return false;
+    }
 
     const blockedWords = this.getBlockedWords();
 
-    if (blockedWords.some((word) => content.includes(word))) return false;
-
-    const contextTerms = this.unique([
-      ...this.getDomainKeywords(input),
-      ...(input.keywords ?? []).map((keyword) => this.normalizeText(keyword)),
-    ]).filter(Boolean);
-
-    return contextTerms.some((term) => content.includes(term));
+    return !blockedWords.some((word) => content.includes(word));
   }
 
-  /**
-   * Reads common blocked words and Stack Overflow-specific blocked words.
-   *
-   * @returns A normalized list of blocked words.
-   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('STACKOVERFLOW_BLOCKED_WORDS');
   }
 
-  /**
-   * Returns the Stack Exchange site identifier.
-   *
-   * Defaults to "stackoverflow" if STACKOVERFLOW_SITE is not defined.
-   *
-   * @returns Stack Exchange site name.
-   */
   private getSite(): string {
     return (
       this.configService.get<string>('STACKOVERFLOW_SITE') || 'stackoverflow'
     );
   }
 
-  /**
-   * Builds the optional Stack Exchange API key parameter.
-   *
-   * @returns Object containing the API key if configured.
-   */
   private buildApiKeyParam(): Record<string, string> {
     const key = this.configService.get<string>('STACKOVERFLOW_API_KEY');
 
     return key ? { key } : {};
   }
 
-  /**
-   * Builds JSON request headers using the shared header utility.
-   *
-   * Keeps the previous behavior:
-   * - Accepts JSON responses.
-   * - Adds the project User-Agent.
-   *
-   * @returns HTTP request headers.
-   */
   private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
   }

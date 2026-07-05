@@ -21,6 +21,9 @@ import { TelegramCollector } from './telegram/telegram.collector';
 import { TikTokCollector } from './tiktok/tiktok.collector';
 import { XCollector } from './x/x.collector';
 import { YouTubeCollector } from './youtube/youtube.collector';
+import { HackerNewsCollector } from './hacker-news/hacker-news.collector';
+import { ProductHuntCollector } from './product-hunt/product-hunt.collector';
+import { DevToCollector } from './dev-to/dev-to.collector';
 
 /**
  * Factory responsible for returning the correct collector
@@ -51,6 +54,9 @@ export class CollectorsFactory {
     private readonly newsCollector: NewsCollector,
     private readonly appStoreCollector: AppStoreCollector,
     private readonly googlePlayCollector: GooglePlayCollector,
+    private readonly hackerNewsCollector: HackerNewsCollector,
+    private readonly productHuntCollector: ProductHuntCollector,
+    private readonly devToCollector: DevToCollector,
   ) {
     this.collectors = new Map<CollectionSourceType, SocialCollector>([
       [CollectionSourceType.MOCK, this.mockCollector],
@@ -71,6 +77,9 @@ export class CollectorsFactory {
       [CollectionSourceType.NEWS, this.newsCollector],
       [CollectionSourceType.APP_STORE, this.appStoreCollector],
       [CollectionSourceType.GOOGLE_PLAY, this.googlePlayCollector],
+      [CollectionSourceType.HACKER_NEWS, this.hackerNewsCollector],
+      [CollectionSourceType.PRODUCT_HUNT, this.productHuntCollector],
+      [CollectionSourceType.DEV_TO, this.devToCollector],
     ]);
   }
 

@@ -3,12 +3,16 @@
  *
  * Used by all collectors to rank collected posts before saving.
  *
- * The score is based on:
+ * This utility stays generic and domain-neutral.
+ * It does not penalize specific content types such as songs, vlogs,
+ * or entertainment content because those may be valid results
+ * depending on the selected domain.
+ *
+ * Score is based on:
  * - Domain relevance.
- * - Problem / need signals.
+ * - Problem / need relevance.
  * - Engagement.
  * - Recency.
- * - Noise reduction for entertainment or unrelated content.
  *
  * @author Malak
  */
@@ -16,10 +20,10 @@ export class RelevanceScoreUtil {
   /**
    * Calculates a relevance score for a collected text item.
    *
-   * Higher score means the content is more useful for the NLP pipeline
-   * and more likely to represent a real user problem, need, or discussion.
+   * Higher scores mean the content is more relevant to the selected domain
+   * and more useful for later NLP analysis.
    *
-   * @param input Text, domain terms, problem terms, engagement, and date data.
+   * @param input Text, ranking terms, engagement values, and publish date.
    * @returns Numeric relevance score.
    */
   static scoreText(input: {
@@ -37,12 +41,14 @@ export class RelevanceScoreUtil {
   }): number {
     const title = this.normalize(input.title ?? '');
     const body = this.normalize(input.body ?? '');
-    const text = `${title} ${body}`;
 
     let score = 0;
 
     /**
      * Domain relevance.
+     *
+     * Title matches are weighted higher because the title usually
+     * represents the main topic of the post.
      */
     for (const term of input.domainTerms) {
       const normalizedTerm = this.normalize(term);
@@ -54,7 +60,10 @@ export class RelevanceScoreUtil {
     }
 
     /**
-     * Problem relevance from collector/base problem terms.
+     * Problem / need relevance.
+     *
+     * These terms help prioritize content that may describe
+     * real problems, requests, complaints, or unmet needs.
      */
     for (const term of input.problemTerms) {
       const normalizedTerm = this.normalize(term);
@@ -66,90 +75,10 @@ export class RelevanceScoreUtil {
     }
 
     /**
-     * Extra pain signals.
-     *
-     * These words usually indicate that the content contains
-     * a real problem, complaint, unmet need, or user struggle.
-     */
-    const painSignals = [
-      'problem',
-      'issue',
-      'struggle',
-      'challenge',
-      'difficult',
-      'difficulty',
-      'hard to',
-      'need',
-      'needs',
-      'can’t',
-      "can't",
-      'cannot',
-      'failed',
-      'failure',
-      'expensive',
-      'costly',
-      'debt',
-      'stress',
-      'confusing',
-      'lack of',
-      'missing',
-      'broken',
-      'error',
-      'bug',
-      'blocked',
-      'delay',
-      'waiting',
-      'complaint',
-      'request',
-      'improve',
-      'help',
-    ];
-
-    for (const signal of painSignals) {
-      if (title.includes(signal)) score += 25;
-      if (body.includes(signal)) score += 10;
-    }
-
-    /**
-     * Noise signals.
-     *
-     * These words often indicate entertainment, music, or generic content
-     * that may be less useful for software idea discovery.
-     */
-    const noiseSignals = [
-      'song',
-      'official video',
-      'lyrics',
-      'music',
-      'vlog',
-      'day in the life',
-      'funny',
-      'comedy',
-      'reaction',
-      'challenge video',
-      'shorts',
-      'trailer',
-      'teaser',
-      'dance',
-      'prank',
-    ];
-
-    for (const signal of noiseSignals) {
-      if (title.includes(signal)) score -= 40;
-      if (body.includes(signal)) score -= 15;
-    }
-
-    /**
-     * Strong discussion bonus.
-     *
-     * Content with real discussion is more useful for extracting
-     * repeated problems and unmet needs.
-     */
-    if ((input.replies ?? 0) >= 5) score += 10;
-    if ((input.replies ?? 0) >= 20) score += 15;
-
-    /**
      * Engagement.
+     *
+     * Engagement is capped so popular but weakly relevant content
+     * does not dominate the ranking.
      */
     score += Math.min(input.likes ?? 0, 50);
     score += Math.min(input.replies ?? 0, 50);
@@ -157,6 +86,9 @@ export class RelevanceScoreUtil {
 
     /**
      * Recency.
+     *
+     * Recent content receives a small bonus because it is usually
+     * more useful for identifying current market or community needs.
      */
     if (input.publishedAt) {
       const daysOld =
@@ -169,21 +101,14 @@ export class RelevanceScoreUtil {
       }
     }
 
-    /**
-     * Empty or very weak content should not rank highly.
-     */
-    if (text.length < 40) {
-      score -= 20;
-    }
-
-    return Math.max(score, 0);
+    return score;
   }
 
   /**
    * Normalizes text before matching.
    *
    * @param text Raw text.
-   * @returns Lowercase trimmed text with normalized spaces.
+   * @returns Lowercase trimmed text with normalized whitespace.
    */
   private static normalize(text: string): string {
     return text.replace(/\s+/g, ' ').trim().toLowerCase();

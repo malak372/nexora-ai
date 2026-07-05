@@ -264,20 +264,10 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const description = video?.snippet?.description ?? '';
     const content = this.normalizeText(`${title} ${description}`);
 
-    if (
-      !CollectorLanguageUtil.matchesRequestedLanguage(content, input.language)
-    ) {
-      return false;
-    }
-
-    const domainKeywords = this.getDomainKeywords(input);
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
-
-    const contextTerms = this.unique([...domainKeywords, ...userKeywords]);
-
-    return contextTerms.some((term) => content.includes(term));
+    return CollectorLanguageUtil.matchesRequestedLanguage(
+      content,
+      input.language,
+    );
   }
 
   /**
@@ -465,7 +455,15 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const rawContent = comment?.snippet?.textDisplay ?? '';
     const content = this.normalizeText(rawContent);
 
-    if (!comment?.id || content.length < 50) return false;
+    if (!comment?.id || content.length < 50) {
+      return false;
+    }
+
+    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+
+    if (!cleaned) {
+      return false;
+    }
 
     if (
       !CollectorLanguageUtil.matchesRequestedLanguage(content, input.language)
@@ -473,18 +471,27 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       return false;
     }
 
+    const lowValueComments = new Set([
+      'thanks',
+      'thank you',
+      'great',
+      'good',
+      'nice',
+      'awesome',
+      'love it',
+      'very good',
+      'great video',
+      'nice video',
+      'good video',
+    ]);
+
+    if (lowValueComments.has(content)) {
+      return false;
+    }
+
     const blockedWords = this.getBlockedWords();
 
-    if (blockedWords.some((word) => content.includes(word))) return false;
-
-    const domainKeywords = this.getDomainKeywords(input);
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
-
-    const contextTerms = this.unique([...domainKeywords, ...userKeywords]);
-
-    return contextTerms.some((term) => content.includes(term));
+    return !blockedWords.some((word) => content.includes(word));
   }
 
   /**

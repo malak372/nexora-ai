@@ -13,7 +13,6 @@ import {
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
-import { CollectorQueryBuilderUtil } from '../base/collector-query-builder.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
@@ -21,22 +20,18 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
  *
  * Collects public GitHub issues and issue comments using GitHub REST API.
  *
- * Strategy:
- * - Uses domainKeywords from the database as the main search context.
- * - Uses problem words only to improve search queries and ranking.
- * - Does not reject issues only because they do not explicitly contain
- *   words like "problem" or "issue".
- * - Leaves deeper problem/need/sentiment detection to the NLP pipeline.
- *
  * Supports:
- * - Domain-based search.
+ * - Domain-based issue search.
  * - Optional user keywords.
- * - Filtering spam, jobs, bots, pull requests, and irrelevant content.
- * - Lightweight relevance ordering before storage limits.
- * - Deduplication inside the same collection run.
+ * - Pull request exclusion.
+ * - General discussion and contribution-noise filtering.
+ * - Spam, jobs, bots, and low-value comments filtering.
+ * - Lightweight relevance scoring.
+ * - Deduplication.
  * - Retry with exponential backoff.
  * - In-memory caching.
- * - Centralized GitHub request headers through CollectorHeaderUtil.
+ * - GitHub ETag / If-None-Match support.
+ * - GitHub rate-limit monitoring.
  *
  * Notes:
  * - GitHub does not support real country/city filtering for public issues.
@@ -55,19 +50,6 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     super(configService, GitHubCollector.name);
   }
 
-  /**
-   * Collects public GitHub issues and their useful comments.
-   *
-   * The method:
-   * - Builds a GitHub search query from domain keywords and user keywords.
-   * - Fetches issues from GitHub Search API.
-   * - Filters invalid, duplicated, or irrelevant issues.
-   * - Scores issues by relevance.
-   * - Maps selected issues into the common CollectorPost format.
-   *
-   * @param input Collection request context.
-   * @returns A list of normalized collector posts.
-   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -85,7 +67,7 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         input.language,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+      const response = await CollectorHttpUtil.getWithRetryCacheAndHeaders<any>(
         `${this.apiBaseUrl}/search/issues`,
         {
           headers: this.buildHeaders(),
@@ -99,18 +81,20 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         },
         {
           cacheKey,
+          etagCacheKey: `${cacheKey}:etag`,
           cacheTtlMs: this.cacheTtlMs,
           retryAttempts: this.retryAttempts,
           retryDelayMs: this.retryDelayMs,
         },
       );
 
-      const issues = data?.items ?? [];
+      this.monitorGitHubRateLimit(response.headers);
+
+      const issues = response.data?.items ?? [];
       const seenIssueIds = new Set<string>();
 
       const rankedIssues = issues
         .filter((issue: any) => this.isValidIssue(issue))
-        .filter((issue: any) => this.matchesInputContext(issue, input))
         .filter((issue: any) => {
           const id = issue?.id?.toString();
 
@@ -150,21 +134,6 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     }
   }
 
-  /**
-   * Builds a GitHub issues search query using:
-   * - Domain keywords.
-   * - Optional user-provided keywords.
-   * - Generated problem-related search queries.
-   *
-   * GitHub search qualifiers are added to:
-   * - Search only issues.
-   * - Exclude pull requests.
-   * - Prefer issues with comments.
-   * - Limit results to recently updated issues.
-   *
-   * @param input Collection request context.
-   * @returns GitHub Search API query string.
-   */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -176,97 +145,85 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
 
+    const domainName = input.domainName
+      ? this.normalizeText(input.domainName)
+      : '';
+
     const terms = this.unique([
-      ...userQueries,
+      domainName,
       ...domainKeywords,
-    ]).slice(0, 3);
+      ...userQueries,
+    ])
+      .filter((term) => term.length >= 3)
+      .slice(0, 5);
 
     const searchTerms = terms.map((term) => `"${term}"`).join(' OR ');
 
     return [
-      searchTerms,
+      `(${searchTerms})`,
+      'in:title,body',
       'is:issue',
       '-is:pr',
-      'comments:>0',
-      'updated:>2024-01-01',
+      'state:open',
+      'comments:>1',
+      'updated:>2025-01-01',
+      '-label:discussion',
+      '-label:question',
+      '-label:documentation',
+      '-label:"good first issue"',
+      '-label:"help wanted"',
     ].join(' ');
   }
 
-  /**
-   * Performs lightweight validation before mapping issues.
-   *
-   * Rejects:
-   * - Missing issue IDs.
-   * - Empty titles.
-   * - Pull requests.
-   * - Issues without comments.
-   * - Bot authors.
-   * - Job-related URLs.
-   * - Content containing blocked words.
-   *
-   * @param issue Raw GitHub issue object.
-   * @returns True if the issue is valid for collection.
-   */
   private isValidIssue(issue: any): boolean {
     const title = issue?.title ?? '';
     const body = issue?.body ?? '';
     const author = issue?.user?.login ?? '';
     const url = issue?.html_url ?? '';
-    const content = this.normalizeText(`${title} ${body}`);
 
+    const normalizedTitle = this.normalizeText(title);
+    const content = this.normalizeText(`${title} ${body}`);
+    const labels = this.getIssueLabelsText(issue);
     const blockedWords = this.getBlockedWords();
 
-    return (
-      Boolean(issue?.id) &&
-      Boolean(title) &&
-      !issue?.pull_request &&
-      issue.comments > 0 &&
-      !author.includes('[bot]') &&
-      !url.includes('/jobs/') &&
-      !blockedWords.some((word) => content.includes(word))
-    );
+    if (
+      !issue?.id ||
+      !title ||
+      !url ||
+      issue?.pull_request ||
+      issue.comments <= 1 ||
+      author.includes('[bot]') ||
+      url.includes('/jobs/') ||
+      content.length < 80
+    ) {
+      return false;
+    }
+
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
+
+    if (!cleaned) {
+      return false;
+    }
+
+    if (blockedWords.some((word) => content.includes(word))) {
+      return false;
+    }
+
+    if (this.hasBlockedIssueLabel(labels)) {
+      return false;
+    }
+
+    if (this.isGeneralDiscussionIssue(issue)) {
+      return false;
+    }
+
+    if (this.hasIgnoredIssueTitle(normalizedTitle)) {
+      return false;
+    }
+
+    return true;
   }
 
-  /**
-   * Checks whether the issue belongs to the selected domain/context.
-   *
-   * GitHub does not support reliable country, city, or region filtering,
-   * so this method only validates textual relevance using domain and user keywords.
-   *
-   * @param issue Raw GitHub issue object.
-   * @param input Collection request context.
-   * @returns True if the issue text matches the requested context.
-   */
-  private matchesInputContext(issue: any, input: CollectorInput): boolean {
-    const content = this.normalizeText(
-      `${issue?.title ?? ''} ${issue?.body ?? ''}`,
-    );
-
-    const domainKeywords = this.getDomainKeywords(input);
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
-
-    const contextTerms = this.unique([...domainKeywords, ...userKeywords]);
-
-    return contextTerms.some((term) => content.includes(term));
-  }
-
-  /**
-   * Calculates a lightweight relevance score before applying storage limits.
-   *
-   * The score considers:
-   * - Title and body relevance.
-   * - Domain keywords.
-   * - Problem-related terms.
-   * - Reactions count.
-   * - Comments count.
-   * - Publication date.
-   *
-   * @param issue Raw GitHub issue object.
-   * @param input Collection request context.
-   * @returns Numeric relevance score.
-   */
   private calculateIssueRelevanceScore(
     issue: any,
     input: CollectorInput,
@@ -282,15 +239,6 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     });
   }
 
-  /**
-   * Maps a GitHub issue into the common CollectorPost format.
-   *
-   * Also collects useful issue comments and attaches them to the post.
-   *
-   * @param issue Raw GitHub issue object.
-   * @param input Collection request context.
-   * @returns Normalized collector post.
-   */
   private async mapIssueToCollectorPost(
     issue: any,
     input: CollectorInput,
@@ -318,22 +266,6 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     };
   }
 
-  /**
-   * Collects and maps useful comments for a GitHub issue.
-   *
-   * The method:
-   * - Skips issues without comments.
-   * - Uses cache and retry support through CollectorHttpUtil.
-   * - Removes duplicate comments inside the same run.
-   * - Sorts comments by reaction count.
-   * - Limits stored comments according to collector configuration.
-   *
-   * If comment collection fails, the issue is still kept without comments.
-   *
-   * @param issue Raw GitHub issue object.
-   * @param input Collection request context.
-   * @returns Normalized collector comments.
-   */
   private async collectIssueComments(
     issue: any,
     input: CollectorInput,
@@ -347,23 +279,28 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         issue.id,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any[]>(
-        issue.comments_url,
-        {
-          headers: this.buildHeaders(),
-          params: {
-            per_page: Math.min(this.maxFetchedComments, 100),
+      const response =
+        await CollectorHttpUtil.getWithRetryCacheAndHeaders<any[]>(
+          issue.comments_url,
+          {
+            headers: this.buildHeaders(),
+            params: {
+              per_page: Math.min(this.maxFetchedComments, 100),
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+          {
+            cacheKey,
+            etagCacheKey: `${cacheKey}:etag`,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
+      this.monitorGitHubRateLimit(response.headers);
+
+      const data = response.data;
       const seenCommentIds = new Set<string>();
 
       return (data ?? [])
@@ -393,25 +330,16 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
             ? new Date(comment.created_at)
             : undefined,
         }));
-    } catch {
+    } catch (error: any) {
+      this.logger.warn(
+        `GitHub comments collection failed for issue ${issue?.id}`,
+        error.response?.data ?? error.message,
+      );
+
       return [];
     }
   }
 
-  /**
-   * Filters comments before storage.
-   *
-   * Rejects:
-   * - Missing comment IDs.
-   * - Very short comments.
-   * - Bot authors.
-   * - Blocked words.
-   * - Comments unrelated to the selected domain/context.
-   *
-   * @param comment Raw GitHub issue comment object.
-   * @param input Collection request context.
-   * @returns True if the comment is useful for the NLP pipeline.
-   */
   private isUsefulComment(comment: any, input: CollectorInput): boolean {
     const author = comment?.user?.login ?? '';
     const content = this.normalizeText(comment?.body ?? '');
@@ -420,45 +348,149 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       return false;
     }
 
-    const blockedWords = this.getBlockedWords();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
 
-    if (blockedWords.some((word) => content.includes(word))) {
+    if (!cleaned) {
       return false;
     }
 
-    const domainKeywords = this.getDomainKeywords(input);
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
+    if (this.isLowValueComment(comment?.body ?? content)) {
+      return false;
+    }
 
-    const contextTerms = this.unique([...domainKeywords, ...userKeywords]);
+    const blockedWords = this.getBlockedWords();
 
-    return contextTerms.some((term) => content.includes(term));
+    return !blockedWords.some((word) => content.includes(word));
   }
 
-  /**
-   * Reads common blocked words and GitHub-specific blocked words.
-   *
-   * The environment variable GITHUB_BLOCKED_WORDS can be used
-   * to add platform-specific blocked words without changing code.
-   *
-   * @returns A normalized list of blocked words.
-   */
+  private isLowValueComment(content: string): boolean {
+    const patterns = [
+      /\bthanks\b/i,
+      /\bthank you\b/i,
+      /\bgreat\b/i,
+      /\bgood\b/i,
+      /\bnice\b/i,
+      /^\+1$/i,
+      /\bsame\b/i,
+      /\bme too\b/i,
+      /\bworks\b/i,
+      /\bfixed\b/i,
+      /\bsolved\b/i,
+      /\bresolved\b/i,
+      /\bclosed\b/i,
+      /\bclosing\b/i,
+      /\bmerged\b/i,
+      /\bapproved\b/i,
+      /\bduplicate\b/i,
+      /\bin review\b/i,
+      /\bstarting work\b/i,
+      /\bwork submitted\b/i,
+      /\bpost-merge\b/i,
+      /\bplease assign\b/i,
+      /\bassign it to me\b/i,
+      /\bassign me\b/i,
+      /\bcan you assign\b/i,
+      /\bi would like to work\b/i,
+      /\bunder gssoc\b/i,
+      /\bunder gsoc\b/i,
+      /\bunder ecsoc\b/i,
+      /\bunder ssoc\b/i,
+      /\/assign/i,
+      /\bstart_work\.sh\b/i,
+      /\breview_work\.sh\b/i,
+    ];
+
+    return patterns.some((pattern) => pattern.test(content));
+  }
+
+  private hasBlockedIssueLabel(labels: string): boolean {
+    const blockedLabels = [
+      'good first issue',
+      'first timers only',
+      'help wanted',
+      'gssoc',
+      'gsoc',
+      'ecsoc',
+      'ssoc',
+      'hacktoberfest',
+      'documentation',
+      'question',
+      'discussion',
+    ];
+
+    return blockedLabels.some((word) => labels.includes(word));
+  }
+
+  private hasIgnoredIssueTitle(title: string): boolean {
+    const ignoredTitleTerms = [
+      'general discussion',
+      'discussion',
+      'chat',
+      'random',
+      'off topic',
+      'off-topic',
+      'announcement',
+      'show and tell',
+      'paper note',
+      'post-merge',
+      'release',
+      'chore',
+      'docs:',
+      'doc:',
+    ];
+
+    return ignoredTitleTerms.some((word) => title.includes(word));
+  }
+
+  private isGeneralDiscussionIssue(issue: any): boolean {
+    const title = this.normalizeText(issue?.title ?? '');
+    const labels = this.getIssueLabelsText(issue);
+    const text = `${title} ${labels}`;
+
+    const generalDiscussionTerms = [
+      'general discussion',
+      'discussion',
+      'chat',
+      'random',
+      'off topic',
+      'off-topic',
+      'announcement',
+      'show and tell',
+    ];
+
+    return generalDiscussionTerms.some((term) => text.includes(term));
+  }
+
+  private getIssueLabelsText(issue: any): string {
+    return (issue?.labels ?? [])
+      .map((label: any) => this.normalizeText(label?.name ?? ''))
+      .join(' ');
+  }
+
+  private monitorGitHubRateLimit(headers: Record<string, any>): void {
+    const remaining = Number(headers?.['x-ratelimit-remaining']);
+    const limit = Number(headers?.['x-ratelimit-limit']);
+    const reset = Number(headers?.['x-ratelimit-reset']);
+
+    if (Number.isNaN(remaining)) {
+      return;
+    }
+
+    if (remaining <= 10) {
+      const resetDate = reset
+        ? new Date(reset * 1000).toISOString()
+        : 'unknown';
+
+      this.logger.warn(
+        `GitHub rate limit is low. Remaining: ${remaining}/${limit || 'unknown'}. Reset: ${resetDate}`,
+      );
+    }
+  }
+
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('GITHUB_BLOCKED_WORDS');
   }
 
-  /**
-   * Builds GitHub request headers using the shared header utility.
-   *
-   * Keeps the previous behavior:
-   * - Uses GitHub media type.
-   * - Uses GitHub REST API version.
-   * - Adds User-Agent.
-   * - Adds Authorization only when GITHUB_TOKEN exists.
-   *
-   * @returns GitHub API request headers.
-   */
   private buildHeaders(): Record<string, string> {
     const token = this.configService.get<string>('GITHUB_TOKEN');
 
