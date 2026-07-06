@@ -6,17 +6,46 @@ import appStore from 'app-store-scraper';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
+import { CollectorLanguageUtil } from '../base/collector-language.util';
+import { CollectorRegionUtil } from '../base/collector-region.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type AppStoreApp = {
+  id?: string | number;
+  appId?: string | number;
+  title?: string;
+  description?: string;
+  summary?: string;
+  developer?: string;
+  url?: string;
+  reviews?: number;
+  ratings?: number;
+  released?: string | Date;
+};
+
+type AppStoreReview = {
+  id?: string | number;
+  text?: string;
+  userName?: string;
+  score?: number;
+  updated?: string | Date;
+  date?: string | Date;
+};
 
 /**
  * Apple App Store collector.
  *
- * Collects public App Store apps and reviews using app-store-scraper.
+ * Collects public App Store apps and public user reviews using
+ * app-store-scraper.
+ *
+ * Notes:
+ * - App Store search requires a supported storefront country code.
+ * - If a country is not supported or not provided, US is used as fallback.
  *
  * @author Malak
  */
@@ -30,6 +59,10 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     super(configService, AppStoreCollector.name);
   }
 
+  /**
+   * Collects App Store apps matching the selected domain/search input,
+   * ranks them by relevance, and attaches useful public reviews.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -41,40 +74,49 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
         return [];
       }
 
-      const apps = await appStore.search({
+      const apps = (await appStore.search({
         term: searchQuery,
         num: Math.min(this.maxFetchedPosts, 20),
         country: this.resolveCountry(input.country),
         lang: this.resolveLanguage(input.language),
-      });
+      })) as AppStoreApp[];
 
       this.logger.log(`App Store search query: ${searchQuery}`);
       this.logger.log(`App Store apps returned: ${apps.length}`);
 
       const rankedApps = apps
-        .filter((app: any) => this.isValidApp(app))
-        .map((app: any) => ({
+        .filter((app) => this.isValidApp(app))
+        .map((app) => ({
           app,
           score: this.calculateAppRelevanceScore(app, input),
         }))
-        .sort((a: any, b: any) => b.score - a.score)
+        .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item: any) =>
-          this.mapAppToCollectorPost(item.app, input),
-        ),
+        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
       );
 
       this.logger.log(`App Store collection completed. Apps: ${posts.length}`);
 
       return posts;
-    } catch (error: any) {
-      this.logger.warn('App Store collection failed', error?.message ?? error);
+    } catch (error: unknown) {
+      this.logger.warn(
+        'App Store collection failed',
+        error instanceof Error ? error.message : error,
+      );
       return [];
     }
   }
 
+  /**
+   * Builds the App Store search query.
+   *
+   * Priority:
+   * 1. User keyword.
+   * 2. Domain name.
+   * 3. First domain keyword.
+   */
   private buildSearchQuery(input: CollectorInput): string {
     const userKeyword = input.keywords?.[0]
       ? this.normalizeText(input.keywords[0])
@@ -89,39 +131,46 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     return this.getDomainKeywords(input)[0] ?? '';
   }
 
-  private isValidApp(app: any): boolean {
+  /**
+   * Checks whether an app has enough required data and is not blocked.
+   */
+  private isValidApp(app: AppStoreApp): boolean {
     const appId = this.getAppId(app);
 
-    const title = this.normalizeText(app?.title ?? '');
-    const description = this.normalizeText(
-      app?.description ?? app?.summary ?? '',
-    );
+    const title = this.normalizeText(app.title ?? '');
+    const description = this.normalizeText(app.description ?? app.summary ?? '');
 
     if (!appId || !title) return false;
 
-    const blockedWords = this.getBlockedWords();
+    const blockedWords = this.getAppStoreBlockedWords();
     const content = `${title} ${description}`;
 
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Calculates relevance score using the shared scoring utility.
+   */
   private calculateAppRelevanceScore(
-    app: any,
+    app: AppStoreApp,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: app?.title ?? '',
-      body: app?.description ?? app?.summary ?? '',
+      title: app.title ?? '',
+      body: app.description ?? app.summary ?? '',
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
-      likes: app?.reviews ?? app?.ratings ?? 0,
-      replies: app?.reviews ?? app?.ratings ?? 0,
-      publishedAt: app?.released ? new Date(app.released) : undefined,
+      likes: app.reviews ?? app.ratings ?? 0,
+      replies: app.reviews ?? app.ratings ?? 0,
+      publishedAt: app.released ? new Date(app.released) : undefined,
     });
   }
 
+  /**
+   * Maps an App Store app to the unified CollectorPost format.
+   */
   private async mapAppToCollectorPost(
-    app: any,
+    app: AppStoreApp,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const appId = this.getAppId(app);
@@ -133,7 +182,7 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
       platformName: this.platformName,
       externalId: appId.toString(),
       title: app.title,
-      content: app.description ?? app.summary ?? app.title,
+      content: app.description ?? app.summary ?? app.title ?? '',
       author: app.developer,
       url: app.url,
 
@@ -149,24 +198,27 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     };
   }
 
+  /**
+   * Collects recent public reviews for a specific App Store app.
+   */
   private async collectAppReviews(
     appId: string | number,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
     try {
-      const reviews = await appStore.reviews({
+      const reviews = (await appStore.reviews({
         id: appId,
         page: 1,
         country: this.resolveCountry(input.country),
         sort: appStore.sort.RECENT,
-      });
+      })) as AppStoreReview[];
 
       return (reviews ?? [])
-        .filter((review: any) => this.isUsefulReview(review))
+        .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
-        .map((review: any): CollectorComment => ({
+        .map((review): CollectorComment => ({
           externalId: review.id?.toString() ?? `${appId}-${review.date}`,
-          content: review.text,
+          content: review.text ?? '',
           author: review.userName,
           language: input.language,
           likesCount: review.score ?? 0,
@@ -176,20 +228,31 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
               ? new Date(review.date)
               : undefined,
         }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.warn(
         `Failed to collect reviews for app ${appId}`,
-        error?.message ?? error,
+        error instanceof Error ? error.message : error,
       );
 
       return [];
     }
   }
 
-  private isUsefulReview(review: any): boolean {
-    const content = this.normalizeText(review?.text ?? '');
+  /**
+   * Filters out short, low-value, blocked, or language-mismatched reviews.
+   */
+  private isUsefulReview(
+    review: AppStoreReview,
+    language?: string,
+  ): boolean {
+    const rawContent = review.text ?? '';
+    const content = this.normalizeText(rawContent);
 
-    if (!review?.id || content.length < 40) {
+    if (!review.id || content.length < 40) {
+      return false;
+    }
+
+    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
       return false;
     }
 
@@ -219,36 +282,44 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
       return false;
     }
 
-    const blockedWords = this.getBlockedWords();
+    const blockedWords = this.getAppStoreBlockedWords();
 
     return !blockedWords.some((word) => content.includes(word));
   }
 
-  private getAppId(app: any): string | number {
-    return app?.id ?? app?.appId;
+  /**
+   * Extracts the app identifier from app-store-scraper response.
+   */
+  private getAppId(app: AppStoreApp): string | number {
+    return app.id ?? app.appId ?? '';
   }
 
-  protected getBlockedWords(): string[] {
+  /**
+   * Reads common blocked words and App Store-specific blocked words.
+   */
+  private getAppStoreBlockedWords(): string[] {
     return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
   }
 
+  /**
+   * Resolves the requested language to an App Store-supported language code.
+   */
   private resolveLanguage(language?: string): string {
-    const normalized = this.normalizeText(language ?? '');
-
-    if (normalized === 'ar' || normalized === 'arabic') return 'ar';
-    if (normalized === 'en' || normalized === 'english') return 'en';
-
-    return 'en';
+    return CollectorLanguageUtil.resolveLanguageCode(language) ?? 'en';
   }
 
+  /**
+   * Resolves country into App Store storefront code.
+   *
+   * Palestine is mapped to US because App Store storefront support
+   * for Palestine is not reliably available in app-store-scraper.
+   */
   private resolveCountry(country?: string): string {
-    const normalized = this.normalizeText(country ?? '');
+    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
 
-    if (normalized === 'palestine') return 'us';
-    if (normalized === 'jordan') return 'jo';
-    if (normalized === 'saudi arabia') return 'sa';
-    if (normalized === 'egypt') return 'eg';
+    if (!regionCode) return 'us';
+    if (regionCode === 'PS') return 'us';
 
-    return 'us';
+    return regionCode.toLowerCase();
   }
 }

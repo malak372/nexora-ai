@@ -5,37 +5,75 @@ import { CollectionSourceType } from '@prisma/client';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type GitHubUser = {
+  login?: string;
+};
+
+type GitHubLabel = {
+  name?: string;
+};
+
+type GitHubReactions = {
+  total_count?: number;
+};
+
+type GitHubIssue = {
+  id?: number;
+  title?: string;
+  body?: string;
+  html_url?: string;
+  comments_url?: string;
+  comments?: number;
+  created_at?: string;
+  pull_request?: unknown;
+  user?: GitHubUser;
+  labels?: GitHubLabel[];
+  reactions?: GitHubReactions;
+};
+
+type GitHubComment = {
+  id?: number;
+  body?: string;
+  created_at?: string;
+  user?: GitHubUser;
+  reactions?: GitHubReactions;
+};
+
+type GitHubSearchResponse = {
+  items?: GitHubIssue[];
+};
 
 /**
  * GitHub collector.
  *
  * Collects public GitHub issues and issue comments using GitHub REST API.
  *
- * Supports:
+ * Features:
  * - Domain-based issue search.
  * - Optional user keywords.
  * - Pull request exclusion.
- * - General discussion and contribution-noise filtering.
+ * - General discussion filtering.
  * - Spam, jobs, bots, and low-value comments filtering.
- * - Lightweight relevance scoring.
+ * - Relevance scoring.
  * - Deduplication.
  * - Retry with exponential backoff.
  * - In-memory caching.
- * - GitHub ETag / If-None-Match support.
+ * - ETag / If-None-Match support.
  * - GitHub rate-limit monitoring.
  *
  * Notes:
  * - GitHub does not support real country/city filtering for public issues.
- * - country/city/region/language are stored as request metadata only.
+ * - country, city, region, and language are stored as request metadata only.
  *
  * @author Malak
  */
@@ -50,6 +88,10 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     super(configService, GitHubCollector.name);
   }
 
+  /**
+   * Collects GitHub issues, ranks them, and maps them
+   * into the unified CollectorPost format.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -67,36 +109,37 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         input.language,
       ]);
 
-      const response = await CollectorHttpUtil.getWithRetryCacheAndHeaders<any>(
-        `${this.apiBaseUrl}/search/issues`,
-        {
-          headers: this.buildHeaders(),
-          params: {
-            q: searchQuery,
-            sort: 'updated',
-            order: 'desc',
-            per_page: Math.min(this.maxFetchedPosts, 100),
+      const response =
+        await CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubSearchResponse>(
+          `${this.apiBaseUrl}/search/issues`,
+          {
+            headers: this.buildHeaders(),
+            params: {
+              q: searchQuery,
+              sort: 'updated',
+              order: 'desc',
+              per_page: Math.min(this.maxFetchedPosts, 100),
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          etagCacheKey: `${cacheKey}:etag`,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+          {
+            cacheKey,
+            etagCacheKey: `${cacheKey}:etag`,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
       this.monitorGitHubRateLimit(response.headers);
 
-      const issues = response.data?.items ?? [];
+      const issues = response.data.items ?? [];
       const seenIssueIds = new Set<string>();
 
       const rankedIssues = issues
-        .filter((issue: any) => this.isValidIssue(issue))
-        .filter((issue: any) => {
-          const id = issue?.id?.toString();
+        .filter((issue) => this.isValidIssue(issue))
+        .filter((issue) => {
+          const id = issue.id?.toString();
 
           if (!id || seenIssueIds.has(id)) {
             return false;
@@ -105,16 +148,16 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
           seenIssueIds.add(id);
           return true;
         })
-        .map((issue: any) => ({
+        .map((issue) => ({
           issue,
           score: this.calculateIssueRelevanceScore(issue, input),
         }))
-        .filter((item: any) => item.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedIssues.map((item: any) =>
+        rankedIssues.map((item) =>
           this.mapIssueToCollectorPost(item.issue, input),
         ),
       );
@@ -122,11 +165,8 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       this.logger.log(`GitHub collection completed. Posts: ${posts.length}`);
 
       return posts;
-    } catch (error: any) {
-      this.logger.error(
-        'GitHub collection failed',
-        error.response?.data ?? error.message,
-      );
+    } catch (error: unknown) {
+      this.logger.error('GitHub collection failed', this.getErrorMessage(error));
 
       throw new ServiceUnavailableException(
         'GitHub collection failed. Check GitHub token, collector limits, API limits, or network connection.',
@@ -134,6 +174,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     }
   }
 
+  /**
+   * Builds GitHub issue search query from domain and user keywords.
+   */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -175,11 +218,14 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     ].join(' ');
   }
 
-  private isValidIssue(issue: any): boolean {
-    const title = issue?.title ?? '';
-    const body = issue?.body ?? '';
-    const author = issue?.user?.login ?? '';
-    const url = issue?.html_url ?? '';
+  /**
+   * Validates GitHub issue before ranking and mapping.
+   */
+  private isValidIssue(issue: GitHubIssue): boolean {
+    const title = issue.title ?? '';
+    const body = issue.body ?? '';
+    const author = issue.user?.login ?? '';
+    const url = issue.html_url ?? '';
 
     const normalizedTitle = this.normalizeText(title);
     const content = this.normalizeText(`${title} ${body}`);
@@ -187,11 +233,11 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     const blockedWords = this.getBlockedWords();
 
     if (
-      !issue?.id ||
+      !issue.id ||
       !title ||
       !url ||
-      issue?.pull_request ||
-      issue.comments <= 1 ||
+      issue.pull_request ||
+      (issue.comments ?? 0) <= 1 ||
       author.includes('[bot]') ||
       url.includes('/jobs/') ||
       content.length < 80
@@ -224,13 +270,16 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return true;
   }
 
+  /**
+   * Calculates relevance score for a GitHub issue.
+   */
   private calculateIssueRelevanceScore(
-    issue: any,
+    issue: GitHubIssue,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: issue?.title ?? '',
-      body: issue?.body ?? '',
+      title: issue.title ?? '',
+      body: issue.body ?? '',
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: issue.reactions?.total_count ?? 0,
@@ -239,8 +288,11 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     });
   }
 
+  /**
+   * Maps a GitHub issue to the unified CollectorPost format.
+   */
   private async mapIssueToCollectorPost(
-    issue: any,
+    issue: GitHubIssue,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const comments = await this.collectIssueComments(issue, input);
@@ -248,9 +300,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return {
       sourceType: CollectionSourceType.GITHUB,
       platformName: this.platformName,
-      externalId: issue.id.toString(),
+      externalId: issue.id?.toString() ?? '',
       title: issue.title,
-      content: issue.body ?? issue.title,
+      content: issue.body ?? issue.title ?? '',
       author: issue.user?.login,
       url: issue.html_url,
 
@@ -266,11 +318,14 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     };
   }
 
+  /**
+   * Collects useful comments for a GitHub issue.
+   */
   private async collectIssueComments(
-    issue: any,
+    issue: GitHubIssue,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
-    if (!issue?.comments_url || !issue.comments) {
+    if (!issue.comments_url || !issue.comments) {
       return [];
     }
 
@@ -280,7 +335,7 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       ]);
 
       const response =
-        await CollectorHttpUtil.getWithRetryCacheAndHeaders<any[]>(
+        await CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubComment[]>(
           issue.comments_url,
           {
             headers: this.buildHeaders(),
@@ -304,9 +359,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       const seenCommentIds = new Set<string>();
 
       return (data ?? [])
-        .filter((comment: any) => this.isUsefulComment(comment, input))
-        .filter((comment: any) => {
-          const id = comment?.id?.toString();
+        .filter((comment) => this.isUsefulComment(comment, input))
+        .filter((comment) => {
+          const id = comment.id?.toString();
 
           if (!id || seenCommentIds.has(id)) {
             return false;
@@ -316,35 +371,41 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
           return true;
         })
         .sort(
-          (a: any, b: any) =>
+          (a, b) =>
             (b.reactions?.total_count ?? 0) -
             (a.reactions?.total_count ?? 0),
         )
         .slice(0, this.maxSavedComments)
-        .map((comment: any): CollectorComment => ({
-          externalId: comment.id.toString(),
-          content: comment.body,
+        .map((comment): CollectorComment => ({
+          externalId: comment.id?.toString() ?? '',
+          content: comment.body ?? '',
           author: comment.user?.login,
           likesCount: comment.reactions?.total_count ?? 0,
           publishedAt: comment.created_at
             ? new Date(comment.created_at)
             : undefined,
         }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `GitHub comments collection failed for issue ${issue?.id}`,
-        error.response?.data ?? error.message,
+        `GitHub comments collection failed for issue ${issue.id}`,
+        this.getErrorMessage(error),
       );
 
       return [];
     }
   }
 
-  private isUsefulComment(comment: any, input: CollectorInput): boolean {
-    const author = comment?.user?.login ?? '';
-    const content = this.normalizeText(comment?.body ?? '');
+  /**
+   * Validates a GitHub comment before saving it.
+   */
+  private isUsefulComment(
+    comment: GitHubComment,
+    _input: CollectorInput,
+  ): boolean {
+    const author = comment.user?.login ?? '';
+    const content = this.normalizeText(comment.body ?? '');
 
-    if (!comment?.id || content.length < 50 || author.includes('[bot]')) {
+    if (!comment.id || content.length < 50 || author.includes('[bot]')) {
       return false;
     }
 
@@ -354,7 +415,7 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       return false;
     }
 
-    if (this.isLowValueComment(comment?.body ?? content)) {
+    if (this.isLowValueComment(comment.body ?? content)) {
       return false;
     }
 
@@ -363,6 +424,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Detects short operational comments that do not help idea generation.
+   */
   private isLowValueComment(content: string): boolean {
     const patterns = [
       /\bthanks\b/i,
@@ -403,6 +467,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return patterns.some((pattern) => pattern.test(content));
   }
 
+  /**
+   * Checks whether issue labels indicate low-value collection data.
+   */
   private hasBlockedIssueLabel(labels: string): boolean {
     const blockedLabels = [
       'good first issue',
@@ -421,6 +488,9 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return blockedLabels.some((word) => labels.includes(word));
   }
 
+  /**
+   * Checks whether issue title indicates a discussion or maintenance task.
+   */
   private hasIgnoredIssueTitle(title: string): boolean {
     const ignoredTitleTerms = [
       'general discussion',
@@ -442,8 +512,11 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return ignoredTitleTerms.some((word) => title.includes(word));
   }
 
-  private isGeneralDiscussionIssue(issue: any): boolean {
-    const title = this.normalizeText(issue?.title ?? '');
+  /**
+   * Detects general discussion issues.
+   */
+  private isGeneralDiscussionIssue(issue: GitHubIssue): boolean {
+    const title = this.normalizeText(issue.title ?? '');
     const labels = this.getIssueLabelsText(issue);
     const text = `${title} ${labels}`;
 
@@ -461,16 +534,22 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
     return generalDiscussionTerms.some((term) => text.includes(term));
   }
 
-  private getIssueLabelsText(issue: any): string {
-    return (issue?.labels ?? [])
-      .map((label: any) => this.normalizeText(label?.name ?? ''))
+  /**
+   * Converts GitHub issue labels into normalized text.
+   */
+  private getIssueLabelsText(issue: GitHubIssue): string {
+    return (issue.labels ?? [])
+      .map((label) => this.normalizeText(label.name ?? ''))
       .join(' ');
   }
 
-  private monitorGitHubRateLimit(headers: Record<string, any>): void {
-    const remaining = Number(headers?.['x-ratelimit-remaining']);
-    const limit = Number(headers?.['x-ratelimit-limit']);
-    const reset = Number(headers?.['x-ratelimit-reset']);
+  /**
+   * Logs a warning when GitHub remaining requests are low.
+   */
+  private monitorGitHubRateLimit(headers: Record<string, unknown>): void {
+    const remaining = Number(headers['x-ratelimit-remaining']);
+    const limit = Number(headers['x-ratelimit-limit']);
+    const reset = Number(headers['x-ratelimit-reset']);
 
     if (Number.isNaN(remaining)) {
       return;
@@ -482,18 +561,37 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
         : 'unknown';
 
       this.logger.warn(
-        `GitHub rate limit is low. Remaining: ${remaining}/${limit || 'unknown'}. Reset: ${resetDate}`,
+        `GitHub rate limit is low. Remaining: ${
+          remaining
+        }/${limit || 'unknown'}. Reset: ${resetDate}`,
       );
     }
   }
 
+  /**
+   * Reads common blocked words and GitHub-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('GITHUB_BLOCKED_WORDS');
   }
 
+  /**
+   * Builds GitHub REST API headers.
+   */
   private buildHeaders(): Record<string, string> {
     const token = this.configService.get<string>('GITHUB_TOKEN');
 
     return CollectorHeaderUtil.github(token);
+  }
+
+  /**
+   * Extracts readable error message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }

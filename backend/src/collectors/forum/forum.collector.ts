@@ -11,6 +11,11 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
 import { ForumAdapter } from './adapters/forum-adapter.interface';
 import { DiscourseForumAdapter } from './adapters/discourse-forum.adapter';
 
+type ForumSource = {
+  url: string;
+  adapter: ForumAdapter;
+};
+
 /**
  * Generic forum collector.
  *
@@ -31,10 +36,7 @@ import { DiscourseForumAdapter } from './adapters/discourse-forum.adapter';
 export class ForumCollector extends BaseCollector implements SocialCollector {
   readonly sourceType = CollectionSourceType.FORUM;
 
-  private readonly forumSources: {
-    url: string;
-    adapter: ForumAdapter;
-  }[];
+  private readonly forumSources: ForumSource[];
 
   constructor(
     configService: ConfigService,
@@ -43,45 +45,22 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     super(configService, ForumCollector.name);
 
     this.forumSources = [
-      {
-        url: 'https://meta.discourse.org',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://forum.freecodecamp.org',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://discourse.mozilla.org',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://discourse.ubuntu.com',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://discussion.fedoraproject.org',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://discuss.kubernetes.io',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://community.grafana.com',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://forums.docker.com',
-        adapter: this.discourseForumAdapter,
-      },
-      {
-        url: 'https://discuss.elastic.co',
-        adapter: this.discourseForumAdapter,
-      },
+      { url: 'https://meta.discourse.org', adapter: this.discourseForumAdapter },
+      { url: 'https://forum.freecodecamp.org', adapter: this.discourseForumAdapter },
+      { url: 'https://discourse.mozilla.org', adapter: this.discourseForumAdapter },
+      { url: 'https://discourse.ubuntu.com', adapter: this.discourseForumAdapter },
+      { url: 'https://discussion.fedoraproject.org', adapter: this.discourseForumAdapter },
+      { url: 'https://discuss.kubernetes.io', adapter: this.discourseForumAdapter },
+      { url: 'https://community.grafana.com', adapter: this.discourseForumAdapter },
+      { url: 'https://forums.docker.com', adapter: this.discourseForumAdapter },
+      { url: 'https://discuss.elastic.co', adapter: this.discourseForumAdapter },
     ];
   }
 
+  /**
+   * Collects forum posts from all configured forum sources,
+   * ranks them, removes duplicates, and returns the best results.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -112,12 +91,15 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       );
 
       return rankedPosts;
-    } catch (error: any) {
-      this.logger.warn('Forum collection failed', error?.message ?? error);
+    } catch (error: unknown) {
+      this.logger.warn('Forum collection failed', this.getErrorMessage(error));
       return [];
     }
   }
 
+  /**
+   * Removes duplicated forum posts and ranks them by relevance.
+   */
   private rankAndDeduplicatePosts(
     posts: CollectorPost[],
     input: CollectorInput,
@@ -143,6 +125,9 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       .map((item) => item.post);
   }
 
+  /**
+   * Builds forum search query from domain and user keywords.
+   */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -159,6 +144,9 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       .join(' ');
   }
 
+  /**
+   * Calculates relevance score for a forum post.
+   */
   private calculatePostRelevanceScore(
     post: CollectorPost,
     input: CollectorInput,
@@ -174,7 +162,21 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     });
   }
 
+  /**
+   * Reads common blocked words and forum-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('FORUM_BLOCKED_WORDS');
+  }
+
+  /**
+   * Extracts readable message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }
