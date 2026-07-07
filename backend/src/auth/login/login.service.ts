@@ -11,15 +11,40 @@ import {
 } from '../audit/audit.service';
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const LOGIN_LOCK_MINUTES = 15;
+const FAILED_LOGIN_WINDOW_MINUTES = 15;
+
+/**
+ * Progressive lock durations in minutes:
+ * - First lock: 30 minutes.
+ * - Second lock: 2 hours.
+ * - Third and later locks: 24 hours.
+ */
+const LOGIN_LOCK_DURATIONS_MINUTES = [30, 120, 1440];
 
 /**
  * Service responsible for user login operations.
  *
- * Handles credential validation, account activity checks,
- * email verification enforcement, failed login tracking,
- * temporary account locking, token generation, and
- * authentication audit logging.
+ * Handles verified user authentication in Nexora AI, including:
+ * - Credential validation.
+ * - Account activity checks.
+ * - Email verification enforcement.
+ * - Failed login attempt tracking within a limited time window.
+ * - Progressive temporary account locking.
+ * - JWT access token generation.
+ * - Refresh token generation.
+ * - Authentication audit logging.
+ *
+ * Failed login attempts are counted only within the configured
+ * failure window. If failed attempts are separated by more than
+ * the allowed time window, the counter is restarted.
+ *
+ * Lock policy:
+ * - 5 failed attempts within 15 minutes => 30 minutes lock.
+ * - Another 5 failed attempts within 15 minutes after the first lock expires => 2 hours lock.
+ * - Another 5 failed attempts within 15 minutes after the second lock expires => 24 hours lock.
+ *
+ * A successful login resets failed attempts, lock window, lock level,
+ * and lock expiration.
  *
  * @author Eman
  */
@@ -34,14 +59,9 @@ export class AuthLoginService {
     /**
      * Authenticates an active and verified user.
      *
-     * Records authentication audit logs for failed attempts,
-     * locked accounts, and successful logins. Failed password
-     * attempts are tracked, and the account is temporarily locked
-     * after repeated failures.
-     *
      * @param dto User login credentials.
      * @param meta Optional request metadata such as IP address and user agent.
-     * @returns Login response containing tokens and user data.
+     * @returns Login response containing access token, refresh token, and user data.
      *
      * @throws UnauthorizedException if login validation fails.
      */
@@ -62,7 +82,9 @@ export class AuthLoginService {
             throw new UnauthorizedException('Invalid email or password');
         }
 
-        if (user.lockedUntil && user.lockedUntil > new Date()) {
+        const now = new Date();
+
+        if (user.lockedUntil && user.lockedUntil > now) {
             await this.authAuditService.createLog({
                 userId: user.id,
                 email: user.email,
@@ -111,72 +133,30 @@ export class AuthLoginService {
         );
 
         if (!isPasswordValid) {
-            const nextFailedAttempts = user.failedLoginAttempts + 1;
-
-            if (nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-                const lockedUntil = new Date();
-                lockedUntil.setMinutes(
-                    lockedUntil.getMinutes() + LOGIN_LOCK_MINUTES,
-                );
-
-                await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: {
-                        failedLoginAttempts: nextFailedAttempts,
-                        lockedUntil,
-                    },
-                });
-
-                await this.authAuditService.createLog({
-                    userId: user.id,
+            await this.handleFailedLogin(
+                {
+                    id: user.id,
                     email: user.email,
-                    action: AuthAction.ACCOUNT_LOCKED,
-                    isSuccess: true,
-                    message: 'Account locked after repeated failed login attempts',
-                    ...meta,
-                });
-
-                throw new UnauthorizedException(
-                    'Too many failed login attempts. Account temporarily locked',
-                );
-            }
-
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    failedLoginAttempts: nextFailedAttempts,
+                    failedLoginAttempts: user.failedLoginAttempts,
+                    failedLoginWindowStartedAt:
+                        user.failedLoginWindowStartedAt,
+                    loginLockLevel: user.loginLockLevel,
                 },
-            });
-
-            await this.authAuditService.createLog({
-                userId: user.id,
-                email: user.email,
-                action: AuthAction.LOGIN_FAILED,
-                isSuccess: false,
-                message: 'Invalid email or password',
-                ...meta,
-            });
-
-            throw new UnauthorizedException('Invalid email or password');
+                now,
+                meta,
+            );
         }
 
-        if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    failedLoginAttempts: 0,
-                    lockedUntil: null,
-                    lastLoginAt: new Date(),
-                },
-            });
-        } else {
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    lastLoginAt: new Date(),
-                },
-            });
-        }
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                failedLoginAttempts: 0,
+                failedLoginWindowStartedAt: null,
+                loginLockLevel: 0,
+                lockedUntil: null,
+                lastLoginAt: now,
+            },
+        });
 
         const accessToken =
             await this.authTokenService.generateAccessToken(user);
@@ -212,5 +192,152 @@ export class AuthLoginService {
                 creditBalance: user.creditBalance,
             },
         };
+    }
+
+    /**
+     * Handles failed login attempts inside a limited time window.
+     *
+     * If the user reaches the maximum number of failed attempts within
+     * the configured window, the account is locked using the current
+     * progressive lock level.
+     *
+     * If the window has expired, the failed attempt counter restarts
+     * from one instead of accumulating old failures.
+     */
+    private async handleFailedLogin(
+        user: {
+            id: string;
+            email: string;
+            failedLoginAttempts: number;
+            failedLoginWindowStartedAt: Date | null;
+            loginLockLevel: number;
+        },
+        now: Date,
+        meta?: AuthRequestMeta,
+    ): Promise<never> {
+        const windowStartedAt = user.failedLoginWindowStartedAt;
+
+        const isInsideFailureWindow =
+            windowStartedAt !== null &&
+            now.getTime() - windowStartedAt.getTime() <=
+            FAILED_LOGIN_WINDOW_MINUTES * 60 * 1000;
+
+        const nextFailedAttempts = isInsideFailureWindow
+            ? user.failedLoginAttempts + 1
+            : 1;
+
+        const nextWindowStartedAt = isInsideFailureWindow
+            ? windowStartedAt
+            : now;
+
+        if (nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+            await this.lockUser(
+                {
+                    ...user,
+                    failedLoginAttempts: nextFailedAttempts,
+                    failedLoginWindowStartedAt: nextWindowStartedAt,
+                },
+                now,
+                meta,
+            );
+        }
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                failedLoginAttempts: nextFailedAttempts,
+                failedLoginWindowStartedAt: nextWindowStartedAt,
+                lockedUntil: null,
+            },
+        });
+
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.LOGIN_FAILED,
+            isSuccess: false,
+            message: 'Invalid email or password',
+            ...meta,
+        });
+
+        throw new UnauthorizedException('Invalid email or password');
+    }
+
+    /**
+     * Locks the account using progressive lock durations.
+     *
+     * The lock level is increased only when a lock is actually applied.
+     * A successful login resets the lock level to zero.
+     */
+    private async lockUser(
+        user: {
+            id: string;
+            email: string;
+            failedLoginAttempts: number;
+            failedLoginWindowStartedAt: Date | null;
+            loginLockLevel: number;
+        },
+        now: Date,
+        meta?: AuthRequestMeta,
+    ): Promise<never> {
+        const durationIndex = Math.min(
+            user.loginLockLevel,
+            LOGIN_LOCK_DURATIONS_MINUTES.length - 1,
+        );
+
+        const lockDurationMinutes =
+            LOGIN_LOCK_DURATIONS_MINUTES[durationIndex];
+
+        const lockedUntil = new Date(now);
+        lockedUntil.setMinutes(
+            lockedUntil.getMinutes() + lockDurationMinutes,
+        );
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                failedLoginAttempts: 0,
+                failedLoginWindowStartedAt: null,
+                loginLockLevel: user.loginLockLevel + 1,
+                lockedUntil,
+            },
+        });
+
+        await this.authAuditService.createLog({
+            userId: user.id,
+            email: user.email,
+            action: AuthAction.ACCOUNT_LOCKED,
+            isSuccess: true,
+            message: `Account locked for ${this.formatLockDuration(lockDurationMinutes)} after ${MAX_FAILED_LOGIN_ATTEMPTS} failed login attempts within ${FAILED_LOGIN_WINDOW_MINUTES} minutes`,
+            ...meta,
+        });
+
+        throw new UnauthorizedException(
+            'Too many failed login attempts. Account temporarily locked',
+        );
+    }
+    /**
+     * Formats a lock duration into a human-readable value for audit logs.
+     *
+     * This keeps authentication security logs clear for admins when reviewing
+     * progressive account lock events, such as:
+     * - 30 minutes
+     * - 2 hours
+     * - 24 hours
+     *
+     * @param minutes Lock duration in minutes.
+     * @returns Human-readable lock duration.
+     */
+
+    private formatLockDuration(minutes: number): string {
+        if (minutes >= 1440) {
+            return '24 hours';
+        }
+
+        if (minutes >= 60) {
+            return `${minutes / 60} hours`;
+        }
+
+        return `${minutes} minutes`;
     }
 }

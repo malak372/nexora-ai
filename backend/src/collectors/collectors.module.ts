@@ -29,9 +29,8 @@ import { DevToCollector } from './dev-to/dev-to.collector';
 /**
  * Module that groups all platform collectors.
  *
- * Currently:
- * - MOCK is implemented for testing and demo.
- * - Other collectors are placeholders until real API integrations are added.
+ * It registers implemented collectors, unsupported collector placeholders,
+ * shared collector services, and forum adapters.
  *
  * @author Malak
  */
@@ -62,7 +61,7 @@ import { DevToCollector } from './dev-to/dev-to.collector';
     ProductHuntCollector,
     DevToCollector,
   ],
-    exports: [
+  exports: [
     CollectorsFactory,
     CollectorQueueService,
   ],

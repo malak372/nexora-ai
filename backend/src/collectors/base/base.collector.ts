@@ -36,26 +36,52 @@ export abstract class BaseCollector {
   ) {
     this.logger = new Logger(collectorName);
 
-    this.maxFetchedPosts =
-      Number(this.configService.get('COLLECTOR_MAX_FETCHED_POSTS')) || 50;
+    this.maxFetchedPosts = this.getPositiveNumber(
+      'COLLECTOR_MAX_FETCHED_POSTS',
+      50,
+    );
 
-    this.maxSavedPosts =
-      Number(this.configService.get('COLLECTOR_MAX_SAVED_POSTS')) || 30;
+    this.maxSavedPosts = this.getPositiveNumber(
+      'COLLECTOR_MAX_SAVED_POSTS',
+      30,
+    );
 
-    this.maxFetchedComments =
-      Number(this.configService.get('COLLECTOR_MAX_FETCHED_COMMENTS')) || 20;
+    this.maxFetchedComments = this.getPositiveNumber(
+      'COLLECTOR_MAX_FETCHED_COMMENTS',
+      20,
+    );
 
-    this.maxSavedComments =
-      Number(this.configService.get('COLLECTOR_MAX_SAVED_COMMENTS')) || 30;
+    this.maxSavedComments = this.getPositiveNumber(
+      'COLLECTOR_MAX_SAVED_COMMENTS',
+      30,
+    );
 
-    this.retryAttempts =
-      Number(this.configService.get('COLLECTOR_RETRY_ATTEMPTS')) || 3;
+    this.retryAttempts = this.getPositiveNumber(
+      'COLLECTOR_RETRY_ATTEMPTS',
+      3,
+    );
 
-    this.retryDelayMs =
-      Number(this.configService.get('COLLECTOR_RETRY_DELAY_MS')) || 800;
+    this.retryDelayMs = this.getPositiveNumber(
+      'COLLECTOR_RETRY_DELAY_MS',
+      800,
+    );
 
-    this.cacheTtlMs =
-      Number(this.configService.get('COLLECTOR_CACHE_TTL_MS')) || 300000;
+    this.cacheTtlMs = this.getPositiveNumber(
+      'COLLECTOR_CACHE_TTL_MS',
+      300000,
+    );
+  }
+
+  /**
+   * Reads a positive numeric configuration value.
+   *
+   * If the environment variable is missing, invalid, zero,
+   * or negative, the default value is used.
+   */
+  protected getPositiveNumber(key: string, defaultValue: number): number {
+    const value = Number(this.configService.get(key));
+
+    return Number.isFinite(value) && value > 0 ? value : defaultValue;
   }
 
   /**
@@ -80,9 +106,6 @@ export abstract class BaseCollector {
   /**
    * Reads global blocked words and merges them with platform-specific
    * blocked words.
-   *
-   * Example:
-   * this.getBlockedWords('GITHUB_BLOCKED_WORDS')
    */
   protected getBlockedWords(platformBlockedWordsKey: string): string[] {
     return CollectorConfigUtil.getMergedCsv(
@@ -121,7 +144,7 @@ export abstract class BaseCollector {
   /**
    * Removes HTML tags and decodes common HTML entities.
    */
-  protected stripHtml(text: string): string {
+  protected stripHtml(text = ''): string {
     return this.decodeHtml(text.replace(/<[^>]*>/g, ' '));
   }
 }

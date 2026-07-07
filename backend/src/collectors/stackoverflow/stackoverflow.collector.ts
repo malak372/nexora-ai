@@ -5,15 +5,50 @@ import { CollectionSourceType } from '@prisma/client';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type StackOverflowOwner = {
+  display_name?: string;
+};
+
+type StackOverflowQuestion = {
+  question_id?: number;
+  title?: string;
+  body?: string;
+  link?: string;
+  score?: number;
+  answer_count?: number;
+  comment_count?: number;
+  creation_date?: number;
+  owner?: StackOverflowOwner;
+};
+
+type StackOverflowComment = {
+  comment_id?: number;
+  body?: string;
+  score?: number;
+  creation_date?: number;
+  owner?: StackOverflowOwner;
+};
+
+type StackOverflowResponse<T> = {
+  items?: T[];
+};
+
+type StackOverflowSearchQuery = {
+  q?: string;
+  title?: string;
+  body?: string;
+  tagged?: string;
+};
 
 /**
  * Stack Overflow collector.
@@ -21,17 +56,13 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
  * Collects public programming-related questions and comments
  * from Stack Overflow using Stack Exchange API.
  *
- * Note:
- * Stack Overflow is a technical platform, so results are expected
- * to be stronger for software, programming, AI, databases, security,
- * education technology, healthcare software, and finance software topics.
- *
  * @author Malak
  */
 @Injectable()
 export class StackOverflowCollector
   extends BaseCollector
-  implements SocialCollector {
+  implements SocialCollector
+{
   readonly sourceType = CollectionSourceType.STACKOVERFLOW;
 
   private readonly platformName = 'Stack Overflow';
@@ -41,6 +72,10 @@ export class StackOverflowCollector
     super(configService, StackOverflowCollector.name);
   }
 
+  /**
+   * Collects Stack Overflow questions, ranks them,
+   * and maps them into the unified CollectorPost format.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const queries = this.buildSearchQueries(input);
@@ -52,7 +87,7 @@ export class StackOverflowCollector
         return [];
       }
 
-      const allQuestions: any[] = [];
+      const allQuestions: StackOverflowQuestion[] = [];
 
       for (const query of queries) {
         const cacheKey = CollectorCacheUtil.build('stackoverflow', 'questions', [
@@ -64,7 +99,9 @@ export class StackOverflowCollector
           input.language,
         ]);
 
-        const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+        const data = await CollectorHttpUtil.getWithRetryAndCache<
+          StackOverflowResponse<StackOverflowQuestion>
+        >(
           `${this.apiBaseUrl}/search/advanced`,
           {
             headers: this.buildHeaders(),
@@ -87,31 +124,31 @@ export class StackOverflowCollector
           },
         );
 
-        allQuestions.push(...(data?.items ?? []));
+        allQuestions.push(...(data.items ?? []));
       }
 
       const seenQuestionIds = new Set<string>();
 
       const rankedQuestions = allQuestions
-        .filter((question: any) => this.isValidQuestion(question))
-        .filter((question: any) => {
-          const id = question?.question_id?.toString();
+        .filter((question) => this.isValidQuestion(question))
+        .filter((question) => {
+          const id = question.question_id?.toString();
 
           if (!id || seenQuestionIds.has(id)) return false;
 
           seenQuestionIds.add(id);
           return true;
         })
-        .map((question: any) => ({
+        .map((question) => ({
           question,
           score: this.calculateQuestionRelevanceScore(question, input),
         }))
-        .filter((item: any) => item.score > 0)
-        .sort((a: any, b: any) => b.score - a.score)
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedQuestions.map((item: any) =>
+        rankedQuestions.map((item) =>
           this.mapQuestionToCollectorPost(item.question, input),
         ),
       );
@@ -121,10 +158,10 @@ export class StackOverflowCollector
       );
 
       return posts;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
         'Stack Overflow collection failed',
-        error.response?.data ?? error.message,
+        this.getErrorMessage(error),
       );
 
       throw new ServiceUnavailableException(
@@ -133,7 +170,12 @@ export class StackOverflowCollector
     }
   }
 
-  private buildSearchQueries(input: CollectorInput): Record<string, string>[] {
+  /**
+   * Builds multiple search queries to improve Stack Overflow coverage.
+   */
+  private buildSearchQueries(
+    input: CollectorInput,
+  ): StackOverflowSearchQuery[] {
     const domainKeywords = this.getDomainKeywords(input);
 
     const userKeywords = (input.keywords ?? [])
@@ -151,25 +193,16 @@ export class StackOverflowCollector
     const tags = this.buildTags(keywords);
 
     return [
-      {
-        q: mainQuery,
-      },
-      {
-        title: mainQuery,
-      },
-      {
-        body: mainQuery,
-      },
-      ...(tags
-        ? [
-          {
-            tagged: tags,
-          },
-        ]
-        : []),
+      { q: mainQuery },
+      { title: mainQuery },
+      { body: mainQuery },
+      ...(tags ? [{ tagged: tags }] : []),
     ];
   }
 
+  /**
+   * Builds Stack Overflow tag query from known keywords.
+   */
   private buildTags(keywords: string[]): string {
     const tagMap: Record<string, string> = {
       ai: 'artificial-intelligence',
@@ -208,15 +241,18 @@ export class StackOverflowCollector
     return this.unique(tags).join(';');
   }
 
-  private isValidQuestion(question: any): boolean {
-    const title = question?.title ?? '';
-    const body = question?.body ?? '';
+  /**
+   * Validates Stack Overflow question before ranking and mapping.
+   */
+  private isValidQuestion(question: StackOverflowQuestion): boolean {
+    const title = question.title ?? '';
+    const body = question.body ?? '';
     const content = this.normalizeText(`${title} ${this.stripHtml(body)}`);
 
     if (
-      !question?.question_id ||
+      !question.question_id ||
       !title ||
-      !question?.link ||
+      !question.link ||
       content.length < 50
     ) {
       return false;
@@ -227,13 +263,16 @@ export class StackOverflowCollector
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Calculates relevance score for a Stack Overflow question.
+   */
   private calculateQuestionRelevanceScore(
-    question: any,
+    question: StackOverflowQuestion,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: question?.title ?? '',
-      body: this.stripHtml(question?.body ?? ''),
+      title: question.title ?? '',
+      body: this.stripHtml(question.body ?? ''),
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: question.score ?? 0,
@@ -244,8 +283,11 @@ export class StackOverflowCollector
     });
   }
 
+  /**
+   * Maps Stack Overflow question to the unified CollectorPost format.
+   */
   private async mapQuestionToCollectorPost(
-    question: any,
+    question: StackOverflowQuestion,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const comments = await this.collectQuestionComments(question);
@@ -253,9 +295,9 @@ export class StackOverflowCollector
     return {
       sourceType: CollectionSourceType.STACKOVERFLOW,
       platformName: this.platformName,
-      externalId: question.question_id.toString(),
-      title: this.decodeHtml(question.title),
-      content: this.stripHtml(question.body ?? question.title),
+      externalId: question.question_id?.toString() ?? '',
+      title: this.decodeHtml(question.title ?? ''),
+      content: this.stripHtml(question.body ?? question.title ?? ''),
       author: question.owner?.display_name,
       url: question.link,
 
@@ -275,17 +317,22 @@ export class StackOverflowCollector
     };
   }
 
+  /**
+   * Collects useful comments for a Stack Overflow question.
+   */
   private async collectQuestionComments(
-    question: any,
+    question: StackOverflowQuestion,
   ): Promise<CollectorComment[]> {
-    if (!question?.question_id) return [];
+    if (!question.question_id) return [];
 
     try {
       const cacheKey = CollectorCacheUtil.build('stackoverflow', 'comments', [
         question.question_id,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any>(
+      const data = await CollectorHttpUtil.getWithRetryAndCache<
+        StackOverflowResponse<StackOverflowComment>
+      >(
         `${this.apiBaseUrl}/questions/${question.question_id}/comments`,
         {
           headers: this.buildHeaders(),
@@ -309,10 +356,10 @@ export class StackOverflowCollector
 
       const seenCommentIds = new Set<string>();
 
-      return (data?.items ?? [])
-        .filter((comment: any) => this.isUsefulComment(comment))
-        .filter((comment: any) => {
-          const id = comment?.comment_id?.toString();
+      return (data.items ?? [])
+        .filter((comment) => this.isUsefulComment(comment))
+        .filter((comment) => {
+          const id = comment.comment_id?.toString();
 
           if (!id || seenCommentIds.has(id)) return false;
 
@@ -320,8 +367,8 @@ export class StackOverflowCollector
           return true;
         })
         .slice(0, this.maxSavedComments)
-        .map((comment: any): CollectorComment => ({
-          externalId: comment.comment_id.toString(),
+        .map((comment): CollectorComment => ({
+          externalId: comment.comment_id?.toString() ?? '',
           content: this.stripHtml(comment.body ?? ''),
           author: comment.owner?.display_name,
           likesCount: comment.score ?? 0,
@@ -334,10 +381,13 @@ export class StackOverflowCollector
     }
   }
 
-  private isUsefulComment(comment: any): boolean {
-    const content = this.normalizeText(this.stripHtml(comment?.body ?? ''));
+  /**
+   * Filters short, low-value, empty, or blocked comments.
+   */
+  private isUsefulComment(comment: StackOverflowComment): boolean {
+    const content = this.normalizeText(this.stripHtml(comment.body ?? ''));
 
-    if (!comment?.comment_id || content.length < 30) {
+    if (!comment.comment_id || content.length < 30) {
       return false;
     }
 
@@ -370,23 +420,46 @@ export class StackOverflowCollector
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Reads common blocked words and Stack Overflow-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('STACKOVERFLOW_BLOCKED_WORDS');
   }
 
+  /**
+   * Reads Stack Exchange site from environment variables.
+   */
   private getSite(): string {
     return (
       this.configService.get<string>('STACKOVERFLOW_SITE') || 'stackoverflow'
     );
   }
 
+  /**
+   * Builds optional Stack Exchange API key params.
+   */
   private buildApiKeyParam(): Record<string, string> {
     const key = this.configService.get<string>('STACKOVERFLOW_API_KEY');
 
     return key ? { key } : {};
   }
 
+  /**
+   * Builds Stack Exchange API headers.
+   */
   private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
+  }
+
+  /**
+   * Extracts readable message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }

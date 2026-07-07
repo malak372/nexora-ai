@@ -15,29 +15,25 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 /**
  * Service responsible for storing and listing collected social posts.
  *
- * Responsibilities:
- * - Store collected social posts.
- * - Store collected comments related to each post.
- * - Link each post to its normalized platform record.
- * - Create the platform automatically if it does not exist.
- * - Avoid duplicate posts using sourceType + externalId.
- * - Avoid duplicate comments using postId + externalId.
- * - Return paginated posts for admin review.
- *
  * @author Malak
  */
 @Injectable()
 export class SocialPostService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Stores collected posts and their comments.
+   *
+   * Uses upsert to avoid duplicates based on:
+   * - sourceType + externalId for posts.
+   * - postId + externalId for comments.
+   */
   async createManyWithComments(collectionJobId: string, posts: CollectorPost[]) {
     let totalPosts = 0;
     let totalComments = 0;
 
     for (const post of posts) {
-      if (!post.externalId) {
-        continue;
-      }
+      if (!post.externalId) continue;
 
       const comments = post.comments ?? [];
       const platform = await this.findOrCreatePlatform(post);
@@ -51,7 +47,7 @@ export class SocialPostService {
         },
         update: {
           collectionJobId,
-          platformId: platform?.id,
+          platformId: platform.id,
           title: post.title,
           content: post.content,
           author: post.author,
@@ -67,7 +63,7 @@ export class SocialPostService {
         },
         create: {
           collectionJobId,
-          platformId: platform?.id,
+          platformId: platform.id,
           sourceType: post.sourceType,
           externalId: post.externalId,
           title: post.title,
@@ -87,9 +83,7 @@ export class SocialPostService {
       totalPosts++;
 
       for (const comment of comments) {
-        if (!comment.externalId) {
-          continue;
-        }
+        if (!comment.externalId) continue;
 
         await this.prisma.socialComment.upsert({
           where: {
@@ -127,6 +121,9 @@ export class SocialPostService {
     };
   }
 
+  /**
+   * Returns paginated collected posts.
+   */
   async findPosts(query: GetSocialPostsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
@@ -187,6 +184,9 @@ export class SocialPostService {
     };
   }
 
+  /**
+   * Finds platform by normalized name or creates it.
+   */
   private async findOrCreatePlatform(post: CollectorPost) {
     const platformName = this.resolvePlatformName(post);
 
@@ -204,6 +204,9 @@ export class SocialPostService {
     });
   }
 
+  /**
+   * Resolves platform name from CollectionSourceType.
+   */
   private resolvePlatformName(post: CollectorPost): string {
     return PLATFORM_NAMES[post.sourceType] ?? post.platformName ?? 'Other';
   }

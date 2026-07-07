@@ -293,10 +293,10 @@ model User {
   isActive   Boolean @default(true) @map("is_active")
   isVerified Boolean @default(false) @map("is_verified")
 
- failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
- failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
- loginLockLevel             Int       @default(0) @map("login_lock_level")
- lockedUntil                DateTime? @map("locked_until")
+  failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
+  failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
+  loginLockLevel             Int       @default(0) @map("login_lock_level")
+  lockedUntil                DateTime? @map("locked_until")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -320,6 +320,8 @@ model User {
   ideaFeedback            IdeaFeedback[]
   savedGenerationSearches SavedGenerationSearch[]
 
+  @@index([lockedUntil])
+  @@index([loginLockLevel])
   @@map("users")
 }
 
@@ -801,7 +803,7 @@ model CollectionJob {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   posts       SocialPost[]
-  nlpAnalyses NlpAnalysis[]
+  nlpAnalysis NlpAnalysis?
 
   @@index([domainId])
   @@index([status])
@@ -876,8 +878,10 @@ model SocialComment {
 model NlpAnalysis {
   id String @id @default(uuid())
 
-  collectionJobId String        @map("collection_job_id")
+  collectionJobId String        @unique @map("collection_job_id")
   collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+
+  totalTextsAnalyzed Int @default(0) @map("total_texts_analyzed")
 
   sentimentStats    Json  @map("sentiment_stats")
   keywords          Json
@@ -888,8 +892,8 @@ model NlpAnalysis {
   statistics        Json?
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([collectionJobId])
   @@map("nlp_analyses")
 }
 

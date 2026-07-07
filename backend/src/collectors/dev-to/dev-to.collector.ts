@@ -5,15 +5,40 @@ import { CollectionSourceType } from '@prisma/client';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type DevToUser = {
+  username?: string;
+  name?: string;
+};
+
+type DevToArticle = {
+  id?: number;
+  title?: string;
+  description?: string;
+  url?: string;
+  positive_reactions_count?: number;
+  comments_count?: number;
+  published_at?: string;
+  user?: DevToUser;
+};
+
+type DevToComment = {
+  id?: number;
+  id_code?: string;
+  body_html?: string;
+  body_markdown?: string;
+  created_at?: string;
+  user?: DevToUser;
+};
 
 /**
  * DEV.to collector.
@@ -33,6 +58,10 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     super(configService, DevToCollector.name);
   }
 
+  /**
+   * Collects DEV.to articles, removes duplicates, ranks them,
+   * and maps them into the unified CollectorPost format.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQueries = this.buildSearchQueries(input);
@@ -44,7 +73,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         return [];
       }
 
-      const collectedArticles: any[] = [];
+      const collectedArticles: DevToArticle[] = [];
 
       for (const query of searchQueries) {
         if (collectedArticles.length >= this.maxFetchedPosts) break;
@@ -58,7 +87,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       const rankedArticles = collectedArticles
         .filter((article) => this.isValidArticle(article))
         .filter((article) => {
-          const id = article?.id?.toString();
+          const id = article.id?.toString();
 
           if (!id || seenArticleIds.has(id)) return false;
 
@@ -82,11 +111,8 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       this.logger.log(`DEV.to collection completed. Posts: ${posts.length}`);
 
       return posts;
-    } catch (error: any) {
-      this.logger.error(
-        'DEV.to collection failed',
-        error.response?.data ?? error.message,
-      );
+    } catch (error: unknown) {
+      this.logger.error('DEV.to collection failed', this.getErrorMessage(error));
 
       throw new ServiceUnavailableException(
         'DEV.to collection failed. Check collector limits, API availability, or network connection.',
@@ -94,10 +120,13 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     }
   }
 
-  private async searchArticles(query: string): Promise<any[]> {
+  /**
+   * Searches DEV.to articles by tag.
+   */
+  private async searchArticles(query: string): Promise<DevToArticle[]> {
     const cacheKey = CollectorCacheUtil.build('dev-to', 'articles', [query]);
 
-    return CollectorHttpUtil.getWithRetryAndCache<any[]>(
+    return CollectorHttpUtil.getWithRetryAndCache<DevToArticle[]>(
       `${this.apiBaseUrl}/articles`,
       {
         headers: this.buildHeaders(),
@@ -117,6 +146,9 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     );
   }
 
+  /**
+   * Builds search queries from user keywords, domain keywords, and domain name.
+   */
   private buildSearchQueries(input: CollectorInput): string[] {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -137,38 +169,47 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       .slice(0, 6);
   }
 
-  private isValidArticle(article: any): boolean {
-    const title = article?.title ?? '';
-    const description = article?.description ?? '';
+  /**
+   * Validates a DEV.to article before ranking and mapping.
+   */
+  private isValidArticle(article: DevToArticle): boolean {
+    const title = article.title ?? '';
+    const description = article.description ?? '';
     const content = this.normalizeText(`${title} ${description}`);
     const blockedWords = this.getBlockedWords();
 
-    if (!article?.id || !title || !article?.url || content.length < 40) {
+    if (!article.id || !title || !article.url || content.length < 40) {
       return false;
     }
 
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Calculates article relevance score using the shared scoring utility.
+   */
   private calculateArticleRelevanceScore(
-    article: any,
+    article: DevToArticle,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: article?.title ?? '',
-      body: article?.description ?? '',
+      title: article.title ?? '',
+      body: article.description ?? '',
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
-      likes: article?.positive_reactions_count ?? 0,
-      replies: article?.comments_count ?? 0,
-      publishedAt: article?.published_at
+      likes: article.positive_reactions_count ?? 0,
+      replies: article.comments_count ?? 0,
+      publishedAt: article.published_at
         ? new Date(article.published_at)
         : undefined,
     });
   }
 
+  /**
+   * Maps a DEV.to article to the unified CollectorPost format.
+   */
   private async mapArticleToCollectorPost(
-    article: any,
+    article: DevToArticle,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const comments = await this.collectArticleComments(article);
@@ -176,9 +217,9 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     return {
       sourceType: CollectionSourceType.DEV_TO,
       platformName: this.platformName,
-      externalId: article.id.toString(),
+      externalId: article.id?.toString() ?? '',
       title: article.title,
-      content: article.description ?? article.title,
+      content: article.description ?? article.title ?? '',
       author: article.user?.username ?? article.user?.name,
       url: article.url,
 
@@ -196,10 +237,13 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     };
   }
 
+  /**
+   * Collects public comments for a DEV.to article.
+   */
   private async collectArticleComments(
-    article: any,
+    article: DevToArticle,
   ): Promise<CollectorComment[]> {
-    if (!article?.id || !article?.comments_count) {
+    if (!article.id || !article.comments_count) {
       return [];
     }
 
@@ -208,7 +252,9 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         article.id,
       ]);
 
-      const comments = await CollectorHttpUtil.getWithRetryAndCache<any[]>(
+      const comments = await CollectorHttpUtil.getWithRetryAndCache<
+        DevToComment[]
+      >(
         `${this.apiBaseUrl}/comments`,
         {
           headers: this.buildHeaders(),
@@ -229,7 +275,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         .filter((comment) => this.isUsefulComment(comment))
         .slice(0, this.maxSavedComments)
         .map((comment): CollectorComment => ({
-          externalId: comment.id_code ?? comment.id?.toString(),
+          externalId: comment.id_code ?? comment.id?.toString() ?? '',
           content: this.stripHtml(comment.body_html ?? comment.body_markdown ?? ''),
           author: comment.user?.username ?? comment.user?.name,
           likesCount: 0,
@@ -237,22 +283,25 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
             ? new Date(comment.created_at)
             : undefined,
         }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.warn(
-        `DEV.to comments collection failed for article ${article?.id}`,
-        error.response?.data ?? error.message,
+        `DEV.to comments collection failed for article ${article.id}`,
+        this.getErrorMessage(error),
       );
 
       return [];
     }
   }
 
-  private isUsefulComment(comment: any): boolean {
+  /**
+   * Filters short, invalid, or blocked comments.
+   */
+  private isUsefulComment(comment: DevToComment): boolean {
     const content = this.normalizeText(
-      this.stripHtml(comment?.body_html ?? comment?.body_markdown ?? ''),
+      this.stripHtml(comment.body_html ?? comment.body_markdown ?? ''),
     );
 
-    if (!comment?.id_code && !comment?.id) return false;
+    if (!comment.id_code && !comment.id) return false;
 
     if (content.length < 40) return false;
 
@@ -261,11 +310,28 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Reads common blocked words and DEV.to-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('DEV_TO_BLOCKED_WORDS');
   }
 
+  /**
+   * Builds DEV.to API headers.
+   */
   private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
+  }
+
+  /**
+   * Extracts readable message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }

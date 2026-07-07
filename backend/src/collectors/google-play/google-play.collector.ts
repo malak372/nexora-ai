@@ -6,24 +6,53 @@ import gplay from 'google-play-scraper';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
+import { CollectorLanguageUtil } from '../base/collector-language.util';
+import { CollectorRegionUtil } from '../base/collector-region.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type GooglePlayApp = {
+  appId?: string;
+  title?: string;
+  summary?: string;
+  developer?: string;
+  url?: string;
+  ratings?: number;
+};
+
+type GooglePlayReview = {
+  id?: string;
+  text?: string;
+  userName?: string;
+  thumbsUp?: number;
+  date?: string | Date;
+};
+
+type GooglePlayReviewsResponse = {
+  data?: GooglePlayReview[];
+};
 
 /**
  * Google Play collector.
  *
- * Collects public Google Play app reviews using google-play-scraper.
+ * Collects public Google Play apps and public app reviews
+ * using google-play-scraper.
+ *
+ * Notes:
+ * - Google Play supports language and country filters.
+ * - Country, city, and region are stored as request metadata.
  *
  * @author Malak
  */
 @Injectable()
 export class GooglePlayCollector
   extends BaseCollector
-  implements SocialCollector {
+  implements SocialCollector
+{
   readonly sourceType = CollectionSourceType.GOOGLE_PLAY;
 
   private readonly platformName = 'Google Play';
@@ -32,6 +61,10 @@ export class GooglePlayCollector
     super(configService, GooglePlayCollector.name);
   }
 
+  /**
+   * Collects Google Play apps, ranks them by relevance,
+   * and maps them to the unified CollectorPost format.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -43,26 +76,24 @@ export class GooglePlayCollector
         return [];
       }
 
-      const apps = await gplay.search({
+      const apps = (await gplay.search({
         term: searchQuery,
         num: Math.min(this.maxFetchedPosts, 20),
         lang: this.resolveLanguage(input.language),
         country: this.resolveCountry(input.country),
-      });
+      })) as GooglePlayApp[];
 
       const rankedApps = apps
-        .filter((app: any) => this.isValidApp(app))
-        .map((app: any) => ({
+        .filter((app) => this.isValidApp(app))
+        .map((app) => ({
           app,
           score: this.calculateAppRelevanceScore(app, input),
         }))
-        .sort((a: any, b: any) => b.score - a.score)
+        .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item: any) =>
-          this.mapAppToCollectorPost(item.app, input),
-        ),
+        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
       );
 
       this.logger.log(
@@ -70,16 +101,19 @@ export class GooglePlayCollector
       );
 
       return posts;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.warn(
         'Google Play collection failed',
-        error?.message ?? error,
+        this.getErrorMessage(error),
       );
 
       return [];
     }
   }
 
+  /**
+   * Builds search query from domain keywords, domain name, and user keywords.
+   */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -96,11 +130,14 @@ export class GooglePlayCollector
       .join(' ');
   }
 
-  private isValidApp(app: any): boolean {
-    const title = this.normalizeText(app?.title ?? '');
-    const summary = this.normalizeText(app?.summary ?? '');
+  /**
+   * Validates Google Play app before ranking and mapping.
+   */
+  private isValidApp(app: GooglePlayApp): boolean {
+    const title = this.normalizeText(app.title ?? '');
+    const summary = this.normalizeText(app.summary ?? '');
 
-    if (!app?.appId || !title) return false;
+    if (!app.appId || !title) return false;
 
     const blockedWords = this.getBlockedWords();
     const content = `${title} ${summary}`;
@@ -108,33 +145,40 @@ export class GooglePlayCollector
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Calculates app relevance score using the shared scoring utility.
+   */
   private calculateAppRelevanceScore(
-    app: any,
+    app: GooglePlayApp,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: app?.title ?? '',
-      body: app?.summary ?? '',
+      title: app.title ?? '',
+      body: app.summary ?? '',
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
-      likes: app?.ratings ?? 0,
-      replies: app?.ratings ?? 0,
+      likes: app.ratings ?? 0,
+      replies: app.ratings ?? 0,
       publishedAt: undefined,
     });
   }
 
+  /**
+   * Maps a Google Play app to the unified CollectorPost format.
+   */
   private async mapAppToCollectorPost(
-    app: any,
+    app: GooglePlayApp,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments = await this.collectAppReviews(app.appId, input);
+    const appId = app.appId ?? '';
+    const comments = await this.collectAppReviews(appId, input);
 
     return {
       sourceType: CollectionSourceType.GOOGLE_PLAY,
       platformName: this.platformName,
-      externalId: app.appId,
+      externalId: appId,
       title: app.title,
-      content: app.summary ?? app.title,
+      content: app.summary ?? app.title ?? '',
       author: app.developer,
       url: app.url,
 
@@ -150,26 +194,30 @@ export class GooglePlayCollector
     };
   }
 
+  /**
+   * Collects public reviews for a Google Play app.
+   */
   private async collectAppReviews(
     appId: string,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
+    if (!appId) return [];
+
     try {
-      const reviews = await gplay.reviews({
+      const reviews = (await gplay.reviews({
         appId,
         num: this.maxSavedComments,
-        // google-play-scraper's sort enum typings may differ; cast to any to avoid TS errors
-        sort: (gplay.sort as any).NEWEST,
+        sort: this.getNewestSort(),
         lang: this.resolveLanguage(input.language),
         country: this.resolveCountry(input.country),
-      });
+      })) as GooglePlayReviewsResponse;
 
-      return (reviews?.data ?? [])
-        .filter((review: any) => this.isUsefulReview(review))
+      return (reviews.data ?? [])
+        .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
-        .map((review: any): CollectorComment => ({
-          externalId: review.id,
-          content: review.text,
+        .map((review): CollectorComment => ({
+          externalId: review.id ?? `${appId}-${review.date}`,
+          content: review.text ?? '',
           author: review.userName,
           language: input.language,
           likesCount: review.thumbsUp ?? 0,
@@ -180,10 +228,21 @@ export class GooglePlayCollector
     }
   }
 
-  private isUsefulReview(review: any): boolean {
-    const content = this.normalizeText(review?.text ?? '');
+  /**
+   * Filters short, low-value, blocked, or language-mismatched reviews.
+   */
+  private isUsefulReview(
+    review: GooglePlayReview,
+    language?: string,
+  ): boolean {
+    const rawContent = review.text ?? '';
+    const content = this.normalizeText(rawContent);
 
-    if (!review?.id || content.length < 40) {
+    if (!review.id || content.length < 40) {
+      return false;
+    }
+
+    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
       return false;
     }
 
@@ -217,27 +276,48 @@ export class GooglePlayCollector
 
     return !blockedWords.some((word) => content.includes(word));
   }
+
+  /**
+   * Reads common blocked words and Google Play-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('GOOGLE_PLAY_BLOCKED_WORDS');
   }
 
+  /**
+   * Resolves requested language to a Google Play language code.
+   */
   private resolveLanguage(language?: string): string {
-    const normalized = this.normalizeText(language ?? '');
-
-    if (normalized === 'ar' || normalized === 'arabic') return 'ar';
-    if (normalized === 'en' || normalized === 'english') return 'en';
-
-    return 'en';
+    return CollectorLanguageUtil.resolveLanguageCode(language) ?? 'en';
   }
 
+  /**
+   * Resolves requested country to a Google Play country code.
+   */
   private resolveCountry(country?: string): string {
-    const normalized = this.normalizeText(country ?? '');
+    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
 
-    if (normalized === 'palestine') return 'ps';
-    if (normalized === 'jordan') return 'jo';
-    if (normalized === 'saudi arabia') return 'sa';
-    if (normalized === 'egypt') return 'eg';
+    return regionCode?.toLowerCase() ?? 'us';
+  }
 
-    return 'us';
+  /**
+   * Returns google-play-scraper newest sort value.
+   *
+   * The package typings can differ between versions,
+   * so the enum access is isolated here.
+   */
+  private getNewestSort() {
+    return (gplay.sort as any).NEWEST || 'NEWEST';
+  }
+
+  /**
+   * Extracts readable message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }

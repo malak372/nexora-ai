@@ -23,16 +23,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
 import { PLATFORM_NAMES } from '../../collectors/base/platform-name.constant';
 
 /**
- * Service responsible for CollectionJob persistence and status management.
- *
- * Responsibilities:
- * - Validate active domains.
- * - Validate requested platforms.
- * - Create running jobs.
- * - Mark jobs as completed, failed, or stopped.
- * - Return collection job status.
- * - Return paginated job history.
- * - Return detailed job information with domain and user keywords.
+ * Service responsible for collection job persistence and status management.
  *
  * @author Malak
  */
@@ -45,9 +36,6 @@ export class CollectionJobService {
 
   /**
    * Validates that the selected domain exists and is active.
-   *
-   * Domain keywords are included because collectors depend on them
-   * to build search queries.
    */
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findFirst({
@@ -61,16 +49,16 @@ export class CollectionJobService {
     });
 
     if (!domain) {
-      throw new NotFoundException('Domain not found or inactive');
+      throw new NotFoundException('Domain not found or inactive.');
     }
 
     return domain;
   }
 
   /**
-   * Validates that all requested platforms have collectors registered.
+   * Validates that all requested platforms have registered collectors.
    */
-  validateSupportedPlatforms(platforms: CollectionSourceType[]) {
+  validateSupportedPlatforms(platforms: CollectionSourceType[]): void {
     const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
 
     const unsupportedPlatforms = platforms.filter(
@@ -85,10 +73,29 @@ export class CollectionJobService {
   }
 
   /**
+   * Validates that the selected platform exists and is active in DB.
+   */
+  async validateActivePlatform(sourceType: CollectionSourceType) {
+    const platformName = PLATFORM_NAMES[sourceType];
+
+    const platform = await this.prisma.platform.findFirst({
+      where: {
+        name: platformName,
+        isActive: true,
+      },
+    });
+
+    if (!platform) {
+      throw new BadRequestException(
+        `Platform ${platformName} is inactive or not found.`,
+      );
+    }
+
+    return platform;
+  }
+
+  /**
    * Creates a collection job in RUNNING state.
-   *
-   * The keywords field stores user-provided keywords only.
-   * Domain keywords remain stored in the DomainKeyword table.
    */
   createRunningJob(dto: RunCollectionDto) {
     return this.prisma.collectionJob.create({
@@ -123,14 +130,18 @@ export class CollectionJobService {
   }
 
   /**
-   * Returns detailed information about one collection job.
+   * Checks whether a job was stopped.
    *
-   * Response includes:
-   * - Job metadata.
-   * - Domain information.
-   * - Domain keywords filtered by job language.
-   * - User keywords stored on the job.
-   * - Posts and NLP analysis counts.
+   * Used by the runner before starting each platform collector.
+   */
+  async isJobStopped(id: string): Promise<boolean> {
+    const job = await this.findJobOrThrow(id);
+
+    return job.status === CollectionJobStatus.STOPPED;
+  }
+
+  /**
+   * Returns detailed information about one collection job.
    */
   async findJobDetails(id: string) {
     const job = await this.prisma.collectionJob.findUnique({
@@ -149,10 +160,10 @@ export class CollectionJobService {
             },
           },
         },
+        nlpAnalysis: true,
         _count: {
           select: {
             posts: true,
-            nlpAnalyses: true,
           },
         },
       },
@@ -190,9 +201,6 @@ export class CollectionJobService {
         name: job.domain.name,
       },
 
-      /**
-       * Keywords actually used or available for this job context.
-       */
       domainKeywords,
       userKeywords: job.keywords,
 
@@ -202,9 +210,6 @@ export class CollectionJobService {
 
   /**
    * Marks a collection job as completed.
-   *
-   * POST /data-collection/run response intentionally returns job result only,
-   * without domainKeywords or userKeywords.
    */
   completeJob(
     id: string,
@@ -299,9 +304,6 @@ export class CollectionJobService {
 
   /**
    * Returns paginated collection jobs with filtering and sorting.
-   *
-   * This endpoint returns summary data only.
-   * For domainKeywords and userKeywords, use findJobDetails.
    */
   async findJobs(query: GetCollectionJobsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
@@ -336,10 +338,10 @@ export class CollectionJobService {
               name: true,
             },
           },
+          nlpAnalysis: true,
           _count: {
             select: {
               posts: true,
-              nlpAnalyses: true,
             },
           },
         },
@@ -381,27 +383,5 @@ export class CollectionJobService {
         );
       })
       .map((item) => item.keyword);
-  }
-
-  /**
-   * Validates that the selected platform exists and is active.
-   */ 
-  async validateActivePlatform(sourceType: CollectionSourceType) {
-    const platformName = PLATFORM_NAMES[sourceType];
-
-    const platform = await this.prisma.platform.findFirst({
-      where: {
-        name: platformName,
-        isActive: true,
-      },
-    });
-
-    if (!platform) {
-      throw new BadRequestException(
-        `Platform ${platformName} is inactive or not found.`,
-      );
-    }
-
-    return platform;
   }
 }

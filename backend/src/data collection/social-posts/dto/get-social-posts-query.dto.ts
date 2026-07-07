@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { LanguageCode } from '@prisma/client';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
@@ -17,11 +18,10 @@ export class GetSocialPostsQueryDto extends ListQueryDto {
   platformId?: string;
 
   @IsOptional()
-  @IsString()
-  language?: string;
+  @IsEnum(LanguageCode)
+  language?: LanguageCode;
 
   @IsOptional()
   @IsString()
   region?: string;
-
 }

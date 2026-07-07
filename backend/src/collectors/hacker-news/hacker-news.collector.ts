@@ -5,15 +5,30 @@ import { CollectionSourceType } from '@prisma/client';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type HackerNewsItem = {
+  id?: number;
+  type?: 'story' | 'comment' | string;
+  title?: string;
+  text?: string;
+  url?: string;
+  by?: string;
+  time?: number;
+  score?: number;
+  descendants?: number;
+  kids?: number[];
+  deleted?: boolean;
+  dead?: boolean;
+};
 
 /**
  * Hacker News collector.
@@ -40,7 +55,8 @@ import { RelevanceScoreUtil } from '../base/relevance-score.util';
 @Injectable()
 export class HackerNewsCollector
   extends BaseCollector
-  implements SocialCollector {
+  implements SocialCollector
+{
   readonly sourceType = CollectionSourceType.HACKER_NEWS;
 
   private readonly platformName = 'Hacker News';
@@ -51,6 +67,10 @@ export class HackerNewsCollector
     super(configService, HackerNewsCollector.name);
   }
 
+  /**
+   * Collects Hacker News stories, ranks them, and maps them
+   * into the unified CollectorPost format.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchTerms = this.buildSearchTerms(input);
@@ -63,7 +83,7 @@ export class HackerNewsCollector
       }
 
       const storyIds = await this.getStoryIds();
-      const stories: any[] = [];
+      const stories: HackerNewsItem[] = [];
       const seenStoryIds = new Set<string>();
 
       for (const storyId of storyIds.slice(0, this.maxFetchedPosts * 8)) {
@@ -75,9 +95,9 @@ export class HackerNewsCollector
           continue;
         }
 
-        const id = story.id.toString();
+        const id = story.id?.toString();
 
-        if (seenStoryIds.has(id)) {
+        if (!id || seenStoryIds.has(id)) {
           continue;
         }
 
@@ -105,10 +125,10 @@ export class HackerNewsCollector
       );
 
       return posts;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
         'Hacker News collection failed',
-        error.response?.data ?? error.message,
+        this.getErrorMessage(error),
       );
 
       throw new ServiceUnavailableException(
@@ -117,6 +137,9 @@ export class HackerNewsCollector
     }
   }
 
+  /**
+   * Collects story IDs from multiple Hacker News feeds.
+   */
   private async getStoryIds(): Promise<number[]> {
     const feeds = [
       'topstories',
@@ -153,11 +176,14 @@ export class HackerNewsCollector
     return this.unique(allIds);
   }
 
-  private async getItem(id: number): Promise<any | null> {
+  /**
+   * Fetches a single Hacker News item by ID.
+   */
+  private async getItem(id: number): Promise<HackerNewsItem | null> {
     try {
       const cacheKey = CollectorCacheUtil.build('hacker-news', 'item', [id]);
 
-      return await CollectorHttpUtil.getWithRetryAndCache<any>(
+      return await CollectorHttpUtil.getWithRetryAndCache<HackerNewsItem>(
         `${this.apiBaseUrl}/item/${id}.json`,
         {
           headers: this.buildHeaders(),
@@ -175,6 +201,9 @@ export class HackerNewsCollector
     }
   }
 
+  /**
+   * Builds search terms from user keywords, domain keywords, and domain name.
+   */
   private buildSearchTerms(input: CollectorInput): string[] {
     const domainKeywords = this.getDomainKeywords(input);
 
@@ -195,18 +224,21 @@ export class HackerNewsCollector
       .slice(0, 8);
   }
 
-  private isValidStory(story: any): boolean {
-    if (!story?.id || story?.type !== 'story' || !story?.title) {
+  /**
+   * Validates Hacker News story before ranking.
+   */
+  private isValidStory(story: HackerNewsItem | null): story is HackerNewsItem {
+    if (!story?.id || story.type !== 'story' || !story.title) {
       return false;
     }
 
-    if (story?.deleted || story?.dead) {
+    if (story.deleted || story.dead) {
       return false;
     }
 
     const title = this.normalizeText(story.title);
-    const text = this.normalizeText(story?.text ?? '');
-    const url = story?.url ?? `${this.siteBaseUrl}/item?id=${story.id}`;
+    const text = this.normalizeText(story.text ?? '');
+    const url = story.url ?? `${this.siteBaseUrl}/item?id=${story.id}`;
     const content = `${title} ${text}`;
     const blockedWords = this.getBlockedWords();
 
@@ -217,8 +249,13 @@ export class HackerNewsCollector
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Calculates final story score.
+   *
+   * If the story does not match any search term, it is ignored.
+   */
   private calculateFinalStoryScore(
-    story: any,
+    story: HackerNewsItem,
     input: CollectorInput,
     searchTerms: string[],
   ): number {
@@ -234,25 +271,34 @@ export class HackerNewsCollector
     return baseScore + keywordBonus + problemBonus;
   }
 
+  /**
+   * Calculates base relevance score using the shared scoring utility.
+   */
   private calculateStoryRelevanceScore(
-    story: any,
+    story: HackerNewsItem,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: story?.title ?? '',
-      body: story?.text ?? '',
+      title: story.title ?? '',
+      body: story.text ?? '',
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
-      likes: story?.score ?? 0,
-      replies: story?.descendants ?? 0,
-      publishedAt: story?.time ? new Date(story.time * 1000) : undefined,
+      likes: story.score ?? 0,
+      replies: story.descendants ?? 0,
+      publishedAt: story.time ? new Date(story.time * 1000) : undefined,
     });
   }
 
-  private calculateKeywordBonus(story: any, searchTerms: string[]): number {
-    const title = this.normalizeText(story?.title ?? '');
-    const body = this.normalizeText(story?.text ?? '');
-    const url = this.normalizeText(story?.url ?? '');
+  /**
+   * Adds score when search terms appear in title, body, or URL.
+   */
+  private calculateKeywordBonus(
+    story: HackerNewsItem,
+    searchTerms: string[],
+  ): number {
+    const title = this.normalizeText(story.title ?? '');
+    const body = this.normalizeText(story.text ?? '');
+    const url = this.normalizeText(story.url ?? '');
     const content = `${title} ${body} ${url}`;
 
     let bonus = 0;
@@ -268,9 +314,13 @@ export class HackerNewsCollector
 
     return bonus;
   }
-  private calculateProblemBonus(story: any): number {
-    const title = this.normalizeText(story?.title ?? '');
-    const body = this.normalizeText(story?.text ?? '');
+
+  /**
+   * Adds score for Hacker News terms that often indicate problems or needs.
+   */
+  private calculateProblemBonus(story: HackerNewsItem): number {
+    const title = this.normalizeText(story.title ?? '');
+    const body = this.normalizeText(story.text ?? '');
     const content = `${title} ${body}`;
 
     const hnProblemTerms = [
@@ -309,8 +359,11 @@ export class HackerNewsCollector
     return bonus;
   }
 
+  /**
+   * Maps Hacker News story to the unified CollectorPost format.
+   */
   private async mapStoryToCollectorPost(
-    story: any,
+    story: HackerNewsItem,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const comments = await this.collectStoryComments(story);
@@ -318,9 +371,9 @@ export class HackerNewsCollector
     return {
       sourceType: CollectionSourceType.HACKER_NEWS,
       platformName: this.platformName,
-      externalId: story.id.toString(),
+      externalId: story.id?.toString() ?? '',
       title: story.title,
-      content: this.stripHtml(story.text ?? story.title),
+      content: this.stripHtml(story.text ?? story.title ?? ''),
       author: story.by,
       url: story.url ?? `${this.siteBaseUrl}/item?id=${story.id}`,
 
@@ -336,8 +389,13 @@ export class HackerNewsCollector
     };
   }
 
-  private async collectStoryComments(story: any): Promise<CollectorComment[]> {
-    const commentIds = (story?.kids ?? []).slice(0, this.maxFetchedComments);
+  /**
+   * Collects useful comments for a Hacker News story.
+   */
+  private async collectStoryComments(
+    story: HackerNewsItem,
+  ): Promise<CollectorComment[]> {
+    const commentIds = (story.kids ?? []).slice(0, this.maxFetchedComments);
     const comments: CollectorComment[] = [];
     const seenCommentIds = new Set<string>();
 
@@ -350,9 +408,9 @@ export class HackerNewsCollector
         continue;
       }
 
-      const id = comment.id.toString();
+      const id = comment.id?.toString();
 
-      if (seenCommentIds.has(id)) {
+      if (!id || seenCommentIds.has(id)) {
         continue;
       }
 
@@ -372,14 +430,19 @@ export class HackerNewsCollector
     return comments;
   }
 
-  private isUsefulComment(comment: any): boolean {
+  /**
+   * Validates Hacker News comments before saving.
+   */
+  private isUsefulComment(
+    comment: HackerNewsItem | null,
+  ): comment is HackerNewsItem {
     const content = this.normalizeText(this.stripHtml(comment?.text ?? ''));
 
-    if (!comment?.id || comment?.type !== 'comment' || comment?.deleted) {
+    if (!comment?.id || comment.type !== 'comment' || comment.deleted) {
       return false;
     }
 
-    if (comment?.dead || content.length < 40) {
+    if (comment.dead || content.length < 40) {
       return false;
     }
 
@@ -392,6 +455,9 @@ export class HackerNewsCollector
     return !blockedWords.some((word) => content.includes(word));
   }
 
+  /**
+   * Detects comments that are too generic to help idea discovery.
+   */
   private isLowValueComment(content: string): boolean {
     const lowValuePatterns = [
       /^thanks$/i,
@@ -407,11 +473,28 @@ export class HackerNewsCollector
     return lowValuePatterns.some((pattern) => pattern.test(content));
   }
 
+  /**
+   * Reads common blocked words and Hacker News-specific blocked words.
+   */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('HACKER_NEWS_BLOCKED_WORDS');
   }
 
+  /**
+   * Builds Hacker News API headers.
+   */
   private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
+  }
+
+  /**
+   * Extracts readable message from unknown errors.
+   */
+  private getErrorMessage(error: unknown): unknown {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return error;
   }
 }
