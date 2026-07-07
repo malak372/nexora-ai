@@ -13,13 +13,6 @@ import { SocialCommentService } from './social-comments/social-comment.service';
 /**
  * Module responsible for the data collection pipeline.
  *
- * Handles:
- * - Collection jobs.
- * - Platform collectors.
- * - Collected social posts.
- * - Collected social comments.
- * - Admin audit logging for collection actions.
- *
  * @author Malak
  */
 @Module({

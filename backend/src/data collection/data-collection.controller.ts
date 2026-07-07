@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
@@ -26,21 +27,13 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
  * Base route:
  * /data-collection
  *
- * Available endpoints:
- * - POST /data-collection/run
- * - GET /data-collection/status
- * - GET /data-collection/jobs
- * - GET /data-collection/posts
- * - GET /data-collection/comments
- * - POST /data-collection/:id/stop
- *
  * @author Malak
  */
 @Controller('data-collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DataCollectionController {
-  constructor(private readonly dataCollectionService: DataCollectionService) { }
+  constructor(private readonly dataCollectionService: DataCollectionService) {}
 
   /**
    * Starts a new data collection job.
@@ -70,6 +63,14 @@ export class DataCollectionController {
   }
 
   /**
+   * Returns detailed information about one collection job.
+   */
+  @Get('jobs/:id')
+  getJobDetails(@Param('id', ParseUUIDPipe) id: string) {
+    return this.dataCollectionService.getJobDetails(id);
+  }
+
+  /**
    * Returns paginated collected social posts.
    */
   @Get('posts')
@@ -90,17 +91,9 @@ export class DataCollectionController {
    */
   @Post(':id/stop')
   stop(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() admin: { id: string },
   ) {
     return this.dataCollectionService.stop(id, admin.id);
-  }
-
-  /**
-   * Returns detailed information about one collection job.
-   */
-  @Get('jobs/:id')
-  getJobDetails(@Param('id') id: string) {
-    return this.dataCollectionService.getJobDetails(id);
   }
 }

@@ -14,22 +14,12 @@ import { CollectionSourceType, LanguageCode } from '@prisma/client';
 /**
  * DTO used by admins to start a new data collection job.
  *
- * The admin selects:
- * - Software domain.
- * - Optional geographical filters.
- * - Target platforms.
- * - Optional keywords.
- *
  * @author Malak
  */
 export class RunCollectionDto {
   @IsUUID()
   domainId!: string;
 
-  /**
-   * Filled internally after validating the selected domain.
-   * It should not be required from the request body.
-   */
   @IsOptional()
   @IsString()
   domainName?: string;
