@@ -131,6 +131,7 @@ enum LanguageCode {
   FR
   ES
   DE
+  TR
 }
 
 enum ApiRequestType {
@@ -238,7 +239,6 @@ enum CollectionJobStatus {
 }
 
 enum CollectionSourceType {
-  MOCK
   REDDIT
   FACEBOOK
   YOUTUBE
@@ -266,6 +266,7 @@ enum CollectionSourceType {
 
 enum PromptType {
   IDEA_GENERATION
+  IDEA_UNLOCK
   CHAT_RESPONSE
   NLP_ANALYSIS
   ABSTRACT_GENERATION
@@ -293,10 +294,10 @@ model User {
   isActive   Boolean @default(true) @map("is_active")
   isVerified Boolean @default(false) @map("is_verified")
 
-  failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
-  failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
-  loginLockLevel             Int       @default(0) @map("login_lock_level")
-  lockedUntil                DateTime? @map("locked_until")
+ failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
+ failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
+ loginLockLevel             Int       @default(0) @map("login_lock_level")
+ lockedUntil                DateTime? @map("locked_until")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -777,10 +778,10 @@ model CollectionJob {
   id String @id @default(uuid())
 
   domainId String        @map("domain_id")
-  language LanguageCode?
+  language LanguageCode
   domain   Domain        @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
-  country         String?
+  country         String
   city            String?
   region          String?
   promptHistories PromptHistory[]
@@ -806,6 +807,7 @@ model CollectionJob {
   nlpAnalysis NlpAnalysis?
 
   @@index([domainId])
+  @@index([country])
   @@index([status])
   @@index([createdAt])
   @@map("collection_jobs")
@@ -828,10 +830,10 @@ model SocialPost {
   author     String?
   url        String?
 
-  country  String?
+  country  String
   city     String?
   region   String?
-  language String?
+  language LanguageCode?
 
   likesCount   Int @default(0) @map("likes_count")
   repliesCount Int @default(0) @map("replies_count")
@@ -842,9 +844,10 @@ model SocialPost {
 
   comments SocialComment[]
 
-  @@unique([sourceType, externalId])
+  @@unique([collectionJobId, sourceType, externalId])
   @@index([collectionJobId])
   @@index([platformId])
+  @@index([country])
   @@index([region])
   @@index([language])
   @@map("social_posts")
@@ -859,7 +862,7 @@ model SocialComment {
   externalId String  @map("external_id")
   content    String
   author     String?
-  language   String?
+  language LanguageCode?
   sentiment  String?
 
   likesCount Int @default(0) @map("likes_count")

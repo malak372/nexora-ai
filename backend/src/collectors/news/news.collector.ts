@@ -13,6 +13,7 @@ import {
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
 import { CollectorHttpUtil } from '../base/collector-http.util';
+import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 type NewsApiSource = {
@@ -42,13 +43,10 @@ type NewsApiResponse = {
  *
  * Collects public news articles using NewsAPI.
  *
- * This collector is intentionally permissive:
- * - It does not reject articles just because description/content is missing.
- * - It does not reject short articles.
- * - It only removes clearly unusable records such as missing URL/title
- *   or removed NewsAPI records.
- *
- * Relevance is handled by scoring and ranking instead of strict rejection.
+ * Notes:
+ * - NewsAPI does not provide article comments.
+ * - Language resolving is centralized in CollectorLanguageUtil.
+ * - Relevance is handled by scoring and ranking.
  *
  * @author Malak
  */
@@ -88,7 +86,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       const collectedArticles: NewsApiArticle[] = [];
 
       for (const searchQuery of searchQueries) {
-        if (collectedArticles.length >= this.maxFetchedPosts) break;
+        if (collectedArticles.length >= this.maxFetchedPosts) {
+          break;
+        }
 
         const articles = await this.searchArticles(searchQuery, input);
         collectedArticles.push(...articles);
@@ -101,7 +101,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         .filter((article) => {
           const url = article.url;
 
-          if (!url || seenArticleUrls.has(url)) return false;
+          if (!url || seenArticleUrls.has(url)) {
+            return false;
+          }
 
           seenArticleUrls.add(url);
           return true;
@@ -110,6 +112,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
           article,
           score: this.calculateArticleRelevanceScore(article, input),
         }))
+        .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts)
         .map((item) => this.mapArticleToCollectorPost(item.article, input));
@@ -147,7 +150,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         headers: this.buildHeaders(),
         params: {
           q: searchQuery,
-          language: this.resolveLanguageCode(input.language),
+          language: CollectorLanguageUtil.resolveNewsApiLanguage(
+            input.language,
+          ),
           sortBy: 'relevancy',
           pageSize: Math.min(this.maxFetchedPosts, 100),
         },
@@ -186,7 +191,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       ...fallbackDomain,
     ]).slice(0, 6);
 
-    if (!baseTerms.length) return [];
+    if (!baseTerms.length) {
+      return [];
+    }
 
     const problemTerms = this.getProblemWords()
       .map((word) => this.normalizeText(word))
@@ -212,9 +219,13 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     const url = article.url ?? '';
     const description = article.description ?? '';
 
-    if (!title || !url) return false;
+    if (!title || !url) {
+      return false;
+    }
 
-    if (title === '[Removed]' || description === '[Removed]') return false;
+    if (title === '[Removed]' || description === '[Removed]') {
+      return false;
+    }
 
     const blockedWords = this.getBlockedWords();
     const text = this.normalizeText(
@@ -261,7 +272,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
 
-    if (!keywords.length) return 0;
+    if (!keywords.length) {
+      return 0;
+    }
 
     const title = this.normalizeText(article.title ?? '');
     const body = this.normalizeText(
@@ -271,8 +284,13 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     let bonus = 0;
 
     for (const keyword of keywords) {
-      if (title.includes(keyword)) bonus += 25;
-      if (body.includes(keyword)) bonus += 10;
+      if (title.includes(keyword)) {
+        bonus += 25;
+      }
+
+      if (body.includes(keyword)) {
+        bonus += 10;
+      }
     }
 
     return bonus;
@@ -281,15 +299,13 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   /**
    * Improves Arabic news ranking using simple contextual weighting.
    *
-   * This does not reject articles.
+   * This method does not reject articles.
    */
   private getArabicContextScore(
     article: NewsApiArticle,
     input: CollectorInput,
   ): number {
-    const language = this.normalizeText(input.language ?? '');
-
-    if (language !== 'ar' && language !== 'arabic' && language !== 'ara') {
+    if (!CollectorLanguageUtil.isArabic(input.language)) {
       return 0;
     }
 
@@ -355,11 +371,15 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     let score = 0;
 
     for (const word of educationTerms) {
-      if (text.includes(word)) score += 6;
+      if (text.includes(word)) {
+        score += 6;
+      }
     }
 
     for (const word of unrelatedTerms) {
-      if (text.includes(word)) score -= 5;
+      if (text.includes(word)) {
+        score -= 5;
+      }
     }
 
     return score;
@@ -420,51 +440,6 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     return Buffer.from(article.url ?? article.title ?? Date.now().toString())
       .toString('base64')
       .slice(0, 64);
-  }
-
-  /**
-   * Resolves requested language to NewsAPI language code.
-   */
-  private resolveLanguageCode(language?: string | null): string | undefined {
-    if (!language) return undefined;
-
-    const normalized = this.normalizeText(language);
-
-    const languageMap: Record<string, string> = {
-      en: 'en',
-      eng: 'en',
-      english: 'en',
-      ar: 'ar',
-      ara: 'ar',
-      arabic: 'ar',
-      fr: 'fr',
-      french: 'fr',
-      de: 'de',
-      german: 'de',
-      es: 'es',
-      spanish: 'es',
-    };
-
-    const supportedLanguages = new Set([
-      'ar',
-      'de',
-      'en',
-      'es',
-      'fr',
-      'he',
-      'it',
-      'nl',
-      'no',
-      'pt',
-      'ru',
-      'sv',
-      'ud',
-      'zh',
-    ]);
-
-    const code = languageMap[normalized] ?? normalized.slice(0, 2);
-
-    return supportedLanguages.has(code) ? code : undefined;
   }
 
   /**

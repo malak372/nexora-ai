@@ -1,20 +1,16 @@
+type CacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
 /**
- * Utility for building consistent cache keys
- * across all collectors.
- *
- * Examples:
- * - youtube:search:health:ps:en
- * - github:comments:123456
+ * Utility for building and storing collector cache entries.
  *
  * @author Malak
  */
 export class CollectorCacheUtil {
-  /**
-   * Builds a normalized cache key.
-   *
-   * Empty or undefined parts are removed to avoid keys
-   * containing unnecessary empty sections.
-   */
+  private static readonly cache = new Map<string, CacheEntry<unknown>>();
+
   static build(
     platform: string,
     action: string,
@@ -28,5 +24,35 @@ export class CollectorCacheUtil {
       )
       .filter(Boolean)
       .join(':');
+  }
+
+  static get<T>(key: string): T | undefined {
+    const entry = this.cache.get(key);
+
+    if (!entry) {
+      return undefined;
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    return entry.value as T;
+  }
+
+  static set<T>(key: string, value: T, ttlMs: number): void {
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }
+
+  static delete(key: string): void {
+    this.cache.delete(key);
+  }
+
+  static clear(): void {
+    this.cache.clear();
   }
 }

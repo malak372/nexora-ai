@@ -4,6 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CollectionSourceType } from '@prisma/client';
 
 /**
  * Represents an asynchronous task executed by the collector queue.
@@ -13,19 +14,22 @@ import { ConfigService } from '@nestjs/config';
 type QueueTask<T> = () => Promise<T>;
 
 /**
+ * Metadata used for logging and monitoring queued collector tasks.
+ */
+type QueueTaskMetadata = {
+  platform?: CollectionSourceType | string;
+};
+
+/**
  * Service responsible for limiting concurrent execution of
  * data collection tasks.
- *
- * This queue helps prevent excessive simultaneous requests to
- * external APIs, reducing the likelihood of rate limiting and
- * improving overall system stability.
  *
  * Features:
  * - Configurable concurrency.
  * - Configurable maximum waiting queue size.
  * - FIFO task scheduling.
+ * - Optional platform-aware logging.
  * - Queue status monitoring.
- * - Execution logging.
  *
  * Environment variables:
  * - COLLECTOR_QUEUE_CONCURRENCY
@@ -73,15 +77,29 @@ export class CollectorQueueService {
    * Executes a task using the collector queue.
    *
    * If the concurrency limit is reached, the task waits.
-   * If the queue is full, the request is rejected safely.
+   * If the waiting queue is full, the task is rejected safely.
+   *
+   * @param task Async task to execute.
+   * @param metadata Optional task metadata used for logging.
    */
-  async run<T>(task: QueueTask<T>): Promise<T> {
+  async run<T>(
+    task: QueueTask<T>,
+    metadata?: QueueTaskMetadata | CollectionSourceType | string,
+  ): Promise<T> {
+    const platform = this.resolvePlatform(metadata);
+
     if (this.running >= this.concurrency) {
       if (this.queue.length >= this.maxQueueSize) {
         throw new ServiceUnavailableException(
           'Collector queue is full. Please try again later.',
         );
       }
+
+      this.logger.debug(
+        `Collector task queued${platform ? ` for ${platform}` : ''}. Waiting: ${
+          this.queue.length + 1
+        }`,
+      );
 
       await new Promise<void>((resolve) => {
         this.queue.push(resolve);
@@ -91,7 +109,11 @@ export class CollectorQueueService {
     this.running++;
 
     try {
-      this.logger.log(`Collector task started. Running: ${this.running}`);
+      this.logger.log(
+        `Collector task started${platform ? ` for ${platform}` : ''}. Running: ${
+          this.running
+        }`,
+      );
 
       return await task();
     } finally {
@@ -103,7 +125,11 @@ export class CollectorQueueService {
         next();
       }
 
-      this.logger.log(`Collector task finished. Running: ${this.running}`);
+      this.logger.log(
+        `Collector task finished${platform ? ` for ${platform}` : ''}. Running: ${
+          this.running
+        }`,
+      );
     }
   }
 
@@ -117,6 +143,23 @@ export class CollectorQueueService {
       concurrency: this.concurrency,
       maxQueueSize: this.maxQueueSize,
     };
+  }
+
+  /**
+   * Resolves optional task metadata into a readable platform name.
+   */
+  private resolvePlatform(
+    metadata?: QueueTaskMetadata | CollectionSourceType | string,
+  ): string | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+
+    if (typeof metadata === 'string') {
+      return metadata;
+    }
+
+    return metadata.platform?.toString();
   }
 
   /**

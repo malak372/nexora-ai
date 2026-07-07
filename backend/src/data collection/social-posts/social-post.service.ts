@@ -19,7 +19,7 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class SocialPostService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Stores collected posts and their comments.
@@ -40,19 +40,19 @@ export class SocialPostService {
 
       const savedPost = await this.prisma.socialPost.upsert({
         where: {
-          sourceType_externalId: {
+          collectionJobId_sourceType_externalId: {
+            collectionJobId,
             sourceType: post.sourceType,
             externalId: post.externalId,
           },
         },
         update: {
-          collectionJobId,
           platformId: platform.id,
           title: post.title,
           content: post.content,
           author: post.author,
           url: post.url,
-          country: post.country,
+          country: post.country ?? 'Unknown',
           city: post.city,
           region: post.region,
           language: post.language,
@@ -70,7 +70,7 @@ export class SocialPostService {
           content: post.content,
           author: post.author,
           url: post.url,
-          country: post.country,
+          country: post.country ?? 'Unknown',
           city: post.city,
           region: post.region,
           language: post.language,

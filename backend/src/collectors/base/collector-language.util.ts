@@ -3,73 +3,144 @@
  * and lightweight language detection used by data collectors.
  *
  * Features:
- * - Converts user-provided language names into standardized ISO language codes.
- * - Performs simple content-language validation using character detection.
- * - Helps collectors filter posts and comments according to the requested language.
- *
- * Note:
- * This utility uses lightweight heuristic detection (regular expressions)
- * rather than full natural language detection libraries in order to remain
- * fast and dependency-free.
+ * - Converts language names into ISO language codes.
+ * - Supports all project languages.
+ * - Provides NewsAPI language resolution.
+ * - Performs lightweight language detection.
  *
  * @author Malak
  */
 export class CollectorLanguageUtil {
   /**
-   * Resolves a language name or code into a normalized ISO language code.
-   *
-   * Supported values:
-   * - English → en
-   * - Arabic → ar
-   * - French → fr
-   * - Turkish → tr
+   * Language aliases.
+   */
+  private static readonly LANGUAGE_MAP: Record<string, string> = {
+    en: 'en',
+    eng: 'en',
+    english: 'en',
+
+    ar: 'ar',
+    ara: 'ar',
+    arabic: 'ar',
+
+    fr: 'fr',
+    fra: 'fr',
+    french: 'fr',
+
+    tr: 'tr',
+    tur: 'tr',
+    turkish: 'tr',
+
+    de: 'de',
+    deu: 'de',
+    ger: 'de',
+    german: 'de',
+
+    es: 'es',
+    spa: 'es',
+    spanish: 'es',
+
+    ru: 'ru',
+    rus: 'ru',
+    russian: 'ru',
+
+    it: 'it',
+    ita: 'it',
+    italian: 'it',
+
+    nl: 'nl',
+    nld: 'nl',
+    dutch: 'nl',
+
+    pt: 'pt',
+    por: 'pt',
+    portuguese: 'pt',
+
+    he: 'he',
+    heb: 'he',
+    hebrew: 'he',
+
+    no: 'no',
+    nor: 'no',
+    norwegian: 'no',
+
+    sv: 'sv',
+    swe: 'sv',
+    swedish: 'sv',
+
+    zh: 'zh',
+    zho: 'zh',
+    chi: 'zh',
+    chinese: 'zh',
+  };
+
+  /**
+   * Languages officially supported by NewsAPI.
+   */
+  private static readonly NEWS_API_LANGUAGES = new Set([
+    'ar',
+    'de',
+    'en',
+    'es',
+    'fr',
+    'he',
+    'it',
+    'nl',
+    'no',
+    'pt',
+    'ru',
+    'sv',
+    'zh',
+  ]);
+
+  /**
+   * Resolves a language name or code into an ISO language code.
    *
    * Examples:
-   * - "English" → "en"
-   * - "EN" → "en"
-   * - "arabic" → "ar"
-   * - "fr" → "fr"
-   *
-   * Returns undefined if the language is not recognized.
-   *
-   * @param language User-provided language name or code.
-   * @returns Normalized ISO language code or undefined.
+   * English -> en
+   * Arabic -> ar
+   * German -> de
    */
   static resolveLanguageCode(language?: string): string | undefined {
     if (!language) return undefined;
 
     const value = language.trim().toLowerCase();
 
-    const map: Record<string, string> = {
-      en: 'en',
-      english: 'en',
-      ar: 'ar',
-      arabic: 'ar',
-      fr: 'fr',
-      french: 'fr',
-      tr: 'tr',
-      turkish: 'tr',
-    };
-
-    return map[value];
+    return (
+      this.LANGUAGE_MAP[value] ??
+      this.LANGUAGE_MAP[value.slice(0, 3)] ??
+      value.slice(0, 2)
+    );
   }
 
   /**
-   * Determines whether a text appears to match
-   * the requested language.
+   * Resolves language code supported by NewsAPI.
    *
-   * Detection strategy:
-   * - Arabic: checks for Arabic Unicode characters.
-   * - English: checks for Latin alphabet characters.
-   * - Other supported languages currently bypass filtering.
-   * - If no language is requested, all content is accepted.
-   *
-   * This method is intentionally lightweight and is not intended
-   * to replace full language detection algorithms.
-   *
-   * @param content Text to evaluate.
-   * @param language Requested language name or code.
-   * @returns True if the content matches the requested language.
+   * Returns undefined if NewsAPI does not support it.
+   */
+  static resolveNewsApiLanguage(
+    language?: string,
+  ): string | undefined {
+    const code = this.resolveLanguageCode(language);
+
+    if (!code) {
+      return undefined;
+    }
+
+    return this.NEWS_API_LANGUAGES.has(code)
+      ? code
+      : undefined;
+  }
+
+  /**
+   * Returns true if the requested language is Arabic.
+   */
+  static isArabic(language?: string): boolean {
+    return this.resolveLanguageCode(language) === 'ar';
+  }
+
+  /**
+   * Performs lightweight language validation.
    */
   static matchesRequestedLanguage(
     content: string,
@@ -77,10 +148,39 @@ export class CollectorLanguageUtil {
   ): boolean {
     const languageCode = this.resolveLanguageCode(language);
 
-    if (!languageCode) return true;
-    if (languageCode === 'ar') return /[\u0600-\u06FF]/.test(content);
-    if (languageCode === 'en') return /[a-z]/i.test(content);
+    if (!languageCode) {
+      return true;
+    }
 
-    return true;
+    switch (languageCode) {
+      case 'ar':
+        return /[\u0600-\u06FF]/.test(content);
+
+      case 'en':
+        return /[a-z]/i.test(content);
+
+      case 'de':
+        return /[äöüß]/i.test(content) || /[a-z]/i.test(content);
+
+      case 'fr':
+        return /[àâçéèêëîïôûùüÿ]/i.test(content) || /[a-z]/i.test(content);
+
+      case 'es':
+        return /[áéíóúñü]/i.test(content) || /[a-z]/i.test(content);
+
+      case 'it':
+        return /[àèéìîòóù]/i.test(content) || /[a-z]/i.test(content);
+
+      case 'nl':
+      case 'pt':
+      case 'sv':
+      case 'no':
+      case 'tr':
+      case 'ru':
+      case 'he':
+      case 'zh':
+      default:
+        return true;
+    }
   }
 }

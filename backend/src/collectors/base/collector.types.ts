@@ -1,4 +1,4 @@
-import { CollectionSourceType } from '@prisma/client';
+import { CollectionSourceType, LanguageCode } from '@prisma/client';
 
 /**
  * Input passed to all social platform collectors.
@@ -9,12 +9,12 @@ export type CollectorInput = {
   domainName: string;
   domainKeywords?: string[];
 
-  country?: string;
+  country: string;
+  language: LanguageCode;
   city?: string;
   region?: string;
   radiusKm?: number;
 
-  language?: string;
   keywords?: string[];
 };
 
@@ -30,7 +30,7 @@ export type CollectorComment = {
   externalId: string;
   content: string;
   author?: string;
-  language?: string;
+  language?: LanguageCode;
   likesCount?: number;
   publishedAt?: Date;
 };
@@ -54,7 +54,7 @@ export type CollectorPost = {
   country?: string;
   city?: string;
   region?: string;
-  language?: string;
+  language?: LanguageCode;
   likesCount?: number;
   repliesCount?: number;
   publishedAt?: Date;
