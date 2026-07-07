@@ -9,7 +9,6 @@ import { CollectionSourceType } from '@prisma/client';
  *  
  */
 export const PLATFORM_NAMES: Record<CollectionSourceType, string> = {
-  [CollectionSourceType.MOCK]: 'Mock',
 
   [CollectionSourceType.REDDIT]: 'Reddit',
   [CollectionSourceType.FACEBOOK]: 'Facebook',

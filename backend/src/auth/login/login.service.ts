@@ -85,17 +85,21 @@ export class AuthLoginService {
         const now = new Date();
 
         if (user.lockedUntil && user.lockedUntil > now) {
+            const remainingMinutes = Math.ceil(
+                (user.lockedUntil.getTime() - now.getTime()) / 60000,
+            );
+
             await this.authAuditService.createLog({
                 userId: user.id,
                 email: user.email,
                 action: AuthAction.LOGIN_FAILED,
                 isSuccess: false,
-                message: 'Account is temporarily locked',
+                message: `Login attempted while account was locked. Remaining lock time: ${this.formatLockDuration(remainingMinutes)}`,
                 ...meta,
             });
 
             throw new UnauthorizedException(
-                'Account is temporarily locked. Please try again later',
+                `Account is temporarily locked. Try again in ${this.formatLockDuration(remainingMinutes)}.`,
             );
         }
 
@@ -313,7 +317,7 @@ export class AuthLoginService {
         });
 
         throw new UnauthorizedException(
-            'Too many failed login attempts. Account temporarily locked',
+            `Account locked for ${this.formatLockDuration(lockDurationMinutes)} due to multiple failed login attempts.`,
         );
     }
     /**
