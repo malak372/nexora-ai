@@ -32,7 +32,7 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
-  ) {}
+  ) { }
 
   /**
    * Validates that the selected domain exists and is active.
@@ -160,10 +160,10 @@ export class CollectionJobService {
             },
           },
         },
+        nlpAnalysis: true,
         _count: {
           select: {
             posts: true,
-            nlpAnalyses: true,
           },
         },
       },
@@ -338,10 +338,10 @@ export class CollectionJobService {
               name: true,
             },
           },
+          nlpAnalysis: true,
           _count: {
             select: {
               posts: true,
-              nlpAnalyses: true,
             },
           },
         },
