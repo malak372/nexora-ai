@@ -6,31 +6,64 @@ import Parser from 'rss-parser';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 import {
+  CollectorComment,
   CollectorInput,
   CollectorPost,
-  CollectorComment,
 } from '../base/collector.types';
 
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
+import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+
+type RssItem = {
+  guid?: string;
+  link?: string;
+  title?: string;
+  contentSnippet?: string;
+  content?: string;
+  summary?: string;
+  creator?: string;
+  author?: string;
+  isoDate?: string;
+  pubDate?: string;
+};
+
+type DevToArticle = {
+  id?: number;
+  title?: string;
+  description?: string;
+  url?: string;
+  user?: {
+    name?: string;
+    username?: string;
+  };
+  public_reactions_count?: number;
+  comments_count?: number;
+  published_at?: string;
+};
+
+type DevToComment = {
+  id?: number;
+  id_code?: string;
+  body_html?: string;
+  user?: {
+    name?: string;
+    username?: string;
+  };
+  created_at?: string;
+};
 
 /**
  * Blog collector.
  *
- * Collects public blog articles from multiple blog-like sources:
+ * Collects public blog articles from:
  * - RSS feeds.
  * - Dev.to public API.
  *
- * RSS feeds are used as a broad fallback source for articles.
- * Dev.to is used because it provides public article metadata,
- * reactions, and comments.
- *
  * Notes:
  * - RSS feeds usually do not expose comments or likes.
- * - Dev.to can provide article comments and public reactions.
- * - WordPress REST API can be added later for specific WordPress sites.
+ * - Dev.to provides article metadata, reactions, and public comments.
  *
  * @author Malak
  */
@@ -46,12 +79,8 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Collects blog articles from RSS feeds and Dev.to,
-   * removes duplicates, ranks results by relevance,
-   * and returns the best posts.
-   *
-   * @param input Collector input containing domain, keywords, and location.
-   * @returns Ranked blog articles with comments when available.
+   * Collects blog articles, removes duplicates, ranks them,
+   * and returns the most relevant posts.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -68,7 +97,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       const devToPosts = await this.collectFromDevTo(input);
 
       const collectedPosts = [...rssPosts, ...devToPosts];
-
       const seenPostIds = new Set<string>();
 
       const rankedPosts = collectedPosts
@@ -92,20 +120,17 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       this.logger.log(`Blog collection completed. Posts: ${rankedPosts.length}`);
 
       return rankedPosts;
-    } catch (error: any) {
-      this.logger.warn('Blog collection failed', error?.message ?? error);
+    } catch (error: unknown) {
+      this.logger.warn(
+        'Blog collection failed',
+        error instanceof Error ? error.message : error,
+      );
       return [];
     }
   }
 
   /**
    * Collects blog articles from RSS feeds selected by domain.
-   *
-   * RSS is useful for general blog/news content, but it usually
-   * does not provide likes or comments.
-   *
-   * @param input Collector input.
-   * @returns Blog posts collected from RSS feeds.
    */
   private async collectFromRssFeeds(
     input: CollectorInput,
@@ -128,10 +153,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Collects articles from a single RSS feed.
-   *
-   * @param feedUrl RSS feed URL.
-   * @param input Collector input.
-   * @returns Blog articles from the feed.
    */
   private async collectFromFeed(
     feedUrl: string,
@@ -141,36 +162,46 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       const feed = await this.parser.parseURL(feedUrl);
 
       return (feed.items ?? [])
-        .filter((item: any) => this.isValidRssArticle(item))
+        .filter((item) => this.isValidRssArticle(item as RssItem))
         .slice(0, this.maxFetchedPosts)
-        .map((item: any): CollectorPost => ({
-          sourceType: CollectionSourceType.BLOG,
-          platformName: `${this.platformName} - RSS`,
-          externalId: item.guid ?? item.link ?? item.title,
-          title: item.title,
-          content: this.stripHtml(
-            item.contentSnippet ?? item.content ?? item.summary ?? item.title,
-          ),
-          author: item.creator ?? item.author ?? feed.title,
-          url: item.link,
+        .map((item): CollectorPost => {
+          const rssItem = item as RssItem;
 
-          country: input.country,
-          city: input.city,
-          region: input.region,
+          return {
+            sourceType: CollectionSourceType.BLOG,
+            platformName: `${this.platformName} - RSS`,
+            externalId: rssItem.guid ?? rssItem.link ?? rssItem.title ?? '',
+            title: rssItem.title,
+            content: this.stripHtml(
+              rssItem.contentSnippet ??
+                rssItem.content ??
+                rssItem.summary ??
+                rssItem.title ??
+                '',
+            ),
+            author: rssItem.creator ?? rssItem.author ?? feed.title,
+            url: rssItem.link,
 
-          language: input.language,
-          likesCount: 0,
-          repliesCount: 0,
-          publishedAt: item.isoDate
-            ? new Date(item.isoDate)
-            : item.pubDate
-              ? new Date(item.pubDate)
-              : undefined,
-          comments: [],
-        }));
-    } catch (error: any) {
+            country: input.country,
+            city: input.city,
+            region: input.region,
+
+            language: input.language,
+            likesCount: 0,
+            repliesCount: 0,
+            publishedAt: rssItem.isoDate
+              ? new Date(rssItem.isoDate)
+              : rssItem.pubDate
+                ? new Date(rssItem.pubDate)
+                : undefined,
+            comments: [],
+          };
+        });
+    } catch (error: unknown) {
       this.logger.warn(
-        `Blog feed skipped: ${feedUrl} - ${error?.message ?? error}`,
+        `Blog feed skipped: ${feedUrl} - ${
+          error instanceof Error ? error.message : error
+        }`,
       );
 
       return [];
@@ -179,17 +210,10 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Collects public articles from Dev.to API.
-   *
-   * Dev.to is useful because it provides:
-   * - Articles.
-   * - Public reactions count.
-   * - Comments count.
-   * - Public comments through a separate endpoint.
-   *
-   * @param input Collector input.
-   * @returns Blog posts collected from Dev.to.
    */
-  private async collectFromDevTo(input: CollectorInput): Promise<CollectorPost[]> {
+  private async collectFromDevTo(
+    input: CollectorInput,
+  ): Promise<CollectorPost[]> {
     try {
       const tag = this.buildDevToTag(input);
 
@@ -201,7 +225,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
         input.language,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any[]>(
+      const data = await CollectorHttpUtil.getWithRetryAndCache<DevToArticle[]>(
         'https://dev.to/api/articles',
         {
           headers: this.buildHeaders(),
@@ -220,41 +244,42 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
         },
       );
 
-      const articles = data ?? [];
-
-      const posts = await Promise.all(
-        articles
-          .filter((article: any) => this.isValidDevToArticle(article))
-          .slice(0, this.maxFetchedPosts)
-          .map((article: any) => this.mapDevToArticle(article, input)),
+      return (data ?? [])
+        .filter((article) => this.isValidDevToArticle(article))
+        .slice(0, this.maxFetchedPosts)
+        .map((article) => this.mapDevToArticle(article, input))
+        .reduce<Promise<CollectorPost[]>>(
+          async (promise, postPromise) => [
+            ...(await promise),
+            await postPromise,
+          ],
+          Promise.resolve([]),
+        );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Dev.to collection skipped - ${
+          error instanceof Error ? error.message : error
+        }`,
       );
-
-      return posts;
-    } catch (error: any) {
-      this.logger.warn(`Dev.to collection skipped - ${error?.message ?? error}`);
       return [];
     }
   }
 
   /**
    * Maps a Dev.to article to the shared CollectorPost format.
-   *
-   * @param article Dev.to article object.
-   * @param input Collector input.
-   * @returns CollectorPost with comments and reaction counts.
    */
   private async mapDevToArticle(
-    article: any,
+    article: DevToArticle,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments = await this.collectDevToComments(article.id);
+    const comments = await this.collectDevToComments(article.id ?? 0);
 
     return {
       sourceType: CollectionSourceType.BLOG,
       platformName: `${this.platformName} - Dev.to`,
-      externalId: article.id.toString(),
+      externalId: String(article.id),
       title: article.title,
-      content: this.stripHtml(article.description ?? article.title),
+      content: this.stripHtml(article.description ?? article.title ?? ''),
       author: article.user?.name ?? article.user?.username,
       url: article.url,
 
@@ -274,19 +299,18 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Collects public comments for a Dev.to article.
-   *
-   * @param articleId Dev.to article ID.
-   * @returns Useful public comments.
    */
   private async collectDevToComments(
     articleId: number,
   ): Promise<CollectorComment[]> {
+    if (!articleId) return [];
+
     try {
       const cacheKey = CollectorCacheUtil.build('blog', 'devto-comments', [
         articleId,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<any[]>(
+      const data = await CollectorHttpUtil.getWithRetryAndCache<DevToComment[]>(
         'https://dev.to/api/comments',
         {
           headers: this.buildHeaders(),
@@ -306,9 +330,9 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       const seenCommentIds = new Set<string>();
 
       return (data ?? [])
-        .filter((comment: any) => this.isUsefulComment(comment?.body_html))
-        .filter((comment: any) => {
-          const id = comment?.id_code ?? comment?.id?.toString();
+        .filter((comment) => this.isUsefulComment(comment.body_html))
+        .filter((comment) => {
+          const id = comment.id_code ?? comment.id?.toString();
 
           if (!id || seenCommentIds.has(id)) return false;
 
@@ -316,8 +340,8 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
           return true;
         })
         .slice(0, this.maxSavedComments)
-        .map((comment: any): CollectorComment => ({
-          externalId: comment.id_code ?? comment.id?.toString(),
+        .map((comment): CollectorComment => ({
+          externalId: comment.id_code ?? comment.id?.toString() ?? '',
           content: this.stripHtml(comment.body_html ?? ''),
           author: comment.user?.name ?? comment.user?.username,
           likesCount: 0,
@@ -331,11 +355,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Builds the general search query used for checking whether
-   * the blog collector has enough input to run.
-   *
-   * @param input Collector input.
-   * @returns Search query.
+   * Builds the general search query.
    */
   private buildSearchQuery(input: CollectorInput): string {
     const userKeyword = input.keywords?.[0]
@@ -352,13 +372,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Builds a Dev.to tag from domain or user keywords.
-   *
-   * Dev.to works better with technical tags such as:
-   * webdev, ai, machinelearning, programming, cybersecurity.
-   *
-   * @param input Collector input.
-   * @returns Dev.to compatible tag.
+   * Builds a Dev.to compatible tag from domain or keywords.
    */
   private buildDevToTag(input: CollectorInput): string {
     const keywords = [
@@ -408,22 +422,15 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Validates RSS article before mapping.
-   *
-   * @param item RSS item.
-   * @returns True if the RSS article is usable.
+   * Validates RSS articles before mapping.
    */
-  private isValidRssArticle(item: any): boolean {
-    const title = this.normalizeText(item?.title ?? '');
+  private isValidRssArticle(item: RssItem): boolean {
+    const title = this.normalizeText(item.title ?? '');
     const content = this.normalizeText(
-      item?.contentSnippet ?? item?.content ?? item?.summary ?? '',
+      item.contentSnippet ?? item.content ?? item.summary ?? '',
     );
 
-    if (
-      !title ||
-      !item?.link ||
-      content.length < 80
-    ) {
+    if (!title || !item.link || content.length < 80) {
       return false;
     }
 
@@ -440,17 +447,14 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Validates Dev.to article before mapping.
-   *
-   * @param article Dev.to article object.
-   * @returns True if the article is usable.
+   * Validates Dev.to articles before mapping.
    */
-  private isValidDevToArticle(article: any): boolean {
-    const title = this.normalizeText(article?.title ?? '');
-    const description = this.normalizeText(article?.description ?? '');
+  private isValidDevToArticle(article: DevToArticle): boolean {
+    const title = this.normalizeText(article.title ?? '');
+    const description = this.normalizeText(article.description ?? '');
     const text = `${title} ${description}`;
 
-    if (!article?.id || !article?.url || !title) {
+    if (!article.id || !article.url || !title) {
       return false;
     }
 
@@ -460,10 +464,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Validates public comments before saving.
-   *
-   * @param content Raw comment content.
-   * @returns True if the comment is useful.
+   * Filters short, low-value, empty, or blocked comments.
    */
   private isUsefulComment(content?: string): boolean {
     const text = this.normalizeText(this.stripHtml(content ?? ''));
@@ -502,10 +503,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Calculates relevance score for collected blog posts.
-   *
-   * @param post Collected blog post.
-   * @param input Collector input.
-   * @returns Numeric relevance score.
    */
   private calculatePostRelevanceScore(
     post: CollectorPost,
@@ -523,10 +520,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Returns RSS feeds based on the selected domain.
-   *
-   * @param domainName Selected domain name.
-   * @returns List of RSS feed URLs.
+   * Returns RSS feeds based on selected domain.
    */
   private getFeedsForDomain(domainName?: string): string[] {
     const domain = this.normalizeText(domainName ?? '');
@@ -582,11 +576,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Reads common blocked words and Blog-specific blocked words.
-   *
-   * Environment variable:
-   * BLOG_BLOCKED_WORDS
-   *
-   * @returns List of blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('BLOG_BLOCKED_WORDS');
@@ -594,8 +583,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Builds headers for public blog APIs.
-   *
-   * @returns HTTP headers.
    */
   private buildHeaders(): Record<string, string> {
     return {

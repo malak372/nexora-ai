@@ -16,7 +16,7 @@ type CacheEntry<T> = {
  */
 export type CollectorHttpResponse<T> = {
   data: T;
-  headers: Record<string, any>;
+  headers: Record<string, unknown>;
   status: number;
 };
 
@@ -37,7 +37,7 @@ export type CollectorHttpResponse<T> = {
 export class CollectorHttpUtil {
   private static readonly logger = new Logger(CollectorHttpUtil.name);
 
-  private static readonly cache = new Map<string, CacheEntry<any>>();
+  private static readonly cache = new Map<string, CacheEntry<unknown>>();
 
   /**
    * Old method kept for backward compatibility.
@@ -70,16 +70,6 @@ export class CollectorHttpUtil {
    * - Exponential backoff.
    * - Optional ETag support.
    * - Response headers return.
-   *
-   * This is useful for APIs like GitHub where we need:
-   * - ETag to reduce API usage.
-   * - X-RateLimit headers to monitor remaining requests.
-   *
-   * @template T Response type.
-   * @param url Target URL.
-   * @param config Axios request config.
-   * @param options Cache, retry, and optional ETag options.
-   * @returns Data, headers, and status code.
    */
   static async getWithRetryCacheAndHeaders<T>(
     url: string,
@@ -110,19 +100,21 @@ export class CollectorHttpUtil {
 
     const requestConfig: AxiosRequestConfig = {
       ...config,
+      timeout: config.timeout ?? 10000,
       headers: {
         ...(config.headers ?? {}),
         ...(cachedEtag?.data
-          ? { 'If-None-Match': cachedEtag.data }
+          ? { 'If-None-Match': String(cachedEtag.data) }
           : {}),
       },
       validateStatus: (status: number) =>
         (status >= 200 && status < 300) || status === 304,
     };
 
-    let lastError: any;
+    const retryAttempts = Math.max(1, options.retryAttempts);
+    let lastError: unknown;
 
-    for (let attempt = 1; attempt <= options.retryAttempts; attempt++) {
+    for (let attempt = 1; attempt <= retryAttempts; attempt++) {
       try {
         this.logger.log(`HTTP GET attempt ${attempt}: ${url}`);
 
@@ -187,7 +179,7 @@ export class CollectorHttpUtil {
         const shouldRetry =
           !status || status === 408 || status === 429 || status >= 500;
 
-        if (!shouldRetry || attempt === options.retryAttempts) {
+        if (!shouldRetry || attempt === retryAttempts) {
           this.logger.error(
             `HTTP GET failed: ${url}`,
             error.response?.data ?? error.message,
@@ -223,6 +215,12 @@ export class CollectorHttpUtil {
     throw lastError;
   }
 
+  /**
+   * Calculates retry delay.
+   *
+   * If Retry-After exists, it is respected.
+   * Otherwise, exponential backoff is used.
+   */
   private static calculateBackoffDelay(
     baseDelayMs: number,
     attempt: number,
@@ -235,6 +233,9 @@ export class CollectorHttpUtil {
     return baseDelayMs * Math.pow(2, attempt - 1);
   }
 
+  /**
+   * Pauses execution for the given number of milliseconds.
+   */
   private static sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

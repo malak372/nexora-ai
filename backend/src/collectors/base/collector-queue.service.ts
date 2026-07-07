@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -18,68 +22,67 @@ type QueueTask<T> = () => Promise<T>;
  *
  * Features:
  * - Configurable concurrency.
- * - FIFO (First-In, First-Out) task scheduling.
+ * - Configurable maximum waiting queue size.
+ * - FIFO task scheduling.
  * - Queue status monitoring.
  * - Execution logging.
  *
- * The maximum number of concurrent tasks is configured using:
- * COLLECTOR_QUEUE_CONCURRENCY
+ * Environment variables:
+ * - COLLECTOR_QUEUE_CONCURRENCY
+ * - COLLECTOR_QUEUE_MAX_SIZE
  *
  * @author Malak
  */
 @Injectable()
 export class CollectorQueueService {
-  /**
-   * Logger used for queue execution events.
-   */
   private readonly logger = new Logger(CollectorQueueService.name);
 
   /**
-   * Number of tasks currently being executed.
+   * Number of tasks currently running.
    */
   private running = 0;
 
   /**
-   * Queue of waiting tasks.
-   *
-   * Tasks are processed in FIFO order as execution slots
-   * become available.
+   * Waiting tasks queue.
    */
   private readonly queue: Array<() => void> = [];
 
   /**
-   * Maximum number of tasks allowed to run concurrently.
+   * Maximum number of tasks allowed to run at the same time.
    */
   private readonly concurrency: number;
 
   /**
-   * Creates the queue service.
-   *
-   * Reads the maximum concurrency value from the application
-   * configuration. Defaults to 1 if not provided.
-   *
-   * @param configService NestJS configuration service.
+   * Maximum number of tasks allowed to wait in the queue.
    */
+  private readonly maxQueueSize: number;
+
   constructor(private readonly configService: ConfigService) {
-    this.concurrency =
-      Number(this.configService.get('COLLECTOR_QUEUE_CONCURRENCY')) || 1;
+    this.concurrency = this.getPositiveNumber(
+      'COLLECTOR_QUEUE_CONCURRENCY',
+      1,
+    );
+
+    this.maxQueueSize = this.getPositiveNumber(
+      'COLLECTOR_QUEUE_MAX_SIZE',
+      100,
+    );
   }
 
   /**
    * Executes a task using the collector queue.
    *
-   * If the concurrency limit has been reached, the task waits
-   * until a running task finishes.
-   *
-   * Once execution completes, the next waiting task (if any)
-   * is automatically started.
-   *
-   * @template T Task return type.
-   * @param task Asynchronous task to execute.
-   * @returns Task result.
+   * If the concurrency limit is reached, the task waits.
+   * If the queue is full, the request is rejected safely.
    */
   async run<T>(task: QueueTask<T>): Promise<T> {
     if (this.running >= this.concurrency) {
+      if (this.queue.length >= this.maxQueueSize) {
+        throw new ServiceUnavailableException(
+          'Collector queue is full. Please try again later.',
+        );
+      }
+
       await new Promise<void>((resolve) => {
         this.queue.push(resolve);
       });
@@ -88,9 +91,7 @@ export class CollectorQueueService {
     this.running++;
 
     try {
-      this.logger.log(
-        `Collector task started. Running: ${this.running}`,
-      );
+      this.logger.log(`Collector task started. Running: ${this.running}`);
 
       return await task();
     } finally {
@@ -102,27 +103,28 @@ export class CollectorQueueService {
         next();
       }
 
-      this.logger.log(
-        `Collector task finished. Running: ${this.running}`,
-      );
+      this.logger.log(`Collector task finished. Running: ${this.running}`);
     }
   }
 
   /**
-   * Returns the current queue status.
-   *
-   * Useful for monitoring collector workload and debugging.
-   *
-   * @returns Queue statistics including:
-   * - running tasks
-   * - waiting tasks
-   * - configured concurrency
+   * Returns current queue status.
    */
   getStatus() {
     return {
       running: this.running,
       waiting: this.queue.length,
       concurrency: this.concurrency,
+      maxQueueSize: this.maxQueueSize,
     };
+  }
+
+  /**
+   * Reads a positive numeric configuration value.
+   */
+  private getPositiveNumber(key: string, defaultValue: number): number {
+    const value = Number(this.configService.get(key));
+
+    return Number.isFinite(value) && value > 0 ? value : defaultValue;
   }
 }
