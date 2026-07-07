@@ -44,13 +44,6 @@ type GooglePlayReviewsResponse = {
  * Collects public Google Play apps and public app reviews
  * using google-play-scraper.
  *
- * Notes:
- * - External google-play-scraper calls are cached through
- *   CollectorExternalCacheUtil.
- * - Generic return types are passed explicitly to the cache wrapper
- *   to avoid TypeScript inferring cached results as unknown or {}.
- * - Google Play supports language and country filters.
- *
  * @author Malak
  */
 @Injectable()
@@ -145,11 +138,11 @@ export class GooglePlayCollector
     const domainKeywords = this.getDomainKeywords(input);
 
     const fallbackDomain = input.domainName
-      ? [this.normalizeText(input.domainName)]
+      ? [this.cleanNormalizedText(input.domainName)]
       : [];
 
     const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
     return this.unique([...domainKeywords, ...fallbackDomain, ...userKeywords])
@@ -161,17 +154,52 @@ export class GooglePlayCollector
    * Validates Google Play app before ranking and mapping.
    */
   private isValidApp(app: GooglePlayApp): boolean {
-    const title = this.normalizeText(app.title ?? '');
-    const summary = this.normalizeText(app.summary ?? '');
+    const title = this.cleanPlainText(app.title);
+    const summary = this.cleanPlainText(app.summary);
 
     if (!app.appId || !title) {
       return false;
     }
 
-    const blockedWords = this.getBlockedWords();
-    const content = `${title} ${summary}`;
+    const content = this.cleanNormalizedText(`${title} ${summary}`);
 
-    return !blockedWords.some((word) => content.includes(word));
+    if (this.isLikelyGameApp(content)) {
+      return false;
+    }
+
+    const blockedWords = this.getBlockedWords();
+
+    return !blockedWords.some((word) =>
+      content.includes(this.cleanNormalizedText(word)),
+    );
+  }
+
+  /**
+   * Detects Google Play game-like apps that pollute education results.
+   *
+   * This is intentionally scoped to Google Play only because many Google Play
+   * search results for education keywords are simulation games, not real
+   * learning platforms or educational tools.
+   */
+  private isLikelyGameApp(content: string): boolean {
+    const gameTerms = [
+      'game',
+      'games',
+      'simulator',
+      'simulation',
+      'school simulator',
+      'teacher simulator',
+      'teacher game',
+      'student game',
+      'classroom play',
+      'rpg',
+      'mini game',
+      'minigame',
+      'offline game',
+      'puzzle game',
+    ];
+
+    return gameTerms.some((term) => content.includes(term));
   }
 
   /**
@@ -182,8 +210,8 @@ export class GooglePlayCollector
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: app.title ?? '',
-      body: app.summary ?? '',
+      title: this.cleanPlainText(app.title),
+      body: this.cleanPlainText(app.summary),
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: app.ratings ?? 0,
@@ -200,15 +228,19 @@ export class GooglePlayCollector
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const appId = app.appId ?? '';
+    const title = this.cleanPlainText(app.title);
+    const summary = this.cleanPlainText(app.summary);
+    const author = this.cleanPlainText(app.developer);
+
     const comments = await this.collectAppReviews(appId, input);
 
     return {
       sourceType: CollectionSourceType.GOOGLE_PLAY,
       platformName: this.platformName,
       externalId: appId,
-      title: app.title,
-      content: app.summary ?? app.title ?? '',
-      author: app.developer,
+      title,
+      content: summary || title,
+      author,
       url: app.url,
 
       country: input.country,
@@ -260,8 +292,8 @@ export class GooglePlayCollector
         .slice(0, this.maxSavedComments)
         .map((review): CollectorComment => ({
           externalId: review.id ?? `${appId}-${review.date}`,
-          content: review.text ?? '',
-          author: review.userName,
+          content: this.cleanPlainText(review.text),
+          author: this.cleanPlainText(review.userName),
           language: input.language,
           likesCount: review.thumbsUp ?? 0,
           publishedAt: review.date ? new Date(review.date) : undefined,
@@ -275,8 +307,8 @@ export class GooglePlayCollector
    * Filters short, low-value, blocked, or language-mismatched reviews.
    */
   private isUsefulReview(review: GooglePlayReview, language?: string): boolean {
-    const rawContent = review.text ?? '';
-    const content = this.normalizeText(rawContent);
+    const rawContent = this.cleanPlainText(review.text);
+    const content = this.cleanNormalizedText(rawContent);
 
     if (!review.id || content.length < 40) {
       return false;
@@ -314,7 +346,9 @@ export class GooglePlayCollector
 
     const blockedWords = this.getBlockedWords();
 
-    return !blockedWords.some((word) => content.includes(word));
+    return !blockedWords.some((word) =>
+      content.includes(this.cleanNormalizedText(word)),
+    );
   }
 
   /**

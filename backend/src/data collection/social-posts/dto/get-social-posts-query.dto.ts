@@ -1,10 +1,11 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { LanguageCode } from '@prisma/client';
+import { CollectionSourceType, LanguageCode } from '@prisma/client';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for filtering, sorting, and paginating collected social posts.
+ * Query DTO for filtering, searching, sorting,
+ * date filtering, and paginating collected social posts.
  *
  * @author Malak
  */
@@ -18,10 +19,26 @@ export class GetSocialPostsQueryDto extends ListQueryDto {
   platformId?: string;
 
   @IsOptional()
+  @IsEnum(CollectionSourceType)
+  sourceType?: CollectionSourceType;
+
+  @IsOptional()
   @IsEnum(LanguageCode)
   language?: LanguageCode;
 
   @IsOptional()
   @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
   region?: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
 }

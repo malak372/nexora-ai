@@ -35,13 +35,17 @@ export type IdeaGenerationCollectionInput = {
 /**
  * Main orchestration service for the data collection pipeline.
  *
- * Applies a final relevance filter before saving collected posts.
+ * Supports:
+ * - Admin manual collection.
+ * - Automatic collection for idea generation.
+ * - General domain fallback using keywords from all active domains.
  *
  * @author Malak
  */
 @Injectable()
 export class DataCollectionService {
   private readonly MIN_RELEVANCE_SCORE = 60;
+  private readonly GENERAL_DOMAIN_NAME = 'general';
 
   constructor(
     private readonly collectionJobService: CollectionJobService,
@@ -50,10 +54,14 @@ export class DataCollectionService {
     private readonly collectorsFactory: CollectorsFactory,
     private readonly collectorQueueService: CollectorQueueService,
     private readonly auditService: AuditService,
-  ) {}
+  ) { }
 
   async run(dto: RunCollectionDto, adminId: string) {
-    return this.runInternal(dto, dto.platforms, adminId);
+    const selectedPlatforms = dto.platforms?.length
+      ? dto.platforms
+      : await this.collectionJobService.getActiveSupportedPlatforms();
+
+    return this.runInternal(dto, selectedPlatforms, adminId);
   }
 
   async runForIdeaGeneration(dto: IdeaGenerationCollectionInput) {
@@ -73,14 +81,16 @@ export class DataCollectionService {
       dto.domainId,
     );
 
-    const domainKeywords = this.getDomainKeywordsByLanguage(
-      domain.domainKeywords,
-      dto.language,
-    );
+    const isGeneralDomain = this.isGeneralDomain(domain.name);
+
+    const domainKeywords = isGeneralDomain
+      ? await this.collectionJobService.getAllActiveDomainKeywords(dto.language)
+      : this.getDomainKeywordsByLanguage(domain.domainKeywords, dto.language);
 
     const userKeywords = dto.keywords ?? [];
+
     const relevanceTerms = this.unique([
-      domain.name,
+      ...(isGeneralDomain ? [] : [domain.name]),
       ...domainKeywords,
       ...userKeywords,
     ]);
@@ -105,7 +115,7 @@ export class DataCollectionService {
         newValue: {
           trigger: 'ADMIN_MANUAL',
           domainId: dto.domainId,
-          domainName: domain.name,
+          domainName: isGeneralDomain ? 'General / All Domains' : domain.name,
           platforms: selectedPlatforms,
           country: dto.country,
           city: dto.city,
@@ -134,7 +144,7 @@ export class DataCollectionService {
         const collector = this.collectorsFactory.getCollector(platform);
 
         const collectorInput = {
-          domainName: domain.name,
+          domainName: isGeneralDomain ? 'All Domains' : domain.name,
           domainKeywords,
           country: dto.country,
           city: dto.city,
@@ -153,6 +163,11 @@ export class DataCollectionService {
 
         const totals = await this.socialPostService.createManyWithComments(
           job.id,
+          {
+            country: job.country,
+            city: job.city,
+            region: job.region,
+          },
           relevantPosts,
         );
 
@@ -176,18 +191,16 @@ export class DataCollectionService {
     }
   }
 
+  /**
+   * Returns the current status of the data collection service.
+   */
   async getStatus() {
     return {
       service: 'Data Collection',
-      status: 'RUNNING',
+      available: true,
       queue: this.collectorQueueService.getStatus(),
       jobs: await this.collectionJobService.getStatus(),
-      supportedPlatforms: this.collectorsFactory.getSupportedPlatforms(),
-      notes: {
-        github: 'Public issues and comments are supported.',
-        youtube: 'Public videos and top-level comments are supported.',
-        x: 'Implemented, but live access depends on X API credits and plan.',
-      },
+      platforms: await this.collectionJobService.getPlatformsStatus(),
     };
   }
 
@@ -224,13 +237,14 @@ export class DataCollectionService {
     return stoppedJob;
   }
 
-  /**
-   * Keeps only posts that are strongly related to the selected domain.
-   */
   private filterRelevantPosts(
     posts: CollectorPost[],
     relevanceTerms: string[],
   ): CollectorPost[] {
+    if (!relevanceTerms.length) {
+      return posts;
+    }
+
     return posts.filter((post) => {
       const score = RelevanceScoreUtil.scoreText({
         title: post.title,
@@ -263,5 +277,9 @@ export class DataCollectionService {
 
   private unique(values: string[]): string[] {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  }
+
+  private isGeneralDomain(domainName: string): boolean {
+    return domainName.trim().toLowerCase() === this.GENERAL_DOMAIN_NAME;
   }
 }

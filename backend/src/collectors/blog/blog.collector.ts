@@ -150,7 +150,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
             platformName: `${this.platformName} - RSS`,
             externalId: rssItem.guid ?? rssItem.link ?? rssItem.title ?? '',
             title: rssItem.title,
-            content: this.stripHtml(
+            content: this.cleanPlainText(
               rssItem.contentSnippet ??
               rssItem.content ??
               rssItem.summary ??
