@@ -12,14 +12,29 @@ import {
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_MINUTES = 15;
+const FAILED_LOGIN_WINDOW_MINUTES = 15;
 
 /**
  * Service responsible for user login operations.
  *
- * Handles credential validation, account activity checks,
- * email verification enforcement, failed login tracking,
- * temporary account locking, token generation, and
- * authentication audit logging.
+ * Handles verified user authentication in Nexora AI, including:
+ * - Credential validation.
+ * - Account activity checks.
+ * - Email verification enforcement.
+ * - Failed login attempt tracking.
+ * - Temporary account locking.
+ * - JWT access token generation.
+ * - Refresh token generation.
+ * - Authentication audit logging.
+ *
+ * Failed login attempts are tracked within a limited time window.
+ * The account is temporarily locked only when the user reaches
+ * the maximum number of failed login attempts inside that window.
+ * This prevents old failed attempts from accumulating forever while
+ * still protecting the account from brute-force login attempts.
+ *
+ * On successful login, failed attempt counters and lock metadata
+ * are cleared, and the user's last login timestamp is updated.
  *
  * @author Eman
  */
@@ -34,14 +49,19 @@ export class AuthLoginService {
     /**
      * Authenticates an active and verified user.
      *
-     * Records authentication audit logs for failed attempts,
-     * locked accounts, and successful logins. Failed password
-     * attempts are tracked, and the account is temporarily locked
-     * after repeated failures.
+     * This method validates the user's credentials and account state.
+     * If the account is locked, inactive, unverified, or the credentials
+     * are invalid, the attempt is rejected and recorded in the
+     * authentication audit log.
+     *
+     * Failed password attempts are counted only within the configured
+     * failure window. If the number of failed attempts reaches the maximum
+     * allowed limit within that window, the account is locked temporarily.
      *
      * @param dto User login credentials.
      * @param meta Optional request metadata such as IP address and user agent.
-     * @returns Login response containing tokens and user data.
+     * @returns Login response containing access token, refresh token,
+     * and authenticated user data.
      *
      * @throws UnauthorizedException if login validation fails.
      */
@@ -62,7 +82,9 @@ export class AuthLoginService {
             throw new UnauthorizedException('Invalid email or password');
         }
 
-        if (user.lockedUntil && user.lockedUntil > new Date()) {
+        const now = new Date();
+
+        if (user.lockedUntil && user.lockedUntil > now) {
             await this.authAuditService.createLog({
                 userId: user.id,
                 email: user.email,
@@ -111,10 +133,23 @@ export class AuthLoginService {
         );
 
         if (!isPasswordValid) {
-            const nextFailedAttempts = user.failedLoginAttempts + 1;
+            const failedWindowStartedAt = user.failedLoginWindowStartedAt;
+
+            const isInsideFailureWindow =
+                failedWindowStartedAt &&
+                now.getTime() - failedWindowStartedAt.getTime() <=
+                FAILED_LOGIN_WINDOW_MINUTES * 60 * 1000;
+
+            const nextFailedAttempts = isInsideFailureWindow
+                ? user.failedLoginAttempts + 1
+                : 1;
+
+            const nextFailedWindowStartedAt = isInsideFailureWindow
+                ? failedWindowStartedAt
+                : now;
 
             if (nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-                const lockedUntil = new Date();
+                const lockedUntil = new Date(now);
                 lockedUntil.setMinutes(
                     lockedUntil.getMinutes() + LOGIN_LOCK_MINUTES,
                 );
@@ -123,6 +158,7 @@ export class AuthLoginService {
                     where: { id: user.id },
                     data: {
                         failedLoginAttempts: nextFailedAttempts,
+                        failedLoginWindowStartedAt: nextFailedWindowStartedAt,
                         lockedUntil,
                     },
                 });
@@ -132,7 +168,8 @@ export class AuthLoginService {
                     email: user.email,
                     action: AuthAction.ACCOUNT_LOCKED,
                     isSuccess: true,
-                    message: 'Account locked after repeated failed login attempts',
+                    message:
+                        'Account locked after repeated failed login attempts within the allowed time window',
                     ...meta,
                 });
 
@@ -145,6 +182,7 @@ export class AuthLoginService {
                 where: { id: user.id },
                 data: {
                     failedLoginAttempts: nextFailedAttempts,
+                    failedLoginWindowStartedAt: nextFailedWindowStartedAt,
                 },
             });
 
@@ -160,23 +198,15 @@ export class AuthLoginService {
             throw new UnauthorizedException('Invalid email or password');
         }
 
-        if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    failedLoginAttempts: 0,
-                    lockedUntil: null,
-                    lastLoginAt: new Date(),
-                },
-            });
-        } else {
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    lastLoginAt: new Date(),
-                },
-            });
-        }
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                failedLoginAttempts: 0,
+                failedLoginWindowStartedAt: null,
+                lockedUntil: null,
+                lastLoginAt: now,
+            },
+        });
 
         const accessToken =
             await this.authTokenService.generateAccessToken(user);

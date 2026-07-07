@@ -16,6 +16,7 @@ import { MailModule } from './mail/mail.module';
 
 import { CollectorsModule } from './collectors/collectors.module';
 import { DataCollectionModule } from './data collection/data-collection.module';
+import { NlpModule } from './nlp/nlp.module';
 
 /**
  * Root application module.
@@ -47,6 +48,7 @@ import { DataCollectionModule } from './data collection/data-collection.module';
     AdminModule,
     DataCollectionModule,
     CollectorsModule,
+    NlpModule,
   ],
   controllers: [AppController],
   providers: [AppService],
