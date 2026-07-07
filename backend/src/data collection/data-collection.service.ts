@@ -18,14 +18,9 @@ import { SocialCommentService } from './social-comments/social-comment.service';
 import { CollectorsFactory } from '../collectors/collectors.factory';
 import { AuditService } from '../audit-logs/audit-logs.service';
 import { CollectorQueueService } from '../collectors/base/collector-queue.service';
+import { CollectorPost } from '../collectors/base/collector.types';
+import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 
-/**
- * Input used internally when idea generation needs fresh collection data.
- *
- * Unlike RunCollectionDto, platforms are optional here:
- * - If provided, the system uses them.
- * - If missing, the system uses all active supported platforms.
- */
 export type IdeaGenerationCollectionInput = {
   domainId: string;
   country: string;
@@ -40,21 +35,14 @@ export type IdeaGenerationCollectionInput = {
 /**
  * Main orchestration service for the data collection pipeline.
  *
- * Supports:
- * - Admin manual data collection.
- * - Automatic data collection from idea generation pipeline.
- *
- * Responsibilities:
- * - Validate domain and selected platforms.
- * - Create and update collection jobs.
- * - Run collectors through CollectorQueueService.
- * - Persist collected posts and comments.
- * - Write admin audit logs.
+ * Applies a final relevance filter before saving collected posts.
  *
  * @author Malak
  */
 @Injectable()
 export class DataCollectionService {
+  private readonly MIN_RELEVANCE_SCORE = 60;
+
   constructor(
     private readonly collectionJobService: CollectionJobService,
     private readonly socialPostService: SocialPostService,
@@ -64,20 +52,10 @@ export class DataCollectionService {
     private readonly auditService: AuditService,
   ) {}
 
-  /**
-   * Starts a manual data collection job by Admin.
-   *
-   * Admin must explicitly send platforms.
-   */
   async run(dto: RunCollectionDto, adminId: string) {
     return this.runInternal(dto, dto.platforms, adminId);
   }
 
-  /**
-   * Starts an automatic collection job for idea generation.
-   *
-   * Used when /ideas/generate needs fresh community data.
-   */
   async runForIdeaGeneration(dto: IdeaGenerationCollectionInput) {
     const selectedPlatforms = dto.platforms?.length
       ? dto.platforms
@@ -86,13 +64,6 @@ export class DataCollectionService {
     return this.runInternal(dto, selectedPlatforms, null);
   }
 
-  /**
-   * Shared collection runner.
-   *
-   * Used by:
-   * - Admin manual collection.
-   * - Automatic idea-generation collection.
-   */
   private async runInternal(
     dto: IdeaGenerationCollectionInput,
     selectedPlatforms: CollectionSourceType[],
@@ -108,6 +79,11 @@ export class DataCollectionService {
     );
 
     const userKeywords = dto.keywords ?? [];
+    const relevanceTerms = this.unique([
+      domain.name,
+      ...domainKeywords,
+      ...userKeywords,
+    ]);
 
     this.collectionJobService.validateSupportedPlatforms(selectedPlatforms);
 
@@ -173,9 +149,11 @@ export class DataCollectionService {
           platform,
         );
 
+        const relevantPosts = this.filterRelevantPosts(posts, relevanceTerms);
+
         const totals = await this.socialPostService.createManyWithComments(
           job.id,
-          posts,
+          relevantPosts,
         );
 
         totalPosts += totals.totalPosts;
@@ -198,9 +176,6 @@ export class DataCollectionService {
     }
   }
 
-  /**
-   * Returns service health/status including queue state.
-   */
   async getStatus() {
     return {
       service: 'Data Collection',
@@ -232,9 +207,6 @@ export class DataCollectionService {
     return this.socialCommentService.findComments(query);
   }
 
-  /**
-   * Stops a running collection job.
-   */
   async stop(id: string, adminId: string) {
     const stoppedJob = await this.collectionJobService.stopJob(id);
 
@@ -253,8 +225,27 @@ export class DataCollectionService {
   }
 
   /**
-   * Returns domain keywords matching the requested language.
+   * Keeps only posts that are strongly related to the selected domain.
    */
+  private filterRelevantPosts(
+    posts: CollectorPost[],
+    relevanceTerms: string[],
+  ): CollectorPost[] {
+    return posts.filter((post) => {
+      const score = RelevanceScoreUtil.scoreText({
+        title: post.title,
+        body: post.content,
+        domainTerms: relevanceTerms,
+        problemTerms: [],
+        likes: post.likesCount,
+        replies: post.repliesCount,
+        publishedAt: post.publishedAt,
+      });
+
+      return score >= this.MIN_RELEVANCE_SCORE;
+    });
+  }
+
   private getDomainKeywordsByLanguage(
     domainKeywords: { keyword: string; language: LanguageCode }[],
     language: LanguageCode,
@@ -268,5 +259,9 @@ export class DataCollectionService {
         return item.language === LanguageCode.ANY || item.language === language;
       })
       .map((item) => item.keyword);
+  }
+
+  private unique(values: string[]): string[] {
+    return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 }

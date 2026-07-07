@@ -25,7 +25,12 @@ export class SocialPostService {
    * Stores collected posts and their comments.
    *
    * Uses upsert to avoid duplicates based on:
-   * - sourceType + externalId for posts.
+   * - collectionJobId + sourceType + externalId for posts.
+   * - postId + externalId for comments.
+   *
+   * Note:
+   * The same external post can be stored again in another CollectionJob
+   * because each job represents an independent collection snapshot.
    * - postId + externalId for comments.
    */
   async createManyWithComments(collectionJobId: string, posts: CollectorPost[]) {
