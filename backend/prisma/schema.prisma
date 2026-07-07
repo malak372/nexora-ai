@@ -272,6 +272,13 @@ enum PromptType {
   ABSTRACT_GENERATION
 }
 
+enum NlpLexiconType {
+  PROBLEM
+  NEED
+  POSITIVE
+  NEGATIVE
+}
+
 /**
  * USERS
  */
@@ -294,10 +301,10 @@ model User {
   isActive   Boolean @default(true) @map("is_active")
   isVerified Boolean @default(false) @map("is_verified")
 
- failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
- failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
- loginLockLevel             Int       @default(0) @map("login_lock_level")
- lockedUntil                DateTime? @map("locked_until")
+  failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
+  failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
+  loginLockLevel             Int       @default(0) @map("login_lock_level")
+  lockedUntil                DateTime? @map("locked_until")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -777,9 +784,9 @@ model AuthenticationLog {
 model CollectionJob {
   id String @id @default(uuid())
 
-  domainId String        @map("domain_id")
+  domainId String       @map("domain_id")
   language LanguageCode
-  domain   Domain        @relation(fields: [domainId], references: [id], onDelete: Restrict)
+  domain   Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   country         String
   city            String?
@@ -859,10 +866,10 @@ model SocialComment {
   postId String     @map("post_id")
   post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  externalId String  @map("external_id")
+  externalId String        @map("external_id")
   content    String
   author     String?
-  language LanguageCode?
+  language   LanguageCode?
   sentiment  String?
 
   likesCount Int @default(0) @map("likes_count")
@@ -988,7 +995,7 @@ model SavedGenerationSearch {
   country  String?
   city     String?
   region   String?
-  language String?
+  language LanguageCode?
 
   platforms Json?
   keywords  Json?
@@ -1002,3 +1009,5 @@ model SavedGenerationSearch {
   @@index([domainId])
   @@map("saved_generation_searches")
 }
+
+
