@@ -157,7 +157,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
               ),
             };
           })
-          .filter((item) => item.score > 0)
+          .filter((item) => item.score > 5)
           .sort((a, b) => b.score - a.score);
 
         for (const item of rankedVideos) {
