@@ -78,7 +78,7 @@ export abstract class BaseCollector {
    * If the environment variable is missing, invalid, zero,
    * or negative, the default value is used.
    */
-  private getPositiveNumber(key: string, defaultValue: number): number {
+  protected getPositiveNumber(key: string, defaultValue: number): number {
     const value = Number(this.configService.get(key));
 
     return Number.isFinite(value) && value > 0 ? value : defaultValue;

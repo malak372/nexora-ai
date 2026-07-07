@@ -2,14 +2,19 @@ import { Injectable } from '@nestjs/common';
 import { CollectionSourceType } from '@prisma/client';
 
 import { SocialCollector } from '../base/collector.interface';
-import { CollectorInput, CollectorPost } from '../base/collector.types';
+import {
+  CollectorInput,
+  CollectorPost,
+} from '../base/collector.types';
 
 /**
- * Mock collector used for development, testing, and demo purposes.
+ * Mock collector.
  *
- * This collector does not call external APIs.
- * It generates deterministic sample posts and comments based on the selected
- * domain and optional location filters.
+ * Used for development, testing, and demo purposes.
+ *
+ * This collector does not call external APIs. It returns deterministic
+ * sample posts and comments based on the selected domain, location,
+ * language, and optional keywords.
  *
  * @author Malak
  */
@@ -17,10 +22,16 @@ import { CollectorInput, CollectorPost } from '../base/collector.types';
 export class MockCollector implements SocialCollector {
   readonly sourceType = CollectionSourceType.MOCK;
 
+  /**
+   * Generates sample collector posts without external API calls.
+   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     const now = new Date();
+
     const regionLabel =
       input.region ?? input.city ?? input.country ?? 'unspecified region';
+
+    const language = input.language ?? 'en';
 
     return [
       {
@@ -34,7 +45,7 @@ export class MockCollector implements SocialCollector {
         country: input.country,
         city: input.city,
         region: input.region,
-        language: input.language ?? 'en',
+        language,
         likesCount: 18,
         repliesCount: 2,
         publishedAt: now,
@@ -43,15 +54,16 @@ export class MockCollector implements SocialCollector {
             externalId: this.buildExternalId('comment-1', input),
             content: `We need a practical software solution for ${input.domainName} problems in ${regionLabel}.`,
             author: 'mock_commenter_1',
-            language: input.language ?? 'en',
+            language,
             likesCount: 5,
             publishedAt: now,
           },
           {
             externalId: this.buildExternalId('comment-2', input),
-            content: `The current process is slow and people keep asking for a digital platform.`,
+            content:
+              'The current process is slow and people keep asking for a digital platform.',
             author: 'mock_commenter_2',
-            language: input.language ?? 'en',
+            language,
             likesCount: 7,
             publishedAt: now,
           },
@@ -62,30 +74,33 @@ export class MockCollector implements SocialCollector {
         platformName: 'Mock',
         externalId: this.buildExternalId('post-2', input),
         title: `Need for better ${input.domainName} services`,
-        content: `Users mentioned missing features, poor accessibility, and lack of local digital tools.`,
+        content:
+          'Users mentioned missing features, poor accessibility, and lack of local digital tools.',
         author: 'mock_user_2',
         url: 'https://example.com/mock-post-2',
         country: input.country,
         city: input.city,
         region: input.region,
-        language: input.language ?? 'en',
+        language,
         likesCount: 25,
         repliesCount: 2,
         publishedAt: now,
         comments: [
           {
             externalId: this.buildExternalId('comment-3', input),
-            content: `A mobile app could help users report issues and track service requests.`,
+            content:
+              'A mobile app could help users report issues and track service requests.',
             author: 'mock_commenter_3',
-            language: input.language ?? 'en',
+            language,
             likesCount: 10,
             publishedAt: now,
           },
           {
             externalId: this.buildExternalId('comment-4', input),
-            content: `It would be useful if the system provides recommendations based on real feedback.`,
+            content:
+              'It would be useful if the system provides recommendations based on real feedback.',
             author: 'mock_commenter_4',
-            language: input.language ?? 'en',
+            language,
             likesCount: 8,
             publishedAt: now,
           },
@@ -95,7 +110,8 @@ export class MockCollector implements SocialCollector {
   }
 
   /**
-   * Builds a stable external ID so repeated mock collection does not create duplicates.
+   * Builds a stable external ID so repeated mock collection
+   * does not create duplicated records.
    */
   private buildExternalId(prefix: string, input: CollectorInput): string {
     return [
