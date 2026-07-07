@@ -61,8 +61,7 @@ type StackOverflowSearchQuery = {
 @Injectable()
 export class StackOverflowCollector
   extends BaseCollector
-  implements SocialCollector
-{
+  implements SocialCollector {
   readonly sourceType = CollectionSourceType.STACKOVERFLOW;
 
   private readonly platformName = 'Stack Overflow';
@@ -176,28 +175,17 @@ export class StackOverflowCollector
   private buildSearchQueries(
     input: CollectorInput,
   ): StackOverflowSearchQuery[] {
-    const domainKeywords = this.getDomainKeywords(input);
-
     const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    const keywords = this.unique([...domainKeywords, ...userKeywords]).slice(
-      0,
-      8,
-    );
+    const keywords = userKeywords.length
+      ? userKeywords
+      : this.getDomainKeywords(input);
 
-    if (!keywords.length) return [];
-
-    const mainQuery = keywords.join(' ');
-    const tags = this.buildTags(keywords);
-
-    return [
-      { q: mainQuery },
-      { title: mainQuery },
-      { body: mainQuery },
-      ...(tags ? [{ tagged: tags }] : []),
-    ];
+    return keywords.slice(0, 5).map((keyword) => ({
+      q: keyword,
+    }));
   }
 
   /**

@@ -354,4 +354,28 @@ export class CollectionJobService {
       })
       .map((item) => item.keyword);
   }
+  /**
+ * Returns unique keywords from all active domains.
+ *
+ * Used when the selected domain is General, so collection can run
+ * across all stored project domains instead of one specific domain.
+ */
+  async getAllActiveDomainKeywords(language: LanguageCode): Promise<string[]> {
+    const keywords = await this.prisma.domainKeyword.findMany({
+      where: {
+        domain: {
+          isActive: true,
+        },
+        OR:
+          language === LanguageCode.ANY
+            ? [{ language: LanguageCode.ANY }]
+            : [{ language: LanguageCode.ANY }, { language }],
+      },
+      select: {
+        keyword: true,
+      },
+    });
+
+    return [...new Set(keywords.map((item) => item.keyword))];
+  }
 }

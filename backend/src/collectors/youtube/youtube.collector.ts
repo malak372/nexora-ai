@@ -80,13 +80,6 @@ type YouTubeCommentsResponse = {
  * Collects public YouTube videos and top-level comments using
  * YouTube Data API v3.
  *
- * Uses shared utilities for:
- * - Region code resolution.
- * - Language code resolution and lightweight language matching.
- * - HTTP retry and cache support.
- * - Query enrichment.
- * - Relevance scoring.
- *
  * @author Malak
  */
 @Injectable()
@@ -293,11 +286,12 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
    */
   private isValidVideo(video: YouTubeSearchVideo): boolean {
     const videoId = video.id?.videoId;
-    const title = video.snippet?.title ?? '';
-    const description = video.snippet?.description ?? '';
-    const channelTitle = video.snippet?.channelTitle ?? '';
 
-    const content = this.normalizeText(
+    const title = this.cleanPlainText(video.snippet?.title);
+    const description = this.cleanPlainText(video.snippet?.description);
+    const channelTitle = this.cleanPlainText(video.snippet?.channelTitle);
+
+    const content = this.cleanNormalizedText(
       `${title} ${description} ${channelTitle}`,
     );
 
@@ -306,7 +300,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     return (
       Boolean(videoId) &&
       Boolean(title) &&
-      !blockedWords.some((word) => content.includes(word))
+      !blockedWords.some((word) => content.includes(this.normalizeText(word)))
     );
   }
 
@@ -317,9 +311,9 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     video: YouTubeSearchVideo,
     input: CollectorInput,
   ): boolean {
-    const title = video.snippet?.title ?? '';
-    const description = video.snippet?.description ?? '';
-    const content = this.normalizeText(`${title} ${description}`);
+    const title = this.cleanPlainText(video.snippet?.title);
+    const description = this.cleanPlainText(video.snippet?.description);
+    const content = this.cleanNormalizedText(`${title} ${description}`);
 
     return CollectorLanguageUtil.matchesRequestedLanguage(
       content,
@@ -336,8 +330,8 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     statistics?: YouTubeVideoStatistics,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: video.snippet?.title ?? '',
-      body: video.snippet?.description ?? '',
+      title: this.cleanPlainText(video.snippet?.title),
+      body: this.cleanPlainText(video.snippet?.description),
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: statistics?.likeCount ?? 0,
@@ -359,15 +353,19 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const videoId = video.id?.videoId ?? '';
     const snippet = video.snippet ?? {};
 
+    const title = this.cleanPlainText(snippet.title);
+    const description = this.cleanPlainText(snippet.description);
+    const author = this.cleanPlainText(snippet.channelTitle);
+
     const comments = await this.collectVideoComments(videoId, input);
 
     return {
       sourceType: CollectionSourceType.YOUTUBE,
       platformName: this.platformName,
       externalId: videoId,
-      title: snippet.title,
-      content: snippet.description || snippet.title || '',
-      author: snippet.channelTitle,
+      title,
+      content: description || title,
+      author,
       url: `https://www.youtube.com/watch?v=${videoId}`,
 
       country: input.country,
@@ -503,8 +501,8 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
           return {
             externalId: comment.id ?? '',
-            content: snippet.textDisplay ?? '',
-            author: snippet.authorDisplayName,
+            content: this.cleanPlainText(snippet.textDisplay),
+            author: this.cleanPlainText(snippet.authorDisplayName),
             likesCount: snippet.likeCount ?? 0,
             publishedAt: snippet.publishedAt
               ? new Date(snippet.publishedAt)
@@ -523,8 +521,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     comment: YouTubeTopLevelComment,
     input: CollectorInput,
   ): boolean {
-    const rawContent = comment.snippet?.textDisplay ?? '';
-    const content = this.normalizeText(rawContent);
+    const content = this.cleanNormalizedText(comment.snippet?.textDisplay);
 
     if (!comment.id || content.length < 50) {
       return false;
@@ -562,7 +559,9 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
     const blockedWords = this.getBlockedWords();
 
-    return !blockedWords.some((word) => content.includes(word));
+    return !blockedWords.some((word) =>
+      content.includes(this.normalizeText(word)),
+    );
   }
 
   /**
@@ -576,16 +575,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
    * Normalizes a YouTube search query.
    */
   private normalizeQuery(query: string): string {
-    return this.normalizeText(query);
-  }
-
-  /**
-   * Reads a positive numeric configuration value.
-   */
-  protected getPositiveNumber(key: string, defaultValue: number): number {
-    const value = Number(this.configService.get(key));
-
-    return Number.isFinite(value) && value > 0 ? value : defaultValue;
+    return this.cleanNormalizedText(query);
   }
 
   /**

@@ -33,7 +33,15 @@ export class SocialPostService {
    * because each job represents an independent collection snapshot.
    * - postId + externalId for comments.
    */
-  async createManyWithComments(collectionJobId: string, posts: CollectorPost[]) {
+  async createManyWithComments(
+    collectionJobId: string,
+    location: {
+      country: string;
+      city?: string | null;
+      region?: string | null;
+    },
+    posts: CollectorPost[],
+  ) {
     let totalPosts = 0;
     let totalComments = 0;
 
@@ -57,9 +65,9 @@ export class SocialPostService {
           content: post.content,
           author: post.author,
           url: post.url,
-          country: post.country ?? 'Unknown',
-          city: post.city,
-          region: post.region,
+          country: location.country,
+          city: location.city,
+          region: location.region,
           language: post.language,
           likesCount: post.likesCount ?? 0,
           repliesCount: post.repliesCount ?? comments.length,
@@ -75,9 +83,9 @@ export class SocialPostService {
           content: post.content,
           author: post.author,
           url: post.url,
-          country: post.country ?? 'Unknown',
-          city: post.city,
-          region: post.region,
+          country: location.country,
+          city: location.city,
+          region: location.region,
           language: post.language,
           likesCount: post.likesCount ?? 0,
           repliesCount: post.repliesCount ?? comments.length,

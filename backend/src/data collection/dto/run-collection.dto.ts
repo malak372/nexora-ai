@@ -44,10 +44,10 @@ export class RunCollectionDto {
   @Min(1)
   radiusKm?: number;
 
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsEnum(CollectionSourceType, { each: true })
-  platforms!: CollectionSourceType[];
+  platforms?: CollectionSourceType[];
 
   @IsOptional()
   @IsArray()
