@@ -7,6 +7,7 @@ import { PLATFORM_NAMES } from '../../collectors/base/platform-name.constant';
 import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
 
 import {
+  buildDateFilter,
   buildOrderBy,
   buildPagination,
 } from '../../utilities/base-query/builder';
@@ -19,20 +20,8 @@ import { calculateTotalPages } from '../../utilities/analytics/analytics.helper'
  */
 @Injectable()
 export class SocialPostService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Stores collected posts and their comments.
-   *
-   * Uses upsert to avoid duplicates based on:
-   * - collectionJobId + sourceType + externalId for posts.
-   * - postId + externalId for comments.
-   *
-   * Note:
-   * The same external post can be stored again in another CollectionJob
-   * because each job represents an independent collection snapshot.
-   * - postId + externalId for comments.
-   */
   async createManyWithComments(
     collectionJobId: string,
     location: {
@@ -135,17 +124,11 @@ export class SocialPostService {
   }
 
   /**
-   * Returns paginated collected posts.
+   * Returns paginated collected posts with filters/search/date/sorting.
    */
   async findPosts(query: GetSocialPostsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
-
-    const where: Prisma.SocialPostWhereInput = {
-      ...(query.collectionJobId && { collectionJobId: query.collectionJobId }),
-      ...(query.platformId && { platformId: query.platformId }),
-      ...(query.language && { language: query.language }),
-      ...(query.region && { region: query.region }),
-    };
+    const where = this.buildPostsWhere(query);
 
     const [data, total] = await Promise.all([
       this.prisma.socialPost.findMany({
@@ -154,7 +137,7 @@ export class SocialPostService {
         take,
         orderBy: buildOrderBy(
           query,
-          ['createdAt', 'collectedAt', 'likesCount'] as const,
+          ['createdAt', 'collectedAt', 'likesCount', 'repliesCount'] as const,
           'createdAt',
         ),
         include: {
@@ -198,8 +181,87 @@ export class SocialPostService {
   }
 
   /**
-   * Finds platform by normalized name or creates it.
+   * Builds Prisma filters for social posts.
    */
+  private buildPostsWhere(
+    query: GetSocialPostsQueryDto,
+  ): Prisma.SocialPostWhereInput {
+    const dateFilter = buildDateFilter(query);
+
+    return {
+      ...(query.collectionJobId && { collectionJobId: query.collectionJobId }),
+      ...(query.platformId && { platformId: query.platformId }),
+      ...(query.sourceType && { sourceType: query.sourceType }),
+      ...(query.language && { language: query.language }),
+
+      ...(query.country && {
+        country: {
+          contains: query.country,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.city && {
+        city: {
+          contains: query.city,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.region && {
+        region: {
+          contains: query.region,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.author && {
+        author: {
+          contains: query.author,
+          mode: 'insensitive',
+        },
+      }),
+
+      ...(dateFilter ?? {}),
+
+      ...(query.search?.trim() && {
+        OR: [
+          {
+            title: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            content: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            author: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            url: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            collectionJob: {
+              domain: {
+                name: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          },
+        ],
+      }),
+    };
+  }
+
   private async findOrCreatePlatform(post: CollectorPost) {
     const platformName = this.resolvePlatformName(post);
 
@@ -217,9 +279,6 @@ export class SocialPostService {
     });
   }
 
-  /**
-   * Resolves platform name from CollectionSourceType.
-   */
   private resolvePlatformName(post: CollectorPost): string {
     return PLATFORM_NAMES[post.sourceType] ?? post.platformName ?? 'Other';
   }

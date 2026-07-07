@@ -38,8 +38,7 @@ export type IdeaGenerationCollectionInput = {
  * Supports:
  * - Admin manual collection.
  * - Automatic collection for idea generation.
- * - General domain fallback that collects using keywords
- *   from all active stored domains.
+ * - General domain fallback using keywords from all active domains.
  *
  * @author Malak
  */
@@ -57,9 +56,6 @@ export class DataCollectionService {
     private readonly auditService: AuditService,
   ) { }
 
-  /**
-   * Starts manual data collection by Admin.
-   */
   async run(dto: RunCollectionDto, adminId: string) {
     const selectedPlatforms = dto.platforms?.length
       ? dto.platforms
@@ -68,9 +64,6 @@ export class DataCollectionService {
     return this.runInternal(dto, selectedPlatforms, adminId);
   }
 
-  /**
-   * Starts automatic data collection for idea generation.
-   */
   async runForIdeaGeneration(dto: IdeaGenerationCollectionInput) {
     const selectedPlatforms = dto.platforms?.length
       ? dto.platforms
@@ -79,9 +72,6 @@ export class DataCollectionService {
     return this.runInternal(dto, selectedPlatforms, null);
   }
 
-  /**
-   * Shared runner for manual and automatic collection.
-   */
   private async runInternal(
     dto: IdeaGenerationCollectionInput,
     selectedPlatforms: CollectionSourceType[],
@@ -202,20 +192,15 @@ export class DataCollectionService {
   }
 
   /**
-   * Returns data collection service status.
+   * Returns the current status of the data collection service.
    */
   async getStatus() {
     return {
       service: 'Data Collection',
-      status: 'RUNNING',
+      available: true,
       queue: this.collectorQueueService.getStatus(),
       jobs: await this.collectionJobService.getStatus(),
-      supportedPlatforms: this.collectorsFactory.getSupportedPlatforms(),
-      notes: {
-        github: 'Public issues and comments are supported.',
-        youtube: 'Public videos and top-level comments are supported.',
-        x: 'Implemented, but live access depends on X API credits and plan.',
-      },
+      platforms: await this.collectionJobService.getPlatformsStatus(),
     };
   }
 
@@ -235,9 +220,6 @@ export class DataCollectionService {
     return this.socialCommentService.findComments(query);
   }
 
-  /**
-   * Stops a running collection job.
-   */
   async stop(id: string, adminId: string) {
     const stoppedJob = await this.collectionJobService.stopJob(id);
 
@@ -255,9 +237,6 @@ export class DataCollectionService {
     return stoppedJob;
   }
 
-  /**
-   * Keeps only posts strongly related to the selected domain/keywords.
-   */
   private filterRelevantPosts(
     posts: CollectorPost[],
     relevanceTerms: string[],
@@ -281,9 +260,6 @@ export class DataCollectionService {
     });
   }
 
-  /**
-   * Returns domain keywords matching the requested language.
-   */
   private getDomainKeywordsByLanguage(
     domainKeywords: { keyword: string; language: LanguageCode }[],
     language: LanguageCode,
@@ -299,16 +275,10 @@ export class DataCollectionService {
       .map((item) => item.keyword);
   }
 
-  /**
-   * Removes duplicated and empty strings.
-   */
   private unique(values: string[]): string[] {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 
-  /**
-   * Checks whether the selected domain is the General fallback domain.
-   */
   private isGeneralDomain(domainName: string): boolean {
     return domainName.trim().toLowerCase() === this.GENERAL_DOMAIN_NAME;
   }

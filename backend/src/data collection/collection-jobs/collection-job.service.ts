@@ -16,6 +16,7 @@ import { GetCollectionJobsQueryDto } from './dto/get-collection-jobs-query.dto';
 import { CollectorsFactory } from '../../collectors/collectors.factory';
 
 import {
+  buildDateFilter,
   buildOrderBy,
   buildPagination,
 } from '../../utilities/base-query/builder';
@@ -32,7 +33,7 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
-  ) { }
+  ) {}
 
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findFirst({
@@ -178,31 +179,11 @@ export class CollectionJobService {
       job.language,
     );
 
-    return {
-      id: job.id,
-      domainId: job.domainId,
-      country: job.country,
-      city: job.city,
-      region: job.region,
-      radiusKm: job.radiusKm,
-      platforms: job.platforms,
-      language: job.language,
-      status: job.status,
-      totalPosts: job.totalPosts,
-      totalComments: job.totalComments,
-      failedReason: job.failedReason,
-      startedAt: job.startedAt,
-      completedAt: job.completedAt,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-      domain: {
-        id: job.domain.id,
-        name: job.domain.name,
-      },
+    return this.mapJobResponse({
+      ...job,
       domainKeywords,
       userKeywords: job.keywords,
-      _count: job._count,
-    };
+    });
   }
 
   completeJob(
@@ -262,39 +243,34 @@ export class CollectionJobService {
   }
 
   async getStatus() {
-    const [runningJobs, completedJobs, failedJobs, stoppedJobs] =
-      await Promise.all([
-        this.prisma.collectionJob.count({
-          where: { status: CollectionJobStatus.RUNNING },
-        }),
-        this.prisma.collectionJob.count({
-          where: { status: CollectionJobStatus.COMPLETED },
-        }),
-        this.prisma.collectionJob.count({
-          where: { status: CollectionJobStatus.FAILED },
-        }),
-        this.prisma.collectionJob.count({
-          where: { status: CollectionJobStatus.STOPPED },
-        }),
-      ]);
+    const [running, completed, failed, stopped] = await Promise.all([
+      this.prisma.collectionJob.count({
+        where: { status: CollectionJobStatus.RUNNING },
+      }),
+      this.prisma.collectionJob.count({
+        where: { status: CollectionJobStatus.COMPLETED },
+      }),
+      this.prisma.collectionJob.count({
+        where: { status: CollectionJobStatus.FAILED },
+      }),
+      this.prisma.collectionJob.count({
+        where: { status: CollectionJobStatus.STOPPED },
+      }),
+    ]);
 
     return {
-      runningJobs,
-      completedJobs,
-      failedJobs,
-      stoppedJobs,
-      isRunning: runningJobs > 0,
+      running,
+      completed,
+      failed,
+      stopped,
+      hasRunningJobs: running > 0,
     };
   }
 
   async findJobs(query: GetCollectionJobsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
-    const where: Prisma.CollectionJobWhereInput = {
-      ...(query.domainId && { domainId: query.domainId }),
-      ...(query.status && { status: query.status }),
-      ...(query.region && { region: query.region }),
-    };
+    const where = this.buildJobsWhere(query);
 
     const [data, total] = await Promise.all([
       this.prisma.collectionJob.findMany({
@@ -332,7 +308,7 @@ export class CollectionJobService {
     ]);
 
     return {
-      data,
+      data: data.map((job) => this.mapJobResponse(job)),
       meta: {
         page,
         limit,
@@ -342,24 +318,83 @@ export class CollectionJobService {
     };
   }
 
-  private getDomainKeywordsByLanguage(
-    domainKeywords: { keyword: string; language: LanguageCode }[],
-    language: LanguageCode,
-  ): string[] {
-    return domainKeywords
-      .filter((item) => {
-        if (language === LanguageCode.ANY) return true;
-
-        return item.language === LanguageCode.ANY || item.language === language;
-      })
-      .map((item) => item.keyword);
-  }
   /**
- * Returns unique keywords from all active domains.
- *
- * Used when the selected domain is General, so collection can run
- * across all stored project domains instead of one specific domain.
- */
+   * Builds CollectionJob filtering query.
+   */
+  private buildJobsWhere(
+    query: GetCollectionJobsQueryDto,
+  ): Prisma.CollectionJobWhereInput {
+    const dateFilter = buildDateFilter(query);
+
+    return {
+      ...(query.domainId && { domainId: query.domainId }),
+      ...(query.status && { status: query.status }),
+      ...(query.country && {
+        country: {
+          contains: query.country,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.city && {
+        city: {
+          contains: query.city,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.region && {
+        region: {
+          contains: query.region,
+          mode: 'insensitive',
+        },
+      }),
+      ...(query.language && { language: query.language }),
+
+      ...(query.platform && {
+        platforms: {
+          array_contains: [query.platform],
+        } as Prisma.JsonFilter,
+      }),
+
+      ...(dateFilter ?? {}),
+
+      ...(query.search?.trim() && {
+        OR: [
+          {
+            country: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            city: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            region: {
+              contains: query.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            domain: {
+              name: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ],
+      }),
+    };
+  }
+
+  /**
+   * Returns unique keywords from all active domains.
+   *
+   * Used when the selected domain is General.
+   */
   async getAllActiveDomainKeywords(language: LanguageCode): Promise<string[]> {
     const keywords = await this.prisma.domainKeyword.findMany({
       where: {
@@ -377,5 +412,100 @@ export class CollectionJobService {
     });
 
     return [...new Set(keywords.map((item) => item.keyword))];
+  }
+
+  /**
+   * Returns all configured collection platforms with activation status.
+   */
+  async getPlatformsStatus() {
+    return this.prisma.platform.findMany({
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
+
+  private getDomainKeywordsByLanguage(
+    domainKeywords: { keyword: string; language: LanguageCode }[],
+    language: LanguageCode,
+  ): string[] {
+    return domainKeywords
+      .filter((item) => {
+        if (language === LanguageCode.ANY) return true;
+
+        return item.language === LanguageCode.ANY || item.language === language;
+      })
+      .map((item) => item.keyword);
+  }
+
+  /**
+   * Maps CollectionJob entity into a cleaner API response.
+   */
+  private mapJobResponse(job: any) {
+    const platforms = Array.isArray(job.platforms) ? job.platforms : [];
+    const keywords = Array.isArray(job.keywords) ? job.keywords : [];
+
+    return {
+      id: job.id,
+      domainId: job.domainId,
+      language: job.language,
+      country: job.country,
+      city: job.city,
+      region: job.region,
+      radiusKm: job.radiusKm,
+
+      platforms,
+      platformCount: platforms.length,
+      keywords,
+
+      status: job.status,
+      totalPosts: job.totalPosts,
+      totalComments: job.totalComments,
+      actualPostsCount: job._count?.posts ?? 0,
+
+      durationSeconds: this.calculateDurationSeconds(
+        job.startedAt,
+        job.completedAt,
+      ),
+
+      failedReason:
+        job.status === CollectionJobStatus.FAILED ? job.failedReason : undefined,
+
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+
+      domain: job.domain
+        ? {
+            id: job.domain.id,
+            name: job.domain.name,
+          }
+        : null,
+
+      nlpStatus: job.nlpAnalysis ? 'COMPLETED' : 'NOT_STARTED',
+
+      ...(job.domainKeywords && { domainKeywords: job.domainKeywords }),
+      ...(job.userKeywords && { userKeywords: job.userKeywords }),
+    };
+  }
+
+  /**
+   * Calculates job execution duration in seconds.
+   */
+  private calculateDurationSeconds(
+    startedAt?: Date | null,
+    completedAt?: Date | null,
+  ): number | null {
+    if (!startedAt || !completedAt) {
+      return null;
+    }
+
+    return Math.round((completedAt.getTime() - startedAt.getTime()) / 1000);
   }
 }

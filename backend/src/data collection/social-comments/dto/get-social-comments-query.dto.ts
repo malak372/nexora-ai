@@ -4,7 +4,17 @@ import { LanguageCode } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for filtering, sorting, and paginating social comments.
+ * Query DTO for filtering, searching, sorting,
+ * date filtering, and paginating social comments.
+ *
+ * Inherits from ListQueryDto:
+ * - page
+ * - limit
+ * - search
+ * - sortBy
+ * - sortOrder
+ * - fromDate
+ * - toDate
  *
  * @author Malak
  */
@@ -24,4 +34,8 @@ export class GetSocialCommentsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsString()
   sentiment?: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
 }
