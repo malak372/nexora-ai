@@ -9,6 +9,7 @@ import { CollectionSourceType } from '@prisma/client';
  *  
  */
 export const PLATFORM_NAMES: Record<CollectionSourceType, string> = {
+
   [CollectionSourceType.REDDIT]: 'Reddit',
   [CollectionSourceType.FACEBOOK]: 'Facebook',
   [CollectionSourceType.YOUTUBE]: 'YouTube',
