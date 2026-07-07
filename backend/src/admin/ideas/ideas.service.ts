@@ -44,7 +44,7 @@ import {
  */
 @Injectable()
 export class IdeasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Builds the shared Prisma where filter used by
@@ -694,11 +694,7 @@ export class IdeasService {
               },
             },
 
-            nlpAnalyses: {
-              orderBy: {
-                createdAt: 'desc',
-              },
-              take: 5,
+            nlpAnalysis: {
               select: {
                 id: true,
                 sentimentStats: true,
@@ -711,20 +707,20 @@ export class IdeasService {
                 createdAt: true,
               },
             },
-          },
-        },
 
-        promptHistories: {
-          orderBy: {
-            createdAt: 'desc',
-          },
-          take: 10,
-          select: {
-            id: true,
-            promptType: true,
-            promptText: true,
-            createdAt: true,
-            collectionJobId: true,
+            promptHistories: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 10,
+              select: {
+                id: true,
+                promptType: true,
+                promptText: true,
+                createdAt: true,
+                collectionJobId: true,
+              },
+            },
           },
         },
 

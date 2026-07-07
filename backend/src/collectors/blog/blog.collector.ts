@@ -2,18 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CollectionSourceType } from '@prisma/client';
 import Parser from 'rss-parser';
+import { CollectorCacheUtil } from '../base/collector-cache.util';
+import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
-import {
-  CollectorComment,
-  CollectorInput,
-  CollectorPost,
-} from '../base/collector.types';
+import { CollectorInput, CollectorPost } from '../base/collector.types';
 
-import { CollectorCacheUtil } from '../base/collector-cache.util';
-import { CollectorHeaderUtil } from '../base/collector-header.util';
-import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 type RssItem = {
@@ -29,41 +24,18 @@ type RssItem = {
   pubDate?: string;
 };
 
-type DevToArticle = {
-  id?: number;
-  title?: string;
-  description?: string;
-  url?: string;
-  user?: {
-    name?: string;
-    username?: string;
-  };
-  public_reactions_count?: number;
-  comments_count?: number;
-  published_at?: string;
-};
-
-type DevToComment = {
-  id?: number;
-  id_code?: string;
-  body_html?: string;
-  user?: {
-    name?: string;
-    username?: string;
-  };
-  created_at?: string;
-};
-
 /**
  * Blog collector.
  *
- * Collects public blog articles from:
- * - RSS feeds.
- * - Dev.to public API.
+ * Collects public blog articles from RSS feeds only.
+ *
+ * Dev.to is handled by DevToCollector to avoid:
+ * - Duplicate posts.
+ * - Duplicate comments.
+ * - Duplicate NLP analysis.
  *
  * Notes:
  * - RSS feeds usually do not expose comments or likes.
- * - Dev.to provides article metadata, reactions, and public comments.
  *
  * @author Malak
  */
@@ -94,16 +66,15 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       }
 
       const rssPosts = await this.collectFromRssFeeds(input);
-      const devToPosts = await this.collectFromDevTo(input);
-
-      const collectedPosts = [...rssPosts, ...devToPosts];
       const seenPostIds = new Set<string>();
 
-      const rankedPosts = collectedPosts
+      const rankedPosts = rssPosts
         .filter((post) => {
           const key = `${post.platformName}-${post.externalId}-${post.url}`;
 
-          if (seenPostIds.has(key)) return false;
+          if (seenPostIds.has(key)) {
+            return false;
+          }
 
           seenPostIds.add(key);
           return true;
@@ -125,6 +96,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
         'Blog collection failed',
         error instanceof Error ? error.message : error,
       );
+
       return [];
     }
   }
@@ -159,7 +131,13 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     try {
-      const feed = await this.parser.parseURL(feedUrl);
+      const cacheKey = CollectorCacheUtil.build('blog', 'rss-feed', [feedUrl]);
+
+      const feed = await CollectorExternalCacheUtil.remember(
+        cacheKey,
+        this.cacheTtlMs,
+        () => this.parser.parseURL(feedUrl),
+      );
 
       return (feed.items ?? [])
         .filter((item) => this.isValidRssArticle(item as RssItem))
@@ -174,10 +152,10 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
             title: rssItem.title,
             content: this.stripHtml(
               rssItem.contentSnippet ??
-                rssItem.content ??
-                rssItem.summary ??
-                rssItem.title ??
-                '',
+              rssItem.content ??
+              rssItem.summary ??
+              rssItem.title ??
+              '',
             ),
             author: rssItem.creator ?? rssItem.author ?? feed.title,
             url: rssItem.link,
@@ -199,157 +177,10 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
         });
     } catch (error: unknown) {
       this.logger.warn(
-        `Blog feed skipped: ${feedUrl} - ${
-          error instanceof Error ? error.message : error
+        `Blog feed skipped: ${feedUrl} - ${error instanceof Error ? error.message : error
         }`,
       );
 
-      return [];
-    }
-  }
-
-  /**
-   * Collects public articles from Dev.to API.
-   */
-  private async collectFromDevTo(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]> {
-    try {
-      const tag = this.buildDevToTag(input);
-
-      if (!tag) return [];
-
-      const cacheKey = CollectorCacheUtil.build('blog', 'devto-articles', [
-        tag,
-        input.country,
-        input.language,
-      ]);
-
-      const data = await CollectorHttpUtil.getWithRetryAndCache<DevToArticle[]>(
-        'https://dev.to/api/articles',
-        {
-          headers: this.buildHeaders(),
-          params: {
-            tag,
-            per_page: Math.min(this.maxFetchedPosts, 30),
-            top: 7,
-          },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
-
-      return (data ?? [])
-        .filter((article) => this.isValidDevToArticle(article))
-        .slice(0, this.maxFetchedPosts)
-        .map((article) => this.mapDevToArticle(article, input))
-        .reduce<Promise<CollectorPost[]>>(
-          async (promise, postPromise) => [
-            ...(await promise),
-            await postPromise,
-          ],
-          Promise.resolve([]),
-        );
-    } catch (error: unknown) {
-      this.logger.warn(
-        `Dev.to collection skipped - ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Maps a Dev.to article to the shared CollectorPost format.
-   */
-  private async mapDevToArticle(
-    article: DevToArticle,
-    input: CollectorInput,
-  ): Promise<CollectorPost> {
-    const comments = await this.collectDevToComments(article.id ?? 0);
-
-    return {
-      sourceType: CollectionSourceType.BLOG,
-      platformName: `${this.platformName} - Dev.to`,
-      externalId: String(article.id),
-      title: article.title,
-      content: this.stripHtml(article.description ?? article.title ?? ''),
-      author: article.user?.name ?? article.user?.username,
-      url: article.url,
-
-      country: input.country,
-      city: input.city,
-      region: input.region,
-
-      language: input.language,
-      likesCount: article.public_reactions_count ?? 0,
-      repliesCount: article.comments_count ?? comments.length,
-      publishedAt: article.published_at
-        ? new Date(article.published_at)
-        : undefined,
-      comments,
-    };
-  }
-
-  /**
-   * Collects public comments for a Dev.to article.
-   */
-  private async collectDevToComments(
-    articleId: number,
-  ): Promise<CollectorComment[]> {
-    if (!articleId) return [];
-
-    try {
-      const cacheKey = CollectorCacheUtil.build('blog', 'devto-comments', [
-        articleId,
-      ]);
-
-      const data = await CollectorHttpUtil.getWithRetryAndCache<DevToComment[]>(
-        'https://dev.to/api/comments',
-        {
-          headers: this.buildHeaders(),
-          params: {
-            a_id: articleId,
-          },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
-
-      const seenCommentIds = new Set<string>();
-
-      return (data ?? [])
-        .filter((comment) => this.isUsefulComment(comment.body_html))
-        .filter((comment) => {
-          const id = comment.id_code ?? comment.id?.toString();
-
-          if (!id || seenCommentIds.has(id)) return false;
-
-          seenCommentIds.add(id);
-          return true;
-        })
-        .slice(0, this.maxSavedComments)
-        .map((comment): CollectorComment => ({
-          externalId: comment.id_code ?? comment.id?.toString() ?? '',
-          content: this.stripHtml(comment.body_html ?? ''),
-          author: comment.user?.name ?? comment.user?.username,
-          likesCount: 0,
-          publishedAt: comment.created_at
-            ? new Date(comment.created_at)
-            : undefined,
-        }));
-    } catch {
       return [];
     }
   }
@@ -362,63 +193,15 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       ? this.normalizeText(input.keywords[0])
       : '';
 
-    if (userKeyword) return userKeyword;
+    if (userKeyword) {
+      return userKeyword;
+    }
 
     if (input.domainName) {
       return this.normalizeText(input.domainName);
     }
 
     return this.getDomainKeywords(input)[0] ?? '';
-  }
-
-  /**
-   * Builds a Dev.to compatible tag from domain or keywords.
-   */
-  private buildDevToTag(input: CollectorInput): string {
-    const keywords = [
-      ...(input.keywords ?? []),
-      input.domainName ?? '',
-      ...this.getDomainKeywords(input),
-    ]
-      .map((keyword) => this.normalizeText(keyword))
-      .filter(Boolean);
-
-    const tagMap: Record<string, string> = {
-      education: 'education',
-      healthcare: 'health',
-      health: 'health',
-      finance: 'finance',
-      financial: 'finance',
-      cybersecurity: 'security',
-      security: 'security',
-      technology: 'technology',
-      tech: 'technology',
-      ai: 'ai',
-      artificial: 'ai',
-      intelligence: 'ai',
-      'artificial intelligence': 'ai',
-      machine: 'machinelearning',
-      learning: 'machinelearning',
-      'machine learning': 'machinelearning',
-      software: 'programming',
-      programming: 'programming',
-      web: 'webdev',
-      website: 'webdev',
-      backend: 'backend',
-      frontend: 'frontend',
-      mobile: 'mobile',
-      database: 'database',
-    };
-
-    for (const keyword of keywords) {
-      if (tagMap[keyword]) return tagMap[keyword];
-
-      const compactKeyword = keyword.replace(/\s+/g, '');
-
-      if (tagMap[compactKeyword]) return tagMap[compactKeyword];
-    }
-
-    return 'programming';
   }
 
   /**
@@ -442,61 +225,6 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
     const blockedWords = this.getBlockedWords();
     const text = `${title} ${content}`;
-
-    return !blockedWords.some((word) => text.includes(word));
-  }
-
-  /**
-   * Validates Dev.to articles before mapping.
-   */
-  private isValidDevToArticle(article: DevToArticle): boolean {
-    const title = this.normalizeText(article.title ?? '');
-    const description = this.normalizeText(article.description ?? '');
-    const text = `${title} ${description}`;
-
-    if (!article.id || !article.url || !title) {
-      return false;
-    }
-
-    const blockedWords = this.getBlockedWords();
-
-    return !blockedWords.some((word) => text.includes(word));
-  }
-
-  /**
-   * Filters short, low-value, empty, or blocked comments.
-   */
-  private isUsefulComment(content?: string): boolean {
-    const text = this.normalizeText(this.stripHtml(content ?? ''));
-
-    if (text.length < 30) {
-      return false;
-    }
-
-    const cleaned = text.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
-
-    if (!cleaned) {
-      return false;
-    }
-
-    const lowValueComments = new Set([
-      'thanks',
-      'thank you',
-      'great',
-      'good',
-      'nice',
-      'awesome',
-      'love it',
-      'same',
-      'me too',
-      'first',
-    ]);
-
-    if (lowValueComments.has(text)) {
-      return false;
-    }
-
-    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) => text.includes(word));
   }
@@ -579,15 +307,5 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('BLOG_BLOCKED_WORDS');
-  }
-
-  /**
-   * Builds headers for public blog APIs.
-   */
-  private buildHeaders(): Record<string, string> {
-    return {
-      ...CollectorHeaderUtil.json(),
-      'User-Agent': 'NexoraAI/1.0.0 academic-project',
-    };
   }
 }

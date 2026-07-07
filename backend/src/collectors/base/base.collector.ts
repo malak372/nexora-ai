@@ -77,8 +77,12 @@ export abstract class BaseCollector {
    *
    * If the environment variable is missing, invalid, zero,
    * or negative, the default value is used.
+   *
+   * @param key Environment variable key.
+   * @param defaultValue Fallback value when the key is invalid.
+   * @returns A positive number from environment variables or the default value.
    */
-  private getPositiveNumber(key: string, defaultValue: number): number {
+  protected getPositiveNumber(key: string, defaultValue: number): number {
     const value = Number(this.configService.get(key));
 
     return Number.isFinite(value) && value > 0 ? value : defaultValue;
@@ -86,6 +90,9 @@ export abstract class BaseCollector {
 
   /**
    * Extracts and normalizes domain keywords from collector input.
+   *
+   * @param input Collector input containing optional domain keywords.
+   * @returns Normalized non-empty domain keywords.
    */
   protected getDomainKeywords(input: CollectorInput): string[] {
     return (input.domainKeywords ?? [])
@@ -95,6 +102,8 @@ export abstract class BaseCollector {
 
   /**
    * Reads global problem words from environment variables.
+   *
+   * @returns List of configured problem words.
    */
   protected getProblemWords(): string[] {
     return CollectorConfigUtil.getCsv(
@@ -106,6 +115,9 @@ export abstract class BaseCollector {
   /**
    * Reads global blocked words and merges them with platform-specific
    * blocked words.
+   *
+   * @param platformBlockedWordsKey Environment variable key for platform-specific blocked words.
+   * @returns Merged list of global and platform-specific blocked words.
    */
   protected getBlockedWords(platformBlockedWordsKey: string): string[] {
     return CollectorConfigUtil.getMergedCsv(
@@ -117,6 +129,16 @@ export abstract class BaseCollector {
 
   /**
    * Normalizes text for lightweight matching.
+   *
+   * This method lowercases the text, trims it, and collapses
+   * repeated whitespace. Use it for keyword matching, filtering,
+   * deduplication, and scoring logic.
+   *
+   * Do not use this method directly for user-facing stored content
+   * if preserving original casing is important.
+   *
+   * @param text Raw text.
+   * @returns Normalized lowercase text.
    */
   protected normalizeText(text: string): string {
     return text.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -124,6 +146,9 @@ export abstract class BaseCollector {
 
   /**
    * Removes duplicated values while preserving order.
+   *
+   * @param values Array that may contain duplicated values.
+   * @returns Array with duplicates removed.
    */
   protected unique<T>(values: T[]): T[] {
     return Array.from(new Set(values));
@@ -131,6 +156,9 @@ export abstract class BaseCollector {
 
   /**
    * Decodes the most common HTML entities returned by APIs.
+   *
+   * @param text Text that may contain encoded HTML entities.
+   * @returns Text with common HTML entities decoded.
    */
   protected decodeHtml(text: string): string {
     return text
@@ -143,8 +171,47 @@ export abstract class BaseCollector {
 
   /**
    * Removes HTML tags and decodes common HTML entities.
+   *
+   * @param text Raw text that may contain HTML tags.
+   * @returns Plain text without HTML tags.
    */
   protected stripHtml(text = ''): string {
     return this.decodeHtml(text.replace(/<[^>]*>/g, ' '));
+  }
+
+  /**
+   * Converts raw API text into safe plain text.
+   *
+   * Handles null/undefined values, removes HTML tags,
+   * decodes common HTML entities, trims the result, and collapses
+   * repeated whitespace.
+   *
+   * Use this method for stored or displayed content such as:
+   * title, body, description, summary, review text, and comment text.
+   *
+   * This method preserves original letter casing.
+   *
+   * @param text Raw external API text.
+   * @returns Clean plain text.
+   */
+  protected cleanPlainText(text?: string | null): string {
+    return this.stripHtml(text ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Converts raw API text into normalized plain text.
+   *
+   * Handles null/undefined values, removes HTML tags,
+   * decodes common HTML entities, trims the result, collapses
+   * repeated whitespace, and lowercases the text.
+   *
+   * Use this method for matching, searching, scoring, filtering,
+   * and duplicate detection.
+   *
+   * @param text Raw external API text.
+   * @returns Clean normalized lowercase text.
+   */
+  protected cleanNormalizedText(text?: string | null): string {
+    return this.normalizeText(this.cleanPlainText(text));
   }
 }

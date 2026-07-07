@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { AuditAction, AuditTargetType, LanguageCode } from '@prisma/client';
+import {
+  AuditAction,
+  AuditTargetType,
+  CollectionJobStatus,
+  CollectionSourceType,
+  LanguageCode,
+} from '@prisma/client';
 
 import { RunCollectionDto } from './dto/run-collection.dto';
 import { GetCollectionJobsQueryDto } from './collection-jobs/dto/get-collection-jobs-query.dto';
@@ -14,17 +20,36 @@ import { AuditService } from '../audit-logs/audit-logs.service';
 import { CollectorQueueService } from '../collectors/base/collector-queue.service';
 
 /**
+ * Input used internally when idea generation needs fresh collection data.
+ *
+ * Unlike RunCollectionDto, platforms are optional here:
+ * - If provided, the system uses them.
+ * - If missing, the system uses all active supported platforms.
+ */
+export type IdeaGenerationCollectionInput = {
+  domainId: string;
+  country: string;
+  city?: string;
+  region?: string;
+  language: LanguageCode;
+  radiusKm?: number;
+  platforms?: CollectionSourceType[];
+  keywords?: string[];
+};
+
+/**
  * Main orchestration service for the data collection pipeline.
  *
- * Flow:
- * 1. Validate domain.
- * 2. Resolve domain keywords based on selected language.
- * 3. Validate selected platforms.
- * 4. Create a RUNNING collection job.
- * 5. Run collectors using domain keywords and optional user keywords.
- * 6. Store posts and comments.
- * 7. Mark the job as COMPLETED or FAILED.
- * 8. Record audit logs with full collection context.
+ * Supports:
+ * - Admin manual data collection.
+ * - Automatic data collection from idea generation pipeline.
+ *
+ * Responsibilities:
+ * - Validate domain and selected platforms.
+ * - Create and update collection jobs.
+ * - Run collectors through CollectorQueueService.
+ * - Persist collected posts and comments.
+ * - Write admin audit logs.
  *
  * @author Malak
  */
@@ -37,15 +62,42 @@ export class DataCollectionService {
     private readonly collectorsFactory: CollectorsFactory,
     private readonly collectorQueueService: CollectorQueueService,
     private readonly auditService: AuditService,
-  ) { }
+  ) {}
 
   /**
-   * Starts a new data collection job.
+   * Starts a manual data collection job by Admin.
    *
-   * Domain keywords are used as the main discovery source.
-   * User keywords are optional advanced filters provided in the request body.
+   * Admin must explicitly send platforms.
    */
   async run(dto: RunCollectionDto, adminId: string) {
+    return this.runInternal(dto, dto.platforms, adminId);
+  }
+
+  /**
+   * Starts an automatic collection job for idea generation.
+   *
+   * Used when /ideas/generate needs fresh community data.
+   */
+  async runForIdeaGeneration(dto: IdeaGenerationCollectionInput) {
+    const selectedPlatforms = dto.platforms?.length
+      ? dto.platforms
+      : await this.collectionJobService.getActiveSupportedPlatforms();
+
+    return this.runInternal(dto, selectedPlatforms, null);
+  }
+
+  /**
+   * Shared collection runner.
+   *
+   * Used by:
+   * - Admin manual collection.
+   * - Automatic idea-generation collection.
+   */
+  private async runInternal(
+    dto: IdeaGenerationCollectionInput,
+    selectedPlatforms: CollectionSourceType[],
+    adminId: string | null,
+  ) {
     const domain = await this.collectionJobService.validateActiveDomain(
       dto.domainId,
     );
@@ -57,57 +109,68 @@ export class DataCollectionService {
 
     const userKeywords = dto.keywords ?? [];
 
-    this.collectionJobService.validateSupportedPlatforms(dto.platforms);
+    this.collectionJobService.validateSupportedPlatforms(selectedPlatforms);
 
-    const job = await this.collectionJobService.createRunningJob(dto);
+    for (const platform of selectedPlatforms) {
+      await this.collectionJobService.validateActivePlatform(platform);
+    }
 
-    await this.auditService.createLog({
-      actorId: adminId,
-      action: AuditAction.RUN_DATA_COLLECTION,
-      targetType: AuditTargetType.DATA_COLLECTION,
-      targetId: job.id,
-      newValue: {
-        domainId: dto.domainId,
-        domainName: domain.name,
-        platforms: dto.platforms,
-        country: dto.country,
-        city: dto.city,
-        region: dto.region,
-        language: dto.language,
-        radiusKm: dto.radiusKm,
+    const job = await this.collectionJobService.createRunningJob(
+      dto,
+      selectedPlatforms,
+    );
 
-        /**
-         * Keywords used by the collection pipeline.
-         *
-         * domainKeywords:
-         * - System-defined keywords attached to the selected domain.
-         *
-         * userKeywords:
-         * - Optional keywords sent by the user/admin to narrow the search.
-         */
-        domainKeywords,
-        userKeywords,
-      },
-    });
+    if (adminId) {
+      await this.auditService.createLog({
+        actorId: adminId,
+        action: AuditAction.RUN_DATA_COLLECTION,
+        targetType: AuditTargetType.DATA_COLLECTION,
+        targetId: job.id,
+        newValue: {
+          trigger: 'ADMIN_MANUAL',
+          domainId: dto.domainId,
+          domainName: domain.name,
+          platforms: selectedPlatforms,
+          country: dto.country,
+          city: dto.city,
+          region: dto.region,
+          language: dto.language,
+          radiusKm: dto.radiusKm,
+          domainKeywords,
+          userKeywords,
+        },
+      });
+    }
 
     try {
       let totalPosts = 0;
       let totalComments = 0;
 
-      for (const platform of dto.platforms) {
+      for (const platform of selectedPlatforms) {
+        const currentJob = await this.collectionJobService.findJobOrThrow(
+          job.id,
+        );
+
+        if (currentJob.status === CollectionJobStatus.STOPPED) {
+          return currentJob;
+        }
+
         const collector = this.collectorsFactory.getCollector(platform);
 
-        const posts = await this.collectorQueueService.run(() =>
-          collector.collect({
-            domainName: domain.name,
-            domainKeywords,
-            country: dto.country,
-            city: dto.city,
-            region: dto.region,
-            language: dto.language,
-            radiusKm: dto.radiusKm,
-            keywords: userKeywords,
-          }),
+        const collectorInput = {
+          domainName: domain.name,
+          domainKeywords,
+          country: dto.country,
+          city: dto.city,
+          region: dto.region,
+          language: dto.language,
+          radiusKm: dto.radiusKm,
+          keywords: userKeywords,
+        };
+
+        const posts = await this.collectorQueueService.run(
+          () => collector.collect(collectorInput),
+          platform,
         );
 
         const totals = await this.socialPostService.createManyWithComments(
@@ -123,21 +186,27 @@ export class DataCollectionService {
         totalPosts,
         totalComments,
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      const latestJob = await this.collectionJobService.findJobOrThrow(job.id);
+
+      if (latestJob.status === CollectionJobStatus.STOPPED) {
+        return latestJob;
+      }
+
       await this.collectionJobService.failJob(job.id, error);
       throw error;
     }
   }
 
   /**
-   * Returns collection jobs summary status.
+   * Returns service health/status including queue state.
    */
-  getStatus() {
+  async getStatus() {
     return {
       service: 'Data Collection',
       status: 'RUNNING',
       queue: this.collectorQueueService.getStatus(),
-      jobs: this.collectionJobService.getStatus(),
+      jobs: await this.collectionJobService.getStatus(),
       supportedPlatforms: this.collectorsFactory.getSupportedPlatforms(),
       notes: {
         github: 'Public issues and comments are supported.',
@@ -146,30 +215,19 @@ export class DataCollectionService {
       },
     };
   }
-  /**
-   * Returns paginated collection jobs.
-   */
+
   getJobs(query: GetCollectionJobsQueryDto) {
     return this.collectionJobService.findJobs(query);
   }
 
-  /**
-   * Returns detailed information about one collection job.
-   */
   getJobDetails(id: string) {
     return this.collectionJobService.findJobDetails(id);
   }
 
-  /**
-   * Returns paginated collected posts.
-   */
   getPosts(query: GetSocialPostsQueryDto) {
     return this.socialPostService.findPosts(query);
   }
 
-  /**
-   * Returns paginated collected comments.
-   */
   getComments(query: GetSocialCommentsQueryDto) {
     return this.socialCommentService.findComments(query);
   }
@@ -195,29 +253,19 @@ export class DataCollectionService {
   }
 
   /**
-   * Filters domain keywords according to the requested language.
-   *
-   * If no language is provided, all domain keywords are returned.
-   * If a language is provided, keywords with that language or ANY are returned.
+   * Returns domain keywords matching the requested language.
    */
   private getDomainKeywordsByLanguage(
     domainKeywords: { keyword: string; language: LanguageCode }[],
-    language?: string,
+    language: LanguageCode,
   ): string[] {
-    const requestedLanguage = language?.toUpperCase() as
-      | LanguageCode
-      | undefined;
-
     return domainKeywords
       .filter((item) => {
-        if (!requestedLanguage || requestedLanguage === LanguageCode.ANY) {
+        if (language === LanguageCode.ANY) {
           return true;
         }
 
-        return (
-          item.language === LanguageCode.ANY ||
-          item.language === requestedLanguage
-        );
+        return item.language === LanguageCode.ANY || item.language === language;
       })
       .map((item) => item.keyword);
   }

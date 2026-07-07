@@ -11,6 +11,8 @@ import {
   CollectorPost,
 } from '../base/collector.types';
 
+import { CollectorCacheUtil } from '../base/collector-cache.util';
+import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
@@ -44,6 +46,8 @@ type AppStoreReview = {
  * app-store-scraper.
  *
  * Notes:
+ * - External app-store-scraper calls are cached through
+ *   CollectorExternalCacheUtil.
  * - App Store search requires a supported storefront country code.
  * - If a country is not supported or not provided, US is used as fallback.
  *
@@ -59,10 +63,6 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     super(configService, AppStoreCollector.name);
   }
 
-  /**
-   * Collects App Store apps matching the selected domain/search input,
-   * ranks them by relevance, and attaches useful public reviews.
-   */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const searchQuery = this.buildSearchQuery(input);
@@ -74,15 +74,7 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
         return [];
       }
 
-      const apps = (await appStore.search({
-        term: searchQuery,
-        num: Math.min(this.maxFetchedPosts, 20),
-        country: this.resolveCountry(input.country),
-        lang: this.resolveLanguage(input.language),
-      })) as AppStoreApp[];
-
-      this.logger.log(`App Store search query: ${searchQuery}`);
-      this.logger.log(`App Store apps returned: ${apps.length}`);
+      const apps = await this.searchApps(searchQuery, input);
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
@@ -90,6 +82,7 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
           app,
           score: this.calculateAppRelevanceScore(app, input),
         }))
+        .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
@@ -105,18 +98,33 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
         'App Store collection failed',
         error instanceof Error ? error.message : error,
       );
+
       return [];
     }
   }
 
-  /**
-   * Builds the App Store search query.
-   *
-   * Priority:
-   * 1. User keyword.
-   * 2. Domain name.
-   * 3. First domain keyword.
-   */
+  private async searchApps(
+    searchQuery: string,
+    input: CollectorInput,
+  ): Promise<AppStoreApp[]> {
+    const cacheKey = CollectorCacheUtil.build('app-store', 'search', [
+      searchQuery,
+      input.country,
+      input.language,
+    ]);
+
+    return CollectorExternalCacheUtil.remember<AppStoreApp[]>(
+      cacheKey,
+      this.cacheTtlMs,
+      () =>
+        appStore.search({
+          term: searchQuery,
+          country: this.resolveCountry(input.country),
+          num: this.maxFetchedPosts,
+        }) as Promise<AppStoreApp[]>,
+    );
+  }
+
   private buildSearchQuery(input: CollectorInput): string {
     const userKeyword = input.keywords?.[0]
       ? this.normalizeText(input.keywords[0])
@@ -131,12 +139,8 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     return this.getDomainKeywords(input)[0] ?? '';
   }
 
-  /**
-   * Checks whether an app has enough required data and is not blocked.
-   */
   private isValidApp(app: AppStoreApp): boolean {
     const appId = this.getAppId(app);
-
     const title = this.normalizeText(app.title ?? '');
     const description = this.normalizeText(app.description ?? app.summary ?? '');
 
@@ -148,9 +152,6 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     return !blockedWords.some((word) => content.includes(word));
   }
 
-  /**
-   * Calculates relevance score using the shared scoring utility.
-   */
   private calculateAppRelevanceScore(
     app: AppStoreApp,
     input: CollectorInput,
@@ -166,15 +167,11 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     });
   }
 
-  /**
-   * Maps an App Store app to the unified CollectorPost format.
-   */
   private async mapAppToCollectorPost(
     app: AppStoreApp,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const appId = this.getAppId(app);
-
     const comments = await this.collectAppReviews(appId, input);
 
     return {
@@ -185,11 +182,9 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
       content: app.description ?? app.summary ?? app.title ?? '',
       author: app.developer,
       url: app.url,
-
       country: input.country,
       city: input.city,
       region: input.region,
-
       language: input.language,
       likesCount: app.reviews ?? app.ratings ?? 0,
       repliesCount: comments.length,
@@ -198,22 +193,29 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     };
   }
 
-  /**
-   * Collects recent public reviews for a specific App Store app.
-   */
   private async collectAppReviews(
     appId: string | number,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
     try {
-      const reviews = (await appStore.reviews({
-        id: appId,
-        page: 1,
-        country: this.resolveCountry(input.country),
-        sort: appStore.sort.RECENT,
-      })) as AppStoreReview[];
+      const cacheKey = CollectorCacheUtil.build('app-store', 'reviews', [
+        appId,
+        input.country,
+      ]);
 
-      return (reviews ?? [])
+      const reviews = await CollectorExternalCacheUtil.remember<
+        AppStoreReview[]
+      >(
+        cacheKey,
+        this.cacheTtlMs,
+        () =>
+          appStore.reviews({
+            id: appId,
+            country: this.resolveCountry(input.country),
+          }) as Promise<AppStoreReview[]>,
+      );
+
+      return reviews
         .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
         .map((review): CollectorComment => ({
@@ -238,19 +240,11 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
     }
   }
 
-  /**
-   * Filters out short, low-value, blocked, or language-mismatched reviews.
-   */
-  private isUsefulReview(
-    review: AppStoreReview,
-    language?: string,
-  ): boolean {
+  private isUsefulReview(review: AppStoreReview, language?: string): boolean {
     const rawContent = review.text ?? '';
     const content = this.normalizeText(rawContent);
 
-    if (!review.id || content.length < 40) {
-      return false;
-    }
+    if (!review.id || content.length < 40) return false;
 
     if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
       return false;
@@ -258,9 +252,7 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
 
     const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
-    if (!cleaned) {
-      return false;
-    }
+    if (!cleaned) return false;
 
     const lowValueReviews = new Set([
       'excellent',
@@ -278,48 +270,28 @@ export class AppStoreCollector extends BaseCollector implements SocialCollector 
       'nice app',
     ]);
 
-    if (lowValueReviews.has(content)) {
-      return false;
-    }
+    if (lowValueReviews.has(content)) return false;
 
     const blockedWords = this.getAppStoreBlockedWords();
 
     return !blockedWords.some((word) => content.includes(word));
   }
 
-  /**
-   * Extracts the app identifier from app-store-scraper response.
-   */
   private getAppId(app: AppStoreApp): string | number {
     return app.id ?? app.appId ?? '';
   }
 
-  /**
-   * Reads common blocked words and App Store-specific blocked words.
-   */
-  private getAppStoreBlockedWords(): string[] {
-    return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
-  }
-
-  /**
-   * Resolves the requested language to an App Store-supported language code.
-   */
-  private resolveLanguage(language?: string): string {
-    return CollectorLanguageUtil.resolveLanguageCode(language) ?? 'en';
-  }
-
-  /**
-   * Resolves country into App Store storefront code.
-   *
-   * Palestine is mapped to US because App Store storefront support
-   * for Palestine is not reliably available in app-store-scraper.
-   */
   private resolveCountry(country?: string): string {
     const regionCode = CollectorRegionUtil.resolveRegionCode(country);
 
-    if (!regionCode) return 'us';
-    if (regionCode === 'PS') return 'us';
+    if (!regionCode || regionCode === 'PS') {
+      return 'us';
+    }
 
     return regionCode.toLowerCase();
+  }
+
+  private getAppStoreBlockedWords(): string[] {
+    return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
   }
 }
