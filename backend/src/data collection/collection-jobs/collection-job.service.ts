@@ -34,9 +34,6 @@ export class CollectionJobService {
     private readonly collectorsFactory: CollectorsFactory,
   ) { }
 
-  /**
-   * Validates that the selected domain exists and is active.
-   */
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findFirst({
       where: {
@@ -55,9 +52,6 @@ export class CollectionJobService {
     return domain;
   }
 
-  /**
-   * Validates that all requested platforms have registered collectors.
-   */
   validateSupportedPlatforms(platforms: CollectionSourceType[]): void {
     const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
 
@@ -72,9 +66,6 @@ export class CollectionJobService {
     }
   }
 
-  /**
-   * Validates that the selected platform exists and is active in DB.
-   */
   async validateActivePlatform(sourceType: CollectionSourceType) {
     const platformName = PLATFORM_NAMES[sourceType];
 
@@ -94,14 +85,40 @@ export class CollectionJobService {
     return platform;
   }
 
-  /**
-   * Creates a collection job in RUNNING state.
-   */
-  createRunningJob(dto: RunCollectionDto) {
+  async getActiveSupportedPlatforms(): Promise<CollectionSourceType[]> {
+    const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
+
+    const activePlatforms = await this.prisma.platform.findMany({
+      where: {
+        isActive: true,
+        name: {
+          in: supportedPlatforms.map((sourceType) => PLATFORM_NAMES[sourceType]),
+        },
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    const activePlatformNames = new Set(
+      activePlatforms.map((platform) => platform.name),
+    );
+
+    return supportedPlatforms.filter((sourceType) =>
+      activePlatformNames.has(PLATFORM_NAMES[sourceType]),
+    );
+  }
+
+  createRunningJob(
+    dto: Omit<RunCollectionDto, 'platforms'> & {
+      platforms?: CollectionSourceType[];
+    },
+    platforms: CollectionSourceType[],
+  ) {
     return this.prisma.collectionJob.create({
       data: {
         domainId: dto.domainId,
-        platforms: dto.platforms,
+        platforms,
         language: dto.language,
         country: dto.country,
         city: dto.city,
@@ -114,9 +131,6 @@ export class CollectionJobService {
     });
   }
 
-  /**
-   * Finds a collection job or throws NotFoundException.
-   */
   async findJobOrThrow(id: string) {
     const job = await this.prisma.collectionJob.findUnique({
       where: { id },
@@ -129,20 +143,6 @@ export class CollectionJobService {
     return job;
   }
 
-  /**
-   * Checks whether a job was stopped.
-   *
-   * Used by the runner before starting each platform collector.
-   */
-  async isJobStopped(id: string): Promise<boolean> {
-    const job = await this.findJobOrThrow(id);
-
-    return job.status === CollectionJobStatus.STOPPED;
-  }
-
-  /**
-   * Returns detailed information about one collection job.
-   */
   async findJobDetails(id: string) {
     const job = await this.prisma.collectionJob.findUnique({
       where: { id },
@@ -175,7 +175,7 @@ export class CollectionJobService {
 
     const domainKeywords = this.getDomainKeywordsByLanguage(
       job.domain.domainKeywords,
-      job.language ?? undefined,
+      job.language,
     );
 
     return {
@@ -195,22 +195,16 @@ export class CollectionJobService {
       completedAt: job.completedAt,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
-
       domain: {
         id: job.domain.id,
         name: job.domain.name,
       },
-
       domainKeywords,
       userKeywords: job.keywords,
-
       _count: job._count,
     };
   }
 
-  /**
-   * Marks a collection job as completed.
-   */
   completeJob(
     id: string,
     totals: {
@@ -237,9 +231,6 @@ export class CollectionJobService {
     });
   }
 
-  /**
-   * Marks a collection job as failed and stores the failure reason.
-   */
   failJob(id: string, error: unknown) {
     return this.prisma.collectionJob.update({
       where: { id },
@@ -252,9 +243,6 @@ export class CollectionJobService {
     });
   }
 
-  /**
-   * Stops a currently running collection job.
-   */
   async stopJob(id: string) {
     const job = await this.findJobOrThrow(id);
 
@@ -273,9 +261,6 @@ export class CollectionJobService {
     });
   }
 
-  /**
-   * Returns collection jobs summary status.
-   */
   async getStatus() {
     const [runningJobs, completedJobs, failedJobs, stoppedJobs] =
       await Promise.all([
@@ -302,9 +287,6 @@ export class CollectionJobService {
     };
   }
 
-  /**
-   * Returns paginated collection jobs with filtering and sorting.
-   */
   async findJobs(query: GetCollectionJobsQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
 
@@ -360,27 +342,15 @@ export class CollectionJobService {
     };
   }
 
-  /**
-   * Filters domain keywords according to a selected job language.
-   */
   private getDomainKeywordsByLanguage(
     domainKeywords: { keyword: string; language: LanguageCode }[],
-    language?: string,
+    language: LanguageCode,
   ): string[] {
-    const requestedLanguage = language?.toUpperCase() as
-      | LanguageCode
-      | undefined;
-
     return domainKeywords
       .filter((item) => {
-        if (!requestedLanguage || requestedLanguage === LanguageCode.ANY) {
-          return true;
-        }
+        if (language === LanguageCode.ANY) return true;
 
-        return (
-          item.language === LanguageCode.ANY ||
-          item.language === requestedLanguage
-        );
+        return item.language === LanguageCode.ANY || item.language === language;
       })
       .map((item) => item.keyword);
   }

@@ -11,6 +11,8 @@ import {
   CollectorPost,
 } from '../base/collector.types';
 
+import { CollectorCacheUtil } from '../base/collector-cache.util';
+import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
@@ -43,8 +45,11 @@ type GooglePlayReviewsResponse = {
  * using google-play-scraper.
  *
  * Notes:
+ * - External google-play-scraper calls are cached through
+ *   CollectorExternalCacheUtil.
+ * - Generic return types are passed explicitly to the cache wrapper
+ *   to avoid TypeScript inferring cached results as unknown or {}.
  * - Google Play supports language and country filters.
- * - Country, city, and region are stored as request metadata.
  *
  * @author Malak
  */
@@ -63,7 +68,7 @@ export class GooglePlayCollector
 
   /**
    * Collects Google Play apps, ranks them by relevance,
-   * and maps them to the unified CollectorPost format.
+   * attaches useful public reviews, and maps them to CollectorPost.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -76,12 +81,7 @@ export class GooglePlayCollector
         return [];
       }
 
-      const apps = (await gplay.search({
-        term: searchQuery,
-        num: Math.min(this.maxFetchedPosts, 20),
-        lang: this.resolveLanguage(input.language),
-        country: this.resolveCountry(input.country),
-      })) as GooglePlayApp[];
+      const apps = await this.searchApps(searchQuery, input);
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
@@ -89,6 +89,7 @@ export class GooglePlayCollector
           app,
           score: this.calculateAppRelevanceScore(app, input),
         }))
+        .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, this.maxSavedPosts);
 
@@ -109,6 +110,32 @@ export class GooglePlayCollector
 
       return [];
     }
+  }
+
+  /**
+   * Searches Google Play apps using google-play-scraper with cache support.
+   */
+  private async searchApps(
+    searchQuery: string,
+    input: CollectorInput,
+  ): Promise<GooglePlayApp[]> {
+    const cacheKey = CollectorCacheUtil.build('google-play', 'search', [
+      searchQuery,
+      input.country,
+      input.language,
+    ]);
+
+    return CollectorExternalCacheUtil.remember<GooglePlayApp[]>(
+      cacheKey,
+      this.cacheTtlMs,
+      () =>
+        gplay.search({
+          term: searchQuery,
+          num: Math.min(this.maxFetchedPosts, 20),
+          lang: this.resolveLanguage(input.language),
+          country: this.resolveCountry(input.country),
+        }) as Promise<GooglePlayApp[]>,
+    );
   }
 
   /**
@@ -137,7 +164,9 @@ export class GooglePlayCollector
     const title = this.normalizeText(app.title ?? '');
     const summary = this.normalizeText(app.summary ?? '');
 
-    if (!app.appId || !title) return false;
+    if (!app.appId || !title) {
+      return false;
+    }
 
     const blockedWords = this.getBlockedWords();
     const content = `${title} ${summary}`;
@@ -195,24 +224,38 @@ export class GooglePlayCollector
   }
 
   /**
-   * Collects public reviews for a Google Play app.
+   * Collects public reviews for a Google Play app using cache support.
    */
   private async collectAppReviews(
     appId: string,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
-    if (!appId) return [];
+    if (!appId) {
+      return [];
+    }
 
     try {
-      const reviews = (await gplay.reviews({
+      const cacheKey = CollectorCacheUtil.build('google-play', 'reviews', [
         appId,
-        num: this.maxSavedComments,
-        sort: this.getNewestSort(),
-        lang: this.resolveLanguage(input.language),
-        country: this.resolveCountry(input.country),
-      })) as GooglePlayReviewsResponse;
+        input.country,
+        input.language,
+      ]);
 
-      return (reviews.data ?? [])
+      const response =
+        await CollectorExternalCacheUtil.remember<GooglePlayReviewsResponse>(
+          cacheKey,
+          this.cacheTtlMs,
+          () =>
+            gplay.reviews({
+              appId,
+              num: this.maxSavedComments,
+              sort: this.getNewestSort(),
+              lang: this.resolveLanguage(input.language),
+              country: this.resolveCountry(input.country),
+            }) as Promise<GooglePlayReviewsResponse>,
+        );
+
+      return (response.data ?? [])
         .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
         .map((review): CollectorComment => ({
@@ -231,10 +274,7 @@ export class GooglePlayCollector
   /**
    * Filters short, low-value, blocked, or language-mismatched reviews.
    */
-  private isUsefulReview(
-    review: GooglePlayReview,
-    language?: string,
-  ): boolean {
+  private isUsefulReview(review: GooglePlayReview, language?: string): boolean {
     const rawContent = review.text ?? '';
     const content = this.normalizeText(rawContent);
 
@@ -304,7 +344,7 @@ export class GooglePlayCollector
    * Returns google-play-scraper newest sort value.
    *
    * The package typings can differ between versions,
-   * so the enum access is isolated here.
+   * so enum access is isolated here.
    */
   private getNewestSort() {
     return (gplay.sort as any).NEWEST || 'NEWEST';
