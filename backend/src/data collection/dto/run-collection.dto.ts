@@ -12,7 +12,11 @@ import { Type } from 'class-transformer';
 import { CollectionSourceType, LanguageCode } from '@prisma/client';
 
 /**
- * DTO used by admins to start a new data collection job.
+ * DTO used by admins to manually start a data collection job.
+ *
+ * Notes:
+ * - Admin must explicitly choose platforms.
+ * - User idea generation can use optional platforms in GenerateIdeaDto later.
  *
  * @author Malak
  */
@@ -20,13 +24,8 @@ export class RunCollectionDto {
   @IsUUID()
   domainId!: string;
 
-  @IsOptional()
   @IsString()
-  domainName?: string;
-
-  @IsOptional()
-  @IsString()
-  country?: string;
+  country!: string;
 
   @IsOptional()
   @IsString()
@@ -36,9 +35,8 @@ export class RunCollectionDto {
   @IsString()
   region?: string;
 
-  @IsOptional()
   @IsEnum(LanguageCode)
-  language?: LanguageCode;
+  language!: LanguageCode;
 
   @IsOptional()
   @Type(() => Number)

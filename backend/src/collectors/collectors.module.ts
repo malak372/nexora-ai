@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 
 import { CollectorsFactory } from './collectors.factory';
 
-import { MockCollector } from './mock/mock.collector';
 import { AppStoreCollector } from './app-store/app-store.collector';
 import { BlogCollector } from './blog/blog.collector';
 import { DiscordCollector } from './discord/discord.collector';
@@ -37,7 +36,6 @@ import { DevToCollector } from './dev-to/dev-to.collector';
 @Module({
   providers: [
     CollectorsFactory,
-    MockCollector,
     RedditCollector,
     FacebookCollector,
     YouTubeCollector,

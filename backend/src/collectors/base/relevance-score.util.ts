@@ -53,10 +53,15 @@ export class RelevanceScoreUtil {
     for (const term of input.domainTerms) {
       const normalizedTerm = this.normalize(term);
 
-      if (!normalizedTerm) continue;
+      if (!normalizedTerm) {
+        continue;
+      }
 
-      if (title.includes(normalizedTerm)) score += 30;
-      if (body.includes(normalizedTerm)) score += 12;
+      score +=
+        Math.min(this.countTermOccurrences(title, normalizedTerm), 3) * 30;
+
+      score +=
+        Math.min(this.countTermOccurrences(body, normalizedTerm), 5) * 12;
     }
 
     /**
@@ -68,10 +73,15 @@ export class RelevanceScoreUtil {
     for (const term of input.problemTerms) {
       const normalizedTerm = this.normalize(term);
 
-      if (!normalizedTerm) continue;
+      if (!normalizedTerm) {
+        continue;
+      }
 
-      if (title.includes(normalizedTerm)) score += 35;
-      if (body.includes(normalizedTerm)) score += 15;
+      score +=
+        Math.min(this.countTermOccurrences(title, normalizedTerm), 3) * 35;
+
+      score +=
+        Math.min(this.countTermOccurrences(body, normalizedTerm), 5) * 15;
     }
 
     /**
@@ -102,6 +112,25 @@ export class RelevanceScoreUtil {
     }
 
     return score;
+  }
+
+  /**
+   * Counts how many times a search term appears in a text.
+   *
+   * The returned value is later capped inside the scoring logic
+   * to prevent excessively repetitive content from receiving
+   * an unfairly high relevance score.
+   *
+   * @param text Normalized text.
+   * @param term Normalized search term.
+   * @returns Number of occurrences.
+   */
+  private static countTermOccurrences(text: string, term: string): number {
+    if (!text || !term) {
+      return 0;
+    }
+
+    return text.split(term).length - 1;
   }
 
   /**
