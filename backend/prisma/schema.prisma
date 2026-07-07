@@ -321,6 +321,8 @@ model User {
   ideaFeedback            IdeaFeedback[]
   savedGenerationSearches SavedGenerationSearch[]
 
+  @@index([lockedUntil])
+  @@index([loginLockLevel])
   @@map("users")
 }
 
@@ -879,15 +881,15 @@ model SocialComment {
 model NlpAnalysis {
   id String @id @default(uuid())
 
-  collectionJobId String @unique @map("collection_job_id")
+  collectionJobId String        @unique @map("collection_job_id")
   collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
 
   totalTextsAnalyzed Int @default(0) @map("total_texts_analyzed")
 
-  sentimentStats    Json @map("sentiment_stats")
+  sentimentStats    Json  @map("sentiment_stats")
   keywords          Json
   topics            Json?
-  recurringProblems Json @map("recurring_problems")
+  recurringProblems Json  @map("recurring_problems")
   extractedNeeds    Json? @map("extracted_needs")
   sampleComments    Json? @map("sample_comments")
   statistics        Json?
