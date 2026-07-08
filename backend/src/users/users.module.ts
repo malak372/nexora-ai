@@ -28,6 +28,8 @@ import { UserComplaintsService } from './complaints/complaints.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserFeedbackService } from './feedback/feedback.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
+import { ContactController } from './contact-message/contact.controller';
+import { ContactService } from './contact-message/contact.service';
 
 
 /**
@@ -72,6 +74,7 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserFavoritesController,
     UserFeedbackController,
     UserSavedSearchesController,
+    ContactController,
   ],
   providers: [
     UserValidationService,
@@ -87,7 +90,8 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
-  ],
+    ContactService
+    ],
   exports: [
     UserValidationService,
     UserPermissionsService,
@@ -102,6 +106,7 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
+    ContactService,
   ],
 })
 export class UsersModule { }
