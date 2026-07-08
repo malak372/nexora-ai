@@ -90,6 +90,13 @@ enum ComplaintPriority {
   HIGH
 }
 
+enum ContactMessageStatus {
+  NEW
+  IN_PROGRESS
+  REPLIED
+  CLOSED
+}
+
 enum AlertType {
   SYSTEM
   PAYMENT
@@ -193,6 +200,9 @@ enum AuditAction {
   USER_UPDATE_PROFILE
   USER_MARK_NOTIFICATION_READ
   USER_MARK_ALL_NOTIFICATIONS_READ
+
+  ADMIN_UPDATE_CONTACT_MESSAGE
+  USER_CREATE_CONTACT_MESSAGE
 }
 
 enum AuditTargetType {
@@ -204,6 +214,7 @@ enum AuditTargetType {
   SYSTEM_SETTING
   PROMPT
   COMPLAINT
+  CONTACT_MESSAGE
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
@@ -327,6 +338,7 @@ model User {
   preference              UserPreference?
   ideaFeedback            IdeaFeedback[]
   savedGenerationSearches SavedGenerationSearch[]
+  contactMessages         ContactMessage[]
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -488,6 +500,8 @@ model Idea {
   externalApiLogs    ExternalApiLog[]
   favoriteIdeas      FavoriteIdea[]
   feedback           IdeaFeedback[]
+  averageRating      Decimal             @default(0) @map("average_rating") @db.Decimal(3, 2)
+  ratingsCount       Int                 @default(0) @map("ratings_count")
 
   @@map("ideas")
 }
@@ -938,6 +952,9 @@ model FavoriteIdea {
   createdAt DateTime @default(now())
 
   @@unique([userId, ideaId])
+  @@index([userId])
+  @@index([ideaId])
+  @@map("favorite_ideas")
 }
 
 model UserPreference {
@@ -1010,4 +1027,27 @@ model SavedGenerationSearch {
   @@map("saved_generation_searches")
 }
 
+model ContactMessage {
+  id String @id @default(uuid())
 
+  fullName String
+  email    String
+  subject  String
+  message  String
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  status ContactMessageStatus @default(NEW)
+
+  adminReply String? @map("admin_reply")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
