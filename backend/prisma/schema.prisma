@@ -1051,3 +1051,22 @@ model ContactMessage {
   @@index([createdAt])
   @@map("contact_messages")
 }
+
+model NlpLexicon {
+  id String @id @default(uuid())
+
+  word     String
+  type     NlpLexiconType
+  language LanguageCode   @default(ANY)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([word, type, language])
+  @@index([type])
+  @@index([language])
+  @@index([isActive])
+  @@map("nlp_lexicons")
+}
