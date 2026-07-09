@@ -728,6 +728,7 @@ model Domain {
 
   ideas                   Idea[]
   savedGenerationSearches SavedGenerationSearch[]
+  topicRules              NlpTopicRule[]
 
   @@map("domains")
 }
@@ -1101,4 +1102,25 @@ model NlpLexicon {
   /// Speeds up filtering active lexicon entries.
   @@index([isActive])
   @@map("nlp_lexicons")
+}
+
+model NlpTopicRule {
+  id String @id @default(uuid())
+
+  topic    String
+  terms    Json
+  domainId String? @map("domain_id")
+  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  language LanguageCode @default(ANY)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([domainId])
+  @@index([language])
+  @@index([isActive])
+  @@map("nlp_topic_rules")
 }
