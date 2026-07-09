@@ -1,31 +1,30 @@
 import { Injectable } from '@nestjs/common';
+import { LanguageCode } from '@prisma/client';
 
 import {
     WeightedKeyword,
     WeightedTopic,
 } from '../pipeline/types/intelligent-analysis.types';
-
-type TopicRule = {
-    topic: string;
-    terms: string[];
-};
+import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
 
 /**
  * Extracts high-level discussion topics from weighted keywords.
  *
- * This service converts frequent keywords into broader topic groups that help
- * Nexora AI understand the main areas of community concern before prompt
- * generation.
+ * This service converts frequent keywords into broader topic groups using
+ * configurable topic rules stored in the database. This allows Nexora AI to
+ * classify community concerns without hardcoding domain-specific rules inside
+ * the application source code.
  *
  * Responsibilities:
+ * - Load configurable topic rules for the analyzed language.
  * - Group related keywords into meaningful discussion topics.
  * - Calculate topic frequency from supporting keyword frequencies.
  * - Keep unmatched but frequent keywords as standalone topic candidates.
  * - Return sorted weighted topics for insight extraction and prompt building.
  *
- * This service is intentionally rule-based and does not call external AI
- * services. AI-assisted topic refinement can be added later when rule-based
- * confidence is low.
+ * This service does not persist results and does not call external AI services.
+ * AI-assisted topic refinement can be added later when rule-based confidence
+ * is low.
  *
  * @author Eman
  */
@@ -33,61 +32,25 @@ type TopicRule = {
 export class TopicExtractionService {
     private readonly maxTopics = 15;
 
-    private readonly topicRules: TopicRule[] = [
-        {
-            topic: 'Appointment Management',
-            terms: ['appointment', 'booking', 'reservation', 'schedule', 'scheduling'],
-        },
-        {
-            topic: 'Waiting Time',
-            terms: ['waiting', 'wait', 'queue', 'delay', 'delayed', 'slow'],
-        },
-        {
-            topic: 'Service Quality',
-            terms: ['service', 'quality', 'support', 'response', 'experience'],
-        },
-        {
-            topic: 'Cost and Affordability',
-            terms: ['cost', 'price', 'expensive', 'payment', 'fee', 'affordable'],
-        },
-        {
-            topic: 'Access and Availability',
-            terms: ['access', 'available', 'availability', 'unavailable', 'open'],
-        },
-        {
-            topic: 'Reliability and Performance',
-            terms: ['reliable', 'reliability', 'crash', 'error', 'bug', 'broken'],
-        },
-        {
-            topic: 'Safety and Trust',
-            terms: ['safe', 'safety', 'risk', 'privacy', 'trust', 'secure'],
-        },
-        {
-            topic: 'Communication',
-            terms: ['message', 'notification', 'call', 'contact', 'reply', 'update'],
-        },
-        {
-            topic: 'Healthcare Services',
-            terms: ['doctor', 'clinic', 'hospital', 'patient', 'medicine', 'pharmacy'],
-        },
-        {
-            topic: 'Digital Access',
-            terms: ['app', 'website', 'online', 'platform', 'system', 'portal'],
-        },
-    ];
+    constructor(private readonly topicRuleService: TopicRuleService) { }
 
     /**
      * Extracts the most relevant discussion topics from weighted keywords.
      *
      * @param keywords Weighted keywords extracted from analyzed community texts.
+     * @param language Language used to load matching topic rules.
      * @returns Weighted topics sorted by frequency.
      */
-    extract(keywords: WeightedKeyword[]): WeightedTopic[] {
+    async extract(
+        keywords: WeightedKeyword[],
+        language: LanguageCode,
+    ): Promise<WeightedTopic[]> {
+        const topicRules = await this.topicRuleService.getRules(language);
         const topicMap = new Map<string, number>();
 
         for (const keyword of keywords) {
             const normalizedKeyword = this.normalizeTerm(keyword.keyword);
-            const topic = this.findMatchingTopic(normalizedKeyword);
+            const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
 
             topicMap.set(topic, (topicMap.get(topic) ?? 0) + keyword.frequency);
         }
@@ -111,14 +74,15 @@ export class TopicExtractionService {
      * Finds the best topic label for a normalized keyword.
      *
      * If no configured rule matches the keyword, the keyword itself is converted
-     * into a readable standalone topic. This preserves important emerging signals
-     * that are not yet covered by predefined rules.
+     * into a readable standalone topic. This preserves emerging signals that are
+     * not yet covered by administrator-managed topic rules.
      *
      * @param keyword Normalized keyword.
+     * @param topicRules Configurable topic rules loaded from the database.
      * @returns Topic label.
      */
-    private findMatchingTopic(keyword: string): string {
-        const matchedRule = this.topicRules.find((rule) =>
+    private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
+        const matchedRule = topicRules.find((rule) =>
             rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
         );
 
@@ -128,9 +92,8 @@ export class TopicExtractionService {
     /**
      * Checks whether a keyword is related to a configured topic term.
      *
-     * This supports both exact matches and phrase matches, which allows keywords
-     * such as "waiting time" or "online appointment" to match their broader
-     * topic groups.
+     * This supports exact matches and phrase matches, which allows keywords such
+     * as "waiting time" or "online appointment" to match broader topic groups.
      *
      * @param keyword Normalized keyword.
      * @param term Topic rule term.
