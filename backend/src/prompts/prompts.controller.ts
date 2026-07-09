@@ -10,7 +10,6 @@ import { UserRole } from '@prisma/client';
 
 import { CurrentUser } from '../utilities/decorators/current-user.decorator';
 import type { JwtCurrentUser } from '../utilities/decorators/current-user.decorator';
-
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -21,9 +20,12 @@ import { PromptHistoryService } from './services/prompt-history.service';
 import { PromptTemplateService } from './services/prompt-template.service';
 
 /**
- * Admin controller for prompt template management and prompt history.
+ * Admin-only controller for prompt template management and prompt history.
  *
- * All routes are restricted to ADMIN users.
+ * Routes:
+ * - GET /prompts/template
+ * - PATCH /prompts/template
+ * - GET /prompts/history
  *
  * @author Malak
  */
@@ -37,21 +39,21 @@ export class PromptsController {
   ) {}
 
   /**
-   * Returns the active prompt template.
+   * Returns the active AI idea prompt template.
    */
   @Get('template')
-  getCurrentTemplate() {
+  getCurrentTemplate(): Promise<{ ideaPromptTemplate: string }> {
     return this.promptTemplateService.getCurrentTemplate();
   }
 
   /**
-   * Updates the prompt template.
+   * Updates the AI idea prompt template.
    */
   @Patch('template')
   updateTemplate(
     @Body() dto: UpdatePromptTemplateDto,
     @CurrentUser() user: JwtCurrentUser,
-  ) {
+  ): Promise<{ ideaPromptTemplate: string }> {
     return this.promptTemplateService.updateTemplate(
       dto.ideaPromptTemplate,
       user.id,
@@ -59,10 +61,12 @@ export class PromptsController {
   }
 
   /**
-   * Returns prompt history with filters and pagination.
+   * Returns paginated prompt history records.
    */
   @Get('history')
-  getPromptHistory(@Query() query: GetPromptHistoryQueryDto) {
+  getPromptHistory(
+    @Query() query: GetPromptHistoryQueryDto,
+  ): ReturnType<PromptHistoryService['findAll']> {
     return this.promptHistoryService.findAll(query);
   }
 }
