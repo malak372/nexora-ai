@@ -207,6 +207,17 @@ enum AuditAction {
 
   ADMIN_UPDATE_CONTACT_MESSAGE
   USER_CREATE_CONTACT_MESSAGE
+
+  ADMIN_CREATE_AI_MODEL
+  ADMIN_UPDATE_AI_MODEL
+  ADMIN_DEACTIVATE_AI_MODEL
+  ADMIN_SET_DEFAULT_AI_MODEL
+}
+
+enum AiProviderType {
+  OPENAI
+  CLAUDE
+  GEMINI
 }
 
 enum AuditTargetType {
@@ -218,6 +229,8 @@ enum AuditTargetType {
   SYSTEM_SETTING
   PROMPT
   COMPLAINT
+  AI_MODEL
+
   CONTACT_MESSAGE
   ALERT
   CREDIT_TRANSACTION
@@ -1059,6 +1072,30 @@ model SavedGenerationSearch {
   @@index([userId])
   @@index([domainId])
   @@map("saved_generation_searches")
+}
+
+model AiModel {
+  id String @id @default(uuid())
+
+  provider    AiProviderType
+  modelName   String         @map("model_name")
+  apiModelId  String         @map("api_model_id")
+  displayName String?        @map("display_name")
+  description String?
+
+  priority  Int     @default(0)
+  isActive  Boolean @default(true) @map("is_active")
+  isDefault Boolean @default(false) @map("is_default")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, modelName])
+  @@index([provider])
+  @@index([isActive])
+  @@index([isDefault])
+  @@index([priority])
+  @@map("ai_models")
 }
 
 model ContactMessage {
