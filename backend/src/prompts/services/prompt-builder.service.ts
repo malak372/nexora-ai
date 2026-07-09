@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { Idea, IdeaGenerationType, PromptType } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -10,6 +12,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PromptTemplateService } from './prompt-template.service';
 import { PromptBuilderInput } from '../types/prompt-builder-input.type';
 import { PromptBuilderOutput } from '../types/prompt-builder-output.type';
+import { DEFAULT_TOKEN_RATIO } from '../constants/prompt.constants';
+import {
+  FREE_OUTPUT_FORMAT,
+  GUEST_OUTPUT_FORMAT,
+  PREMIUM_OUTPUT_FORMAT,
+  UNLOCK_OUTPUT_FORMAT,
+} from '../output-formats';
 
 /**
  * Builds AI prompts from database records.
@@ -23,11 +32,10 @@ import { PromptBuilderOutput } from '../types/prompt-builder-output.type';
  * It does not:
  * - Call OpenAI
  * - Save ideas
+ * - Save prompt history
  * - Deduct credits
  * - Process payments
  * - Run NLP analysis
- *
- * This keeps the database as the single source of truth.
  *
  * @author Malak
  */
@@ -65,10 +73,9 @@ export class PromptBuilderService {
     }
 
     const existingIdea = await this.getExistingIdea(input);
-
     const template = await this.promptTemplateService.getIdeaPromptTemplate();
 
-    const promptText = this.replacePlaceholders(template, {
+    const renderedPrompt = this.promptTemplateService.renderTemplate(template, {
       domain: collectionJob.domain.name,
       country: collectionJob.country ?? 'Not specified',
       city: collectionJob.city ?? 'Not specified',
@@ -76,48 +83,36 @@ export class PromptBuilderService {
       platforms: this.formatJsonArray(collectionJob.platforms),
       commentsCount: String(collectionJob.totalComments),
 
-      sentimentStats: this.formatJson(
-        collectionJob.nlpAnalysis.sentimentStats,
-      ),
+      sentimentStats: this.formatJson(collectionJob.nlpAnalysis.sentimentStats),
       keywords: this.formatJson(collectionJob.nlpAnalysis.keywords),
       topics: this.formatJson(collectionJob.nlpAnalysis.topics),
       recurringProblems: this.formatJson(
         collectionJob.nlpAnalysis.recurringProblems,
       ),
-      extractedNeeds: this.formatJson(
-        collectionJob.nlpAnalysis.extractedNeeds,
+      extractedNeeds: this.formatJson(collectionJob.nlpAnalysis.extractedNeeds),
+      featureRequests: this.formatJson(
+        collectionJob.nlpAnalysis.featureRequests,
       ),
+      opportunities: this.formatJson(collectionJob.nlpAnalysis.opportunities),
+      insights: this.formatJson(collectionJob.nlpAnalysis.insights),
+      dataQuality: this.formatJson(collectionJob.nlpAnalysis.dataQuality),
+      samplePosts: this.formatJson(collectionJob.nlpAnalysis.samplePosts),
+      sampleComments: this.formatJson(collectionJob.nlpAnalysis.sampleComments),
 
-      featureRequests: this.formatFromStatistics(
-        collectionJob.nlpAnalysis.statistics,
-        'featureRequests',
-      ),
-      opportunities: this.formatFromStatistics(
-        collectionJob.nlpAnalysis.statistics,
-        'opportunities',
-      ),
-      insights: this.formatFromStatistics(
-        collectionJob.nlpAnalysis.statistics,
-        'insights',
-      ),
-      samplePosts: this.formatFromStatistics(
-        collectionJob.nlpAnalysis.statistics,
-        'samplePosts',
-      ),
-
-      sampleComments: this.formatJson(
-        collectionJob.nlpAnalysis.sampleComments,
-      ),
       existingIdea: this.formatExistingIdea(existingIdea),
       requestedOutputFormat: this.getRequestedOutputFormat(input),
     });
 
-    const compactPrompt = this.compactPrompt(promptText);
+    const compactPrompt = this.compactPrompt(renderedPrompt);
+
+    this.validateRenderedPrompt(compactPrompt);
 
     return {
       promptType: this.getPromptType(input),
       promptText: compactPrompt,
-      estimatedInputTokens: this.estimateTokens(compactPrompt),
+      estimatedInputTokens:
+        this.estimateApproximateInputTokens(compactPrompt),
+      templateHash: this.createTemplateHash(template),
     };
   }
 
@@ -175,109 +170,18 @@ export class PromptBuilderService {
    */
   private getRequestedOutputFormat(input: PromptBuilderInput): string {
     if (input.purpose === 'IDEA_UNLOCK') {
-      return this.getUnlockOutputFormat();
+      return UNLOCK_OUTPUT_FORMAT;
     }
 
     if (input.generationType === IdeaGenerationType.GUEST_FREE) {
-      return this.getGuestOutputFormat();
+      return GUEST_OUTPUT_FORMAT;
     }
 
     if (input.generationType === IdeaGenerationType.NORMAL_FREE) {
-      return this.getFreeUserOutputFormat();
+      return FREE_OUTPUT_FORMAT;
     }
 
-    return this.getPremiumOutputFormat();
-  }
-
-  /**
-   * Guest output format.
-   */
-  private getGuestOutputFormat(): string {
-    return `
-{
-  "title": "string",
-  "limitedAbstract": "string"
-}
-`;
-  }
-
-  /**
-   * Registered free user output format.
-   */
-  private getFreeUserOutputFormat(): string {
-    return `
-{
-  "title": "string",
-  "problemStatement": "string",
-  "objectives": "string",
-  "targetUsers": "string",
-  "partialAbstract": "string"
-}
-`;
-  }
-
-  /**
-   * Direct unlock output format.
-   *
-   * Used only for an already generated free idea.
-   */
-  private getUnlockOutputFormat(): string {
-    return `
-{
-  "fullAbstract": "string",
-  "technologyStack": "string",
-  "systemArchitecture": "string",
-  "databaseDesign": "string",
-  "businessModel": "string",
-  "revenueModel": "string",
-  "budgetEstimation": "string",
-  "implementationTimeline": "string",
-  "feasibilityAssessment": "string",
-  "marketPotential": "string",
-  "localRegulations": "string",
-  "valueProposition": "string",
-  "nlpAnalysis": "string",
-  "commentAnalysisSummary": "string",
-  "recurringProblems": ["string"],
-  "extractedKeywords": ["string"],
-  "sampleComments": ["string"],
-  "commentsCount": number
-}
-`;
-  }
-
-  /**
-   * Premium credit output format.
-   *
-   * Used when one credit is consumed to generate a new complete idea.
-   */
-  private getPremiumOutputFormat(): string {
-    return `
-{
-  "title": "string",
-  "problemStatement": "string",
-  "objectives": "string",
-  "targetUsers": "string",
-  "fullAbstract": "string",
-  "technologyStack": "string",
-  "systemArchitecture": "string",
-  "databaseDesign": "string",
-  "businessModel": "string",
-  "revenueModel": "string",
-  "budgetEstimation": "string",
-  "implementationTimeline": "string",
-  "feasibilityAssessment": "string",
-  "marketPotential": "string",
-  "localRegulations": "string",
-  "valueProposition": "string",
-  "nlpAnalysis": "string",
-  "commentAnalysisSummary": "string",
-  "recurringProblems": ["string"],
-  "extractedKeywords": ["string"],
-  "sampleComments": ["string"],
-  "commentsCount": number
-}
-`;
+    return PREMIUM_OUTPUT_FORMAT;
   }
 
   /**
@@ -299,15 +203,18 @@ export class PromptBuilderService {
   }
 
   /**
-   * Replaces all placeholders in the template.
+   * Ensures that no unresolved placeholders remain in the final prompt.
    */
-  private replacePlaceholders(
-    template: string,
-    values: Record<string, string>,
-  ): string {
-    return Object.entries(values).reduce((result, [key, value]) => {
-      return result.replaceAll(`{{${key}}}`, value);
-    }, template);
+  private validateRenderedPrompt(prompt: string): void {
+    const unresolvedPlaceholders = prompt.match(/{{\s*[\w]+\s*}}/g);
+
+    if (unresolvedPlaceholders?.length) {
+      throw new InternalServerErrorException(
+        `Prompt contains unresolved placeholders: ${unresolvedPlaceholders.join(
+          ', ',
+        )}`,
+      );
+    }
   }
 
   /**
@@ -341,26 +248,6 @@ export class PromptBuilderService {
   }
 
   /**
-   * Reads optional nested data from NlpAnalysis.statistics.
-   */
-  private formatFromStatistics(
-    statistics: unknown,
-    key: string,
-  ): string {
-    if (
-      !statistics ||
-      typeof statistics !== 'object' ||
-      Array.isArray(statistics)
-    ) {
-      return 'Not enough data';
-    }
-
-    const record = statistics as Record<string, unknown>;
-
-    return this.formatJson(record[key]);
-  }
-
-  /**
    * Removes excessive blank lines.
    */
   private compactPrompt(prompt: string): string {
@@ -370,7 +257,14 @@ export class PromptBuilderService {
   /**
    * Estimates input tokens approximately.
    */
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+  private estimateApproximateInputTokens(text: string): number {
+    return Math.ceil(text.length / DEFAULT_TOKEN_RATIO);
+  }
+
+  /**
+   * Creates a stable SHA-256 hash for the template version used.
+   */
+  private createTemplateHash(template: string): string {
+    return createHash('sha256').update(template).digest('hex');
   }
 }

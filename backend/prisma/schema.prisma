@@ -935,8 +935,10 @@ model NlpAnalysis {
   opportunities     Json?
   insights          Json?
 
-  dataQuality     Json? @map("data_quality")
-  evidenceSamples Json? @map("evidence_samples")
+  dataQuality Json? @map("data_quality")
+
+  samplePosts    Json? @map("sample_posts")
+  sampleComments Json? @map("sample_comments")
 
   aiUsed     Boolean  @default(false) @map("ai_used")
   confidence Decimal? @db.Decimal(4, 3)
@@ -959,10 +961,16 @@ model PromptHistory {
   promptType PromptType @map("prompt_type")
   promptText String     @map("prompt_text")
 
+  templateHash String? @map("template_hash")
+
+  estimatedInputTokens Int? @map("estimated_input_tokens")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([collectionJobId])
   @@index([ideaId])
+  @@index([promptType])
+  @@index([createdAt])
   @@map("prompt_histories")
 }
 

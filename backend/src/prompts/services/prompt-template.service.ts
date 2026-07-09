@@ -1,12 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  PromptTemplateValues,
+  REQUIRED_PROMPT_PLACEHOLDERS,
+} from '../constants/prompt-placeholders.constant';
 
 /**
  * Manages the configurable AI prompt template.
  *
- * The Admin can update the idea prompt template from system settings.
- * If no template is configured, the service falls back to a safe default.
+ * Responsibilities:
+ * - Return the active idea prompt template.
+ * - Update the admin-configured idea prompt template.
+ * - Validate required placeholders before saving.
+ * - Render templates using placeholder values.
  *
  * @author Malak
  */
@@ -15,24 +26,25 @@ export class PromptTemplateService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns the current idea prompt template.
+   * Returns the currently active AI prompt template.
    */
   async getCurrentTemplate(): Promise<{ ideaPromptTemplate: string }> {
-    const settings = await this.prisma.systemSetting.findFirst();
+    const template = await this.getIdeaPromptTemplate();
 
     return {
-      ideaPromptTemplate:
-        settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate(),
+      ideaPromptTemplate: template,
     };
   }
 
   /**
-   * Updates the idea prompt template.
+   * Updates the admin-configured AI prompt template.
    */
   async updateTemplate(
     ideaPromptTemplate: string,
     adminId?: string,
   ): Promise<{ ideaPromptTemplate: string }> {
+    this.validateRequiredPlaceholders(ideaPromptTemplate);
+
     const settings = await this.prisma.systemSetting.findFirst();
 
     if (!settings) {
@@ -60,17 +72,60 @@ export class PromptTemplateService {
   }
 
   /**
-   * Returns the active template used by PromptBuilderService.
+   * Returns the configured idea prompt template or the default template.
    */
   async getIdeaPromptTemplate(): Promise<string> {
     const settings = await this.prisma.systemSetting.findFirst();
 
-    return settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate();
+    const template =
+      settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate();
+
+    this.validateRequiredPlaceholders(template);
+
+    return template;
   }
 
   /**
-   * Default production-safe prompt template.
+   * Renders a prompt template by replacing supported placeholders.
    */
+  renderTemplate(template: string, values: PromptTemplateValues): string {
+    const renderedTemplate = Object.entries(values).reduce(
+      (result, [key, value]) => result.replaceAll(`{{${key}}}`, value),
+      template,
+    );
+
+    this.validateNoUnresolvedPlaceholders(renderedTemplate);
+
+    return renderedTemplate;
+  }
+
+  private validateRequiredPlaceholders(template: string): void {
+    const missingPlaceholders = REQUIRED_PROMPT_PLACEHOLDERS.filter(
+      (placeholder) => !template.includes(`{{${placeholder}}}`),
+    );
+
+    if (missingPlaceholders.length) {
+      throw new BadRequestException(
+        `Prompt template is missing required placeholders: ${missingPlaceholders.join(
+          ', ',
+        )}`,
+      );
+    }
+  }
+
+  private validateNoUnresolvedPlaceholders(renderedTemplate: string): void {
+    const unresolvedPlaceholders =
+      renderedTemplate.match(/{{\s*[\w]+\s*}}/g) ?? [];
+
+    if (unresolvedPlaceholders.length) {
+      throw new BadRequestException(
+        `Prompt contains unresolved placeholders: ${unresolvedPlaceholders.join(
+          ', ',
+        )}`,
+      );
+    }
+  }
+
   private getDefaultIdeaPromptTemplate(): string {
     return `
 You are Nexora AI, an intelligent software project discovery and generation assistant.
@@ -115,6 +170,9 @@ NLP analysis:
 
 - Additional insights:
 {{insights}}
+
+- Data quality:
+{{dataQuality}}
 
 Sample posts:
 {{samplePosts}}

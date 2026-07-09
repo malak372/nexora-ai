@@ -8,27 +8,37 @@ import { PromptHistoryService } from './services/prompt-history.service';
 import { PromptTemplateService } from './services/prompt-template.service';
 
 /**
- * Prompts module.
+ * Provides all services required for AI prompt management.
  *
  * Responsibilities:
- * - Build AI prompts from database records.
- * - Manage configurable prompt templates.
- * - Store prompt history for auditing and debugging.
+ * - Build AI prompts from persisted NLP analysis.
+ * - Manage configurable AI prompt templates.
+ * - Persist prompt history for auditing and debugging.
+ * - Expose prompt services to feature modules such as Ideas.
+ *
+ * This module does not:
+ * - Call AI providers.
+ * - Generate ideas.
+ * - Process payments.
+ * - Execute NLP analysis.
  *
  * @author Malak
  */
 @Module({
   imports: [PrismaModule],
+
   controllers: [PromptsController],
+
   providers: [
     PromptBuilderService,
-    PromptHistoryService,
     PromptTemplateService,
+    PromptHistoryService,
   ],
+
   exports: [
     PromptBuilderService,
-    PromptHistoryService,
     PromptTemplateService,
+    PromptHistoryService,
   ],
 })
 export class PromptsModule {}

@@ -1,8 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PromptType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetPromptHistoryQueryDto } from '../dto/get-prompt-history-query.dto';
+import { PaginatedPromptHistory } from '../types/prompt-history.type';
+import { SavePromptParams } from '../types/save-prompt-params.type';
+
+const ALLOWED_PROMPT_HISTORY_SORT_FIELDS = [
+  'createdAt',
+  'promptType',
+  'estimatedInputTokens',
+] as const;
+
+type PromptHistorySortField =
+  (typeof ALLOWED_PROMPT_HISTORY_SORT_FIELDS)[number];
 
 /**
  * Handles prompt history persistence and retrieval.
@@ -11,69 +22,36 @@ import { GetPromptHistoryQueryDto } from '../dto/get-prompt-history-query.dto';
  * - AI debugging
  * - Admin monitoring
  * - Prompt auditing
- * - Re-generating or reviewing previous AI requests
+ * - Reviewing the exact prompt template version used
  *
  * @author Malak
  */
 @Injectable()
 export class PromptHistoryService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Saves any prompt sent to the AI provider.
    */
-  async savePrompt(params: {
-    collectionJobId?: string | null;
-    ideaId?: string | null;
-    promptType: PromptType;
-    promptText: string;
-  }) {
+  async savePrompt(params: SavePromptParams) {
     return this.prisma.promptHistory.create({
       data: {
         collectionJobId: params.collectionJobId ?? undefined,
         ideaId: params.ideaId ?? undefined,
         promptType: params.promptType,
         promptText: params.promptText,
+        templateHash: params.templateHash ?? undefined,
+        estimatedInputTokens: params.estimatedInputTokens ?? undefined,
       },
-    });
-  }
-
-  /**
-   * Saves an idea generation prompt.
-   */
-  async saveIdeaGenerationPrompt(params: {
-    collectionJobId: string;
-    ideaId?: string | null;
-    promptText: string;
-  }) {
-    return this.savePrompt({
-      collectionJobId: params.collectionJobId,
-      ideaId: params.ideaId,
-      promptType: PromptType.IDEA_GENERATION,
-      promptText: params.promptText,
-    });
-  }
-
-  /**
-   * Saves a direct unlock prompt.
-   */
-  async saveIdeaUnlockPrompt(params: {
-    collectionJobId: string;
-    ideaId: string;
-    promptText: string;
-  }) {
-    return this.savePrompt({
-      collectionJobId: params.collectionJobId,
-      ideaId: params.ideaId,
-      promptType: PromptType.IDEA_UNLOCK,
-      promptText: params.promptText,
     });
   }
 
   /**
    * Returns paginated prompt history for Admin.
    */
-  async findAll(query: GetPromptHistoryQueryDto) {
+  async findAll(
+    query: GetPromptHistoryQueryDto,
+  ): Promise<PaginatedPromptHistory> {
     const page = Number(query.page ?? 1);
     const limit = Number(query.limit ?? 10);
     const skip = (page - 1) * limit;
@@ -111,9 +89,7 @@ export class PromptHistoryService {
           },
         },
       }),
-      this.prisma.promptHistory.count({
-        where,
-      }),
+      this.prisma.promptHistory.count({ where }),
     ]);
 
     return {
@@ -147,6 +123,10 @@ export class PromptHistoryService {
       where.collectionJobId = query.collectionJobId;
     }
 
+    if (query.templateHash) {
+      where.templateHash = query.templateHash;
+    }
+
     if (query.search) {
       where.promptText = {
         contains: query.search,
@@ -170,14 +150,11 @@ export class PromptHistoryService {
   private buildOrderByClause(
     query: GetPromptHistoryQueryDto,
   ): Prisma.PromptHistoryOrderByWithRelationInput {
-    const allowedSortFields = ['createdAt', 'promptType'] as const;
+    const requestedSortBy = query.sortBy as PromptHistorySortField | undefined;
 
-    type AllowedSortField = (typeof allowedSortFields)[number];
-
-    const requestedSortBy = query.sortBy as AllowedSortField | undefined;
-
-    const sortBy: AllowedSortField =
-      requestedSortBy && allowedSortFields.includes(requestedSortBy)
+    const sortBy: PromptHistorySortField =
+      requestedSortBy &&
+      ALLOWED_PROMPT_HISTORY_SORT_FIELDS.includes(requestedSortBy)
         ? requestedSortBy
         : 'createdAt';
 

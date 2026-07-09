@@ -23,8 +23,6 @@ import { PlatformsService } from './platforms/platforms.service';
 import { DomainsController } from './domains/domains.controller';
 import { DomainsService } from './domains/domains.service';
 
-import { PromptsController } from './prompts/prompts.controller';
-import { PromptsService } from './prompts/prompts.service';
 
 import { ComplaintsController } from './complaints/complaints.controller';
 import { ComplaintsService } from './complaints/complaints.service';
@@ -91,7 +89,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     CommentsController,
     PlatformsController,
     DomainsController,
-    PromptsController,
     ComplaintsController,
     AlertsController,
     ContactMessagesController,
@@ -109,7 +106,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PaymentsService,
     PlatformsService,
     DomainsService,
-    PromptsService,
     ComplaintsService,
     AlertsService,
     ContactMessagesService,

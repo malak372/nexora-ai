@@ -1,47 +1,44 @@
 import { IdeaGenerationType } from '@prisma/client';
 
 /**
- * Defines the reason for building an AI prompt.
- *
- * IDEA_GENERATION:
- * Used when generating a new idea for Guest, Free User, or Premium Credit.
- *
- * IDEA_UNLOCK:
- * Used when unlocking advanced details for an already generated free idea.
+ * Defines why the system is building an AI prompt.
  *
  * @author Malak
  */
 export type PromptPurpose = 'IDEA_GENERATION' | 'IDEA_UNLOCK';
 
 /**
- * Input required to build an AI prompt.
+ * Input required by PromptBuilderService to build an AI prompt.
  *
- * The Prompt Builder intentionally receives only identifiers and access metadata.
- * It reads CollectionJob, NLP analysis, and existing idea data directly from
- * the database to keep the database as the single source of truth.
+ * The builder receives only identifiers and access metadata.
+ * It reads CollectionJob, NLP analysis, and existing idea data directly
+ * from the database to keep the database as the single source of truth.
  *
  * @author Malak
  */
 export type PromptBuilderInput = {
   /**
-   * Prompt purpose.
+   * Determines whether the prompt is for a new idea
+   * or unlocking an existing one.
    */
-  purpose: PromptPurpose;
+  readonly purpose: PromptPurpose;
 
   /**
-   * Collection job ID containing collected data and NLP analysis.
+   * Collection job identifier containing the collected data
+   * and NLP analysis.
    */
-  collectionJobId: string;
+  readonly collectionJobId: string;
 
   /**
-   * Generation access type.
+   * Determines the user's access level and
+   * the required AI output format.
    */
-  generationType: IdeaGenerationType;
+  readonly generationType: IdeaGenerationType;
 
   /**
-   * Existing idea ID.
+   * Existing idea identifier.
    *
-   * Required only for IDEA_UNLOCK.
+   * Required only when the purpose is IDEA_UNLOCK.
    */
-  existingIdeaId?: string;
+  readonly existingIdeaId?: string;
 };
