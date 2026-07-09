@@ -1078,7 +1078,7 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider    AiProviderType
+  provider AiProviderType @default(OPENAI)
   modelName   String         @map("model_name")
   apiModelId  String         @map("api_model_id")
   displayName String?        @map("display_name")
@@ -1092,6 +1092,7 @@ model AiModel {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@unique([provider, modelName])
+  @@unique([apiModelId])
   @@index([provider])
   @@index([isActive])
   @@index([isDefault])
