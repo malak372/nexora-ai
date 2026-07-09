@@ -391,10 +391,14 @@ export type IntelligentAnalysisOutput = {
     confidence: number;
 
     /**
-     * Optional detailed per-text results.
+     * Optional detailed per-text analysis results.
      *
-     * Useful for debugging, auditing, admin review, and improving the NLP engine.
-     * This field does not need to be sent بالكامل للـ Prompt Builder إذا كان حجمه كبير.
+     * These records are primarily intended for debugging, auditing,
+     * administrative review, and future improvements of the NLP engine.
+     *
+     * Since this collection can become quite large, it is optional and
+     * does not have to be forwarded to the Prompt Builder. The AI prompt
+     * typically requires only the aggregated analysis results.
      */
     analyzedTexts: TextAnalysisResult[];
 };
