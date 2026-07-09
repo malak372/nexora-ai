@@ -919,15 +919,26 @@ model NlpAnalysis {
   collectionJobId String        @unique @map("collection_job_id")
   collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
 
-  totalTextsAnalyzed Int @default(0) @map("total_texts_analyzed")
+  totalTextsAnalyzed    Int @default(0) @map("total_texts_analyzed")
+  totalPostsAnalyzed    Int @default(0) @map("total_posts_analyzed")
+  totalCommentsAnalyzed Int @default(0) @map("total_comments_analyzed")
 
-  sentimentStats    Json  @map("sentiment_stats")
-  keywords          Json
-  topics            Json?
+  sentimentStats Json @map("sentiment_stats")
+
+  keywords Json
+  topics   Json?
+
   recurringProblems Json  @map("recurring_problems")
   extractedNeeds    Json? @map("extracted_needs")
-  sampleComments    Json? @map("sample_comments")
-  statistics        Json?
+  featureRequests   Json? @map("feature_requests")
+  opportunities     Json?
+  insights          Json?
+
+  dataQuality     Json? @map("data_quality")
+  evidenceSamples Json? @map("evidence_samples")
+
+  aiUsed     Boolean  @default(false) @map("ai_used")
+  confidence Decimal? @db.Decimal(4, 3)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1078,9 +1089,16 @@ model NlpLexicon {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// Prevent duplicate lexicon entries for the same word, category, and language.
   @@unique([word, type, language])
+  /// Used when querying all lexicon entries of a specific category.
   @@index([type])
+  /// Used when querying lexicon entries by language.
   @@index([language])
+  /// Optimizes the most common NLP lookup:
+  /// WHERE type = ? AND language IN (?, ANY)
+  @@index([type, language])
+  /// Speeds up filtering active lexicon entries.
   @@index([isActive])
   @@map("nlp_lexicons")
 }
