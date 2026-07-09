@@ -39,6 +39,14 @@ import { IdeasService } from './ideas/ideas.service';
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 
+import { FeedbackController } from './feedback/feedbacks.controller';
+import { FeedbackService } from './feedback/feedbacks.service';
+
+import {ContactMessagesController} from './contact-messages/contact-messages.controller';
+import {ContactMessagesService} from './contact-messages/contact-messages.service';
+
+
+
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
 import { AuditModule } from '../audit-logs/audit-logs.module';
@@ -78,6 +86,7 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasController,
     UsersController,
     SettingsController,
+    FeedbackController,
     CreditsController,
     CommentsController,
     PlatformsController,
@@ -85,6 +94,7 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PromptsController,
     ComplaintsController,
     AlertsController,
+    ContactMessagesController,
   ],
 
   providers: [
@@ -93,6 +103,7 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasService,
     UsersService,
     SettingsService,
+    FeedbackService,
     CreditsService,
     CommentsService,
     PaymentsService,
@@ -101,6 +112,7 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PromptsService,
     ComplaintsService,
     AlertsService,
+    ContactMessagesService,
   ],
 })
 export class AdminModule { }

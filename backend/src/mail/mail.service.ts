@@ -435,4 +435,107 @@ This email was sent automatically by Nexora AI. Please do not reply.
       ),
     });
   }
+/**
+ * Sends an email reply for a Contact Us message.
+ *
+ * Used when an administrator replies to a contact message
+ * from the admin panel. The reply is also stored in the
+ * database by ContactMessagesService for auditing and history.
+ *
+ * @param email Recipient email address.
+ * @param fullName Recipient full name.
+ * @param originalSubject Original contact message subject.
+ * @param reply Administrative reply content.
+ * @author Malak
+ */
+/**
+ * Sends an email reply for a Contact Us message.
+ *
+ * Used when an administrator replies to a contact message
+ * from the admin panel. The reply is stored in the database
+ * by ContactMessagesService and also delivered to the sender's
+ * email address.
+ *
+ * @param email Recipient email address.
+ * @param fullName Recipient full name.
+ * @param originalSubject Original contact message subject.
+ * @param reply Administrative reply content.
+ */
+async sendContactReplyEmail(
+  email: string,
+  fullName: string,
+  originalSubject: string,
+  reply: string,
+): Promise<void> {
+  const trimmedReply = reply.trim();
+  const recipientName = fullName.trim() || 'User';
+  const safeSubject = originalSubject.trim() || 'Contact Request';
+
+  await this.sendEmail({
+    to: email,
+    subject: `Nexora AI Support - ${safeSubject}`,
+    text: `
+Dear ${recipientName},
+
+Thank you for contacting Nexora AI.
+
+We have reviewed your inquiry regarding:
+${safeSubject}
+
+The Nexora AI Support Team has reviewed your request and provided the following reply:
+${trimmedReply}
+
+If you require any additional assistance, please submit another Contact Us request through the Nexora AI platform.
+
+Sincerely,
+Nexora AI Support Team
+
+This email was sent by Nexora AI Support.
+Please do not reply directly to this email.
+    `.trim(),
+    html: this.buildEmailTemplate(
+      'Response to Your Contact Request',
+      `
+        <p>Dear ${recipientName},</p>
+
+        <p>
+          Thank you for contacting <strong>Nexora AI</strong>.
+          We have reviewed your inquiry regarding:
+        </p>
+
+        <p style="
+          margin:12px 0 20px;
+          font-weight:600;
+          color:#111827;
+        ">
+          ${safeSubject}
+        </p>
+
+        <p>
+          The Nexora AI Support Team has reviewed your request and provided the following reply:
+        </p>
+
+        <div style="
+          background:#f8fafc;
+          border:1px solid #dbeafe;
+          border-left:4px solid #2563eb;
+          padding:16px;
+          border-radius:6px;
+          margin:20px 0;
+          white-space:pre-line;
+        ">${trimmedReply}</div>
+
+        <p>
+          If you require any additional assistance or have further questions,
+          please submit another Contact Us request through the Nexora AI platform.
+        </p>
+
+        <p>
+          Sincerely,<br />
+          <strong>Nexora AI Support Team</strong>
+        </p>
+      `,
+    ),
+  });
+}
 }

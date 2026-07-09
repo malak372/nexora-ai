@@ -90,6 +90,13 @@ enum ComplaintPriority {
   HIGH
 }
 
+enum ContactMessageStatus {
+  NEW
+  IN_PROGRESS
+  REPLIED
+  CLOSED
+}
+
 enum AlertType {
   SYSTEM
   PAYMENT
@@ -190,9 +197,16 @@ enum AuditAction {
   DATA_COLLECTION_STOP
   NLP_ANALYSIS_RUN
 
+  USER_AI_CHAT
+  ABSTRACT_GENERATION_RUN
+  PROMPT_HISTORY_CREATED
+
   USER_UPDATE_PROFILE
   USER_MARK_NOTIFICATION_READ
   USER_MARK_ALL_NOTIFICATIONS_READ
+
+  ADMIN_UPDATE_CONTACT_MESSAGE
+  USER_CREATE_CONTACT_MESSAGE
 
   ADMIN_CREATE_AI_MODEL
   ADMIN_UPDATE_AI_MODEL
@@ -216,6 +230,8 @@ enum AuditTargetType {
   PROMPT
   COMPLAINT
   AI_MODEL
+
+  CONTACT_MESSAGE
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
@@ -289,6 +305,16 @@ enum NlpLexiconType {
   NEED
   POSITIVE
   NEGATIVE
+
+  FEATURE_REQUEST
+  COMPLAINT
+  URGENCY
+  COST
+  TIME
+  ACCESSIBILITY
+  SAFETY
+  RELIABILITY
+  OPPORTUNITY
 }
 
 /**
@@ -339,6 +365,7 @@ model User {
   preference              UserPreference?
   ideaFeedback            IdeaFeedback[]
   savedGenerationSearches SavedGenerationSearch[]
+  contactMessages         ContactMessage[]
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -500,6 +527,8 @@ model Idea {
   externalApiLogs    ExternalApiLog[]
   favoriteIdeas      FavoriteIdea[]
   feedback           IdeaFeedback[]
+  averageRating      Decimal             @default(0) @map("average_rating") @db.Decimal(3, 2)
+  ratingsCount       Int                 @default(0) @map("ratings_count")
 
   @@map("ideas")
 }
@@ -712,6 +741,7 @@ model Domain {
 
   ideas                   Idea[]
   savedGenerationSearches SavedGenerationSearch[]
+  topicRules              NlpTopicRule[]
 
   @@map("domains")
 }
@@ -903,15 +933,26 @@ model NlpAnalysis {
   collectionJobId String        @unique @map("collection_job_id")
   collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
 
-  totalTextsAnalyzed Int @default(0) @map("total_texts_analyzed")
+  totalTextsAnalyzed    Int @default(0) @map("total_texts_analyzed")
+  totalPostsAnalyzed    Int @default(0) @map("total_posts_analyzed")
+  totalCommentsAnalyzed Int @default(0) @map("total_comments_analyzed")
 
-  sentimentStats    Json  @map("sentiment_stats")
-  keywords          Json
-  topics            Json?
+  sentimentStats Json @map("sentiment_stats")
+
+  keywords Json
+  topics   Json?
+
   recurringProblems Json  @map("recurring_problems")
   extractedNeeds    Json? @map("extracted_needs")
-  sampleComments    Json? @map("sample_comments")
-  statistics        Json?
+  featureRequests   Json? @map("feature_requests")
+  opportunities     Json?
+  insights          Json?
+
+  dataQuality     Json? @map("data_quality")
+  evidenceSamples Json? @map("evidence_samples")
+
+  aiUsed     Boolean  @default(false) @map("ai_used")
+  confidence Decimal? @db.Decimal(4, 3)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -950,6 +991,9 @@ model FavoriteIdea {
   createdAt DateTime @default(now())
 
   @@unique([userId, ideaId])
+  @@index([userId])
+  @@index([ideaId])
+  @@map("favorite_ideas")
 }
 
 model UserPreference {
@@ -1025,10 +1069,13 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider    AiProviderType @default(OPENAI)
+  provider    AiProviderType
   modelName   String         @map("model_name")
+  apiModelId  String         @map("api_model_id")
   displayName String?        @map("display_name")
+  description String?
 
+  priority  Int     @default(0)
   isActive  Boolean @default(true) @map("is_active")
   isDefault Boolean @default(false) @map("is_default")
 
@@ -1039,7 +1086,78 @@ model AiModel {
   @@index([provider])
   @@index([isActive])
   @@index([isDefault])
+  @@index([priority])
   @@map("ai_models")
 }
 
+model ContactMessage {
+  id String @id @default(uuid())
 
+  fullName String
+  email    String
+  subject  String
+  message  String
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  status ContactMessageStatus @default(NEW)
+
+  adminReply String? @map("admin_reply")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
+
+model NlpLexicon {
+  id String @id @default(uuid())
+
+  word     String
+  type     NlpLexiconType
+  language LanguageCode   @default(ANY)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// Prevent duplicate lexicon entries for the same word, category, and language.
+  @@unique([word, type, language])
+  /// Used when querying all lexicon entries of a specific category.
+  @@index([type])
+  /// Used when querying lexicon entries by language.
+  @@index([language])
+  /// Optimizes the most common NLP lookup:
+  /// WHERE type = ? AND language IN (?, ANY)
+  @@index([type, language])
+  /// Speeds up filtering active lexicon entries.
+  @@index([isActive])
+  @@map("nlp_lexicons")
+}
+
+model NlpTopicRule {
+  id String @id @default(uuid())
+
+  topic    String
+  terms    Json
+  domainId String? @map("domain_id")
+  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  language LanguageCode @default(ANY)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([domainId])
+  @@index([language])
+  @@index([isActive])
+  @@map("nlp_topic_rules")
+}
