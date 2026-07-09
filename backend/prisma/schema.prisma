@@ -193,6 +193,17 @@ enum AuditAction {
   USER_UPDATE_PROFILE
   USER_MARK_NOTIFICATION_READ
   USER_MARK_ALL_NOTIFICATIONS_READ
+
+  ADMIN_CREATE_AI_MODEL
+  ADMIN_UPDATE_AI_MODEL
+  ADMIN_DEACTIVATE_AI_MODEL
+  ADMIN_SET_DEFAULT_AI_MODEL
+}
+
+enum AiProviderType {
+  OPENAI
+  CLAUDE
+  GEMINI
 }
 
 enum AuditTargetType {
@@ -204,6 +215,7 @@ enum AuditTargetType {
   SYSTEM_SETTING
   PROMPT
   COMPLAINT
+  AI_MODEL
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
@@ -1008,6 +1020,26 @@ model SavedGenerationSearch {
   @@index([userId])
   @@index([domainId])
   @@map("saved_generation_searches")
+}
+
+model AiModel {
+  id String @id @default(uuid())
+
+  provider    AiProviderType @default(OPENAI)
+  modelName   String         @map("model_name")
+  displayName String?        @map("display_name")
+
+  isActive  Boolean @default(true) @map("is_active")
+  isDefault Boolean @default(false) @map("is_default")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, modelName])
+  @@index([provider])
+  @@index([isActive])
+  @@index([isDefault])
+  @@map("ai_models")
 }
 
 
