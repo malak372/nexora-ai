@@ -1,134 +1,87 @@
-import { Injectable } from '@nestjs/common';
-import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * Service responsible for managing the AI prompt template used
- * by the Prompt Builder.
+ * Manages the configurable AI prompt template.
  *
- * It allows the system to:
- * - retrieve the current idea generation template
- * - return a safe default template when no custom template exists
- * - allow admins to update the template
- * - audit admin prompt updates
+ * The Admin can update the idea prompt template from system settings.
+ * If no template is configured, the service falls back to a safe default.
  *
  * @author Malak
  */
 @Injectable()
 export class PromptTemplateService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditService: AuditService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns the active idea generation prompt template.
-   *
-   * If no template is stored in system settings, the default template
-   * is returned instead.
+   * Returns the current idea prompt template.
    */
-  async getIdeaGenerationTemplate(): Promise<string> {
-    const settings = await this.prisma.systemSetting.findFirst();
-
-    return settings?.ideaPromptTemplate ?? this.getDefaultIdeaGenerationTemplate();
-  }
-
-  /**
-   * Returns the current prompt template metadata.
-   *
-   * This is mainly used by admin screens to display:
-   * - the active template
-   * - last update date
-   * - admin who updated it
-   * - whether the template is the default one
-   */
-  async getCurrentTemplate() {
+  async getCurrentTemplate(): Promise<{ ideaPromptTemplate: string }> {
     const settings = await this.prisma.systemSetting.findFirst();
 
     return {
       ideaPromptTemplate:
-        settings?.ideaPromptTemplate ?? this.getDefaultIdeaGenerationTemplate(),
-      updatedAt: settings?.updatedAt ?? null,
-      updatedById: settings?.updatedById ?? null,
-      isDefault: !settings?.ideaPromptTemplate,
+        settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate(),
     };
   }
 
   /**
-   * Updates the idea generation prompt template.
-   *
-   * The update is stored in system settings and recorded in audit logs
-   * so admin changes remain traceable.
-   *
-   * @param adminId ID of the admin performing the update.
-   * @param ideaPromptTemplate New prompt template content.
+   * Updates the idea prompt template.
    */
-  async updateTemplate(adminId: string, ideaPromptTemplate: string) {
-    const currentSettings = await this.findOrCreateSettings();
+  async updateTemplate(
+    ideaPromptTemplate: string,
+    adminId?: string,
+  ): Promise<{ ideaPromptTemplate: string }> {
+    const settings = await this.prisma.systemSetting.findFirst();
 
-    const updated = await this.prisma.systemSetting.update({
+    if (!settings) {
+      throw new NotFoundException('System settings were not initialized.');
+    }
+
+    const updatedSettings = await this.prisma.systemSetting.update({
       where: {
-        id: currentSettings.id,
+        id: settings.id,
       },
       data: {
         ideaPromptTemplate,
         updatedById: adminId,
       },
-    });
-
-    await this.auditService.createLog({
-      actorId: adminId,
-      action: AuditAction.ADMIN_UPDATE_PROMPT,
-      targetType: AuditTargetType.PROMPT,
-      targetId: updated.id,
-      oldValue: {
-        ideaPromptTemplate: currentSettings.ideaPromptTemplate,
-      } as Prisma.InputJsonValue,
-      newValue: {
-        ideaPromptTemplate: updated.ideaPromptTemplate,
-      } as Prisma.InputJsonValue,
-    });
-
-    return updated;
-  }
-
-  /**
-   * Finds the existing system settings row.
-   *
-   * If the row does not exist, it creates one with safe default values.
-   * This prevents prompt operations from failing on a fresh database.
-   */
-  private async findOrCreateSettings() {
-    const settings = await this.prisma.systemSetting.findFirst();
-
-    if (settings) {
-      return settings;
-    }
-
-    return this.prisma.systemSetting.create({
-      data: {
-        creditPrice: 15,
-        bonusThreshold: 0,
-        bonusCredits: 0,
-        ideaPromptTemplate: this.getDefaultIdeaGenerationTemplate(),
+      select: {
+        ideaPromptTemplate: true,
       },
     });
+
+    return {
+      ideaPromptTemplate:
+        updatedSettings.ideaPromptTemplate ??
+        this.getDefaultIdeaPromptTemplate(),
+    };
   }
 
   /**
-   * Default idea generation prompt template.
-   *
-   * Placeholders such as {{domain}}, {{country}}, and {{sampleComments}}
-   * are replaced by the Prompt Builder before sending the final prompt
-   * to the AI provider.
+   * Returns the active template used by PromptBuilderService.
    */
-  private getDefaultIdeaGenerationTemplate(): string {
-    return `
-You are Nexora AI, an intelligent software project discovery assistant.
+  async getIdeaPromptTemplate(): Promise<string> {
+    const settings = await this.prisma.systemSetting.findFirst();
 
-Generate a practical software project idea based on real community feedback.
+    return settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate();
+  }
+
+  /**
+   * Default production-safe prompt template.
+   */
+  private getDefaultIdeaPromptTemplate(): string {
+    return `
+You are Nexora AI, an intelligent software project discovery and generation assistant.
+
+Your task is to generate a practical software project idea based on real community feedback, collected posts, collected comments, and NLP analysis.
+
+Access rules:
+- Guest users receive only: title and limitedAbstract.
+- Registered free users receive only: title, problemStatement, objectives, targetUsers, and partialAbstract.
+- Direct unlock expands an existing free idea and returns advanced features only.
+- Premium credit generation creates a new idea with all advanced features immediately.
 
 Context:
 - Domain: {{domain}}
@@ -136,37 +89,55 @@ Context:
 - City: {{city}}
 - Region: {{region}}
 - Platforms: {{platforms}}
-- Comments analyzed: {{commentsCount}}
+- Number of comments analyzed: {{commentsCount}}
 
-NLP Insights:
-- Sentiment: {{sentimentStats}}
-- Recurring problems: {{recurringProblems}}
-- User needs: {{extractedNeeds}}
-- Keywords: {{keywords}}
-- Topics: {{topics}}
+NLP analysis:
+- Sentiment statistics:
+{{sentimentStats}}
+
+- Keywords:
+{{keywords}}
+
+- Topics:
+{{topics}}
+
+- Recurring problems:
+{{recurringProblems}}
+
+- Extracted needs:
+{{extractedNeeds}}
+
+- Feature requests:
+{{featureRequests}}
+
+- Opportunities:
+{{opportunities}}
+
+- Additional insights:
+{{insights}}
+
+Sample posts:
+{{samplePosts}}
+
+Sample comments:
+{{sampleComments}}
 
 Existing idea context:
 {{existingIdea}}
 
-Sample community comments:
-{{sampleComments}}
+Strict rules:
+1. Use only the provided community feedback and NLP analysis as evidence.
+2. Do not invent fake comments, fake numbers, fake statistics, fake sources, or fake citations.
+3. Generate a practical software project suitable for software engineering students or developers.
+4. Consider local context and high-level legal/regulatory constraints.
+5. Keep recommendations realistic and implementation-oriented.
+6. Return valid JSON only.
+7. Do not include markdown.
+8. Do not include fields outside the requested JSON format.
+9. For Guest and Free users, do not reveal advanced features.
+10. For direct unlock, expand the existing idea instead of generating a new unrelated idea.
 
-User chat message:
-{{chatMessage}}
-
-Raw NLP text:
-{{nlpText}}
-
-Rules:
-1. Use the provided community feedback as evidence.
-2. Do not invent fake comments, fake statistics, or fake sources.
-3. Generate a practical software project suitable for students or developers.
-4. Consider local context and high-level regulatory constraints.
-5. Return valid JSON only.
-6. Do not include markdown.
-7. Output must match the requested format exactly.
-
-Required output:
+Required JSON output format:
 {{requestedOutputFormat}}
 `;
   }

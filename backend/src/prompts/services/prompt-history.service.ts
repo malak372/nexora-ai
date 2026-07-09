@@ -1,107 +1,91 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-  PromptType,
-} from '@prisma/client';
+import { Prisma, PromptType } from '@prisma/client';
 
-import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
-import {
-  buildDateFilter,
-  buildOrderBy,
-  buildPagination,
-} from '../../utilities/base-query/builder';
 import { GetPromptHistoryQueryDto } from '../dto/get-prompt-history-query.dto';
 
 /**
- * Service responsible for storing and retrieving AI prompt history.
+ * Handles prompt history persistence and retrieval.
  *
- * It keeps a trace of prompts sent to the AI provider and creates
- * audit logs for important prompt-related actions.
+ * Prompt history helps with:
+ * - AI debugging
+ * - Admin monitoring
+ * - Prompt auditing
+ * - Re-generating or reviewing previous AI requests
  *
  * @author Malak
  */
 @Injectable()
 export class PromptHistoryService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditService: AuditService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Saves a generated prompt in PromptHistory.
-   *
-   * This method is used after building a prompt and before/after sending it
-   * to the AI provider, so the system can keep a traceable record of AI usage.
-   *
-   * @param params Prompt history data.
-   * @returns Created prompt history record.
+   * Saves any prompt sent to the AI provider.
    */
   async savePrompt(params: {
-    actorId?: string | null;
     collectionJobId?: string | null;
     ideaId?: string | null;
     promptType: PromptType;
     promptText: string;
-    estimatedInputTokens?: number;
   }) {
-    const promptHistory = await this.prisma.promptHistory.create({
+    return this.prisma.promptHistory.create({
       data: {
-        collectionJobId: params.collectionJobId ?? null,
-        ideaId: params.ideaId ?? null,
+        collectionJobId: params.collectionJobId ?? undefined,
+        ideaId: params.ideaId ?? undefined,
         promptType: params.promptType,
         promptText: params.promptText,
       },
     });
-
-    await this.auditService.createLog({
-      actorId: params.actorId ?? null,
-      action: this.resolveAuditAction(params.promptType),
-      targetType: AuditTargetType.PROMPT,
-      targetId: promptHistory.id,
-      newValue: {
-        promptType: params.promptType,
-        ideaId: params.ideaId ?? null,
-        collectionJobId: params.collectionJobId ?? null,
-        estimatedInputTokens: params.estimatedInputTokens ?? null,
-      } as Prisma.InputJsonValue,
-    });
-
-    return promptHistory;
   }
 
   /**
-   * Returns paginated prompt history records.
-   *
-   * Supports:
-   * - pagination
-   * - sorting
-   * - date filtering
-   * - filtering by idea
-   * - filtering by collection job
-   * - filtering by prompt type
-   * - searching inside prompt text or idea title
-   *
-   * @param query Prompt history query filters.
+   * Saves an idea generation prompt.
    */
-  async getPromptHistories(query: GetPromptHistoryQueryDto) {
-    const { page, limit, skip, take } = buildPagination(query);
-    const where = this.buildWhere(query);
+  async saveIdeaGenerationPrompt(params: {
+    collectionJobId: string;
+    ideaId?: string | null;
+    promptText: string;
+  }) {
+    return this.savePrompt({
+      collectionJobId: params.collectionJobId,
+      ideaId: params.ideaId,
+      promptType: PromptType.IDEA_GENERATION,
+      promptText: params.promptText,
+    });
+  }
 
-    const orderBy = buildOrderBy(
-      query,
-      ['createdAt', 'promptType'] as const,
-      'createdAt',
-    );
+  /**
+   * Saves a direct unlock prompt.
+   */
+  async saveIdeaUnlockPrompt(params: {
+    collectionJobId: string;
+    ideaId: string;
+    promptText: string;
+  }) {
+    return this.savePrompt({
+      collectionJobId: params.collectionJobId,
+      ideaId: params.ideaId,
+      promptType: PromptType.IDEA_UNLOCK,
+      promptText: params.promptText,
+    });
+  }
 
-    const [data, total] = await Promise.all([
+  /**
+   * Returns paginated prompt history for Admin.
+   */
+  async findAll(query: GetPromptHistoryQueryDto) {
+    const page = Number(query.page ?? 1);
+    const limit = Number(query.limit ?? 10);
+    const skip = (page - 1) * limit;
+
+    const where = this.buildWhereClause(query);
+    const orderBy = this.buildOrderByClause(query);
+
+    const [data, total] = await this.prisma.$transaction([
       this.prisma.promptHistory.findMany({
         where,
         skip,
-        take,
+        take: limit,
         orderBy,
         include: {
           idea: {
@@ -122,11 +106,14 @@ export class PromptHistoryService {
               status: true,
               totalPosts: true,
               totalComments: true,
+              createdAt: true,
             },
           },
         },
       }),
-      this.prisma.promptHistory.count({ where }),
+      this.prisma.promptHistory.count({
+        where,
+      }),
     ]);
 
     return {
@@ -135,75 +122,70 @@ export class PromptHistoryService {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(total, limit),
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
 
   /**
-   * Builds Prisma where conditions from query filters.
+   * Builds Prisma where clause for prompt history filters.
    */
-  private buildWhere(
+  private buildWhereClause(
     query: GetPromptHistoryQueryDto,
   ): Prisma.PromptHistoryWhereInput {
-    const dateFilter = buildDateFilter(query);
+    const where: Prisma.PromptHistoryWhereInput = {};
 
-    return {
-      ...(dateFilter ?? {}),
-      ...(query.collectionJobId && {
-        collectionJobId: query.collectionJobId,
-      }),
-      ...(query.ideaId && {
-        ideaId: query.ideaId,
-      }),
-      ...(query.promptType && {
-        promptType: query.promptType,
-      }),
-      ...(query.search?.trim()
-        ? {
-            OR: [
-              {
-                promptText: {
-                  contains: query.search,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                idea: {
-                  title: {
-                    contains: query.search,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-    };
+    if (query.promptType) {
+      where.promptType = query.promptType;
+    }
+
+    if (query.ideaId) {
+      where.ideaId = query.ideaId;
+    }
+
+    if (query.collectionJobId) {
+      where.collectionJobId = query.collectionJobId;
+    }
+
+    if (query.search) {
+      where.promptText = {
+        contains: query.search,
+        mode: 'insensitive',
+      };
+    }
+
+    if (query.fromDate || query.toDate) {
+      where.createdAt = {
+        gte: query.fromDate ? new Date(query.fromDate) : undefined,
+        lte: query.toDate ? new Date(query.toDate) : undefined,
+      };
+    }
+
+    return where;
   }
 
   /**
-   * Maps each prompt type to the most suitable audit action.
+   * Builds safe orderBy clause.
    */
-  private resolveAuditAction(promptType: PromptType): AuditAction {
-    switch (promptType) {
-      case PromptType.IDEA_GENERATION:
-        return AuditAction.USER_GENERATE_IDEA;
+  private buildOrderByClause(
+    query: GetPromptHistoryQueryDto,
+  ): Prisma.PromptHistoryOrderByWithRelationInput {
+    const allowedSortFields = ['createdAt', 'promptType'] as const;
 
-      case PromptType.IDEA_UNLOCK:
-        return AuditAction.USER_UNLOCK_IDEA;
+    type AllowedSortField = (typeof allowedSortFields)[number];
 
-      case PromptType.NLP_ANALYSIS:
-        return AuditAction.NLP_ANALYSIS_RUN;
+    const requestedSortBy = query.sortBy as AllowedSortField | undefined;
 
-      case PromptType.CHAT_RESPONSE:
-        return AuditAction.USER_AI_CHAT;
+    const sortBy: AllowedSortField =
+      requestedSortBy && allowedSortFields.includes(requestedSortBy)
+        ? requestedSortBy
+        : 'createdAt';
 
-      case PromptType.ABSTRACT_GENERATION:
-        return AuditAction.ABSTRACT_GENERATION_RUN;
+    const sortOrder: Prisma.SortOrder =
+      query.sortOrder === 'asc' ? 'asc' : 'desc';
 
-      default:
-        return AuditAction.PROMPT_HISTORY_CREATED;
-    }
+    return {
+      [sortBy]: sortOrder,
+    };
   }
 }

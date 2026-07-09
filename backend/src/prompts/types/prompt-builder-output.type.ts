@@ -1,41 +1,23 @@
 import { PromptType } from '@prisma/client';
 
 /**
- * Result returned by the Prompt Builder after constructing
- * a complete AI-ready prompt.
- *
- * The generated prompt can be sent directly to the AI provider
- * and stored in PromptHistory for auditing and analytics.
+ * Final prompt output prepared for the AI provider.
  *
  * @author Malak
  */
 export type PromptBuilderOutput = {
   /**
-   * Type of prompt that was generated.
-   *
-   * Example:
-   * - IDEA_GENERATION
-   * - IDEA_UNLOCK
-   * - CHAT_RESPONSE
-   * - NLP_ANALYSIS
-   * - ABSTRACT_GENERATION
+   * Prompt type used for audit/history.
    */
   promptType: PromptType;
 
   /**
-   * Fully constructed prompt text ready to be sent
-   * to the AI model.
+   * Final prompt text sent to OpenAI.
    */
   promptText: string;
 
   /**
-   * Estimated number of input tokens.
-   *
-   * Used for:
-   * - AI cost estimation
-   * - request validation
-   * - monitoring prompt size
-   * - future token usage analytics
+   * Rough token estimation used for monitoring.
    */
   estimatedInputTokens: number;
 };

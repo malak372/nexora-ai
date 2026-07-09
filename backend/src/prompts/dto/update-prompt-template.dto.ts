@@ -1,22 +1,33 @@
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 /**
- * DTO used to update the system's AI idea generation prompt template.
+ * DTO used by Admin to update the AI idea prompt template.
  *
- * The template is stored in the system settings and is used by the
- * Prompt Builder service as the base prompt when generating software
- * project ideas.
+ * Supported placeholders:
+ * - {{domain}}
+ * - {{country}}
+ * - {{city}}
+ * - {{region}}
+ * - {{platforms}}
+ * - {{commentsCount}}
+ * - {{sentimentStats}}
+ * - {{keywords}}
+ * - {{topics}}
+ * - {{recurringProblems}}
+ * - {{extractedNeeds}}
+ * - {{featureRequests}}
+ * - {{opportunities}}
+ * - {{insights}}
+ * - {{samplePosts}}
+ * - {{sampleComments}}
+ * - {{existingIdea}}
+ * - {{requestedOutputFormat}}
  *
  * @author Malak
  */
 export class UpdatePromptTemplateDto {
   /**
-   * AI prompt template used for idea generation.
-   *
-   * Supports placeholders that are replaced dynamically by the
-   * Prompt Builder before sending the prompt to the AI model.
-   *
-   * Maximum length: 15,000 characters.
+   * New prompt template.
    */
   @IsString()
   @IsNotEmpty()
