@@ -8,11 +8,11 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
-import { CurrentUser } from '../utilities/decorators/current-user.decorator';
-import type { JwtCurrentUser } from '../utilities/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
 import { GetPromptHistoryQueryDto } from './dto/get-prompt-history-query.dto';
 import { UpdatePromptTemplateDto } from './dto/update-prompt-template.dto';
@@ -52,7 +52,7 @@ export class PromptsController {
   @Patch('template')
   updateTemplate(
     @Body() dto: UpdatePromptTemplateDto,
-    @CurrentUser() user: JwtCurrentUser,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ ideaPromptTemplate: string }> {
     return this.promptTemplateService.updateTemplate(
       dto.ideaPromptTemplate,

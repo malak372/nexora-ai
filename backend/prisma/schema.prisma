@@ -107,11 +107,17 @@ enum AlertType {
 }
 
 enum ApiProvider {
+  // AI Providers
   OPENAI
+  ANTHROPIC
+  GOOGLE
+
+  // Payment Providers
   STRIPE
   PAYPAL
   PALPAY
 
+  // Data Providers
   REDDIT
   FACEBOOK
   YOUTUBE
@@ -124,7 +130,14 @@ enum ApiProvider {
   STACKOVERFLOW
   DISCORD
   QUORA
+  FORUM
+  BLOG
+  NEWS
+  HACKER_NEWS
+  PRODUCT_HUNT
+  DEV_TO
 
+  // Application and Google Services
   GOOGLE_PLAY
   APP_STORE
   GOOGLE_MAPS
@@ -174,51 +187,67 @@ enum GeneratedOutputType {
 }
 
 enum AuditAction {
+  // User administration
   ADMIN_UPDATE_USER_STATUS
   ADMIN_SOFT_DELETE_USER
-  ADMIN_UPDATE_SETTINGS
-  ADMIN_UPDATE_PROMPT
-  ADMIN_CREATE_ALERT
-  ADMIN_CREATE_PLATFORM
-  ADMIN_UPDATE_PLATFORM
-  ADMIN_DEACTIVATE_PLATFORM
-  ADMIN_CREATE_DOMAIN
-  ADMIN_UPDATE_DOMAIN
-  ADMIN_DEACTIVATE_DOMAIN
-  ADMIN_UPDATE_COMPLAINT
-  RUN_DATA_COLLECTION
-  ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
 
-  USER_GENERATE_IDEA
-  USER_UNLOCK_IDEA
-  USER_CREATE_COMPLAINT
-  DATA_COLLECTION_RUN
-  DATA_COLLECTION_STOP
-  NLP_ANALYSIS_RUN
+  // System settings and prompts
+  ADMIN_UPDATE_SETTINGS
+  ADMIN_UPDATE_PROMPT
 
-  USER_AI_CHAT
-  ABSTRACT_GENERATION_RUN
-  PROMPT_HISTORY_CREATED
+  // Alerts
+  ADMIN_CREATE_ALERT
 
-  USER_UPDATE_PROFILE
-  USER_MARK_NOTIFICATION_READ
-  USER_MARK_ALL_NOTIFICATIONS_READ
+  // Platforms
+  ADMIN_CREATE_PLATFORM
+  ADMIN_UPDATE_PLATFORM
+  ADMIN_DEACTIVATE_PLATFORM
 
+  // Domains
+  ADMIN_CREATE_DOMAIN
+  ADMIN_UPDATE_DOMAIN
+  ADMIN_DEACTIVATE_DOMAIN
+
+  // Complaints and contact messages
+  ADMIN_UPDATE_COMPLAINT
   ADMIN_UPDATE_CONTACT_MESSAGE
-  USER_CREATE_CONTACT_MESSAGE
 
+  // AI model management
   ADMIN_CREATE_AI_MODEL
   ADMIN_UPDATE_AI_MODEL
   ADMIN_DEACTIVATE_AI_MODEL
   ADMIN_SET_DEFAULT_AI_MODEL
+
+  // Data collection
+  RUN_DATA_COLLECTION
+  COMPLETE_DATA_COLLECTION
+  FAIL_DATA_COLLECTION
+  STOP_DATA_COLLECTION
+  ADMIN_START_DATA_COLLECTION
+  ADMIN_STOP_DATA_COLLECTION
+
+  // User operations
+  USER_GENERATE_IDEA
+  USER_UNLOCK_IDEA
+  USER_CREATE_COMPLAINT
+  USER_CREATE_CONTACT_MESSAGE
+  USER_AI_CHAT
+  USER_UPDATE_PROFILE
+  USER_MARK_NOTIFICATION_READ
+  USER_MARK_ALL_NOTIFICATIONS_READ
+
+  // Pipeline operations
+  NLP_ANALYSIS_RUN
+  ABSTRACT_GENERATION_RUN
+  PROMPT_HISTORY_CREATED
 }
 
 enum AiProviderType {
   OPENAI
-  CLAUDE
-  GEMINI
+  ANTHROPIC
+  GOOGLE
 }
 
 enum AuditTargetType {
@@ -564,6 +593,11 @@ model Payment {
 
   creditTransactions CreditTransaction[]
 
+  @@index([userId])
+  @@index([ideaId])
+  @@index([status])
+  @@index([paymentPurpose])
+  @@index([createdAt])
   @@map("payments")
 }
 
@@ -590,6 +624,11 @@ model CreditTransaction {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([userId])
+  @@index([paymentId])
+  @@index([ideaId])
+  @@index([type])
+  @@index([createdAt])
   @@map("credit_transactions")
 }
 
@@ -609,9 +648,9 @@ model GeneratedOutput {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([ideaId, outputType])
   @@map("generated_outputs")
 }
-
 /**
  * CHAT
  */
@@ -631,7 +670,9 @@ model ChatSession {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   messages ChatMessage[]
-
+  @@index([userId])
+  @@index([ideaId])
+  @@index([createdAt])
   @@map("chat_sessions")
 }
 
@@ -645,7 +686,8 @@ model ChatMessage {
   message String
 
   createdAt DateTime @default(now()) @map("created_at")
-
+  @@index([sessionId])
+  @@index([createdAt])
   @@map("chat_messages")
 }
 
@@ -665,7 +707,8 @@ model Alert {
   isRead  Boolean   @default(false) @map("is_read")
 
   createdAt DateTime @default(now()) @map("created_at")
-
+  @@index([userId, isRead])
+  @@index([createdAt])
   @@map("alerts")
 }
 
@@ -692,7 +735,11 @@ model Complaint {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
   resolvedAt DateTime? @map("resolved_at")
-
+  @@index([userId])
+  @@index([ideaId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
   @@map("complaints")
 }
 
@@ -709,6 +756,9 @@ model ExternalApiLog {
   ideaId String? @map("idea_id")
   idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
+  aiModelId String?  @map("ai_model_id")
+  aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
+
   provider    ApiProvider
   endpoint    String?
   requestId   String?        @map("request_id")
@@ -721,7 +771,17 @@ model ExternalApiLog {
   errorMessage   String?  @map("error_message")
   costEstimate   Decimal? @map("cost_estimate") @db.Decimal(10, 4)
 
+  apiModelId  String? @map("api_model_id")
+  inputTokens Int?    @map("input_tokens")
+  outputTokens Int?   @map("output_tokens")
+
   createdAt DateTime @default(now()) @map("created_at")
+  @@index([aiModelId])
+  @@index([provider, createdAt])
+  @@index([requestType, createdAt])
+  @@index([isSuccess, createdAt])
+  @@index([userId, createdAt])
+  @@index([ideaId, createdAt])
 
   @@map("external_api_logs")
 }
@@ -1078,7 +1138,7 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider AiProviderType @default(OPENAI)
+  provider    AiProviderType @default(OPENAI)
   modelName   String         @map("model_name")
   apiModelId  String         @map("api_model_id")
   displayName String?        @map("display_name")
@@ -1091,12 +1151,15 @@ model AiModel {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  externalApiLogs ExternalApiLog[]
+
   @@unique([provider, modelName])
-  @@unique([apiModelId])
-  @@index([provider])
-  @@index([isActive])
-  @@index([isDefault])
+  @@unique([provider, apiModelId])
+
+  @@index([provider, isActive])
   @@index([priority])
+  @@index([createdAt])
+
   @@map("ai_models")
 }
 
@@ -1139,8 +1202,6 @@ model NlpLexicon {
 
   /// Prevent duplicate lexicon entries for the same word, category, and language.
   @@unique([word, type, language])
-  /// Used when querying all lexicon entries of a specific category.
-  @@index([type])
   /// Used when querying lexicon entries by language.
   @@index([language])
   /// Optimizes the most common NLP lookup:
