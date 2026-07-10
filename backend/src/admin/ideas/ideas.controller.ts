@@ -35,7 +35,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class IdeasController {
-  constructor(private readonly ideasService: IdeasService) { }
+  constructor(private readonly ideasService: IdeasService) {}
 
   /**
    * Retrieves generated project ideas.

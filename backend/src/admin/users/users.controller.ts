@@ -51,7 +51,7 @@ type AuthenticatedAdmin = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   /**
    * Retrieves a paginated list of users.
@@ -108,11 +108,11 @@ export class UsersController {
   }
 
   /**
- * Exports filtered users as CSV.
- *
- * Endpoint:
- * GET /admin/users/export/csv
- */
+   * Exports filtered users as CSV.
+   *
+   * Endpoint:
+   * GET /admin/users/export/csv
+   */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv')
   @Header('Content-Disposition', 'attachment; filename="users.csv"')
@@ -175,10 +175,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.usersService.sendPasswordResetEmail(
-      id,
-      currentUser.id,
-    );
+    return this.usersService.sendPasswordResetEmail(id, currentUser.id);
   }
 
   /**

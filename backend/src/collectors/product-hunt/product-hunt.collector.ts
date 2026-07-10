@@ -9,14 +9,20 @@ import {
   CollectorInput,
   CollectorPost,
 } from '../base/collector.types';
-
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
+/**
+ * Represents a Product Hunt user.
+ */
 type ProductHuntUser = {
   name?: string;
   username?: string;
 };
 
+/**
+ * Represents a Product Hunt post returned by
+ * the Product Hunt GraphQL API.
+ */
 type ProductHuntPost = {
   id?: string;
   name?: string;
@@ -29,6 +35,10 @@ type ProductHuntPost = {
   user?: ProductHuntUser;
 };
 
+/**
+ * Represents a Product Hunt comment returned by
+ * the Product Hunt GraphQL API.
+ */
 type ProductHuntComment = {
   id?: string;
   body?: string;
@@ -36,23 +46,39 @@ type ProductHuntComment = {
   user?: ProductHuntUser;
 };
 
+/**
+ * Represents one node edge in a GraphQL connection.
+ *
+ * @template T GraphQL node type.
+ */
 type ProductHuntEdge<T> = {
   node: T;
 };
 
+/**
+ * Represents cursor-based pagination information.
+ */
+type ProductHuntPageInfo = {
+  hasNextPage?: boolean;
+  endCursor?: string;
+};
+
+/**
+ * Represents the Product Hunt posts GraphQL response.
+ */
 type ProductHuntPostsResponse = {
   data?: {
     posts?: {
-      pageInfo?: {
-        hasNextPage?: boolean;
-        endCursor?: string;
-      };
+      pageInfo?: ProductHuntPageInfo;
       edges?: Array<ProductHuntEdge<ProductHuntPost>>;
     };
   };
   errors?: unknown[];
 };
 
+/**
+ * Represents the Product Hunt comments GraphQL response.
+ */
 type ProductHuntCommentsResponse = {
   data?: {
     post?: {
@@ -65,16 +91,25 @@ type ProductHuntCommentsResponse = {
 };
 
 /**
+ * Runtime validator used to safely narrow unknown
+ * GraphQL responses.
+ *
+ * @template T Expected response type.
+ */
+type GraphqlResponseValidator<T> = (value: unknown) => value is T;
+
+/**
  * Product Hunt collector.
  *
  * Collects public Product Hunt posts and comments using
- * Product Hunt GraphQL API.
+ * the Product Hunt GraphQL API.
  *
  * Notes:
  * - Requires PRODUCT_HUNT_TOKEN.
- * - Uses pagination to collect posts.
- * - Filters posts locally based on user/domain keywords.
+ * - Uses cursor-based pagination to collect posts.
+ * - Filters posts locally using user and domain keywords.
  * - Adds small delays between requests to reduce rate-limit risk.
+ * - Validates unknown GraphQL responses before using them.
  *
  * @author Malak
  */
@@ -83,13 +118,34 @@ export class ProductHuntCollector
   extends BaseCollector
   implements SocialCollector
 {
+  /**
+   * Platform source type stored with collected records.
+   */
   readonly sourceType = CollectionSourceType.PRODUCT_HUNT;
 
+  /**
+   * Human-readable platform name.
+   */
   private readonly platformName = 'Product Hunt';
+
+  /**
+   * Product Hunt GraphQL API endpoint.
+   */
   private readonly apiUrl = 'https://api.producthunt.com/v2/api/graphql';
 
+  /**
+   * Number of posts requested per GraphQL page.
+   */
   private readonly pageSize = 20;
+
+  /**
+   * Maximum number of comments requested per post.
+   */
   private readonly commentsPageSize = 10;
+
+  /**
+   * Delay between Product Hunt API requests.
+   */
   private readonly requestDelayMs = 500;
 
   constructor(configService: ConfigService) {
@@ -97,48 +153,63 @@ export class ProductHuntCollector
   }
 
   /**
-   * Collects Product Hunt posts, filters them by input,
-   * ranks them by relevance, and maps them to CollectorPost format.
+   * Collects Product Hunt posts, filters them using
+   * the collection input, ranks them by relevance,
+   * and maps them to the unified collector format.
+   *
+   * @param input Collection job configuration.
+   * @returns Relevant Product Hunt posts and comments.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const token = this.getToken();
+
       const searchTerms = this.buildSearchTerms(input);
 
       if (!token) {
         this.logger.warn(
           'Product Hunt collection skipped because PRODUCT_HUNT_TOKEN is missing.',
         );
+
         return [];
       }
 
-      if (!searchTerms.length) {
+      if (searchTerms.length === 0) {
         this.logger.warn(
           'Product Hunt collection skipped because no search keywords exist.',
         );
+
         return [];
       }
 
       const rawPosts = await this.collectPostsByPagination(token);
-      const filteredPosts = this.filterPostsByInput(rawPosts, input, searchTerms);
+
+      const filteredPosts = this.filterPostsByInput(
+        rawPosts,
+        input,
+        searchTerms,
+      );
 
       const seenPostIds = new Set<string>();
 
       const rankedPosts = filteredPosts
         .filter((post) => this.isValidPost(post))
         .filter((post) => {
-          const id = post.id?.toString();
+          const postId = post.id;
 
-          if (!id || seenPostIds.has(id)) return false;
+          if (!postId || seenPostIds.has(postId)) {
+            return false;
+          }
 
-          seenPostIds.add(id);
+          seenPostIds.add(postId);
+
           return true;
         })
         .map((post) => ({
           post,
           score: this.calculatePostRelevanceScore(post, input),
         }))
-        .sort((a, b) => b.score - a.score)
+        .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts);
 
       const result: CollectorPost[] = [];
@@ -151,6 +222,7 @@ export class ProductHuntCollector
         );
 
         result.push(mappedPost);
+
         await this.delay(this.requestDelayMs);
       }
 
@@ -173,6 +245,9 @@ export class ProductHuntCollector
 
   /**
    * Collects Product Hunt posts using cursor-based pagination.
+   *
+   * @param token Product Hunt API access token.
+   * @returns Collected Product Hunt posts.
    */
   private async collectPostsByPagination(
     token: string,
@@ -205,25 +280,36 @@ export class ProductHuntCollector
     `;
 
     const collectedPosts: ProductHuntPost[] = [];
+
     let after: string | null = null;
 
     while (collectedPosts.length < this.maxFetchedPosts) {
-      const data = await this.graphqlRequest<ProductHuntPostsResponse>(
+      const response: ProductHuntPostsResponse = await this.graphqlRequest(
         query,
         {
           first: this.pageSize,
           after,
         },
         token,
+        (value: unknown): value is ProductHuntPostsResponse =>
+          this.isProductHuntPostsResponse(value),
       );
 
-      const edges = data.data?.posts?.edges ?? [];
-      const pageInfo = data.data?.posts?.pageInfo;
+      const postsConnection = response.data?.posts;
 
-      const posts = edges.map((edge) => edge.node);
+      const edges: Array<ProductHuntEdge<ProductHuntPost>> =
+        postsConnection?.edges ?? [];
+
+      const pageInfo: ProductHuntPageInfo | undefined =
+        postsConnection?.pageInfo;
+
+      const posts: ProductHuntPost[] = edges.map(
+        (edge: ProductHuntEdge<ProductHuntPost>): ProductHuntPost => edge.node,
+      );
+
       collectedPosts.push(...posts);
 
-      if (!pageInfo?.hasNextPage || !pageInfo?.endCursor) {
+      if (pageInfo?.hasNextPage !== true || !pageInfo.endCursor) {
         break;
       }
 
@@ -236,7 +322,13 @@ export class ProductHuntCollector
   }
 
   /**
-   * Filters posts according to user keywords, domain name, and domain keywords.
+   * Filters posts according to user keywords,
+   * domain name, and domain keywords.
+   *
+   * @param posts Product Hunt posts.
+   * @param input Collection job configuration.
+   * @param searchTerms Prepared search terms.
+   * @returns Matching Product Hunt posts.
    */
   private filterPostsByInput(
     posts: ProductHuntPost[],
@@ -261,7 +353,11 @@ export class ProductHuntCollector
   }
 
   /**
-   * Collects public comments for a Product Hunt post.
+   * Collects public comments for one Product Hunt post.
+   *
+   * @param postId Product Hunt post identifier.
+   * @param token Product Hunt API access token.
+   * @returns Useful Product Hunt comments.
    */
   private async collectProductComments(
     postId: string,
@@ -287,39 +383,58 @@ export class ProductHuntCollector
       }
     `;
 
-    const data = await this.graphqlRequest<ProductHuntCommentsResponse>(
+    const response: ProductHuntCommentsResponse = await this.graphqlRequest(
       query,
       {
         id: postId,
         first: this.commentsPageSize,
       },
       token,
+      (value: unknown): value is ProductHuntCommentsResponse =>
+        this.isProductHuntCommentsResponse(value),
     );
 
-    const edges = data.data?.post?.comments?.edges ?? [];
+    const edges: Array<ProductHuntEdge<ProductHuntComment>> =
+      response.data?.post?.comments?.edges ?? [];
 
     return edges
-      .map((edge) => edge.node)
+      .map(
+        (edge: ProductHuntEdge<ProductHuntComment>): ProductHuntComment =>
+          edge.node,
+      )
       .filter((comment) => this.isUsefulComment(comment))
       .slice(0, this.maxSavedComments)
-      .map((comment): CollectorComment => ({
-        externalId: comment.id?.toString() ?? `${postId}-${comment.createdAt}`,
-        content: this.cleanHtml(comment.body),
-        author: comment.user?.username ?? comment.user?.name,
-        likesCount: 0,
-        publishedAt: comment.createdAt
-          ? new Date(comment.createdAt)
-          : undefined,
-      }));
+      .map(
+        (comment): CollectorComment => ({
+          externalId: this.buildCommentExternalId(postId, comment),
+          content: this.cleanHtml(comment.body),
+          author: comment.user?.username ?? comment.user?.name,
+          likesCount: 0,
+          publishedAt: comment.createdAt
+            ? new Date(comment.createdAt)
+            : undefined,
+        }),
+      );
   }
 
   /**
-   * Sends a GraphQL request to Product Hunt API.
+   * Sends a GraphQL request to the Product Hunt API.
+   *
+   * The JSON body is first treated as unknown and then
+   * validated using the provided runtime validator.
+   *
+   * @template T Expected GraphQL response type.
+   * @param query GraphQL query text.
+   * @param variables GraphQL query variables.
+   * @param token Product Hunt API access token.
+   * @param validator Runtime response validator.
+   * @returns Validated GraphQL response.
    */
   private async graphqlRequest<T>(
     query: string,
     variables: Record<string, unknown>,
     token: string,
+    validator: GraphqlResponseValidator<T>,
   ): Promise<T> {
     const response = await fetch(this.apiUrl, {
       method: 'POST',
@@ -334,21 +449,37 @@ export class ProductHuntCollector
       throw new Error(`Product Hunt API failed with status ${response.status}`);
     }
 
-    const data = (await response.json()) as T & { errors?: unknown[] };
+    const rawResponse: unknown = await response.json();
 
-    if (data.errors?.length) {
-      this.logger.warn(
-        `Product Hunt GraphQL errors: ${JSON.stringify(data.errors)}`,
-      );
-
-      return {} as T;
+    if (!this.isRecord(rawResponse)) {
+      throw new Error('Product Hunt API returned an invalid response.');
     }
 
-    return data;
+    const errors = rawResponse.errors;
+
+    if (Array.isArray(errors) && errors.length > 0) {
+      this.logger.warn(
+        `Product Hunt GraphQL errors: ${this.stringifySafely(errors)}`,
+      );
+
+      throw new Error('Product Hunt GraphQL returned one or more errors.');
+    }
+
+    if (!validator(rawResponse)) {
+      throw new Error(
+        'Product Hunt API response does not match the expected structure.',
+      );
+    }
+
+    return rawResponse;
   }
 
   /**
-   * Builds search terms from user keywords, domain keywords, and domain name.
+   * Builds search terms from user keywords,
+   * domain keywords, and the domain name.
+   *
+   * @param input Collection job configuration.
+   * @returns Unique normalized search terms.
    */
   private buildSearchTerms(input: CollectorInput): string[] {
     const domainKeywords = this.getDomainKeywords(input);
@@ -361,22 +492,24 @@ export class ProductHuntCollector
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
       .filter((term) => term.length >= 2)
       .slice(0, 10);
   }
 
   /**
-   * Validates Product Hunt post before ranking and mapping.
+   * Validates a Product Hunt post before ranking.
+   *
+   * @param post Product Hunt post.
+   * @returns True when the post contains useful content.
    */
   private isValidPost(post: ProductHuntPost): boolean {
     const title = post.name ?? '';
+
     const body = `${post.tagline ?? ''} ${post.description ?? ''}`;
+
     const content = this.normalizeText(`${title} ${body}`);
+
     const blockedWords = this.getBlockedWords();
 
     if (!post.id || !title || content.length < 20) {
@@ -387,7 +520,12 @@ export class ProductHuntCollector
   }
 
   /**
-   * Calculates relevance score using shared scoring utility.
+   * Calculates post relevance using the shared
+   * relevance scoring utility.
+   *
+   * @param post Product Hunt post.
+   * @param input Collection job configuration.
+   * @returns Relevance score.
    */
   private calculatePostRelevanceScore(
     post: ProductHuntPost,
@@ -405,14 +543,21 @@ export class ProductHuntCollector
   }
 
   /**
-   * Maps Product Hunt post to the unified CollectorPost format.
+   * Maps a Product Hunt post to the unified
+   * collector post format.
+   *
+   * @param post Product Hunt post.
+   * @param input Collection job configuration.
+   * @param token Product Hunt API access token.
+   * @returns Unified collector post.
    */
   private async mapProductToCollectorPost(
     post: ProductHuntPost,
     input: CollectorInput,
     token: string,
   ): Promise<CollectorPost> {
-    const postId = post.id?.toString() ?? '';
+    const postId = post.id ?? '';
+
     const comments = await this.collectProductComments(postId, token);
 
     return {
@@ -425,11 +570,9 @@ export class ProductHuntCollector
       ),
       author: post.user?.username ?? post.user?.name,
       url: post.url,
-
       country: input.country,
       city: input.city,
       region: input.region,
-
       language: input.language,
       likesCount: post.votesCount ?? 0,
       repliesCount: post.commentsCount ?? comments.length,
@@ -439,7 +582,35 @@ export class ProductHuntCollector
   }
 
   /**
+   * Builds a stable external identifier for a comment.
+   *
+   * The original comment ID is preferred. When it is missing,
+   * the post ID and normalized creation date are used.
+   *
+   * @param postId Product Hunt post identifier.
+   * @param comment Product Hunt comment.
+   * @returns Stable external comment identifier.
+   */
+  private buildCommentExternalId(
+    postId: string,
+    comment: ProductHuntComment,
+  ): string {
+    if (comment.id) {
+      return comment.id;
+    }
+
+    const datePart = comment.createdAt
+      ? new Date(comment.createdAt).toISOString()
+      : 'unknown-date';
+
+    return `${postId}-${datePart}`;
+  }
+
+  /**
    * Filters short, empty, or blocked comments.
+   *
+   * @param comment Product Hunt comment.
+   * @returns True when the comment is useful.
    */
   private isUsefulComment(comment: ProductHuntComment): boolean {
     const content = this.normalizeText(this.cleanHtml(comment.body));
@@ -454,21 +625,29 @@ export class ProductHuntCollector
   }
 
   /**
-   * Reads Product Hunt token from environment variables.
+   * Reads the Product Hunt API token.
+   *
+   * @returns Configured API token or an empty string.
    */
   private getToken(): string {
     return this.configService.get<string>('PRODUCT_HUNT_TOKEN') ?? '';
   }
 
   /**
-   * Reads common blocked words and Product Hunt-specific blocked words.
+   * Reads common blocked words and
+   * Product Hunt-specific blocked words.
+   *
+   * @returns Normalized blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('PRODUCT_HUNT_BLOCKED_WORDS');
   }
 
   /**
-   * Builds Product Hunt API headers.
+   * Builds Product Hunt API request headers.
+   *
+   * @param token Product Hunt API access token.
+   * @returns HTTP request headers.
    */
   private buildHeaders(token: string): Record<string, string> {
     return {
@@ -481,6 +660,9 @@ export class ProductHuntCollector
 
   /**
    * Removes HTML tags and decodes common HTML entities.
+   *
+   * @param text Optional HTML text.
+   * @returns Clean plain text.
    */
   private cleanHtml(text?: string): string {
     return (text ?? '')
@@ -499,20 +681,198 @@ export class ProductHuntCollector
   }
 
   /**
-   * Extracts a readable error message from unknown errors.
+   * Validates the Product Hunt posts GraphQL response.
+   *
+   * @param value Unknown API response.
+   * @returns True when the response has a valid posts structure.
    */
-  private getErrorMessage(error: unknown): unknown {
+  private isProductHuntPostsResponse(
+    value: unknown,
+  ): value is ProductHuntPostsResponse {
+    if (!this.isRecord(value)) {
+      return false;
+    }
+
+    const data = value.data;
+
+    if (data === undefined) {
+      return true;
+    }
+
+    if (!this.isRecord(data)) {
+      return false;
+    }
+
+    const posts = data.posts;
+
+    if (posts === undefined) {
+      return true;
+    }
+
+    if (!this.isRecord(posts)) {
+      return false;
+    }
+
+    const edges = posts.edges;
+
+    if (edges !== undefined && !Array.isArray(edges)) {
+      return false;
+    }
+
+    if (
+      Array.isArray(edges) &&
+      !edges.every((edge) => this.isGraphqlEdge(edge))
+    ) {
+      return false;
+    }
+
+    const pageInfo = posts.pageInfo;
+
+    if (pageInfo !== undefined && !this.isProductHuntPageInfo(pageInfo)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Validates the Product Hunt comments GraphQL response.
+   *
+   * @param value Unknown API response.
+   * @returns True when the response has a valid comments structure.
+   */
+  private isProductHuntCommentsResponse(
+    value: unknown,
+  ): value is ProductHuntCommentsResponse {
+    if (!this.isRecord(value)) {
+      return false;
+    }
+
+    const data = value.data;
+
+    if (data === undefined) {
+      return true;
+    }
+
+    if (!this.isRecord(data)) {
+      return false;
+    }
+
+    const post = data.post;
+
+    if (post === undefined || post === null) {
+      return true;
+    }
+
+    if (!this.isRecord(post)) {
+      return false;
+    }
+
+    const comments = post.comments;
+
+    if (comments === undefined || comments === null) {
+      return true;
+    }
+
+    if (!this.isRecord(comments)) {
+      return false;
+    }
+
+    const edges = comments.edges;
+
+    if (edges === undefined) {
+      return true;
+    }
+
+    return (
+      Array.isArray(edges) && edges.every((edge) => this.isGraphqlEdge(edge))
+    );
+  }
+
+  /**
+   * Validates Product Hunt pagination information.
+   *
+   * @param value Unknown page information.
+   * @returns True when the value has a valid pagination shape.
+   */
+  private isProductHuntPageInfo(value: unknown): value is ProductHuntPageInfo {
+    if (!this.isRecord(value)) {
+      return false;
+    }
+
+    const hasNextPage = value.hasNextPage;
+    const endCursor = value.endCursor;
+
+    return (
+      (hasNextPage === undefined || typeof hasNextPage === 'boolean') &&
+      (endCursor === undefined || typeof endCursor === 'string')
+    );
+  }
+
+  /**
+   * Validates one generic GraphQL connection edge.
+   *
+   * @param value Unknown edge value.
+   * @returns True when the edge contains a node property.
+   */
+  private isGraphqlEdge(value: unknown): value is ProductHuntEdge<unknown> {
+    return this.isRecord(value) && 'node' in value;
+  }
+
+  /**
+   * Determines whether an unknown value is a non-null record.
+   *
+   * @param value Unknown value.
+   * @returns True when the value is an object record.
+   */
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  /**
+   * Extracts a readable message from an unknown error.
+   *
+   * @param error Unknown caught value.
+   * @returns Safe error message.
+   */
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    return error;
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    return 'Unknown Product Hunt collector error.';
+  }
+
+  /**
+   * Converts an unknown value to a safe log string.
+   *
+   * @param value Unknown value.
+   * @returns Safely serialized value.
+   */
+  private stringifySafely(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    try {
+      return JSON.stringify(value) ?? 'Unknown GraphQL error';
+    } catch {
+      return 'Unknown GraphQL error';
+    }
   }
 
   /**
    * Adds a delay between API requests.
+   *
+   * @param ms Delay in milliseconds.
    */
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 }

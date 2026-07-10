@@ -29,8 +29,7 @@ export const REQUIRED_PROMPT_PLACEHOLDERS = [
 /**
  * Represents every supported prompt placeholder.
  */
-export type PromptPlaceholder =
-  (typeof REQUIRED_PROMPT_PLACEHOLDERS)[number];
+export type PromptPlaceholder = (typeof REQUIRED_PROMPT_PLACEHOLDERS)[number];
 
 /**
  * Values used to render a prompt template.

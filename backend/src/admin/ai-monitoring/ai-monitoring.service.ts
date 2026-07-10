@@ -32,7 +32,7 @@ import {
  */
 @Injectable()
 export class AiMonitoringService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Builds a shared Prisma where filter for AI monitoring endpoints.
@@ -47,51 +47,51 @@ export class AiMonitoringService {
   ): Prisma.ExternalApiLogWhereInput {
     const searchFilter: Prisma.ExternalApiLogWhereInput = query.search
       ? {
-        OR: [
-          {
-            endpoint: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            requestId: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            errorMessage: {
-              contains: query.search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            user: {
-              fullName: {
+          OR: [
+            {
+              endpoint: {
                 contains: query.search,
                 mode: 'insensitive',
               },
             },
-          },
-          {
-            user: {
-              email: {
+            {
+              requestId: {
                 contains: query.search,
                 mode: 'insensitive',
               },
             },
-          },
-          {
-            idea: {
-              title: {
+            {
+              errorMessage: {
                 contains: query.search,
                 mode: 'insensitive',
               },
             },
-          },
-        ],
-      }
+            {
+              user: {
+                fullName: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              user: {
+                email: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              idea: {
+                title: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }
       : {};
 
     return {
@@ -342,9 +342,7 @@ export class AiMonitoringService {
       failedRequests,
       successRate: calculateSuccessRate(successfulRequests, totalRequests),
       errorRate: calculateSuccessRate(failedRequests, totalRequests),
-      averageResponseTime: toNumber(
-        responseTimeAggregate._avg.responseTimeMs,
-      ),
+      averageResponseTime: toNumber(responseTimeAggregate._avg.responseTimeMs),
       totalCost: toNumber(costAggregate._sum.costEstimate),
     };
   }

@@ -15,10 +15,10 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Eman
  */
 export class GetSavedSearchesQueryDto extends ListQueryDto {
-    /**
-     * Optional domain filter.
-     */
-    @IsOptional()
-    @IsUUID()
-    domainId?: string;
+  /**
+   * Optional domain filter.
+   */
+  @IsOptional()
+  @IsUUID()
+  domainId?: string;
 }

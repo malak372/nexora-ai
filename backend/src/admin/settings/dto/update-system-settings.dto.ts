@@ -1,10 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  IsInt,
-  IsNumber,
-  IsOptional,
-  Min,
-} from 'class-validator';
+import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 /**
  * DTO for updating system settings related to the credit system.

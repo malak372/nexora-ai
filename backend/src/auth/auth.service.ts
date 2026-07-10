@@ -49,7 +49,7 @@ export class AuthService {
     private readonly authLogoutService: AuthLogoutService,
     private readonly authPasswordService: AuthPasswordService,
     private readonly authEmailService: AuthEmailService,
-  ) { }
+  ) {}
 
   /**
    * Registers a new user account.

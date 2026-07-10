@@ -50,7 +50,7 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditService,
-  ) { }
+  ) {}
 
   /**
    * Builds the shared Prisma where filter for credit reports.
@@ -62,11 +62,7 @@ export class CreditsService {
       ...buildDateFilter(query),
       ...buildExactFilter('type', query.type),
 
-      ...buildRelationSearchFilter(
-        'user',
-        ['fullName', 'email'],
-        query.search,
-      ),
+      ...buildRelationSearchFilter('user', ['fullName', 'email'], query.search),
     };
   }
 
@@ -210,22 +206,21 @@ export class CreditsService {
   async getCreditsCharts(query: GetCreditHistoryQueryDto) {
     const where = this.buildCreditHistoryWhere(query);
 
-    const transactionsByType =
-      await this.prisma.creditTransaction.groupBy({
-        by: ['type'],
-        where,
+    const transactionsByType = await this.prisma.creditTransaction.groupBy({
+      by: ['type'],
+      where,
+      _count: {
+        type: true,
+      },
+      _sum: {
+        amount: true,
+      },
+      orderBy: {
         _count: {
-          type: true,
+          type: 'desc',
         },
-        _sum: {
-          amount: true,
-        },
-        orderBy: {
-          _count: {
-            type: 'desc',
-          },
-        },
-      });
+      },
+    });
 
     return {
       transactionsByType: transactionsByType.map((item) => ({
@@ -361,9 +356,7 @@ export class CreditsService {
       }
 
       const newStatus =
-        newBalance > 0
-          ? AccountStatus.PREMIUM
-          : AccountStatus.NORMAL;
+        newBalance > 0 ? AccountStatus.PREMIUM : AccountStatus.NORMAL;
 
       const updatedUser = await tx.user.update({
         where: {

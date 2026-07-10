@@ -45,7 +45,7 @@ export class ContactMessagesService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditService,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
 
   /**
    * Builds a reusable Prisma where filter for contact messages.
@@ -352,32 +352,31 @@ export class ContactMessagesService {
       };
     }
 
-    const updatedContactMessage =
-      await this.prisma.contactMessage.update({
-        where: { id },
-        data: {
-          status: nextStatus,
-          adminReply: body.adminReply ?? contactMessage.adminReply,
-        },
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          subject: true,
-          message: true,
-          status: true,
-          adminReply: true,
-          createdAt: true,
-          updatedAt: true,
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
+    const updatedContactMessage = await this.prisma.contactMessage.update({
+      where: { id },
+      data: {
+        status: nextStatus,
+        adminReply: body.adminReply ?? contactMessage.adminReply,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        subject: true,
+        message: true,
+        status: true,
+        adminReply: true,
+        createdAt: true,
+        updatedAt: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
           },
         },
-      });
+      },
+    });
 
     if (body.adminReply?.trim()) {
       await this.mailService.sendContactReplyEmail(

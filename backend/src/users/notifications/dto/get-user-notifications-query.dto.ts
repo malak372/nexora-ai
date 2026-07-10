@@ -1,9 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-    IsBoolean,
-    IsEnum,
-    IsOptional,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
 import { AlertType } from '@prisma/client';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
@@ -24,18 +20,18 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Eman
  */
 export class GetUserNotificationsQueryDto extends ListQueryDto {
-    /**
-     * Optional read status filter.
-     */
-    @IsOptional()
-    @Transform(({ value }) => value === 'true')
-    @IsBoolean()
-    isRead?: boolean;
+  /**
+   * Optional read status filter.
+   */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  isRead?: boolean;
 
-    /**
-     * Optional notification type filter.
-     */
-    @IsOptional()
-    @IsEnum(AlertType)
-    type?: AlertType;
+  /**
+   * Optional notification type filter.
+   */
+  @IsOptional()
+  @IsEnum(AlertType)
+  type?: AlertType;
 }

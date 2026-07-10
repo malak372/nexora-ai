@@ -21,10 +21,7 @@ import { Prisma } from '@prisma/client';
  *
  * @author Malak
  */
-export function buildPagination(query: {
-  page?: number;
-  limit?: number;
-}) {
+export function buildPagination(query: { page?: number; limit?: number }) {
   const page = query.page ?? 1;
   const limit = query.limit ?? 10;
   const skip = (page - 1) * limit;
@@ -50,10 +47,7 @@ export function buildPagination(query: {
  *
  * @author Malak
  */
-export function buildDateFilter(query: {
-  fromDate?: string;
-  toDate?: string;
-}) {
+export function buildDateFilter(query: { fromDate?: string; toDate?: string }) {
   if (!query.fromDate && !query.toDate) return undefined;
 
   const from = query.fromDate ? new Date(query.fromDate) : undefined;
@@ -84,10 +78,7 @@ export function buildDateFilter(query: {
  *
  * @author Malak
  */
-export function buildSearchFilter(
-  fields: string[],
-  search?: string,
-) {
+export function buildSearchFilter(fields: string[], search?: string) {
   if (!search?.trim()) return undefined;
 
   return {
@@ -121,8 +112,7 @@ export function buildOrderBy<T extends string>(
   allowedFields: readonly T[],
   defaultField: T,
 ) {
-  const sortOrder: Prisma.SortOrder =
-    query.sortOrder ?? 'desc';
+  const sortOrder: Prisma.SortOrder = query.sortOrder ?? 'desc';
 
   const sortBy =
     query.sortBy && allowedFields.includes(query.sortBy)
@@ -151,10 +141,7 @@ export function buildOrderBy<T extends string>(
  *
  * @author Malak
  */
-export function buildExactFilter<T>(
-  field: string,
-  value?: T,
-) {
+export function buildExactFilter<T>(field: string, value?: T) {
   if (value === undefined || value === null) return undefined;
 
   return {
@@ -219,10 +206,7 @@ export function buildRelationSearchFilter(
  *
  * @author Malak
  */
-export function buildStringFilter(
-  field: string,
-  value?: string,
-) {
+export function buildStringFilter(field: string, value?: string) {
   if (!value?.trim()) return undefined;
 
   return {

@@ -377,11 +377,7 @@ export class ComplaintsService {
     return buildCsv(headers, rows);
   }
 
-  async updateComplaint(
-    id: string,
-    body: UpdateComplaintDto,
-    adminId: string,
-  ) {
+  async updateComplaint(id: string, body: UpdateComplaintDto, adminId: string) {
     const complaint = await this.prisma.complaint.findUnique({
       where: { id },
     });

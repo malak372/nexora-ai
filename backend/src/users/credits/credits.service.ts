@@ -38,7 +38,7 @@ export class UserCreditsService {
 
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-  ) { }
+  ) {}
 
   /**
    * Retrieves the authenticated user's credit information.
@@ -84,10 +84,7 @@ export class UserCreditsService {
    *
    * @throws NotFoundException if the user does not exist.
    */
-  async getCreditHistory(
-    userId: string,
-    query: GetUserCreditHistoryQueryDto,
-  ) {
+  async getCreditHistory(userId: string, query: GetUserCreditHistoryQueryDto) {
     await this.userCommonService.findUserOrThrow(userId);
 
     const { page, limit, skip } = buildPagination(query);

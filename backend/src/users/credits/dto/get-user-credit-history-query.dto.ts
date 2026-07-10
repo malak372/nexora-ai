@@ -17,10 +17,10 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Eman
  */
 export class GetUserCreditHistoryQueryDto extends ListQueryDto {
-    /**
-     * Optional credit transaction type filter.
-     */
-    @IsOptional()
-    @IsEnum(CreditTransactionType)
-    type?: CreditTransactionType;
+  /**
+   * Optional credit transaction type filter.
+   */
+  @IsOptional()
+  @IsEnum(CreditTransactionType)
+  type?: CreditTransactionType;
 }

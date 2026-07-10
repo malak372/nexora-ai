@@ -6,11 +6,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import {
-  IdeaGenerationType,
-  UnlockMethod,
-  UserType,
-} from '@prisma/client';
+import { IdeaGenerationType, UnlockMethod, UserType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**

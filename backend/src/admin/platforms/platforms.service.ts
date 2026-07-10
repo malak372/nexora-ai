@@ -59,9 +59,7 @@ export class PlatformsService {
     query: GetPlatformsQueryDto,
   ): Prisma.PlatformWhereInput {
     const isActive =
-      query.isActive !== undefined
-        ? query.isActive === 'true'
-        : undefined;
+      query.isActive !== undefined ? query.isActive === 'true' : undefined;
 
     return {
       ...buildDateFilter(query),
@@ -413,11 +411,7 @@ export class PlatformsService {
    * Endpoint:
    * PATCH /admin/platforms/:id
    */
-  async updatePlatform(
-    id: string,
-    body: UpdatePlatformDto,
-    adminId: string,
-  ) {
+  async updatePlatform(id: string, body: UpdatePlatformDto, adminId: string) {
     const platform = await this.prisma.platform.findUnique({
       where: {
         id,
@@ -442,8 +436,7 @@ export class PlatformsService {
 
     const hasChanges =
       (body.name !== undefined && body.name !== platform.name) ||
-      (body.isActive !== undefined &&
-        body.isActive !== platform.isActive);
+      (body.isActive !== undefined && body.isActive !== platform.isActive);
 
     if (!hasChanges) {
       return {

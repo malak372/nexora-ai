@@ -1,6 +1,7 @@
+import { ApiProvider, ApiRequestType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
-import { ApiProvider, ApiRequestType } from '@prisma/client';
+
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
@@ -13,13 +14,13 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * - GET /admin/ai-monitoring/logs/export/csv
  *
  * Supports:
- * - Pagination
- * - Sorting
- * - Date filtering
- * - Search
- * - Provider filtering
- * - Request type filtering
- * - Success status filtering
+ * - Pagination.
+ * - Sorting.
+ * - Date filtering.
+ * - Search.
+ * - Provider filtering.
+ * - Request type filtering.
+ * - Success status filtering.
  *
  * @author Malak
  */
@@ -28,7 +29,11 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    * External API provider filter.
    *
    * Examples:
-   * OPENAI, REDDIT, FACEBOOK, PAYPAL, PALPAY
+   * - OPENAI
+   * - REDDIT
+   * - FACEBOOK
+   * - PAYPAL
+   * - PALPAY
    */
   @IsOptional()
   @IsEnum(ApiProvider)
@@ -38,7 +43,10 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    * External API request type filter.
    *
    * Examples:
-   * IDEA_GENERATION, COMMENT_ANALYSIS, AI_CHAT, PAYMENT
+   * - IDEA_GENERATION
+   * - COMMENT_ANALYSIS
+   * - AI_CHAT
+   * - PAYMENT
    */
   @IsOptional()
   @IsEnum(ApiRequestType)
@@ -48,16 +56,21 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    * Success status filter.
    *
    * Query examples:
-   * ?isSuccess=true
-   * ?isSuccess=false
+   * - ?isSuccess=true
+   * - ?isSuccess=false
    */
   @IsOptional()
-  @Transform(({ value }) => {
+  @Transform(({ value }: { value: unknown }): unknown => {
     if (typeof value === 'string') {
       const normalized = value.toLowerCase();
 
-      if (normalized === 'true') return true;
-      if (normalized === 'false') return false;
+      if (normalized === 'true') {
+        return true;
+      }
+
+      if (normalized === 'false') {
+        return false;
+      }
     }
 
     return value;

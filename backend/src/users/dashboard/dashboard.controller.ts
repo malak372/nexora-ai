@@ -15,13 +15,13 @@ import { UserDashboardService } from './dashboard.service';
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UserDashboardController {
-    constructor(private readonly userSummaryService: UserDashboardService) { }
+  constructor(private readonly userSummaryService: UserDashboardService) {}
 
-    /**
-     * Retrieves a dashboard-style summary for the authenticated user.
-     */
-    @Get('summary')
-    getSummary(@CurrentUser() user: { id: string }) {
-        return this.userSummaryService.getSummary(user.id);
-    }
+  /**
+   * Retrieves a dashboard-style summary for the authenticated user.
+   */
+  @Get('summary')
+  getSummary(@CurrentUser() user: { id: string }) {
+    return this.userSummaryService.getSummary(user.id);
+  }
 }

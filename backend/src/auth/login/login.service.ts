@@ -5,10 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto } from '../dto/login.dto';
 import { AuthTokenService } from '../token/token.service';
-import {
-    AuthAuditService,
-    AuthRequestMeta,
-} from '../audit/audit.service';
+import { AuthAuditService, AuthRequestMeta } from '../audit/audit.service';
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const FAILED_LOGIN_WINDOW_MINUTES = 15;
@@ -50,298 +47,290 @@ const LOGIN_LOCK_DURATIONS_MINUTES = [30, 120, 1440];
  */
 @Injectable()
 export class AuthLoginService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly authTokenService: AuthTokenService,
-        private readonly authAuditService: AuthAuditService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authTokenService: AuthTokenService,
+    private readonly authAuditService: AuthAuditService,
+  ) {}
 
-    /**
-     * Authenticates an active and verified user.
-     *
-     * @param dto User login credentials.
-     * @param meta Optional request metadata such as IP address and user agent.
-     * @returns Login response containing access token, refresh token, and user data.
-     *
-     * @throws UnauthorizedException if login validation fails.
-     */
-    async login(dto: LoginDto, meta?: AuthRequestMeta) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: dto.email },
-        });
+  /**
+   * Authenticates an active and verified user.
+   *
+   * @param dto User login credentials.
+   * @param meta Optional request metadata such as IP address and user agent.
+   * @returns Login response containing access token, refresh token, and user data.
+   *
+   * @throws UnauthorizedException if login validation fails.
+   */
+  async login(dto: LoginDto, meta?: AuthRequestMeta) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
-        if (!user) {
-            await this.authAuditService.createLog({
-                email: dto.email,
-                action: AuthAction.LOGIN_FAILED,
-                isSuccess: false,
-                message: 'Invalid email or password',
-                ...meta,
-            });
+    if (!user) {
+      await this.authAuditService.createLog({
+        email: dto.email,
+        action: AuthAction.LOGIN_FAILED,
+        isSuccess: false,
+        message: 'Invalid email or password',
+        ...meta,
+      });
 
-            throw new UnauthorizedException('Invalid email or password');
-        }
-
-        const now = new Date();
-
-        if (user.lockedUntil && user.lockedUntil > now) {
-            const remainingMinutes = Math.ceil(
-                (user.lockedUntil.getTime() - now.getTime()) / 60000,
-            );
-
-            await this.authAuditService.createLog({
-                userId: user.id,
-                email: user.email,
-                action: AuthAction.LOGIN_FAILED,
-                isSuccess: false,
-                message: `Login attempted while account was locked. Remaining lock time: ${this.formatLockDuration(remainingMinutes)}`,
-                ...meta,
-            });
-
-            throw new UnauthorizedException(
-                `Account is temporarily locked. Try again in ${this.formatLockDuration(remainingMinutes)}.`,
-            );
-        }
-
-        if (!user.isActive) {
-            await this.authAuditService.createLog({
-                userId: user.id,
-                email: user.email,
-                action: AuthAction.LOGIN_FAILED,
-                isSuccess: false,
-                message: 'Account is inactive',
-                ...meta,
-            });
-
-            throw new UnauthorizedException('Account is inactive');
-        }
-
-        if (!user.isVerified) {
-            await this.authAuditService.createLog({
-                userId: user.id,
-                email: user.email,
-                action: AuthAction.LOGIN_FAILED,
-                isSuccess: false,
-                message: 'Email is not verified',
-                ...meta,
-            });
-
-            throw new UnauthorizedException(
-                'Please verify your email before logging in',
-            );
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-            dto.password,
-            user.passwordHash,
-        );
-
-        if (!isPasswordValid) {
-            await this.handleFailedLogin(
-                {
-                    id: user.id,
-                    email: user.email,
-                    failedLoginAttempts: user.failedLoginAttempts,
-                    failedLoginWindowStartedAt:
-                        user.failedLoginWindowStartedAt,
-                    loginLockLevel: user.loginLockLevel,
-                },
-                now,
-                meta,
-            );
-        }
-
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                failedLoginAttempts: 0,
-                failedLoginWindowStartedAt: null,
-                loginLockLevel: 0,
-                lockedUntil: null,
-                lastLoginAt: now,
-            },
-        });
-
-        const accessToken =
-            await this.authTokenService.generateAccessToken(user);
-
-        const refreshToken =
-            await this.authTokenService.generateRefreshToken(
-                user.id,
-                meta,
-            );
-
-        await this.authAuditService.createLog({
-            userId: user.id,
-            email: user.email,
-            action: AuthAction.LOGIN_SUCCESS,
-            isSuccess: true,
-            message: 'User logged in successfully',
-            ...meta,
-        });
-
-        return {
-            message: 'Logged in successfully',
-            accessToken,
-            refreshToken,
-            user: {
-                id: user.id,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role,
-                accountStatus: user.accountStatus,
-                userType: user.userType,
-                freeGenerationLimit: user.freeGenerationLimit,
-                freeGenerationsUsed: user.freeGenerationsUsed,
-                creditBalance: user.creditBalance,
-            },
-        };
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    /**
-     * Handles failed login attempts inside a limited time window.
-     *
-     * If the user reaches the maximum number of failed attempts within
-     * the configured window, the account is locked using the current
-     * progressive lock level.
-     *
-     * If the window has expired, the failed attempt counter restarts
-     * from one instead of accumulating old failures.
-     */
-    private async handleFailedLogin(
-        user: {
-            id: string;
-            email: string;
-            failedLoginAttempts: number;
-            failedLoginWindowStartedAt: Date | null;
-            loginLockLevel: number;
+    const now = new Date();
+
+    if (user.lockedUntil && user.lockedUntil > now) {
+      const remainingMinutes = Math.ceil(
+        (user.lockedUntil.getTime() - now.getTime()) / 60000,
+      );
+
+      await this.authAuditService.createLog({
+        userId: user.id,
+        email: user.email,
+        action: AuthAction.LOGIN_FAILED,
+        isSuccess: false,
+        message: `Login attempted while account was locked. Remaining lock time: ${this.formatLockDuration(remainingMinutes)}`,
+        ...meta,
+      });
+
+      throw new UnauthorizedException(
+        `Account is temporarily locked. Try again in ${this.formatLockDuration(remainingMinutes)}.`,
+      );
+    }
+
+    if (!user.isActive) {
+      await this.authAuditService.createLog({
+        userId: user.id,
+        email: user.email,
+        action: AuthAction.LOGIN_FAILED,
+        isSuccess: false,
+        message: 'Account is inactive',
+        ...meta,
+      });
+
+      throw new UnauthorizedException('Account is inactive');
+    }
+
+    if (!user.isVerified) {
+      await this.authAuditService.createLog({
+        userId: user.id,
+        email: user.email,
+        action: AuthAction.LOGIN_FAILED,
+        isSuccess: false,
+        message: 'Email is not verified',
+        ...meta,
+      });
+
+      throw new UnauthorizedException(
+        'Please verify your email before logging in',
+      );
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
+
+    if (!isPasswordValid) {
+      await this.handleFailedLogin(
+        {
+          id: user.id,
+          email: user.email,
+          failedLoginAttempts: user.failedLoginAttempts,
+          failedLoginWindowStartedAt: user.failedLoginWindowStartedAt,
+          loginLockLevel: user.loginLockLevel,
         },
-        now: Date,
-        meta?: AuthRequestMeta,
-    ): Promise<never> {
-        const windowStartedAt = user.failedLoginWindowStartedAt;
-
-        const isInsideFailureWindow =
-            windowStartedAt !== null &&
-            now.getTime() - windowStartedAt.getTime() <=
-            FAILED_LOGIN_WINDOW_MINUTES * 60 * 1000;
-
-        const nextFailedAttempts = isInsideFailureWindow
-            ? user.failedLoginAttempts + 1
-            : 1;
-
-        const nextWindowStartedAt = isInsideFailureWindow
-            ? windowStartedAt
-            : now;
-
-        if (nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
-            await this.lockUser(
-                {
-                    ...user,
-                    failedLoginAttempts: nextFailedAttempts,
-                    failedLoginWindowStartedAt: nextWindowStartedAt,
-                },
-                now,
-                meta,
-            );
-        }
-
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                failedLoginAttempts: nextFailedAttempts,
-                failedLoginWindowStartedAt: nextWindowStartedAt,
-                lockedUntil: null,
-            },
-        });
-
-        await this.authAuditService.createLog({
-            userId: user.id,
-            email: user.email,
-            action: AuthAction.LOGIN_FAILED,
-            isSuccess: false,
-            message: 'Invalid email or password',
-            ...meta,
-        });
-
-        throw new UnauthorizedException('Invalid email or password');
+        now,
+        meta,
+      );
     }
 
-    /**
-     * Locks the account using progressive lock durations.
-     *
-     * The lock level is increased only when a lock is actually applied.
-     * A successful login resets the lock level to zero.
-     */
-    private async lockUser(
-        user: {
-            id: string;
-            email: string;
-            failedLoginAttempts: number;
-            failedLoginWindowStartedAt: Date | null;
-            loginLockLevel: number;
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        failedLoginWindowStartedAt: null,
+        loginLockLevel: 0,
+        lockedUntil: null,
+        lastLoginAt: now,
+      },
+    });
+
+    const accessToken = await this.authTokenService.generateAccessToken(user);
+
+    const refreshToken = await this.authTokenService.generateRefreshToken(
+      user.id,
+      meta,
+    );
+
+    await this.authAuditService.createLog({
+      userId: user.id,
+      email: user.email,
+      action: AuthAction.LOGIN_SUCCESS,
+      isSuccess: true,
+      message: 'User logged in successfully',
+      ...meta,
+    });
+
+    return {
+      message: 'Logged in successfully',
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        userType: user.userType,
+        freeGenerationLimit: user.freeGenerationLimit,
+        freeGenerationsUsed: user.freeGenerationsUsed,
+        creditBalance: user.creditBalance,
+      },
+    };
+  }
+
+  /**
+   * Handles failed login attempts inside a limited time window.
+   *
+   * If the user reaches the maximum number of failed attempts within
+   * the configured window, the account is locked using the current
+   * progressive lock level.
+   *
+   * If the window has expired, the failed attempt counter restarts
+   * from one instead of accumulating old failures.
+   */
+  private async handleFailedLogin(
+    user: {
+      id: string;
+      email: string;
+      failedLoginAttempts: number;
+      failedLoginWindowStartedAt: Date | null;
+      loginLockLevel: number;
+    },
+    now: Date,
+    meta?: AuthRequestMeta,
+  ): Promise<never> {
+    const windowStartedAt = user.failedLoginWindowStartedAt;
+
+    const isInsideFailureWindow =
+      windowStartedAt !== null &&
+      now.getTime() - windowStartedAt.getTime() <=
+        FAILED_LOGIN_WINDOW_MINUTES * 60 * 1000;
+
+    const nextFailedAttempts = isInsideFailureWindow
+      ? user.failedLoginAttempts + 1
+      : 1;
+
+    const nextWindowStartedAt = isInsideFailureWindow ? windowStartedAt : now;
+
+    if (nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+      await this.lockUser(
+        {
+          ...user,
+          failedLoginAttempts: nextFailedAttempts,
+          failedLoginWindowStartedAt: nextWindowStartedAt,
         },
-        now: Date,
-        meta?: AuthRequestMeta,
-    ): Promise<never> {
-        const durationIndex = Math.min(
-            user.loginLockLevel,
-            LOGIN_LOCK_DURATIONS_MINUTES.length - 1,
-        );
-
-        const lockDurationMinutes =
-            LOGIN_LOCK_DURATIONS_MINUTES[durationIndex];
-
-        const lockedUntil = new Date(now);
-        lockedUntil.setMinutes(
-            lockedUntil.getMinutes() + lockDurationMinutes,
-        );
-
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                failedLoginAttempts: 0,
-                failedLoginWindowStartedAt: null,
-                loginLockLevel: user.loginLockLevel + 1,
-                lockedUntil,
-            },
-        });
-
-        await this.authAuditService.createLog({
-            userId: user.id,
-            email: user.email,
-            action: AuthAction.ACCOUNT_LOCKED,
-            isSuccess: true,
-            message: `Account locked for ${this.formatLockDuration(lockDurationMinutes)} after ${MAX_FAILED_LOGIN_ATTEMPTS} failed login attempts within ${FAILED_LOGIN_WINDOW_MINUTES} minutes`,
-            ...meta,
-        });
-
-        throw new UnauthorizedException(
-            `Account locked for ${this.formatLockDuration(lockDurationMinutes)} due to multiple failed login attempts.`,
-        );
+        now,
+        meta,
+      );
     }
-    /**
-     * Formats a lock duration into a human-readable value for audit logs.
-     *
-     * This keeps authentication security logs clear for admins when reviewing
-     * progressive account lock events, such as:
-     * - 30 minutes
-     * - 2 hours
-     * - 24 hours
-     *
-     * @param minutes Lock duration in minutes.
-     * @returns Human-readable lock duration.
-     */
 
-    private formatLockDuration(minutes: number): string {
-        if (minutes >= 1440) {
-            return '24 hours';
-        }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: nextFailedAttempts,
+        failedLoginWindowStartedAt: nextWindowStartedAt,
+        lockedUntil: null,
+      },
+    });
 
-        if (minutes >= 60) {
-            return `${minutes / 60} hours`;
-        }
+    await this.authAuditService.createLog({
+      userId: user.id,
+      email: user.email,
+      action: AuthAction.LOGIN_FAILED,
+      isSuccess: false,
+      message: 'Invalid email or password',
+      ...meta,
+    });
 
-        return `${minutes} minutes`;
+    throw new UnauthorizedException('Invalid email or password');
+  }
+
+  /**
+   * Locks the account using progressive lock durations.
+   *
+   * The lock level is increased only when a lock is actually applied.
+   * A successful login resets the lock level to zero.
+   */
+  private async lockUser(
+    user: {
+      id: string;
+      email: string;
+      failedLoginAttempts: number;
+      failedLoginWindowStartedAt: Date | null;
+      loginLockLevel: number;
+    },
+    now: Date,
+    meta?: AuthRequestMeta,
+  ): Promise<never> {
+    const durationIndex = Math.min(
+      user.loginLockLevel,
+      LOGIN_LOCK_DURATIONS_MINUTES.length - 1,
+    );
+
+    const lockDurationMinutes = LOGIN_LOCK_DURATIONS_MINUTES[durationIndex];
+
+    const lockedUntil = new Date(now);
+    lockedUntil.setMinutes(lockedUntil.getMinutes() + lockDurationMinutes);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        failedLoginWindowStartedAt: null,
+        loginLockLevel: user.loginLockLevel + 1,
+        lockedUntil,
+      },
+    });
+
+    await this.authAuditService.createLog({
+      userId: user.id,
+      email: user.email,
+      action: AuthAction.ACCOUNT_LOCKED,
+      isSuccess: true,
+      message: `Account locked for ${this.formatLockDuration(lockDurationMinutes)} after ${MAX_FAILED_LOGIN_ATTEMPTS} failed login attempts within ${FAILED_LOGIN_WINDOW_MINUTES} minutes`,
+      ...meta,
+    });
+
+    throw new UnauthorizedException(
+      `Account locked for ${this.formatLockDuration(lockDurationMinutes)} due to multiple failed login attempts.`,
+    );
+  }
+  /**
+   * Formats a lock duration into a human-readable value for audit logs.
+   *
+   * This keeps authentication security logs clear for admins when reviewing
+   * progressive account lock events, such as:
+   * - 30 minutes
+   * - 2 hours
+   * - 24 hours
+   *
+   * @param minutes Lock duration in minutes.
+   * @returns Human-readable lock duration.
+   */
+
+  private formatLockDuration(minutes: number): string {
+    if (minutes >= 1440) {
+      return '24 hours';
     }
+
+    if (minutes >= 60) {
+      return `${minutes / 60} hours`;
+    }
+
+    return `${minutes} minutes`;
+  }
 }

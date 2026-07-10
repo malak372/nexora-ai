@@ -56,20 +56,11 @@ export abstract class BaseCollector {
       30,
     );
 
-    this.retryAttempts = this.getPositiveNumber(
-      'COLLECTOR_RETRY_ATTEMPTS',
-      3,
-    );
+    this.retryAttempts = this.getPositiveNumber('COLLECTOR_RETRY_ATTEMPTS', 3);
 
-    this.retryDelayMs = this.getPositiveNumber(
-      'COLLECTOR_RETRY_DELAY_MS',
-      800,
-    );
+    this.retryDelayMs = this.getPositiveNumber('COLLECTOR_RETRY_DELAY_MS', 800);
 
-    this.cacheTtlMs = this.getPositiveNumber(
-      'COLLECTOR_CACHE_TTL_MS',
-      300000,
-    );
+    this.cacheTtlMs = this.getPositiveNumber('COLLECTOR_CACHE_TTL_MS', 300000);
   }
 
   /**
@@ -195,7 +186,9 @@ export abstract class BaseCollector {
    * @returns Clean plain text.
    */
   protected cleanPlainText(text?: string | null): string {
-    return this.stripHtml(text ?? '').replace(/\s+/g, ' ').trim();
+    return this.stripHtml(text ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /**

@@ -29,7 +29,7 @@ type AuthenticatedAdmin = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AlertsController {
-  constructor(private readonly alertsService: AlertsService) { }
+  constructor(private readonly alertsService: AlertsService) {}
 
   /**
    * Retrieves alerts with optional filtering and pagination.

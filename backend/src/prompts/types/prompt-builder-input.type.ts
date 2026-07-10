@@ -1,44 +1,76 @@
 import { IdeaGenerationType } from '@prisma/client';
 
 /**
- * Defines why the system is building an AI prompt.
+ * Input required to generate a new idea prompt.
  *
  * @author Malak
  */
-export type PromptPurpose = 'IDEA_GENERATION' | 'IDEA_UNLOCK';
-
-/**
- * Input required by PromptBuilderService to build an AI prompt.
- *
- * The builder receives only identifiers and access metadata.
- * It reads CollectionJob, NLP analysis, and existing idea data directly
- * from the database to keep the database as the single source of truth.
- *
- * @author Malak
- */
-export type PromptBuilderInput = {
+export type IdeaGenerationPromptInput = {
   /**
-   * Determines whether the prompt is for a new idea
-   * or unlocking an existing one.
+   * Indicates that a new idea must be generated.
    */
-  readonly purpose: PromptPurpose;
+  readonly purpose: 'IDEA_GENERATION';
 
   /**
-   * Collection job identifier containing the collected data
-   * and NLP analysis.
+   * Collection job containing the persisted NLP analysis.
    */
   readonly collectionJobId: string;
 
   /**
-   * Determines the user's access level and
-   * the required AI output format.
+   * Determines the user's access level and response schema.
    */
   readonly generationType: IdeaGenerationType;
 
   /**
-   * Existing idea identifier.
-   *
-   * Required only when the purpose is IDEA_UNLOCK.
+   * Existing ideas are not valid for new generation.
    */
-  readonly existingIdeaId?: string;
+  readonly existingIdeaId?: never;
+
+  /**
+   * Requester ownership validation is not required here.
+   */
+  readonly requesterUserId?: never;
 };
+
+/**
+ * Input required to expand an existing free-tier idea.
+ *
+ * @author Malak
+ */
+export type IdeaUnlockPromptInput = {
+  /**
+   * Indicates that an existing idea must be expanded.
+   */
+  readonly purpose: 'IDEA_UNLOCK';
+
+  /**
+   * Collection job originally used to generate the idea.
+   */
+  readonly collectionJobId: string;
+
+  /**
+   * Existing idea to expand.
+   */
+  readonly existingIdeaId: string;
+
+  /**
+   * Authenticated user requesting the unlock.
+   */
+  readonly requesterUserId: string;
+
+  /**
+   * Unlock output does not depend on a caller-provided
+   * generation type.
+   */
+  readonly generationType?: never;
+};
+
+/**
+ * Type-safe input accepted by PromptBuilderService.
+ *
+ * TypeScript prevents generation-only fields from being used
+ * with unlock requests and vice versa.
+ */
+export type PromptBuilderInput =
+  | IdeaGenerationPromptInput
+  | IdeaUnlockPromptInput;

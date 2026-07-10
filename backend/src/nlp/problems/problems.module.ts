@@ -20,15 +20,15 @@ import { ProblemSeverityPolicyService } from './problem-severity-policy.service'
  * @author Eman
  */
 @Module({
-    providers: [
-        ProblemInsightService,
-        ProblemNormalizerService,
-        ProblemSeverityPolicyService,
-    ],
-    exports: [
-        ProblemInsightService,
-        ProblemNormalizerService,
-        ProblemSeverityPolicyService,
-    ],
+  providers: [
+    ProblemInsightService,
+    ProblemNormalizerService,
+    ProblemSeverityPolicyService,
+  ],
+  exports: [
+    ProblemInsightService,
+    ProblemNormalizerService,
+    ProblemSeverityPolicyService,
+  ],
 })
-export class ProblemsModule { }
+export class ProblemsModule {}

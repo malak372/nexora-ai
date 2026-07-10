@@ -88,7 +88,9 @@ export class XCollector extends BaseCollector implements SocialCollector {
     );
 
     if (!queries.length) {
-      this.logger.warn('X collection skipped because no search keywords exist.');
+      this.logger.warn(
+        'X collection skipped because no search keywords exist.',
+      );
       return [];
     }
 
@@ -131,7 +133,9 @@ export class XCollector extends BaseCollector implements SocialCollector {
         }
       }
 
-      this.logger.log(`X collection completed. Posts: ${collectedPosts.length}`);
+      this.logger.log(
+        `X collection completed. Posts: ${collectedPosts.length}`,
+      );
 
       return collectedPosts;
     } catch (error: unknown) {

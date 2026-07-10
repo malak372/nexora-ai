@@ -27,129 +27,129 @@ import { userCacheKeys } from '../cache/user-cache.keys';
  */
 @Injectable()
 export class UserProfileService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly userCommonService: UserValidationService,
-        private readonly auditService: AuditService,
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userCommonService: UserValidationService,
+    private readonly auditService: AuditService,
 
-        @Inject(CACHE_MANAGER)
-        private readonly cacheManager: Cache,
-    ) { }
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+  ) {}
 
-    private calculateRemainingFreeGenerations(limit: number, used: number) {
-        return Math.max(0, limit - used);
+  private calculateRemainingFreeGenerations(limit: number, used: number) {
+    return Math.max(0, limit - used);
+  }
+
+  /**
+   * Retrieves the authenticated user's profile information.
+   *
+   * Uses cache to reduce repeated database reads for frequently
+   * requested profile data.
+   */
+  async getProfile(userId: string) {
+    const cacheKey = userCacheKeys.profile(userId);
+    const cachedProfile = await this.cacheManager.get(cacheKey);
+
+    if (cachedProfile) {
+      return cachedProfile;
     }
 
-    /**
-     * Retrieves the authenticated user's profile information.
-     *
-     * Uses cache to reduce repeated database reads for frequently
-     * requested profile data.
-     */
-    async getProfile(userId: string) {
-        const cacheKey = userCacheKeys.profile(userId);
-        const cachedProfile = await this.cacheManager.get(cacheKey);
+    const user = await this.userCommonService.findUserOrThrow(userId);
 
-        if (cachedProfile) {
-            return cachedProfile;
-        }
+    const profile = {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      userType: user.userType,
+      accountStatus: user.accountStatus,
+      creditBalance: user.creditBalance,
+      freeGenerationLimit: user.freeGenerationLimit,
+      freeGenerationsUsed: user.freeGenerationsUsed,
+      remainingFreeGenerations: this.calculateRemainingFreeGenerations(
+        user.freeGenerationLimit,
+        user.freeGenerationsUsed,
+      ),
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+    };
 
-        const user = await this.userCommonService.findUserOrThrow(userId);
+    await this.cacheManager.set(cacheKey, profile);
 
-        const profile = {
-            id: user.id,
-            fullName: user.fullName,
-            email: user.email,
-            role: user.role,
-            userType: user.userType,
-            accountStatus: user.accountStatus,
-            creditBalance: user.creditBalance,
-            freeGenerationLimit: user.freeGenerationLimit,
-            freeGenerationsUsed: user.freeGenerationsUsed,
-            remainingFreeGenerations: this.calculateRemainingFreeGenerations(
-                user.freeGenerationLimit,
-                user.freeGenerationsUsed,
-            ),
-            isActive: user.isActive,
-            isVerified: user.isVerified,
-            createdAt: user.createdAt,
-        };
+    return profile;
+  }
 
-        await this.cacheManager.set(cacheKey, profile);
+  /**
+   * Updates the authenticated user's editable profile fields.
+   *
+   * Invalidates cached profile and dashboard summary data
+   * because these responses may contain profile fields.
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const oldUser = await this.userCommonService.findUserOrThrow(userId);
 
-        return profile;
-    }
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.fullName !== undefined && {
+          fullName: dto.fullName,
+        }),
+        ...(dto.userType !== undefined && {
+          userType: dto.userType,
+        }),
+      },
+    });
 
-    /**
-     * Updates the authenticated user's editable profile fields.
-     *
-     * Invalidates cached profile and dashboard summary data
-     * because these responses may contain profile fields.
-     */
-    async updateProfile(userId: string, dto: UpdateProfileDto) {
-        const oldUser = await this.userCommonService.findUserOrThrow(userId);
+    await this.cacheManager.del(userCacheKeys.profile(userId));
+    await this.cacheManager.del(userCacheKeys.summary(userId));
 
-        const updatedUser = await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                ...(dto.fullName !== undefined && {
-                    fullName: dto.fullName,
-                }),
-                ...(dto.userType !== undefined && {
-                    userType: dto.userType,
-                }),
-            },
-        });
+    await this.auditService.createLog({
+      actorId: userId,
+      action: AuditAction.USER_UPDATE_PROFILE,
+      targetType: AuditTargetType.USER,
+      targetId: userId,
+      oldValue: {
+        fullName: oldUser.fullName,
+        userType: oldUser.userType,
+      },
+      newValue: {
+        fullName: updatedUser.fullName,
+        userType: updatedUser.userType,
+      },
+    });
 
-        await this.cacheManager.del(userCacheKeys.profile(userId));
-        await this.cacheManager.del(userCacheKeys.summary(userId));
+    return {
+      id: updatedUser.id,
+      fullName: updatedUser.fullName,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      userType: updatedUser.userType,
+      accountStatus: updatedUser.accountStatus,
+      creditBalance: updatedUser.creditBalance,
+      freeGenerationLimit: updatedUser.freeGenerationLimit,
+      freeGenerationsUsed: updatedUser.freeGenerationsUsed,
+      remainingFreeGenerations: this.calculateRemainingFreeGenerations(
+        updatedUser.freeGenerationLimit,
+        updatedUser.freeGenerationsUsed,
+      ),
+      updatedAt: updatedUser.updatedAt,
+    };
+  }
 
-        await this.auditService.createLog({
-            actorId: userId,
-            action: AuditAction.USER_UPDATE_PROFILE,
-            targetType: AuditTargetType.USER,
-            targetId: userId,
-            oldValue: {
-                fullName: oldUser.fullName,
-                userType: oldUser.userType,
-            },
-            newValue: {
-                fullName: updatedUser.fullName,
-                userType: updatedUser.userType,
-            },
-        });
+  /**
+   * Retrieves free generation usage statistics.
+   */
+  async getFreeGenerations(userId: string) {
+    const user = await this.userCommonService.findUserOrThrow(userId);
 
-        return {
-            id: updatedUser.id,
-            fullName: updatedUser.fullName,
-            email: updatedUser.email,
-            role: updatedUser.role,
-            userType: updatedUser.userType,
-            accountStatus: updatedUser.accountStatus,
-            creditBalance: updatedUser.creditBalance,
-            freeGenerationLimit: updatedUser.freeGenerationLimit,
-            freeGenerationsUsed: updatedUser.freeGenerationsUsed,
-            remainingFreeGenerations: this.calculateRemainingFreeGenerations(
-                updatedUser.freeGenerationLimit,
-                updatedUser.freeGenerationsUsed,
-            ),
-            updatedAt: updatedUser.updatedAt,
-        };
-    }
-
-    /**
-     * Retrieves free generation usage statistics.
-     */
-    async getFreeGenerations(userId: string) {
-        const user = await this.userCommonService.findUserOrThrow(userId);
-
-        return {
-            limit: user.freeGenerationLimit,
-            used: user.freeGenerationsUsed,
-            remaining: this.calculateRemainingFreeGenerations(
-                user.freeGenerationLimit,
-                user.freeGenerationsUsed,
-            ),
-        };
-    }
+    return {
+      limit: user.freeGenerationLimit,
+      used: user.freeGenerationsUsed,
+      remaining: this.calculateRemainingFreeGenerations(
+        user.freeGenerationLimit,
+        user.freeGenerationsUsed,
+      ),
+    };
+  }
 }

@@ -47,7 +47,7 @@ type AuthenticatedAdmin = {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class ComplaintsController {
-  constructor(private readonly complaintsService: ComplaintsService) { }
+  constructor(private readonly complaintsService: ComplaintsService) {}
 
   /**
    * Retrieves submitted complaints.
@@ -109,10 +109,6 @@ export class ComplaintsController {
     @Body() body: UpdateComplaintDto,
     @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.complaintsService.updateComplaint(
-      id,
-      body,
-      currentUser.id,
-    );
+    return this.complaintsService.updateComplaint(id, body, currentUser.id);
   }
 }

@@ -18,16 +18,16 @@ import { Roles } from '../decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AuthAuditController {
-    constructor(private readonly authAuditService: AuthAuditService) { }
+  constructor(private readonly authAuditService: AuthAuditService) {}
 
-    /**
-     * Returns the latest authentication audit logs.
-     *
-     * Endpoint:
-     * GET /admin/auth-audit-logs
-     */
-    @Get()
-    getLogs() {
-        return this.authAuditService.getLogs();
-    }
+  /**
+   * Returns the latest authentication audit logs.
+   *
+   * Endpoint:
+   * GET /admin/auth-audit-logs
+   */
+  @Get()
+  getLogs() {
+    return this.authAuditService.getLogs();
+  }
 }

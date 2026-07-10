@@ -21,9 +21,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AiMonitoringController {
-  constructor(
-    private readonly aiMonitoringService: AiMonitoringService,
-  ) { }
+  constructor(private readonly aiMonitoringService: AiMonitoringService) {}
 
   /**
    * Retrieves paginated external API logs.

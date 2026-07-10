@@ -99,9 +99,6 @@ import { AuthSessionsService } from './sessions/sessions.service';
     JwtStrategy,
     RolesGuard,
   ],
-  exports: [
-    AuthService,
-    RolesGuard,
-  ],
+  exports: [AuthService, RolesGuard],
 })
-export class AuthModule { }
+export class AuthModule {}

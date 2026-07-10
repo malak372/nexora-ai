@@ -21,5 +21,4 @@ export const ROLES_KEY = 'roles';
  * @param roles - One or more user roles allowed to access the route.
  * @returns A metadata decorator containing the required roles.
  */
-export const Roles = (...roles: UserRole[]) =>
-  SetMetadata(ROLES_KEY, roles);
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);

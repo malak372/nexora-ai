@@ -1,10 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-    IsBoolean,
-    IsEnum,
-    IsOptional,
-    IsUUID,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { IdeaGenerationType } from '@prisma/client';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
@@ -27,36 +22,36 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Eman
  */
 export class GetUserIdeasQueryDto extends ListQueryDto {
-    /**
-     * Optional idea generation type filter.
-     */
-    @IsOptional()
-    @IsEnum(IdeaGenerationType)
-    generationType?: IdeaGenerationType;
+  /**
+   * Optional idea generation type filter.
+   */
+  @IsOptional()
+  @IsEnum(IdeaGenerationType)
+  generationType?: IdeaGenerationType;
 
-    /**
-     * Optional unlock status filter.
-     *
-     * Accepts:
-     * - true
-     * - false
-     */
-    @IsOptional()
-    @Transform(({ value }) => value === 'true')
-    @IsBoolean()
-    isUnlocked?: boolean;
+  /**
+   * Optional unlock status filter.
+   *
+   * Accepts:
+   * - true
+   * - false
+   */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  isUnlocked?: boolean;
 
-    /**
-     * Optional domain filter.
-     */
-    @IsOptional()
-    @IsUUID()
-    domainId?: string;
+  /**
+   * Optional domain filter.
+   */
+  @IsOptional()
+  @IsUUID()
+  domainId?: string;
 
-    /**
-     * Optional selected platform filter.
-     */
-    @IsOptional()
-    @IsUUID()
-    selectedPlatformId?: string;
+  /**
+   * Optional selected platform filter.
+   */
+  @IsOptional()
+  @IsUUID()
+  selectedPlatformId?: string;
 }
