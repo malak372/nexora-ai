@@ -34,6 +34,25 @@ export class TopicExtractionService {
 
   constructor(private readonly topicRuleService: TopicRuleService) {}
 
+    constructor(private readonly topicRuleService: TopicRuleService) { }
+
+    /**
+     * Extracts the most relevant discussion topics from weighted keywords.
+     *
+     * @param keywords Weighted keywords extracted from analyzed community texts.
+     * @param language Language used to load matching topic rules.
+     * @returns Weighted topics sorted by frequency.
+     */
+    async extract(
+        keywords: WeightedKeyword[],
+        language: LanguageCode,
+    ): Promise<WeightedTopic[]> {
+        const topicRules = await this.topicRuleService.getRules(language);
+        const topicMap = new Map<string, number>();
+
+        for (const keyword of keywords) {
+            const normalizedKeyword = this.normalizeTerm(keyword.keyword);
+            const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
   /**
    * Extracts the most relevant discussion topics from weighted keywords.
    *
@@ -86,6 +105,21 @@ export class TopicExtractionService {
       rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
     );
 
+    /**
+     * Finds the best topic label for a normalized keyword.
+     *
+     * If no configured rule matches the keyword, the keyword itself is converted
+     * into a readable standalone topic. This preserves emerging signals that are
+     * not yet covered by administrator-managed topic rules.
+     *
+     * @param keyword Normalized keyword.
+     * @param topicRules Configurable topic rules loaded from the database.
+     * @returns Topic label.
+     */
+    private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
+        const matchedRule = topicRules.find((rule) =>
+            rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
+        );
     return matchedRule?.topic ?? this.toTitleCase(keyword);
   }
 
@@ -103,6 +137,29 @@ export class TopicExtractionService {
     return keyword === term || keyword.includes(term) || term.includes(keyword);
   }
 
+    /**
+     * Checks whether a keyword is related to a configured topic term.
+     *
+     * This supports exact matches and phrase matches, which allows keywords such
+     * as "waiting time" or "online appointment" to match broader topic groups.
+     *
+     * @param keyword Normalized keyword.
+     * @param term Topic rule term.
+     * @returns True when the keyword is related to the topic term.
+     */
+    private isRelatedTerm(keyword: string, term: string): boolean {
+        return keyword === term || keyword.includes(term) || term.includes(keyword);
+    }
+
+    /**
+     * Normalizes a keyword before topic matching.
+     *
+     * @param value Keyword value.
+     * @returns Normalized keyword.
+     */
+    private normalizeTerm(value: string): string {
+        return value.toLowerCase().trim().replace(/\s+/g, ' ');
+    }
   /**
    * Normalizes a keyword before topic matching.
    *

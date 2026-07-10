@@ -353,9 +353,42 @@ export type IntelligentAnalysisOutput = {
     need?: string;
 
     /**
-     * Main discussion topic related to this opportunity.
+     * Structured software opportunity signals detected from community discussion.
+     *
+     * These are not final project ideas. They provide evidence-based direction
+     * for the Prompt Builder and AI idea generation layer.
      */
-    topic?: string;
+    opportunities: {
+        /**
+         * Recurring problem connected to this opportunity.
+         */
+        problem?: string;
+
+        /**
+         * User need connected to this opportunity.
+         */
+        need?: string;
+
+        /**
+         * Main discussion topic related to this opportunity.
+         */
+        topic?: string;
+
+        /**
+         * Suggested solution area inferred from problems, needs, topics, and keywords.
+         */
+        solutionArea: string;
+
+        /**
+         * Opportunity strength score from 0 to 1.
+         */
+        score: number;
+
+        /**
+         * Representative community evidence supporting this opportunity.
+         */
+        evidenceSamples: string[];
+    }[];
 
     /**
      * Suggested solution area inferred from problems, needs, topics, and keywords.
