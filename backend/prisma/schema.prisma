@@ -12,7 +12,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 /**
  * ENUMS
  */
@@ -107,11 +106,17 @@ enum AlertType {
 }
 
 enum ApiProvider {
+  // AI Providers
   OPENAI
+  ANTHROPIC
+  GOOGLE
+
+  // Payment Providers
   STRIPE
   PAYPAL
   PALPAY
 
+  // Data Providers
   REDDIT
   FACEBOOK
   YOUTUBE
@@ -124,7 +129,14 @@ enum ApiProvider {
   STACKOVERFLOW
   DISCORD
   QUORA
+  FORUM
+  BLOG
+  NEWS
+  HACKER_NEWS
+  PRODUCT_HUNT
+  DEV_TO
 
+  // Application and Google Services
   GOOGLE_PLAY
   APP_STORE
   GOOGLE_MAPS
@@ -174,51 +186,81 @@ enum GeneratedOutputType {
 }
 
 enum AuditAction {
+  // User administration
   ADMIN_UPDATE_USER_STATUS
   ADMIN_SOFT_DELETE_USER
-  ADMIN_UPDATE_SETTINGS
-  ADMIN_UPDATE_PROMPT
-  ADMIN_CREATE_ALERT
-  ADMIN_CREATE_PLATFORM
-  ADMIN_UPDATE_PLATFORM
-  ADMIN_DEACTIVATE_PLATFORM
-  ADMIN_CREATE_DOMAIN
-  ADMIN_UPDATE_DOMAIN
-  ADMIN_DEACTIVATE_DOMAIN
-  ADMIN_UPDATE_COMPLAINT
-  RUN_DATA_COLLECTION
-  ADMIN_STOP_DATA_COLLECTION
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
 
+  // System settings and prompts
+  ADMIN_UPDATE_SETTINGS
+  ADMIN_UPDATE_PROMPT
+
+  // Alerts
+  ADMIN_CREATE_ALERT
+
+  // Platforms
+  ADMIN_CREATE_PLATFORM
+  ADMIN_UPDATE_PLATFORM
+  ADMIN_DEACTIVATE_PLATFORM
+
+  // Domains
+  ADMIN_CREATE_DOMAIN
+  ADMIN_UPDATE_DOMAIN
+  ADMIN_DEACTIVATE_DOMAIN
+
+  // Complaints and contact messages
+  ADMIN_UPDATE_COMPLAINT
+  ADMIN_UPDATE_CONTACT_MESSAGE
+
+  // AI model management
+  ADMIN_CREATE_AI_MODEL
+  ADMIN_UPDATE_AI_MODEL
+  ADMIN_ACTIVATE_AI_MODEL
+  ADMIN_DEACTIVATE_AI_MODEL
+  ADMIN_SET_DEFAULT_AI_MODEL
+
+  // Data collection
+  RUN_DATA_COLLECTION
+  COMPLETE_DATA_COLLECTION
+  FAIL_DATA_COLLECTION
+  STOP_DATA_COLLECTION
+  ADMIN_START_DATA_COLLECTION
+  ADMIN_STOP_DATA_COLLECTION
+
+  // User operations
   USER_GENERATE_IDEA
   USER_UNLOCK_IDEA
   USER_CREATE_COMPLAINT
-  DATA_COLLECTION_RUN
-  DATA_COLLECTION_STOP
-  NLP_ANALYSIS_RUN
-
+  USER_CREATE_CONTACT_MESSAGE
   USER_AI_CHAT
-  ABSTRACT_GENERATION_RUN
-  PROMPT_HISTORY_CREATED
-
   USER_UPDATE_PROFILE
   USER_MARK_NOTIFICATION_READ
   USER_MARK_ALL_NOTIFICATIONS_READ
 
-  ADMIN_UPDATE_CONTACT_MESSAGE
-  USER_CREATE_CONTACT_MESSAGE
+  // Pipeline operations
+  NLP_ANALYSIS_RUN
+  ABSTRACT_GENERATION_RUN
+  PROMPT_HISTORY_CREATED
+}
 
-  ADMIN_CREATE_AI_MODEL
-  ADMIN_UPDATE_AI_MODEL
-  ADMIN_DEACTIVATE_AI_MODEL
-  ADMIN_SET_DEFAULT_AI_MODEL
+enum AiModelHealthStatus {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNAVAILABLE
+}
+
+enum AiRoutingStrategy {
+  DEFAULT
+  LOWEST_COST
+  BALANCED
 }
 
 enum AiProviderType {
   OPENAI
-  CLAUDE
-  GEMINI
+  ANTHROPIC
+  GOOGLE
 }
 
 enum AuditTargetType {
@@ -368,6 +410,12 @@ model User {
   savedGenerationSearches SavedGenerationSearch[]
   contactMessages         ContactMessage[]
 
+  /**
+   * Prompts requested by this authenticated user.
+   * Guest prompts are linked through GuestSession instead.
+   */
+  promptHistories PromptHistory[]
+
   @@index([lockedUntil])
   @@index([loginLockLevel])
   @@map("users")
@@ -417,12 +465,13 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-/**
- * SYSTEM SETTINGS
- */
-
 model SystemSetting {
   id String @id @default(uuid())
+
+  /**
+   * Guarantees that only one global system-settings row exists.
+   */
+  key String @unique @default("GLOBAL")
 
   creditPrice        Decimal @map("credit_price") @db.Decimal(10, 2)
   bonusThreshold     Int     @default(0) @map("bonus_threshold")
@@ -460,10 +509,6 @@ model AuditLog {
   @@map("audit_logs")
 }
 
-/**
- * GUEST SESSIONS
- */
-
 model GuestSession {
   id           String  @id @default(uuid())
   sessionToken String  @unique @map("session_token")
@@ -472,14 +517,18 @@ model GuestSession {
   createdAt DateTime  @default(now()) @map("created_at")
   expiresAt DateTime? @map("expires_at")
 
+  /**
+   * Ideas generated through this guest session.
+   */
   ideas Idea[]
+
+  /**
+   * Prompt-history records requested through this guest session.
+   */
+  promptHistories PromptHistory[]
 
   @@map("guest_sessions")
 }
-
-/**
- * IDEAS
- */
 
 model Idea {
   id String @id @default(uuid())
@@ -506,12 +555,14 @@ model Idea {
   objectives       String?
   targetUsers      String? @map("target_users")
 
-  generationType  IdeaGenerationType @map("generation_type")
-  isUnlocked      Boolean            @default(false) @map("is_unlocked")
-  unlockMethod    UnlockMethod       @default(NONE) @map("unlock_method")
-  unlockedAt      DateTime?          @map("unlocked_at")
-  collectionJobId String?            @unique @map("collection_job_id")
-  collectionJob   CollectionJob?     @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
+  generationType IdeaGenerationType @map("generation_type")
+
+  isUnlocked   Boolean      @default(false) @map("is_unlocked")
+  unlockMethod UnlockMethod @default(NONE) @map("unlock_method")
+  unlockedAt   DateTime?    @map("unlocked_at")
+
+  collectionJobId String?        @map("collection_job_id")
+  collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
 
   promptHistories PromptHistory[]
 
@@ -528,9 +579,11 @@ model Idea {
   externalApiLogs    ExternalApiLog[]
   favoriteIdeas      FavoriteIdea[]
   feedback           IdeaFeedback[]
-  averageRating      Decimal             @default(0) @map("average_rating") @db.Decimal(3, 2)
-  ratingsCount       Int                 @default(0) @map("ratings_count")
 
+  averageRating Decimal @default(0) @map("average_rating") @db.Decimal(3, 2)
+  ratingsCount  Int     @default(0) @map("ratings_count")
+
+  @@index([collectionJobId])
   @@map("ideas")
 }
 
@@ -564,6 +617,11 @@ model Payment {
 
   creditTransactions CreditTransaction[]
 
+  @@index([userId])
+  @@index([ideaId])
+  @@index([status])
+  @@index([paymentPurpose])
+  @@index([createdAt])
   @@map("payments")
 }
 
@@ -590,6 +648,11 @@ model CreditTransaction {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([userId])
+  @@index([paymentId])
+  @@index([ideaId])
+  @@index([type])
+  @@index([createdAt])
   @@map("credit_transactions")
 }
 
@@ -609,6 +672,7 @@ model GeneratedOutput {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([ideaId, outputType])
   @@map("generated_outputs")
 }
 
@@ -632,6 +696,9 @@ model ChatSession {
 
   messages ChatMessage[]
 
+  @@index([userId])
+  @@index([ideaId])
+  @@index([createdAt])
   @@map("chat_sessions")
 }
 
@@ -646,6 +713,8 @@ model ChatMessage {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([sessionId])
+  @@index([createdAt])
   @@map("chat_messages")
 }
 
@@ -666,6 +735,8 @@ model Alert {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([userId, isRead])
+  @@index([createdAt])
   @@map("alerts")
 }
 
@@ -693,6 +764,11 @@ model Complaint {
   updatedAt  DateTime  @updatedAt @map("updated_at")
   resolvedAt DateTime? @map("resolved_at")
 
+  @@index([userId])
+  @@index([ideaId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
   @@map("complaints")
 }
 
@@ -709,20 +785,38 @@ model ExternalApiLog {
   ideaId String? @map("idea_id")
   idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
+  aiModelId String?  @map("ai_model_id")
+  aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
+
   provider    ApiProvider
   endpoint    String?
   requestId   String?        @map("request_id")
   requestType ApiRequestType @map("request_type")
+
+  operationId   String? @map("operation_id")
+  attemptNumber Int     @default(1) @map("attempt_number")
+  fallbackUsed  Boolean @default(false) @map("fallback_used")
 
   statusCode Int?    @map("status_code")
   isSuccess  Boolean @default(false) @map("is_success")
 
   responseTimeMs Int?     @map("response_time_ms")
   errorMessage   String?  @map("error_message")
-  costEstimate   Decimal? @map("cost_estimate") @db.Decimal(10, 4)
+  costEstimate   Decimal? @map("cost_estimate") @db.Decimal(12, 6)
+
+  apiModelId   String? @map("api_model_id")
+  inputTokens  Int?    @map("input_tokens")
+  outputTokens Int?    @map("output_tokens")
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([aiModelId])
+  @@index([operationId])
+  @@index([provider, createdAt])
+  @@index([requestType, createdAt])
+  @@index([isSuccess, createdAt])
+  @@index([userId, createdAt])
+  @@index([ideaId, createdAt])
   @@map("external_api_logs")
 }
 
@@ -831,12 +925,11 @@ model CollectionJob {
   language LanguageCode
   domain   Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
-  country         String
-  city            String?
-  region          String?
-  promptHistories PromptHistory[]
-  idea            Idea?
-  radiusKm        Int?            @map("radius_km")
+  country String
+  city    String?
+  region  String?
+
+  radiusKm Int? @map("radius_km")
 
   platforms Json
   keywords  Json?
@@ -853,8 +946,10 @@ model CollectionJob {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  posts       SocialPost[]
-  nlpAnalysis NlpAnalysis?
+  posts           SocialPost[]
+  nlpAnalysis     NlpAnalysis?
+  ideas           Idea[]
+  promptHistories PromptHistory[]
 
   @@index([domainId])
   @@index([country])
@@ -966,24 +1061,60 @@ model NlpAnalysis {
 model PromptHistory {
   id String @id @default(uuid())
 
+  /**
+   * Registered user who requested the prompt.
+   * Null when the prompt was requested by a guest session.
+   */
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /**
+   * Guest session that requested the prompt.
+   * Null when the prompt was requested by an authenticated user.
+   */
+  guestSessionId String?       @map("guest_session_id")
+  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+
+  /**
+   * Collection job supplying the persisted NLP analysis.
+   */
   collectionJobId String?        @map("collection_job_id")
   collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
 
+  /**
+   * Idea associated with this prompt-history record.
+   */
   ideaId String? @map("idea_id")
   idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
+  /**
+   * Determines the operation for which the prompt was built.
+   */
   promptType PromptType @map("prompt_type")
-  promptText String     @map("prompt_text")
 
+  /**
+   * Complete rendered prompt sent to the AI provider.
+   */
+  promptText String @map("prompt_text")
+
+  /**
+   * SHA-256 hash of the template used to build the prompt.
+   */
   templateHash String? @map("template_hash")
 
+  /**
+   * Estimated number of input tokens in the rendered prompt.
+   */
   estimatedInputTokens Int? @map("estimated_input_tokens")
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([userId])
+  @@index([guestSessionId])
   @@index([collectionJobId])
   @@index([ideaId])
   @@index([promptType])
+  @@index([templateHash])
   @@index([createdAt])
   @@map("prompt_histories")
 }
@@ -1078,25 +1209,40 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider AiProviderType @default(OPENAI)
+  provider    AiProviderType @default(OPENAI)
   modelName   String         @map("model_name")
   apiModelId  String         @map("api_model_id")
   displayName String?        @map("display_name")
   description String?
 
-  priority  Int     @default(0)
+  priority Int @default(0)
+  weight   Int @default(1)
+
+  maxOutputTokens Int @default(2048) @map("max_output_tokens")
+
+  inputCostPerMillion  Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
+  outputCostPerMillion Decimal @default(0) @map("output_cost_per_million") @db.Decimal(12, 6)
+
   isActive  Boolean @default(true) @map("is_active")
   isDefault Boolean @default(false) @map("is_default")
+
+  healthStatus        AiModelHealthStatus @default(UNKNOWN) @map("health_status")
+  consecutiveFailures Int                 @default(0) @map("consecutive_failures")
+  lastHealthCheckAt   DateTime?           @map("last_health_check_at")
+  lastFailureAt       DateTime?           @map("last_failure_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  externalApiLogs ExternalApiLog[]
+
   @@unique([provider, modelName])
-  @@unique([apiModelId])
-  @@index([provider])
-  @@index([isActive])
-  @@index([isDefault])
+  @@unique([provider, apiModelId])
+  @@index([provider, isActive])
+  @@index([isActive, healthStatus])
+  @@index([isActive, healthStatus, priority])
   @@index([priority])
+  @@index([createdAt])
   @@map("ai_models")
 }
 
@@ -1139,8 +1285,6 @@ model NlpLexicon {
 
   /// Prevent duplicate lexicon entries for the same word, category, and language.
   @@unique([word, type, language])
-  /// Used when querying all lexicon entries of a specific category.
-  @@index([type])
   /// Used when querying lexicon entries by language.
   @@index([language])
   /// Optimizes the most common NLP lookup:

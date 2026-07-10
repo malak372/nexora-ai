@@ -109,11 +109,7 @@ export class PlatformsController {
     @Body() body: UpdatePlatformDto,
     @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.platformsService.updatePlatform(
-      id,
-      body,
-      currentUser.id,
-    );
+    return this.platformsService.updatePlatform(id, body, currentUser.id);
   }
 
   /**
@@ -127,9 +123,6 @@ export class PlatformsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedAdmin,
   ) {
-    return this.platformsService.deactivatePlatform(
-      id,
-      currentUser.id,
-    );
+    return this.platformsService.deactivatePlatform(id, currentUser.id);
   }
 }

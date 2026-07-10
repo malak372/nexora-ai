@@ -24,67 +24,68 @@ import { FeatureRequest } from './types/feature-request.type';
  */
 @Injectable()
 export class FeatureRequestExtractionService {
-    private readonly maxEvidenceSamples = 3;
+  private readonly maxEvidenceSamples = 3;
 
-    /**
-     * Extracts feature requests from analyzed texts.
-     *
-     * @param analyzedTexts Final analyzed text records.
-     * @returns Feature requests sorted by frequency.
-     */
-    extract(analyzedTexts: TextAnalysisResult[]): FeatureRequest[] {
-        const requestMap = new Map<
-            string,
-            { frequency: number; evidenceSamples: string[] }
-        >();
+  /**
+   * Extracts feature requests from analyzed texts.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @returns Feature requests sorted by frequency.
+   */
+  extract(analyzedTexts: TextAnalysisResult[]): FeatureRequest[] {
+    const requestMap = new Map<
+      string,
+      { frequency: number; evidenceSamples: string[] }
+    >();
 
-        for (const text of analyzedTexts) {
-            const requests = text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
+    for (const text of analyzedTexts) {
+      const requests =
+        text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
 
-            for (const request of new Set(requests)) {
-                const feature = toTitleCase(request);
-                const current = requestMap.get(feature) ?? {
-                    frequency: 0,
-                    evidenceSamples: [],
-                };
+      for (const request of new Set(requests)) {
+        const feature = toTitleCase(request);
+        const current = requestMap.get(feature) ?? {
+          frequency: 0,
+          evidenceSamples: [],
+        };
 
-                current.frequency += 1;
-                this.addEvidenceSample(current.evidenceSamples, text.originalText);
+        current.frequency += 1;
+        this.addEvidenceSample(current.evidenceSamples, text.originalText);
 
-                requestMap.set(feature, current);
-            }
-        }
-
-        return [...requestMap.entries()]
-            .map(([feature, value]) => ({
-                feature,
-                frequency: value.frequency,
-                evidenceSamples: value.evidenceSamples,
-            }))
-            .sort((first, second) => second.frequency - first.frequency);
+        requestMap.set(feature, current);
+      }
     }
 
-    /**
-     * Adds a representative evidence sample without duplicates.
-     *
-     * @param samples Existing evidence samples.
-     * @param sample New sample candidate.
-     */
-    private addEvidenceSample(samples: string[], sample: string): void {
-        const normalizedSample = sample.trim();
+    return [...requestMap.entries()]
+      .map(([feature, value]) => ({
+        feature,
+        frequency: value.frequency,
+        evidenceSamples: value.evidenceSamples,
+      }))
+      .sort((first, second) => second.frequency - first.frequency);
+  }
 
-        if (!normalizedSample) {
-            return;
-        }
+  /**
+   * Adds a representative evidence sample without duplicates.
+   *
+   * @param samples Existing evidence samples.
+   * @param sample New sample candidate.
+   */
+  private addEvidenceSample(samples: string[], sample: string): void {
+    const normalizedSample = sample.trim();
 
-        if (samples.length >= this.maxEvidenceSamples) {
-            return;
-        }
-
-        if (samples.includes(normalizedSample)) {
-            return;
-        }
-
-        samples.push(normalizedSample);
+    if (!normalizedSample) {
+      return;
     }
+
+    if (samples.length >= this.maxEvidenceSamples) {
+      return;
+    }
+
+    if (samples.includes(normalizedSample)) {
+      return;
+    }
+
+    samples.push(normalizedSample);
+  }
 }

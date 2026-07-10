@@ -61,9 +61,7 @@ export class ContactMessagesController {
    * GET /admin/contact-messages
    */
   @Get()
-  getContactMessages(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
+  getContactMessages(@Query() query: GetContactMessagesQueryDto) {
     return this.contactMessagesService.getContactMessages(query);
   }
 
@@ -74,12 +72,8 @@ export class ContactMessagesController {
    * GET /admin/contact-messages/summary
    */
   @Get('summary')
-  getContactMessagesSummary(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.contactMessagesService.getContactMessagesSummary(
-      query,
-    );
+  getContactMessagesSummary(@Query() query: GetContactMessagesQueryDto) {
+    return this.contactMessagesService.getContactMessagesSummary(query);
   }
 
   /**
@@ -89,12 +83,8 @@ export class ContactMessagesController {
    * GET /admin/contact-messages/charts
    */
   @Get('charts')
-  getContactMessagesCharts(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.contactMessagesService.getContactMessagesCharts(
-      query,
-    );
+  getContactMessagesCharts(@Query() query: GetContactMessagesQueryDto) {
+    return this.contactMessagesService.getContactMessagesCharts(query);
   }
 
   /**
@@ -105,16 +95,9 @@ export class ContactMessagesController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="contact-messages.csv"',
-  )
-  exportContactMessagesCsv(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.contactMessagesService.exportContactMessagesCsv(
-      query,
-    );
+  @Header('Content-Disposition', 'attachment; filename="contact-messages.csv"')
+  exportContactMessagesCsv(@Query() query: GetContactMessagesQueryDto) {
+    return this.contactMessagesService.exportContactMessagesCsv(query);
   }
 
   /**

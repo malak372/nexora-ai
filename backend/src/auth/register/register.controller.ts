@@ -17,28 +17,23 @@ import { AuthRegisterService } from './register.service';
  */
 @Controller('auth/register')
 export class RegisterController {
-    constructor(
-        private readonly authRegisterService: AuthRegisterService,
-    ) { }
+  constructor(private readonly authRegisterService: AuthRegisterService) {}
 
-    /**
-     * Registers a new user account and sends an email verification link.
-     *
-     * Endpoint:
-     * POST /auth/register
-     *
-     * @param dto User registration data.
-     * @param req HTTP request metadata.
-     * * @returns Registered user data and transferred guest ideas count.
-     */
-    @Post()
-    register(
-        @Body() dto: RegisterDto,
-        @Req() req: Request,
-    ) {
-        return this.authRegisterService.register(dto, {
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        });
-    }
+  /**
+   * Registers a new user account and sends an email verification link.
+   *
+   * Endpoint:
+   * POST /auth/register
+   *
+   * @param dto User registration data.
+   * @param req HTTP request metadata.
+   * * @returns Registered user data and transferred guest ideas count.
+   */
+  @Post()
+  register(@Body() dto: RegisterDto, @Req() req: Request) {
+    return this.authRegisterService.register(dto, {
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
 }

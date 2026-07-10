@@ -19,6 +19,15 @@ import { LanguageDetectionService } from './language-detection/language-detectio
 
 import { LexiconAnalysisService } from './lexicon/lexicon-analysis.service';
 import { NlpLexiconService } from './lexicon/nlp-lexicon.service';
+import { AnalysisEvidenceService } from './pipeline/analysis-evidence.service';
+import { AnalysisOutputBuilderService } from './pipeline/analysis-output-builder.service';
+import { AnalysisStatisticsService } from './pipeline/analysis-statistics.service';
+import { IntelligentAnalysisService } from './pipeline/intelligent-analysis.service';
+import { TextInputBuilderService } from './pipeline/text-input-builder.service';
+import { TextPreprocessingService } from './pipeline/text-preprocessing.service';
+import { ProblemsModule } from './problems/problems.module';
+import { TextCleaningService } from './text-cleaning/text-cleaning.service';
+import { TopicRuleService } from './topic-rules/topic-rule.service';
 
 import { NlpPersistenceService } from './persistence/nlp-persistence.service';
 
@@ -129,4 +138,4 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     ProblemsModule,
   ],
 })
-export class NlpModule { }
+export class NlpModule {}

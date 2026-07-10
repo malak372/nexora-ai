@@ -25,34 +25,34 @@ import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
  * @author Eman
  */
 export class UpdateProfileDto {
-    /**
-     * User's full name.
-     *
-     * Optional field.
-     *
-     * When provided, the value must contain
-     * at least two characters.
-     */
-    @IsOptional()
-    @IsString()
-    @MinLength(2)
-    fullName?: string;
+  /**
+   * User's full name.
+   *
+   * Optional field.
+   *
+   * When provided, the value must contain
+   * at least two characters.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  fullName?: string;
 
-    /**
-     * Category of the authenticated user.
-     *
-     * Optional field.
-     *
-     * This field identifies the user's category
-     * to support analytics, personalization,
-     * and future project recommendation features.
-     *
-     * Updating this field does not affect:
-     * - User permissions.
-     * - Premium status.
-     * - Credit balance.
-     */
-    @IsOptional()
-    @IsEnum(UserType)
-    userType?: UserType;
+  /**
+   * Category of the authenticated user.
+   *
+   * Optional field.
+   *
+   * This field identifies the user's category
+   * to support analytics, personalization,
+   * and future project recommendation features.
+   *
+   * Updating this field does not affect:
+   * - User permissions.
+   * - Premium status.
+   * - Credit balance.
+   */
+  @IsOptional()
+  @IsEnum(UserType)
+  userType?: UserType;
 }

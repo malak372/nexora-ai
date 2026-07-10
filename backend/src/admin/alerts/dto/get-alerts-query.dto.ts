@@ -1,6 +1,7 @@
+import { AlertType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
-import { AlertType } from '@prisma/client';
+
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
@@ -26,9 +27,9 @@ export class GetAlertsQueryDto extends ListQueryDto {
    * Must be one of the values defined in AlertType enum.
    *
    * Example:
-   * SYSTEM
-   * PAYMENT
-   * ADMIN
+   * - SYSTEM
+   * - PAYMENT
+   * - ADMIN
    */
   @IsOptional()
   @IsEnum(AlertType)
@@ -38,18 +39,14 @@ export class GetAlertsQueryDto extends ListQueryDto {
    * Read status filter.
    *
    * Accepts:
-   * ?isRead=true
-   * ?isRead=false
+   * - ?isRead=true
+   * - ?isRead=false
    *
    * Automatically transforms the query value
    * into a boolean before validation.
-   *
-   * Query examples:
-   * ?isRead=true → true
-   * ?isRead=false → false
    */
   @IsOptional()
-  @Transform(({ value }) => {
+  @Transform(({ value }: { value: unknown }): unknown => {
     if (typeof value === 'string') {
       const normalized = value.toLowerCase();
 

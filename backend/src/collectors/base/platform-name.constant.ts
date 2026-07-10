@@ -3,13 +3,12 @@ import { CollectionSourceType } from '@prisma/client';
 /**
  * Mapping of CollectionSourceType to human-readable platform names.
  *
- * This constant provides a mapping between the CollectionSourceType enum values        
+ * This constant provides a mapping between the CollectionSourceType enum values
  *  and their corresponding human-readable platform names. It is used to display
- * platform names in the user interface and to ensure consistency across the application.   
- *  
+ * platform names in the user interface and to ensure consistency across the application.
+ *
  */
 export const PLATFORM_NAMES: Record<CollectionSourceType, string> = {
-
   [CollectionSourceType.REDDIT]: 'Reddit',
   [CollectionSourceType.FACEBOOK]: 'Facebook',
   [CollectionSourceType.YOUTUBE]: 'YouTube',

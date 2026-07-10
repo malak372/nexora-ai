@@ -1,45 +1,27 @@
+import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
 
 import {
   PROMPT_TEMPLATE_MAX_LENGTH,
   PROMPT_TEMPLATE_MIN_LENGTH,
 } from '../constants/prompt.constants';
-import { Transform } from 'class-transformer';
 
 /**
- * DTO used by Admin to update the AI idea prompt template.
+ * DTO used by administrators to update the configurable
+ * idea-generation prompt template.
  *
- * The template is stored in system settings and later rendered by
- * PromptTemplateService when building prompts for OpenAI.
+ * The template is provider-independent and may be used with
+ * any supported AI provider.
  *
- * Required placeholders:
- * - {{domain}}
- * - {{country}}
- * - {{city}}
- * - {{region}}
- * - {{platforms}}
- * - {{commentsCount}}
- * - {{sentimentStats}}
- * - {{keywords}}
- * - {{topics}}
- * - {{recurringProblems}}
- * - {{extractedNeeds}}
- * - {{featureRequests}}
- * - {{opportunities}}
- * - {{insights}}
- * - {{dataQuality}}
- * - {{samplePosts}}
- * - {{sampleComments}}
- * - {{existingIdea}}
- * - {{requestedOutputFormat}}
+ * Placeholder validation is performed by PromptTemplateService.
  *
  * @author Malak
  */
 export class UpdatePromptTemplateDto {
   /**
-   * New AI idea prompt template configured by Admin.
+   * New configurable idea-generation prompt template.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()

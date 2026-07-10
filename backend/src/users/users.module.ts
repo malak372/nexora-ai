@@ -31,7 +31,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
 import { ContactController } from './contact-message/contact.controller';
 import { ContactService } from './contact-message/contact.service';
 
-
 /**
  * User management module.
  *
@@ -90,8 +89,8 @@ import { ContactService } from './contact-message/contact.service';
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
-    ContactService
-    ],
+    ContactService,
+  ],
   exports: [
     UserValidationService,
     UserPermissionsService,
@@ -109,4 +108,4 @@ import { ContactService } from './contact-message/contact.service';
     ContactService,
   ],
 })
-export class UsersModule { }
+export class UsersModule {}

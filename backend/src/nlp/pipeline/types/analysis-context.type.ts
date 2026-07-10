@@ -1,9 +1,9 @@
 import { FeatureRequest } from '../../analysis/types/feature-request.type';
 import {
-    IntelligentAnalysisOutput,
-    TextAnalysisResult,
-    WeightedKeyword,
-    WeightedTopic,
+  IntelligentAnalysisOutput,
+  TextAnalysisResult,
+  WeightedKeyword,
+  WeightedTopic,
 } from './intelligent-analysis.types';
 
 /**
@@ -20,76 +20,76 @@ import {
  * @author Eman
  */
 export type AnalysisContext = {
-    /**
-     * Collection job being analyzed.
-     */
-    collectionJobId: string;
+  /**
+   * Collection job being analyzed.
+   */
+  collectionJobId: string;
 
-    /**
-     * Selected software domain.
-     */
-    domain: {
-        id: string;
-        name: string;
-        keywords: string[];
-    };
+  /**
+   * Selected software domain.
+   */
+  domain: {
+    id: string;
+    name: string;
+    keywords: string[];
+  };
 
-    /**
-     * Selected geographical context.
-     */
-    location: {
-        country?: string | null;
-        city?: string | null;
-        region?: string | null;
-    };
+  /**
+   * Selected geographical context.
+   */
+  location: {
+    country?: string | null;
+    city?: string | null;
+    region?: string | null;
+  };
 
-    /**
-     * Selected collection platforms.
-     */
-    platforms: string[];
+  /**
+   * Selected collection platforms.
+   */
+  platforms: string[];
 
-    /**
-     * Final analyzed texts after preprocessing, lexicon analysis, and sentiment
-     * refinement.
-     */
-    analyzedTexts: TextAnalysisResult[];
+  /**
+   * Final analyzed texts after preprocessing, lexicon analysis, and sentiment
+   * refinement.
+   */
+  analyzedTexts: TextAnalysisResult[];
 
-    /**
-     * Preprocessing statistics.
-     */
-    preprocessing: {
-        duplicateTextsRemoved: number;
-        irrelevantTextsRemoved: number;
-        spamTextsRemoved: number;
-    };
+  /**
+   * Preprocessing statistics.
+   */
+  preprocessing: {
+    duplicateTextsRemoved: number;
+    irrelevantTextsRemoved: number;
+    spamTextsRemoved: number;
+  };
 
-    /**
-     * Extracted weighted keywords.
-     */
-    keywords: WeightedKeyword[];
+  /**
+   * Extracted weighted keywords.
+   */
+  keywords: WeightedKeyword[];
 
-    /**
-     * Extracted discussion topics.
-     */
-    topics: WeightedTopic[];
+  /**
+   * Extracted discussion topics.
+   */
+  topics: WeightedTopic[];
 
-    /**
-     * Recurring community problems.
-     */
-    recurringProblems: IntelligentAnalysisOutput['recurringProblems'];
+  /**
+   * Recurring community problems.
+   */
+  recurringProblems: IntelligentAnalysisOutput['recurringProblems'];
 
-    /**
-     * Extracted user needs.
-     */
-    extractedNeeds: IntelligentAnalysisOutput['extractedNeeds'];
+  /**
+   * Extracted user needs.
+   */
+  extractedNeeds: IntelligentAnalysisOutput['extractedNeeds'];
 
-    /**
-     * Extracted feature requests.
-     */
-    featureRequests: FeatureRequest[];
+  /**
+   * Extracted feature requests.
+   */
+  featureRequests: FeatureRequest[];
 
-    /**
-     * Structured software opportunities.
-     */
-    opportunities: IntelligentAnalysisOutput['opportunities'];
+  /**
+   * Structured software opportunities.
+   */
+  opportunities: IntelligentAnalysisOutput['opportunities'];
 };

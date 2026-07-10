@@ -23,7 +23,6 @@ import { PlatformsService } from './platforms/platforms.service';
 import { DomainsController } from './domains/domains.controller';
 import { DomainsService } from './domains/domains.service';
 
-
 import { ComplaintsController } from './complaints/complaints.controller';
 import { ComplaintsService } from './complaints/complaints.service';
 
@@ -33,17 +32,14 @@ import { AlertsService } from './alerts/alerts.service';
 import { IdeasController } from './ideas/ideas.controller';
 import { IdeasService } from './ideas/ideas.service';
 
-
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 
 import { FeedbackController } from './feedback/feedbacks.controller';
 import { FeedbackService } from './feedback/feedbacks.service';
 
-import {ContactMessagesController} from './contact-messages/contact-messages.controller';
-import {ContactMessagesService} from './contact-messages/contact-messages.service';
-
-
+import { ContactMessagesController } from './contact-messages/contact-messages.controller';
+import { ContactMessagesService } from './contact-messages/contact-messages.service';
 
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
@@ -71,11 +67,7 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    MailModule,
-    AuditModule
-  ],
+  imports: [PrismaModule, MailModule, AuditModule],
 
   controllers: [
     DashboardController,
@@ -111,6 +103,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     ContactMessagesService,
   ],
 })
-export class AdminModule { }
+export class AdminModule {}
 
 export { MailModule };

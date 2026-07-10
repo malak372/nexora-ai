@@ -45,15 +45,39 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
     super(configService, ForumCollector.name);
 
     this.forumSources = [
-      { url: 'https://meta.discourse.org', adapter: this.discourseForumAdapter },
-      { url: 'https://forum.freecodecamp.org', adapter: this.discourseForumAdapter },
-      { url: 'https://discourse.mozilla.org', adapter: this.discourseForumAdapter },
-      { url: 'https://discourse.ubuntu.com', adapter: this.discourseForumAdapter },
-      { url: 'https://discussion.fedoraproject.org', adapter: this.discourseForumAdapter },
-      { url: 'https://discuss.kubernetes.io', adapter: this.discourseForumAdapter },
-      { url: 'https://community.grafana.com', adapter: this.discourseForumAdapter },
+      {
+        url: 'https://meta.discourse.org',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://forum.freecodecamp.org',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://discourse.mozilla.org',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://discourse.ubuntu.com',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://discussion.fedoraproject.org',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://discuss.kubernetes.io',
+        adapter: this.discourseForumAdapter,
+      },
+      {
+        url: 'https://community.grafana.com',
+        adapter: this.discourseForumAdapter,
+      },
       { url: 'https://forums.docker.com', adapter: this.discourseForumAdapter },
-      { url: 'https://discuss.elastic.co', adapter: this.discourseForumAdapter },
+      {
+        url: 'https://discuss.elastic.co',
+        adapter: this.discourseForumAdapter,
+      },
     ];
   }
 

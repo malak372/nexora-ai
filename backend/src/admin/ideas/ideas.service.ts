@@ -1,9 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  IdeaGenerationType,
-  Prisma,
-  UnlockMethod,
-} from '@prisma/client';
+import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetIdeasQueryDto } from './dto/get-ideas-query.dto';
@@ -44,19 +40,15 @@ import {
  */
 @Injectable()
 export class IdeasService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Builds the shared Prisma where filter used by
    * idea listing, summaries, charts, and CSV export.
    */
-  private buildIdeasWhere(
-    query: GetIdeasQueryDto,
-  ): Prisma.IdeaWhereInput {
+  private buildIdeasWhere(query: GetIdeasQueryDto): Prisma.IdeaWhereInput {
     const isUnlocked =
-      query.isUnlocked !== undefined
-        ? query.isUnlocked === 'true'
-        : undefined;
+      query.isUnlocked !== undefined ? query.isUnlocked === 'true' : undefined;
 
     return {
       ...buildDateFilter(query),
@@ -402,7 +394,7 @@ export class IdeasService {
 
       ideasByPlatform: ideasByPlatform.map((item) => {
         const platformName = item.selectedPlatformId
-          ? platformMap.get(item.selectedPlatformId) ?? null
+          ? (platformMap.get(item.selectedPlatformId) ?? null)
           : null;
 
         return {

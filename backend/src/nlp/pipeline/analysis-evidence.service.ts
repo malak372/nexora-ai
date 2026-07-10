@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 import {
-    SentimentLabel,
-    TextAnalysisResult,
+  SentimentLabel,
+  TextAnalysisResult,
 } from './types/intelligent-analysis.types';
 
 /**
@@ -24,51 +24,51 @@ import {
  */
 @Injectable()
 export class AnalysisEvidenceService {
-    private readonly maxSamples = 5;
+  private readonly maxSamples = 5;
 
-    /**
-     * Extracts representative analyzed posts.
-     *
-     * @param analyzedTexts Final analyzed text records.
-     * @returns High-confidence post samples.
-     */
-    extractSamplePosts(analyzedTexts: TextAnalysisResult[]): {
-        id: string;
-        text: string;
-        sentiment: SentimentLabel;
-    }[] {
-        return analyzedTexts
-            .filter((text) => text.sourceType === 'POST')
-            .sort((first, second) => second.confidence - first.confidence)
-            .slice(0, this.maxSamples)
-            .map((text) => ({
-                id: text.id,
-                text: text.originalText,
-                sentiment: text.sentiment,
-            }));
-    }
+  /**
+   * Extracts representative analyzed posts.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @returns High-confidence post samples.
+   */
+  extractSamplePosts(analyzedTexts: TextAnalysisResult[]): {
+    id: string;
+    text: string;
+    sentiment: SentimentLabel;
+  }[] {
+    return analyzedTexts
+      .filter((text) => text.sourceType === 'POST')
+      .sort((first, second) => second.confidence - first.confidence)
+      .slice(0, this.maxSamples)
+      .map((text) => ({
+        id: text.id,
+        text: text.originalText,
+        sentiment: text.sentiment,
+      }));
+  }
 
-    /**
-     * Extracts representative analyzed comments.
-     *
-     * @param analyzedTexts Final analyzed text records.
-     * @returns High-confidence comment samples.
-     */
-    extractSampleComments(analyzedTexts: TextAnalysisResult[]): {
-        id: string;
-        postId: string;
-        text: string;
-        sentiment: SentimentLabel;
-    }[] {
-        return analyzedTexts
-            .filter((text) => text.sourceType === 'COMMENT' && text.postId)
-            .sort((first, second) => second.confidence - first.confidence)
-            .slice(0, this.maxSamples)
-            .map((text) => ({
-                id: text.id,
-                postId: text.postId as string,
-                text: text.originalText,
-                sentiment: text.sentiment,
-            }));
-    }
+  /**
+   * Extracts representative analyzed comments.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @returns High-confidence comment samples.
+   */
+  extractSampleComments(analyzedTexts: TextAnalysisResult[]): {
+    id: string;
+    postId: string;
+    text: string;
+    sentiment: SentimentLabel;
+  }[] {
+    return analyzedTexts
+      .filter((text) => text.sourceType === 'COMMENT' && text.postId)
+      .sort((first, second) => second.confidence - first.confidence)
+      .slice(0, this.maxSamples)
+      .map((text) => ({
+        id: text.id,
+        postId: text.postId as string,
+        text: text.originalText,
+        sentiment: text.sentiment,
+      }));
+  }
 }

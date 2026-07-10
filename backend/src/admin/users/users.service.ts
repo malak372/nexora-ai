@@ -55,7 +55,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditService,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
 
   /**
    * Builds the shared Prisma where filter for users.
@@ -70,9 +70,7 @@ export class UsersService {
    */
   private buildUsersWhere(query: GetUsersQueryDto): Prisma.UserWhereInput {
     const isActive =
-      query.isActive !== undefined
-        ? query.isActive === 'true'
-        : undefined;
+      query.isActive !== undefined ? query.isActive === 'true' : undefined;
 
     return {
       ...buildDateFilter(query),
@@ -766,15 +764,11 @@ export class UsersService {
       },
     });
 
-    const frontendUrl =
-      process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
 
     const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
 
-    await this.mailService.sendPasswordResetEmail(
-      user.email,
-      resetLink,
-    );
+    await this.mailService.sendPasswordResetEmail(user.email, resetLink);
 
     await this.auditLogsService.createLog({
       actorId: currentAdminId,

@@ -13,8 +13,21 @@ import { CollectorCacheUtil } from './collector-cache.util';
  * @author Malak
  */
 export class CollectorExternalCacheUtil {
+  /**
+   * Logger used to report failed external cached calls.
+   */
   private static readonly logger = new Logger(CollectorExternalCacheUtil.name);
 
+  /**
+   * Returns a cached value when available, otherwise executes
+   * the callback and stores its result using the provided TTL.
+   *
+   * @template T Type of the cached value.
+   * @param cacheKey Unique cache key.
+   * @param cacheTtlMs Cache lifetime in milliseconds.
+   * @param callback External asynchronous operation.
+   * @returns The cached or newly fetched result.
+   */
   static async remember<T>(
     cacheKey: string,
     cacheTtlMs: number,
@@ -33,11 +46,10 @@ export class CollectorExternalCacheUtil {
 
       return result;
     } catch (error: unknown) {
-      this.logger.warn(
-        `External cached call failed: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      this.logger.warn(`External cached call failed: ${errorMessage}`);
 
       throw error;
     }

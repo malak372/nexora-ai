@@ -47,9 +47,7 @@ export class DomainsService {
     query: GetDomainsQueryDto,
   ): Prisma.DomainWhereInput {
     const isActive =
-      query.isActive !== undefined
-        ? query.isActive === 'true'
-        : undefined;
+      query.isActive !== undefined ? query.isActive === 'true' : undefined;
 
     return {
       ...buildDateFilter(query),

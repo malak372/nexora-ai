@@ -19,117 +19,115 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 @Injectable()
 export class NlpLexiconService {
-    constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-    /**
-     * Returns active lexicon words for a specific lexicon type and language.
-     *
-     * The lookup includes both language-specific terms and generic terms marked
-     * as LanguageCode.ANY, allowing the NLP engine to support multilingual and
-     * mixed-language community content.
-     *
-     * @param type Lexicon category to retrieve.
-     * @param language Target language of the analyzed text.
-     * @returns Unique normalized lexicon words.
-     */
-    async getWords(
-        type: NlpLexiconType,
-        language: LanguageCode,
-    ): Promise<string[]> {
-        const lexicons = await this.prisma.nlpLexicon.findMany({
-            where: {
-                type,
-                isActive: true,
-                language: {
-                    in: [language, LanguageCode.ANY],
-                },
-            },
-            select: {
-                word: true,
-            },
-            orderBy: {
-                word: 'asc',
-            },
-        });
+  /**
+   * Returns active lexicon words for a specific lexicon type and language.
+   *
+   * The lookup includes both language-specific terms and generic terms marked
+   * as LanguageCode.ANY, allowing the NLP engine to support multilingual and
+   * mixed-language community content.
+   *
+   * @param type Lexicon category to retrieve.
+   * @param language Target language of the analyzed text.
+   * @returns Unique normalized lexicon words.
+   */
+  async getWords(
+    type: NlpLexiconType,
+    language: LanguageCode,
+  ): Promise<string[]> {
+    const lexicons = await this.prisma.nlpLexicon.findMany({
+      where: {
+        type,
+        isActive: true,
+        language: {
+          in: [language, LanguageCode.ANY],
+        },
+      },
+      select: {
+        word: true,
+      },
+      orderBy: {
+        word: 'asc',
+      },
+    });
 
-        return this.normalizeWords(lexicons.map((lexicon) => lexicon.word));
+    return this.normalizeWords(lexicons.map((lexicon) => lexicon.word));
+  }
+
+  /**
+   * Returns active lexicon words grouped by lexicon type for a specific language.
+   *
+   * This method is optimized for full-text analysis because it retrieves all
+   * lexicon categories in one database query instead of querying each category
+   * separately.
+   *
+   * @param language Target language of the analyzed text.
+   * @returns Normalized lexicon words grouped by NlpLexiconType.
+   */
+  async getGroupedWords(
+    language: LanguageCode,
+  ): Promise<Record<NlpLexiconType, string[]>> {
+    const groupedWords = this.buildEmptyGroupedWords();
+
+    const lexicons = await this.prisma.nlpLexicon.findMany({
+      where: {
+        isActive: true,
+        language: {
+          in: [language, LanguageCode.ANY],
+        },
+      },
+      select: {
+        word: true,
+        type: true,
+      },
+      orderBy: [
+        {
+          type: 'asc',
+        },
+        {
+          word: 'asc',
+        },
+      ],
+    });
+
+    for (const lexicon of lexicons) {
+      groupedWords[lexicon.type].push(lexicon.word);
     }
 
-    /**
-     * Returns active lexicon words grouped by lexicon type for a specific language.
-     *
-     * This method is optimized for full-text analysis because it retrieves all
-     * lexicon categories in one database query instead of querying each category
-     * separately.
-     *
-     * @param language Target language of the analyzed text.
-     * @returns Normalized lexicon words grouped by NlpLexiconType.
-     */
-    async getGroupedWords(
-        language: LanguageCode,
-    ): Promise<Record<NlpLexiconType, string[]>> {
-        const groupedWords = this.buildEmptyGroupedWords();
-
-        const lexicons = await this.prisma.nlpLexicon.findMany({
-            where: {
-                isActive: true,
-                language: {
-                    in: [language, LanguageCode.ANY],
-                },
-            },
-            select: {
-                word: true,
-                type: true,
-            },
-            orderBy: [
-                {
-                    type: 'asc',
-                },
-                {
-                    word: 'asc',
-                },
-            ],
-        });
-
-        for (const lexicon of lexicons) {
-            groupedWords[lexicon.type].push(lexicon.word);
-        }
-
-        for (const type of Object.values(NlpLexiconType)) {
-            groupedWords[type] = this.normalizeWords(groupedWords[type]);
-        }
-
-        return groupedWords;
+    for (const type of Object.values(NlpLexiconType)) {
+      groupedWords[type] = this.normalizeWords(groupedWords[type]);
     }
 
-    /**
-     * Normalizes lexicon words and removes duplicates.
-     *
-     * @param words Raw lexicon words retrieved from the database.
-     * @returns Unique lowercase lexicon words.
-     */
-    private normalizeWords(words: string[]): string[] {
-        return [
-            ...new Set(
-                words
-                    .map((word) => word.toLowerCase().trim())
-                    .filter(Boolean),
-            ),
-        ];
-    }
+    return groupedWords;
+  }
 
-    /**
-     * Builds an empty grouped lexicon object containing all supported lexicon types.
-     *
-     * @returns Empty grouped lexicon map.
-     */
-    private buildEmptyGroupedWords(): Record<NlpLexiconType, string[]> {
-        return Object.values(NlpLexiconType).reduce(
-            (accumulator, type) => ({
-                ...accumulator,
-                [type]: [],
-            }),
-            {} as Record<NlpLexiconType, string[]>,
-        );
-    }
+  /**
+   * Normalizes lexicon words and removes duplicates.
+   *
+   * @param words Raw lexicon words retrieved from the database.
+   * @returns Unique lowercase lexicon words.
+   */
+  private normalizeWords(words: string[]): string[] {
+    return [
+      ...new Set(
+        words.map((word) => word.toLowerCase().trim()).filter(Boolean),
+      ),
+    ];
+  }
+
+  /**
+   * Builds an empty grouped lexicon object containing all supported lexicon types.
+   *
+   * @returns Empty grouped lexicon map.
+   */
+  private buildEmptyGroupedWords(): Record<NlpLexiconType, string[]> {
+    return Object.values(NlpLexiconType).reduce(
+      (accumulator, type) => ({
+        ...accumulator,
+        [type]: [],
+      }),
+      {} as Record<NlpLexiconType, string[]>,
+    );
+  }
 }

@@ -59,9 +59,6 @@ import { DevToCollector } from './dev-to/dev-to.collector';
     ProductHuntCollector,
     DevToCollector,
   ],
-  exports: [
-    CollectorsFactory,
-    CollectorQueueService,
-  ],
+  exports: [CollectorsFactory, CollectorQueueService],
 })
 export class CollectorsModule {}

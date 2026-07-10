@@ -1,7 +1,33 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
+
 import { ROLES_KEY } from '../decorators/roles.decorator';
+
+/**
+ * Represents the authenticated user data required
+ * by the role authorization guard.
+ */
+type AuthenticatedUser = {
+  /**
+   * Role assigned to the authenticated user.
+   */
+  role: UserRole;
+};
+
+/**
+ * Represents the minimal HTTP request shape required
+ * by the role authorization guard.
+ */
+type RequestWithUser = {
+  /**
+   * Authenticated user attached by the authentication guard.
+   *
+   * The property may be undefined when authentication
+   * has not been completed successfully.
+   */
+  user?: AuthenticatedUser;
+};
 
 /**
  * Guard that enforces role-based authorization.
@@ -14,7 +40,7 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) { }
+  constructor(private readonly reflector: Reflector) {}
 
   /**
    * Determines whether the current request is authorized
@@ -34,7 +60,8 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+
     const user = request.user;
 
     if (!user) {

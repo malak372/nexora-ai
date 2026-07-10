@@ -8,18 +8,18 @@
  * @author Eman
  */
 export type FeatureRequest = {
-    /**
-     * Human-readable feature request title.
-     */
-    feature: string;
+  /**
+   * Human-readable feature request title.
+   */
+  feature: string;
 
-    /**
-     * Number of analyzed texts supporting this feature request.
-     */
-    frequency: number;
+  /**
+   * Number of analyzed texts supporting this feature request.
+   */
+  frequency: number;
 
-    /**
-     * Representative community evidence supporting the request.
-     */
-    evidenceSamples: string[];
+  /**
+   * Representative community evidence supporting the request.
+   */
+  evidenceSamples: string[];
 };

@@ -1,31 +1,33 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
-import { CurrentUser } from '../utilities/decorators/current-user.decorator';
-import type { JwtCurrentUser } from '../utilities/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
 import { GetPromptHistoryQueryDto } from './dto/get-prompt-history-query.dto';
 import { UpdatePromptTemplateDto } from './dto/update-prompt-template.dto';
+
 import { PromptHistoryService } from './services/prompt-history.service';
-import { PromptTemplateService } from './services/prompt-template.service';
+import {
+  PromptTemplateResponse,
+  PromptTemplateService,
+} from './services/prompt-template.service';
+
+import { PaginatedPromptHistory } from './types/prompt-history.type';
 
 /**
- * Admin-only controller for prompt template management and prompt history.
+ * Administrator-only controller for prompt-template management
+ * and prompt-history retrieval.
  *
  * Routes:
  * - GET /prompts/template
  * - PATCH /prompts/template
  * - GET /prompts/history
+ *
+ * All routes require an authenticated administrator.
  *
  * @author Malak
  */
@@ -39,21 +41,21 @@ export class PromptsController {
   ) {}
 
   /**
-   * Returns the active AI idea prompt template.
+   * Returns the currently active idea-generation prompt template.
    */
   @Get('template')
-  getCurrentTemplate(): Promise<{ ideaPromptTemplate: string }> {
+  getCurrentTemplate(): Promise<PromptTemplateResponse> {
     return this.promptTemplateService.getCurrentTemplate();
   }
 
   /**
-   * Updates the AI idea prompt template.
+   * Updates the active idea-generation prompt template.
    */
   @Patch('template')
   updateTemplate(
     @Body() dto: UpdatePromptTemplateDto,
-    @CurrentUser() user: JwtCurrentUser,
-  ): Promise<{ ideaPromptTemplate: string }> {
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PromptTemplateResponse> {
     return this.promptTemplateService.updateTemplate(
       dto.ideaPromptTemplate,
       user.id,
@@ -61,12 +63,12 @@ export class PromptsController {
   }
 
   /**
-   * Returns paginated prompt history records.
+   * Returns filtered, sorted, and paginated prompt-history records.
    */
   @Get('history')
   getPromptHistory(
     @Query() query: GetPromptHistoryQueryDto,
-  ): ReturnType<PromptHistoryService['findAll']> {
+  ): Promise<PaginatedPromptHistory> {
     return this.promptHistoryService.findAll(query);
   }
 }

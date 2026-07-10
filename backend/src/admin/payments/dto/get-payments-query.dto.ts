@@ -1,9 +1,5 @@
 import { IsEnum, IsOptional } from 'class-validator';
-import {
-  PaymentMethod,
-  PaymentPurpose,
-  PaymentStatus,
-} from '@prisma/client';
+import { PaymentMethod, PaymentPurpose, PaymentStatus } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**

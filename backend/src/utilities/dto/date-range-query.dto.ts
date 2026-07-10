@@ -16,27 +16,27 @@ import { IsDateString, IsOptional } from 'class-validator';
  * @author Malak
  */
 export class DateRangeQueryDto {
-    /**
-     * Optional start date filter.
-     *
-     * Returns records created on or after this date.
-     *
-     * Example:
-     * 2026-06-01
-     */
-    @IsOptional()
-    @IsDateString()
-    fromDate?: string;
+  /**
+   * Optional start date filter.
+   *
+   * Returns records created on or after this date.
+   *
+   * Example:
+   * 2026-06-01
+   */
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
 
-    /**
-     * Optional end date filter.
-     *
-     * Returns records created on or before this date.
-     *
-     * Example:
-     * 2026-06-30
-     */
-    @IsOptional()
-    @IsDateString()
-    toDate?: string;
+  /**
+   * Optional end date filter.
+   *
+   * Returns records created on or before this date.
+   *
+   * Example:
+   * 2026-06-30
+   */
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
 }

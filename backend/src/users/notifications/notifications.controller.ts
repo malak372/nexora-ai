@@ -1,11 +1,11 @@
 import {
-    Controller,
-    Get,
-    Param,
-    ParseUUIDPipe,
-    Patch,
-    Query,
-    UseGuards,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -24,40 +24,40 @@ import { UserNotificationsService } from './notifications.service';
 @Controller('users/notifications')
 @UseGuards(JwtAuthGuard)
 export class UserNotificationsController {
-    constructor(
-        private readonly userNotificationsService: UserNotificationsService,
-    ) { }
+  constructor(
+    private readonly userNotificationsService: UserNotificationsService,
+  ) {}
 
-    /**
-     * Retrieves the authenticated user's notifications.
-     */
-    @Get()
-    getNotifications(
-        @CurrentUser() user: { id: string },
-        @Query() query: GetUserNotificationsQueryDto,
-    ) {
-        return this.userNotificationsService.getNotifications(user.id, query);
-    }
+  /**
+   * Retrieves the authenticated user's notifications.
+   */
+  @Get()
+  getNotifications(
+    @CurrentUser() user: { id: string },
+    @Query() query: GetUserNotificationsQueryDto,
+  ) {
+    return this.userNotificationsService.getNotifications(user.id, query);
+  }
 
-    /**
-     * Marks a specific notification as read.
-     */
-    @Patch(':id/read')
-    markNotificationAsRead(
-        @CurrentUser() user: { id: string },
-        @Param('id', ParseUUIDPipe) notificationId: string,
-    ) {
-        return this.userNotificationsService.markNotificationAsRead(
-            user.id,
-            notificationId,
-        );
-    }
+  /**
+   * Marks a specific notification as read.
+   */
+  @Patch(':id/read')
+  markNotificationAsRead(
+    @CurrentUser() user: { id: string },
+    @Param('id', ParseUUIDPipe) notificationId: string,
+  ) {
+    return this.userNotificationsService.markNotificationAsRead(
+      user.id,
+      notificationId,
+    );
+  }
 
-    /**
-     * Marks all unread notifications as read.
-     */
-    @Patch('read-all')
-    markAllNotificationsAsRead(@CurrentUser() user: { id: string }) {
-        return this.userNotificationsService.markAllNotificationsAsRead(user.id);
-    }
+  /**
+   * Marks all unread notifications as read.
+   */
+  @Patch('read-all')
+  markAllNotificationsAsRead(@CurrentUser() user: { id: string }) {
+    return this.userNotificationsService.markAllNotificationsAsRead(user.id);
+  }
 }

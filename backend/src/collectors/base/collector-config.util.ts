@@ -21,10 +21,7 @@ export class CollectorConfigUtil {
    * returns:
    * ['a','b','c']
    */
-  static getCsv(
-    config: ConfigService,
-    key: string,
-  ): string[] {
+  static getCsv(config: ConfigService, key: string): string[] {
     return (config.get<string>(key) ?? '')
       .split(',')
       .map((word) => word.trim().toLowerCase())

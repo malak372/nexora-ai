@@ -2,18 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
 import {
-    IntelligentAnalysisOutput,
-    PriorityLevel,
+  IntelligentAnalysisOutput,
+  PriorityLevel,
 } from '../pipeline/types/intelligent-analysis.types';
 import { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 
 type ExtractedNeed = IntelligentAnalysisOutput['extractedNeeds'][number];
 
 type NeedAccumulator = {
-    priority: PriorityLevel;
-    relatedProblem?: string;
-    evidenceSamples: string[];
-    frequency: number;
+  priority: PriorityLevel;
+  relatedProblem?: string;
+  evidenceSamples: string[];
+  frequency: number;
 };
 
 /**
@@ -36,177 +36,178 @@ type NeedAccumulator = {
  */
 @Injectable()
 export class NeedExtractionService {
-    private readonly maxEvidenceSamples = 3;
+  private readonly maxEvidenceSamples = 3;
 
-    /**
-     * Extracts user needs from lexicon-enriched text analysis results.
-     *
-     * If a limit is provided, only the highest ranked needs are returned.
-     * Without a limit, all extracted needs are returned for persistence and
-     * admin analytics.
-     *
-     * @param analyzedTexts Lexicon-enriched analyzed texts.
-     * @param limit Optional maximum number of needs to return.
-     * @returns Extracted user needs sorted by frequency and priority.
-     */
-    extract(
-        analyzedTexts: LexiconTextAnalysisResult[],
-        limit?: number,
-    ): ExtractedNeed[] {
-        const needMap = new Map<string, NeedAccumulator>();
+  /**
+   * Extracts user needs from lexicon-enriched text analysis results.
+   *
+   * If a limit is provided, only the highest ranked needs are returned.
+   * Without a limit, all extracted needs are returned for persistence and
+   * admin analytics.
+   *
+   * @param analyzedTexts Lexicon-enriched analyzed texts.
+   * @param limit Optional maximum number of needs to return.
+   * @returns Extracted user needs sorted by frequency and priority.
+   */
+  extract(
+    analyzedTexts: LexiconTextAnalysisResult[],
+    limit?: number,
+  ): ExtractedNeed[] {
+    const needMap = new Map<string, NeedAccumulator>();
 
-        for (const text of analyzedTexts) {
-            const needTerms = this.extractNeedTerms(text);
+    for (const text of analyzedTexts) {
+      const needTerms = this.extractNeedTerms(text);
 
-            for (const term of new Set(needTerms)) {
-                const need = this.normalizeNeed(term);
+      for (const term of new Set(needTerms)) {
+        const need = this.normalizeNeed(term);
 
-                if (!need) {
-                    continue;
-                }
-
-                const current = needMap.get(need) ?? this.createAccumulator();
-
-                current.frequency += 1;
-                current.priority = this.calculatePriority(current.frequency, text);
-                this.addEvidenceSample(current.evidenceSamples, text.originalText);
-
-                needMap.set(need, current);
-            }
+        if (!need) {
+          continue;
         }
 
-        const results = [...needMap.entries()]
-            .map(([need, value]) => ({
-                need,
-                priority: value.priority,
-                relatedProblem: value.relatedProblem,
-                evidenceSamples: value.evidenceSamples,
-            }))
-            .sort((first, second) => {
-                const priorityDifference =
-                    this.priorityWeight(second.priority) - this.priorityWeight(first.priority);
+        const current = needMap.get(need) ?? this.createAccumulator();
 
-                if (priorityDifference !== 0) {
-                    return priorityDifference;
-                }
+        current.frequency += 1;
+        current.priority = this.calculatePriority(current.frequency, text);
+        this.addEvidenceSample(current.evidenceSamples, text.originalText);
 
-                return first.need.localeCompare(second.need);
-            });
-
-        return typeof limit === 'number' ? results.slice(0, limit) : results;
+        needMap.set(need, current);
+      }
     }
 
-    /**
-     * Extracts need-related terms from one analyzed text.
-     *
-     * @param text Lexicon-enriched text result.
-     * @returns Normalized need-related terms.
-     */
-    private extractNeedTerms(text: LexiconTextAnalysisResult): string[] {
-        return [
-            ...(text.matchedLexicons[NlpLexiconType.NEED] ?? []),
-            ...(text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []),
-        ]
-            .map((term) => term.toLowerCase().trim())
-            .filter(Boolean);
-    }
+    const results = [...needMap.entries()]
+      .map(([need, value]) => ({
+        need,
+        priority: value.priority,
+        relatedProblem: value.relatedProblem,
+        evidenceSamples: value.evidenceSamples,
+      }))
+      .sort((first, second) => {
+        const priorityDifference =
+          this.priorityWeight(second.priority) -
+          this.priorityWeight(first.priority);
 
-    /**
-     * Converts a raw need term into a readable need statement.
-     *
-     * @param term Need-related term.
-     * @returns Human-readable need statement.
-     */
-    private normalizeNeed(term: string): string {
-        const normalizedTerm = term.toLowerCase().trim().replace(/\s+/g, ' ');
-
-        if (!normalizedTerm) {
-            return '';
+        if (priorityDifference !== 0) {
+          return priorityDifference;
         }
 
-        return normalizedTerm
-            .split(' ')
-            .filter(Boolean)
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
+        return first.need.localeCompare(second.need);
+      });
+
+    return typeof limit === 'number' ? results.slice(0, limit) : results;
+  }
+
+  /**
+   * Extracts need-related terms from one analyzed text.
+   *
+   * @param text Lexicon-enriched text result.
+   * @returns Normalized need-related terms.
+   */
+  private extractNeedTerms(text: LexiconTextAnalysisResult): string[] {
+    return [
+      ...(text.matchedLexicons[NlpLexiconType.NEED] ?? []),
+      ...(text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []),
+    ]
+      .map((term) => term.toLowerCase().trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Converts a raw need term into a readable need statement.
+   *
+   * @param term Need-related term.
+   * @returns Human-readable need statement.
+   */
+  private normalizeNeed(term: string): string {
+    const normalizedTerm = term.toLowerCase().trim().replace(/\s+/g, ' ');
+
+    if (!normalizedTerm) {
+      return '';
     }
 
-    /**
-     * Calculates need priority from frequency and feature-request strength.
-     *
-     * @param frequency Number of supporting texts.
-     * @param text Current analyzed text.
-     * @returns Need priority level.
-     */
-    private calculatePriority(
-        frequency: number,
-        text: LexiconTextAnalysisResult,
-    ): PriorityLevel {
-        const hasFeatureRequest =
-            (text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []).length > 0;
+    return normalizedTerm
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
 
-        if (frequency >= 5 || hasFeatureRequest) {
-            return 'HIGH';
-        }
+  /**
+   * Calculates need priority from frequency and feature-request strength.
+   *
+   * @param frequency Number of supporting texts.
+   * @param text Current analyzed text.
+   * @returns Need priority level.
+   */
+  private calculatePriority(
+    frequency: number,
+    text: LexiconTextAnalysisResult,
+  ): PriorityLevel {
+    const hasFeatureRequest =
+      (text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []).length > 0;
 
-        if (frequency >= 3) {
-            return 'MEDIUM';
-        }
-
-        return 'LOW';
+    if (frequency >= 5 || hasFeatureRequest) {
+      return 'HIGH';
     }
 
-    /**
-     * Creates an empty accumulator for one extracted need.
-     *
-     * @returns Empty need accumulator.
-     */
-    private createAccumulator(): NeedAccumulator {
-        return {
-            frequency: 0,
-            priority: 'LOW',
-            evidenceSamples: [],
-        };
+    if (frequency >= 3) {
+      return 'MEDIUM';
     }
 
-    /**
-     * Adds a representative evidence sample without exceeding the configured
-     * sample limit.
-     *
-     * @param samples Existing evidence samples.
-     * @param sample New sample candidate.
-     */
-    private addEvidenceSample(samples: string[], sample: string): void {
-        const normalizedSample = sample.trim();
+    return 'LOW';
+  }
 
-        if (!normalizedSample) {
-            return;
-        }
+  /**
+   * Creates an empty accumulator for one extracted need.
+   *
+   * @returns Empty need accumulator.
+   */
+  private createAccumulator(): NeedAccumulator {
+    return {
+      frequency: 0,
+      priority: 'LOW',
+      evidenceSamples: [],
+    };
+  }
 
-        if (samples.length >= this.maxEvidenceSamples) {
-            return;
-        }
+  /**
+   * Adds a representative evidence sample without exceeding the configured
+   * sample limit.
+   *
+   * @param samples Existing evidence samples.
+   * @param sample New sample candidate.
+   */
+  private addEvidenceSample(samples: string[], sample: string): void {
+    const normalizedSample = sample.trim();
 
-        if (samples.includes(normalizedSample)) {
-            return;
-        }
-
-        samples.push(normalizedSample);
+    if (!normalizedSample) {
+      return;
     }
 
-    /**
-     * Converts priority into a sortable numeric weight.
-     *
-     * @param priority Priority level.
-     * @returns Numeric priority weight.
-     */
-    private priorityWeight(priority: PriorityLevel): number {
-        const weights: Record<PriorityLevel, number> = {
-            LOW: 1,
-            MEDIUM: 2,
-            HIGH: 3,
-        };
-
-        return weights[priority];
+    if (samples.length >= this.maxEvidenceSamples) {
+      return;
     }
+
+    if (samples.includes(normalizedSample)) {
+      return;
+    }
+
+    samples.push(normalizedSample);
+  }
+
+  /**
+   * Converts priority into a sortable numeric weight.
+   *
+   * @param priority Priority level.
+   * @returns Numeric priority weight.
+   */
+  private priorityWeight(priority: PriorityLevel): number {
+    const weights: Record<PriorityLevel, number> = {
+      LOW: 1,
+      MEDIUM: 2,
+      HIGH: 3,
+    };
+
+    return weights[priority];
+  }
 }

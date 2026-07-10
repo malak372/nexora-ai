@@ -20,29 +20,29 @@ import { IsIn, IsOptional, IsString } from 'class-validator';
  * @author Malak
  */
 export class SortingQueryDto {
-    /**
-     * Optional sorting field.
-     *
-     * The supported fields depend on the endpoint.
-     *
-     * Example:
-     * createdAt
-     */
-    @IsOptional()
-    @IsString()
-    sortBy?: string;
+  /**
+   * Optional sorting field.
+   *
+   * The supported fields depend on the endpoint.
+   *
+   * Example:
+   * createdAt
+   */
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
 
-    /**
-     * Optional sorting direction.
-     *
-     * Accepted values:
-     * - asc
-     * - desc
-     *
-     * Default:
-     * desc
-     */
-    @IsOptional()
-    @IsIn(['asc', 'desc'])
-    sortOrder?: 'asc' | 'desc';
+  /**
+   * Optional sorting direction.
+   *
+   * Accepted values:
+   * - asc
+   * - desc
+   *
+   * Default:
+   * desc
+   */
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }

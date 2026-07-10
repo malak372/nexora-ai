@@ -11,12 +11,12 @@ import { IsEmail } from 'class-validator';
  * @author Eman
  */
 export class ResendVerificationEmailDto {
-    /**
-     * User email address.
-     */
-    @Transform(({ value }) =>
-        typeof value === 'string' ? value.trim().toLowerCase() : value,
-    )
-    @IsEmail()
-    email!: string;
+  /**
+   * User email address.
+   */
+  @Transform(({ value }: { value: unknown }): unknown =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail()
+  email!: string;
 }

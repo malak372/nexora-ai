@@ -15,45 +15,45 @@ import { AccountStatus, UserRole, UserType } from '@prisma/client';
  * @author Eman
  */
 export interface AuthenticatedUser {
-    /**
-     * Unique user identifier.
-     */
-    id: string;
+  /**
+   * Unique user identifier.
+   */
+  id: string;
 
-    /**
-     * User email address.
-     */
-    email: string;
+  /**
+   * User email address.
+   */
+  email: string;
 
-    /**
-     * User full name.
-     */
-    fullName: string;
+  /**
+   * User full name.
+   */
+  fullName: string;
 
-    /**
-     * User authorization role.
-     */
-    role: UserRole;
+  /**
+   * User authorization role.
+   */
+  role: UserRole;
 
-    /**
-     * Current account status.
-     */
-    accountStatus: AccountStatus;
+  /**
+   * Current account status.
+   */
+  accountStatus: AccountStatus;
 
-    /**
-     * User classification used for personalization
-     * and analytics.
-     */
-    userType: UserType | null;
+  /**
+   * User classification used for personalization
+   * and analytics.
+   */
+  userType: UserType | null;
 
-    /**
-     * Indicates whether the account is active.
-     */
-    isActive: boolean;
+  /**
+   * Indicates whether the account is active.
+   */
+  isActive: boolean;
 
-    /**
-     * Indicates whether the user's email address
-     * has been verified.
-     */
-    isVerified: boolean;
+  /**
+   * Indicates whether the user's email address
+   * has been verified.
+   */
+  isVerified: boolean;
 }

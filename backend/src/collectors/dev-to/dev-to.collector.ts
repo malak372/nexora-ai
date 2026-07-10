@@ -112,7 +112,10 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
 
       return posts;
     } catch (error: unknown) {
-      this.logger.error('DEV.to collection failed', this.getErrorMessage(error));
+      this.logger.error(
+        'DEV.to collection failed',
+        this.getErrorMessage(error),
+      );
 
       throw new ServiceUnavailableException(
         'DEV.to collection failed. Check collector limits, API availability, or network connection.',
@@ -160,11 +163,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
       .filter((term) => term.length >= 3)
       .slice(0, 6);
   }
@@ -274,15 +273,19 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       return (comments ?? [])
         .filter((comment) => this.isUsefulComment(comment))
         .slice(0, this.maxSavedComments)
-        .map((comment): CollectorComment => ({
-          externalId: comment.id_code ?? comment.id?.toString() ?? '',
-          content: this.stripHtml(comment.body_html ?? comment.body_markdown ?? ''),
-          author: comment.user?.username ?? comment.user?.name,
-          likesCount: 0,
-          publishedAt: comment.created_at
-            ? new Date(comment.created_at)
-            : undefined,
-        }));
+        .map(
+          (comment): CollectorComment => ({
+            externalId: comment.id_code ?? comment.id?.toString() ?? '',
+            content: this.stripHtml(
+              comment.body_html ?? comment.body_markdown ?? '',
+            ),
+            author: comment.user?.username ?? comment.user?.name,
+            likesCount: 0,
+            publishedAt: comment.created_at
+              ? new Date(comment.created_at)
+              : undefined,
+          }),
+        );
     } catch (error: unknown) {
       this.logger.warn(
         `DEV.to comments collection failed for article ${article.id}`,

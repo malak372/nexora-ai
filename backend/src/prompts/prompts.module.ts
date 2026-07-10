@@ -1,31 +1,35 @@
 import { Module } from '@nestjs/common';
 
+import { AuditModule } from '../audit-logs/audit-logs.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 import { PromptsController } from './prompts.controller';
+
 import { PromptBuilderService } from './services/prompt-builder.service';
 import { PromptHistoryService } from './services/prompt-history.service';
 import { PromptTemplateService } from './services/prompt-template.service';
 
 /**
- * Provides all services required for AI prompt management.
+ * Provides prompt-building, template-management,
+ * and prompt-history services.
  *
  * Responsibilities:
- * - Build AI prompts from persisted NLP analysis.
- * - Manage configurable AI prompt templates.
- * - Persist prompt history for auditing and debugging.
- * - Expose prompt services to feature modules such as Ideas.
+ * - Build provider-neutral AI prompts.
+ * - Manage configurable prompt templates.
+ * - Persist prompt history.
+ * - Audit administrator template changes.
  *
  * This module does not:
  * - Call AI providers.
- * - Generate ideas.
+ * - Generate or persist ideas.
  * - Process payments.
+ * - Deduct credits.
  * - Execute NLP analysis.
  *
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuditModule],
 
   controllers: [PromptsController],
 
@@ -35,10 +39,6 @@ import { PromptTemplateService } from './services/prompt-template.service';
     PromptHistoryService,
   ],
 
-  exports: [
-    PromptBuilderService,
-    PromptTemplateService,
-    PromptHistoryService,
-  ],
+  exports: [PromptBuilderService, PromptTemplateService, PromptHistoryService],
 })
 export class PromptsModule {}

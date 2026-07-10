@@ -5,8 +5,8 @@ import { AnalysisEvidenceService } from './analysis-evidence.service';
 import { AnalysisStatisticsService } from './analysis-statistics.service';
 import { AnalysisContext } from './types/analysis-context.type';
 import {
-    IntelligentAnalysisOutput,
-    TextAnalysisResult,
+  IntelligentAnalysisOutput,
+  TextAnalysisResult,
 } from './types/intelligent-analysis.types';
 
 /**
@@ -21,110 +21,113 @@ import {
  */
 @Injectable()
 export class AnalysisOutputBuilderService {
-    constructor(
-        private readonly analysisStatisticsService: AnalysisStatisticsService,
-        private readonly analysisEvidenceService: AnalysisEvidenceService,
-    ) { }
+  constructor(
+    private readonly analysisStatisticsService: AnalysisStatisticsService,
+    private readonly analysisEvidenceService: AnalysisEvidenceService,
+  ) {}
 
-    /**
-     * Builds the final intelligent analysis output.
-     *
-     * @param context Complete pipeline analysis context.
-     * @returns Final intelligent NLP analysis output.
-     */
-    build(context: AnalysisContext): IntelligentAnalysisOutput {
-        return {
-            collectionJobId: context.collectionJobId,
-            domain: {
-                id: context.domain.id,
-                name: context.domain.name,
-            },
-            location: context.location,
-            platforms: context.platforms,
+  /**
+   * Builds the final intelligent analysis output.
+   *
+   * @param context Complete pipeline analysis context.
+   * @returns Final intelligent NLP analysis output.
+   */
+  build(context: AnalysisContext): IntelligentAnalysisOutput {
+    return {
+      collectionJobId: context.collectionJobId,
+      domain: {
+        id: context.domain.id,
+        name: context.domain.name,
+      },
+      location: context.location,
+      platforms: context.platforms,
 
-            totalTextsAnalyzed: context.analyzedTexts.length,
-            totalPostsAnalyzed: this.analysisStatisticsService.countPosts(
-                context.analyzedTexts,
-            ),
-            totalCommentsAnalyzed: this.analysisStatisticsService.countComments(
-                context.analyzedTexts,
-            ),
+      totalTextsAnalyzed: context.analyzedTexts.length,
+      totalPostsAnalyzed: this.analysisStatisticsService.countPosts(
+        context.analyzedTexts,
+      ),
+      totalCommentsAnalyzed: this.analysisStatisticsService.countComments(
+        context.analyzedTexts,
+      ),
 
-            dataQuality: {
-                duplicateTextsRemoved: context.preprocessing.duplicateTextsRemoved,
-                spamTextsRemoved: context.preprocessing.spamTextsRemoved,
-                irrelevantTextsRemoved: context.preprocessing.irrelevantTextsRemoved,
-            },
-            sentimentStats: this.analysisStatisticsService.buildSentimentStats(
-                context.analyzedTexts,
-            ),
+      dataQuality: {
+        duplicateTextsRemoved: context.preprocessing.duplicateTextsRemoved,
+        spamTextsRemoved: context.preprocessing.spamTextsRemoved,
+        irrelevantTextsRemoved: context.preprocessing.irrelevantTextsRemoved,
+      },
+      sentimentStats: this.analysisStatisticsService.buildSentimentStats(
+        context.analyzedTexts,
+      ),
 
-            keywords: context.keywords,
-            topics: context.topics,
-            recurringProblems: context.recurringProblems,
-            extractedNeeds: context.extractedNeeds,
-            featureRequests: context.featureRequests,
-            opportunities: context.opportunities,
+      keywords: context.keywords,
+      topics: context.topics,
+      recurringProblems: context.recurringProblems,
+      extractedNeeds: context.extractedNeeds,
+      featureRequests: context.featureRequests,
+      opportunities: context.opportunities,
 
-            insights: this.buildInsights(context.analyzedTexts),
-            samplePosts: this.analysisEvidenceService.extractSamplePosts(
-                context.analyzedTexts,
-            ),
-            sampleComments: this.analysisEvidenceService.extractSampleComments(
-                context.analyzedTexts,
-            ),
+      insights: this.buildInsights(context.analyzedTexts),
+      samplePosts: this.analysisEvidenceService.extractSamplePosts(
+        context.analyzedTexts,
+      ),
+      sampleComments: this.analysisEvidenceService.extractSampleComments(
+        context.analyzedTexts,
+      ),
 
-            aiUsed: context.analyzedTexts.some((text) => text.aiUsed),
-            confidence: this.analysisStatisticsService.calculateOverallConfidence(
-                context.analyzedTexts,
-            ),
-            analyzedTexts: context.analyzedTexts,
-        };
-    }
+      aiUsed: context.analyzedTexts.some((text) => text.aiUsed),
+      confidence: this.analysisStatisticsService.calculateOverallConfidence(
+        context.analyzedTexts,
+      ),
+      analyzedTexts: context.analyzedTexts,
+    };
+  }
 
-    /**
-     * Builds classified concern signals from matched lexicons.
-     *
-     * @param analyzedTexts Final analyzed text records.
-     * @returns Classified insight signals.
-     */
-    private buildInsights(
-        analyzedTexts: TextAnalysisResult[],
-    ): IntelligentAnalysisOutput['insights'] {
-        return {
-            urgencySignals: this.collectSignals(analyzedTexts, NlpLexiconType.URGENCY),
-            costConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.COST),
-            timeConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.TIME),
-            accessibilityConcerns: this.collectSignals(
-                analyzedTexts,
-                NlpLexiconType.ACCESSIBILITY,
-            ),
-            safetyConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.SAFETY),
-            reliabilityConcerns: this.collectSignals(
-                analyzedTexts,
-                NlpLexiconType.RELIABILITY,
-            ),
-        };
-    }
+  /**
+   * Builds classified concern signals from matched lexicons.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @returns Classified insight signals.
+   */
+  private buildInsights(
+    analyzedTexts: TextAnalysisResult[],
+  ): IntelligentAnalysisOutput['insights'] {
+    return {
+      urgencySignals: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.URGENCY,
+      ),
+      costConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.COST),
+      timeConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.TIME),
+      accessibilityConcerns: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.ACCESSIBILITY,
+      ),
+      safetyConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.SAFETY),
+      reliabilityConcerns: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.RELIABILITY,
+      ),
+    };
+  }
 
-    /**
-     * Collects unique lexicon signals for a specific insight category.
-     *
-     * @param analyzedTexts Final analyzed text records.
-     * @param type NLP lexicon type.
-     * @returns Unique normalized signals.
-     */
-    private collectSignals(
-        analyzedTexts: TextAnalysisResult[],
-        type: NlpLexiconType,
-    ): string[] {
-        return [
-            ...new Set(
-                analyzedTexts
-                    .flatMap((text) => text.matchedLexicons[type] ?? [])
-                    .map((signal) => signal.toLowerCase().trim())
-                    .filter(Boolean),
-            ),
-        ];
-    }
+  /**
+   * Collects unique lexicon signals for a specific insight category.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @param type NLP lexicon type.
+   * @returns Unique normalized signals.
+   */
+  private collectSignals(
+    analyzedTexts: TextAnalysisResult[],
+    type: NlpLexiconType,
+  ): string[] {
+    return [
+      ...new Set(
+        analyzedTexts
+          .flatMap((text) => text.matchedLexicons[type] ?? [])
+          .map((signal) => signal.toLowerCase().trim())
+          .filter(Boolean),
+      ),
+    ];
+  }
 }

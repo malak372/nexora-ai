@@ -118,18 +118,14 @@ export class CollectorLanguageUtil {
    *
    * Returns undefined if NewsAPI does not support it.
    */
-  static resolveNewsApiLanguage(
-    language?: string,
-  ): string | undefined {
+  static resolveNewsApiLanguage(language?: string): string | undefined {
     const code = this.resolveLanguageCode(language);
 
     if (!code) {
       return undefined;
     }
 
-    return this.NEWS_API_LANGUAGES.has(code)
-      ? code
-      : undefined;
+    return this.NEWS_API_LANGUAGES.has(code) ? code : undefined;
   }
 
   /**
@@ -142,10 +138,7 @@ export class CollectorLanguageUtil {
   /**
    * Performs lightweight language validation.
    */
-  static matchesRequestedLanguage(
-    content: string,
-    language?: string,
-  ): boolean {
+  static matchesRequestedLanguage(content: string, language?: string): boolean {
     const languageCode = this.resolveLanguageCode(language);
 
     if (!languageCode) {
