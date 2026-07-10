@@ -2,23 +2,23 @@ import { Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
 import { STOP_WORDS } from '../common/constants/stop-words.constant';
-import {
-    WeightedKeyword,
-} from '../pipeline/types/intelligent-analysis.types';
+import { WeightedKeyword } from '../pipeline/types/intelligent-analysis.types';
 import { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 
 /**
  * Extracts weighted keywords from lexicon-analyzed community texts.
  *
- * This service identifies the most frequent meaningful terms found in cleaned
+ * This service identifies meaningful terms and short phrases from cleaned
  * social posts and comments after preprocessing and lexicon analysis.
  *
  * Responsibilities:
  * - Tokenize cleaned community texts.
  * - Remove language-specific stop words.
- * - Remove very short and low-value tokens.
- * - Prioritize meaningful lexicon matches.
- * - Count keyword frequency across relevant posts and comments.
+ * - Extract meaningful single-word keywords.
+ * - Extract important two-word phrases.
+ * - Count each keyword once per text to prevent spammy repetition.
+ * - Give higher weight to lexicon terms that represent problems, needs,
+ *   complaints, opportunities, and feature requests.
  * - Return sorted weighted keywords for prompt generation and insight extraction.
  *
  * This service does not persist results and does not call external AI services.
@@ -29,6 +29,8 @@ import { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 export class KeywordExtractionService {
     private readonly minimumTokenLength = 3;
     private readonly maxKeywords = 30;
+    private readonly lexiconTermWeight = 2;
+    private readonly phraseWeight = 2;
 
     /**
      * Extracts the most frequent meaningful keywords from analyzed texts.
@@ -42,11 +44,12 @@ export class KeywordExtractionService {
         for (const text of analyzedTexts) {
             const stopWords = STOP_WORDS[text.language] ?? [];
             const tokens = this.extractTokens(text.cleanedText, stopWords);
+            const phrases = this.extractPhrases(tokens);
             const lexiconTerms = this.extractPriorityLexiconTerms(text);
 
-            for (const token of [...tokens, ...lexiconTerms]) {
-                frequencyMap.set(token, (frequencyMap.get(token) ?? 0) + 1);
-            }
+            this.addUniqueTerms(frequencyMap, tokens, 1);
+            this.addUniqueTerms(frequencyMap, phrases, this.phraseWeight);
+            this.addUniqueTerms(frequencyMap, lexiconTerms, this.lexiconTermWeight);
         }
 
         return [...frequencyMap.entries()]
@@ -69,7 +72,7 @@ export class KeywordExtractionService {
      *
      * @param cleanedText Cleaned text produced by the preprocessing stage.
      * @param stopWords Language-specific stop words.
-     * @returns Meaningful tokens.
+     * @returns Meaningful single-word tokens.
      */
     private extractTokens(cleanedText: string, stopWords: string[]): string[] {
         const stopWordSet = new Set(stopWords.map((word) => word.toLowerCase()));
@@ -81,11 +84,31 @@ export class KeywordExtractionService {
     }
 
     /**
-     * Extracts important lexicon terms that should influence keyword ranking.
+     * Extracts meaningful two-word phrases from valid tokens.
+     *
+     * Phrases such as "waiting time", "online appointment", and
+     * "customer service" are often more useful for project idea generation
+     * than isolated words.
+     *
+     * @param tokens Valid normalized tokens.
+     * @returns Two-word phrase candidates.
+     */
+    private extractPhrases(tokens: string[]): string[] {
+        const phrases: string[] = [];
+
+        for (let index = 0; index < tokens.length - 1; index += 1) {
+            phrases.push(`${tokens[index]} ${tokens[index + 1]}`);
+        }
+
+        return phrases;
+    }
+
+    /**
+     * Extracts important lexicon terms that should receive higher weight.
      *
      * Problem, need, complaint, urgency, cost, time, accessibility, safety,
-     * reliability, opportunity, and feature-request terms are given priority
-     * because they directly support Nexora AI idea generation requirements.
+     * reliability, opportunity, and feature-request terms directly support
+     * Nexora AI idea generation requirements.
      *
      * @param text Lexicon-enriched text analysis result.
      * @returns Priority lexicon terms.
@@ -107,7 +130,34 @@ export class KeywordExtractionService {
             NlpLexiconType.FEATURE_REQUEST,
         ];
 
-        return priorityTypes.flatMap((type) => text.matchedLexicons[type] ?? []);
+        return priorityTypes
+            .flatMap((type) => text.matchedLexicons[type] ?? [])
+            .map((term) => term.toLowerCase().trim())
+            .filter(Boolean);
+    }
+
+    /**
+     * Adds terms to the global frequency map once per analyzed text.
+     *
+     * Counting each term once per text prevents a single repeated comment from
+     * dominating keyword frequency while still preserving dataset-level trends.
+     *
+     * @param frequencyMap Global keyword frequency map.
+     * @param terms Terms extracted from a single text.
+     * @param weight Frequency weight assigned to each unique term.
+     */
+    private addUniqueTerms(
+        frequencyMap: Map<string, number>,
+        terms: string[],
+        weight: number,
+    ): void {
+        const uniqueTerms = new Set(
+            terms.map((term) => term.toLowerCase().trim()).filter(Boolean),
+        );
+
+        for (const term of uniqueTerms) {
+            frequencyMap.set(term, (frequencyMap.get(term) ?? 0) + weight);
+        }
     }
 
     /**

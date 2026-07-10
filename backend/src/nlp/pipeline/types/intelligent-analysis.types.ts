@@ -336,14 +336,40 @@ export type IntelligentAnalysisOutput = {
     }[];
 
     /**
-     * Opportunity signals detected from community discussion.
+     * Structured software opportunity signals detected from community discussion.
      *
-     * Unlike problems, opportunities can be positive market gaps or repeated user
-     * preferences that suggest potential project ideas.
+     * These are not final project ideas. They provide evidence-based direction
+     * for the Prompt Builder and AI idea generation layer.
      */
     opportunities: {
-        opportunity: string;
+        /**
+         * Recurring problem connected to this opportunity.
+         */
+        problem?: string;
+
+        /**
+         * User need connected to this opportunity.
+         */
+        need?: string;
+
+        /**
+         * Main discussion topic related to this opportunity.
+         */
+        topic?: string;
+
+        /**
+         * Suggested solution area inferred from problems, needs, topics, and keywords.
+         */
+        solutionArea: string;
+
+        /**
+         * Opportunity strength score from 0 to 1.
+         */
         score: number;
+
+        /**
+         * Representative community evidence supporting this opportunity.
+         */
         evidenceSamples: string[];
     }[];
 
