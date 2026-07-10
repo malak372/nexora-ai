@@ -7,14 +7,16 @@ import { OpportunityAnalysisService } from '../analysis/opportunity-analysis.ser
 import { SentimentAnalysisService } from '../analysis/sentiment-analysis.service';
 import { TopicExtractionService } from '../analysis/topic-extraction.service';
 import { LexiconAnalysisService } from '../lexicon/lexicon-analysis.service';
+import { IntelligentAnalysisPersistenceMapper } from '../persistence/mappers/intelligent-analysis-persistence.mapper';
+import { NlpPersistenceService } from '../persistence/nlp-persistence.service';
 import { ProblemInsightService } from '../problems/problem-insight.service';
 
 import { AnalysisOutputBuilderService } from './analysis-output-builder.service';
 import { AnalysisStatisticsService } from './analysis-statistics.service';
 import { TextInputBuilderService } from './text-input-builder.service';
 import { TextPreprocessingService } from './text-preprocessing.service';
-import { AnalysisContext } from './types/analysis-context.type';
-import { IntelligentAnalysisOutput } from './types/intelligent-analysis.types';
+import type { AnalysisContext } from './types/analysis-context.type';
+import type { IntelligentAnalysisOutput } from './types/intelligent-analysis.types';
 
 /**
  * Orchestrates the complete rule-based intelligent NLP analysis pipeline.
@@ -26,11 +28,13 @@ import { IntelligentAnalysisOutput } from './types/intelligent-analysis.types';
  * Responsibilities:
  * - Build unified text inputs from a collection job.
  * - Run preprocessing, lexicon analysis, and sentiment refinement.
- * - Coordinate keyword, topic, problem, need, feature request, and opportunity extraction.
+ * - Coordinate keyword, topic, problem, need, feature request, and
+ *   opportunity extraction.
  * - Store intermediate pipeline state inside AnalysisContext.
  * - Delegate final output construction to AnalysisOutputBuilderService.
+ * - Persist the final aggregated NLP analysis result.
  *
- * This service does not persist results and does not call external AI services.
+ * This service does not call external AI services.
  *
  * @author Eman
  */
@@ -49,12 +53,18 @@ export class IntelligentAnalysisService {
         private readonly opportunityAnalysisService: OpportunityAnalysisService,
         private readonly analysisStatisticsService: AnalysisStatisticsService,
         private readonly analysisOutputBuilderService: AnalysisOutputBuilderService,
+        private readonly nlpPersistenceService: NlpPersistenceService,
     ) { }
 
     /**
-     * Runs the full rule-based NLP analysis for a collection job.
+     * Runs the complete rule-based NLP analysis for a collection job
+     * and persists the final aggregated result.
      *
-     * @param collectionJobId Collection job ID containing collected posts and comments.
+     * Re-running the analysis for the same collection job updates the
+     * existing persisted analysis instead of creating a duplicate.
+     *
+     * @param collectionJobId Collection job ID containing collected posts
+     * and comments.
      * @returns Structured intelligent NLP analysis output.
      */
     async analyze(collectionJobId: string): Promise<IntelligentAnalysisOutput> {
@@ -88,7 +98,8 @@ export class IntelligentAnalysisService {
         const recurringProblems =
             this.problemInsightService.extract(analyzedTexts);
 
-        const extractedNeeds = this.needExtractionService.extract(analyzedTexts);
+        const extractedNeeds =
+            this.needExtractionService.extract(analyzedTexts);
 
         const featureRequests =
             this.featureRequestExtractionService.extract(analyzedTexts);
@@ -105,11 +116,15 @@ export class IntelligentAnalysisService {
             domain: inputContext.domain,
             location: inputContext.location,
             platforms: inputContext.platforms,
+
             preprocessing: {
-                duplicateTextsRemoved: preprocessingOutput.duplicateTextsRemoved,
-                irrelevantTextsRemoved: preprocessingOutput.irrelevantTextsRemoved,
+                duplicateTextsRemoved:
+                    preprocessingOutput.duplicateTextsRemoved,
+                irrelevantTextsRemoved:
+                    preprocessingOutput.irrelevantTextsRemoved,
                 spamTextsRemoved: 0,
             },
+
             analyzedTexts,
             keywords,
             topics,
@@ -119,6 +134,13 @@ export class IntelligentAnalysisService {
             opportunities,
         };
 
-        return this.analysisOutputBuilderService.build(context);
+        const output = this.analysisOutputBuilderService.build(context);
+
+        const persistenceCommand =
+            IntelligentAnalysisPersistenceMapper.toCommand(output);
+
+        await this.nlpPersistenceService.saveAnalysis(persistenceCommand);
+
+        return output;
     }
 }
