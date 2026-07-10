@@ -15,13 +15,13 @@ import { UserActivityService } from './activity.service';
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UserActivityController {
-    constructor(private readonly userActivityService: UserActivityService) { }
+  constructor(private readonly userActivityService: UserActivityService) {}
 
-    /**
-     * Retrieves the authenticated user's recent activity.
-     */
-    @Get('activity')
-    getActivity(@CurrentUser() user: { id: string }) {
-        return this.userActivityService.getActivity(user.id);
-    }
+  /**
+   * Retrieves the authenticated user's recent activity.
+   */
+  @Get('activity')
+  getActivity(@CurrentUser() user: { id: string }) {
+    return this.userActivityService.getActivity(user.id);
+  }
 }

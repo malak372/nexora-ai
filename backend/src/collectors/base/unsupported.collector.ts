@@ -14,9 +14,12 @@ import { CollectorInput, CollectorPost } from './collector.types';
  */
 export abstract class UnsupportedCollector implements SocialCollector {
   abstract readonly sourceType: CollectionSourceType;
+
   protected abstract readonly platformName: string;
 
-  collect(_input: CollectorInput): Promise<CollectorPost[]> {
+  collect(input: CollectorInput): Promise<CollectorPost[]> {
+    void input;
+
     throw new NotImplementedException(
       `${this.platformName} collector is not implemented yet or requires API permissions.`,
     );

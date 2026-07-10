@@ -11,25 +11,25 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 @Injectable()
 export class UserValidationService {
-    constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-    /**
-     * Finds a user by ID.
-     *
-     * @param userId - User ID.
-     * @returns The user record.
-     *
-     * @throws NotFoundException if the user does not exist.
-     */
-    async findUserOrThrow(userId: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-        });
+  /**
+   * Finds a user by ID.
+   *
+   * @param userId - User ID.
+   * @returns The user record.
+   *
+   * @throws NotFoundException if the user does not exist.
+   */
+  async findUserOrThrow(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
 
-        if (!user) {
-            throw new NotFoundException('User not found');
-        }
-
-        return user;
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
+
+    return user;
+  }
 }

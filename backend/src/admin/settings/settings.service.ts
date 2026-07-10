@@ -96,10 +96,7 @@ export class SettingsService {
    * @param body - DTO containing updated settings.
    * @returns Updated settings or no-change response.
    */
-  async updateSystemSettings(
-    adminId: string,
-    body: UpdateSystemSettingsDto,
-  ) {
+  async updateSystemSettings(adminId: string, body: UpdateSystemSettingsDto) {
     const currentSettings = await this.getSystemSettings();
 
     const hasChanges =

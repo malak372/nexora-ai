@@ -37,120 +37,120 @@ import { userCacheKeys } from '../cache/user-cache.keys';
  */
 @Injectable()
 export class UserActivityService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly userCommonService: UserValidationService,
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userCommonService: UserValidationService,
 
-        @Inject(CACHE_MANAGER)
-        private readonly cacheManager: Cache,
-    ) { }
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
+  ) {}
 
-    /**
-     * Retrieves the authenticated user's recent activity.
-     *
-     * The method first checks the cache. If cached activity exists,
-     * it returns the cached response directly. Otherwise, it validates
-     * the user, loads the latest activity records from the database,
-     * stores the result in cache, and returns the fresh response.
-     *
-     * @param userId - Authenticated user ID extracted from the JWT token.
-     * @returns Recent activity overview for the authenticated user.
-     *
-     * @throws NotFoundException if the authenticated user does not exist.
-     */
-    async getActivity(userId: string) {
-        const cacheKey = userCacheKeys.activity(userId);
+  /**
+   * Retrieves the authenticated user's recent activity.
+   *
+   * The method first checks the cache. If cached activity exists,
+   * it returns the cached response directly. Otherwise, it validates
+   * the user, loads the latest activity records from the database,
+   * stores the result in cache, and returns the fresh response.
+   *
+   * @param userId - Authenticated user ID extracted from the JWT token.
+   * @returns Recent activity overview for the authenticated user.
+   *
+   * @throws NotFoundException if the authenticated user does not exist.
+   */
+  async getActivity(userId: string) {
+    const cacheKey = userCacheKeys.activity(userId);
 
-        const cachedActivity = await this.cacheManager.get(cacheKey);
+    const cachedActivity = await this.cacheManager.get(cacheKey);
 
-        if (cachedActivity) {
-            return cachedActivity;
-        }
-
-        await this.userCommonService.findUserOrThrow(userId);
-
-        const [
-            latestIdea,
-            latestPayment,
-            latestCreditTransaction,
-            latestComplaint,
-            latestAlert,
-        ] = await Promise.all([
-            this.prisma.idea.findFirst({
-                where: { userId },
-                orderBy: { createdAt: 'desc' },
-                select: {
-                    id: true,
-                    title: true,
-                    generationType: true,
-                    isUnlocked: true,
-                    createdAt: true,
-                },
-            }),
-
-            this.prisma.payment.findFirst({
-                where: { userId },
-                orderBy: { createdAt: 'desc' },
-                select: {
-                    id: true,
-                    amount: true,
-                    currency: true,
-                    paymentMethod: true,
-                    status: true,
-                    paymentPurpose: true,
-                    createdAt: true,
-                },
-            }),
-
-            this.prisma.creditTransaction.findFirst({
-                where: { userId },
-                orderBy: { createdAt: 'desc' },
-                select: {
-                    id: true,
-                    type: true,
-                    amount: true,
-                    balanceAfter: true,
-                    description: true,
-                    createdAt: true,
-                },
-            }),
-
-            this.prisma.complaint.findFirst({
-                where: { userId },
-                orderBy: { createdAt: 'desc' },
-                select: {
-                    id: true,
-                    subject: true,
-                    status: true,
-                    priority: true,
-                    createdAt: true,
-                },
-            }),
-
-            this.prisma.alert.findFirst({
-                where: { userId },
-                orderBy: { createdAt: 'desc' },
-                select: {
-                    id: true,
-                    title: true,
-                    message: true,
-                    type: true,
-                    isRead: true,
-                    createdAt: true,
-                },
-            }),
-        ]);
-
-        const activity = {
-            latestIdea,
-            latestPayment,
-            latestCreditTransaction,
-            latestComplaint,
-            latestAlert,
-        };
-
-        await this.cacheManager.set(cacheKey, activity);
-
-        return activity;
+    if (cachedActivity) {
+      return cachedActivity;
     }
+
+    await this.userCommonService.findUserOrThrow(userId);
+
+    const [
+      latestIdea,
+      latestPayment,
+      latestCreditTransaction,
+      latestComplaint,
+      latestAlert,
+    ] = await Promise.all([
+      this.prisma.idea.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          generationType: true,
+          isUnlocked: true,
+          createdAt: true,
+        },
+      }),
+
+      this.prisma.payment.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          amount: true,
+          currency: true,
+          paymentMethod: true,
+          status: true,
+          paymentPurpose: true,
+          createdAt: true,
+        },
+      }),
+
+      this.prisma.creditTransaction.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          createdAt: true,
+        },
+      }),
+
+      this.prisma.complaint.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          subject: true,
+          status: true,
+          priority: true,
+          createdAt: true,
+        },
+      }),
+
+      this.prisma.alert.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          message: true,
+          type: true,
+          isRead: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const activity = {
+      latestIdea,
+      latestPayment,
+      latestCreditTransaction,
+      latestComplaint,
+      latestAlert,
+    };
+
+    await this.cacheManager.set(cacheKey, activity);
+
+    return activity;
+  }
 }

@@ -17,17 +17,17 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Eman
  */
 export class GetUserComplaintsQueryDto extends ListQueryDto {
-    /**
-     * Optional complaint status filter.
-     */
-    @IsOptional()
-    @IsEnum(ComplaintStatus)
-    status?: ComplaintStatus;
+  /**
+   * Optional complaint status filter.
+   */
+  @IsOptional()
+  @IsEnum(ComplaintStatus)
+  status?: ComplaintStatus;
 
-    /**
-     * Optional complaint priority filter.
-     */
-    @IsOptional()
-    @IsEnum(ComplaintPriority)
-    priority?: ComplaintPriority;
+  /**
+   * Optional complaint priority filter.
+   */
+  @IsOptional()
+  @IsEnum(ComplaintPriority)
+  priority?: ComplaintPriority;
 }

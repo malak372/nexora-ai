@@ -55,7 +55,7 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
-  ) { }
+  ) {}
 
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findFirst({
@@ -115,7 +115,9 @@ export class CollectionJobService {
       where: {
         isActive: true,
         name: {
-          in: supportedPlatforms.map((sourceType) => PLATFORM_NAMES[sourceType]),
+          in: supportedPlatforms.map(
+            (sourceType) => PLATFORM_NAMES[sourceType],
+          ),
         },
       },
       select: {
@@ -374,7 +376,7 @@ export class CollectionJobService {
       ...(query.platform && {
         platforms: {
           array_contains: [query.platform],
-        } as Prisma.JsonFilter,
+        },
       }),
 
       ...(dateFilter ?? {}),
@@ -465,7 +467,6 @@ export class CollectionJobService {
       .map((item) => item.keyword);
   }
 
-
   /**
    * Maps CollectionJob entity into a cleaner API response.
    */
@@ -497,7 +498,9 @@ export class CollectionJobService {
       ),
 
       failedReason:
-        job.status === CollectionJobStatus.FAILED ? job.failedReason : undefined,
+        job.status === CollectionJobStatus.FAILED
+          ? job.failedReason
+          : undefined,
 
       startedAt: job.startedAt,
       completedAt: job.completedAt,
@@ -506,9 +509,9 @@ export class CollectionJobService {
 
       domain: job.domain
         ? {
-          id: job.domain.id,
-          name: job.domain.name,
-        }
+            id: job.domain.id,
+            name: job.domain.name,
+          }
         : null,
 
       nlpStatus: job.nlpAnalysis ? 'COMPLETED' : 'NOT_STARTED',

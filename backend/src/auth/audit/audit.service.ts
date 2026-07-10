@@ -11,8 +11,8 @@ import { PrismaService } from '../../prisma/prisma.service';
  * to the originating client when available.
  */
 export type AuthRequestMeta = {
-    ipAddress?: string;
-    userAgent?: string;
+  ipAddress?: string;
+  userAgent?: string;
 };
 
 /**
@@ -41,50 +41,50 @@ export type AuthRequestMeta = {
  */
 @Injectable()
 export class AuthAuditService {
-    constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-    /**
-     * Creates a new authentication audit log entry.
-     *
-     * @param data Authentication audit log information.
-     * @returns Created authentication log record.
-     */
-    async createLog(data: {
-        userId?: string;
-        email?: string;
-        action: AuthAction;
-        isSuccess?: boolean;
-        message?: string;
-        ipAddress?: string;
-        userAgent?: string;
-    }) {
-        return this.prisma.authenticationLog.create({
-            data: {
-                userId: data.userId,
-                email: data.email,
-                action: data.action,
-                isSuccess: data.isSuccess ?? true,
-                message: data.message,
-                ipAddress: data.ipAddress,
-                userAgent: data.userAgent,
-            },
-        });
-    }
-    /**
- * Retrieves authentication audit logs ordered from newest to oldest.
- *
- * This method is intended for admin monitoring screens to review
- * authentication-related events such as login attempts, password
- * changes, token refreshes, logouts, and email verification actions.
- *
- * @returns List of authentication audit logs.
- */
-    async getLogs() {
-        return this.prisma.authenticationLog.findMany({
-            orderBy: {
-                createdAt: 'desc',
-            },
-            take: 100,
-        });
-    }
+  /**
+   * Creates a new authentication audit log entry.
+   *
+   * @param data Authentication audit log information.
+   * @returns Created authentication log record.
+   */
+  async createLog(data: {
+    userId?: string;
+    email?: string;
+    action: AuthAction;
+    isSuccess?: boolean;
+    message?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }) {
+    return this.prisma.authenticationLog.create({
+      data: {
+        userId: data.userId,
+        email: data.email,
+        action: data.action,
+        isSuccess: data.isSuccess ?? true,
+        message: data.message,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+      },
+    });
+  }
+  /**
+   * Retrieves authentication audit logs ordered from newest to oldest.
+   *
+   * This method is intended for admin monitoring screens to review
+   * authentication-related events such as login attempts, password
+   * changes, token refreshes, logouts, and email verification actions.
+   *
+   * @returns List of authentication audit logs.
+   */
+  async getLogs() {
+    return this.prisma.authenticationLog.findMany({
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 100,
+    });
+  }
 }

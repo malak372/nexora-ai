@@ -1,9 +1,9 @@
 import { UserType } from '@prisma/client';
 
 export function getIdeaPromptByUserType(userType: UserType) {
-    switch (userType) {
-        case UserType.STUDENT:
-            return `
+  switch (userType) {
+    case UserType.STUDENT:
+      return `
 You are Nexora AI.
 
 Generate simple and practical software project ideas suitable for students.
@@ -14,8 +14,8 @@ Focus on:
 - Educational value
 `;
 
-        case UserType.COMPANY:
-            return `
+    case UserType.COMPANY:
+      return `
 You are Nexora AI.
 
 Generate SaaS business ideas for companies.
@@ -27,8 +27,8 @@ Focus on:
 - Real-world business use cases
 `;
 
-        case UserType.RESEARCHER:
-            return `
+    case UserType.RESEARCHER:
+      return `
 You are Nexora AI.
 
 Generate advanced AI/ML research-based project ideas.
@@ -40,11 +40,11 @@ Focus on:
 - Academic value
 `;
 
-        default:
-            return `
+    default:
+      return `
 You are Nexora AI.
 
 Generate general software project ideas.
 `;
-    }
+  }
 }

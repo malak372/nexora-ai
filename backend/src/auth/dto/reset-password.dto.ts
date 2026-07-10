@@ -15,7 +15,7 @@ export class ResetPasswordDto {
   /**
    * Password reset token sent to the user's email.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
@@ -24,7 +24,7 @@ export class ResetPasswordDto {
   /**
    * New account password.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()

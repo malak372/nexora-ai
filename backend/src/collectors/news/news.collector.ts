@@ -203,9 +203,9 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     const queries = [
       baseTerms.join(' OR '),
       ...baseTerms.slice(0, 3),
-      ...baseTerms.slice(0, 3).flatMap((term) =>
-        problemTerms.map((problem) => `${term} ${problem}`),
-      ),
+      ...baseTerms
+        .slice(0, 3)
+        .flatMap((term) => problemTerms.map((problem) => `${term} ${problem}`)),
     ];
 
     return this.unique(queries).slice(0, 8);

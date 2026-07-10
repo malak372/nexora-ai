@@ -16,16 +16,16 @@ import { UserIdeasService } from './ideas.service';
 @Controller('users/ideas')
 @UseGuards(JwtAuthGuard)
 export class UserIdeasController {
-    constructor(private readonly userIdeasService: UserIdeasService) { }
+  constructor(private readonly userIdeasService: UserIdeasService) {}
 
-    /**
-     * Retrieves the authenticated user's generated ideas.
-     */
-    @Get()
-    getGeneratedIdeas(
-        @CurrentUser() user: { id: string },
-        @Query() query: GetUserIdeasQueryDto,
-    ) {
-        return this.userIdeasService.getGeneratedIdeas(user.id, query);
-    }
+  /**
+   * Retrieves the authenticated user's generated ideas.
+   */
+  @Get()
+  getGeneratedIdeas(
+    @CurrentUser() user: { id: string },
+    @Query() query: GetUserIdeasQueryDto,
+  ) {
+    return this.userIdeasService.getGeneratedIdeas(user.id, query);
+  }
 }

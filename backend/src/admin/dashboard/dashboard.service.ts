@@ -26,7 +26,7 @@ type UsersGrowthRow = {
  */
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Retrieves summarized analytics for the Admin dashboard.
@@ -42,11 +42,7 @@ export class DashboardService {
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
-    const startOfMonth = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      1,
-    );
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const startOfLast30Days = new Date(now);
     startOfLast30Days.setDate(now.getDate() - 30);
@@ -516,11 +512,8 @@ export class DashboardService {
       aiRequests === 0
         ? 0
         : Number(
-          (
-            ((aiRequests - failedAiRequests) / aiRequests) *
-            100
-          ).toFixed(2),
-        );
+            (((aiRequests - failedAiRequests) / aiRequests) * 100).toFixed(2),
+          );
 
     const averageAiCostPerRequest =
       aiRequests === 0
@@ -531,11 +524,10 @@ export class DashboardService {
       premiumUsers === 0
         ? 0
         : Number(
-          (
-            (totalPremiumCreditBalance._sum.creditBalance ?? 0) /
-            premiumUsers
-          ).toFixed(2),
-        );
+            (
+              (totalPremiumCreditBalance._sum.creditBalance ?? 0) / premiumUsers
+            ).toFixed(2),
+          );
 
     const recentPayments = recentPaymentsRaw.map((payment) => ({
       ...payment,
@@ -649,7 +641,7 @@ export class DashboardService {
       mostUsedPlatforms: mostUsedPlatforms.map((item) => {
         const platformName =
           item.platformId !== null
-            ? platformMap.get(item.platformId) ?? null
+            ? (platformMap.get(item.platformId) ?? null)
             : null;
 
         return {

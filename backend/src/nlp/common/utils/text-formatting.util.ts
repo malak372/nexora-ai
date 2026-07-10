@@ -9,11 +9,11 @@
  * @returns Title-cased text.
  */
 export function toTitleCase(value: string): string {
-    return value
-        .toLowerCase()
-        .trim()
-        .split(' ')
-        .filter(Boolean)
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
+  return value
+    .toLowerCase()
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }

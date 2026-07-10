@@ -298,7 +298,7 @@ export class CommentsService {
     return {
       commentsByPlatform: commentsByPlatformGroup.map((item) => ({
         label: item.platformId
-          ? platformNameMap.get(item.platformId) ?? 'Unknown Platform'
+          ? (platformNameMap.get(item.platformId) ?? 'Unknown Platform')
           : 'Unknown Platform',
         platformId: item.platformId,
         count: item._count.platformId,

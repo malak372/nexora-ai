@@ -1,110 +1,269 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
+import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
 import {
+  PromptPlaceholder,
   PromptTemplateValues,
   REQUIRED_PROMPT_PLACEHOLDERS,
 } from '../constants/prompt-placeholders.constant';
 
+import {
+  GLOBAL_SYSTEM_SETTINGS_KEY,
+  PROMPT_TEMPLATE_MAX_LENGTH,
+  PROMPT_TEMPLATE_MIN_LENGTH,
+} from '../constants/prompt.constants';
+
+import { DEFAULT_IDEA_PROMPT_TEMPLATE } from '../templates/default-idea-prompt.template';
+
 /**
- * Manages the configurable AI prompt template.
+ * Matches the supported prompt-placeholder syntax.
+ *
+ * Examples:
+ * - {{domain}}
+ * - {{sampleComments}}
+ * - {{requestedOutputFormat}}
+ */
+const PROMPT_PLACEHOLDER_PATTERN = /{{([a-zA-Z0-9_]+)}}/g;
+
+/**
+ * Public response returned by the prompt-template endpoints.
+ *
+ * @author Malak
+ */
+export type PromptTemplateResponse = {
+  /**
+   * Currently active idea-generation prompt template.
+   */
+  readonly ideaPromptTemplate: string;
+};
+
+/**
+ * Manages the configurable idea-generation prompt template.
  *
  * Responsibilities:
- * - Return the active idea prompt template.
- * - Update the admin-configured idea prompt template.
- * - Validate required placeholders before saving.
- * - Render templates using placeholder values.
+ * - Read the active prompt template.
+ * - Fall back to the application default template.
+ * - Normalize template input.
+ * - Validate template length.
+ * - Validate required placeholders.
+ * - Reject unsupported placeholders.
+ * - Render placeholder values.
+ * - Update the template transactionally.
+ * - Audit administrator template changes.
+ *
+ * Template validation always occurs before external values such as
+ * posts, comments, NLP results, or existing idea content are inserted.
  *
  * @author Malak
  */
 @Injectable()
 export class PromptTemplateService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
-   * Returns the currently active AI prompt template.
+   * Returns the currently active idea-generation prompt template.
    */
-  async getCurrentTemplate(): Promise<{ ideaPromptTemplate: string }> {
-    const template = await this.getIdeaPromptTemplate();
-
+  async getCurrentTemplate(): Promise<PromptTemplateResponse> {
     return {
-      ideaPromptTemplate: template,
+      ideaPromptTemplate: await this.getIdeaPromptTemplate(),
     };
   }
 
   /**
-   * Updates the admin-configured AI prompt template.
+   * Updates the global idea-generation prompt template.
+   *
+   * The template is:
+   * 1. Trimmed.
+   * 2. Validated.
+   * 3. Compared with the current value.
+   * 4. Persisted transactionally.
+   * 5. Recorded in the administrator audit log.
+   *
+   * No database update or audit record is created when the submitted
+   * template is identical to the currently active template.
+   *
+   * @param ideaPromptTemplate New configurable prompt template.
+   * @param adminId Identifier of the administrator performing the update.
    */
   async updateTemplate(
     ideaPromptTemplate: string,
-    adminId?: string,
-  ): Promise<{ ideaPromptTemplate: string }> {
-    this.validateRequiredPlaceholders(ideaPromptTemplate);
+    adminId: string,
+  ): Promise<PromptTemplateResponse> {
+    const normalizedTemplate = ideaPromptTemplate.trim();
 
-    const settings = await this.prisma.systemSetting.findFirst();
+    this.validateTemplate(normalizedTemplate);
 
-    if (!settings) {
-      throw new NotFoundException('System settings were not initialized.');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const settings = await tx.systemSetting.findUnique({
+        where: {
+          key: GLOBAL_SYSTEM_SETTINGS_KEY,
+        },
+      });
 
-    const updatedSettings = await this.prisma.systemSetting.update({
+      if (!settings) {
+        throw new NotFoundException('System settings were not initialized.');
+      }
+
+      const previousTemplate =
+        settings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE;
+
+      /**
+       * Avoid unnecessary database writes and audit records.
+       */
+      if (previousTemplate === normalizedTemplate) {
+        return {
+          ideaPromptTemplate: previousTemplate,
+        };
+      }
+
+      const updatedSettings = await tx.systemSetting.update({
+        where: {
+          key: GLOBAL_SYSTEM_SETTINGS_KEY,
+        },
+        data: {
+          ideaPromptTemplate: normalizedTemplate,
+          updatedById: adminId,
+        },
+        select: {
+          id: true,
+          ideaPromptTemplate: true,
+        },
+      });
+
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_UPDATE_PROMPT,
+          targetType: AuditTargetType.PROMPT,
+          targetId: updatedSettings.id,
+
+          oldValue: this.toAuditJson({
+            ideaPromptTemplate: previousTemplate,
+          }),
+
+          newValue: this.toAuditJson({
+            ideaPromptTemplate: normalizedTemplate,
+          }),
+        },
+        tx,
+      );
+
+      return {
+        ideaPromptTemplate:
+          updatedSettings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE,
+      };
+    });
+  }
+
+  /**
+   * Returns the configured idea-generation prompt template.
+   *
+   * The application default is used when:
+   * - The global SystemSetting record has no custom template.
+   * - ideaPromptTemplate is null.
+   *
+   * The selected template is always validated before being returned.
+   */
+  async getIdeaPromptTemplate(): Promise<string> {
+    const settings = await this.prisma.systemSetting.findUnique({
       where: {
-        id: settings.id,
-      },
-      data: {
-        ideaPromptTemplate,
-        updatedById: adminId,
+        key: GLOBAL_SYSTEM_SETTINGS_KEY,
       },
       select: {
         ideaPromptTemplate: true,
       },
     });
 
-    return {
-      ideaPromptTemplate:
-        updatedSettings.ideaPromptTemplate ??
-        this.getDefaultIdeaPromptTemplate(),
-    };
-  }
+    const template = (
+      settings?.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE
+    ).trim();
 
-  /**
-   * Returns the configured idea prompt template or the default template.
-   */
-  async getIdeaPromptTemplate(): Promise<string> {
-    const settings = await this.prisma.systemSetting.findFirst();
-
-    const template =
-      settings?.ideaPromptTemplate ?? this.getDefaultIdeaPromptTemplate();
-
-    this.validateRequiredPlaceholders(template);
+    this.validateTemplate(template);
 
     return template;
   }
 
   /**
-   * Renders a prompt template by replacing supported placeholders.
+   * Replaces every supported placeholder with its provided value.
+   *
+   * The original template is validated before external data is
+   * inserted. This prevents placeholder-like content contained inside
+   * posts, comments, NLP evidence, or existing ideas from being treated
+   * as unresolved application placeholders.
+   *
+   * @param template Valid prompt template.
+   * @param values Values required to render every placeholder.
    */
   renderTemplate(template: string, values: PromptTemplateValues): string {
-    const renderedTemplate = Object.entries(values).reduce(
-      (result, [key, value]) => result.replaceAll(`{{${key}}}`, value),
-      template,
+    const normalizedTemplate = template.trim();
+
+    this.validateTemplate(normalizedTemplate);
+
+    return normalizedTemplate.replace(
+      PROMPT_PLACEHOLDER_PATTERN,
+      (_match: string, key: string) => {
+        const placeholder = key as PromptPlaceholder;
+        const value = values[placeholder];
+
+        if (value === undefined) {
+          throw new InternalServerErrorException(
+            `No value was provided for prompt placeholder: ${key}`,
+          );
+        }
+
+        return value;
+      },
     );
-
-    this.validateNoUnresolvedPlaceholders(renderedTemplate);
-
-    return renderedTemplate;
   }
 
+  /**
+   * Runs all validations required for a configurable prompt template.
+   */
+  private validateTemplate(template: string): void {
+    this.validateTemplateLength(template);
+    this.validateRequiredPlaceholders(template);
+    this.validateSupportedPlaceholders(template);
+  }
+
+  /**
+   * Ensures that the template length remains within the configured
+   * application limits.
+   *
+   * Validation is repeated inside the service because service methods
+   * may be called internally without passing through an HTTP DTO.
+   */
+  private validateTemplateLength(template: string): void {
+    if (
+      template.length < PROMPT_TEMPLATE_MIN_LENGTH ||
+      template.length > PROMPT_TEMPLATE_MAX_LENGTH
+    ) {
+      throw new BadRequestException(
+        `Prompt template length must be between ${PROMPT_TEMPLATE_MIN_LENGTH} and ${PROMPT_TEMPLATE_MAX_LENGTH} characters.`,
+      );
+    }
+  }
+
+  /**
+   * Ensures that every placeholder required by PromptBuilderService
+   * exists in the configurable template.
+   */
   private validateRequiredPlaceholders(template: string): void {
     const missingPlaceholders = REQUIRED_PROMPT_PLACEHOLDERS.filter(
       (placeholder) => !template.includes(`{{${placeholder}}}`),
     );
 
-    if (missingPlaceholders.length) {
+    if (missingPlaceholders.length > 0) {
       throw new BadRequestException(
         `Prompt template is missing required placeholders: ${missingPlaceholders.join(
           ', ',
@@ -113,90 +272,45 @@ export class PromptTemplateService {
     }
   }
 
-  private validateNoUnresolvedPlaceholders(renderedTemplate: string): void {
-    const unresolvedPlaceholders =
-      renderedTemplate.match(/{{\s*[\w]+\s*}}/g) ?? [];
+  /**
+   * Ensures that every placeholder declared inside the template
+   * is supported by PromptBuilderService.
+   *
+   * Unsupported placeholders are rejected instead of being left
+   * unresolved in the final AI prompt.
+   */
+  private validateSupportedPlaceholders(template: string): void {
+    const placeholders = Array.from(
+      template.matchAll(PROMPT_PLACEHOLDER_PATTERN),
+      (match) => match[1],
+    );
 
-    if (unresolvedPlaceholders.length) {
+    const supportedPlaceholders = new Set<string>(REQUIRED_PROMPT_PLACEHOLDERS);
+
+    const unsupportedPlaceholders = [
+      ...new Set(
+        placeholders.filter(
+          (placeholder) => !supportedPlaceholders.has(placeholder),
+        ),
+      ),
+    ];
+
+    if (unsupportedPlaceholders.length > 0) {
       throw new BadRequestException(
-        `Prompt contains unresolved placeholders: ${unresolvedPlaceholders.join(
+        `Prompt template contains unsupported placeholders: ${unsupportedPlaceholders.join(
           ', ',
         )}`,
       );
     }
   }
 
-  private getDefaultIdeaPromptTemplate(): string {
-    return `
-You are Nexora AI, an intelligent software project discovery and generation assistant.
-
-Your task is to generate a practical software project idea based on real community feedback, collected posts, collected comments, and NLP analysis.
-
-Access rules:
-- Guest users receive only: title and limitedAbstract.
-- Registered free users receive only: title, problemStatement, objectives, targetUsers, and partialAbstract.
-- Direct unlock expands an existing free idea and returns advanced features only.
-- Premium credit generation creates a new idea with all advanced features immediately.
-
-Context:
-- Domain: {{domain}}
-- Country: {{country}}
-- City: {{city}}
-- Region: {{region}}
-- Platforms: {{platforms}}
-- Number of comments analyzed: {{commentsCount}}
-
-NLP analysis:
-- Sentiment statistics:
-{{sentimentStats}}
-
-- Keywords:
-{{keywords}}
-
-- Topics:
-{{topics}}
-
-- Recurring problems:
-{{recurringProblems}}
-
-- Extracted needs:
-{{extractedNeeds}}
-
-- Feature requests:
-{{featureRequests}}
-
-- Opportunities:
-{{opportunities}}
-
-- Additional insights:
-{{insights}}
-
-- Data quality:
-{{dataQuality}}
-
-Sample posts:
-{{samplePosts}}
-
-Sample comments:
-{{sampleComments}}
-
-Existing idea context:
-{{existingIdea}}
-
-Strict rules:
-1. Use only the provided community feedback and NLP analysis as evidence.
-2. Do not invent fake comments, fake numbers, fake statistics, fake sources, or fake citations.
-3. Generate a practical software project suitable for software engineering students or developers.
-4. Consider local context and high-level legal/regulatory constraints.
-5. Keep recommendations realistic and implementation-oriented.
-6. Return valid JSON only.
-7. Do not include markdown.
-8. Do not include fields outside the requested JSON format.
-9. For Guest and Free users, do not reveal advanced features.
-10. For direct unlock, expand the existing idea instead of generating a new unrelated idea.
-
-Required JSON output format:
-{{requestedOutputFormat}}
-`;
+  /**
+   * Converts a JavaScript value into Prisma-compatible JSON.
+   *
+   * The conversion removes unsupported values such as undefined
+   * before the value is passed to AuditService.
+   */
+  private toAuditJson(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

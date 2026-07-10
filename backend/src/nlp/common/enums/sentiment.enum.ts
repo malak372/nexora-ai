@@ -19,18 +19,18 @@
  * @author Eman
  */
 export enum Sentiment {
-    /**
-     * Positive user opinion or feedback.
-     */
-    POSITIVE = 'POSITIVE',
+  /**
+   * Positive user opinion or feedback.
+   */
+  POSITIVE = 'POSITIVE',
 
-    /**
-     * Negative user opinion, complaint, or problem.
-     */
-    NEGATIVE = 'NEGATIVE',
+  /**
+   * Negative user opinion, complaint, or problem.
+   */
+  NEGATIVE = 'NEGATIVE',
 
-    /**
-     * Neutral or informational content.
-     */
-    NEUTRAL = 'NEUTRAL',
+  /**
+   * Neutral or informational content.
+   */
+  NEUTRAL = 'NEUTRAL',
 }

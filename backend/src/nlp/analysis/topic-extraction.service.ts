@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import {
-    WeightedKeyword,
-    WeightedTopic,
+  WeightedKeyword,
+  WeightedTopic,
 } from '../pipeline/types/intelligent-analysis.types';
 import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
 
@@ -30,100 +30,100 @@ import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
  */
 @Injectable()
 export class TopicExtractionService {
-    private readonly maxTopics = 15;
+  private readonly maxTopics = 15;
 
-    constructor(private readonly topicRuleService: TopicRuleService) { }
+  constructor(private readonly topicRuleService: TopicRuleService) {}
 
-    /**
-     * Extracts the most relevant discussion topics from weighted keywords.
-     *
-     * @param keywords Weighted keywords extracted from analyzed community texts.
-     * @param language Language used to load matching topic rules.
-     * @returns Weighted topics sorted by frequency.
-     */
-    async extract(
-        keywords: WeightedKeyword[],
-        language: LanguageCode,
-    ): Promise<WeightedTopic[]> {
-        const topicRules = await this.topicRuleService.getRules(language);
-        const topicMap = new Map<string, number>();
+  /**
+   * Extracts the most relevant discussion topics from weighted keywords.
+   *
+   * @param keywords Weighted keywords extracted from analyzed community texts.
+   * @param language Language used to load matching topic rules.
+   * @returns Weighted topics sorted by frequency.
+   */
+  async extract(
+    keywords: WeightedKeyword[],
+    language: LanguageCode,
+  ): Promise<WeightedTopic[]> {
+    const topicRules = await this.topicRuleService.getRules(language);
+    const topicMap = new Map<string, number>();
 
-        for (const keyword of keywords) {
-            const normalizedKeyword = this.normalizeTerm(keyword.keyword);
-            const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
+    for (const keyword of keywords) {
+      const normalizedKeyword = this.normalizeTerm(keyword.keyword);
+      const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
 
-            topicMap.set(topic, (topicMap.get(topic) ?? 0) + keyword.frequency);
+      topicMap.set(topic, (topicMap.get(topic) ?? 0) + keyword.frequency);
+    }
+
+    return [...topicMap.entries()]
+      .map(([topic, frequency]) => ({
+        topic,
+        frequency,
+      }))
+      .sort((first, second) => {
+        if (second.frequency !== first.frequency) {
+          return second.frequency - first.frequency;
         }
 
-        return [...topicMap.entries()]
-            .map(([topic, frequency]) => ({
-                topic,
-                frequency,
-            }))
-            .sort((first, second) => {
-                if (second.frequency !== first.frequency) {
-                    return second.frequency - first.frequency;
-                }
+        return first.topic.localeCompare(second.topic);
+      })
+      .slice(0, this.maxTopics);
+  }
 
-                return first.topic.localeCompare(second.topic);
-            })
-            .slice(0, this.maxTopics);
-    }
+  /**
+   * Finds the best topic label for a normalized keyword.
+   *
+   * If no configured rule matches the keyword, the keyword itself is converted
+   * into a readable standalone topic. This preserves emerging signals that are
+   * not yet covered by administrator-managed topic rules.
+   *
+   * @param keyword Normalized keyword.
+   * @param topicRules Configurable topic rules loaded from the database.
+   * @returns Topic label.
+   */
+  private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
+    const matchedRule = topicRules.find((rule) =>
+      rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
+    );
 
-    /**
-     * Finds the best topic label for a normalized keyword.
-     *
-     * If no configured rule matches the keyword, the keyword itself is converted
-     * into a readable standalone topic. This preserves emerging signals that are
-     * not yet covered by administrator-managed topic rules.
-     *
-     * @param keyword Normalized keyword.
-     * @param topicRules Configurable topic rules loaded from the database.
-     * @returns Topic label.
-     */
-    private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
-        const matchedRule = topicRules.find((rule) =>
-            rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
-        );
+    return matchedRule?.topic ?? this.toTitleCase(keyword);
+  }
 
-        return matchedRule?.topic ?? this.toTitleCase(keyword);
-    }
+  /**
+   * Checks whether a keyword is related to a configured topic term.
+   *
+   * This supports exact matches and phrase matches, which allows keywords such
+   * as "waiting time" or "online appointment" to match broader topic groups.
+   *
+   * @param keyword Normalized keyword.
+   * @param term Topic rule term.
+   * @returns True when the keyword is related to the topic term.
+   */
+  private isRelatedTerm(keyword: string, term: string): boolean {
+    return keyword === term || keyword.includes(term) || term.includes(keyword);
+  }
 
-    /**
-     * Checks whether a keyword is related to a configured topic term.
-     *
-     * This supports exact matches and phrase matches, which allows keywords such
-     * as "waiting time" or "online appointment" to match broader topic groups.
-     *
-     * @param keyword Normalized keyword.
-     * @param term Topic rule term.
-     * @returns True when the keyword is related to the topic term.
-     */
-    private isRelatedTerm(keyword: string, term: string): boolean {
-        return keyword === term || keyword.includes(term) || term.includes(keyword);
-    }
+  /**
+   * Normalizes a keyword before topic matching.
+   *
+   * @param value Keyword value.
+   * @returns Normalized keyword.
+   */
+  private normalizeTerm(value: string): string {
+    return value.toLowerCase().trim().replace(/\s+/g, ' ');
+  }
 
-    /**
-     * Normalizes a keyword before topic matching.
-     *
-     * @param value Keyword value.
-     * @returns Normalized keyword.
-     */
-    private normalizeTerm(value: string): string {
-        return value.toLowerCase().trim().replace(/\s+/g, ' ');
-    }
-
-    /**
-     * Converts unmatched keyword candidates into readable topic labels.
-     *
-     * @param value Normalized keyword.
-     * @returns Title-cased topic label.
-     */
-    private toTitleCase(value: string): string {
-        return value
-            .split(' ')
-            .filter(Boolean)
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
-    }
+  /**
+   * Converts unmatched keyword candidates into readable topic labels.
+   *
+   * @param value Normalized keyword.
+   * @returns Title-cased topic label.
+   */
+  private toTitleCase(value: string): string {
+    return value
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
 }

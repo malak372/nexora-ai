@@ -1,27 +1,40 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+
 import { AppModule } from './app.module';
 
-/**
- * Bootstraps the NestJS application.
- *
- * Creates the application instance, configures global
- * validation pipes, and starts listening for incoming requests.
- *
- * @author Eman
- */
-async function bootstrap() {
+async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   app.useGlobalPipes(
     new ValidationPipe({
+      /**
+       * Removes properties that are not declared in the DTO.
+       */
       whitelist: true,
+
+      /**
+       * Rejects the request instead of silently removing unknown
+       * properties.
+       */
       forbidNonWhitelisted: true,
+
+      /**
+       * Applies class-transformer transformations.
+       */
       transform: true,
+
+      transformOptions: {
+        /**
+         * Numeric conversion is handled explicitly through
+         * @Type(() => Number), avoiding unsafe implicit conversion.
+         */
+        enableImplicitConversion: false,
+      },
     }),
   );
 
   await app.listen(process.env.PORT ?? 3000);
 }
 
-bootstrap();
+void bootstrap();

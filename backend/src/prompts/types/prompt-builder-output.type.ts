@@ -1,42 +1,58 @@
 import { PromptType } from '@prisma/client';
 
+import { JsonSchema } from './json-schema.type';
+
 /**
- * Final prompt produced by PromptBuilderService.
+ * Final prompt contract produced by PromptBuilderService.
  *
- * This object is returned to the caller (typically IdeasService),
- * which is responsible for:
+ * The caller is responsible for:
  * - Saving prompt history.
- * - Sending the prompt to the AI provider.
- * - Persisting the generated AI response.
+ * - Sending the prompt to an AI provider.
+ * - Passing the response schema to the provider adapter.
+ * - Validating and persisting the generated response.
  *
  * @author Malak
  */
 export type PromptBuilderOutput = {
   /**
-   * Prompt category used for auditing and prompt history.
+   * Prompt category used by persistence and audit logic.
    */
   readonly promptType: PromptType;
 
   /**
-   * Final rendered prompt that will be sent to the AI provider.
+   * Final rendered prompt sent to the AI provider.
    */
   readonly promptText: string;
 
   /**
    * Approximate number of input tokens.
    *
-   * Used for:
-   * - Monitoring
-   * - Cost estimation
-   * - AI analytics
+   * Used for monitoring, cost estimation, and analytics.
    */
   readonly estimatedInputTokens: number;
 
   /**
-   * SHA-256 hash of the template used to build this prompt.
+   * SHA-256 hash of the source template.
    *
-   * Allows tracking which template version generated
-   * a specific AI response without storing duplicate templates.
+   * Identifies the template version used to generate
+   * this prompt without duplicating template content.
    */
   readonly templateHash: string;
+
+  /**
+   * Stable identifier for the expected response schema.
+   *
+   * Example:
+   * - guest_idea
+   * - free_idea
+   * - premium_idea
+   * - idea_unlock
+   */
+  readonly responseSchemaName: string;
+
+  /**
+   * Provider-neutral structured-output schema describing
+   * the expected AI response.
+   */
+  readonly responseSchema: JsonSchema;
 };

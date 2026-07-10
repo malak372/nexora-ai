@@ -10,7 +10,7 @@ import { MailService } from './mail.service';
  * @author Eman
  */
 @Module({
-    providers: [MailService],
-    exports: [MailService],
+  providers: [MailService],
+  exports: [MailService],
 })
-export class MailModule { }
+export class MailModule {}

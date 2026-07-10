@@ -14,7 +14,7 @@ export class RefreshDto {
   /**
    * Refresh token issued during authentication.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()

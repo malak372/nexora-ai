@@ -39,10 +39,7 @@ export class DataCollectionController {
    * Starts a new data collection job.
    */
   @Post('run')
-  run(
-    @Body() dto: RunCollectionDto,
-    @CurrentUser() admin: { id: string },
-  ) {
+  run(@Body() dto: RunCollectionDto, @CurrentUser() admin: { id: string }) {
     return this.dataCollectionService.run(dto, admin.id);
   }
 

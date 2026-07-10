@@ -18,97 +18,97 @@ import { PrismaService } from '../../prisma/prisma.service';
  */
 @Injectable()
 export class AuthTokenService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly jwtService: JwtService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+  ) {}
 
-    /**
-     * Hashes a plain token using SHA-256.
-     *
-     * Used before storing or comparing sensitive tokens
-     * such as refresh tokens, password reset tokens,
-     * and email verification tokens.
-     *
-     * @param token - Plain token value.
-     * @returns Hashed token value.
-     */
-    hashToken(token: string) {
-        return createHash('sha256').update(token).digest('hex');
-    }
+  /**
+   * Hashes a plain token using SHA-256.
+   *
+   * Used before storing or comparing sensitive tokens
+   * such as refresh tokens, password reset tokens,
+   * and email verification tokens.
+   *
+   * @param token - Plain token value.
+   * @returns Hashed token value.
+   */
+  hashToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
-    /**
-     * Generates a signed JWT access token.
-     *
-     * The token includes the user's ID, email, role,
-     * and account status. These claims support authentication
-     * and role-based authorization, while the latest user data
-     * is still reloaded from the database by JwtStrategy.
-     *
-     * @param user User data required for JWT payload.
-     * @returns Signed JWT access token.
-     */
-    async generateAccessToken(user: {
-        id: string;
-        email: string;
-        role: UserRole;
-        accountStatus: AccountStatus;
-    }) {
-        return this.jwtService.signAsync(
-            {
-                sub: user.id,
-                email: user.email,
-                role: user.role,
-                accountStatus: user.accountStatus,
-            },
-            {
-                secret: process.env.JWT_ACCESS_SECRET,
-                expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
-            },
-        );
-    }
+  /**
+   * Generates a signed JWT access token.
+   *
+   * The token includes the user's ID, email, role,
+   * and account status. These claims support authentication
+   * and role-based authorization, while the latest user data
+   * is still reloaded from the database by JwtStrategy.
+   *
+   * @param user User data required for JWT payload.
+   * @returns Signed JWT access token.
+   */
+  async generateAccessToken(user: {
+    id: string;
+    email: string;
+    role: UserRole;
+    accountStatus: AccountStatus;
+  }) {
+    return this.jwtService.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        accountStatus: user.accountStatus,
+      },
+      {
+        secret: process.env.JWT_ACCESS_SECRET,
+        expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
+      },
+    );
+  }
 
-    /**
-     * Generates and stores a secure refresh token.
-     *
-     * A cryptographically secure refresh token is generated
-     * and returned to the client, while only its hashed value
-     * is stored in the database for security.
-     *
-     * The associated session metadata, including the client's
-     * IP address and user agent when available, is stored to
-     * support session management, device tracking, and future
-     * security analysis.
-     *
-     * @param userId ID of the user who owns the refresh token.
-     * @param meta Optional client session metadata such as IP address
-     * and user agent.
-     * @returns Plain refresh token.
-     */
-    async generateRefreshToken(
-        userId: string,
-        meta?: {
-            ipAddress?: string;
-            userAgent?: string;
-        },
-    ) {
-        const refreshToken = randomBytes(64).toString('hex');
-        const tokenHash = this.hashToken(refreshToken);
+  /**
+   * Generates and stores a secure refresh token.
+   *
+   * A cryptographically secure refresh token is generated
+   * and returned to the client, while only its hashed value
+   * is stored in the database for security.
+   *
+   * The associated session metadata, including the client's
+   * IP address and user agent when available, is stored to
+   * support session management, device tracking, and future
+   * security analysis.
+   *
+   * @param userId ID of the user who owns the refresh token.
+   * @param meta Optional client session metadata such as IP address
+   * and user agent.
+   * @returns Plain refresh token.
+   */
+  async generateRefreshToken(
+    userId: string,
+    meta?: {
+      ipAddress?: string;
+      userAgent?: string;
+    },
+  ) {
+    const refreshToken = randomBytes(64).toString('hex');
+    const tokenHash = this.hashToken(refreshToken);
 
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 30);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
 
-        await this.prisma.refreshToken.create({
-            data: {
-                userId,
-                tokenHash,
-                expiresAt,
-                ipAddress: meta?.ipAddress,
-                userAgent: meta?.userAgent,
-                lastUsedAt: new Date(),
-            },
-        });
+    await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+        ipAddress: meta?.ipAddress,
+        userAgent: meta?.userAgent,
+        lastUsedAt: new Date(),
+      },
+    });
 
-        return refreshToken;
-    }
+    return refreshToken;
+  }
 }

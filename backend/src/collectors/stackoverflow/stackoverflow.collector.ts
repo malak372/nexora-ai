@@ -61,7 +61,8 @@ type StackOverflowSearchQuery = {
 @Injectable()
 export class StackOverflowCollector
   extends BaseCollector
-  implements SocialCollector {
+  implements SocialCollector
+{
   readonly sourceType = CollectionSourceType.STACKOVERFLOW;
 
   private readonly platformName = 'Stack Overflow';
@@ -89,14 +90,18 @@ export class StackOverflowCollector
       const allQuestions: StackOverflowQuestion[] = [];
 
       for (const query of queries) {
-        const cacheKey = CollectorCacheUtil.build('stackoverflow', 'questions', [
-          query.q,
-          query.title,
-          query.body,
-          query.tagged,
-          input.country,
-          input.language,
-        ]);
+        const cacheKey = CollectorCacheUtil.build(
+          'stackoverflow',
+          'questions',
+          [
+            query.q,
+            query.title,
+            query.body,
+            query.tagged,
+            input.country,
+            input.language,
+          ],
+        );
 
         const data = await CollectorHttpUtil.getWithRetryAndCache<
           StackOverflowResponse<StackOverflowQuestion>
@@ -355,15 +360,17 @@ export class StackOverflowCollector
           return true;
         })
         .slice(0, this.maxSavedComments)
-        .map((comment): CollectorComment => ({
-          externalId: comment.comment_id?.toString() ?? '',
-          content: this.stripHtml(comment.body ?? ''),
-          author: comment.owner?.display_name,
-          likesCount: comment.score ?? 0,
-          publishedAt: comment.creation_date
-            ? new Date(comment.creation_date * 1000)
-            : undefined,
-        }));
+        .map(
+          (comment): CollectorComment => ({
+            externalId: comment.comment_id?.toString() ?? '',
+            content: this.stripHtml(comment.body ?? ''),
+            author: comment.owner?.display_name,
+            likesCount: comment.score ?? 0,
+            publishedAt: comment.creation_date
+              ? new Date(comment.creation_date * 1000)
+              : undefined,
+          }),
+        );
     } catch {
       return [];
     }

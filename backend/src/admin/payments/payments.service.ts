@@ -53,11 +53,7 @@ export class PaymentsService {
       ...buildExactFilter('paymentPurpose', query.purpose),
       ...buildExactFilter('paymentMethod', query.method),
 
-      ...buildRelationSearchFilter(
-        'user',
-        ['fullName', 'email'],
-        query.search,
-      ),
+      ...buildRelationSearchFilter('user', ['fullName', 'email'], query.search),
     };
   }
 
@@ -131,9 +127,7 @@ export class PaymentsService {
       data: payments.map((payment) => ({
         ...payment,
         amount: toNumber(payment.amount),
-        creditPriceAtPurchase: toNumber(
-          payment.creditPriceAtPurchase,
-        ),
+        creditPriceAtPurchase: toNumber(payment.creditPriceAtPurchase),
       })),
 
       meta: {

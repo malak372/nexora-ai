@@ -1,3 +1,4 @@
+import { UserType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
@@ -7,7 +8,6 @@ import {
   Matches,
   MinLength,
 } from 'class-validator';
-import { UserType } from '@prisma/client';
 
 /**
  * Data Transfer Object (DTO) used for user registration.
@@ -22,7 +22,7 @@ export class RegisterDto {
   /**
    * User's full name.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
@@ -31,7 +31,7 @@ export class RegisterDto {
   /**
    * User's email address.
    */
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsEmail()

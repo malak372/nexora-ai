@@ -204,21 +204,20 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       input.language,
     ]);
 
-    const data = await CollectorHttpUtil.getWithRetryAndCache<
-      YouTubeSearchResponse
-    >(
-      `${this.apiBaseUrl}/search`,
-      {
-        params: this.buildSearchParams(input, apiKey, query),
-        timeout: 10000,
-      },
-      {
-        cacheKey,
-        cacheTtlMs: this.cacheTtlMs,
-        retryAttempts: this.retryAttempts,
-        retryDelayMs: this.retryDelayMs,
-      },
-    );
+    const data =
+      await CollectorHttpUtil.getWithRetryAndCache<YouTubeSearchResponse>(
+        `${this.apiBaseUrl}/search`,
+        {
+          params: this.buildSearchParams(input, apiKey, query),
+          timeout: 10000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
     return data.items ?? [];
   }
@@ -398,25 +397,24 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
         videoIds.join(','),
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<
-        YouTubeStatisticsResponse
-      >(
-        `${this.apiBaseUrl}/videos`,
-        {
-          params: {
-            key: apiKey,
-            part: 'statistics',
-            id: videoIds.join(','),
+      const data =
+        await CollectorHttpUtil.getWithRetryAndCache<YouTubeStatisticsResponse>(
+          `${this.apiBaseUrl}/videos`,
+          {
+            params: {
+              key: apiKey,
+              part: 'statistics',
+              id: videoIds.join(','),
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+          {
+            cacheKey,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
       const videos = data.items ?? [];
 
@@ -451,28 +449,27 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
         videoId,
       ]);
 
-      const data = await CollectorHttpUtil.getWithRetryAndCache<
-        YouTubeCommentsResponse
-      >(
-        `${this.apiBaseUrl}/commentThreads`,
-        {
-          params: {
-            key: apiKey,
-            part: 'snippet',
-            videoId,
-            maxResults: Math.min(this.maxFetchedComments, 100),
-            order: 'relevance',
-            textFormat: 'plainText',
+      const data =
+        await CollectorHttpUtil.getWithRetryAndCache<YouTubeCommentsResponse>(
+          `${this.apiBaseUrl}/commentThreads`,
+          {
+            params: {
+              key: apiKey,
+              part: 'snippet',
+              videoId,
+              maxResults: Math.min(this.maxFetchedComments, 100),
+              order: 'relevance',
+              textFormat: 'plainText',
+            },
+            timeout: 10000,
           },
-          timeout: 10000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+          {
+            cacheKey,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
+        );
 
       const comments = data.items ?? [];
       const seenCommentIds = new Set<string>();
@@ -492,8 +489,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           return true;
         })
         .sort(
-          (a, b) =>
-            (b.snippet?.likeCount ?? 0) - (a.snippet?.likeCount ?? 0),
+          (a, b) => (b.snippet?.likeCount ?? 0) - (a.snippet?.likeCount ?? 0),
         )
         .slice(0, this.maxSavedComments)
         .map((comment): CollectorComment => {

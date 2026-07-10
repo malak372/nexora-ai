@@ -15,6 +15,11 @@ import {
   calculateTotalPages,
 } from '../utilities/analytics/analytics.helper';
 
+/**
+ * Input used when creating an audit log.
+ *
+ * @author Malak
+ */
 export type CreateAuditLogInput = {
   actorId?: string | null;
   action: AuditAction;
@@ -29,33 +34,32 @@ export type CreateAuditLogInput = {
  *
  * Responsibilities:
  * - Create audit logs.
- * - List audit logs.
- * - Filter audit logs.
+ * - Participate in existing Prisma transactions.
+ * - List and filter audit logs.
  * - Generate audit summaries.
  * - Generate chart-ready analytics.
  * - Export audit logs as CSV.
- *
- * This service is general and not admin-specific.
  *
  * @author Malak
  */
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Creates a new audit log record.
+   * Creates a new audit log.
    *
-   * Can be used by:
-   * - Admin module.
-   * - Data collection module.
-   * - NLP module.
-   * - Ideas module.
-   * - Payments module.
-   * - Any future system module.
+   * When a transaction client is provided, the audit log is created
+   * inside the caller's transaction. This guarantees that the business
+   * operation and its audit record either both succeed or both roll back.
+   *
+   * @param input Audit log values.
+   * @param tx Optional Prisma transaction client.
    */
-  async createLog(input: CreateAuditLogInput) {
-    return this.prisma.auditLog.create({
+  async createLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient) {
+    const client = tx ?? this.prisma;
+
+    return client.auditLog.create({
       data: {
         actorId: input.actorId ?? null,
         action: input.action,
@@ -110,6 +114,7 @@ export class AuditService {
       },
     };
   }
+
   /**
    * Returns summary counts for audit logs.
    */
@@ -118,6 +123,7 @@ export class AuditService {
 
     const [totalLogs, logsWithActor, logsWithoutActor] = await Promise.all([
       this.prisma.auditLog.count({ where }),
+
       this.prisma.auditLog.count({
         where: {
           ...where,
@@ -126,6 +132,7 @@ export class AuditService {
           },
         },
       }),
+
       this.prisma.auditLog.count({
         where: {
           ...where,
@@ -155,6 +162,7 @@ export class AuditService {
           action: true,
         },
       }),
+
       this.prisma.auditLog.groupBy({
         by: ['targetType'],
         where,
@@ -169,6 +177,7 @@ export class AuditService {
         action: item.action,
         count: item._count.action,
       })),
+
       byTargetType: byTargetType.map((item) => ({
         targetType: item.targetType,
         count: item._count.targetType,
@@ -227,44 +236,58 @@ export class AuditService {
   }
 
   /**
-   * Builds Prisma where filter for audit logs.
+   * Builds the Prisma filter used by audit-log endpoints.
    */
   private buildWhere(query: GetAuditLogsQueryDto): Prisma.AuditLogWhereInput {
     const dateFilter = buildDateFilter(query);
+    const search = query.search?.trim();
 
     return {
       ...(dateFilter ?? {}),
-      ...(query.actorId && { actorId: query.actorId }),
-      ...(query.action && { action: query.action }),
-      ...(query.targetType && { targetType: query.targetType }),
-      ...(query.targetId && { targetId: query.targetId }),
-      ...(query.search?.trim()
+
+      ...(query.actorId && {
+        actorId: query.actorId,
+      }),
+
+      ...(query.action && {
+        action: query.action,
+      }),
+
+      ...(query.targetType && {
+        targetType: query.targetType,
+      }),
+
+      ...(query.targetId && {
+        targetId: query.targetId,
+      }),
+
+      ...(search
         ? {
-          OR: [
-            {
-              targetId: {
-                contains: query.search,
-                mode: 'insensitive',
-              },
-            },
-            {
-              actor: {
-                fullName: {
-                  contains: query.search,
+            OR: [
+              {
+                targetId: {
+                  contains: search,
                   mode: 'insensitive',
                 },
               },
-            },
-            {
-              actor: {
-                email: {
-                  contains: query.search,
-                  mode: 'insensitive',
+              {
+                actor: {
+                  fullName: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
                 },
               },
-            },
-          ],
-        }
+              {
+                actor: {
+                  email: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+              },
+            ],
+          }
         : {}),
     };
   }
@@ -275,8 +298,6 @@ export class AuditService {
   private normalizeJsonValue(
     value?: Prisma.InputJsonValue | null,
   ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-    return value === undefined || value === null
-      ? Prisma.JsonNull
-      : value;
+    return value === undefined || value === null ? Prisma.JsonNull : value;
   }
 }

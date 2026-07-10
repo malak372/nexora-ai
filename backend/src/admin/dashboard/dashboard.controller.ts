@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards, UseInterceptors } from '@nestjs/common';
 import { CacheInterceptor } from '@nestjs/cache-manager';
 import { ApiOkResponse } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';

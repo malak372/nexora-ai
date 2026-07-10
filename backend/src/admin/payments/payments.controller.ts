@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
 import { PaymentsService } from './payments.service';
@@ -85,10 +79,7 @@ export class PaymentsController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="payments-report.csv"',
-  )
+  @Header('Content-Disposition', 'attachment; filename="payments-report.csv"')
   exportPaymentsCsv(@Query() query: GetPaymentsQueryDto) {
     return this.paymentsService.exportPaymentsCsv(query);
   }

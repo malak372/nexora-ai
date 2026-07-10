@@ -7,25 +7,25 @@ import { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
  * Sentiment scoring result calculated from lexicon-based NLP signals.
  */
 export type SentimentScore = {
-    /**
-     * Positive signal score.
-     */
-    positiveScore: number;
+  /**
+   * Positive signal score.
+   */
+  positiveScore: number;
 
-    /**
-     * Negative signal score.
-     */
-    negativeScore: number;
+  /**
+   * Negative signal score.
+   */
+  negativeScore: number;
 
-    /**
-     * Absolute score difference used to determine sentiment strength.
-     */
-    difference: number;
+  /**
+   * Absolute score difference used to determine sentiment strength.
+   */
+  difference: number;
 
-    /**
-     * Total score from all sentiment-related signals.
-     */
-    totalScore: number;
+  /**
+   * Total score from all sentiment-related signals.
+   */
+  totalScore: number;
 };
 
 /**
@@ -48,74 +48,74 @@ export type SentimentScore = {
  */
 @Injectable()
 export class SentimentScoringPolicyService {
-    private readonly minimumSentimentDifference = 1;
+  private readonly minimumSentimentDifference = 1;
 
-    private readonly positiveWeights: Partial<Record<NlpLexiconType, number>> = {
-        [NlpLexiconType.POSITIVE]: 2,
-        [NlpLexiconType.OPPORTUNITY]: 1,
+  private readonly positiveWeights: Partial<Record<NlpLexiconType, number>> = {
+    [NlpLexiconType.POSITIVE]: 2,
+    [NlpLexiconType.OPPORTUNITY]: 1,
+  };
+
+  private readonly negativeWeights: Partial<Record<NlpLexiconType, number>> = {
+    [NlpLexiconType.NEGATIVE]: 2,
+    [NlpLexiconType.COMPLAINT]: 2,
+    [NlpLexiconType.PROBLEM]: 1,
+    [NlpLexiconType.URGENCY]: 1,
+    [NlpLexiconType.COST]: 1,
+    [NlpLexiconType.TIME]: 1,
+    [NlpLexiconType.ACCESSIBILITY]: 1,
+    [NlpLexiconType.SAFETY]: 1,
+    [NlpLexiconType.RELIABILITY]: 1,
+  };
+
+  /**
+   * Calculates positive and negative sentiment scores for one analyzed text.
+   *
+   * @param text Lexicon-enriched text analysis record.
+   * @returns Sentiment score summary.
+   */
+  score(text: LexiconTextAnalysisResult): SentimentScore {
+    const positiveScore = this.calculateWeightedScore(
+      text,
+      this.positiveWeights,
+    );
+    const negativeScore = this.calculateWeightedScore(
+      text,
+      this.negativeWeights,
+    );
+
+    return {
+      positiveScore,
+      negativeScore,
+      difference: positiveScore - negativeScore,
+      totalScore: positiveScore + negativeScore,
     };
+  }
 
-    private readonly negativeWeights: Partial<Record<NlpLexiconType, number>> = {
-        [NlpLexiconType.NEGATIVE]: 2,
-        [NlpLexiconType.COMPLAINT]: 2,
-        [NlpLexiconType.PROBLEM]: 1,
-        [NlpLexiconType.URGENCY]: 1,
-        [NlpLexiconType.COST]: 1,
-        [NlpLexiconType.TIME]: 1,
-        [NlpLexiconType.ACCESSIBILITY]: 1,
-        [NlpLexiconType.SAFETY]: 1,
-        [NlpLexiconType.RELIABILITY]: 1,
-    };
+  /**
+   * Returns the minimum score difference required to classify sentiment as
+   * positive or negative.
+   *
+   * @returns Minimum score difference.
+   */
+  getMinimumSentimentDifference(): number {
+    return this.minimumSentimentDifference;
+  }
 
-    /**
-     * Calculates positive and negative sentiment scores for one analyzed text.
-     *
-     * @param text Lexicon-enriched text analysis record.
-     * @returns Sentiment score summary.
-     */
-    score(text: LexiconTextAnalysisResult): SentimentScore {
-        const positiveScore = this.calculateWeightedScore(
-            text,
-            this.positiveWeights,
-        );
-        const negativeScore = this.calculateWeightedScore(
-            text,
-            this.negativeWeights,
-        );
+  /**
+   * Calculates a weighted score for a set of lexicon types.
+   *
+   * @param text Lexicon-enriched text analysis record.
+   * @param weights Lexicon weights.
+   * @returns Weighted score.
+   */
+  private calculateWeightedScore(
+    text: LexiconTextAnalysisResult,
+    weights: Partial<Record<NlpLexiconType, number>>,
+  ): number {
+    return Object.entries(weights).reduce((total, [type, weight]) => {
+      const matches = text.matchedLexicons[type as NlpLexiconType]?.length ?? 0;
 
-        return {
-            positiveScore,
-            negativeScore,
-            difference: positiveScore - negativeScore,
-            totalScore: positiveScore + negativeScore,
-        };
-    }
-
-    /**
-     * Returns the minimum score difference required to classify sentiment as
-     * positive or negative.
-     *
-     * @returns Minimum score difference.
-     */
-    getMinimumSentimentDifference(): number {
-        return this.minimumSentimentDifference;
-    }
-
-    /**
-     * Calculates a weighted score for a set of lexicon types.
-     *
-     * @param text Lexicon-enriched text analysis record.
-     * @param weights Lexicon weights.
-     * @returns Weighted score.
-     */
-    private calculateWeightedScore(
-        text: LexiconTextAnalysisResult,
-        weights: Partial<Record<NlpLexiconType, number>>,
-    ): number {
-        return Object.entries(weights).reduce((total, [type, weight]) => {
-            const matches = text.matchedLexicons[type as NlpLexiconType]?.length ?? 0;
-
-            return total + matches * (weight ?? 0);
-        }, 0);
-    }
+      return total + matches * (weight ?? 0);
+    }, 0);
+  }
 }
