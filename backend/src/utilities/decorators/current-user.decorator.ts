@@ -1,4 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 
 /**
  * Represents the authenticated user extracted from the JWT payload.
@@ -21,12 +22,8 @@ export type JwtCurrentUser = {
 
   /**
    * User role.
-   *
-   * Example:
-   * - USER
-   * - ADMIN
    */
-  role: string;
+  role: UserRole;
 };
 
 /**
@@ -35,15 +32,7 @@ export type JwtCurrentUser = {
  *
  * This decorator retrieves the user object attached to the request
  * by the JWT authentication guard, eliminating the need to access
- * `request.user` directly inside controllers.
- *
- * Example:
- * ```ts
- * @Get('profile')
- * getProfile(@CurrentUser() user: JwtCurrentUser) {
- *   return this.usersService.getProfile(user.id);
- * }
- * ```
+ * request.user directly inside controllers.
  *
  * @author Malak
  */
@@ -51,6 +40,6 @@ export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): JwtCurrentUser => {
     const request = ctx.switchToHttp().getRequest();
 
-    return request.user;
+    return request.user as JwtCurrentUser;
   },
 );

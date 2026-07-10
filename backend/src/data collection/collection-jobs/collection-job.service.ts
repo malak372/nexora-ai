@@ -23,6 +23,28 @@ import {
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 import { PLATFORM_NAMES } from '../../collectors/base/platform-name.constant';
 
+type CollectionJobWithRelations = Prisma.CollectionJobGetPayload<{
+  include: {
+    domain: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
+    nlpAnalysis: true;
+    _count: {
+      select: {
+        posts: true;
+      };
+    };
+  };
+}>;
+
+type CollectionJobResponseInput = CollectionJobWithRelations & {
+  domainKeywords?: string[];
+  userKeywords?: Prisma.JsonValue | null;
+};
+
 /**
  * Service responsible for collection job persistence and status management.
  *
@@ -33,7 +55,7 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collectorsFactory: CollectorsFactory,
-  ) {}
+  ) { }
 
   async validateActiveDomain(domainId: string) {
     const domain = await this.prisma.domain.findFirst({
@@ -443,10 +465,11 @@ export class CollectionJobService {
       .map((item) => item.keyword);
   }
 
+
   /**
    * Maps CollectionJob entity into a cleaner API response.
    */
-  private mapJobResponse(job: any) {
+  private mapJobResponse(job: CollectionJobResponseInput) {
     const platforms = Array.isArray(job.platforms) ? job.platforms : [];
     const keywords = Array.isArray(job.keywords) ? job.keywords : [];
 
@@ -483,15 +506,17 @@ export class CollectionJobService {
 
       domain: job.domain
         ? {
-            id: job.domain.id,
-            name: job.domain.name,
-          }
+          id: job.domain.id,
+          name: job.domain.name,
+        }
         : null,
 
       nlpStatus: job.nlpAnalysis ? 'COMPLETED' : 'NOT_STARTED',
 
       ...(job.domainKeywords && { domainKeywords: job.domainKeywords }),
-      ...(job.userKeywords && { userKeywords: job.userKeywords }),
+      ...(Array.isArray(job.userKeywords) && {
+        userKeywords: job.userKeywords,
+      }),
     };
   }
 

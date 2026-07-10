@@ -12,6 +12,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+
 /**
  * ENUMS
  */
@@ -207,6 +208,17 @@ enum AuditAction {
 
   ADMIN_UPDATE_CONTACT_MESSAGE
   USER_CREATE_CONTACT_MESSAGE
+
+  ADMIN_CREATE_AI_MODEL
+  ADMIN_UPDATE_AI_MODEL
+  ADMIN_DEACTIVATE_AI_MODEL
+  ADMIN_SET_DEFAULT_AI_MODEL
+}
+
+enum AiProviderType {
+  OPENAI
+  CLAUDE
+  GEMINI
 }
 
 enum AuditTargetType {
@@ -218,6 +230,8 @@ enum AuditTargetType {
   SYSTEM_SETTING
   PROMPT
   COMPLAINT
+  AI_MODEL
+
   CONTACT_MESSAGE
   ALERT
   CREDIT_TRANSACTION
@@ -935,8 +949,10 @@ model NlpAnalysis {
   opportunities     Json?
   insights          Json?
 
-  dataQuality     Json? @map("data_quality")
-  evidenceSamples Json? @map("evidence_samples")
+  dataQuality Json? @map("data_quality")
+
+  samplePosts    Json? @map("sample_posts")
+  sampleComments Json? @map("sample_comments")
 
   aiUsed     Boolean  @default(false) @map("ai_used")
   confidence Decimal? @db.Decimal(4, 3)
@@ -959,10 +975,16 @@ model PromptHistory {
   promptType PromptType @map("prompt_type")
   promptText String     @map("prompt_text")
 
+  templateHash String? @map("template_hash")
+
+  estimatedInputTokens Int? @map("estimated_input_tokens")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([collectionJobId])
   @@index([ideaId])
+  @@index([promptType])
+  @@index([createdAt])
   @@map("prompt_histories")
 }
 
@@ -1051,6 +1073,31 @@ model SavedGenerationSearch {
   @@index([userId])
   @@index([domainId])
   @@map("saved_generation_searches")
+}
+
+model AiModel {
+  id String @id @default(uuid())
+
+  provider AiProviderType @default(OPENAI)
+  modelName   String         @map("model_name")
+  apiModelId  String         @map("api_model_id")
+  displayName String?        @map("display_name")
+  description String?
+
+  priority  Int     @default(0)
+  isActive  Boolean @default(true) @map("is_active")
+  isDefault Boolean @default(false) @map("is_default")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, modelName])
+  @@unique([apiModelId])
+  @@index([provider])
+  @@index([isActive])
+  @@index([isDefault])
+  @@index([priority])
+  @@map("ai_models")
 }
 
 model ContactMessage {
