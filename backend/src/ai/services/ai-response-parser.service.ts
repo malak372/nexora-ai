@@ -1,11 +1,6 @@
-import {
-  BadGatewayException,
-  Injectable,
-} from '@nestjs/common';
+import { BadGatewayException, Injectable } from '@nestjs/common';
 
-import {
-  MAX_AI_RESPONSE_LENGTH,
-} from '../constants';
+import { MAX_AI_RESPONSE_LENGTH } from '../constants';
 
 /**
  * Parses textual AI-provider output into JSON.
@@ -41,19 +36,14 @@ export class AiResponseParserService {
    * @throws BadGatewayException When the response is empty, too large,
    * non-textual, or contains invalid JSON.
    */
-  parseJson(
-    rawText: string,
-  ): unknown {
-    if (
-      typeof rawText !== 'string'
-    ) {
+  parseJson(rawText: string): unknown {
+    if (typeof rawText !== 'string') {
       throw new BadGatewayException(
         'The AI provider returned a non-textual response.',
       );
     }
 
-    const trimmed =
-      rawText.trim();
+    const trimmed = rawText.trim();
 
     if (!trimmed) {
       throw new BadGatewayException(
@@ -61,29 +51,18 @@ export class AiResponseParserService {
       );
     }
 
-    if (
-      trimmed.length >
-      MAX_AI_RESPONSE_LENGTH
-    ) {
+    if (trimmed.length > MAX_AI_RESPONSE_LENGTH) {
       throw new BadGatewayException(
         'The AI provider returned an unexpectedly large response.',
       );
     }
 
-    const normalized =
-      this.removeCodeFences(
-        trimmed,
-      );
+    const normalized = this.removeCodeFences(trimmed);
 
     try {
-      return JSON.parse(
-        normalized,
-      );
+      return JSON.parse(normalized);
     } catch {
-      const extracted =
-        this.extractBalancedJsonObject(
-          normalized,
-        );
+      const extracted = this.extractBalancedJsonObject(normalized);
 
       if (!extracted) {
         throw new BadGatewayException(
@@ -92,9 +71,7 @@ export class AiResponseParserService {
       }
 
       try {
-        return JSON.parse(
-          extracted,
-        );
+        return JSON.parse(extracted);
       } catch {
         throw new BadGatewayException(
           'The AI provider returned malformed structured output.',
@@ -121,18 +98,10 @@ export class AiResponseParserService {
    * @param value Provider response.
    * @returns Response without surrounding Markdown code fences.
    */
-  private removeCodeFences(
-    value: string,
-  ): string {
+  private removeCodeFences(value: string): string {
     return value
-      .replace(
-        /^```(?:json)?\s*/i,
-        '',
-      )
-      .replace(
-        /\s*```$/i,
-        '',
-      )
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
       .trim();
   }
 
@@ -148,21 +117,14 @@ export class AiResponseParserService {
    * @param value Normalized provider response.
    * @returns Extracted JSON object, or null when none is balanced.
    */
-  private extractBalancedJsonObject(
-    value: string,
-  ): string | null {
+  private extractBalancedJsonObject(value: string): string | null {
     let startIndex = -1;
     let depth = 0;
     let isInsideString = false;
     let isEscaped = false;
 
-    for (
-      let index = 0;
-      index < value.length;
-      index += 1
-    ) {
-      const character =
-        value[index];
+    for (let index = 0; index < value.length; index += 1) {
+      const character = value[index];
 
       if (isInsideString) {
         if (isEscaped) {
@@ -203,14 +165,8 @@ export class AiResponseParserService {
 
         depth -= 1;
 
-        if (
-          depth === 0 &&
-          startIndex !== -1
-        ) {
-          return value.slice(
-            startIndex,
-            index + 1,
-          );
+        if (depth === 0 && startIndex !== -1) {
+          return value.slice(startIndex, index + 1);
         }
       }
     }

@@ -1,20 +1,8 @@
-import {
-  BadGatewayException,
-  Injectable,
-} from '@nestjs/common';
-import {
-  IdeaGenerationType,
-  PromptType,
-} from '@prisma/client';
+import { BadGatewayException, Injectable } from '@nestjs/common';
+import { IdeaGenerationType, PromptType } from '@prisma/client';
 
-import {
-  FreeIdeaOutput,
-  FreeIdeaSchema,
-} from '../schemas/free-idea.schema';
-import {
-  GuestIdeaOutput,
-  GuestIdeaSchema,
-} from '../schemas/guest-idea.schema';
+import { FreeIdeaOutput, FreeIdeaSchema } from '../schemas/free-idea.schema';
+import { GuestIdeaOutput, GuestIdeaSchema } from '../schemas/guest-idea.schema';
 import {
   PremiumIdeaOutput,
   PremiumIdeaSchema,
@@ -104,9 +92,7 @@ export type StructuredOutputValidationResult =
  */
 @Injectable()
 export class AiStructuredOutputService {
-  constructor(
-    private readonly parser: AiResponseParserService,
-  ) {}
+  constructor(private readonly parser: AiResponseParserService) {}
 
   /**
    * Parses and validates one structured idea response.
@@ -183,10 +169,7 @@ export class AiStructuredOutputService {
       };
     }
 
-    const schemaResolution = this.resolveSchema(
-      generationType,
-      promptType,
-    );
+    const schemaResolution = this.resolveSchema(generationType, promptType);
 
     if (!schemaResolution.success) {
       return schemaResolution;
@@ -198,10 +181,7 @@ export class AiStructuredOutputService {
       return {
         success: false,
         issues: result.error.issues.map((issue) => ({
-          path:
-            issue.path.length > 0
-              ? issue.path.map(String).join('.')
-              : '$',
+          path: issue.path.length > 0 ? issue.path.map(String).join('.') : '$',
           code: issue.code,
           message: issue.message,
         })),
@@ -252,8 +232,7 @@ export class AiStructuredOutputService {
           {
             path: '$',
             code: 'unsupported_prompt_type',
-            message:
-              `Structured idea output is not supported for prompt type ${promptType}.`,
+            message: `Structured idea output is not supported for prompt type ${promptType}.`,
           },
         ],
       };
@@ -303,13 +282,8 @@ export class AiStructuredOutputService {
    * Raw provider response bodies, stack traces, and nested SDK
    * objects are not included.
    */
-  private readSafeErrorMessage(
-    error: unknown,
-    fallback: string,
-  ): string {
-    if (
-      error instanceof BadGatewayException
-    ) {
+  private readSafeErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof BadGatewayException) {
       const response = error.getResponse();
 
       if (typeof response === 'string') {
@@ -338,8 +312,6 @@ export class AiStructuredOutputService {
    * are added in the future.
    */
   private assertNever(value: never): never {
-    throw new Error(
-      `Unsupported idea generation type: ${String(value)}`,
-    );
+    throw new Error(`Unsupported idea generation type: ${String(value)}`);
   }
 }

@@ -1,41 +1,50 @@
-import { Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 
+import { AdminModule } from './admin/admin.module';
+import { AiModule } from './ai/ai.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-
-import { AuthModule } from './auth/auth.module';
-import { PrismaModule } from './prisma/prisma.module';
-import { UsersModule } from './users/users.module';
-import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit-logs/audit-logs.module';
-
-import { MailModule } from './mail/mail.module';
-
+import { AuthModule } from './auth/auth.module';
 import { CollectorsModule } from './collectors/collectors.module';
 import { DataCollectionModule } from './data collection/data-collection.module';
+import { MailModule } from './mail/mail.module';
 import { NlpModule } from './nlp/nlp.module';
+import { PrismaModule } from './prisma/prisma.module';
 import { PromptsModule } from './prompts/prompts.module';
-import { AiModule  } from './ai/ai.module';
-import {AiModelsModule} from './ai-models/ai-models.module';
+import { UsersModule } from './users/users.module';
 
 /**
  * Root application module.
+ *
+ * Registers global infrastructure and application feature modules.
+ *
+ * @author Malak
  */
 @Module({
   imports: [
+    /**
+     * Loads application environment variables globally.
+     */
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
+    /**
+     * Registers the global application cache.
+     */
     CacheModule.register({
       isGlobal: true,
       ttl: 100000,
     }),
 
+    /**
+     * Applies a default application-wide request limit.
+     */
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -43,6 +52,9 @@ import {AiModelsModule} from './ai-models/ai-models.module';
       },
     ]),
 
+    /**
+     * Core infrastructure and feature modules.
+     */
     AuthModule,
     PrismaModule,
     UsersModule,
@@ -52,11 +64,12 @@ import {AiModelsModule} from './ai-models/ai-models.module';
     DataCollectionModule,
     CollectorsModule,
     AiModule,
-    AdminModule,
     NlpModule,
     PromptsModule,
   ],
+
   controllers: [AppController],
+
   providers: [AppService],
 })
 export class AppModule {}

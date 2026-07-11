@@ -26,10 +26,7 @@ export const UnlockIdeaSchema = z
     /**
      * Recommended implementation technologies.
      */
-    technologyStack: z
-      .array(z.string().trim().min(1).max(100))
-      .min(1)
-      .max(12),
+    technologyStack: z.array(z.string().trim().min(1).max(100)).min(1).max(12),
 
     /**
      * High-level system architecture recommendation.
@@ -44,10 +41,7 @@ export const UnlockIdeaSchema = z
     /**
      * Minimum viable product features.
      */
-    mvpFeatures: z
-      .array(z.string().trim().min(3).max(300))
-      .min(3)
-      .max(15),
+    mvpFeatures: z.array(z.string().trim().min(3).max(300)).min(3).max(15),
 
     /**
      * Preliminary business-model recommendation.

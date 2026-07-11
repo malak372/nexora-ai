@@ -65,8 +65,7 @@ export enum AiProviderErrorCode {
    * The configured provider model or one of its parameters is not
    * supported.
    */
-  INVALID_MODEL_CONFIGURATION =
-    'INVALID_MODEL_CONFIGURATION',
+  INVALID_MODEL_CONFIGURATION = 'INVALID_MODEL_CONFIGURATION',
 
   /**
    * The generated provider response did not contain usable text.
@@ -77,8 +76,7 @@ export enum AiProviderErrorCode {
    * The provider returned JSON or structured output that did not
    * match the expected application schema.
    */
-  INVALID_STRUCTURED_OUTPUT =
-    'INVALID_STRUCTURED_OUTPUT',
+  INVALID_STRUCTURED_OUTPUT = 'INVALID_STRUCTURED_OUTPUT',
 
   /**
    * The request prompt or its provider-specific representation was

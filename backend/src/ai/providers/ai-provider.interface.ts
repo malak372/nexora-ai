@@ -36,7 +36,5 @@ export interface AiProvider {
    * @throws AiResponseValidationError When the provider returns an
    * invalid or unusable response.
    */
-  generate(
-    input: AiProviderGenerateInput,
-  ): Promise<AiProviderGenerateResult>;
+  generate(input: AiProviderGenerateInput): Promise<AiProviderGenerateResult>;
 }

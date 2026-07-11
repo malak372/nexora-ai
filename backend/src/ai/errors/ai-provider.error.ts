@@ -70,17 +70,11 @@ export class AiProviderError extends Error {
      * Restores the prototype chain when extending the built-in Error
      * class.
      */
-    Object.setPrototypeOf(
-      this,
-      new.target.prototype,
-    );
+    Object.setPrototypeOf(this, new.target.prototype);
 
     /**
      * Produces a cleaner stack trace in Node.js V8 environments.
      */
-    Error.captureStackTrace?.(
-      this,
-      AiProviderError,
-    );
+    Error.captureStackTrace?.(this, AiProviderError);
   }
 }
