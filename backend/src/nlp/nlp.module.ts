@@ -10,38 +10,21 @@ import { OpportunityAnalysisService } from './analysis/opportunity-analysis.serv
 import { SentimentAnalysisService } from './analysis/sentiment-analysis.service';
 import { SentimentScoringPolicyService } from './analysis/sentiment-scoring-policy.service';
 import { TopicExtractionService } from './analysis/topic-extraction.service';
-
 import { AnalysisDecisionService } from './decision/analysis-decision.service';
 import { TextComplexityAnalysisService } from './decision/text-complexity-analysis.service';
-
 import { DomainRelevanceService } from './domain-relevance/domain-relevance.service';
 import { LanguageDetectionService } from './language-detection/language-detection.service';
-
 import { LexiconAnalysisService } from './lexicon/lexicon-analysis.service';
 import { NlpLexiconService } from './lexicon/nlp-lexicon.service';
-import { AnalysisEvidenceService } from './pipeline/analysis-evidence.service';
-import { AnalysisOutputBuilderService } from './pipeline/analysis-output-builder.service';
-import { AnalysisStatisticsService } from './pipeline/analysis-statistics.service';
-import { IntelligentAnalysisService } from './pipeline/intelligent-analysis.service';
-import { TextInputBuilderService } from './pipeline/text-input-builder.service';
-import { TextPreprocessingService } from './pipeline/text-preprocessing.service';
-import { ProblemsModule } from './problems/problems.module';
-import { TextCleaningService } from './text-cleaning/text-cleaning.service';
-import { TopicRuleService } from './topic-rules/topic-rule.service';
-
 import { NlpPersistenceService } from './persistence/nlp-persistence.service';
-
 import { AnalysisEvidenceService } from './pipeline/analysis-evidence.service';
 import { AnalysisOutputBuilderService } from './pipeline/analysis-output-builder.service';
 import { AnalysisStatisticsService } from './pipeline/analysis-statistics.service';
 import { IntelligentAnalysisService } from './pipeline/intelligent-analysis.service';
 import { TextInputBuilderService } from './pipeline/text-input-builder.service';
 import { TextPreprocessingService } from './pipeline/text-preprocessing.service';
-
 import { ProblemsModule } from './problems/problems.module';
-
 import { TextCleaningService } from './text-cleaning/text-cleaning.service';
-
 import { TopicRuleService } from './topic-rules/topic-rule.service';
 
 /**
@@ -138,4 +121,4 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     ProblemsModule,
   ],
 })
-export class NlpModule {}
+export class NlpModule { }
