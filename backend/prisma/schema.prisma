@@ -362,6 +362,12 @@ enum NlpLexiconType {
   OPPORTUNITY
 }
 
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+  PALPAY
+}
+
 /**
  * USERS
  */
@@ -475,13 +481,36 @@ model SystemSetting {
    */
   key String @unique @default("GLOBAL")
 
-  creditPrice        Decimal @map("credit_price") @db.Decimal(10, 2)
-  bonusThreshold     Int     @default(0) @map("bonus_threshold")
-  bonusCredits       Int     @default(0) @map("bonus_credits")
+  /**
+   * Price of one credit.
+   * One credit allows one premium idea generation.
+   */
+  creditPrice Decimal @map("credit_price") @db.Decimal(10, 2)
+
+  /**
+   * Price paid directly to unlock advanced features
+   * for one previously generated free idea.
+   * This payment does not purchase or consume credits.
+   */
+  directUnlockPrice Decimal @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
+
+  /**
+   * Minimum number of purchased credits required
+   * to receive bonus credits.
+   */
+  bonusThreshold Int @default(0) @map("bonus_threshold")
+
+  /**
+   * Number of bonus credits granted when the
+   * configured threshold is reached.
+   */
+  bonusCredits Int @default(0) @map("bonus_credits")
+
   ideaPromptTemplate String? @map("idea_prompt_template")
 
   updatedById String? @map("updated_by")
-  updatedBy   User?   @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  updatedBy User? @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -602,17 +631,37 @@ model Payment {
   ideaId String? @map("idea_id")
   idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
-  amount        Decimal       @db.Decimal(10, 2)
-  currency      String        @default("USD")
-  paymentMethod PaymentMethod @map("payment_method")
-  status        PaymentStatus @default(PENDING)
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("USD")
+
+  paymentMethod PaymentMethod   @map("payment_method")
+  provider      PaymentProvider
+  status        PaymentStatus   @default(PENDING)
 
   paymentPurpose PaymentPurpose @map("payment_purpose")
 
   creditsAmount         Int      @default(0) @map("credits_amount")
+  bonusCreditsAmount    Int      @default(0) @map("bonus_credits_amount")
   creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
 
+  /**
+   * Payment identifier received from the external provider.
+   * Used to prevent processing the same provider payment twice.
+   */
+  providerPaymentId String? @unique @map("provider_payment_id")
+
+  /**
+   * Checkout/session identifier returned when payment is created.
+   */
+  providerSessionId String? @unique @map("provider_session_id")
+
   transactionReference String? @map("transaction_reference")
+
+  failureReason String? @map("failure_reason")
+
+  paidAt     DateTime? @map("paid_at")
+  failedAt   DateTime? @map("failed_at")
+  refundedAt DateTime? @map("refunded_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -622,6 +671,7 @@ model Payment {
   @@index([userId])
   @@index([ideaId])
   @@index([status])
+  @@index([provider])
   @@index([paymentPurpose])
   @@index([createdAt])
   @@map("payments")
