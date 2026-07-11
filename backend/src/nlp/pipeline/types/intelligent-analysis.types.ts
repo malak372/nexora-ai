@@ -1,5 +1,7 @@
 import { LanguageCode, NlpLexiconType } from '@prisma/client';
 
+import { Sentiment } from '../../common/enums/sentiment.enum';
+
 /**
  * Identifies the original source of a text item inside the NLP pipeline.
  *
@@ -10,14 +12,6 @@ import { LanguageCode, NlpLexiconType } from '@prisma/client';
  * @author Eman
  */
 export type TextSourceType = 'POST' | 'COMMENT';
-
-/**
- * Standard sentiment labels used across the NLP pipeline and Prompt Builder.
- *
- * These labels are intentionally strict to keep the output consistent and easy
- * to store, aggregate, and use in AI prompts.
- */
-export type SentimentLabel = 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
 
 /**
  * Generic priority level used for problems, needs, and insight severity.
@@ -154,9 +148,9 @@ export type TextAnalysisResult = {
   language: LanguageCode;
 
   /**
-   * Final sentiment label for this text.
+   * Final sentiment classification for this text.
    */
-  sentiment: SentimentLabel;
+  sentiment: Sentiment;
 
   /**
    * Confidence score from 0 to 1.
@@ -285,7 +279,7 @@ export type IntelligentAnalysisOutput = {
     positive: number;
     negative: number;
     neutral: number;
-    dominantSentiment: SentimentLabel;
+    dominantSentiment: Sentiment;
   };
 
   /**
@@ -339,7 +333,7 @@ export type IntelligentAnalysisOutput = {
    * Structured software opportunity signals detected from community discussion.
    *
    * These are not final project ideas. They provide evidence-based direction
-   * for the Prompt Builder and AI idea generation layer.
+   * for the Prompt Builder and AI idea-generation layer.
    */
   opportunities: {
     /**
@@ -353,45 +347,13 @@ export type IntelligentAnalysisOutput = {
     need?: string;
 
     /**
-     * Structured software opportunity signals detected from community discussion.
-     *
-     * These are not final project ideas. They provide evidence-based direction
-     * for the Prompt Builder and AI idea generation layer.
+     * Main discussion topic related to this opportunity.
      */
-    opportunities: {
-        /**
-         * Recurring problem connected to this opportunity.
-         */
-        problem?: string;
-
-        /**
-         * User need connected to this opportunity.
-         */
-        need?: string;
-
-        /**
-         * Main discussion topic related to this opportunity.
-         */
-        topic?: string;
-
-        /**
-         * Suggested solution area inferred from problems, needs, topics, and keywords.
-         */
-        solutionArea: string;
-
-        /**
-         * Opportunity strength score from 0 to 1.
-         */
-        score: number;
-
-        /**
-         * Representative community evidence supporting this opportunity.
-         */
-        evidenceSamples: string[];
-    }[];
+    topic?: string;
 
     /**
-     * Suggested solution area inferred from problems, needs, topics, and keywords.
+     * Suggested solution area inferred from problems, needs, topics,
+     * and keywords.
      */
     solutionArea: string;
 
@@ -412,12 +374,45 @@ export type IntelligentAnalysisOutput = {
    * These make the analysis richer than basic sentiment analysis.
    */
   insights: {
+    /**
+     * Urgency-related signals extracted from community feedback.
+     */
     urgencySignals: string[];
+
+    /**
+     * Cost-related concerns identified in analyzed texts.
+     */
     costConcerns: string[];
+
+    /**
+     * Time-related concerns such as delays or slow processes.
+     */
     timeConcerns: string[];
+
+    /**
+     * Accessibility barriers or usability concerns.
+     */
     accessibilityConcerns: string[];
+
+    /**
+     * Safety-related concerns found in community discussions.
+     */
     safetyConcerns: string[];
+
+    /**
+     * Reliability-related concerns such as failures or instability.
+     */
     reliabilityConcerns: string[];
+
+    /**
+     * Additional evidence-supported insights produced by the optional
+     * AI-enhancement layer.
+     *
+     * Rule-based concern categories remain authoritative, while this
+     * collection stores only validated insights that do not fit one of
+     * the predefined concern groups.
+     */
+    additionalInsights: string[];
   };
 
   /**
@@ -426,7 +421,7 @@ export type IntelligentAnalysisOutput = {
   samplePosts: {
     id: string;
     text: string;
-    sentiment: SentimentLabel;
+    sentiment: Sentiment;
   }[];
 
   /**
@@ -436,7 +431,7 @@ export type IntelligentAnalysisOutput = {
     id: string;
     postId: string;
     text: string;
-    sentiment: SentimentLabel;
+    sentiment: Sentiment;
   }[];
 
   /**

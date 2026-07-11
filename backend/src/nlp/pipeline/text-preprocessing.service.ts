@@ -1,24 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
+import { Sentiment } from '../common/enums/sentiment.enum';
 import { DomainRelevanceService } from '../domain-relevance/domain-relevance.service';
 import { LanguageDetectionService } from '../language-detection/language-detection.service';
 import {
   CleanTextResult,
   TextCleaningService,
 } from '../text-cleaning/text-cleaning.service';
+
 import {
   IntelligentTextInput,
   TextAnalysisResult,
 } from './types/intelligent-analysis.types';
-import { Sentiment } from '../common/enums/sentiment.enum';
 
 /**
  * Represents a cleaned and validated text item ready for deeper NLP analysis.
  *
  * This type preserves the original metadata from the collected post or comment
  * while adding preprocessing results such as cleaned text, final language,
- * and domain relevance score.
+ * and domain relevance information.
  */
 export type PreprocessedTextInput = IntelligentTextInput & {
   /**
@@ -29,19 +30,20 @@ export type PreprocessedTextInput = IntelligentTextInput & {
   /**
    * Final language used by the NLP pipeline.
    *
-   * If the collector already stored a language, it is reused.
+   * If the collector already stored a specific language, it is reused.
    * Otherwise, the language is detected from the cleaned text.
    */
   finalLanguage: LanguageCode;
 
   /**
-   * Relevance score between 0 and 1 showing how strongly the text matches
-   * the selected project domain.
+   * Relevance score in the range [0, 1] showing how strongly the text
+   * matches the selected software domain.
    */
   relevanceScore: number;
 
   /**
-   * Confidence score between 0 and 1 from the domain relevance check.
+   * Confidence score in the range [0, 1] produced by the domain
+   * relevance analysis.
    */
   relevanceConfidence: number;
 
@@ -57,15 +59,28 @@ export type PreprocessedTextInput = IntelligentTextInput & {
 };
 
 /**
+ * Internal preprocessing result containing the prepared text and its
+ * domain-relevance decision.
+ *
+ * The relevance flag remains internal and is not forwarded to later
+ * NLP pipeline stages.
+ */
+type RelevanceEvaluatedText = {
+  readonly text: PreprocessedTextInput;
+  readonly isRelevant: boolean;
+};
+
+/**
  * Summary returned after preprocessing collected community texts.
  *
- * This summary is used later by the Intelligent NLP Engine to calculate
- * data quality, build transparent analysis outputs, and support prompt
- * generation with reliable community evidence.
+ * This summary is used later by the intelligent NLP pipeline to
+ * calculate data quality, build transparent analysis outputs, and
+ * provide reliable community evidence for prompt generation.
  */
 export type TextPreprocessingOutput = {
   /**
-   * Text inputs that passed cleaning, duplicate filtering, and domain relevance.
+   * Text inputs that passed cleaning, duplicate filtering, and
+   * domain-relevance filtering.
    */
   texts: PreprocessedTextInput[];
 
@@ -80,15 +95,16 @@ export type TextPreprocessingOutput = {
   duplicateTextsRemoved: number;
 
   /**
-   * Number of texts removed because they were not related to the selected domain.
+   * Number of texts removed because they were not related to the
+   * selected domain.
    */
   irrelevantTextsRemoved: number;
 
   /**
    * Initial per-text analysis records used for debugging and auditing.
    *
-   * Later NLP services enrich these records with sentiment, lexicon matches,
-   * extracted insights, and confidence values.
+   * Later NLP services enrich these records with sentiment,
+   * lexicon matches, extracted insights, and confidence values.
    */
   initialAnalysisResults: TextAnalysisResult[];
 };
@@ -96,21 +112,30 @@ export type TextPreprocessingOutput = {
 /**
  * Preprocesses unified text inputs before deeper NLP analysis.
  *
- * This service represents the second step of the Nexora AI Intelligent NLP
- * Engine. It receives unified inputs produced by TextInputBuilderService and
- * prepares them for lexicon analysis, keyword extraction, recurring problem
- * detection, and final AI prompt generation.
+ * This service represents the preprocessing stage of the Nexora AI
+ * intelligent NLP pipeline. It receives unified post and comment
+ * inputs produced by TextInputBuilderService and prepares them for:
+ * - Lexicon analysis.
+ * - Keyword extraction.
+ * - Topic extraction.
+ * - Recurring-problem detection.
+ * - Need and opportunity extraction.
+ * - Optional AI enhancement.
  *
  * Responsibilities:
  * - Clean raw post and comment content.
  * - Remove empty and duplicate texts.
  * - Resolve the final language for every text.
- * - Filter unrelated texts based on selected domain keywords.
+ * - Filter unrelated texts using selected-domain keywords.
+ * - Preserve relevance metadata for later confidence calculations.
  * - Produce initial analysis records for auditing and observability.
  *
- * This service intentionally does not perform sentiment analysis, keyword
- * extraction, topic detection, or persistence. Those responsibilities belong
- * to later services in the NLP pipeline.
+ * This service does not:
+ * - Perform sentiment analysis.
+ * - Extract keywords or topics.
+ * - Generate analytical insights.
+ * - Call external AI services.
+ * - Persist NLP analysis.
  *
  * @author Eman
  */
@@ -123,11 +148,11 @@ export class TextPreprocessingService {
   ) {}
 
   /**
-   * Runs the preprocessing stage for collected posts and comments.
+   * Runs preprocessing for collected posts and comments.
    *
    * @param inputs Unified post and comment inputs.
-   * @param domainKeywords Domain keywords used to validate relevance.
-   * @returns Cleaned, deduplicated, language-aware, and domain-relevant texts.
+   * @param domainKeywords Domain keywords used to evaluate relevance.
+   * @returns Cleaned, deduplicated, language-aware, and relevant texts.
    */
   process(
     inputs: IntelligentTextInput[],
@@ -146,7 +171,7 @@ export class TextPreprocessingService {
 
     const duplicateTextsRemoved = nonEmptyItems.length - uniqueItems.length;
 
-    const preprocessedItems = uniqueItems.map((item) => {
+    const evaluatedTexts: RelevanceEvaluatedText[] = uniqueItems.map((item) => {
       const finalLanguage = this.resolveLanguage(
         item.input.language,
         item.cleaning.cleanedText,
@@ -157,7 +182,7 @@ export class TextPreprocessingService {
         domainKeywords,
       );
 
-      return {
+      const text: PreprocessedTextInput = {
         ...item.input,
         cleaning: item.cleaning,
         finalLanguage,
@@ -165,16 +190,19 @@ export class TextPreprocessingService {
         relevanceConfidence: relevance.confidence,
         matchedKeywords: relevance.matchedKeywords,
         matchedPhrases: relevance.matchedPhrases,
+      };
+
+      return {
+        text,
         isRelevant: relevance.isRelevant,
       };
     });
 
-    const relevantTexts = preprocessedItems
+    const relevantTexts = evaluatedTexts
       .filter((item) => item.isRelevant)
-      .map(({ isRelevant: _isRelevant, ...item }) => item);
+      .map((item) => item.text);
 
-    const irrelevantTextsRemoved =
-      preprocessedItems.length - relevantTexts.length;
+    const irrelevantTextsRemoved = evaluatedTexts.length - relevantTexts.length;
 
     return {
       texts: relevantTexts,
@@ -186,10 +214,14 @@ export class TextPreprocessingService {
   }
 
   /**
-   * Removes duplicate collected texts based on their cleaned representation.
+   * Removes duplicate collected texts based on their cleaned
+   * representation.
    *
-   * Duplicates commonly appear when the same post or comment is collected from
-   * repeated API runs, shared discussions, or mirrored community content.
+   * Duplicates may appear after repeated collection runs, mirrored
+   * discussions, or identical posts shared across supported sources.
+   *
+   * The first occurrence is preserved to retain stable upstream
+   * ordering.
    *
    * @param items Cleaned input items.
    * @returns Unique cleaned input items.
@@ -207,6 +239,7 @@ export class TextPreprocessingService {
       }
 
       seen.add(key);
+
       return true;
     });
   }
@@ -214,9 +247,9 @@ export class TextPreprocessingService {
   /**
    * Resolves the final language used for NLP analysis.
    *
-   * Collector-provided languages are trusted when available and specific.
-   * Unknown, mixed, or missing languages are resolved using lightweight
-   * language detection on cleaned text.
+   * Collector-provided languages are reused when available and
+   * specific. Missing or generic language values are resolved using
+   * lightweight language detection on the cleaned text.
    *
    * @param storedLanguage Language stored during data collection.
    * @param cleanedText Cleaned text used for fallback detection.
@@ -226,7 +259,11 @@ export class TextPreprocessingService {
     storedLanguage: LanguageCode | null | undefined,
     cleanedText: string,
   ): LanguageCode {
-    if (storedLanguage && storedLanguage !== LanguageCode.ANY) {
+    if (
+      storedLanguage !== null &&
+      storedLanguage !== undefined &&
+      storedLanguage !== LanguageCode.ANY
+    ) {
       return storedLanguage;
     }
 
@@ -236,9 +273,10 @@ export class TextPreprocessingService {
   /**
    * Builds initial analysis records for preprocessed texts.
    *
-   * These records provide a consistent audit structure from the beginning of
-   * the NLP pipeline. Later services may update sentiment, confidence,
-   * lexicon matches, and AI usage flags.
+   * These records provide a consistent analysis structure from the
+   * beginning of the pipeline. Later services replace the initial
+   * neutral sentiment and enrich confidence, lexicon matches, and
+   * AI-usage metadata.
    *
    * @param texts Preprocessed and domain-relevant texts.
    * @returns Initial per-text analysis records.

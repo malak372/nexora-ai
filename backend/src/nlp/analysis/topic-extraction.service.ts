@@ -32,7 +32,7 @@ import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
 export class TopicExtractionService {
   private readonly maxTopics = 15;
 
-  constructor(private readonly topicRuleService: TopicRuleService) { }
+  constructor(private readonly topicRuleService: TopicRuleService) {}
 
   /**
    * Extracts the most relevant discussion topics from weighted keywords.
@@ -86,10 +86,7 @@ export class TopicExtractionService {
    * @param topicRules Configurable topic rules loaded from the database.
    * @returns Topic label.
    */
-  private findMatchingTopic(
-    keyword: string,
-    topicRules: TopicRule[],
-  ): string {
+  private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
     const matchedRule = topicRules.find((rule) =>
       rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
     );

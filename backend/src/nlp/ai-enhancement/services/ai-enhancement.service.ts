@@ -1,0 +1,306 @@
+import {
+  BadGatewayException,
+  BadRequestException,
+  HttpException,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+
+import { randomUUID } from 'node:crypto';
+
+import { NLP_AI_CLIENT } from '../tokens/nlp-ai-client.token';
+
+import type { NlpAiClient } from '../clients/nlp-ai-client.interface';
+
+import { AiEnhancementInput } from '../types/ai-enhancement-input.type';
+import { AiEnhancementResult } from '../types/ai-enhancement-result.type';
+
+import { IntelligentAnalysisOutput } from '../../pipeline/types/intelligent-analysis.types';
+
+import { AiAnalysisPromptBuilderService } from './ai-analysis-prompt-builder.service';
+import { AiAnalysisOutputValidatorService } from './ai-analysis-output-validator.service';
+import { AnalysisMergeService } from './analysis-merge.service';
+
+/**
+ * Stable failure codes returned by the NLP AI-enhancement
+ * orchestration layer.
+ *
+ * These values are intentionally provider-neutral so callers do not
+ * depend on OpenAI, Anthropic, Google, or any provider-specific error
+ * contract.
+ */
+const AI_ENHANCEMENT_FAILURE = {
+  INVALID_INPUT: 'INVALID_INPUT',
+  AI_UNAVAILABLE: 'AI_UNAVAILABLE',
+  INVALID_AI_RESPONSE: 'INVALID_AI_RESPONSE',
+  AI_EXECUTION_FAILED: 'AI_EXECUTION_FAILED',
+} as const;
+
+/**
+ * Result returned after attempting one optional AI-enhancement
+ * operation.
+ *
+ * The final analysis is always present:
+ * - When AI enhancement succeeds, it contains the merged result.
+ * - When AI enhancement is skipped or fails, it contains the original
+ *   rule-based result.
+ *
+ * The enhancement metadata explains whether AI was requested and
+ * whether its output was accepted.
+ *
+ * @author Eman
+ */
+export type AiEnhancementExecutionResult = {
+  /**
+   * Final NLP analysis safe for persistence and prompt generation.
+   */
+  readonly analysis: IntelligentAnalysisOutput;
+
+  /**
+   * Status and validated semantic output of the enhancement attempt.
+   */
+  readonly enhancement: AiEnhancementResult;
+
+  /**
+   * Logical operation identifier used to correlate AI logs and
+   * provider attempts.
+   *
+   * Null is returned when AI enhancement was skipped.
+   */
+  readonly operationId: string | null;
+};
+
+/**
+ * Orchestrates optional AI enhancement of a completed rule-based NLP
+ * analysis.
+ *
+ * This service coordinates the complete enhancement flow:
+ *
+ * Rule-based NLP output
+ * → Prompt construction
+ * → AI client execution
+ * → Structured-output validation
+ * → Conservative merge
+ * → Final analysis
+ *
+ * Responsibilities:
+ * - Return an explicit skipped result when AI is not requested.
+ * - Build a provider-neutral enhancement prompt.
+ * - Generate a logical operation identifier for tracing.
+ * - Delegate execution through the NlpAiClient contract.
+ * - Validate all AI output before it enters the NLP pipeline.
+ * - Merge only validated AI output with the rule-based result.
+ * - Preserve graceful degradation when AI is unavailable or invalid.
+ * - Return stable provider-neutral failure codes.
+ *
+ * This service does not:
+ * - Select AI providers or models.
+ * - Implement retries, timeouts, routing, or fallback between models.
+ * - Parse provider-specific response envelopes.
+ * - Persist NLP analysis.
+ * - Persist external API logs directly.
+ * - Decide whether AI enhancement is required.
+ *
+ * Provider routing, retries, health tracking, timeout handling, and
+ * external API logging belong to the central AI execution module.
+ * The NLP decision layer is responsible for deciding whether this
+ * service should be invoked.
+ *
+ * Failure behavior:
+ * - AI failures never invalidate a successful rule-based analysis.
+ * - Invalid or unavailable AI output is discarded.
+ * - The original rule-based output is returned unchanged.
+ * - aiUsed remains false unless validated AI output is actually merged.
+ *
+ * @author Eman
+ */
+@Injectable()
+export class AiEnhancementService {
+  private readonly logger = new Logger(AiEnhancementService.name);
+
+  constructor(
+    private readonly promptBuilder: AiAnalysisPromptBuilderService,
+
+    private readonly outputValidator: AiAnalysisOutputValidatorService,
+
+    private readonly analysisMergeService: AnalysisMergeService,
+
+    @Inject(NLP_AI_CLIENT)
+    private readonly aiClient: NlpAiClient,
+  ) {}
+
+  /**
+   * Returns an explicit result for a pipeline decision that does not
+   * require AI enhancement.
+   *
+   * No prompt is built and no AI client is called.
+   *
+   * @param ruleBasedOutput Completed rule-based NLP analysis.
+   * @returns Original analysis with skipped enhancement metadata.
+   */
+  skip(
+    ruleBasedOutput: IntelligentAnalysisOutput,
+  ): AiEnhancementExecutionResult {
+    return {
+      analysis: ruleBasedOutput,
+
+      enhancement: {
+        requested: false,
+        applied: false,
+        output: null,
+        failureReason: null,
+      },
+
+      operationId: null,
+    };
+  }
+
+  /**
+   * Attempts to enhance one completed rule-based NLP analysis.
+   *
+   * The method performs the following steps:
+   * 1. Build the provider-neutral enhancement prompt.
+   * 2. Generate an operation identifier for request tracing.
+   * 3. Execute the request through NlpAiClient.
+   * 4. Validate the returned structured output.
+   * 5. Merge validated AI output with the rule-based analysis.
+   *
+   * Any failure results in graceful fallback to the unchanged
+   * rule-based analysis.
+   *
+   * @param input Rule-based analysis, evidence, and decision context.
+   * @returns Final analysis and enhancement-attempt metadata.
+   */
+  async enhance(
+    input: AiEnhancementInput,
+  ): Promise<AiEnhancementExecutionResult> {
+    const operationId = randomUUID();
+
+    try {
+      const prompt = this.promptBuilder.build(input);
+
+      const response = await this.aiClient.enhance({
+        prompt: prompt.promptText,
+        operationId,
+      });
+
+      const validatedOutput = this.outputValidator.validate(
+        response.data,
+        input.evidence,
+      );
+
+      const mergedAnalysis = this.analysisMergeService.merge(
+        input.ruleBasedOutput,
+        validatedOutput,
+        input.evidence,
+      );
+
+      return {
+        analysis: mergedAnalysis,
+
+        enhancement: {
+          requested: true,
+          applied: true,
+          output: validatedOutput,
+          failureReason: null,
+        },
+
+        operationId,
+      };
+    } catch (error: unknown) {
+      const failureReason = this.resolveFailureReason(error);
+
+      this.logger.warn(
+        `NLP AI enhancement was not applied. operationId=${operationId}, reason=${failureReason}, error=${this.getErrorMessage(
+          error,
+        )}`,
+      );
+
+      return {
+        analysis: input.ruleBasedOutput,
+
+        enhancement: {
+          requested: true,
+          applied: false,
+          output: null,
+          failureReason,
+        },
+
+        operationId,
+      };
+    }
+  }
+
+  /**
+   * Maps internal and upstream exceptions to stable provider-neutral
+   * failure codes.
+   *
+   * Raw provider messages are intentionally not returned to callers.
+   * Detailed errors remain available through application and external
+   * AI attempt logs.
+   *
+   * @param error Unknown execution error.
+   * @returns Stable enhancement failure code.
+   */
+  private resolveFailureReason(error: unknown): string {
+    if (error instanceof BadRequestException) {
+      return AI_ENHANCEMENT_FAILURE.INVALID_INPUT;
+    }
+
+    if (error instanceof ServiceUnavailableException) {
+      return AI_ENHANCEMENT_FAILURE.AI_UNAVAILABLE;
+    }
+
+    if (error instanceof BadGatewayException) {
+      return AI_ENHANCEMENT_FAILURE.INVALID_AI_RESPONSE;
+    }
+
+    return AI_ENHANCEMENT_FAILURE.AI_EXECUTION_FAILED;
+  }
+
+  /**
+   * Extracts a safe diagnostic message for internal application logs.
+   *
+   * This value is never returned as public enhancement metadata.
+   *
+   * @param error Unknown execution error.
+   * @returns Safe internal diagnostic message.
+   */
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+
+      if (typeof response === 'string') {
+        return response;
+      }
+
+      if (
+        typeof response === 'object' &&
+        response !== null &&
+        'message' in response
+      ) {
+        const message = response.message;
+
+        if (typeof message === 'string') {
+          return message;
+        }
+
+        if (Array.isArray(message)) {
+          return message
+            .filter((item): item is string => typeof item === 'string')
+            .join('; ');
+        }
+      }
+
+      return error.message;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return 'Unknown AI-enhancement error.';
+  }
+}

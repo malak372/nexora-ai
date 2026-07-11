@@ -40,107 +40,103 @@ import type { IntelligentAnalysisOutput } from './types/intelligent-analysis.typ
  */
 @Injectable()
 export class IntelligentAnalysisService {
-    constructor(
-        private readonly textInputBuilderService: TextInputBuilderService,
-        private readonly textPreprocessingService: TextPreprocessingService,
-        private readonly lexiconAnalysisService: LexiconAnalysisService,
-        private readonly sentimentAnalysisService: SentimentAnalysisService,
-        private readonly keywordExtractionService: KeywordExtractionService,
-        private readonly topicExtractionService: TopicExtractionService,
-        private readonly problemInsightService: ProblemInsightService,
-        private readonly needExtractionService: NeedExtractionService,
-        private readonly featureRequestExtractionService: FeatureRequestExtractionService,
-        private readonly opportunityAnalysisService: OpportunityAnalysisService,
-        private readonly analysisStatisticsService: AnalysisStatisticsService,
-        private readonly analysisOutputBuilderService: AnalysisOutputBuilderService,
-        private readonly nlpPersistenceService: NlpPersistenceService,
-    ) { }
+  constructor(
+    private readonly textInputBuilderService: TextInputBuilderService,
+    private readonly textPreprocessingService: TextPreprocessingService,
+    private readonly lexiconAnalysisService: LexiconAnalysisService,
+    private readonly sentimentAnalysisService: SentimentAnalysisService,
+    private readonly keywordExtractionService: KeywordExtractionService,
+    private readonly topicExtractionService: TopicExtractionService,
+    private readonly problemInsightService: ProblemInsightService,
+    private readonly needExtractionService: NeedExtractionService,
+    private readonly featureRequestExtractionService: FeatureRequestExtractionService,
+    private readonly opportunityAnalysisService: OpportunityAnalysisService,
+    private readonly analysisStatisticsService: AnalysisStatisticsService,
+    private readonly analysisOutputBuilderService: AnalysisOutputBuilderService,
+    private readonly nlpPersistenceService: NlpPersistenceService,
+  ) {}
 
-    /**
-     * Runs the complete rule-based NLP analysis for a collection job
-     * and persists the final aggregated result.
-     *
-     * Re-running the analysis for the same collection job updates the
-     * existing persisted analysis instead of creating a duplicate.
-     *
-     * @param collectionJobId Collection job ID containing collected posts
-     * and comments.
-     * @returns Structured intelligent NLP analysis output.
-     */
-    async analyze(collectionJobId: string): Promise<IntelligentAnalysisOutput> {
-        const inputContext =
-            await this.textInputBuilderService.build(collectionJobId);
+  /**
+   * Runs the complete rule-based NLP analysis for a collection job
+   * and persists the final aggregated result.
+   *
+   * Re-running the analysis for the same collection job updates the
+   * existing persisted analysis instead of creating a duplicate.
+   *
+   * @param collectionJobId Collection job ID containing collected posts
+   * and comments.
+   * @returns Structured intelligent NLP analysis output.
+   */
+  async analyze(collectionJobId: string): Promise<IntelligentAnalysisOutput> {
+    const inputContext =
+      await this.textInputBuilderService.build(collectionJobId);
 
-        const preprocessingOutput = this.textPreprocessingService.process(
-            inputContext.inputs,
-            inputContext.domain.keywords,
-        );
+    const preprocessingOutput = this.textPreprocessingService.process(
+      inputContext.inputs,
+      inputContext.domain.keywords,
+    );
 
-        const lexiconOutput = await this.lexiconAnalysisService.analyze(
-            preprocessingOutput.texts,
-            preprocessingOutput.initialAnalysisResults,
-        );
+    const lexiconOutput = await this.lexiconAnalysisService.analyze(
+      preprocessingOutput.texts,
+      preprocessingOutput.initialAnalysisResults,
+    );
 
-        const analyzedTexts = this.sentimentAnalysisService.analyze(
-            lexiconOutput.analyzedTexts,
-        );
+    const analyzedTexts = this.sentimentAnalysisService.analyze(
+      lexiconOutput.analyzedTexts,
+    );
 
-        const keywords = this.keywordExtractionService.extract(analyzedTexts);
+    const keywords = this.keywordExtractionService.extract(analyzedTexts);
 
-        const dominantLanguage =
-            this.analysisStatisticsService.detectDominantLanguage(analyzedTexts);
+    const dominantLanguage =
+      this.analysisStatisticsService.detectDominantLanguage(analyzedTexts);
 
-        const topics = await this.topicExtractionService.extract(
-            keywords,
-            dominantLanguage,
-        );
+    const topics = await this.topicExtractionService.extract(
+      keywords,
+      dominantLanguage,
+    );
 
-        const recurringProblems =
-            this.problemInsightService.extract(analyzedTexts);
+    const recurringProblems = this.problemInsightService.extract(analyzedTexts);
 
-        const extractedNeeds =
-            this.needExtractionService.extract(analyzedTexts);
+    const extractedNeeds = this.needExtractionService.extract(analyzedTexts);
 
-        const featureRequests =
-            this.featureRequestExtractionService.extract(analyzedTexts);
+    const featureRequests =
+      this.featureRequestExtractionService.extract(analyzedTexts);
 
-        const opportunities = this.opportunityAnalysisService.extract(
-            recurringProblems,
-            extractedNeeds,
-            topics,
-            keywords,
-        );
+    const opportunities = this.opportunityAnalysisService.extract(
+      recurringProblems,
+      extractedNeeds,
+      topics,
+      keywords,
+    );
 
-        const context: AnalysisContext = {
-            collectionJobId: inputContext.collectionJobId,
-            domain: inputContext.domain,
-            location: inputContext.location,
-            platforms: inputContext.platforms,
+    const context: AnalysisContext = {
+      collectionJobId: inputContext.collectionJobId,
+      domain: inputContext.domain,
+      location: inputContext.location,
+      platforms: inputContext.platforms,
 
-            preprocessing: {
-                duplicateTextsRemoved:
-                    preprocessingOutput.duplicateTextsRemoved,
-                irrelevantTextsRemoved:
-                    preprocessingOutput.irrelevantTextsRemoved,
-                spamTextsRemoved: 0,
-            },
+      preprocessing: {
+        duplicateTextsRemoved: preprocessingOutput.duplicateTextsRemoved,
+        irrelevantTextsRemoved: preprocessingOutput.irrelevantTextsRemoved,
+        spamTextsRemoved: 0,
+      },
 
-            analyzedTexts,
-            keywords,
-            topics,
-            recurringProblems,
-            extractedNeeds,
-            featureRequests,
-            opportunities,
-        };
+      analyzedTexts,
+      keywords,
+      topics,
+      recurringProblems,
+      extractedNeeds,
+      featureRequests,
+      opportunities,
+    };
 
-        const output = this.analysisOutputBuilderService.build(context);
+    const output = this.analysisOutputBuilderService.build(context);
 
-        const persistenceCommand =
-            IntelligentAnalysisPersistenceMapper.toCommand(output);
+    const persistenceCommand =
+      IntelligentAnalysisPersistenceMapper.toCommand(output);
 
-        await this.nlpPersistenceService.saveAnalysis(persistenceCommand);
+    await this.nlpPersistenceService.saveAnalysis(persistenceCommand);
 
-        return output;
-    }
+    return output;
+  }
 }

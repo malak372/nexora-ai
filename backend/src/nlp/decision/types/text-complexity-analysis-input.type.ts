@@ -1,6 +1,6 @@
 import {
-    IntelligentAnalysisOutput,
-    TextAnalysisResult,
+  IntelligentAnalysisOutput,
+  TextAnalysisResult,
 } from '../../pipeline/types/intelligent-analysis.types';
 
 /**
@@ -12,13 +12,13 @@ import {
  * @author Eman
  */
 export type TextComplexityAnalysisInput = {
-    /**
-     * Detailed analysis result for every analyzed text.
-     */
-    readonly analyzedTexts: readonly TextAnalysisResult[];
+  /**
+   * Detailed analysis result for every analyzed text.
+   */
+  readonly analyzedTexts: readonly TextAnalysisResult[];
 
-    /**
-     * Topics extracted from the analyzed dataset.
-     */
-    readonly topics: IntelligentAnalysisOutput['topics'];
+  /**
+   * Topics extracted from the analyzed dataset.
+   */
+  readonly topics: IntelligentAnalysisOutput['topics'];
 };

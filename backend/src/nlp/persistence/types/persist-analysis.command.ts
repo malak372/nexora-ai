@@ -16,9 +16,7 @@ import type { IntelligentAnalysisOutput } from '../../pipeline/types/intelligent
 export type AnalysisPersistenceStatistics = Readonly<
   Pick<
     IntelligentAnalysisOutput,
-    | 'totalTextsAnalyzed'
-    | 'totalPostsAnalyzed'
-    | 'totalCommentsAnalyzed'
+    'totalTextsAnalyzed' | 'totalPostsAnalyzed' | 'totalCommentsAnalyzed'
   >
 >;
 
@@ -60,9 +58,7 @@ export type PersistAnalysisCommand = {
     IntelligentAnalysisOutput['keywords'][number]
   >;
 
-  readonly topics: ReadonlyArray<
-    IntelligentAnalysisOutput['topics'][number]
-  >;
+  readonly topics: ReadonlyArray<IntelligentAnalysisOutput['topics'][number]>;
 
   readonly recurringProblems: ReadonlyArray<
     IntelligentAnalysisOutput['recurringProblems'][number]
