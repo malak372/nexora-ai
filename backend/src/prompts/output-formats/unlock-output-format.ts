@@ -3,36 +3,36 @@
  * for direct idea-unlock requests.
  *
  * Direct unlock expands an existing NORMAL_FREE idea and returns
- * advanced content only. Basic fields such as title, problem statement,
- * objectives, and target users already exist on the original idea
- * and therefore must not be regenerated.
+ * advanced content only.
  *
- * The AI also creates:
- * - A readable executive summary of the persisted NLP analysis.
- * - A readable summary of the collected community feedback.
+ * Basic fields such as:
+ * - title
+ * - problem statement
+ * - objectives
+ * - target users
+ *
+ * already exist on the original idea and must not be regenerated.
  *
  * Trusted NLP data is appended later from NlpAnalysis by IdeasService
  * or a dedicated response builder.
  *
- * AI provider adapters may transform this schema into:
- * - OpenAI Structured Outputs.
- * - Gemini responseSchema.
- * - Anthropic tool-input schema.
+ * This schema must remain synchronized with:
+ * - UNLOCK_OUTPUT_FORMAT
+ * - UnlockIdeaSchema
  *
  * @author Malak
  */
 export const UNLOCK_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-
   properties: {
     /**
      * Complete abstract expanding the existing free-tier idea.
      */
     fullAbstract: {
       type: 'string',
-      minLength: 1,
-      maxLength: 5000,
+      minLength: 50,
+      maxLength: 5_000,
     },
 
     /**
@@ -54,8 +54,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     systemArchitecture: {
       type: 'string',
-      minLength: 1,
-      maxLength: 4000,
+      minLength: 20,
+      maxLength: 4_000,
     },
 
     /**
@@ -63,8 +63,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     databaseDesign: {
       type: 'string',
-      minLength: 1,
-      maxLength: 4000,
+      minLength: 20,
+      maxLength: 4_000,
     },
 
     /**
@@ -76,7 +76,7 @@ export const UNLOCK_OUTPUT_SCHEMA = {
       maxItems: 15,
       items: {
         type: 'string',
-        minLength: 1,
+        minLength: 3,
         maxLength: 300,
       },
     },
@@ -86,8 +86,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     businessModel: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2500,
+      minLength: 20,
+      maxLength: 2_500,
     },
 
     /**
@@ -95,8 +95,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     revenueModel: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2000,
+      minLength: 20,
+      maxLength: 2_000,
     },
 
     /**
@@ -104,8 +104,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     budgetEstimation: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2000,
+      minLength: 20,
+      maxLength: 2_000,
     },
 
     /**
@@ -113,8 +113,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     implementationTimeline: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2000,
+      minLength: 20,
+      maxLength: 2_000,
     },
 
     /**
@@ -122,8 +122,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     feasibilityAssessment: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2500,
+      minLength: 20,
+      maxLength: 2_500,
     },
 
     /**
@@ -131,19 +131,17 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     marketPotential: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2500,
+      minLength: 20,
+      maxLength: 2_500,
     },
 
     /**
      * High-level local regulatory considerations.
-     *
-     * This field must not be presented as verified legal advice.
      */
     localRegulations: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2000,
+      minLength: 20,
+      maxLength: 2_000,
     },
 
     /**
@@ -151,32 +149,28 @@ export const UNLOCK_OUTPUT_SCHEMA = {
      */
     valueProposition: {
       type: 'string',
-      minLength: 1,
-      maxLength: 1800,
+      minLength: 20,
+      maxLength: 1_800,
     },
 
     /**
-     * AI-generated readable interpretation of the trusted NLP data.
-     *
-     * This is not the raw NlpAnalysis database record.
+     * AI-generated readable interpretation of trusted NLP data.
      */
     nlpExecutiveSummary: {
       type: 'string',
-      minLength: 1,
-      maxLength: 2500,
+      minLength: 20,
+      maxLength: 2_500,
     },
 
     /**
-     * AI-generated readable summary of the supplied community
-     * posts, comments, problems, needs, and feedback.
+     * AI-generated readable summary of community feedback.
      */
     communityFeedbackSummary: {
       type: 'string',
-      minLength: 1,
-      maxLength: 1500,
+      minLength: 20,
+      maxLength: 1_500,
     },
   },
-
   required: [
     'fullAbstract',
     'technologyStack',
@@ -200,8 +194,8 @@ export const UNLOCK_OUTPUT_SCHEMA = {
  * Human-readable JSON example inserted into the unlock prompt.
  *
  * The AI must follow these exact field names and value types.
- * Trusted NLP and collection metadata are appended later
- * by the application.
+ * Trusted NLP and collection metadata are appended later by
+ * the application.
  */
 export const UNLOCK_OUTPUT_FORMAT = JSON.stringify(
   {

@@ -18,6 +18,8 @@ import { CollectorsModule } from './collectors/collectors.module';
 import { DataCollectionModule } from './data collection/data-collection.module';
 import { NlpModule } from './nlp/nlp.module';
 import { PromptsModule } from './prompts/prompts.module';
+import { AiModule  } from './ai/ai.module';
+import {AiModelsModule} from './ai-models/ai-models.module';
 
 /**
  * Root application module.
@@ -49,6 +51,8 @@ import { PromptsModule } from './prompts/prompts.module';
     AdminModule,
     DataCollectionModule,
     CollectorsModule,
+    AiModule,
+    AdminModule,
     NlpModule,
     PromptsModule,
   ],
