@@ -110,6 +110,7 @@ enum ApiProvider {
   OPENAI
   ANTHROPIC
   GOOGLE
+  GROQ
 
   // Payment Providers
   STRIPE
@@ -261,6 +262,7 @@ enum AiProviderType {
   OPENAI
   ANTHROPIC
   GOOGLE
+  GROQ
 }
 
 enum AuditTargetType {

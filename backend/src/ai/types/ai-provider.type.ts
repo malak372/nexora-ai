@@ -1,0 +1,211 @@
+/**
+ * Defines the normalized response format requested from an AI provider.
+ *
+ * This value is provider-independent and must be translated by each
+ * provider adapter into the corresponding SDK request configuration.
+ *
+ * @author Malak
+ */
+export enum AiResponseFormat {
+  /**
+   * Provider should return regular plain text.
+   */
+  TEXT = 'TEXT',
+
+  /**
+   * Provider should return a valid JSON object.
+   */
+  JSON = 'JSON',
+}
+
+/**
+ * Defines normalized AI generation completion reasons.
+ *
+ * Every provider adapter is responsible for mapping its own
+ * provider-specific finish reason into one of these values.
+ *
+ * Examples:
+ * - OpenAI "stop" becomes STOP.
+ * - OpenAI "length" becomes MAX_TOKENS.
+ * - Anthropic "end_turn" becomes STOP.
+ * - Anthropic "max_tokens" becomes MAX_TOKENS.
+ * - Gemini "STOP" becomes STOP.
+ * *
+ * @author Malak
+ */
+export enum AiFinishReason {
+  /**
+   * The model completed the generation normally.
+   */
+  STOP = 'STOP',
+
+  /**
+   * The generation stopped because the output token limit was reached.
+   */
+  MAX_TOKENS = 'MAX_TOKENS',
+
+  /**
+   * The generation stopped because a tool call was requested.
+   */
+  TOOL_CALL = 'TOOL_CALL',
+
+  /**
+   * The response was blocked or interrupted by provider safety filters.
+   */
+  CONTENT_FILTER = 'CONTENT_FILTER',
+
+  /**
+   * The request was cancelled before completion.
+   */
+  CANCELLED = 'CANCELLED',
+
+  /**
+   * The provider returned a reason that could not be normalized.
+   */
+  UNKNOWN = 'UNKNOWN',
+}
+
+/**
+ * Provider-independent generation input.
+ *
+ * Every AI provider adapter receives this same contract regardless
+ * of the provider-specific SDK request structure.
+ *
+ * Provider adapters are responsible for translating this contract
+ * into the request format expected by their corresponding SDK.
+ *
+ * @author Malak
+ */
+export type AiProviderGenerateInput = {
+  /**
+   * Exact provider model identifier.
+   *
+   * Examples:
+   * - gpt-4.1-mini
+   * - claude-sonnet-4-20250514
+   * - gemini-2.5-flash
+   */
+  readonly apiModelId: string;
+
+  /**
+   * Main rendered user prompt sent to the AI model.
+   *
+   * This prompt usually contains the prepared NLP analysis,
+   * collection context, and requested output structure.
+   */
+  readonly userPrompt: string;
+
+  /**
+   * Optional system-level instruction defining the model's role,
+   * behavior, restrictions, and general response expectations.
+   */
+  readonly systemInstruction?: string;
+
+  /**
+   * Maximum number of tokens the provider may generate.
+   *
+   * Provider adapters must map this value to the corresponding
+   * SDK option, such as max_output_tokens or max_tokens.
+   */
+  readonly maxOutputTokens: number;
+
+  /**
+   * Optional model sampling temperature.
+   *
+   * Lower values produce more deterministic responses, while
+   * higher values increase response variation.
+   *
+   * The accepted range may differ between providers, so validation
+   * should occur before execution or inside the provider adapter.
+   */
+  readonly temperature?: number;
+
+  /**
+   * Requested normalized response format.
+   *
+   * JSON should be used for structured outputs such as generated
+   * ideas, while TEXT can be used for conversational responses.
+   *
+   * Defaults to TEXT when not provided.
+   */
+  readonly responseFormat?: AiResponseFormat;
+
+  /**
+   * Abort signal used to cancel the provider request.
+   *
+   * This is mainly used by AiTimeoutService to stop requests that
+   * exceed the configured execution timeout.
+   */
+  readonly signal?: AbortSignal;
+
+  /**
+   * Optional internal metadata associated with the generation request.
+   *
+   * This metadata can be used for observability, tracing, logging,
+   * or provider-supported request metadata.
+   *
+   * Sensitive values such as API keys or user passwords must never
+   * be included here.
+   */
+  readonly metadata?: Readonly<Record<string, unknown>>;
+};
+
+/**
+ * Normalized AI provider generation result.
+ *
+ * Provider-specific SDK response objects must not escape the adapter
+ * layer. Each provider adapter must extract and normalize the required
+ * values before returning this result.
+ *
+ * @author Malak
+ */
+export type AiProviderGenerateResult = {
+  /**
+   * Generated textual response returned by the AI provider.
+   *
+   * When JSON output is requested, this value contains the raw JSON
+   * string that will later be parsed and validated by the structured
+   * output service.
+   */
+  readonly text: string;
+
+  /**
+   * Optional provider request identifier.
+   *
+   * This identifier can be stored in external API logs to help
+   * investigate provider-side errors or support requests.
+   */
+  readonly requestId?: string;
+
+  /**
+   * Actual number of input tokens consumed by the provider.
+   *
+   * A value of zero may be used when the provider does not return
+   * input token usage information.
+   */
+  readonly inputTokens: number;
+
+  /**
+   * Actual number of output tokens generated by the provider.
+   *
+   * A value of zero may be used when the provider does not return
+   * output token usage information.
+   */
+  readonly outputTokens: number;
+
+  /**
+   * Normalized reason explaining why the generation stopped.
+   *
+   * Provider-specific values must be mapped into AiFinishReason
+   * inside the corresponding adapter.
+   */
+  readonly finishReason: AiFinishReason;
+
+  /**
+   * Total provider request duration in milliseconds.
+   *
+   * This value measures the SDK request execution time only and can
+   * be used for performance monitoring and external API logging.
+   */
+  readonly providerLatencyMs: number;
+};

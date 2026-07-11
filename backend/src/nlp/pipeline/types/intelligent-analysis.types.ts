@@ -339,7 +339,7 @@ export type IntelligentAnalysisOutput = {
    * Structured software opportunity signals detected from community discussion.
    *
    * These are not final project ideas. They provide evidence-based direction
-   * for the Prompt Builder and AI idea generation layer.
+   * for the Prompt Builder and AI idea-generation layer.
    */
   opportunities: {
     /**
@@ -353,45 +353,13 @@ export type IntelligentAnalysisOutput = {
     need?: string;
 
     /**
-     * Structured software opportunity signals detected from community discussion.
-     *
-     * These are not final project ideas. They provide evidence-based direction
-     * for the Prompt Builder and AI idea generation layer.
+     * Main discussion topic related to this opportunity.
      */
-    opportunities: {
-        /**
-         * Recurring problem connected to this opportunity.
-         */
-        problem?: string;
-
-        /**
-         * User need connected to this opportunity.
-         */
-        need?: string;
-
-        /**
-         * Main discussion topic related to this opportunity.
-         */
-        topic?: string;
-
-        /**
-         * Suggested solution area inferred from problems, needs, topics, and keywords.
-         */
-        solutionArea: string;
-
-        /**
-         * Opportunity strength score from 0 to 1.
-         */
-        score: number;
-
-        /**
-         * Representative community evidence supporting this opportunity.
-         */
-        evidenceSamples: string[];
-    }[];
+    topic?: string;
 
     /**
-     * Suggested solution area inferred from problems, needs, topics, and keywords.
+     * Suggested solution area inferred from problems, needs, topics,
+     * and keywords.
      */
     solutionArea: string;
 
@@ -405,6 +373,7 @@ export type IntelligentAnalysisOutput = {
      */
     evidenceSamples: string[];
   }[];
+
 
   /**
    * Classified concern signals based on extended NLP lexicon categories.
