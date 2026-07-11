@@ -1,6 +1,4 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   AiProviderType,
   ApiRequestType,
@@ -158,10 +156,7 @@ export type CreateExternalAiLogInput = {
  */
 @Injectable()
 export class ExternalAiLogService {
-  constructor(
-    private readonly prisma:
-      PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Persists one external AI-provider attempt.
@@ -172,73 +167,47 @@ export class ExternalAiLogService {
    * @param input Normalized attempt logging data.
    * @returns Persisted ExternalApiLog record.
    */
-  async create(
-    input: CreateExternalAiLogInput,
-  ): Promise<ExternalApiLog> {
+  async create(input: CreateExternalAiLogInput): Promise<ExternalApiLog> {
     return this.prisma.externalApiLog.create({
       data: {
-        operationId:
-          input.operationId,
+        operationId: input.operationId,
 
-        attemptNumber:
-          input.attemptNumber,
+        attemptNumber: input.attemptNumber,
 
-        fallbackUsed:
-          input.fallbackUsed,
+        fallbackUsed: input.fallbackUsed,
 
-        userId:
-          input.userId ?? null,
+        userId: input.userId ?? null,
 
-        ideaId:
-          input.ideaId ?? null,
+        ideaId: input.ideaId ?? null,
 
-        aiModelId:
-          input.aiModelId,
+        aiModelId: input.aiModelId,
 
-        provider:
-          AI_PROVIDER_TO_API_PROVIDER[
-            input.provider
-          ],
+        provider: AI_PROVIDER_TO_API_PROVIDER[input.provider],
 
-        apiModelId:
-          input.apiModelId,
+        apiModelId: input.apiModelId,
 
-        endpoint:
-          input.endpoint?.trim() ||
-          AI_TEXT_GENERATION_ENDPOINT,
+        endpoint: input.endpoint?.trim() || AI_TEXT_GENERATION_ENDPOINT,
 
-        requestId:
-          input.requestId ?? null,
+        requestId: input.requestId ?? null,
 
-        requestType:
-          input.requestType,
+        requestType: input.requestType,
 
-        statusCode:
-          input.statusCode ?? null,
+        statusCode: input.statusCode ?? null,
 
-        isSuccess:
-          input.isSuccess,
+        isSuccess: input.isSuccess,
 
-        responseTimeMs:
-          input.responseTimeMs,
+        responseTimeMs: input.responseTimeMs,
 
-        inputTokens:
-          input.inputTokens ?? null,
+        inputTokens: input.inputTokens ?? null,
 
-        outputTokens:
-          input.outputTokens ?? null,
+        outputTokens: input.outputTokens ?? null,
 
         costEstimate:
           input.costEstimate !== undefined
-            ? new Prisma.Decimal(
-                input.costEstimate,
-              )
+            ? new Prisma.Decimal(input.costEstimate)
             : null,
 
-        errorMessage:
-          this.normalizeErrorMessage(
-            input.errorMessage,
-          ),
+        errorMessage: this.normalizeErrorMessage(input.errorMessage),
       },
     });
   }
@@ -252,19 +221,13 @@ export class ExternalAiLogService {
    * @param errorMessage Optional normalized provider error message.
    * @returns Safe database value.
    */
-  private normalizeErrorMessage(
-    errorMessage?: string,
-  ): string | null {
-    const normalizedMessage =
-      errorMessage?.trim();
+  private normalizeErrorMessage(errorMessage?: string): string | null {
+    const normalizedMessage = errorMessage?.trim();
 
     if (!normalizedMessage) {
       return null;
     }
 
-    return normalizedMessage.slice(
-      0,
-      MAX_AI_ERROR_MESSAGE_LENGTH,
-    );
+    return normalizedMessage.slice(0, MAX_AI_ERROR_MESSAGE_LENGTH);
   }
 }

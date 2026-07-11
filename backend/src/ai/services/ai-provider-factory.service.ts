@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { AiProviderType } from '@prisma/client';
 
 import { AiProvider } from '../providers/ai-provider.interface';
@@ -26,17 +23,13 @@ import { OpenAiProvider } from '../providers/openai.provider';
 @Injectable()
 export class AiProviderFactoryService {
   constructor(
-    private readonly openAiProvider:
-      OpenAiProvider,
+    private readonly openAiProvider: OpenAiProvider,
 
-    private readonly anthropicProvider:
-      AnthropicProvider,
+    private readonly anthropicProvider: AnthropicProvider,
 
-    private readonly googleProvider:
-      GoogleProvider,
+    private readonly googleProvider: GoogleProvider,
 
-    private readonly groqProvider:
-      GroqProvider,
+    private readonly groqProvider: GroqProvider,
   ) {}
 
   /**
@@ -48,9 +41,7 @@ export class AiProviderFactoryService {
    * @throws InternalServerErrorException When an unsupported provider
    * value reaches the factory.
    */
-  getProvider(
-    provider: AiProviderType,
-  ): AiProvider {
+  getProvider(provider: AiProviderType): AiProvider {
     switch (provider) {
       case AiProviderType.OPENAI:
         return this.openAiProvider;
@@ -75,9 +66,7 @@ export class AiProviderFactoryService {
    * @param value Provider value that should have been impossible.
    * @throws InternalServerErrorException Always.
    */
-  private assertNever(
-    value: never,
-  ): never {
+  private assertNever(value: never): never {
     throw new InternalServerErrorException(
       `Unsupported AI provider: ${String(value)}.`,
     );

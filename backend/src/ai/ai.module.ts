@@ -21,7 +21,6 @@ import { AiStructuredOutputService } from './services/ai-structured-output.servi
 import { AiTimeoutService } from './services/ai-timeout.service';
 import { ExternalAiLogService } from './services/external-ai-log.service';
 
-
 /**
  * Runtime AI integration module.
  *
@@ -52,15 +51,9 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-    AiModelsModule,
-  ],
+  imports: [ConfigModule, PrismaModule, AiModelsModule],
 
-  controllers: [
-    AiUsageAnalyticsController,
-  ],
+  controllers: [AiUsageAnalyticsController],
 
   providers: [
     /**

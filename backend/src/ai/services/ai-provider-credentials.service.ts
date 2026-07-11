@@ -1,13 +1,8 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiProviderType } from '@prisma/client';
 
-import {
-  AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS,
-} from '../constants';
+import { AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS } from '../constants';
 
 /**
  * Resolves AI-provider credentials from application configuration.
@@ -30,10 +25,7 @@ import {
  */
 @Injectable()
 export class AiProviderCredentialsService {
-  constructor(
-    private readonly configService:
-      ConfigService,
-  ) {}
+  constructor(private readonly configService: ConfigService) {}
 
   /**
    * Returns the configured API key for one AI provider.
@@ -50,20 +42,10 @@ export class AiProviderCredentialsService {
    * @throws ServiceUnavailableException When the environment variable
    * is missing, empty, or whitespace-only.
    */
-  getApiKey(
-    provider: AiProviderType,
-  ): string {
-    const environmentKey =
-      AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS[
-        provider
-      ];
+  getApiKey(provider: AiProviderType): string {
+    const environmentKey = AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS[provider];
 
-    const apiKey =
-      this.configService
-        .get<string>(
-          environmentKey,
-        )
-        ?.trim();
+    const apiKey = this.configService.get<string>(environmentKey)?.trim();
 
     if (!apiKey) {
       throw new ServiceUnavailableException(

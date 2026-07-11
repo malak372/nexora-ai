@@ -27,18 +27,12 @@ export const FreeIdeaSchema = z
     /**
      * Main project objectives.
      */
-    objectives: z
-      .array(z.string().trim().min(3).max(300))
-      .min(1)
-      .max(10),
+    objectives: z.array(z.string().trim().min(3).max(300)).min(1).max(10),
 
     /**
      * Primary users or organizations targeted by the project.
      */
-    targetUsers: z
-      .array(z.string().trim().min(2).max(200))
-      .min(1)
-      .max(10),
+    targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
 
     /**
      * Partial project abstract available to registered free users.

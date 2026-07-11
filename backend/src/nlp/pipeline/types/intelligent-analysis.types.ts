@@ -368,7 +368,6 @@ export type IntelligentAnalysisOutput = {
     evidenceSamples: string[];
   }[];
 
-
   /**
    * Classified concern signals based on extended NLP lexicon categories.
    *

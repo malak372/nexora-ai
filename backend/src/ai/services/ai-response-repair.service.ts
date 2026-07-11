@@ -6,9 +6,7 @@ import {
   MAX_AI_REPAIR_VALIDATION_ISSUES,
 } from '../constants';
 
-import {
-  StructuredOutputValidationIssue,
-} from './ai-structured-output.service';
+import { StructuredOutputValidationIssue } from './ai-structured-output.service';
 
 /**
  * Input required to construct one structured-output repair prompt.
@@ -30,8 +28,7 @@ export type BuildAiResponseRepairPromptInput = {
   /**
    * Normalized parsing or schema-validation issues.
    */
-  readonly validationIssues:
-    readonly StructuredOutputValidationIssue[];
+  readonly validationIssues: readonly StructuredOutputValidationIssue[];
 };
 
 /**
@@ -81,9 +78,7 @@ export class AiResponseRepairService {
    * issues.
    * @returns Repair prompt sent to the same model once.
    */
-  buildRepairPrompt(
-    input: BuildAiResponseRepairPromptInput,
-  ): string {
+  buildRepairPrompt(input: BuildAiResponseRepairPromptInput): string {
     const originalPrompt = this.truncateMiddle(
       input.originalPrompt,
       MAX_AI_REPAIR_CONTEXT_LENGTH,
@@ -147,24 +142,17 @@ ${invalidResponse}
    * Used for the invalid response because the beginning normally
    * contains the opening JSON structure and most relevant fields.
    */
-  private truncateEnd(
-    value: string,
-    maximumLength: number,
-  ): string {
+  private truncateEnd(value: string, maximumLength: number): string {
     const normalized = value.trim();
 
     if (normalized.length <= maximumLength) {
       return normalized;
     }
 
-    const marker =
-      '\n...[invalid response truncated by Nexora AI]';
+    const marker = '\n...[invalid response truncated by Nexora AI]';
 
     return (
-      normalized.slice(
-        0,
-        Math.max(0, maximumLength - marker.length),
-      ) + marker
+      normalized.slice(0, Math.max(0, maximumLength - marker.length)) + marker
     );
   }
 
@@ -174,36 +162,25 @@ ${invalidResponse}
    * The beginning preserves the primary task and context, while the
    * end preserves strict rules and the requested JSON output format.
    */
-  private truncateMiddle(
-    value: string,
-    maximumLength: number,
-  ): string {
+  private truncateMiddle(value: string, maximumLength: number): string {
     const normalized = value.trim();
 
     if (normalized.length <= maximumLength) {
       return normalized;
     }
 
-    const marker =
-      '\n...[original prompt middle truncated by Nexora AI]...\n';
+    const marker = '\n...[original prompt middle truncated by Nexora AI]...\n';
 
-    const availableLength = Math.max(
-      0,
-      maximumLength - marker.length,
-    );
+    const availableLength = Math.max(0, maximumLength - marker.length);
 
-    const beginningLength =
-      Math.ceil(availableLength / 2);
+    const beginningLength = Math.ceil(availableLength / 2);
 
-    const endingLength =
-      Math.floor(availableLength / 2);
+    const endingLength = Math.floor(availableLength / 2);
 
     return [
       normalized.slice(0, beginningLength),
       marker,
-      normalized.slice(
-        normalized.length - endingLength,
-      ),
+      normalized.slice(normalized.length - endingLength),
     ].join('');
   }
 }

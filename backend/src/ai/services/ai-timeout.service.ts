@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../errors/ai-provider.error';
@@ -31,31 +28,23 @@ export class AiTimeoutService {
    * @throws AiProviderError When the configured timeout expires.
    */
   async execute<T>(
-    operation: (
-      signal: AbortSignal,
-    ) => Promise<T>,
+    operation: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number,
   ): Promise<T> {
-    this.validateTimeout(
-      timeoutMs,
-    );
+    this.validateTimeout(timeoutMs);
 
-    const controller =
-      new AbortController();
+    const controller = new AbortController();
 
     let timedOut = false;
 
-    const timeoutHandle =
-      setTimeout(() => {
-        timedOut = true;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
 
-        controller.abort();
-      }, timeoutMs);
+      controller.abort();
+    }, timeoutMs);
 
     try {
-      return await operation(
-        controller.signal,
-      );
+      return await operation(controller.signal);
     } catch (error: unknown) {
       if (timedOut) {
         throw new AiProviderError(
@@ -70,9 +59,7 @@ export class AiTimeoutService {
 
       throw error;
     } finally {
-      clearTimeout(
-        timeoutHandle,
-      );
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -83,13 +70,8 @@ export class AiTimeoutService {
    * @throws BadRequestException When the timeout is not a positive
    * finite number.
    */
-  private validateTimeout(
-    timeoutMs: number,
-  ): void {
-    if (
-      !Number.isFinite(timeoutMs) ||
-      timeoutMs <= 0
-    ) {
+  private validateTimeout(timeoutMs: number): void {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       throw new BadRequestException(
         'AI request timeout must be a positive finite number.',
       );

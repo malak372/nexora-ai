@@ -32,13 +32,9 @@ export class GoogleProvider implements AiProvider {
    */
   private readonly client: GoogleGenAI;
 
-  constructor(
-    credentialsService: AiProviderCredentialsService,
-  ) {
+  constructor(credentialsService: AiProviderCredentialsService) {
     this.client = new GoogleGenAI({
-      apiKey: credentialsService.getApiKey(
-        AiProviderType.GOOGLE,
-      ),
+      apiKey: credentialsService.getApiKey(AiProviderType.GOOGLE),
     });
   }
 
@@ -51,56 +47,38 @@ export class GoogleProvider implements AiProvider {
     const startedAt = Date.now();
 
     try {
-      const response =
-        await this.client.models.generateContent({
-          model:
-            input.apiModelId,
+      const response = await this.client.models.generateContent({
+        model: input.apiModelId,
 
-          contents:
-            input.userPrompt,
+        contents: input.userPrompt,
 
-          config: {
-            ...(input.systemInstruction && {
-              systemInstruction:
-                input.systemInstruction,
-            }),
+        config: {
+          ...(input.systemInstruction && {
+            systemInstruction: input.systemInstruction,
+          }),
 
-            maxOutputTokens:
-              input.maxOutputTokens,
+          maxOutputTokens: input.maxOutputTokens,
 
-            ...(input.temperature !== undefined && {
-              temperature:
-                input.temperature,
-            }),
+          ...(input.temperature !== undefined && {
+            temperature: input.temperature,
+          }),
 
-            ...(input.responseFormat ===
-              AiResponseFormat.JSON && {
-              responseMimeType:
-                'application/json',
-            }),
+          ...(input.responseFormat === AiResponseFormat.JSON && {
+            responseMimeType: 'application/json',
+          }),
 
-            abortSignal:
-              input.signal,
-          },
-        });
+          abortSignal: input.signal,
+        },
+      });
 
-      const candidateFinishReason =
-        response.candidates?.[0]
-          ?.finishReason;
+      const candidateFinishReason = response.candidates?.[0]?.finishReason;
 
-      const finishReason =
-        this.mapFinishReason(
-          candidateFinishReason,
-        );
+      const finishReason = this.mapFinishReason(candidateFinishReason);
 
-      const text =
-        response.text?.trim();
+      const text = response.text?.trim();
 
       if (!text) {
-        if (
-          finishReason ===
-          AiFinishReason.CONTENT_FILTER
-        ) {
+        if (finishReason === AiFinishReason.CONTENT_FILTER) {
           throw new AiProviderError(
             'Google AI blocked the generated response because of content safety policies.',
             AiProviderErrorCode.CONTENT_FILTERED,
@@ -118,52 +96,31 @@ export class GoogleProvider implements AiProvider {
       return {
         text,
 
-        requestId:
-          undefined,
+        requestId: undefined,
 
-        inputTokens:
-          response.usageMetadata
-            ?.promptTokenCount ??
-          0,
+        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
 
-        outputTokens:
-          response.usageMetadata
-            ?.candidatesTokenCount ??
-          0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
 
         finishReason,
 
-        providerLatencyMs:
-          Date.now() -
-          startedAt,
+        providerLatencyMs: Date.now() - startedAt,
       };
     } catch (error: unknown) {
       if (error instanceof AiProviderError) {
         throw error;
       }
 
-      const statusCode =
-        this.readStatusCode(error);
+      const statusCode = this.readStatusCode(error);
 
-      const errorCode =
-        this.resolveErrorCode(
-          error,
-          statusCode,
-        );
+      const errorCode = this.resolveErrorCode(error, statusCode);
 
       throw new AiProviderError(
-        this.readMessage(
-          error,
-          'Google AI request failed.',
-        ),
+        this.readMessage(error, 'Google AI request failed.'),
         errorCode,
-        this.isRetryableCode(
-          errorCode,
-        ),
+        this.isRetryableCode(errorCode),
         statusCode,
-        this.readRequestId(
-          error,
-        ),
+        this.readRequestId(error),
         error,
       );
     }
@@ -172,13 +129,9 @@ export class GoogleProvider implements AiProvider {
   /**
    * Maps a Gemini finish reason into the normalized application enum.
    */
-  private mapFinishReason(
-    finishReason: unknown,
-  ): AiFinishReason {
+  private mapFinishReason(finishReason: unknown): AiFinishReason {
     const normalizedReason =
-      typeof finishReason === 'string'
-        ? finishReason.toUpperCase()
-        : '';
+      typeof finishReason === 'string' ? finishReason.toUpperCase() : '';
 
     switch (normalizedReason) {
       case 'STOP':
@@ -220,52 +173,37 @@ export class GoogleProvider implements AiProvider {
       return AiProviderErrorCode.INSUFFICIENT_QUOTA;
     }
 
-    if (
-      statusCode === undefined &&
-      this.isNetworkError(error)
-    ) {
+    if (statusCode === undefined && this.isNetworkError(error)) {
       return AiProviderErrorCode.NETWORK;
     }
 
     switch (statusCode) {
       case 400:
-        return this.isModelConfigurationError(
-          error,
-        )
-          ? AiProviderErrorCode
-              .INVALID_MODEL_CONFIGURATION
-          : AiProviderErrorCode
-              .INVALID_PROMPT;
+        return this.isModelConfigurationError(error)
+          ? AiProviderErrorCode.INVALID_MODEL_CONFIGURATION
+          : AiProviderErrorCode.INVALID_PROMPT;
 
       case 401:
-        return AiProviderErrorCode
-          .INVALID_CREDENTIALS;
+        return AiProviderErrorCode.INVALID_CREDENTIALS;
 
       case 403:
         return AiProviderErrorCode.FORBIDDEN;
 
       case 404:
-        return AiProviderErrorCode
-          .MODEL_NOT_FOUND;
+        return AiProviderErrorCode.MODEL_NOT_FOUND;
 
       case 408:
         return AiProviderErrorCode.TIMEOUT;
 
       case 409:
-        return AiProviderErrorCode
-          .PROVIDER_UNAVAILABLE;
+        return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
 
       case 429:
-        return AiProviderErrorCode
-          .RATE_LIMIT;
+        return AiProviderErrorCode.RATE_LIMIT;
 
       default:
-        if (
-          statusCode !== undefined &&
-          statusCode >= 500
-        ) {
-          return AiProviderErrorCode
-            .PROVIDER_UNAVAILABLE;
+        if (statusCode !== undefined && statusCode >= 500) {
+          return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
         }
 
         return AiProviderErrorCode.UNKNOWN;
@@ -275,54 +213,37 @@ export class GoogleProvider implements AiProvider {
   /**
    * Determines whether the same Gemini model may be retried.
    */
-  private isRetryableCode(
-    code: AiProviderErrorCode,
-  ): boolean {
+  private isRetryableCode(code: AiProviderErrorCode): boolean {
     switch (code) {
       case AiProviderErrorCode.TIMEOUT:
       case AiProviderErrorCode.NETWORK:
       case AiProviderErrorCode.RATE_LIMIT:
-      case AiProviderErrorCode
-        .PROVIDER_UNAVAILABLE:
-      case AiProviderErrorCode
-        .EMPTY_RESPONSE:
-      case AiProviderErrorCode
-        .INVALID_STRUCTURED_OUTPUT:
+      case AiProviderErrorCode.PROVIDER_UNAVAILABLE:
+      case AiProviderErrorCode.EMPTY_RESPONSE:
+      case AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT:
       case AiProviderErrorCode.UNKNOWN:
         return true;
 
-      case AiProviderErrorCode
-        .INSUFFICIENT_QUOTA:
-      case AiProviderErrorCode
-        .INVALID_CREDENTIALS:
+      case AiProviderErrorCode.INSUFFICIENT_QUOTA:
+      case AiProviderErrorCode.INVALID_CREDENTIALS:
       case AiProviderErrorCode.FORBIDDEN:
-      case AiProviderErrorCode
-        .MODEL_NOT_FOUND:
-      case AiProviderErrorCode
-        .INVALID_MODEL_CONFIGURATION:
-      case AiProviderErrorCode
-        .INVALID_PROMPT:
-      case AiProviderErrorCode
-        .CONTENT_FILTERED:
+      case AiProviderErrorCode.MODEL_NOT_FOUND:
+      case AiProviderErrorCode.INVALID_MODEL_CONFIGURATION:
+      case AiProviderErrorCode.INVALID_PROMPT:
+      case AiProviderErrorCode.CONTENT_FILTERED:
       case AiProviderErrorCode.CANCELLED:
         return false;
 
       default:
-        return this.assertNeverErrorCode(
-          code,
-        );
+        return this.assertNeverErrorCode(code);
     }
   }
 
   /**
    * Detects Gemini quota, billing, or resource-exhaustion failures.
    */
-  private isInsufficientQuotaError(
-    error: unknown,
-  ): boolean {
-    const message =
-      this.readMessage(error, '')
-        .toLowerCase();
+  private isInsufficientQuotaError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'quota exceeded',
@@ -332,20 +253,14 @@ export class GoogleProvider implements AiProvider {
       'billing',
       'free tier quota',
       'limit: 0',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
    * Detects likely Gemini model-configuration failures.
    */
-  private isModelConfigurationError(
-    error: unknown,
-  ): boolean {
-    const message =
-      this.readMessage(error, '')
-        .toLowerCase();
+  private isModelConfigurationError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'model',
@@ -355,35 +270,22 @@ export class GoogleProvider implements AiProvider {
       'responsemimetype',
       'response mime type',
       'unsupported parameter',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
    * Extracts an HTTP-like status code from a Google SDK error.
    */
-  private readStatusCode(
-    error: unknown,
-  ): number | undefined {
-    if (
-      typeof error !== 'object' ||
-      error === null
-    ) {
+  private readStatusCode(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null) {
       return undefined;
     }
 
-    if (
-      'status' in error &&
-      typeof error.status === 'number'
-    ) {
+    if ('status' in error && typeof error.status === 'number') {
       return error.status;
     }
 
-    if (
-      'code' in error &&
-      typeof error.code === 'number'
-    ) {
+    if ('code' in error && typeof error.code === 'number') {
       return error.code;
     }
 
@@ -393,27 +295,16 @@ export class GoogleProvider implements AiProvider {
   /**
    * Extracts a provider request identifier when available.
    */
-  private readRequestId(
-    error: unknown,
-  ): string | undefined {
-    if (
-      typeof error !== 'object' ||
-      error === null
-    ) {
+  private readRequestId(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null) {
       return undefined;
     }
 
-    if (
-      'request_id' in error &&
-      typeof error.request_id === 'string'
-    ) {
+    if ('request_id' in error && typeof error.request_id === 'string') {
       return error.request_id;
     }
 
-    if (
-      'requestId' in error &&
-      typeof error.requestId === 'string'
-    ) {
+    if ('requestId' in error && typeof error.requestId === 'string') {
       return error.requestId;
     }
 
@@ -423,47 +314,29 @@ export class GoogleProvider implements AiProvider {
   /**
    * Extracts a human-readable error message.
    */
-  private readMessage(
-    error: unknown,
-    fallback: string,
-  ): string {
-    return error instanceof Error
-      ? error.message
-      : fallback;
+  private readMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
   }
 
   /**
    * Determines whether the request was cancelled.
    */
-  private isAbortError(
-    error: unknown,
-  ): boolean {
+  private isAbortError(error: unknown): boolean {
     return (
       error instanceof Error &&
-      (
-        error.name === 'AbortError' ||
-        error.name === 'TimeoutError'
-      )
+      (error.name === 'AbortError' || error.name === 'TimeoutError')
     );
   }
 
   /**
    * Detects temporary network and connection errors.
    */
-  private isNetworkError(
-    error: unknown,
-  ): boolean {
-    if (
-      typeof error !== 'object' ||
-      error === null
-    ) {
+  private isNetworkError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) {
       return false;
     }
 
-    if (
-      'code' in error &&
-      typeof error.code === 'string'
-    ) {
+    if ('code' in error && typeof error.code === 'string') {
       return [
         'ECONNRESET',
         'ETIMEDOUT',
@@ -476,21 +349,14 @@ export class GoogleProvider implements AiProvider {
 
     return (
       error instanceof Error &&
-      (
-        error.name === 'FetchError' ||
-        error.name === 'TypeError'
-      )
+      (error.name === 'FetchError' || error.name === 'TypeError')
     );
   }
 
   /**
    * Enforces exhaustive handling of normalized error categories.
    */
-  private assertNeverErrorCode(
-    value: never,
-  ): never {
-    throw new Error(
-      `Unsupported AI provider error code: ${String(value)}.`,
-    );
+  private assertNeverErrorCode(value: never): never {
+    throw new Error(`Unsupported AI provider error code: ${String(value)}.`);
   }
 }

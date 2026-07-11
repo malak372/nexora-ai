@@ -1,7 +1,4 @@
-export {
-  FREE_OUTPUT_FORMAT,
-  FREE_OUTPUT_SCHEMA,
-} from './free-output-format';
+export { FREE_OUTPUT_FORMAT, FREE_OUTPUT_SCHEMA } from './free-output-format';
 
 export {
   GUEST_OUTPUT_FORMAT,

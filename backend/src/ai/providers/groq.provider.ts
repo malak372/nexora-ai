@@ -2,9 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AiProviderType } from '@prisma/client';
 import Groq from 'groq-sdk';
 
-import {
-  isRetryableAiProviderStatus,
-} from '../constants';
+import { isRetryableAiProviderStatus } from '../constants';
 
 import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../errors/ai-provider.error';
@@ -21,11 +19,10 @@ import {
 import { AiProvider } from './ai-provider.interface';
 
 /**
- * Maximum length of a provider error message included in the
- * normalized application error.
+ * Maximum safe length of a Groq provider error message.
  *
- * ExternalAiLogService applies its own final persistence limit, but
- * bounding the message here prevents large SDK response bodies from
+ * The logging service applies an additional persistence limit, but
+ * bounding provider messages here prevents large SDK responses from
  * propagating through the application.
  */
 const MAX_GROQ_ERROR_MESSAGE_LENGTH = 500;
@@ -61,14 +58,9 @@ const MAX_GROQ_ERROR_MESSAGE_LENGTH = 500;
 export class GroqProvider implements AiProvider {
   private readonly client: Groq;
 
-  constructor(
-    credentialsService:
-      AiProviderCredentialsService,
-  ) {
+  constructor(credentialsService: AiProviderCredentialsService) {
     this.client = new Groq({
-      apiKey: credentialsService.getApiKey(
-        AiProviderType.GROQ,
-      ),
+      apiKey: credentialsService.getApiKey(AiProviderType.GROQ),
     });
   }
 
@@ -86,65 +78,52 @@ export class GroqProvider implements AiProvider {
     const startedAt = Date.now();
 
     try {
-      const messages:
-        Groq.Chat.Completions.ChatCompletionMessageParam[] =
-        [];
+      const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [];
 
       if (input.systemInstruction?.trim()) {
         messages.push({
           role: 'system',
-          content:
-            input.systemInstruction.trim(),
+          content: input.systemInstruction.trim(),
         });
       }
 
       messages.push({
         role: 'user',
-        content:
-          input.userPrompt,
+        content: input.userPrompt,
       });
 
-      const completion =
-        await this.client.chat.completions.create(
-          {
-            model:
-              input.apiModelId,
+      const completion = await this.client.chat.completions.create(
+        {
+          model: input.apiModelId,
 
-            messages,
+          messages,
 
-            max_completion_tokens:
-              input.maxOutputTokens,
+          max_completion_tokens: input.maxOutputTokens,
 
-            ...(input.temperature !== undefined
-              ? {
-                  temperature:
-                    input.temperature,
-                }
-              : {}),
+          ...(input.temperature !== undefined
+            ? {
+                temperature: input.temperature,
+              }
+            : {}),
 
-            ...(input.responseFormat ===
-            AiResponseFormat.JSON
-              ? {
-                  response_format: {
-                    type:
-                      'json_object' as const,
-                  },
-                }
-              : {}),
+          ...(input.responseFormat === AiResponseFormat.JSON
+            ? {
+                response_format: {
+                  type: 'json_object' as const,
+                },
+              }
+            : {}),
 
-            stream: false,
-          },
-          {
-            signal:
-              input.signal,
-          },
-        );
+          stream: false,
+        },
+        {
+          signal: input.signal,
+        },
+      );
 
-      const firstChoice =
-        completion.choices[0];
+      const firstChoice = completion.choices[0];
 
-      const text =
-        firstChoice?.message?.content?.trim();
+      const text = firstChoice?.message?.content?.trim();
 
       if (!text) {
         throw new AiProviderError(
@@ -159,36 +138,22 @@ export class GroqProvider implements AiProvider {
       return {
         text,
 
-        requestId:
-          completion.id,
+        requestId: completion.id,
 
-        inputTokens:
-          completion.usage
-            ?.prompt_tokens ?? 0,
+        inputTokens: completion.usage?.prompt_tokens ?? 0,
 
-        outputTokens:
-          completion.usage
-            ?.completion_tokens ?? 0,
+        outputTokens: completion.usage?.completion_tokens ?? 0,
 
-        finishReason:
-          this.mapFinishReason(
-            firstChoice.finish_reason,
-          ),
+        finishReason: this.mapFinishReason(firstChoice.finish_reason),
 
-        providerLatencyMs:
-          Date.now() - startedAt,
+        providerLatencyMs: Date.now() - startedAt,
       };
     } catch (error: unknown) {
-      if (
-        error instanceof
-        AiProviderError
-      ) {
+      if (error instanceof AiProviderError) {
         throw error;
       }
 
-      throw this.normalizeError(
-        error,
-      );
+      throw this.normalizeError(error);
     }
   }
 
@@ -199,10 +164,7 @@ export class GroqProvider implements AiProvider {
    * @returns Normalized Nexora AI finish reason.
    */
   private mapFinishReason(
-    finishReason:
-      | string
-      | null
-      | undefined,
+    finishReason: string | null | undefined,
   ): AiFinishReason {
     switch (finishReason) {
       case 'stop':
@@ -224,7 +186,7 @@ export class GroqProvider implements AiProvider {
   }
 
   /**
-   * Converts a Groq SDK error into the normalized application error.
+   * Converts a Groq SDK error into a normalized application error.
    *
    * Raw SDK objects, response headers, credentials, and stack traces
    * are never exposed through the normalized message.
@@ -232,24 +194,14 @@ export class GroqProvider implements AiProvider {
    * @param error Unknown Groq SDK or network error.
    * @returns Normalized provider error.
    */
-  private normalizeError(
-    error: unknown,
-  ): AiProviderError {
-    const statusCode =
-      this.readStatusCode(error);
+  private normalizeError(error: unknown): AiProviderError {
+    const statusCode = this.readStatusCode(error);
 
-    const requestId =
-      this.readRequestId(error);
+    const requestId = this.readRequestId(error);
 
-    const providerCode =
-      this.readProviderErrorCode(
-        error,
-      );
+    const providerCode = this.readProviderErrorCode(error);
 
-    const providerMessage =
-      this.readSafeProviderMessage(
-        error,
-      );
+    const providerMessage = this.readSafeProviderMessage(error);
 
     if (this.isAbortError(error)) {
       return new AiProviderError(
@@ -262,17 +214,12 @@ export class GroqProvider implements AiProvider {
       );
     }
 
-    /*
-     * Some providers may use HTTP 400 or 429 when the account has no
-     * remaining quota. Quota detection must therefore happen before
-     * generic status-code classification.
+    /**
+     * Some provider responses may use status 400 or 429 when the
+     * account has no remaining quota. Quota detection must happen
+     * before generic status-code classification.
      */
-    if (
-      this.indicatesInsufficientQuota(
-        providerCode,
-        providerMessage,
-      )
-    ) {
+    if (this.indicatesInsufficientQuota(providerCode, providerMessage)) {
       return new AiProviderError(
         this.buildErrorMessage(
           'Groq account quota is unavailable or exhausted.',
@@ -337,10 +284,7 @@ export class GroqProvider implements AiProvider {
 
       case 408:
         return new AiProviderError(
-          this.buildErrorMessage(
-            'Groq request timed out.',
-            providerMessage,
-          ),
+          this.buildErrorMessage('Groq request timed out.', providerMessage),
           AiProviderErrorCode.TIMEOUT,
           true,
           statusCode,
@@ -404,9 +348,7 @@ export class GroqProvider implements AiProvider {
         providerMessage,
       ),
       AiProviderErrorCode.UNKNOWN,
-      isRetryableAiProviderStatus(
-        statusCode,
-      ),
+      isRetryableAiProviderStatus(statusCode),
       statusCode,
       requestId,
       error,
@@ -433,29 +375,22 @@ export class GroqProvider implements AiProvider {
     requestId: string | undefined,
     providerMessage: string | undefined,
   ): AiProviderError {
-    const normalizedMessage =
-      providerMessage?.toLowerCase() ??
-      '';
+    const normalizedMessage = providerMessage?.toLowerCase() ?? '';
 
-    const isModelConfigurationError =
-      [
-        'model',
-        'unsupported',
-        'parameter',
-        'response_format',
-        'response format',
-        'max_tokens',
-        'max_completion_tokens',
-        'temperature',
-        'json mode',
-        'json_object',
-        'context window',
-        'token limit',
-      ].some((indicator) =>
-        normalizedMessage.includes(
-          indicator,
-        ),
-      );
+    const isModelConfigurationError = [
+      'model',
+      'unsupported',
+      'parameter',
+      'response_format',
+      'response format',
+      'max_tokens',
+      'max_completion_tokens',
+      'temperature',
+      'json mode',
+      'json_object',
+      'context window',
+      'token limit',
+    ].some((indicator) => normalizedMessage.includes(indicator));
 
     if (isModelConfigurationError) {
       return new AiProviderError(
@@ -490,24 +425,17 @@ export class GroqProvider implements AiProvider {
    * @param error Unknown provider error.
    * @returns True when the request was aborted.
    */
-  private isAbortError(
-    error: unknown,
-  ): boolean {
+  private isAbortError(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
     }
 
-    const normalizedMessage =
-      error.message.toLowerCase();
+    const normalizedMessage = error.message.toLowerCase();
 
     return (
       error.name === 'AbortError' ||
-      normalizedMessage.includes(
-        'aborted',
-      ) ||
-      normalizedMessage.includes(
-        'abort error',
-      )
+      normalizedMessage.includes('aborted') ||
+      normalizedMessage.includes('abort error')
     );
   }
 
@@ -518,16 +446,12 @@ export class GroqProvider implements AiProvider {
    * @param error Unknown provider error.
    * @returns True when the error appears network-related.
    */
-  private isNetworkError(
-    error: unknown,
-  ): boolean {
+  private isNetworkError(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
     }
 
-    const normalized =
-      `${error.name} ${error.message}`
-        .toLowerCase();
+    const normalized = `${error.name} ${error.message}`.toLowerCase();
 
     return [
       'network',
@@ -539,9 +463,7 @@ export class GroqProvider implements AiProvider {
       'enotfound',
       'etimedout',
       'dns',
-    ].some((value) =>
-      normalized.includes(value),
-    );
+    ].some((value) => normalized.includes(value));
   }
 
   /**
@@ -556,13 +478,9 @@ export class GroqProvider implements AiProvider {
     providerCode: string | undefined,
     providerMessage: string | undefined,
   ): boolean {
-    const normalizedCode =
-      providerCode?.toLowerCase() ??
-      '';
+    const normalizedCode = providerCode?.toLowerCase() ?? '';
 
-    const normalizedMessage =
-      providerMessage?.toLowerCase() ??
-      '';
+    const normalizedMessage = providerMessage?.toLowerCase() ?? '';
 
     return [
       'insufficient_quota',
@@ -573,12 +491,8 @@ export class GroqProvider implements AiProvider {
       'payment required',
     ].some(
       (indicator) =>
-        normalizedCode.includes(
-          indicator,
-        ) ||
-        normalizedMessage.includes(
-          indicator,
-        ),
+        normalizedCode.includes(indicator) ||
+        normalizedMessage.includes(indicator),
     );
   }
 
@@ -588,18 +502,10 @@ export class GroqProvider implements AiProvider {
    * @param error Unknown provider error.
    * @returns Status code when available.
    */
-  private readStatusCode(
-    error: unknown,
-  ): number | undefined {
+  private readStatusCode(error: unknown): number | undefined {
     return (
-      this.readNumericProperty(
-        error,
-        'status',
-      ) ??
-      this.readNumericProperty(
-        error,
-        'statusCode',
-      )
+      this.readNumericProperty(error, 'status') ??
+      this.readNumericProperty(error, 'statusCode')
     );
   }
 
@@ -610,69 +516,60 @@ export class GroqProvider implements AiProvider {
    * @param error Unknown provider error.
    * @returns Request identifier when available.
    */
-  private readRequestId(
-    error: unknown,
-  ): string | undefined {
+  private readRequestId(error: unknown): string | undefined {
     const directRequestId =
-      this.readStringProperty(
-        error,
-        'request_id',
-      ) ??
-      this.readStringProperty(
-        error,
-        'requestId',
-      );
+      this.readStringProperty(error, 'request_id') ??
+      this.readStringProperty(error, 'requestId');
 
     if (directRequestId) {
       return directRequestId;
     }
 
-    const headers =
-      this.readObjectProperty(
-        error,
-        'headers',
-      );
+    const headers = this.readObjectProperty(error, 'headers');
 
     if (!headers) {
       return undefined;
     }
 
-    const headerRequestId =
-      this.readStringProperty(
-        headers,
-        'x-request-id',
-      ) ??
-      this.readStringProperty(
-        headers,
-        'request-id',
-      );
+    const directHeaderRequestId =
+      this.readStringProperty(headers, 'x-request-id') ??
+      this.readStringProperty(headers, 'request-id');
 
-    if (headerRequestId) {
-      return headerRequestId;
+    if (directHeaderRequestId) {
+      return directHeaderRequestId;
     }
 
-    const getMethod =
-      headers.get;
-
-    if (
-      typeof getMethod === 'function'
-    ) {
-      try {
-        const result =
-          getMethod.call(
-            headers,
-            'x-request-id',
-          );
-
-        return typeof result === 'string'
-          ? result
-          : undefined;
-      } catch {
-        return undefined;
-      }
+    if (!this.hasHeaderGetter(headers)) {
+      return undefined;
     }
 
-    return undefined;
+    try {
+      const requestId =
+        headers.get('x-request-id') ?? headers.get('request-id');
+
+      return requestId?.trim() || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Determines whether an object exposes a typed Headers-compatible
+   * getter.
+   *
+   * This type guard avoids invoking an untyped Function value, which
+   * would otherwise produce an unsafe any result.
+   *
+   * @param value Unknown headers object.
+   * @returns True when the object has a compatible get method.
+   */
+  private hasHeaderGetter(value: Record<string, unknown>): value is Record<
+    string,
+    unknown
+  > & {
+    get(name: string): string | null;
+  } {
+    return typeof value.get === 'function';
   }
 
   /**
@@ -686,41 +583,20 @@ export class GroqProvider implements AiProvider {
    * @param value Unknown provider error.
    * @returns Provider error code when available.
    */
-  private readProviderErrorCode(
-    value: unknown,
-  ): string | undefined {
-    const directError =
-      this.readObjectProperty(
-        value,
-        'error',
-      );
+  private readProviderErrorCode(value: unknown): string | undefined {
+    const directError = this.readObjectProperty(value, 'error');
 
-    const directCode =
-      this.readStringProperty(
-        directError,
-        'code',
-      );
+    const directCode = this.readStringProperty(directError, 'code');
 
     if (directCode) {
       return directCode;
     }
 
-    const body =
-      this.readObjectProperty(
-        value,
-        'body',
-      );
+    const body = this.readObjectProperty(value, 'body');
 
-    const bodyError =
-      this.readObjectProperty(
-        body,
-        'error',
-      );
+    const bodyError = this.readObjectProperty(body, 'error');
 
-    return this.readStringProperty(
-      bodyError,
-      'code',
-    );
+    return this.readStringProperty(bodyError, 'code');
   }
 
   /**
@@ -732,94 +608,51 @@ export class GroqProvider implements AiProvider {
    * - error.body.error.message
    * - error.message
    *
-   * The resulting message is normalized and length-limited. API keys,
-   * headers, stack traces, and complete provider response bodies are
-   * never included.
-   *
    * @param error Unknown provider error.
    * @returns Safe provider error message when available.
    */
-  private readSafeProviderMessage(
-    error: unknown,
-  ): string | undefined {
-    const directError =
-      this.readObjectProperty(
-        error,
-        'error',
-      );
+  private readSafeProviderMessage(error: unknown): string | undefined {
+    const directError = this.readObjectProperty(error, 'error');
 
-    const directMessage =
-      this.readStringProperty(
-        directError,
-        'message',
-      );
+    const directMessage = this.readStringProperty(directError, 'message');
 
     if (directMessage) {
-      return this.normalizeProviderMessage(
-        directMessage,
-      );
+      return this.normalizeProviderMessage(directMessage);
     }
 
-    const body =
-      this.readObjectProperty(
-        error,
-        'body',
-      );
+    const body = this.readObjectProperty(error, 'body');
 
-    const bodyError =
-      this.readObjectProperty(
-        body,
-        'error',
-      );
+    const bodyError = this.readObjectProperty(body, 'error');
 
-    const bodyMessage =
-      this.readStringProperty(
-        bodyError,
-        'message',
-      );
+    const bodyMessage = this.readStringProperty(bodyError, 'message');
 
     if (bodyMessage) {
-      return this.normalizeProviderMessage(
-        bodyMessage,
-      );
+      return this.normalizeProviderMessage(bodyMessage);
     }
 
-    if (
-      error instanceof Error &&
-      error.message.trim()
-    ) {
-      return this.normalizeProviderMessage(
-        error.message,
-      );
+    if (error instanceof Error && error.message.trim()) {
+      return this.normalizeProviderMessage(error.message);
     }
 
     return undefined;
   }
 
   /**
-   * Normalizes and bounds a provider message.
+   * Normalizes and limits a provider message.
    *
    * @param message Raw provider message.
    * @returns Safe normalized message.
    */
-  private normalizeProviderMessage(
-    message: string,
-  ): string {
+  private normalizeProviderMessage(message: string): string {
     return message
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(
-        0,
-        MAX_GROQ_ERROR_MESSAGE_LENGTH,
-      );
+      .slice(0, MAX_GROQ_ERROR_MESSAGE_LENGTH);
   }
 
   /**
    * Combines an application-level message with an optional safe
    * provider explanation.
-   *
-   * Duplicate messages are avoided when the provider message already
-   * matches the application-level explanation.
    *
    * @param fallback Application-level fallback message.
    * @param providerMessage Safe provider message.
@@ -833,13 +666,7 @@ export class GroqProvider implements AiProvider {
       return fallback;
     }
 
-    if (
-      fallback
-        .toLowerCase()
-        .includes(
-          providerMessage.toLowerCase(),
-        )
-    ) {
+    if (fallback.toLowerCase().includes(providerMessage.toLowerCase())) {
       return fallback;
     }
 
@@ -860,21 +687,11 @@ export class GroqProvider implements AiProvider {
     value: unknown,
     property: string,
   ): Record<string, unknown> | undefined {
-    if (
-      typeof value !== 'object' ||
-      value === null ||
-      !(property in value)
-    ) {
+    if (typeof value !== 'object' || value === null || !(property in value)) {
       return undefined;
     }
 
-    const result =
-      (
-        value as Record<
-          string,
-          unknown
-        >
-      )[property];
+    const result = (value as Record<string, unknown>)[property];
 
     if (
       typeof result !== 'object' ||
@@ -884,10 +701,7 @@ export class GroqProvider implements AiProvider {
       return undefined;
     }
 
-    return result as Record<
-      string,
-      unknown
-    >;
+    return result as Record<string, unknown>;
   }
 
   /**
@@ -901,33 +715,19 @@ export class GroqProvider implements AiProvider {
     value: unknown,
     property: string,
   ): string | undefined {
-    if (
-      typeof value !== 'object' ||
-      value === null ||
-      !(property in value)
-    ) {
+    if (typeof value !== 'object' || value === null || !(property in value)) {
       return undefined;
     }
 
-    const result =
-      (
-        value as Record<
-          string,
-          unknown
-        >
-      )[property];
+    const result = (value as Record<string, unknown>)[property];
 
-    if (
-      typeof result !== 'string'
-    ) {
+    if (typeof result !== 'string') {
       return undefined;
     }
 
-    const normalized =
-      result.trim();
+    const normalized = result.trim();
 
-    return normalized ||
-      undefined;
+    return normalized || undefined;
   }
 
   /**
@@ -941,26 +741,13 @@ export class GroqProvider implements AiProvider {
     value: unknown,
     property: string,
   ): number | undefined {
-    if (
-      typeof value !== 'object' ||
-      value === null ||
-      !(property in value)
-    ) {
+    if (typeof value !== 'object' || value === null || !(property in value)) {
       return undefined;
     }
 
-    const result =
-      (
-        value as Record<
-          string,
-          unknown
-        >
-      )[property];
+    const result = (value as Record<string, unknown>)[property];
 
-    return (
-      typeof result === 'number' &&
-      Number.isFinite(result)
-    )
+    return typeof result === 'number' && Number.isFinite(result)
       ? result
       : undefined;
   }

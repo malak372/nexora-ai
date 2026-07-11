@@ -35,18 +35,12 @@ export const PremiumIdeaSchema = z
     /**
      * Main project goals and expected outcomes.
      */
-    objectives: z
-      .array(z.string().trim().min(3).max(300))
-      .min(1)
-      .max(10),
+    objectives: z.array(z.string().trim().min(3).max(300)).min(1).max(10),
 
     /**
      * Primary users or organizations expected to use the project.
      */
-    targetUsers: z
-      .array(z.string().trim().min(2).max(200))
-      .min(1)
-      .max(10),
+    targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
 
     /**
      * Complete project abstract.
@@ -56,10 +50,7 @@ export const PremiumIdeaSchema = z
     /**
      * Recommended implementation technologies.
      */
-    technologyStack: z
-      .array(z.string().trim().min(1).max(100))
-      .min(1)
-      .max(12),
+    technologyStack: z.array(z.string().trim().min(1).max(100)).min(1).max(12),
 
     /**
      * High-level system architecture recommendation.
@@ -74,10 +65,7 @@ export const PremiumIdeaSchema = z
     /**
      * Minimum viable product features.
      */
-    mvpFeatures: z
-      .array(z.string().trim().min(3).max(300))
-      .min(3)
-      .max(15),
+    mvpFeatures: z.array(z.string().trim().min(3).max(300)).min(3).max(15),
 
     /**
      * Preliminary business-model recommendation.

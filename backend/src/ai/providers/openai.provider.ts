@@ -31,13 +31,9 @@ export class OpenAiProvider implements AiProvider {
    */
   private readonly client: OpenAI;
 
-  constructor(
-    credentialsService: AiProviderCredentialsService,
-  ) {
+  constructor(credentialsService: AiProviderCredentialsService) {
     this.client = new OpenAI({
-      apiKey: credentialsService.getApiKey(
-        AiProviderType.OPENAI,
-      ),
+      apiKey: credentialsService.getApiKey(AiProviderType.OPENAI),
 
       /**
        * Retry execution is controlled centrally by AiExecutionService.
@@ -64,53 +60,40 @@ export class OpenAiProvider implements AiProvider {
     const startedAt = Date.now();
 
     try {
-      const response =
-        await this.client.responses.create(
-          {
-            model: input.apiModelId,
+      const response = await this.client.responses.create(
+        {
+          model: input.apiModelId,
 
-            instructions:
-              input.systemInstruction,
+          instructions: input.systemInstruction,
 
-            input:
-              input.userPrompt,
+          input: input.userPrompt,
 
-            max_output_tokens:
-              input.maxOutputTokens,
+          max_output_tokens: input.maxOutputTokens,
 
-            ...(input.temperature !== undefined && {
-              temperature:
-                input.temperature,
-            }),
-          },
-          {
-            signal:
-              input.signal,
-          },
-        );
+          ...(input.temperature !== undefined && {
+            temperature: input.temperature,
+          }),
+        },
+        {
+          signal: input.signal,
+        },
+      );
 
-      const text =
-        response.output_text?.trim();
+      const text = response.output_text?.trim();
 
       if (!text) {
-        const finishReason =
-          this.mapFinishReason(
-            response.status,
-            response.incomplete_details?.reason,
-          );
+        const finishReason = this.mapFinishReason(
+          response.status,
+          response.incomplete_details?.reason,
+        );
 
-        if (
-          finishReason ===
-          AiFinishReason.CONTENT_FILTER
-        ) {
+        if (finishReason === AiFinishReason.CONTENT_FILTER) {
           throw new AiProviderError(
             'OpenAI blocked the generated response because of content safety policies.',
             AiProviderErrorCode.CONTENT_FILTERED,
             false,
             undefined,
-            this.readResponseRequestId(
-              response,
-            ),
+            this.readResponseRequestId(response),
           );
         }
 
@@ -119,65 +102,41 @@ export class OpenAiProvider implements AiProvider {
           AiProviderErrorCode.EMPTY_RESPONSE,
           true,
           undefined,
-          this.readResponseRequestId(
-            response,
-          ),
+          this.readResponseRequestId(response),
         );
       }
 
       return {
         text,
 
-        requestId:
-          this.readResponseRequestId(
-            response,
-          ),
+        requestId: this.readResponseRequestId(response),
 
-        inputTokens:
-          response.usage?.input_tokens ??
-          0,
+        inputTokens: response.usage?.input_tokens ?? 0,
 
-        outputTokens:
-          response.usage?.output_tokens ??
-          0,
+        outputTokens: response.usage?.output_tokens ?? 0,
 
-        finishReason:
-          this.mapFinishReason(
-            response.status,
-            response.incomplete_details?.reason,
-          ),
+        finishReason: this.mapFinishReason(
+          response.status,
+          response.incomplete_details?.reason,
+        ),
 
-        providerLatencyMs:
-          Date.now() -
-          startedAt,
+        providerLatencyMs: Date.now() - startedAt,
       };
     } catch (error: unknown) {
       if (error instanceof AiProviderError) {
         throw error;
       }
 
-      const statusCode =
-        this.readStatusCode(error);
+      const statusCode = this.readStatusCode(error);
 
-      const errorCode =
-        this.resolveErrorCode(
-          error,
-          statusCode,
-        );
+      const errorCode = this.resolveErrorCode(error, statusCode);
 
       throw new AiProviderError(
-        this.readMessage(
-          error,
-          'OpenAI request failed.',
-        ),
+        this.readMessage(error, 'OpenAI request failed.'),
         errorCode,
-        this.isRetryableCode(
-          errorCode,
-        ),
+        this.isRetryableCode(errorCode),
         statusCode,
-        this.readErrorRequestId(
-          error,
-        ),
+        this.readErrorRequestId(error),
         error,
       );
     }
@@ -235,52 +194,37 @@ export class OpenAiProvider implements AiProvider {
       return AiProviderErrorCode.INSUFFICIENT_QUOTA;
     }
 
-    if (
-      statusCode === undefined &&
-      this.isNetworkError(error)
-    ) {
+    if (statusCode === undefined && this.isNetworkError(error)) {
       return AiProviderErrorCode.NETWORK;
     }
 
     switch (statusCode) {
       case 400:
-        return this.isModelConfigurationError(
-          error,
-        )
-          ? AiProviderErrorCode
-              .INVALID_MODEL_CONFIGURATION
-          : AiProviderErrorCode
-              .INVALID_PROMPT;
+        return this.isModelConfigurationError(error)
+          ? AiProviderErrorCode.INVALID_MODEL_CONFIGURATION
+          : AiProviderErrorCode.INVALID_PROMPT;
 
       case 401:
-        return AiProviderErrorCode
-          .INVALID_CREDENTIALS;
+        return AiProviderErrorCode.INVALID_CREDENTIALS;
 
       case 403:
         return AiProviderErrorCode.FORBIDDEN;
 
       case 404:
-        return AiProviderErrorCode
-          .MODEL_NOT_FOUND;
+        return AiProviderErrorCode.MODEL_NOT_FOUND;
 
       case 408:
         return AiProviderErrorCode.TIMEOUT;
 
       case 409:
-        return AiProviderErrorCode
-          .PROVIDER_UNAVAILABLE;
+        return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
 
       case 429:
-        return AiProviderErrorCode
-          .RATE_LIMIT;
+        return AiProviderErrorCode.RATE_LIMIT;
 
       default:
-        if (
-          statusCode !== undefined &&
-          statusCode >= 500
-        ) {
-          return AiProviderErrorCode
-            .PROVIDER_UNAVAILABLE;
+        if (statusCode !== undefined && statusCode >= 500) {
+          return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
         }
 
         return AiProviderErrorCode.UNKNOWN;
@@ -290,42 +234,29 @@ export class OpenAiProvider implements AiProvider {
   /**
    * Determines whether the same OpenAI model may be attempted again.
    */
-  private isRetryableCode(
-    code: AiProviderErrorCode,
-  ): boolean {
+  private isRetryableCode(code: AiProviderErrorCode): boolean {
     switch (code) {
       case AiProviderErrorCode.TIMEOUT:
       case AiProviderErrorCode.NETWORK:
       case AiProviderErrorCode.RATE_LIMIT:
-      case AiProviderErrorCode
-        .PROVIDER_UNAVAILABLE:
-      case AiProviderErrorCode
-        .EMPTY_RESPONSE:
-      case AiProviderErrorCode
-        .INVALID_STRUCTURED_OUTPUT:
+      case AiProviderErrorCode.PROVIDER_UNAVAILABLE:
+      case AiProviderErrorCode.EMPTY_RESPONSE:
+      case AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT:
       case AiProviderErrorCode.UNKNOWN:
         return true;
 
-      case AiProviderErrorCode
-        .INSUFFICIENT_QUOTA:
-      case AiProviderErrorCode
-        .INVALID_CREDENTIALS:
+      case AiProviderErrorCode.INSUFFICIENT_QUOTA:
+      case AiProviderErrorCode.INVALID_CREDENTIALS:
       case AiProviderErrorCode.FORBIDDEN:
-      case AiProviderErrorCode
-        .MODEL_NOT_FOUND:
-      case AiProviderErrorCode
-        .INVALID_MODEL_CONFIGURATION:
-      case AiProviderErrorCode
-        .INVALID_PROMPT:
-      case AiProviderErrorCode
-        .CONTENT_FILTERED:
+      case AiProviderErrorCode.MODEL_NOT_FOUND:
+      case AiProviderErrorCode.INVALID_MODEL_CONFIGURATION:
+      case AiProviderErrorCode.INVALID_PROMPT:
+      case AiProviderErrorCode.CONTENT_FILTERED:
       case AiProviderErrorCode.CANCELLED:
         return false;
 
       default:
-        return this.assertNeverErrorCode(
-          code,
-        );
+        return this.assertNeverErrorCode(code);
     }
   }
 
@@ -335,12 +266,8 @@ export class OpenAiProvider implements AiProvider {
    * These errors must not be retried using the same OpenAI account,
    * but another configured provider may still be selected.
    */
-  private isInsufficientQuotaError(
-    error: unknown,
-  ): boolean {
-    const message =
-      this.readMessage(error, '')
-        .toLowerCase();
+  private isInsufficientQuotaError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'insufficient_quota',
@@ -350,21 +277,15 @@ export class OpenAiProvider implements AiProvider {
       'billing details',
       'quota exceeded',
       'insufficient quota',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
    * Detects likely model-specific configuration failures returned with
    * HTTP 400.
    */
-  private isModelConfigurationError(
-    error: unknown,
-  ): boolean {
-    const message =
-      this.readMessage(error, '')
-        .toLowerCase();
+  private isModelConfigurationError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'model',
@@ -373,17 +294,13 @@ export class OpenAiProvider implements AiProvider {
       'unsupported parameter',
       'response format',
       'response_format',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
    * Extracts an HTTP status code from an OpenAI SDK error.
    */
-  private readStatusCode(
-    error: unknown,
-  ): number | undefined {
+  private readStatusCode(error: unknown): number | undefined {
     if (
       typeof error === 'object' &&
       error !== null &&
@@ -399,27 +316,16 @@ export class OpenAiProvider implements AiProvider {
   /**
    * Extracts a request identifier from a failed OpenAI request.
    */
-  private readErrorRequestId(
-    error: unknown,
-  ): string | undefined {
-    if (
-      typeof error !== 'object' ||
-      error === null
-    ) {
+  private readErrorRequestId(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null) {
       return undefined;
     }
 
-    if (
-      'request_id' in error &&
-      typeof error.request_id === 'string'
-    ) {
+    if ('request_id' in error && typeof error.request_id === 'string') {
       return error.request_id;
     }
 
-    if (
-      'requestID' in error &&
-      typeof error.requestID === 'string'
-    ) {
+    if ('requestID' in error && typeof error.requestID === 'string') {
       return error.requestID;
     }
 
@@ -429,9 +335,7 @@ export class OpenAiProvider implements AiProvider {
   /**
    * Extracts the request identifier attached to a successful response.
    */
-  private readResponseRequestId(
-    response: unknown,
-  ): string | undefined {
+  private readResponseRequestId(response: unknown): string | undefined {
     if (
       typeof response === 'object' &&
       response !== null &&
@@ -447,48 +351,29 @@ export class OpenAiProvider implements AiProvider {
   /**
    * Extracts a readable error message.
    */
-  private readMessage(
-    error: unknown,
-    fallback: string,
-  ): string {
-    return error instanceof Error
-      ? error.message
-      : fallback;
+  private readMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
   }
 
   /**
    * Determines whether an error represents request cancellation.
    */
-  private isAbortError(
-    error: unknown,
-  ): boolean {
+  private isAbortError(error: unknown): boolean {
     return (
       error instanceof Error &&
-      (
-        error.name === 'AbortError' ||
-        error.name ===
-          'APIUserAbortError'
-      )
+      (error.name === 'AbortError' || error.name === 'APIUserAbortError')
     );
   }
 
   /**
    * Detects temporary network and transport failures.
    */
-  private isNetworkError(
-    error: unknown,
-  ): boolean {
-    if (
-      typeof error !== 'object' ||
-      error === null
-    ) {
+  private isNetworkError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) {
       return false;
     }
 
-    if (
-      'code' in error &&
-      typeof error.code === 'string'
-    ) {
+    if ('code' in error && typeof error.code === 'string') {
       return [
         'ECONNRESET',
         'ETIMEDOUT',
@@ -501,23 +386,15 @@ export class OpenAiProvider implements AiProvider {
 
     return (
       error instanceof Error &&
-      (
-        error.name ===
-          'APIConnectionError' ||
-        error.name ===
-          'APIConnectionTimeoutError'
-      )
+      (error.name === 'APIConnectionError' ||
+        error.name === 'APIConnectionTimeoutError')
     );
   }
 
   /**
    * Enforces exhaustive handling of AiProviderErrorCode values.
    */
-  private assertNeverErrorCode(
-    value: never,
-  ): never {
-    throw new Error(
-      `Unsupported AI provider error code: ${String(value)}.`,
-    );
+  private assertNeverErrorCode(value: never): never {
+    throw new Error(`Unsupported AI provider error code: ${String(value)}.`);
   }
 }

@@ -1,6 +1,4 @@
-import {
-  AiProviderType,
-} from '@prisma/client';
+import { AiProviderType } from '@prisma/client';
 
 /**
  * Aggregated analytics for one AI model.

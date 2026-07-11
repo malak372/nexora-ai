@@ -1,22 +1,13 @@
-
 import { Injectable } from '@nestjs/common';
-import {
-  AiProviderType,
-  ApiProvider,
-  Prisma,
-} from '@prisma/client';
+import { AiProviderType, ApiProvider, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import {
-  AI_PROVIDER_TO_API_PROVIDER,
-} from '../constants';
+import { AI_PROVIDER_TO_API_PROVIDER } from '../constants';
 
 import { GetAiAnalyticsQueryDto } from './dto/get-ai-analytics-query.dto';
 
-import {
-  AiUsageAnalyticsSummary,
-} from './types/ai-usage-analytics.type';
+import { AiUsageAnalyticsSummary } from './types/ai-usage-analytics.type';
 
 /**
  * Aggregation selection used for per-model usage analytics.
@@ -68,9 +59,7 @@ const AI_SUCCESS_BY_MODEL_GROUP_ARGS =
  */
 @Injectable()
 export class AiUsageAnalyticsService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns an aggregated AI usage summary.
@@ -158,10 +147,7 @@ export class AiUsageAnalyticsService {
 
     const modelIds = byModel
       .map((item) => item.aiModelId)
-      .filter(
-        (id): id is string =>
-          id !== null,
-      );
+      .filter((id): id is string => id !== null);
 
     const models =
       modelIds.length > 0
@@ -180,21 +166,10 @@ export class AiUsageAnalyticsService {
           })
         : [];
 
-    const modelMap = new Map(
-      models.map((model) => [
-        model.id,
-        model,
-      ]),
-    );
+    const modelMap = new Map(models.map((model) => [model.id, model]));
 
-    const successCountMap = new Map<
-      string | null,
-      number
-    >(
-      successfulByModel.map((item) => [
-        item.aiModelId,
-        item._count._all,
-      ]),
+    const successCountMap = new Map<string | null, number>(
+      successfulByModel.map((item) => [item.aiModelId, item._count._all]),
     );
 
     return {
@@ -202,88 +177,46 @@ export class AiUsageAnalyticsService {
 
       successfulRequests,
 
-      failedRequests:
-        totalRequests -
-        successfulRequests,
+      failedRequests: totalRequests - successfulRequests,
 
-      successRate:
-        this.calculatePercentage(
-          successfulRequests,
-          totalRequests,
-        ),
+      successRate: this.calculatePercentage(successfulRequests, totalRequests),
 
-      averageResponseTimeMs:
-        this.toRoundedNumber(
-          aggregates._avg
-            .responseTimeMs,
-        ),
+      averageResponseTimeMs: this.toRoundedNumber(
+        aggregates._avg.responseTimeMs,
+      ),
 
-      totalInputTokens:
-        aggregates._sum
-          .inputTokens ?? 0,
+      totalInputTokens: aggregates._sum.inputTokens ?? 0,
 
-      totalOutputTokens:
-        aggregates._sum
-          .outputTokens ?? 0,
+      totalOutputTokens: aggregates._sum.outputTokens ?? 0,
 
-      totalCost:
-        this.toRoundedNumber(
-          aggregates._sum
-            .costEstimate,
-          6,
-        ),
+      totalCost: this.toRoundedNumber(aggregates._sum.costEstimate, 6),
 
       fallbackAttempts,
 
       models: byModel.map((item) => {
-        const requests =
-          item._count._all;
+        const requests = item._count._all;
 
         const successfulModelRequests =
-          successCountMap.get(
-            item.aiModelId,
-          ) ?? 0;
+          successCountMap.get(item.aiModelId) ?? 0;
 
         return {
-          aiModelId:
-            item.aiModelId,
+          aiModelId: item.aiModelId,
 
-          model:
-            item.aiModelId
-              ? modelMap.get(
-                  item.aiModelId,
-                ) ?? null
-              : null,
+          model: item.aiModelId ? (modelMap.get(item.aiModelId) ?? null) : null,
 
           requests,
 
-          successfulRequests:
-            successfulModelRequests,
+          successfulRequests: successfulModelRequests,
 
-          failedRequests:
-            requests -
-            successfulModelRequests,
+          failedRequests: requests - successfulModelRequests,
 
-          inputTokens:
-            item._sum
-              .inputTokens ?? 0,
+          inputTokens: item._sum.inputTokens ?? 0,
 
-          outputTokens:
-            item._sum
-              .outputTokens ?? 0,
+          outputTokens: item._sum.outputTokens ?? 0,
 
-          cost:
-            this.toRoundedNumber(
-              item._sum
-                .costEstimate,
-              6,
-            ),
+          cost: this.toRoundedNumber(item._sum.costEstimate, 6),
 
-          averageResponseTimeMs:
-            this.toRoundedNumber(
-              item._avg
-                .responseTimeMs,
-            ),
+          averageResponseTimeMs: this.toRoundedNumber(item._avg.responseTimeMs),
         };
       }),
     };
@@ -295,15 +228,9 @@ export class AiUsageAnalyticsService {
   private buildWhere(
     query: GetAiAnalyticsQueryDto,
   ): Prisma.ExternalApiLogWhereInput {
-    const fromDate =
-      query.fromDate
-        ? new Date(query.fromDate)
-        : undefined;
+    const fromDate = query.fromDate ? new Date(query.fromDate) : undefined;
 
-    const toDate =
-      query.toDate
-        ? new Date(query.toDate)
-        : undefined;
+    const toDate = query.toDate ? new Date(query.toDate) : undefined;
 
     return {
       ...(fromDate || toDate
@@ -325,24 +252,19 @@ export class AiUsageAnalyticsService {
 
       ...(query.provider !== undefined
         ? {
-            provider:
-              this.mapProvider(
-                query.provider,
-              ),
+            provider: this.mapProvider(query.provider),
           }
         : {}),
 
       ...(query.requestType !== undefined
         ? {
-            requestType:
-              query.requestType,
+            requestType: query.requestType,
           }
         : {}),
 
       ...(query.aiModelId !== undefined
         ? {
-            aiModelId:
-              query.aiModelId,
+            aiModelId: query.aiModelId,
           }
         : {}),
     };
@@ -352,31 +274,19 @@ export class AiUsageAnalyticsService {
    * Maps AiProviderType into the provider enum stored
    * by ExternalApiLog.
    */
-  private mapProvider(
-    provider: AiProviderType,
-  ): ApiProvider {
-    return AI_PROVIDER_TO_API_PROVIDER[
-      provider
-    ];
+  private mapProvider(provider: AiProviderType): ApiProvider {
+    return AI_PROVIDER_TO_API_PROVIDER[provider];
   }
 
   /**
    * Calculates a percentage rounded to two decimal places.
    */
-  private calculatePercentage(
-    value: number,
-    total: number,
-  ): number {
+  private calculatePercentage(value: number, total: number): number {
     if (total === 0) {
       return 0;
     }
 
-    return Number(
-      (
-        (value / total) *
-        100
-      ).toFixed(2),
-    );
+    return Number(((value / total) * 100).toFixed(2));
   }
 
   /**
@@ -384,30 +294,16 @@ export class AiUsageAnalyticsService {
    * JavaScript numbers.
    */
   private toRoundedNumber(
-    value:
-      | Prisma.Decimal
-      | number
-      | null
-      | undefined,
+    value: Prisma.Decimal | number | null | undefined,
     decimalPlaces = 2,
   ): number {
-    if (
-      value === null ||
-      value === undefined
-    ) {
+    if (value === null || value === undefined) {
       return 0;
     }
 
     const numericValue =
-      value instanceof Prisma.Decimal
-        ? value.toNumber()
-        : value;
+      value instanceof Prisma.Decimal ? value.toNumber() : value;
 
-    return Number(
-      numericValue.toFixed(
-        decimalPlaces,
-      ),
-    );
+    return Number(numericValue.toFixed(decimalPlaces));
   }
 }
-

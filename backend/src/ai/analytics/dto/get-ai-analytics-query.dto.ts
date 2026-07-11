@@ -1,13 +1,5 @@
-import {
-  AiProviderType,
-  ApiRequestType,
-} from '@prisma/client';
-import {
-  IsDateString,
-  IsEnum,
-  IsOptional,
-  IsUUID,
-} from 'class-validator';
+import { AiProviderType, ApiRequestType } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 
 /**
  * Query DTO used to filter AI usage analytics.
