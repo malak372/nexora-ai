@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
-import {
-  SentimentLabel,
-  TextAnalysisResult,
-} from './types/intelligent-analysis.types';
+import { TextAnalysisResult } from './types/intelligent-analysis.types';
 
 /**
  * Builds statistical summaries for intelligent NLP analysis results.
@@ -37,7 +34,7 @@ export class AnalysisStatisticsService {
     positive: number;
     negative: number;
     neutral: number;
-    dominantSentiment: SentimentLabel;
+    dominantSentiment: Sentiment;
   } {
     const positive = analyzedTexts.filter(
       (text) => text.sentiment === Sentiment.POSITIVE,
@@ -129,13 +126,13 @@ export class AnalysisStatisticsService {
    * Detects the dominant sentiment from sentiment counters.
    *
    * @param stats Sentiment counters.
-   * @returns Dominant sentiment label.
+   * @returns Dominant sentiment classification.
    */
   private detectDominantSentiment(stats: {
     positive: number;
     negative: number;
     neutral: number;
-  }): SentimentLabel {
+  }): Sentiment {
     if (stats.negative >= stats.positive && stats.negative >= stats.neutral) {
       return Sentiment.NEGATIVE;
     }

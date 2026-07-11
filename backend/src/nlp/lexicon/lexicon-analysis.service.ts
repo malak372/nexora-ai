@@ -2,12 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { LanguageCode, NlpLexiconType } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
-import { NlpLexiconService } from './nlp-lexicon.service';
-import {
-  SentimentLabel,
-  TextAnalysisResult,
-} from '../pipeline/types/intelligent-analysis.types';
+import { TextAnalysisResult } from '../pipeline/types/intelligent-analysis.types';
 import { PreprocessedTextInput } from '../pipeline/text-preprocessing.service';
+
+import { NlpLexiconService } from './nlp-lexicon.service';
 
 /**
  * Represents the result of lexicon-based analysis for a single text item.
@@ -114,12 +112,15 @@ export class LexiconAnalysisService {
     return {
       analyzedTexts,
       totalAnalyzed: analyzedTexts.length,
+
       positiveTexts: analyzedTexts.filter(
         (text) => text.sentiment === Sentiment.POSITIVE,
       ).length,
+
       negativeTexts: analyzedTexts.filter(
         (text) => text.sentiment === Sentiment.NEGATIVE,
       ).length,
+
       neutralTexts: analyzedTexts.filter(
         (text) => text.sentiment === Sentiment.NEUTRAL,
       ).length,
@@ -146,6 +147,7 @@ export class LexiconAnalysisService {
 
     const positiveMatches =
       matchedLexicons[NlpLexiconType.POSITIVE]?.length ?? 0;
+
     const negativeMatches =
       matchedLexicons[NlpLexiconType.NEGATIVE]?.length ?? 0;
 
@@ -207,9 +209,6 @@ export class LexiconAnalysisService {
   /**
    * Loads lexicon terms for one language and groups them by lexicon type.
    *
-   * This method delegates grouped lexicon retrieval to NlpLexiconService so the
-   * analysis layer does not execute one database query per lexicon type.
-   *
    * @param language Language used for lexicon lookup.
    * @returns Lexicon terms grouped by type.
    */
@@ -263,6 +262,7 @@ export class LexiconAnalysisService {
     }
 
     const escapedTerm = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     const pattern = new RegExp(`(^|\\s)${escapedTerm}(\\s|$)`, 'i');
 
     return pattern.test(text);
@@ -273,12 +273,12 @@ export class LexiconAnalysisService {
    *
    * @param positiveMatches Number of positive signals.
    * @param negativeMatches Number of negative signals.
-   * @returns Final sentiment label.
+   * @returns Final sentiment classification.
    */
   private calculateSentiment(
     positiveMatches: number,
     negativeMatches: number,
-  ): SentimentLabel {
+  ): Sentiment {
     if (negativeMatches > positiveMatches) {
       return Sentiment.NEGATIVE;
     }
@@ -310,6 +310,7 @@ export class LexiconAnalysisService {
     }
 
     const matchConfidence = Math.min(totalMatches / 6, 1);
+
     const sentimentStrength = Math.min(
       Math.abs(positiveMatches - negativeMatches) / 3,
       1,

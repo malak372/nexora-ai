@@ -19,9 +19,9 @@ export const TARGET_RESULTS_PER_TEXT = 2;
  * @author Eman
  */
 export const ANALYSIS_CONFIDENCE_WEIGHTS = {
-    textConfidence: 0.4,
-    resultDensity: 0.2,
-    evidenceCoverage: 0.15,
-    dataRetentionRate: 0.15,
-    lexicalCoverage: 0.1,
+  textConfidence: 0.4,
+  resultDensity: 0.2,
+  evidenceCoverage: 0.15,
+  dataRetentionRate: 0.15,
+  lexicalCoverage: 0.1,
 } as const;
