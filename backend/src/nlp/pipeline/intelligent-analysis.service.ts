@@ -90,7 +90,7 @@ export class IntelligentAnalysisService {
     private readonly analysisOutputBuilderService: AnalysisOutputBuilderService,
     private readonly aiEnhancementService: AiEnhancementService,
     private readonly nlpPersistenceService: NlpPersistenceService,
-  ) { }
+  ) {}
 
   /**
    * Runs the complete intelligent NLP analysis for one collection job.
@@ -208,9 +208,7 @@ export class IntelligentAnalysisService {
     const finalOutput = await this.resolveFinalOutput(
       ruleBasedOutput,
       decision.action,
-      decision.reasons.map(
-        (reason) => `${reason.code}: ${reason.message}`,
-      ),
+      decision.reasons.map((reason) => `${reason.code}: ${reason.message}`),
       {
         averageTextLength: complexityMetrics.averageTextLength,
         negationRatio: complexityMetrics.negationRatio,

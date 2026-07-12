@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+
 import {
   AlertType,
   AuditAction,
@@ -7,13 +8,9 @@ import {
   UserRole,
 } from '@prisma/client';
 
-import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { MailService } from '../../mail/mail.service';
-
-import { CreateAlertDto } from './dto/create-alert.dto';
-import { CreateEmailAlertDto } from './dto/create-email-alert.dto';
-import { GetAlertsQueryDto } from './dto/get-alerts-query.dto';
+import { PrismaService } from '../../prisma/prisma.service';
 
 import {
   buildDateFilter,
@@ -24,52 +21,63 @@ import {
 
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
+import { CreateAlertDto } from '../dto/create-alert.dto';
+import { CreateEmailAlertDto } from '../dto/create-email-alert.dto';
+import { GetAlertsQueryDto } from '../dto/get-alerts-query.dto';
+
+import { SystemAlertsService } from './system-alerts.service';
+
 /**
- * Service responsible for admin alert management operations.
+ * Service responsible for administrator alert operations.
  *
  * Supports:
  * - In-app alerts.
  * - Email alerts.
- * - Single user alerts.
+ * - Single-user alerts.
  * - Broadcast alerts.
- * - General audit logging through AuditService.
+ * - Alert monitoring.
+ * - Audit logging.
+ *
+ * Actual in-app alert persistence is delegated to
+ * SystemAlertsService.
  *
  * @author Malak
  */
 @Injectable()
-export class AlertsService {
+export class AdminAlertsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly systemAlertsService: SystemAlertsService,
   ) {}
 
   /**
-   * Retrieves alerts with optional filtering, searching,
+   * Retrieves alerts with filtering, searching,
    * sorting, and pagination.
    */
   async getAlerts(query: GetAlertsQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
 
-    const searchFilter: Prisma.AlertWhereInput = query.search
+    const searchFilter: Prisma.AlertWhereInput = query.search?.trim()
       ? {
           OR: [
             {
               title: {
-                contains: query.search,
+                contains: query.search.trim(),
                 mode: 'insensitive',
               },
             },
             {
               message: {
-                contains: query.search,
+                contains: query.search.trim(),
                 mode: 'insensitive',
               },
             },
             {
               user: {
                 fullName: {
-                  contains: query.search,
+                  contains: query.search.trim(),
                   mode: 'insensitive',
                 },
               },
@@ -77,7 +85,7 @@ export class AlertsService {
             {
               user: {
                 email: {
-                  contains: query.search,
+                  contains: query.search.trim(),
                   mode: 'insensitive',
                 },
               },
@@ -87,10 +95,10 @@ export class AlertsService {
       : {};
 
     const where: Prisma.AlertWhereInput = {
-      ...buildDateFilter(query),
+      ...(buildDateFilter(query) ?? {}),
       ...searchFilter,
-      ...buildExactFilter('type', query.type),
-      ...buildExactFilter('isRead', query.isRead),
+      ...(buildExactFilter('type', query.type) ?? {}),
+      ...(buildExactFilter('isRead', query.isRead) ?? {}),
     };
 
     const [alerts, total] = await Promise.all([
@@ -98,11 +106,13 @@ export class AlertsService {
         where,
         skip,
         take,
+
         orderBy: buildOrderBy(
           query,
-          ['title', 'type', 'isRead', 'createdAt'],
+          ['title', 'type', 'isRead', 'createdAt'] as const,
           'createdAt',
         ),
+
         select: {
           id: true,
           title: true,
@@ -110,6 +120,7 @@ export class AlertsService {
           type: true,
           isRead: true,
           createdAt: true,
+
           user: {
             select: {
               id: true,
@@ -119,11 +130,15 @@ export class AlertsService {
           },
         },
       }),
-      this.prisma.alert.count({ where }),
+
+      this.prisma.alert.count({
+        where,
+      }),
     ]);
 
     return {
       data: alerts,
+
       meta: {
         page,
         limit,
@@ -134,7 +149,7 @@ export class AlertsService {
   }
 
   /**
-   * Creates and sends an in-app alert.
+   * Creates one in-app alert or broadcasts it.
    */
   async createAlert(body: CreateAlertDto, adminId: string) {
     const alertType = body.type ?? AlertType.SYSTEM;
@@ -147,7 +162,7 @@ export class AlertsService {
   }
 
   /**
-   * Sends an email alert separately from in-app alerts.
+   * Sends one email alert or broadcasts it.
    */
   async sendEmailAlert(body: CreateEmailAlertDto, adminId: string) {
     if (body.userId) {
@@ -158,49 +173,47 @@ export class AlertsService {
   }
 
   /**
-   * Creates an in-app alert for a specific active user.
+   * Creates an in-app alert for one active user.
    */
   private async createSingleUserAlert(
     body: CreateAlertDto,
     adminId: string,
     alertType: AlertType,
   ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: body.userId },
-      select: {
-        id: true,
-        role: true,
-        isActive: true,
-      },
-    });
+    const user = await this.findActiveRegisteredUser(body.userId!);
 
-    if (!user || !user.isActive || user.role !== UserRole.USER) {
-      throw new NotFoundException('Active user not found');
-    }
+    const alert = await this.prisma.$transaction(async (tx) => {
+      const createdAlert = await this.systemAlertsService.create(
+        {
+          userId: user.id,
+          title: body.title,
+          message: body.message,
+          type: alertType,
+        },
+        tx,
+      );
 
-    const alert = await this.prisma.alert.create({
-      data: {
-        userId: user.id,
-        title: body.title,
-        message: body.message,
-        type: alertType,
-      },
-    });
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_CREATE_ALERT,
+          targetType: AuditTargetType.ALERT,
+          targetId: createdAlert.id,
 
-    await this.auditService.createLog({
-      actorId: adminId,
-      action: AuditAction.ADMIN_CREATE_ALERT,
-      targetType: AuditTargetType.ALERT,
-      targetId: alert.id,
-      newValue: {
-        id: alert.id,
-        userId: alert.userId,
-        title: alert.title,
-        message: alert.message,
-        type: alert.type,
-        isRead: alert.isRead,
-        createdAt: alert.createdAt.toISOString(),
-      },
+          newValue: {
+            id: createdAlert.id,
+            userId: createdAlert.userId,
+            title: createdAlert.title,
+            message: createdAlert.message,
+            type: createdAlert.type,
+            isRead: createdAlert.isRead,
+            createdAt: createdAlert.createdAt.toISOString(),
+          },
+        },
+        tx,
+      );
+
+      return createdAlert;
     });
 
     return {
@@ -222,41 +235,47 @@ export class AlertsService {
         role: UserRole.USER,
         isActive: true,
       },
+
       select: {
         id: true,
       },
     });
 
-    const alertsData = users.map((user) => ({
-      userId: user.id,
-      title: body.title,
-      message: body.message,
-      type: alertType,
-    }));
+    const result = await this.prisma.$transaction(async (tx) => {
+      const creationResult = await this.systemAlertsService.createMany(
+        users.map((user) => ({
+          userId: user.id,
+          title: body.title,
+          message: body.message,
+          type: alertType,
+        })),
+        tx,
+      );
 
-    if (alertsData.length > 0) {
-      await this.prisma.alert.createMany({
-        data: alertsData,
-      });
-    }
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_CREATE_ALERT,
+          targetType: AuditTargetType.ALERT,
+          targetId: 'BROADCAST',
 
-    await this.auditService.createLog({
-      actorId: adminId,
-      action: AuditAction.ADMIN_CREATE_ALERT,
-      targetType: AuditTargetType.ALERT,
-      targetId: 'BROADCAST',
-      newValue: {
-        broadcast: true,
-        sentCount: alertsData.length,
-        title: body.title,
-        message: body.message,
-        type: alertType,
-      },
+          newValue: {
+            broadcast: true,
+            sentCount: creationResult.count,
+            title: body.title.trim(),
+            message: body.message.trim(),
+            type: alertType,
+          },
+        },
+        tx,
+      );
+
+      return creationResult;
     });
 
     return {
       message: 'Alert sent to all active users successfully',
-      sentCount: alertsData.length,
+      sentCount: result.count,
     };
   }
 
@@ -267,25 +286,12 @@ export class AlertsService {
     body: CreateEmailAlertDto,
     adminId: string,
   ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: body.userId },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        isActive: true,
-        role: true,
-      },
-    });
-
-    if (!user || !user.isActive || user.role !== UserRole.USER) {
-      throw new NotFoundException('Active user not found');
-    }
+    const user = await this.findActiveRegisteredUser(body.userId!);
 
     await this.mailService.sendAdminAlertEmail(
       user.email,
-      body.subject,
-      body.message,
+      body.subject.trim(),
+      body.message.trim(),
       user.fullName,
     );
 
@@ -294,18 +300,20 @@ export class AlertsService {
       action: AuditAction.ADMIN_CREATE_ALERT,
       targetType: AuditTargetType.ALERT,
       targetId: user.id,
+
       newValue: {
         emailAlert: true,
         broadcast: false,
         userId: user.id,
         email: user.email,
-        subject: body.subject,
-        message: body.message,
+        subject: body.subject.trim(),
+        message: body.message.trim(),
       },
     });
 
     return {
       message: 'Email alert sent successfully',
+
       user: {
         id: user.id,
         fullName: user.fullName,
@@ -316,6 +324,8 @@ export class AlertsService {
 
   /**
    * Sends an email alert to all active users.
+   *
+   * One failed email does not stop the remaining deliveries.
    */
   private async sendBroadcastEmailAlert(
     body: CreateEmailAlertDto,
@@ -326,6 +336,7 @@ export class AlertsService {
         role: UserRole.USER,
         isActive: true,
       },
+
       select: {
         id: true,
         fullName: true,
@@ -340,8 +351,8 @@ export class AlertsService {
       try {
         await this.mailService.sendAdminAlertEmail(
           user.email,
-          body.subject,
-          body.message,
+          body.subject.trim(),
+          body.message.trim(),
           user.fullName,
         );
 
@@ -356,14 +367,15 @@ export class AlertsService {
       action: AuditAction.ADMIN_CREATE_ALERT,
       targetType: AuditTargetType.ALERT,
       targetId: 'BROADCAST_EMAIL',
+
       newValue: {
         emailAlert: true,
         broadcast: true,
         totalUsers: users.length,
         sentCount,
         failedCount,
-        subject: body.subject,
-        message: body.message,
+        subject: body.subject.trim(),
+        message: body.message.trim(),
       },
     });
 
@@ -373,5 +385,30 @@ export class AlertsService {
       sentCount,
       failedCount,
     };
+  }
+
+  /**
+   * Finds one active registered user.
+   */
+  private async findActiveRegisteredUser(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        role: UserRole.USER,
+        isActive: true,
+      },
+
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Active user not found');
+    }
+
+    return user;
   }
 }

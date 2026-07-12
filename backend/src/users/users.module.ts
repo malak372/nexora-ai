@@ -7,7 +7,6 @@ import { UserProfileController } from './profile/profile.controller';
 import { UserCreditsController } from './credits/credits.controller';
 import { UserPaymentsController } from './payments/payments.controller';
 import { UserIdeasController } from './ideas/ideas.controller';
-import { UserNotificationsController } from './notifications/notifications.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
 import { UserComplaintsController } from './complaints/complaints.controller';
@@ -20,7 +19,6 @@ import { UserCreditsService } from './credits/credits.service';
 import { UserPaymentsService } from './payments/payments.service';
 import { UserIdeasService } from './ideas/ideas.service';
 import { UserValidationService } from './validation/validation.service';
-import { UserNotificationsService } from './notifications/notifications.service';
 import { UserDashboardService } from './dashboard/dashboard.service';
 import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
@@ -66,7 +64,6 @@ import { ContactService } from './contact-message/contact.service';
     UserCreditsController,
     UserPaymentsController,
     UserIdeasController,
-    UserNotificationsController,
     UserDashboardController,
     UserActivityController,
     UserComplaintsController,
@@ -82,7 +79,6 @@ import { ContactService } from './contact-message/contact.service';
     UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
-    UserNotificationsService,
     UserDashboardService,
     UserActivityService,
     UserComplaintsService,
@@ -98,7 +94,6 @@ import { ContactService } from './contact-message/contact.service';
     UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
-    UserNotificationsService,
     UserDashboardService,
     UserActivityService,
     UserComplaintsService,

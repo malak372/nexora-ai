@@ -44,9 +44,7 @@ export class AnalysisEvidenceService {
    * @param analyzedTexts Final analyzed text records.
    * @returns High-confidence post samples.
    */
-  extractSamplePosts(
-    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
-  ): Array<{
+  extractSamplePosts(analyzedTexts: ReadonlyArray<TextAnalysisResult>): Array<{
     id: string;
     text: string;
     sentiment: Sentiment;
@@ -120,11 +118,7 @@ export class AnalysisEvidenceService {
       const id = text.id.trim();
       const originalText = text.originalText.trim();
 
-      if (
-        id.length === 0 ||
-        originalText.length === 0 ||
-        seenIds.has(id)
-      ) {
+      if (id.length === 0 || originalText.length === 0 || seenIds.has(id)) {
         continue;
       }
 

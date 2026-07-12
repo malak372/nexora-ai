@@ -26,9 +26,6 @@ import { DomainsService } from './domains/domains.service';
 import { ComplaintsController } from './complaints/complaints.controller';
 import { ComplaintsService } from './complaints/complaints.service';
 
-import { AlertsController } from './alerts/alerts.controller';
-import { AlertsService } from './alerts/alerts.service';
-
 import { IdeasController } from './ideas/ideas.controller';
 import { IdeasService } from './ideas/ideas.service';
 
@@ -82,7 +79,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PlatformsController,
     DomainsController,
     ComplaintsController,
-    AlertsController,
     ContactMessagesController,
   ],
 
@@ -99,7 +95,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PlatformsService,
     DomainsService,
     ComplaintsService,
-    AlertsService,
     ContactMessagesService,
   ],
 })

@@ -16,6 +16,7 @@ import { NlpModule } from './nlp/nlp.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PromptsModule } from './prompts/prompts.module';
 import { UsersModule } from './users/users.module';
+import { AlertsModule } from './alerts/alerts.module';
 
 /**
  * Root application module.
@@ -66,6 +67,7 @@ import { UsersModule } from './users/users.module';
     AiModule,
     NlpModule,
     PromptsModule,
+    AlertsModule,
   ],
 
   controllers: [AppController],
