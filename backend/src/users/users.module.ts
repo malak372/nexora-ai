@@ -4,7 +4,6 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit-logs/audit-logs.module';
 
 import { UserProfileController } from './profile/profile.controller';
-import { UserCreditsController } from './credits/credits.controller';
 import { UserPaymentsController } from './payments/payments.controller';
 import { UserIdeasController } from './ideas/ideas.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
@@ -13,7 +12,6 @@ import { UserFavoritesController } from './favorites/favorites.controller';
 import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
 
 import { UserProfileService } from './profile/profile.service';
-import { UserCreditsService } from './credits/credits.service';
 import { UserPaymentsService } from './payments/payments.service';
 import { UserIdeasService } from './ideas/ideas.service';
 import { UserValidationService } from './validation/validation.service';
@@ -56,7 +54,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
   imports: [PrismaModule, AuditModule],
   controllers: [
     UserProfileController,
-    UserCreditsController,
     UserPaymentsController,
     UserIdeasController,
     UserDashboardController,
@@ -68,7 +65,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserValidationService,
     UserPermissionsService,
     UserProfileService,
-    UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
     UserDashboardService,
@@ -80,7 +76,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserValidationService,
     UserPermissionsService,
     UserProfileService,
-    UserCreditsService,
     UserPaymentsService,
     UserIdeasService,
     UserDashboardService,

@@ -11,9 +11,6 @@ import { UsersService } from './users/users.service';
 import { SettingsController } from './settings/settings.controller';
 import { SettingsService } from './settings/settings.service';
 
-import { CreditsController } from './credits/credits.controller';
-import { CreditsService } from './credits/credits.service';
-
 import { CommentsController } from './comments/comments.controller';
 import { CommentsService } from './comments/comments.service';
 
@@ -64,7 +61,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasController,
     UsersController,
     SettingsController,
-    CreditsController,
     CommentsController,
     PlatformsController,
     DomainsController,
@@ -76,7 +72,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasService,
     UsersService,
     SettingsService,
-    CreditsService,
     CommentsService,
     PaymentsService,
     PlatformsService,
