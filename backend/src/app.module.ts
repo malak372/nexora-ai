@@ -18,6 +18,7 @@ import { PromptsModule } from './prompts/prompts.module';
 import { UsersModule } from './users/users.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { ComplaintsModule } from './complaints/complaints.module';
+import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 
 /**
  * Root application module.
@@ -70,6 +71,7 @@ import { ComplaintsModule } from './complaints/complaints.module';
     PromptsModule,
     AlertsModule,
     ComplaintsModule,
+    ContactMessagesModule,
   ],
 
   controllers: [AppController],
