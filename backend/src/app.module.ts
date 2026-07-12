@@ -19,6 +19,7 @@ import { UsersModule } from './users/users.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 /**
  * Root application module.
@@ -72,6 +73,7 @@ import { ContactMessagesModule } from './contact-messages/contact-messages.modul
     AlertsModule,
     ComplaintsModule,
     ContactMessagesModule,
+    FeedbackModule,
   ],
 
   controllers: [AppController],
