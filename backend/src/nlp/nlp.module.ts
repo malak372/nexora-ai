@@ -212,4 +212,4 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     ProblemsModule,
   ],
 })
-export class NlpModule { }
+export class NlpModule {}

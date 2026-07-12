@@ -6,15 +6,15 @@ import { AiResponseParserService } from '../../../ai/services/ai-response-parser
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 
 import {
-    AI_ENHANCEMENT_OUTPUT_SCHEMA,
-    AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
+  AI_ENHANCEMENT_OUTPUT_SCHEMA,
+  AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
 } from '../schemas/ai-enhancement-output.schema';
 
 import type { NlpAiClient } from './nlp-ai-client.interface';
 
 import type {
-    NlpAiClientRequest,
-    NlpAiClientResponse,
+  NlpAiClientRequest,
+  NlpAiClientResponse,
 } from '../types/nlp-ai-client.type';
 
 /**

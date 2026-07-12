@@ -82,14 +82,14 @@ export const MAX_PAYMENT_PAGE_SIZE = 100;
  * in payment metadata.
  */
 export const PAYMENT_METADATA_KEYS = {
-    PAYMENT_ID: 'paymentId',
-    USER_ID: 'userId',
-    IDEA_ID: 'ideaId',
-    PAYMENT_PURPOSE: 'paymentPurpose',
+  PAYMENT_ID: 'paymentId',
+  USER_ID: 'userId',
+  IDEA_ID: 'ideaId',
+  PAYMENT_PURPOSE: 'paymentPurpose',
 } as const;
 
 /**
  * Represents every supported payment metadata key.
  */
 export type PaymentMetadataKey =
-    (typeof PAYMENT_METADATA_KEYS)[keyof typeof PAYMENT_METADATA_KEYS];
+  (typeof PAYMENT_METADATA_KEYS)[keyof typeof PAYMENT_METADATA_KEYS];
