@@ -1,13 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import { IdeaGenerationType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
+import type { AttachGuestIdeasResult } from './types/attach-guest-ideas-result.type';
+
 /**
- * Service responsible for guest session operations.
+ * Transfers guest-owned activity to a newly registered account.
  *
- * This service handles transferring guest-generated ideas
- * to a newly registered user account when the user registers
- * using a valid guest session token.
+ * A transferred guest idea counts as one of the user's three free
+ * generations.
+ *
+ * The service accepts an optional Prisma transaction client so account
+ * creation and ownership transfer can execute atomically.
  *
  * @author Eman
  */
@@ -16,76 +26,196 @@ export class AuthGuestService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Transfers guest-generated ideas to a registered user account.
+   * Transfers guest ideas, prompt histories, and AI logs.
    *
-   * If a guest user generated ideas before registration, this method:
-   * - Finds the guest session using the provided session token.
-   * - Transfers all ideas linked to the guest session to the new user.
-   * - Removes the guest session reference from transferred ideas.
-   * - Increments the user's used free generation count.
-   * - Marks the guest session as already used for generation.
+   * The transferred Idea changes from:
    *
-   * If the guest session token is missing, invalid, or has no ideas,
-   * no transfer is performed and the method returns 0.
+   * GUEST_FREE + guestSessionId
    *
-   * @param guestSessionToken Optional guest session token.
-   * @param userId Newly registered user ID.
-   * @returns Number of guest-generated ideas transferred to the user.
+   * to:
+   *
+   * NORMAL_FREE + userId
+   *
+   * No AI request is executed during registration because the regular
+   * free-tier fields were already generated and persisted internally.
    */
   async attachGuestIdeasToUser(
     guestSessionToken: string | undefined,
+
     userId: string,
-  ) {
-    if (!guestSessionToken) {
-      return 0;
+
+    tx?: Prisma.TransactionClient,
+  ): Promise<AttachGuestIdeasResult> {
+    const normalizedToken = guestSessionToken?.trim();
+
+    if (!normalizedToken) {
+      return {
+        transferredCount: 0,
+        ideaIds: [],
+      };
     }
 
-    const guestSession = await this.prisma.guestSession.findUnique({
-      where: {
-        sessionToken: guestSessionToken,
-      },
-      include: {
-        ideas: true,
-      },
-    });
-
-    if (!guestSession || guestSession.ideas.length === 0) {
-      return 0;
-    }
-
-    const guestIdeasCount = guestSession.ideas.length;
-
-    await this.prisma.$transaction([
-      this.prisma.idea.updateMany({
+    const execute = async (
+      client: Prisma.TransactionClient,
+    ): Promise<AttachGuestIdeasResult> => {
+      const user = await client.user.findUnique({
         where: {
-          guestSessionId: guestSession.id,
-          userId: null,
+          id: userId,
         },
-        data: {
-          userId,
-          guestSessionId: null,
-        },
-      }),
 
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          freeGenerationsUsed: {
-            increment: guestIdeasCount,
-          },
-        },
-      }),
+        select: {
+          id: true,
 
-      this.prisma.guestSession.update({
+          freeGenerationLimit: true,
+
+          freeGenerationsUsed: true,
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Registered user not found.');
+      }
+
+      const guestSession = await client.guestSession.findUnique({
         where: {
-          id: guestSession.id,
+          sessionToken: normalizedToken,
         },
-        data: {
+
+        select: {
+          id: true,
+
           hasGenerated: true,
         },
-      }),
-    ]);
+      });
 
-    return guestIdeasCount;
+      if (!guestSession?.hasGenerated) {
+        return {
+          transferredCount: 0,
+          ideaIds: [],
+        };
+      }
+
+      const guestIdeas = await client.idea.findMany({
+        where: {
+          guestSessionId: guestSession.id,
+
+          userId: null,
+
+          generationType: IdeaGenerationType.GUEST_FREE,
+        },
+
+        select: {
+          id: true,
+        },
+
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
+
+      if (guestIdeas.length === 0) {
+        return {
+          transferredCount: 0,
+          ideaIds: [],
+        };
+      }
+
+      const remainingAllowance =
+        user.freeGenerationLimit - user.freeGenerationsUsed;
+
+      if (remainingAllowance < guestIdeas.length) {
+        throw new ConflictException(
+          'The guest idea cannot be attached because the free-generation allowance would be exceeded.',
+        );
+      }
+
+      const ideaIds = guestIdeas.map((idea) => idea.id);
+
+      const transferResult = await client.idea.updateMany({
+        where: {
+          id: {
+            in: ideaIds,
+          },
+
+          guestSessionId: guestSession.id,
+
+          userId: null,
+
+          generationType: IdeaGenerationType.GUEST_FREE,
+        },
+
+        data: {
+          userId: user.id,
+
+          guestSessionId: null,
+
+          generationType: IdeaGenerationType.NORMAL_FREE,
+        },
+      });
+
+      if (transferResult.count !== ideaIds.length) {
+        throw new ConflictException(
+          'Guest idea ownership changed during registration. Please try again.',
+        );
+      }
+
+      await client.user.update({
+        where: {
+          id: user.id,
+        },
+
+        data: {
+          freeGenerationsUsed: {
+            increment: transferResult.count,
+          },
+        },
+      });
+
+      /**
+       * Transfer every prompt related to the guest session.
+       */
+      await client.promptHistory.updateMany({
+        where: {
+          guestSessionId: guestSession.id,
+
+          userId: null,
+        },
+
+        data: {
+          userId: user.id,
+
+          guestSessionId: null,
+        },
+      });
+
+      /**
+       * Attach external AI execution logs to the registered user.
+       */
+      await client.externalApiLog.updateMany({
+        where: {
+          ideaId: {
+            in: ideaIds,
+          },
+
+          userId: null,
+        },
+
+        data: {
+          userId: user.id,
+        },
+      });
+
+      return {
+        transferredCount: transferResult.count,
+
+        ideaIds,
+      };
+    };
+
+    if (tx) {
+      return execute(tx);
+    }
+
+    return this.prisma.$transaction(execute);
   }
 }

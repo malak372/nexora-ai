@@ -1,12 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  PaymentStatus,
-  Prisma,
-} from '@prisma/client';
+import { PaymentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -45,39 +39,21 @@ import { GetUserPaymentsQueryDto } from '../dto/get-user-payments-query.dto';
  */
 @Injectable()
 export class UserPaymentsService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Retrieves the authenticated user's payment history.
    */
-  async getPaymentHistory(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentHistory(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
 
-    const where = this.buildWhere(
-      userId,
-      query,
-    );
+    const where = this.buildWhere(userId, query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'createdAt',
-        'amount',
-        'status',
-        'paymentMethod',
-      ] as const,
+      ['createdAt', 'amount', 'status', 'paymentMethod'] as const,
       'createdAt',
     );
 
@@ -114,10 +90,7 @@ export class UserPaymentsService {
         total,
         page,
         limit,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -125,84 +98,62 @@ export class UserPaymentsService {
   /**
    * Returns payment summary metrics for one authenticated user.
    */
-  async getPaymentSummary(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentSummary(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
-    const where = this.buildWhere(
-      userId,
-      query,
-    );
+    const where = this.buildWhere(userId, query);
 
-    const [
-      totalPayments,
-      successfulPayments,
-      failedPayments,
-      totalSpent,
-    ] = await Promise.all([
-      this.prisma.payment.count({
-        where,
-      }),
+    const [totalPayments, successfulPayments, failedPayments, totalSpent] =
+      await Promise.all([
+        this.prisma.payment.count({
+          where,
+        }),
 
-      this.prisma.payment.count({
-        where: {
-          ...where,
-          status: PaymentStatus.SUCCESS,
-        },
-      }),
+        this.prisma.payment.count({
+          where: {
+            ...where,
+            status: PaymentStatus.SUCCESS,
+          },
+        }),
 
-      this.prisma.payment.count({
-        where: {
-          ...where,
-          status: PaymentStatus.FAILED,
-        },
-      }),
+        this.prisma.payment.count({
+          where: {
+            ...where,
+            status: PaymentStatus.FAILED,
+          },
+        }),
 
-      this.prisma.payment.aggregate({
-        where: {
-          ...where,
-          status: PaymentStatus.SUCCESS,
-        },
+        this.prisma.payment.aggregate({
+          where: {
+            ...where,
+            status: PaymentStatus.SUCCESS,
+          },
 
-        _sum: {
-          amount: true,
-          creditsAmount: true,
-        },
-      }),
-    ]);
+          _sum: {
+            amount: true,
+            creditsAmount: true,
+          },
+        }),
+      ]);
 
     return {
       totalPayments,
       successfulPayments,
       failedPayments,
-      totalSpent:
-        totalSpent._sum.amount ?? 0,
-      totalCreditsPurchased:
-        totalSpent._sum.creditsAmount ?? 0,
+      totalSpent: totalSpent._sum.amount ?? 0,
+      totalCreditsPurchased: totalSpent._sum.creditsAmount ?? 0,
     };
   }
 
   /**
    * Returns chart-ready payment analytics for one user.
    */
-  async getPaymentCharts(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentCharts(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
-    const where = this.buildWhere(
-      userId,
-      query,
-    );
+    const where = this.buildWhere(userId, query);
 
-    const [
-      byStatus,
-      byPaymentMethod,
-      byPaymentPurpose,
-    ] = await Promise.all([
+    const [byStatus, byPaymentMethod, byPaymentPurpose] = await Promise.all([
       this.prisma.payment.groupBy({
         by: ['status'],
         where,
@@ -237,65 +188,49 @@ export class UserPaymentsService {
         count: item._count.status,
       })),
 
-      byPaymentMethod: byPaymentMethod.map(
-        (item) => ({
-          paymentMethod: item.paymentMethod,
-          count: item._count.paymentMethod,
-        }),
-      ),
+      byPaymentMethod: byPaymentMethod.map((item) => ({
+        paymentMethod: item.paymentMethod,
+        count: item._count.paymentMethod,
+      })),
 
-      byPaymentPurpose: byPaymentPurpose.map(
-        (item) => ({
-          paymentPurpose: item.paymentPurpose,
-          count: item._count.paymentPurpose,
-        }),
-      ),
+      byPaymentPurpose: byPaymentPurpose.map((item) => ({
+        paymentPurpose: item.paymentPurpose,
+        count: item._count.paymentPurpose,
+      })),
     };
   }
 
   /**
    * Exports the authenticated user's payment history as CSV.
    */
-  async exportPaymentsCsv(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async exportPaymentsCsv(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
-    const where = this.buildWhere(
-      userId,
-      query,
-    );
+    const where = this.buildWhere(userId, query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'createdAt',
-        'amount',
-        'status',
-        'paymentMethod',
-      ] as const,
+      ['createdAt', 'amount', 'status', 'paymentMethod'] as const,
       'createdAt',
     );
 
-    const payments =
-      await this.prisma.payment.findMany({
-        where,
-        orderBy,
+    const payments = await this.prisma.payment.findMany({
+      where,
+      orderBy,
 
-        select: {
-          id: true,
-          amount: true,
-          currency: true,
-          paymentMethod: true,
-          status: true,
-          paymentPurpose: true,
-          creditsAmount: true,
-          transactionReference: true,
-          ideaId: true,
-          createdAt: true,
-        },
-      });
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        paymentMethod: true,
+        status: true,
+        paymentPurpose: true,
+        creditsAmount: true,
+        transactionReference: true,
+        ideaId: true,
+        createdAt: true,
+      },
+    });
 
     return buildCsv(
       [
@@ -339,36 +274,22 @@ export class UserPaymentsService {
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildSearchFilter(
-        [
-          'currency',
-          'transactionReference',
-        ],
+        ['currency', 'transactionReference'],
         query.search,
       ) ?? {}),
 
-      ...(buildExactFilter(
-        'status',
-        query.status,
-      ) ?? {}),
+      ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentMethod',
-        query.paymentMethod,
-      ) ?? {}),
+      ...(buildExactFilter('paymentMethod', query.paymentMethod) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentPurpose',
-        query.paymentPurpose,
-      ) ?? {}),
+      ...(buildExactFilter('paymentPurpose', query.paymentPurpose) ?? {}),
     };
   }
 
   /**
    * Ensures the authenticated user still exists.
    */
-  private async ensureUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -380,9 +301,7 @@ export class UserPaymentsService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found',
-      );
+      throw new NotFoundException('User not found');
     }
   }
 }

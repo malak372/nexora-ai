@@ -1,12 +1,6 @@
-import {
-  ComplaintPriority,
-  ComplaintStatus,
-} from '@prisma/client';
+import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
-import {
-  IsEnum,
-  IsOptional,
-} from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 

@@ -1,9 +1,4 @@
-import {
-  Body,
-  Controller,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -26,8 +21,7 @@ import { ContactMessagesService } from '../services/contact-messages.service';
 @UseGuards(JwtAuthGuard)
 export class UserContactMessagesController {
   constructor(
-    private readonly contactMessagesService:
-      ContactMessagesService,
+    private readonly contactMessagesService: ContactMessagesService,
   ) {}
 
   /**
@@ -40,9 +34,6 @@ export class UserContactMessagesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: CreateContactMessageDto,
   ) {
-    return this.contactMessagesService.createContactMessage(
-      body,
-      user.id,
-    );
+    return this.contactMessagesService.createContactMessage(body, user.id);
   }
 }

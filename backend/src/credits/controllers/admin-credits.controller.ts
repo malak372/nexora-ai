@@ -32,39 +32,24 @@ import { AdminCreditsService } from '../services/admin-credits.service';
  * @author Malak
  */
 @Controller('admin/credits')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminCreditsController {
-  constructor(
-    private readonly adminCreditsService:
-      AdminCreditsService,
-  ) {}
+  constructor(private readonly adminCreditsService: AdminCreditsService) {}
 
   @Get('summary')
-  getCreditsSummary(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
-    return this.adminCreditsService
-      .getCreditsSummary(query);
+  getCreditsSummary(@Query() query: GetAdminCreditHistoryQueryDto) {
+    return this.adminCreditsService.getCreditsSummary(query);
   }
 
   @Get('charts')
-  getCreditsCharts(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
-    return this.adminCreditsService
-      .getCreditsCharts(query);
+  getCreditsCharts(@Query() query: GetAdminCreditHistoryQueryDto) {
+    return this.adminCreditsService.getCreditsCharts(query);
   }
 
   @Get('history')
-  getCreditHistory(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
-    return this.adminCreditsService
-      .getCreditHistory(query);
+  getCreditHistory(@Query() query: GetAdminCreditHistoryQueryDto) {
+    return this.adminCreditsService.getCreditHistory(query);
   }
 
   @Post('adjust')
@@ -72,26 +57,13 @@ export class AdminCreditsController {
     @Body() body: AdjustUserCreditsDto,
     @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.adminCreditsService
-      .adjustUserCredits(
-        body,
-        admin.id,
-      );
+    return this.adminCreditsService.adjustUserCredits(body, admin.id);
   }
 
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="credits.csv"',
-  )
-  exportCreditsCsv(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
-    return this.adminCreditsService
-      .exportCreditsCsv(query);
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="credits.csv"')
+  exportCreditsCsv(@Query() query: GetAdminCreditHistoryQueryDto) {
+    return this.adminCreditsService.exportCreditsCsv(query);
   }
 }

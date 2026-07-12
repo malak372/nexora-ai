@@ -21,6 +21,7 @@ import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { PaymentsModule } from './payments/payments.module';
+import { IdeasModule } from './ideas/ideas.module';
 /**
  * Root application module.
  *
@@ -75,6 +76,7 @@ import { PaymentsModule } from './payments/payments.module';
     ContactMessagesModule,
     FeedbackModule,
     PaymentsModule,
+    IdeasModule,
   ],
 
   controllers: [AppController],

@@ -23,18 +23,10 @@ import { UserFeedbackService } from './services/user-feedback.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-  ],
+  imports: [PrismaModule],
 
-  controllers: [
-    UserFeedbackController,
-    AdminFeedbackController,
-  ],
+  controllers: [UserFeedbackController, AdminFeedbackController],
 
-  providers: [
-    UserFeedbackService,
-    AdminFeedbackService,
-  ],
+  providers: [UserFeedbackService, AdminFeedbackService],
 })
 export class FeedbackModule {}

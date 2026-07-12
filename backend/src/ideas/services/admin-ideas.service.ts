@@ -1,13 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-  Prisma,
-  UnlockMethod,
-} from '@prisma/client';
+import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -25,7 +18,7 @@ import {
   calculateTotalPages,
 } from '../../utilities/analytics/analytics.helper';
 
-import { GetIdeasQueryDto } from '../dto/get-ideas-query.dto';
+import { GetIdeasQueryDto } from '../dto/get-admin-ideas-query.dto';
 
 /**
  * Service responsible for administrative idea management.
@@ -52,62 +45,32 @@ import { GetIdeasQueryDto } from '../dto/get-ideas-query.dto';
  */
 @Injectable()
 export class AdminIdeasService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Builds the shared Prisma filter used by idea listing,
    * summaries, charts, and CSV export.
    */
-  private buildIdeasWhere(
-    query: GetIdeasQueryDto,
-  ): Prisma.IdeaWhereInput {
+  private buildIdeasWhere(query: GetIdeasQueryDto): Prisma.IdeaWhereInput {
     const isUnlocked =
-      query.isUnlocked !== undefined
-        ? query.isUnlocked === 'true'
-        : undefined;
+      query.isUnlocked !== undefined ? query.isUnlocked === 'true' : undefined;
 
     return {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildSearchFilter(
-        [
-          'title',
-          'problemStatement',
-        ],
-        query.search,
-      ) ?? {}),
+      ...(buildSearchFilter(['title', 'problemStatement'], query.search) ?? {}),
 
-      ...(buildExactFilter(
-        'domainId',
-        query.domainId,
-      ) ?? {}),
+      ...(buildExactFilter('domainId', query.domainId) ?? {}),
 
-      ...(buildExactFilter(
-        'selectedPlatformId',
-        query.platformId,
-      ) ?? {}),
+      ...(buildExactFilter('selectedPlatformId', query.platformId) ?? {}),
 
-      ...(buildExactFilter(
-        'generationType',
-        query.generationType,
-      ) ?? {}),
+      ...(buildExactFilter('generationType', query.generationType) ?? {}),
 
-      ...(buildExactFilter(
-        'unlockMethod',
-        query.unlockMethod,
-      ) ?? {}),
+      ...(buildExactFilter('unlockMethod', query.unlockMethod) ?? {}),
 
-      ...(buildExactFilter(
-        'isUnlocked',
-        isUnlocked,
-      ) ?? {}),
+      ...(buildExactFilter('isUnlocked', isUnlocked) ?? {}),
 
-      ...(buildStringFilter(
-        'selectedRegion',
-        query.region,
-      ) ?? {}),
+      ...(buildStringFilter('selectedRegion', query.region) ?? {}),
 
       ...(query.userType !== undefined
         ? {
@@ -128,8 +91,7 @@ export class AdminIdeasService {
     gte: Date,
   ): Prisma.IdeaWhereInput {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' &&
-      where.createdAt !== null
+      typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
         : {};
 
@@ -147,15 +109,8 @@ export class AdminIdeasService {
    * Retrieves generated ideas with filtering,
    * searching, sorting, and pagination.
    */
-  async getIdeas(
-    query: GetIdeasQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getIdeas(query: GetIdeasQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildIdeasWhere(query);
 
@@ -235,10 +190,7 @@ export class AdminIdeasService {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -246,9 +198,7 @@ export class AdminIdeasService {
   /**
    * Retrieves idea summary statistics.
    */
-  async getIdeasSummary(
-    query: GetIdeasQueryDto,
-  ) {
+  async getIdeasSummary(query: GetIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
 
     const todayStart = new Date();
@@ -258,15 +208,9 @@ export class AdminIdeasService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const todayWhere = this.mergeCreatedAtGte(
-      where,
-      todayStart,
-    );
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
 
-    const monthWhere = this.mergeCreatedAtGte(
-      where,
-      monthStart,
-    );
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalIdeas,
@@ -309,40 +253,35 @@ export class AdminIdeasService {
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.GUEST_FREE,
+          generationType: IdeaGenerationType.GUEST_FREE,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.NORMAL_FREE,
+          generationType: IdeaGenerationType.NORMAL_FREE,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.PREMIUM_CREDIT,
+          generationType: IdeaGenerationType.PREMIUM_CREDIT,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          unlockMethod:
-            UnlockMethod.DIRECT_PAYMENT,
+          unlockMethod: UnlockMethod.DIRECT_PAYMENT,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          unlockMethod:
-            UnlockMethod.CREDIT_GENERATION,
+          unlockMethod: UnlockMethod.CREDIT_GENERATION,
         },
       }),
     ]);
@@ -364,9 +303,7 @@ export class AdminIdeasService {
   /**
    * Retrieves chart-ready idea analytics.
    */
-  async getIdeasCharts(
-    query: GetIdeasQueryDto,
-  ) {
+  async getIdeasCharts(query: GetIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
 
     const [
@@ -488,20 +425,13 @@ export class AdminIdeasService {
       }),
     ]);
 
-    const domainIds = ideasByDomain.map(
-      (item) => item.domainId,
-    );
+    const domainIds = ideasByDomain.map((item) => item.domainId);
 
     const platformIds = ideasByPlatform
       .map((item) => item.selectedPlatformId)
-      .filter(
-        (id): id is string => Boolean(id),
-      );
+      .filter((id): id is string => Boolean(id));
 
-    const [
-      domains,
-      platforms,
-    ] = await Promise.all([
+    const [domains, platforms] = await Promise.all([
       this.prisma.domain.findMany({
         where: {
           id: {
@@ -530,117 +460,78 @@ export class AdminIdeasService {
     ]);
 
     const domainMap = new Map(
-      domains.map((domain) => [
-        domain.id,
-        domain.name,
-      ]),
+      domains.map((domain) => [domain.id, domain.name]),
     );
 
     const platformMap = new Map(
-      platforms.map((platform) => [
-        platform.id,
-        platform.name,
-      ]),
+      platforms.map((platform) => [platform.id, platform.name]),
     );
 
     return {
-      ideasByGenerationType:
-        ideasByGenerationType.map((item) => ({
-          label: item.generationType,
-          generationType:
-            item.generationType,
-          count:
-            item._count.generationType,
-        })),
+      ideasByGenerationType: ideasByGenerationType.map((item) => ({
+        label: item.generationType,
+        generationType: item.generationType,
+        count: item._count.generationType,
+      })),
 
-      ideasByUnlockMethod:
-        ideasByUnlockMethod.map((item) => ({
-          label: item.unlockMethod,
-          unlockMethod:
-            item.unlockMethod,
-          count:
-            item._count.unlockMethod,
-        })),
+      ideasByUnlockMethod: ideasByUnlockMethod.map((item) => ({
+        label: item.unlockMethod,
+        unlockMethod: item.unlockMethod,
+        count: item._count.unlockMethod,
+      })),
 
-      ideasByUnlockStatus:
-        ideasByUnlockStatus.map((item) => ({
-          label: item.isUnlocked
-            ? 'UNLOCKED'
-            : 'LOCKED',
+      ideasByUnlockStatus: ideasByUnlockStatus.map((item) => ({
+        label: item.isUnlocked ? 'UNLOCKED' : 'LOCKED',
 
-          isUnlocked:
-            item.isUnlocked,
+        isUnlocked: item.isUnlocked,
 
-          count:
-            item._count.isUnlocked,
-        })),
+        count: item._count.isUnlocked,
+      })),
 
-      ideasByDomain:
-        ideasByDomain.map((item) => {
-          const domainName =
-            domainMap.get(item.domainId) ??
-            null;
+      ideasByDomain: ideasByDomain.map((item) => {
+        const domainName = domainMap.get(item.domainId) ?? null;
 
-          return {
-            label:
-              domainName ??
-              'Unknown Domain',
+        return {
+          label: domainName ?? 'Unknown Domain',
 
-            domainId:
-              item.domainId,
+          domainId: item.domainId,
 
-            domainName,
+          domainName,
 
-            count:
-              item._count.domainId,
-          };
-        }),
+          count: item._count.domainId,
+        };
+      }),
 
-      ideasByPlatform:
-        ideasByPlatform.map((item) => {
-          const platformName =
-            item.selectedPlatformId
-              ? platformMap.get(
-                  item.selectedPlatformId,
-                ) ?? null
-              : null;
+      ideasByPlatform: ideasByPlatform.map((item) => {
+        const platformName = item.selectedPlatformId
+          ? (platformMap.get(item.selectedPlatformId) ?? null)
+          : null;
 
-          return {
-            label:
-              platformName ??
-              'Unknown Platform',
+        return {
+          label: platformName ?? 'Unknown Platform',
 
-            platformId:
-              item.selectedPlatformId,
+          platformId: item.selectedPlatformId,
 
-            platformName,
+          platformName,
 
-            count:
-              item._count.selectedPlatformId,
-          };
-        }),
+          count: item._count.selectedPlatformId,
+        };
+      }),
 
-      ideasByRegion:
-        ideasByRegion.map((item) => ({
-          label:
-            item.selectedRegion ??
-            'Unknown Region',
+      ideasByRegion: ideasByRegion.map((item) => ({
+        label: item.selectedRegion ?? 'Unknown Region',
 
-          region:
-            item.selectedRegion,
+        region: item.selectedRegion,
 
-          count:
-            item._count.selectedRegion,
-        })),
+        count: item._count.selectedRegion,
+      })),
     };
   }
 
   /**
    * Exports filtered ideas as CSV.
    */
-  async exportIdeasCsv(
-    query: GetIdeasQueryDto,
-  ) {
+  async exportIdeasCsv(query: GetIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
 
     const orderBy = buildOrderBy(
@@ -656,56 +547,55 @@ export class AdminIdeasService {
       'createdAt',
     );
 
-    const ideas =
-      await this.prisma.idea.findMany({
-        where,
-        orderBy,
+    const ideas = await this.prisma.idea.findMany({
+      where,
+      orderBy,
 
-        select: {
-          id: true,
-          title: true,
-          selectedRegion: true,
-          generationType: true,
-          isUnlocked: true,
-          unlockMethod: true,
-          unlockedAt: true,
-          commentsCount: true,
-          createdAt: true,
-          updatedAt: true,
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              userType: true,
-            },
-          },
-
-          domain: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-
-          selectedPlatform: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-
-          collectionJob: {
-            select: {
-              id: true,
-              status: true,
-              totalPosts: true,
-              totalComments: true,
-            },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            userType: true,
           },
         },
-      });
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        selectedPlatform: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        collectionJob: {
+          select: {
+            id: true,
+            status: true,
+            totalPosts: true,
+            totalComments: true,
+          },
+        },
+      },
+    });
 
     const headers = [
       'Idea ID',
@@ -757,10 +647,7 @@ export class AdminIdeasService {
       idea.updatedAt.toISOString(),
     ]);
 
-    return buildCsv(
-      headers,
-      rows,
-    );
+    return buildCsv(headers, rows);
   }
 
   /**
@@ -778,276 +665,270 @@ export class AdminIdeasService {
    * - Prompt history.
    * - Chat sessions and messages.
    */
-  async getIdeaById(
-    ideaId: string,
-  ) {
-    const idea =
-      await this.prisma.idea.findUnique({
-        where: {
-          id: ideaId,
+  async getIdeaById(ideaId: string) {
+    const idea = await this.prisma.idea.findUnique({
+      where: {
+        id: ideaId,
+      },
+
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        limitedAbstract: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            accountStatus: true,
+            userType: true,
+            creditBalance: true,
+            isActive: true,
+          },
         },
 
-        select: {
-          id: true,
-          title: true,
-          selectedRegion: true,
-          limitedAbstract: true,
-          partialAbstract: true,
-          fullAbstract: true,
-          problemStatement: true,
-          objectives: true,
-          targetUsers: true,
-          generationType: true,
-          isUnlocked: true,
-          unlockMethod: true,
-          unlockedAt: true,
-          commentsCount: true,
-          createdAt: true,
-          updatedAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              role: true,
-              accountStatus: true,
-              userType: true,
-              creditBalance: true,
-              isActive: true,
-            },
+        guestSession: {
+          select: {
+            id: true,
+            hasGenerated: true,
+            createdAt: true,
+            expiresAt: true,
           },
+        },
 
-          guestSession: {
-            select: {
-              id: true,
-              sessionToken: true,
-              hasGenerated: true,
-              createdAt: true,
-              expiresAt: true,
-            },
+        domain: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
           },
+        },
 
-          domain: {
-            select: {
-              id: true,
-              name: true,
-              isActive: true,
-            },
+        selectedPlatform: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
           },
+        },
 
-          selectedPlatform: {
-            select: {
-              id: true,
-              name: true,
-              isActive: true,
+        collectionJob: {
+          select: {
+            id: true,
+            country: true,
+            city: true,
+            region: true,
+            radiusKm: true,
+            platforms: true,
+            keywords: true,
+            status: true,
+            totalPosts: true,
+            totalComments: true,
+            startedAt: true,
+            completedAt: true,
+            failedReason: true,
+            createdAt: true,
+            updatedAt: true,
+
+            domain: {
+              select: {
+                id: true,
+                name: true,
+              },
             },
-          },
 
-          collectionJob: {
-            select: {
-              id: true,
-              country: true,
-              city: true,
-              region: true,
-              radiusKm: true,
-              platforms: true,
-              keywords: true,
-              status: true,
-              totalPosts: true,
-              totalComments: true,
-              startedAt: true,
-              completedAt: true,
-              failedReason: true,
-              createdAt: true,
-              updatedAt: true,
+            posts: {
+              take: 20,
 
-              domain: {
-                select: {
-                  id: true,
-                  name: true,
-                },
+              orderBy: {
+                collectedAt: 'desc',
               },
 
-              posts: {
-                take: 20,
+              select: {
+                id: true,
+                sourceType: true,
+                externalId: true,
+                title: true,
+                content: true,
+                author: true,
+                url: true,
+                country: true,
+                city: true,
+                region: true,
+                language: true,
+                likesCount: true,
+                repliesCount: true,
+                publishedAt: true,
+                collectedAt: true,
+                createdAt: true,
 
-                orderBy: {
-                  collectedAt: 'desc',
+                platform: {
+                  select: {
+                    id: true,
+                    name: true,
+                    isActive: true,
+                  },
                 },
 
-                select: {
-                  id: true,
-                  sourceType: true,
-                  externalId: true,
-                  title: true,
-                  content: true,
-                  author: true,
-                  url: true,
-                  country: true,
-                  city: true,
-                  region: true,
-                  language: true,
-                  likesCount: true,
-                  repliesCount: true,
-                  publishedAt: true,
-                  collectedAt: true,
-                  createdAt: true,
+                comments: {
+                  take: 20,
 
-                  platform: {
-                    select: {
-                      id: true,
-                      name: true,
-                      isActive: true,
-                    },
+                  orderBy: {
+                    collectedAt: 'desc',
                   },
 
-                  comments: {
-                    take: 20,
-
-                    orderBy: {
-                      collectedAt: 'desc',
-                    },
-
-                    select: {
-                      id: true,
-                      externalId: true,
-                      content: true,
-                      author: true,
-                      language: true,
-                      sentiment: true,
-                      likesCount: true,
-                      publishedAt: true,
-                      collectedAt: true,
-                      createdAt: true,
-                    },
+                  select: {
+                    id: true,
+                    externalId: true,
+                    content: true,
+                    author: true,
+                    language: true,
+                    sentiment: true,
+                    likesCount: true,
+                    publishedAt: true,
+                    collectedAt: true,
+                    createdAt: true,
                   },
                 },
               },
+            },
 
-              nlpAnalysis: {
-                select: {
-                  id: true,
-                  totalTextsAnalyzed: true,
-                  totalPostsAnalyzed: true,
-                  totalCommentsAnalyzed: true,
-                  sentimentStats: true,
-                  keywords: true,
-                  topics: true,
-                  recurringProblems: true,
-                  extractedNeeds: true,
-                  featureRequests: true,
-                  opportunities: true,
-                  insights: true,
-                  dataQuality: true,
-                  samplePosts: true,
-                  sampleComments: true,
-                  aiUsed: true,
-                  confidence: true,
-                  createdAt: true,
-                  updatedAt: true,
-                },
-              },
-
-              promptHistories: {
-                orderBy: {
-                  createdAt: 'desc',
-                },
-
-                take: 10,
-
-                select: {
-                  id: true,
-                  promptType: true,
-                  promptText: true,
-                  createdAt: true,
-                  collectionJobId: true,
-                },
+            nlpAnalysis: {
+              select: {
+                id: true,
+                totalTextsAnalyzed: true,
+                totalPostsAnalyzed: true,
+                totalCommentsAnalyzed: true,
+                sentimentStats: true,
+                keywords: true,
+                topics: true,
+                recurringProblems: true,
+                extractedNeeds: true,
+                featureRequests: true,
+                opportunities: true,
+                insights: true,
+                dataQuality: true,
+                samplePosts: true,
+                sampleComments: true,
+                aiUsed: true,
+                confidence: true,
+                createdAt: true,
+                updatedAt: true,
               },
             },
-          },
 
-          payments: {
-            orderBy: {
-              createdAt: 'desc',
-            },
+            promptHistories: {
+              orderBy: {
+                createdAt: 'desc',
+              },
 
-            select: {
-              id: true,
-              amount: true,
-              currency: true,
-              paymentMethod: true,
-              status: true,
-              paymentPurpose: true,
-              creditsAmount: true,
-              transactionReference: true,
-              createdAt: true,
-            },
-          },
+              take: 10,
 
-          creditTransactions: {
-            orderBy: {
-              createdAt: 'desc',
-            },
-
-            select: {
-              id: true,
-              type: true,
-              amount: true,
-              balanceAfter: true,
-              description: true,
-              createdAt: true,
-            },
-          },
-
-          generatedOutputs: {
-            orderBy: {
-              createdAt: 'desc',
-            },
-
-            select: {
-              id: true,
-              outputType: true,
-              content: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          },
-
-          chatSessions: {
-            orderBy: {
-              updatedAt: 'desc',
-            },
-
-            select: {
-              id: true,
-              title: true,
-              createdAt: true,
-              updatedAt: true,
-
-              messages: {
-                take: 20,
-
-                orderBy: {
-                  createdAt: 'desc',
-                },
-
-                select: {
-                  id: true,
-                  sender: true,
-                  message: true,
-                  createdAt: true,
-                },
+              select: {
+                id: true,
+                promptType: true,
+                promptText: true,
+                createdAt: true,
+                collectionJobId: true,
               },
             },
           },
         },
-      });
+
+        payments: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+            paymentMethod: true,
+            status: true,
+            paymentPurpose: true,
+            creditsAmount: true,
+            transactionReference: true,
+            createdAt: true,
+          },
+        },
+
+        creditTransactions: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            balanceAfter: true,
+            description: true,
+            createdAt: true,
+          },
+        },
+
+        generatedOutputs: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+
+          select: {
+            id: true,
+            outputType: true,
+            content: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+
+        chatSessions: {
+          orderBy: {
+            updatedAt: 'desc',
+          },
+
+          select: {
+            id: true,
+            title: true,
+            createdAt: true,
+            updatedAt: true,
+
+            messages: {
+              take: 20,
+
+              orderBy: {
+                createdAt: 'desc',
+              },
+
+              select: {
+                id: true,
+                sender: true,
+                message: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found',
-      );
+      throw new NotFoundException('Idea not found');
     }
 
     return idea;

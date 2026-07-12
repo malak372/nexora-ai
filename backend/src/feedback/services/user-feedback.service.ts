@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { Prisma } from '@prisma/client';
 
@@ -32,9 +29,7 @@ import { UpsertIdeaFeedbackDto } from '../dto/upsert-idea-feedback.dto';
  */
 @Injectable()
 export class UserFeedbackService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Shared feedback response selection.
@@ -69,9 +64,7 @@ export class UserFeedbackService {
     await this.ensureUserOwnsIdea(userId, ideaId);
 
     const normalizedComment =
-      dto.comment !== undefined
-        ? dto.comment.trim() || null
-        : undefined;
+      dto.comment !== undefined ? dto.comment.trim() || null : undefined;
 
     return this.prisma.$transaction(async (tx) => {
       const feedback = await tx.ideaFeedback.upsert({
@@ -102,26 +95,23 @@ export class UserFeedbackService {
         select: this.feedbackSelect,
       });
 
-      const aggregation =
-        await tx.ideaFeedback.aggregate({
-          where: {
-            ideaId,
-          },
+      const aggregation = await tx.ideaFeedback.aggregate({
+        where: {
+          ideaId,
+        },
 
-          _avg: {
-            rating: true,
-          },
+        _avg: {
+          rating: true,
+        },
 
-          _count: {
-            rating: true,
-          },
-        });
+        _count: {
+          rating: true,
+        },
+      });
 
-      const averageRating =
-        aggregation._avg.rating ?? 0;
+      const averageRating = aggregation._avg.rating ?? 0;
 
-      const ratingsCount =
-        aggregation._count.rating;
+      const ratingsCount = aggregation._count.rating;
 
       await tx.idea.update({
         where: {
@@ -138,9 +128,7 @@ export class UserFeedbackService {
         message: 'Feedback saved successfully',
         feedback,
         ideaRating: {
-          averageRating: Number(
-            averageRating.toFixed(2),
-          ),
+          averageRating: Number(averageRating.toFixed(2)),
           ratingsCount,
         },
       };
@@ -153,10 +141,7 @@ export class UserFeedbackService {
    *
    * Returns null when the user has not submitted feedback yet.
    */
-  async getFeedbackByIdea(
-    userId: string,
-    ideaId: string,
-  ) {
+  async getFeedbackByIdea(userId: string, ideaId: string) {
     await this.ensureUserExists(userId);
     await this.ensureUserOwnsIdea(userId, ideaId);
 
@@ -212,9 +197,7 @@ export class UserFeedbackService {
   /**
    * Ensures that the authenticated user exists.
    */
-  private async ensureUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -226,9 +209,7 @@ export class UserFeedbackService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found',
-      );
+      throw new NotFoundException('User not found');
     }
   }
 
@@ -251,9 +232,7 @@ export class UserFeedbackService {
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found',
-      );
+      throw new NotFoundException('Idea not found');
     }
   }
 }

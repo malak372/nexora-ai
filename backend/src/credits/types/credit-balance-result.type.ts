@@ -1,7 +1,4 @@
-import {
-  AccountStatus,
-  CreditTransaction,
-} from '@prisma/client';
+import { AccountStatus, CreditTransaction } from '@prisma/client';
 
 /**
  * Result returned after changing one user's credit balance.

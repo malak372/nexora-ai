@@ -20,7 +20,6 @@ import { PlatformsService } from './platforms/platforms.service';
 import { DomainsController } from './domains/domains.controller';
 import { DomainsService } from './domains/domains.service';
 
-
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 

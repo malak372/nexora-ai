@@ -32,15 +32,9 @@ import { UserCreditsService } from './services/user-credits.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-  ],
+  imports: [PrismaModule, AuditModule],
 
-  controllers: [
-    UserCreditsController,
-    AdminCreditsController,
-  ],
+  controllers: [UserCreditsController, AdminCreditsController],
 
   providers: [
     UserCreditsService,
@@ -49,9 +43,6 @@ import { UserCreditsService } from './services/user-credits.service';
     CreditCacheService,
   ],
 
-  exports: [
-    CreditBalanceService,
-    CreditCacheService,
-  ],
+  exports: [CreditBalanceService, CreditCacheService],
 })
 export class CreditsModule {}

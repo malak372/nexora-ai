@@ -14,7 +14,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 
-import { GetIdeasQueryDto } from '../dto/get-ideas-query.dto';
+import { GetIdeasQueryDto } from '../dto/get-admin-ideas-query.dto';
 import { AdminIdeasService } from '../services/admin-ideas.service';
 
 /**
@@ -37,9 +37,7 @@ import { AdminIdeasService } from '../services/admin-ideas.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminIdeasController {
-  constructor(
-    private readonly adminIdeasService: AdminIdeasService,
-  ) {}
+  constructor(private readonly adminIdeasService: AdminIdeasService) {}
 
   /**
    * Retrieves generated project ideas.
@@ -78,10 +76,7 @@ export class AdminIdeasController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="ideas.csv"',
-  )
+  @Header('Content-Disposition', 'attachment; filename="ideas.csv"')
   exportIdeasCsv(@Query() query: GetIdeasQueryDto) {
     return this.adminIdeasService.exportIdeasCsv(query);
   }

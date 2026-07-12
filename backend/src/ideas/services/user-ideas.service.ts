@@ -1,15 +1,17 @@
-import { Injectable } from '@nestjs/common';
-
 import {
-  GeneratedOutputType,
-  Prisma,
-} from '@prisma/client';
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+
+import { GeneratedOutputType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
 import { UserPermissionsService } from '../../users/permissions/permissions.service';
 import { UserValidationService } from '../../users/validation/validation.service';
 
+import { GetIdeaCommentsQueryDto } from '../dto/get-idea-comments-query.dto';
 import {
   buildDateFilter,
   buildExactFilter,
@@ -49,36 +51,33 @@ export class UserIdeasService {
    * Advanced output types visible only for ideas that
    * have advanced-feature access.
    */
-  private readonly advancedOutputTypes:
-    GeneratedOutputType[] = [
-      GeneratedOutputType.FULL_ABSTRACT,
-      GeneratedOutputType.TECHNOLOGY_STACK,
-      GeneratedOutputType.SYSTEM_ARCHITECTURE,
-      GeneratedOutputType.DATABASE_DESIGN,
-      GeneratedOutputType.COMMENT_ANALYSIS,
-      GeneratedOutputType.SAMPLE_COMMENTS,
-      GeneratedOutputType.NLP_ANALYSIS,
-      GeneratedOutputType.RECURRING_PROBLEMS,
-      GeneratedOutputType.EXTRACTED_KEYWORDS,
-      GeneratedOutputType.LOCAL_REGULATIONS,
-      GeneratedOutputType.BUDGET_ESTIMATION,
-      GeneratedOutputType.BUSINESS_MODEL,
-      GeneratedOutputType.TARGET_USERS,
-      GeneratedOutputType.VALUE_PROPOSITION,
-      GeneratedOutputType.REVENUE_MODEL,
-      GeneratedOutputType.FEASIBILITY_ASSESSMENT,
-      GeneratedOutputType.IMPLEMENTATION_TIMELINE,
-      GeneratedOutputType.MARKET_POTENTIAL,
-    ];
+  private readonly advancedOutputTypes: GeneratedOutputType[] = [
+    GeneratedOutputType.FULL_ABSTRACT,
+    GeneratedOutputType.TECHNOLOGY_STACK,
+    GeneratedOutputType.SYSTEM_ARCHITECTURE,
+    GeneratedOutputType.DATABASE_DESIGN,
+    GeneratedOutputType.COMMENT_ANALYSIS,
+    GeneratedOutputType.SAMPLE_COMMENTS,
+    GeneratedOutputType.NLP_ANALYSIS,
+    GeneratedOutputType.RECURRING_PROBLEMS,
+    GeneratedOutputType.EXTRACTED_KEYWORDS,
+    GeneratedOutputType.LOCAL_REGULATIONS,
+    GeneratedOutputType.BUDGET_ESTIMATION,
+    GeneratedOutputType.BUSINESS_MODEL,
+    GeneratedOutputType.TARGET_USERS,
+    GeneratedOutputType.VALUE_PROPOSITION,
+    GeneratedOutputType.REVENUE_MODEL,
+    GeneratedOutputType.FEASIBILITY_ASSESSMENT,
+    GeneratedOutputType.IMPLEMENTATION_TIMELINE,
+    GeneratedOutputType.MARKET_POTENTIAL,
+  ];
 
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly userValidationService:
-      UserValidationService,
+    private readonly userValidationService: UserValidationService,
 
-    private readonly userPermissionsService:
-      UserPermissionsService,
+    private readonly userPermissionsService: UserPermissionsService,
   ) {}
 
   /**
@@ -96,19 +95,10 @@ export class UserIdeasService {
    * - The idea is unlocked through direct payment.
    * - The idea was generated using premium credits.
    */
-  async getGeneratedIdeas(
-    userId: string,
-    query: GetUserIdeasQueryDto,
-  ) {
-    await this.userValidationService
-      .findUserOrThrow(userId);
+  async getGeneratedIdeas(userId: string, query: GetUserIdeasQueryDto) {
+    await this.userValidationService.findUserOrThrow(userId);
 
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where: Prisma.IdeaWhereInput = {
       userId,
@@ -126,34 +116,19 @@ export class UserIdeasService {
         query.search,
       ) ?? {}),
 
-      ...(buildExactFilter(
-        'generationType',
-        query.generationType,
-      ) ?? {}),
+      ...(buildExactFilter('generationType', query.generationType) ?? {}),
 
-      ...(buildExactFilter(
-        'isUnlocked',
-        query.isUnlocked,
-      ) ?? {}),
+      ...(buildExactFilter('isUnlocked', query.isUnlocked) ?? {}),
 
-      ...(buildExactFilter(
-        'domainId',
-        query.domainId,
-      ) ?? {}),
+      ...(buildExactFilter('domainId', query.domainId) ?? {}),
 
-      ...(buildExactFilter(
-        'selectedPlatformId',
-        query.selectedPlatformId,
-      ) ?? {}),
+      ...(buildExactFilter('selectedPlatformId', query.selectedPlatformId) ??
+        {}),
     };
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'createdAt',
-        'title',
-        'generationType',
-      ] as const,
+      ['createdAt', 'title', 'generationType'] as const,
       'createdAt',
     );
 
@@ -215,111 +190,74 @@ export class UserIdeasService {
 
     const safeIdeas = ideas.map((idea) => {
       const canViewAdvanced =
-        this.userPermissionsService
-          .canViewAdvancedFeatures(idea);
+        this.userPermissionsService.canViewAdvancedFeatures(idea);
 
       return {
         id: idea.id,
         title: idea.title,
 
-        problemStatement:
-          idea.problemStatement,
+        problemStatement: idea.problemStatement,
 
-        objectives:
-          idea.objectives,
+        objectives: idea.objectives,
 
-        targetUsers:
-          idea.targetUsers,
+        targetUsers: idea.targetUsers,
 
-        partialAbstract:
-          idea.partialAbstract,
+        partialAbstract: idea.partialAbstract,
 
-        fullAbstract:
-          canViewAdvanced
-            ? idea.fullAbstract
-            : null,
+        fullAbstract: canViewAdvanced ? idea.fullAbstract : null,
 
-        generationType:
-          idea.generationType,
+        generationType: idea.generationType,
 
-        isUnlocked:
-          idea.isUnlocked,
+        isUnlocked: idea.isUnlocked,
 
-        unlockMethod:
-          idea.unlockMethod,
+        unlockMethod: idea.unlockMethod,
 
-        unlockedAt:
-          idea.unlockedAt,
+        unlockedAt: idea.unlockedAt,
 
-        commentsCount:
-          canViewAdvanced
-            ? idea.commentsCount
-            : null,
+        commentsCount: canViewAdvanced ? idea.commentsCount : null,
 
-        selectedRegion:
-          idea.selectedRegion,
+        selectedRegion: idea.selectedRegion,
 
-        domain:
-          idea.domain,
+        domain: idea.domain,
 
-        selectedPlatform:
-          idea.selectedPlatform,
+        selectedPlatform: idea.selectedPlatform,
 
-        createdAt:
-          idea.createdAt,
+        createdAt: idea.createdAt,
 
-        updatedAt:
-          idea.updatedAt,
+        updatedAt: idea.updatedAt,
 
         access: {
-          canViewAdvancedFeatures:
-            canViewAdvanced,
+          canViewAdvancedFeatures: canViewAdvanced,
 
           canViewFullAbstract:
-            this.userPermissionsService
-              .canViewFullAbstract(idea),
+            this.userPermissionsService.canViewFullAbstract(idea),
 
-          canOpenAiChat:
-            this.userPermissionsService
-              .canOpenAiChat(idea),
+          canOpenAiChat: this.userPermissionsService.canOpenAiChat(idea),
 
           canViewCommentAnalysis:
-            this.userPermissionsService
-              .canViewCommentAnalysis(idea),
+            this.userPermissionsService.canViewCommentAnalysis(idea),
 
           canViewArchitecture:
-            this.userPermissionsService
-              .canViewArchitecture(idea),
+            this.userPermissionsService.canViewArchitecture(idea),
 
           canViewDatabaseDesign:
-            this.userPermissionsService
-              .canViewDatabaseDesign(idea),
+            this.userPermissionsService.canViewDatabaseDesign(idea),
 
           canViewTechnologies:
-            this.userPermissionsService
-              .canViewTechnologies(idea),
+            this.userPermissionsService.canViewTechnologies(idea),
 
           canViewBusinessModel:
-            this.userPermissionsService
-              .canViewBusinessModel(idea),
+            this.userPermissionsService.canViewBusinessModel(idea),
 
-          canViewBudget:
-            this.userPermissionsService
-              .canViewBudget(idea),
+          canViewBudget: this.userPermissionsService.canViewBudget(idea),
 
-          canViewTimeline:
-            this.userPermissionsService
-              .canViewTimeline(idea),
+          canViewTimeline: this.userPermissionsService.canViewTimeline(idea),
 
           canViewFeasibility:
-            this.userPermissionsService
-              .canViewFeasibility(idea),
+            this.userPermissionsService.canViewFeasibility(idea),
         },
 
-        advancedOutputs:
-          canViewAdvanced
-            ? idea.generatedOutputs
-            : [],
+        advancedOutputs: canViewAdvanced ? idea.generatedOutputs : [],
       };
     });
 
@@ -330,8 +268,289 @@ export class UserIdeasService {
         total,
         page,
         limit,
-        totalPages:
-          Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+  /**
+   * Retrieves one user-owned idea with access-aware outputs.
+   *
+   * Locked free ideas expose basic fields only.
+   * Premium or directly unlocked ideas expose advanced outputs.
+   */
+  async getGeneratedIdeaById(userId: string, ideaId: string) {
+    await this.userValidationService.findUserOrThrow(userId);
+
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+
+        userId,
+      },
+
+      select: {
+        id: true,
+        title: true,
+
+        limitedAbstract: true,
+        partialAbstract: true,
+        fullAbstract: true,
+
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+
+        commentsCount: true,
+        selectedRegion: true,
+
+        createdAt: true,
+        updatedAt: true,
+
+        domain: true,
+        selectedPlatform: true,
+
+        generatedOutputs: {
+          where: {
+            outputType: {
+              in: this.advancedOutputTypes,
+            },
+          },
+
+          select: {
+            id: true,
+            outputType: true,
+            content: true,
+            createdAt: true,
+          },
+
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException(
+        'Idea was not found or does not belong to the authenticated user.',
+      );
+    }
+
+    const canViewAdvanced =
+      this.userPermissionsService.canViewAdvancedFeatures(idea);
+
+    return {
+      id: idea.id,
+
+      title: idea.title,
+
+      problemStatement: idea.problemStatement,
+
+      objectives: idea.objectives,
+
+      targetUsers: idea.targetUsers,
+
+      limitedAbstract: idea.limitedAbstract,
+
+      partialAbstract: idea.partialAbstract,
+
+      fullAbstract: canViewAdvanced ? idea.fullAbstract : null,
+
+      generationType: idea.generationType,
+
+      isUnlocked: idea.isUnlocked,
+
+      unlockMethod: idea.unlockMethod,
+
+      unlockedAt: idea.unlockedAt,
+
+      commentsCount: canViewAdvanced ? idea.commentsCount : null,
+
+      selectedRegion: idea.selectedRegion,
+
+      domain: idea.domain,
+
+      selectedPlatform: idea.selectedPlatform,
+
+      createdAt: idea.createdAt,
+
+      updatedAt: idea.updatedAt,
+
+      access: {
+        canViewAdvancedFeatures: canViewAdvanced,
+
+        canViewFullAbstract:
+          this.userPermissionsService.canViewFullAbstract(idea),
+
+        canOpenAiChat: this.userPermissionsService.canOpenAiChat(idea),
+
+        canViewCommentAnalysis:
+          this.userPermissionsService.canViewCommentAnalysis(idea),
+
+        canViewArchitecture:
+          this.userPermissionsService.canViewArchitecture(idea),
+
+        canViewDatabaseDesign:
+          this.userPermissionsService.canViewDatabaseDesign(idea),
+
+        canViewTechnologies:
+          this.userPermissionsService.canViewTechnologies(idea),
+
+        canViewBusinessModel:
+          this.userPermissionsService.canViewBusinessModel(idea),
+
+        canViewBudget: this.userPermissionsService.canViewBudget(idea),
+
+        canViewTimeline: this.userPermissionsService.canViewTimeline(idea),
+
+        canViewFeasibility:
+          this.userPermissionsService.canViewFeasibility(idea),
+      },
+
+      advancedOutputs: canViewAdvanced ? idea.generatedOutputs : [],
+    };
+  }
+  /**
+   * Returns collected comments for one unlocked user-owned idea.
+   *
+   * Comments are paginated and never exposed for locked ideas.
+   */
+  async getCollectedComments(
+    userId: string,
+    ideaId: string,
+    query: GetIdeaCommentsQueryDto,
+  ) {
+    await this.userValidationService.findUserOrThrow(userId);
+
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+
+        userId,
+      },
+
+      select: {
+        id: true,
+
+        isUnlocked: true,
+
+        generationType: true,
+
+        unlockMethod: true,
+
+        collectionJobId: true,
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException(
+        'Idea was not found or does not belong to the authenticated user.',
+      );
+    }
+
+    const canViewAdvanced =
+      this.userPermissionsService.canViewAdvancedFeatures(idea);
+
+    if (!canViewAdvanced) {
+      throw new ForbiddenException(
+        'Collected comments are available only for unlocked ideas.',
+      );
+    }
+
+    if (!idea.collectionJobId) {
+      return {
+        data: [],
+
+        meta: {
+          page: query.page,
+
+          limit: query.limit,
+
+          total: 0,
+
+          totalPages: 0,
+        },
+      };
+    }
+
+    const page = query.page ?? 1;
+
+    const limit = query.limit ?? 20;
+
+    const where: Prisma.SocialCommentWhereInput = {
+      post: {
+        collectionJobId: idea.collectionJobId,
+      },
+    };
+
+    const [comments, total] = await Promise.all([
+      this.prisma.socialComment.findMany({
+        where,
+
+        skip: (page - 1) * limit,
+
+        take: limit,
+
+        orderBy: {
+          collectedAt: 'desc',
+        },
+
+        select: {
+          id: true,
+
+          content: true,
+
+          language: true,
+
+          sentiment: true,
+
+          likesCount: true,
+
+          publishedAt: true,
+
+          collectedAt: true,
+
+          post: {
+            select: {
+              id: true,
+
+              sourceType: true,
+
+              title: true,
+
+              url: true,
+
+              platform: {
+                select: {
+                  id: true,
+
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      this.prisma.socialComment.count({
+        where,
+      }),
+    ]);
+
+    return {
+      data: comments,
+
+      meta: {
+        page,
+        limit,
+        total,
+
+        totalPages: Math.ceil(total / limit),
       },
     };
   }

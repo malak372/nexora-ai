@@ -30,10 +30,7 @@ import { UserComplaintsService } from '../services/user-complaints.service';
 @Controller('users/complaints')
 @UseGuards(JwtAuthGuard)
 export class UserComplaintsController {
-  constructor(
-    private readonly userComplaintsService:
-      UserComplaintsService,
-  ) {}
+  constructor(private readonly userComplaintsService: UserComplaintsService) {}
 
   /**
    * Creates a new complaint.
@@ -45,10 +42,7 @@ export class UserComplaintsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateUserComplaintDto,
   ) {
-    return this.userComplaintsService.createComplaint(
-      user.id,
-      dto,
-    );
+    return this.userComplaintsService.createComplaint(user.id, dto);
   }
 
   /**
@@ -61,10 +55,7 @@ export class UserComplaintsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetUserComplaintsQueryDto,
   ) {
-    return this.userComplaintsService.getComplaints(
-      user.id,
-      query,
-    );
+    return this.userComplaintsService.getComplaints(user.id, query);
   }
 
   /**
@@ -84,9 +75,6 @@ export class UserComplaintsController {
     )
     complaintId: string,
   ) {
-    return this.userComplaintsService.getComplaintById(
-      user.id,
-      complaintId,
-    );
+    return this.userComplaintsService.getComplaintById(user.id, complaintId);
   }
 }
