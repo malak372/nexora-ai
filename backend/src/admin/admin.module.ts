@@ -32,9 +32,6 @@ import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 import { FeedbackController } from './feedback/feedbacks.controller';
 import { FeedbackService } from './feedback/feedbacks.service';
 
-import { ContactMessagesController } from './contact-messages/contact-messages.controller';
-import { ContactMessagesService } from './contact-messages/contact-messages.service';
-
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
 import { AuditModule } from '../audit-logs/audit-logs.module';
@@ -75,7 +72,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     CommentsController,
     PlatformsController,
     DomainsController,
-    ContactMessagesController,
   ],
 
   providers: [
@@ -90,7 +86,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     PaymentsService,
     PlatformsService,
     DomainsService,
-    ContactMessagesService,
   ],
 })
 export class AdminModule {}

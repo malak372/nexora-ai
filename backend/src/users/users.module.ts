@@ -24,8 +24,7 @@ import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserFeedbackService } from './feedback/feedback.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
-import { ContactController } from './contact-message/contact.controller';
-import { ContactService } from './contact-message/contact.service';
+
 
 /**
  * User management module.
@@ -67,7 +66,6 @@ import { ContactService } from './contact-message/contact.service';
     UserFavoritesController,
     UserFeedbackController,
     UserSavedSearchesController,
-    ContactController,
   ],
   providers: [
     UserValidationService,
@@ -81,7 +79,6 @@ import { ContactService } from './contact-message/contact.service';
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
-    ContactService,
   ],
   exports: [
     UserValidationService,
@@ -95,7 +92,6 @@ import { ContactService } from './contact-message/contact.service';
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
-    ContactService,
   ],
 })
 export class UsersModule {}
