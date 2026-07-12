@@ -20,7 +20,7 @@ import { AlertsModule } from './alerts/alerts.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 import { FeedbackModule } from './feedback/feedback.module';
-
+import { PaymentsModule } from './payments/payments.module';
 /**
  * Root application module.
  *
@@ -74,6 +74,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     ComplaintsModule,
     ContactMessagesModule,
     FeedbackModule,
+    PaymentsModule,
   ],
 
   controllers: [AppController],
