@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AiModel, AiRoutingStrategy, PromptType } from '@prisma/client';
+import { AiModel, AiRoutingStrategy } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 import { AiModelHealthService } from '../../ai-models/ai-model-health.service';
@@ -318,6 +318,16 @@ export class AiExecutionService {
     );
   }
 
+  /**
+   * Validates one provider result according to the response format
+   * requested by the calling business module.
+   *
+   * Plain-text responses are accepted without JSON parsing.
+   *
+   * JSON responses are parsed and validated against the caller-supplied
+   * provider-neutral response schema. Validation is therefore no
+   * longer coupled to idea generation or unlock prompt types.
+   */
   private validateProviderResult(
     providerResult: AiProviderGenerateResult,
     input: AiExecutionInput,
@@ -337,10 +347,17 @@ export class AiExecutionService {
       };
     }
 
-    const validation = this.structuredOutputService.safeValidateIdeaOutput(
+    /*
+     * validateExecutionInput guarantees that both values exist for
+     * structured JSON operations.
+     */
+    const responseSchema = input.responseSchema!;
+    const responseSchemaName = input.responseSchemaName!.trim();
+
+    const validation = this.structuredOutputService.safeValidateSchema(
       providerResult.text,
-      input.generationType,
-      input.promptType!,
+      responseSchema,
+      responseSchemaName,
     );
 
     if (!validation.success) {
@@ -350,6 +367,10 @@ export class AiExecutionService {
       };
     }
 
+    /*
+     * Return normalized validated JSON without Markdown fences or
+     * provider commentary.
+     */
     return {
       success: true,
       text: JSON.stringify(validation.data),
@@ -622,32 +643,70 @@ export class AiExecutionService {
     );
   }
 
+  /**
+   * Validates the AI execution contract before model routing or
+   * provider calls begin.
+   *
+   * Structured JSON validation is schema-driven and does not depend
+   * on a specific PromptType. This allows the same runtime to serve:
+   * - Idea generation.
+   * - Idea unlock.
+   * - NLP enhancement.
+   * - Future structured AI operations.
+   */
   private validateExecutionInput(input: AiExecutionInput): void {
+    if (!input.userPrompt.trim()) {
+      throw new BadRequestException('userPrompt must not be empty.');
+    }
+
     if (input.responseFormat !== AiResponseFormat.JSON) {
+      if (
+        input.responseSchema !== undefined ||
+        input.responseSchemaName !== undefined
+      ) {
+        throw new BadRequestException(
+          'responseSchema and responseSchemaName may only be used ' +
+            'when responseFormat is JSON.',
+        );
+      }
+
       return;
     }
 
-    if (input.promptType === undefined) {
+    if (input.responseSchema === undefined) {
       throw new BadRequestException(
-        'promptType is required when JSON structured output is requested.',
+        'responseSchema is required when JSON structured output is requested.',
+      );
+    }
+
+    const responseSchemaName = input.responseSchemaName?.trim();
+
+    if (!responseSchemaName) {
+      throw new BadRequestException(
+        'responseSchemaName is required when JSON structured output is requested.',
+      );
+    }
+
+    if (responseSchemaName.length > 100) {
+      throw new BadRequestException(
+        'responseSchemaName must not exceed 100 characters.',
+      );
+    }
+
+    if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(responseSchemaName)) {
+      throw new BadRequestException(
+        'responseSchemaName must start with a letter and contain ' +
+          'only letters, numbers, underscores, or hyphens.',
       );
     }
 
     if (
-      input.promptType !== PromptType.IDEA_GENERATION &&
-      input.promptType !== PromptType.IDEA_UNLOCK
+      typeof input.responseSchema !== 'object' ||
+      input.responseSchema === null ||
+      Array.isArray(input.responseSchema)
     ) {
       throw new BadRequestException(
-        `Structured idea output is not supported for prompt type ${input.promptType}.`,
-      );
-    }
-
-    if (
-      input.promptType === PromptType.IDEA_GENERATION &&
-      input.generationType === undefined
-    ) {
-      throw new BadRequestException(
-        'generationType is required for structured idea generation.',
+        'responseSchema must be a valid JSON Schema object.',
       );
     }
   }
