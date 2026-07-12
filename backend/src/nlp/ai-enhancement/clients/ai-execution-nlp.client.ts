@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ApiRequestType } from '@prisma/client';
+import { ApiRequestType, PromptType } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
+import { AiResponseParserService } from '../../../ai/services/ai-response-parser.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 
 import {
@@ -9,52 +10,107 @@ import {
   AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
 } from '../schemas/ai-enhancement-output.schema';
 
+import type { NlpAiClient } from './nlp-ai-client.interface';
+
 import type {
   NlpAiClientRequest,
   NlpAiClientResponse,
 } from '../types/nlp-ai-client.type';
-import type { NlpAiClient } from './nlp-ai-client.interface';
 
 /**
- * Production NLP AI-client implementation backed by the central
- * AI execution service.
+ * Deterministic temperature used for analytical NLP enhancement.
  *
- * This adapter translates the NLP-specific enhancement contract into
- * the provider-neutral runtime AI execution contract.
+ * A low value is preferred because the operation refines an existing
+ * evidence-based analysis rather than generating creative content.
+ */
+const NLP_AI_ENHANCEMENT_TEMPERATURE = 0.2;
+
+/**
+ * Production NLP AI-client adapter backed by the central AI runtime.
  *
- * Provider selection, retries, timeout handling, fallback, health
- * tracking, and external API logging remain owned by AiExecutionService.
+ * This adapter forms the integration boundary between:
+ *
+ * NlpModule
+ * → AiExecutionService
+ * → configured AI providers
+ *
+ * Responsibilities:
+ * - Translate the NLP-specific request contract into AiExecutionInput.
+ * - Supply the NLP enhancement JSON Schema to the central AI runtime.
+ * - Classify the operation correctly for logging and analytics.
+ * - Parse the validated JSON text returned by AiExecutionService.
+ * - Normalize provider and usage metadata for the NLP layer.
+ *
+ * The adapter intentionally does not:
+ * - Select an AI model or provider.
+ * - Implement retry, timeout, fallback, or health logic.
+ * - Validate evidence identifiers.
+ * - Merge AI output with rule-based analysis.
+ * - Persist NLP results.
+ *
+ * Provider routing, retries, fallback, response repair, health
+ * tracking, cost calculation, and ExternalApiLog persistence remain
+ * owned by AiExecutionService.
+ *
+ * Domain-level validation remains owned by
+ * AiAnalysisOutputValidatorService because JSON Schema validation
+ * cannot verify whether returned evidence identifiers were actually
+ * supplied by the NLP pipeline.
  *
  * @author Eman
  */
 @Injectable()
 export class AiExecutionNlpClient implements NlpAiClient {
-  constructor(private readonly aiExecutionService: AiExecutionService) {}
+    constructor(
+        private readonly aiExecutionService: AiExecutionService,
+        private readonly aiResponseParserService: AiResponseParserService,
+    ) { }
 
-  /**
-   * Executes one structured NLP AI-enhancement request.
-   *
-   * @param request NLP enhancement request.
-   * @returns Normalized NLP AI-client response.
-   */
-  async enhance(request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
-    const result = await this.aiExecutionService.execute({
-      userPrompt: request.prompt,
-      requestType: ApiRequestType.NLP_ENHANCEMENT,
-      responseFormat: AiResponseFormat.JSON,
-      responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
-      responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
-      temperature: 0.2,
-    });
+    /**
+     * Executes one structured NLP AI-enhancement operation.
+     *
+     * AiExecutionService validates the provider response against
+     * AI_ENHANCEMENT_OUTPUT_SCHEMA before returning successful text.
+     * The parsed value is still returned as unknown so the NLP-specific
+     * validator can enforce evidence and business rules.
+     *
+     * The optional request operationId is not forwarded because the
+     * central AI runtime owns operation-ID generation across retries and
+     * fallback attempts. The authoritative operation identifier is
+     * returned by AiExecutionService and stored in central AI logs.
+     *
+     * @param request Fully rendered NLP AI-enhancement request.
+     * @returns Normalized parsed response and execution metadata.
+     */
+    async enhance(
+        request: NlpAiClientRequest,
+    ): Promise<NlpAiClientResponse> {
+        const result = await this.aiExecutionService.execute({
+            userPrompt: request.prompt,
 
-    return {
-      data: JSON.parse(result.text),
-      provider: result.provider,
-      modelId: result.apiModelId,
-      inputTokens: result.inputTokens,
-      outputTokens: result.outputTokens,
-      responseTimeMs: result.responseTimeMs,
-      estimatedCost: result.costEstimate,
-    };
-  }
+            requestType: ApiRequestType.NLP_ENHANCEMENT,
+
+            promptType: PromptType.NLP_ANALYSIS,
+
+            responseFormat: AiResponseFormat.JSON,
+
+            responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
+
+            responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
+
+            temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
+        });
+
+        const data = this.aiResponseParserService.parseJson(result.text);
+
+        return {
+            data,
+            provider: result.provider,
+            modelId: result.apiModelId,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            responseTimeMs: result.responseTimeMs,
+            estimatedCost: result.costEstimate,
+        };
+    }
 }
