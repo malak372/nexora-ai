@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+
 import {
   IsInt,
   IsString,
@@ -9,13 +10,10 @@ import {
 } from 'class-validator';
 
 /**
- * DTO for adjusting a user's credit balance.
+ * DTO used by an administrator to adjust a user's credits.
  *
- * Used with:
- * POST /admin/credits/adjust
- *
- * Positive amount adds credits.
- * Negative amount deducts credits.
+ * Positive values add credits.
+ * Negative values deduct credits.
  *
  * @author Malak
  */
@@ -23,13 +21,11 @@ export class AdjustUserCreditsDto {
   /**
    * Target user identifier.
    */
-  @IsUUID()
+  @IsUUID('4')
   userId!: string;
 
   /**
-   * Credit adjustment amount.
-   *
-   * Must be a non-zero integer.
+   * Signed non-zero credit adjustment.
    */
   @Type(() => Number)
   @IsInt()
@@ -37,7 +33,7 @@ export class AdjustUserCreditsDto {
   amount!: number;
 
   /**
-   * Reason for the credit adjustment.
+   * Administrative reason for the adjustment.
    */
   @IsString()
   @MinLength(5)
