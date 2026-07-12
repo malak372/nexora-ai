@@ -5,85 +5,138 @@ import {
   PromptType,
 } from '@prisma/client';
 
+import type { AiJsonSchema } from './ai-json-schema.type';
 import { AiResponseFormat } from './ai-provider.type';
 
 /**
- * Input required to execute one AI request.
+ * Input required to execute one logical AI operation.
  *
  * This contract is consumed by AiExecutionService.
- * It contains business-level information only.
  *
- * Model selection, provider selection, retries,
- * fallback execution, timeout management, and
- * structured-output validation are handled internally.
+ * Model selection, provider selection, retries, fallback,
+ * timeout management, response repair, and structured-output
+ * validation are handled centrally by the AI runtime.
+ *
+ * Business modules remain responsible for:
+ * - Building the prompt.
+ * - Defining the expected response schema.
+ * - Selecting the request and prompt categories.
+ * - Persisting the final business result.
  *
  * @author Malak
  */
 export type AiExecutionInput = {
   /**
-   * Rendered user prompt.
+   * Final rendered user prompt sent to the selected AI provider.
    */
   readonly userPrompt: string;
 
   /**
-   * Optional system instruction.
+   * Optional system-level instruction.
    */
   readonly systemInstruction?: string;
 
   /**
-   * Type of API request being executed.
+   * Business category used by ExternalApiLog.
+   *
+   * Examples:
+   * - IDEA_GENERATION
+   * - NLP_ENHANCEMENT
+   * - AI_CHAT
    */
   readonly requestType: ApiRequestType;
 
   /**
-   * Prompt category for analytics and history.
+   * Prompt category used by prompt history and business flows.
+   *
+   * Examples:
+   * - IDEA_GENERATION
+   * - IDEA_UNLOCK
+   * - NLP_ANALYSIS
    */
   readonly promptType?: PromptType;
 
   /**
-   * Guest / Free / Premium generation.
+   * Guest, registered-free, or premium idea tier.
+   *
+   * This remains useful business metadata for idea-generation
+   * flows, but structured-output validation is no longer coupled
+   * to this field.
    */
   readonly generationType?: IdeaGenerationType;
 
   /**
-   * Expected response format.
+   * Expected high-level provider response format.
+   *
+   * JSON responses require responseSchema and responseSchemaName.
    */
   readonly responseFormat?: AiResponseFormat;
 
   /**
-   * Authenticated user.
+   * Provider-neutral JSON Schema describing the expected output.
+   *
+   * Required when responseFormat is JSON.
+   *
+   * The schema is supplied by the calling business module instead
+   * of being resolved internally from PromptType. This allows the
+   * central AI runtime to support any structured response.
+   */
+  readonly responseSchema?: AiJsonSchema;
+
+  /**
+   * Stable diagnostic identifier for responseSchema.
+   *
+   * Examples:
+   * - guest_idea
+   * - free_idea
+   * - premium_idea
+   * - idea_unlock
+   * - nlp_enhancement
+   *
+   * Required when responseFormat is JSON.
+   */
+  readonly responseSchemaName?: string;
+
+  /**
+   * Optional authenticated user related to the operation.
    */
   readonly userId?: string;
 
   /**
-   * Guest session.
+   * Optional guest session related to the operation.
+   *
+   * This field is business metadata and is not written directly
+   * to ExternalApiLog because the log model currently has no
+   * guest-session relation.
    */
   readonly guestSessionId?: string;
 
   /**
-   * Related idea.
+   * Optional idea associated with the operation.
    */
   readonly ideaId?: string;
 
   /**
-   * AI routing strategy.
+   * AI-model routing strategy.
    */
   readonly strategy?: AiRoutingStrategy;
 
   /**
-   * Maximum output tokens.
+   * Maximum number of output tokens requested from the provider.
+   *
+   * AiExecutionService never exceeds the selected model's
+   * configured maximum.
    */
   readonly maxOutputTokens?: number;
 
   /**
-   * Model temperature.
+   * Optional model sampling temperature.
    */
   readonly temperature?: number;
 
   /**
-   * Estimated output tokens.
-   *
-   * Used only for cost-aware routing.
+   * Estimated output token count used only for routing and
+   * pre-request cost estimation.
    */
   readonly estimatedOutputTokens?: number;
 };

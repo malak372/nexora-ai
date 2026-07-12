@@ -6,38 +6,39 @@ import { AiFinishReason } from './ai-provider.type';
  * Normalized result returned by AiExecutionService.
  *
  * This result represents the final successful AI execution after
- * model selection, provider execution, retries, and optional fallback.
+ * model selection, provider execution, retries, structured-output
+ * validation, optional response repair, and fallback execution.
  *
- * Provider-specific SDK response objects must not be exposed through
+ * Provider-specific SDK response objects must never escape through
  * this contract.
  *
  * @author Malak
  */
 export type AiExecutionResult = {
   /**
-   * Final generated textual response.
+   * Final generated response text.
    *
-   * For structured outputs, this value contains the raw JSON text
-   * before or after parsing depending on the calling service design.
+   * For JSON operations, this value contains normalized validated
+   * JSON serialized as a string.
+   *
+   * For plain-text operations, it contains the provider text.
    */
   readonly text: string;
 
   /**
-   * Unique identifier representing the complete AI operation.
-   *
-   * The same operation identifier should be used across retries,
-   * fallback attempts, and external API logs.
+   * Unique identifier shared by every provider attempt belonging
+   * to the same logical AI operation.
    */
   readonly operationId: string;
 
   /**
-   * Database identifier of the AiModel that produced the final
+   * Database identifier of the AI model that produced the final
    * successful response.
    */
   readonly aiModelId: string;
 
   /**
-   * Provider associated with the final successful model.
+   * Provider associated with the successful AI model.
    */
   readonly provider: AiProviderType;
 
@@ -46,54 +47,57 @@ export type AiExecutionResult = {
    *
    * Examples:
    * - gpt-4.1-mini
-   * - claude-sonnet-4-20250514
+   * - claude-sonnet-4
    * - gemini-2.5-flash
+   * - llama-3.3-70b-versatile
    */
   readonly apiModelId: string;
 
   /**
-   * Actual number of input tokens reported by the final provider
-   * request.
+   * Actual input-token count reported by the final successful
+   * provider request.
    */
   readonly inputTokens: number;
 
   /**
-   * Actual number of output tokens reported by the final provider
-   * request.
+   * Actual output-token count reported by the final successful
+   * provider request.
    */
   readonly outputTokens: number;
 
   /**
-   * Estimated monetary cost of the successful provider request.
+   * Estimated monetary cost of the final successful provider
+   * request.
    *
-   * The value should use one consistent currency across the
-   * application, preferably USD.
+   * The project should use one consistent currency, preferably USD.
    */
   readonly costEstimate: number;
 
   /**
-   * Total execution duration in milliseconds.
+   * Total logical-operation duration in milliseconds.
    *
-   * This value should include provider execution, retries, and
-   * fallback attempts performed during the complete operation.
+   * This includes retries, structured-output repair attempts,
+   * fallback execution, and the final successful request.
    */
   readonly responseTimeMs: number;
 
   /**
-   * Normalized reason explaining why the final generation stopped.
+   * Normalized reason explaining why generation stopped.
    */
   readonly finishReason: AiFinishReason;
 
   /**
-   * Indicates whether the successful response was produced by a
-   * fallback model or provider rather than the initially selected one.
+   * Indicates whether the final response was produced by a fallback
+   * model rather than the first routed model.
    */
   readonly fallbackUsed: boolean;
 
   /**
-   * Total number of provider calls made during this operation.
+   * Total number of external provider calls executed during the
+   * logical operation.
    *
-   * The initial request counts as one attempt.
+   * Initial calls, retries, repair requests, and fallback calls are
+   * all included.
    */
   readonly attemptCount: number;
 };

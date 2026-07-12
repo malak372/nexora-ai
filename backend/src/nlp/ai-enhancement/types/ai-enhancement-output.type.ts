@@ -28,90 +28,84 @@ type EvidenceSupportedAiItem = {
  * Common contract for evidence-supported items that expose
  * a confidence score.
  */
-type ConfidentEvidenceSupportedAiItem =
-  EvidenceSupportedAiItem & {
-    /**
-     * Confidence score in the inclusive range [0, 1].
-     *
-     * Runtime validation is performed by the structured-output
-     * validator.
-     */
-    readonly confidence: number;
-  };
+type ConfidentEvidenceSupportedAiItem = EvidenceSupportedAiItem & {
+  /**
+   * Confidence score in the inclusive range [0, 1].
+   *
+   * Runtime validation is performed by the structured-output
+   * validator.
+   */
+  readonly confidence: number;
+};
 
 /**
  * Represents one recurring problem proposed or refined by AI.
  */
-export type AiEnhancedRecurringProblem =
-  EvidenceSupportedAiItem & {
-    /**
-     * Normalized and concise problem title.
-     */
-    readonly title: string;
+export type AiEnhancedRecurringProblem = EvidenceSupportedAiItem & {
+  /**
+   * Normalized and concise problem title.
+   */
+  readonly title: string;
 
-    /**
-     * Semantic explanation that clarifies the problem.
-     *
-     * Null is used when no evidence-supported explanation is available.
-     */
-    readonly description: string | null;
+  /**
+   * Semantic explanation that clarifies the problem.
+   *
+   * Null is used when no evidence-supported explanation is available.
+   */
+  readonly description: string | null;
 
-    /**
-     * Estimated severity score in the inclusive range [0, 1].
-     */
-    readonly severity: number;
-  };
+  /**
+   * Estimated severity score in the inclusive range [0, 1].
+   */
+  readonly severity: number;
+};
 
 /**
  * Represents one user need identified or refined by AI.
  */
-export type AiEnhancedNeed =
-  ConfidentEvidenceSupportedAiItem & {
-    /**
-     * Normalized description of the identified user need.
-     */
-    readonly need: string;
-  };
+export type AiEnhancedNeed = ConfidentEvidenceSupportedAiItem & {
+  /**
+   * Normalized description of the identified user need.
+   */
+  readonly need: string;
+};
 
 /**
  * Represents one feature request identified or refined by AI.
  */
-export type AiEnhancedFeatureRequest =
-  ConfidentEvidenceSupportedAiItem & {
-    /**
-     * Normalized description of the requested feature.
-     */
-    readonly feature: string;
-  };
+export type AiEnhancedFeatureRequest = ConfidentEvidenceSupportedAiItem & {
+  /**
+   * Normalized description of the requested feature.
+   */
+  readonly feature: string;
+};
 
 /**
  * Represents one software or market opportunity identified by AI.
  */
-export type AiEnhancedOpportunity =
-  ConfidentEvidenceSupportedAiItem & {
-    /**
-     * Concise title describing the opportunity.
-     */
-    readonly title: string;
+export type AiEnhancedOpportunity = ConfidentEvidenceSupportedAiItem & {
+  /**
+   * Concise title describing the opportunity.
+   */
+  readonly title: string;
 
-    /**
-     * Explanation of why the opportunity may be valuable.
-     *
-     * Null is used when no evidence-supported explanation is available.
-     */
-    readonly description: string | null;
-  };
+  /**
+   * Explanation of why the opportunity may be valuable.
+   *
+   * Null is used when no evidence-supported explanation is available.
+   */
+  readonly description: string | null;
+};
 
 /**
  * Represents one analytical insight produced by AI.
  */
-export type AiEnhancedInsight =
-  ConfidentEvidenceSupportedAiItem & {
-    /**
-     * Concise analytical insight.
-     */
-    readonly insight: string;
-  };
+export type AiEnhancedInsight = ConfidentEvidenceSupportedAiItem & {
+  /**
+   * Concise analytical insight.
+   */
+  readonly insight: string;
+};
 
 /**
  * Structured response expected from one AI-enhancement operation.

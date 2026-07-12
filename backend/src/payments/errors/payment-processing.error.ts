@@ -17,35 +17,32 @@ import { PaymentErrorCode } from './payment-error-code.enum';
  * @author Eman
  */
 export class PaymentProcessingError extends Error {
-    /**
-     * Stable machine-readable identifier for the payment failure.
-     */
-    readonly code: PaymentErrorCode;
+  /**
+   * Stable machine-readable identifier for the payment failure.
+   */
+  readonly code: PaymentErrorCode;
 
-    /**
-     * Optional sanitized contextual data used for diagnostics.
-     */
-    readonly details?: Readonly<Record<string, unknown>>;
+  /**
+   * Optional sanitized contextual data used for diagnostics.
+   */
+  readonly details?: Readonly<Record<string, unknown>>;
 
-    constructor(
-        code: PaymentErrorCode,
-        message: string,
-        options?: {
-            cause?: unknown;
-            details?: Readonly<Record<string, unknown>>;
-        },
-    ) {
-        super(message, {
-            cause: options?.cause,
-        });
+  constructor(
+    code: PaymentErrorCode,
+    message: string,
+    options?: {
+      cause?: unknown;
+      details?: Readonly<Record<string, unknown>>;
+    },
+  ) {
+    super(message, {
+      cause: options?.cause,
+    });
 
-        this.name = PaymentProcessingError.name;
-        this.code = code;
-        this.details = options?.details;
+    this.name = PaymentProcessingError.name;
+    this.code = code;
+    this.details = options?.details;
 
-        Object.setPrototypeOf(
-            this,
-            PaymentProcessingError.prototype,
-        );
-    }
+    Object.setPrototypeOf(this, PaymentProcessingError.prototype);
+  }
 }

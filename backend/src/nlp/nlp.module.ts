@@ -97,11 +97,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
  * @author Eman
  */
 @Module({
-  imports: [
-    AiModule,
-    PrismaModule,
-    ProblemsModule,
-  ],
+  imports: [AiModule, PrismaModule, ProblemsModule],
 
   providers: [
     /**
@@ -214,4 +210,4 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     ProblemsModule,
   ],
 })
-export class NlpModule { }
+export class NlpModule {}
