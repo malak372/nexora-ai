@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { PaymentPurpose, PaymentStatus, Prisma } from '@prisma/client';
+
+import {
+  PaymentPurpose,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { GetPaymentsQueryDto } from './dto/get-payments-query.dto';
 
 import {
   buildDateFilter,
@@ -18,57 +22,75 @@ import {
   toNumber,
 } from '../../utilities/analytics/analytics.helper';
 
+import { GetAdminPaymentsQueryDto } from '../dto/get-admin-payments-query.dto';
+
 /**
- * Service responsible for Admin payment management operations.
+ * Handles administrator payment monitoring and analytics.
  *
- * Provides:
- * - Paginated payment listing.
- * - Search by user full name or email.
- * - Filtering by status, purpose, method, and date range.
- * - Safe sorting using whitelisted fields.
- * - Payment summary reports.
- * - Chart-ready payment analytics.
- * - Top paying users analytics.
- * - CSV export.
+ * Responsibilities:
+ * - Retrieve payment records.
+ * - Search, filter, sort, and paginate payments.
+ * - Generate payment summary reports.
+ * - Generate chart-ready payment analytics.
+ * - Identify top-paying users.
+ * - Export filtered payments as CSV.
+ *
+ * Payment processing and gateway interaction remain owned by
+ * the dedicated processing services inside PaymentsModule.
  *
  * @author Malak
  */
 @Injectable()
-export class PaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+export class AdminPaymentsService {
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
-   * Builds the shared Prisma where filter for payment list,
-   * summary, charts, and CSV export.
-   *
-   * @param query - Payment query filters.
-   * @returns Prisma PaymentWhereInput object.
+   * Shared selection used by payment list operations.
    */
-  private buildPaymentsWhere(
-    query: GetPaymentsQueryDto,
-  ): Prisma.PaymentWhereInput {
-    return {
-      ...buildDateFilter(query),
-      ...buildExactFilter('status', query.status),
-      ...buildExactFilter('paymentPurpose', query.purpose),
-      ...buildExactFilter('paymentMethod', query.method),
+  private readonly paymentSelect = {
+    id: true,
+    amount: true,
+    currency: true,
+    paymentMethod: true,
+    paymentPurpose: true,
+    status: true,
+    creditsAmount: true,
+    creditPriceAtPurchase: true,
+    transactionReference: true,
+    createdAt: true,
+    updatedAt: true,
 
-      ...buildRelationSearchFilter('user', ['fullName', 'email'], query.search),
-    };
-  }
+    user: {
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+      },
+    },
+
+    idea: {
+      select: {
+        id: true,
+        title: true,
+      },
+    },
+  } satisfies Prisma.PaymentSelect;
 
   /**
-   * Retrieves payment records with filtering, searching,
-   * sorting, and pagination.
-   *
-   * Endpoint:
-   * GET /admin/payments
-   *
-   * @param query - Query parameters for payment listing.
-   * @returns Paginated payment records with metadata.
+   * Retrieves paginated payment records.
    */
-  async getPayments(query: GetPaymentsQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
+  async getPayments(
+    query: GetAdminPaymentsQueryDto,
+  ) {
+    const {
+      page,
+      limit,
+      skip,
+      take,
+    } = buildPagination(query);
+
     const where = this.buildPaymentsWhere(query);
 
     const orderBy = buildOrderBy(
@@ -88,79 +110,47 @@ export class PaymentsService {
       this.prisma.payment.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy,
-        select: {
-          id: true,
-          amount: true,
-          currency: true,
-          paymentMethod: true,
-          paymentPurpose: true,
-          status: true,
-          creditsAmount: true,
-          creditPriceAtPurchase: true,
-          transactionReference: true,
-          createdAt: true,
-          updatedAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          idea: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
+        select: this.paymentSelect,
       }),
 
-      this.prisma.payment.count({ where }),
+      this.prisma.payment.count({
+        where,
+      }),
     ]);
 
     return {
       data: payments.map((payment) => ({
         ...payment,
-        amount: toNumber(payment.amount),
-        creditPriceAtPurchase: toNumber(payment.creditPriceAtPurchase),
+
+        amount: toNumber(
+          payment.amount,
+        ),
+
+        creditPriceAtPurchase: toNumber(
+          payment.creditPriceAtPurchase,
+        ),
       })),
 
       meta: {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(total, limit),
+        totalPages: calculateTotalPages(
+          total,
+          limit,
+        ),
       },
     };
   }
 
   /**
    * Retrieves payment summary statistics.
-   *
-   * Endpoint:
-   * GET /admin/payments/summary
-   *
-   * Summary includes:
-   * - Total payments.
-   * - Successful payments.
-   * - Failed payments.
-   * - Pending payments.
-   * - Refunded payments.
-   * - Total revenue.
-   * - Total refunds.
-   * - Credits sold.
-   * - Direct unlock payments.
-   * - Credit purchase payments.
-   *
-   * @param query - Optional filters used to scope the summary.
-   * @returns Payment summary report.
    */
-  async getPaymentsSummary(query: GetPaymentsQueryDto) {
+  async getPaymentsSummary(
+    query: GetAdminPaymentsQueryDto,
+  ) {
     const where = this.buildPaymentsWhere(query);
 
     const [
@@ -175,7 +165,9 @@ export class PaymentsService {
       creditPurchasePayments,
       directUnlockPayments,
     ] = await Promise.all([
-      this.prisma.payment.count({ where }),
+      this.prisma.payment.count({
+        where,
+      }),
 
       this.prisma.payment.count({
         where: {
@@ -210,6 +202,7 @@ export class PaymentsService {
           ...where,
           status: PaymentStatus.SUCCESS,
         },
+
         _sum: {
           amount: true,
         },
@@ -220,6 +213,7 @@ export class PaymentsService {
           ...where,
           status: PaymentStatus.REFUNDED,
         },
+
         _sum: {
           amount: true,
         },
@@ -229,7 +223,10 @@ export class PaymentsService {
         where: {
           ...where,
           status: PaymentStatus.SUCCESS,
+          paymentPurpose:
+            PaymentPurpose.BUY_CREDITS,
         },
+
         _sum: {
           creditsAmount: true,
         },
@@ -238,14 +235,16 @@ export class PaymentsService {
       this.prisma.payment.count({
         where: {
           ...where,
-          paymentPurpose: PaymentPurpose.BUY_CREDITS,
+          paymentPurpose:
+            PaymentPurpose.BUY_CREDITS,
         },
       }),
 
       this.prisma.payment.count({
         where: {
           ...where,
-          paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
+          paymentPurpose:
+            PaymentPurpose.DIRECT_UNLOCK,
         },
       }),
     ]);
@@ -256,9 +255,19 @@ export class PaymentsService {
       failedPayments,
       pendingPayments,
       refundedPayments,
-      totalRevenue: toNumber(revenueAggregate._sum.amount),
-      totalRefunds: toNumber(refundsAggregate._sum.amount),
-      creditsSold: creditsSoldAggregate._sum.creditsAmount ?? 0,
+
+      totalRevenue: toNumber(
+        revenueAggregate._sum.amount,
+      ),
+
+      totalRefunds: toNumber(
+        refundsAggregate._sum.amount,
+      ),
+
+      creditsSold:
+        creditsSoldAggregate._sum.creditsAmount ??
+        0,
+
       creditPurchasePayments,
       directUnlockPayments,
     };
@@ -266,20 +275,10 @@ export class PaymentsService {
 
   /**
    * Retrieves chart-ready payment analytics.
-   *
-   * Endpoint:
-   * GET /admin/payments/charts
-   *
-   * Charts include:
-   * - Payments by status.
-   * - Payments by method.
-   * - Payments by purpose.
-   * - Top paying users.
-   *
-   * @param query - Optional filters used to scope the charts.
-   * @returns Chart-ready payment analytics.
    */
-  async getPaymentsCharts(query: GetPaymentsQueryDto) {
+  async getPaymentsCharts(
+    query: GetAdminPaymentsQueryDto,
+  ) {
     const where = this.buildPaymentsWhere(query);
 
     const [
@@ -291,12 +290,15 @@ export class PaymentsService {
       this.prisma.payment.groupBy({
         by: ['status'],
         where,
+
         _count: {
           status: true,
         },
+
         _sum: {
           amount: true,
         },
+
         orderBy: {
           _count: {
             status: 'desc',
@@ -307,12 +309,15 @@ export class PaymentsService {
       this.prisma.payment.groupBy({
         by: ['paymentMethod'],
         where,
+
         _count: {
           paymentMethod: true,
         },
+
         _sum: {
           amount: true,
         },
+
         orderBy: {
           _count: {
             paymentMethod: 'desc',
@@ -323,12 +328,15 @@ export class PaymentsService {
       this.prisma.payment.groupBy({
         by: ['paymentPurpose'],
         where,
+
         _count: {
           paymentPurpose: true,
         },
+
         _sum: {
           amount: true,
         },
+
         orderBy: {
           _count: {
             paymentPurpose: 'desc',
@@ -338,26 +346,33 @@ export class PaymentsService {
 
       this.prisma.payment.groupBy({
         by: ['userId'],
+
         where: {
           ...where,
           status: PaymentStatus.SUCCESS,
         },
+
         _count: {
           userId: true,
         },
+
         _sum: {
           amount: true,
         },
+
         orderBy: {
           _sum: {
             amount: 'desc',
           },
         },
+
         take: 5,
       }),
     ]);
 
-    const userIds = topPayingUsers.map((item) => item.userId);
+    const userIds = topPayingUsers.map(
+      (item) => item.userId,
+    );
 
     const users = await this.prisma.user.findMany({
       where: {
@@ -365,6 +380,7 @@ export class PaymentsService {
           in: userIds,
         },
       },
+
       select: {
         id: true,
         fullName: true,
@@ -372,56 +388,82 @@ export class PaymentsService {
       },
     });
 
-    const userMap = new Map(users.map((user) => [user.id, user]));
+    const userMap = new Map(
+      users.map((user) => [
+        user.id,
+        user,
+      ]),
+    );
 
     return {
-      paymentsByStatus: paymentsByStatus.map((item) => ({
-        label: item.status,
-        status: item.status,
-        count: item._count.status,
-        totalAmount: toNumber(item._sum.amount),
-      })),
+      paymentsByStatus:
+        paymentsByStatus.map((item) => ({
+          label: item.status,
+          status: item.status,
+          count: item._count.status,
 
-      paymentsByMethod: paymentsByMethod.map((item) => ({
-        label: item.paymentMethod,
-        paymentMethod: item.paymentMethod,
-        count: item._count.paymentMethod,
-        totalAmount: toNumber(item._sum.amount),
-      })),
+          totalAmount: toNumber(
+            item._sum.amount,
+          ),
+        })),
 
-      paymentsByPurpose: paymentsByPurpose.map((item) => ({
-        label: item.paymentPurpose,
-        paymentPurpose: item.paymentPurpose,
-        count: item._count.paymentPurpose,
-        totalAmount: toNumber(item._sum.amount),
-      })),
+      paymentsByMethod:
+        paymentsByMethod.map((item) => ({
+          label: item.paymentMethod,
+          paymentMethod:
+            item.paymentMethod,
+          count:
+            item._count.paymentMethod,
 
-      topPayingUsers: topPayingUsers.map((item) => {
-        const user = userMap.get(item.userId) ?? null;
+          totalAmount: toNumber(
+            item._sum.amount,
+          ),
+        })),
 
-        return {
-          label: user?.fullName ?? user?.email ?? 'Unknown User',
-          userId: item.userId,
-          user,
-          paymentsCount: item._count.userId,
-          totalPaid: toNumber(item._sum.amount),
-        };
-      }),
+      paymentsByPurpose:
+        paymentsByPurpose.map((item) => ({
+          label: item.paymentPurpose,
+          paymentPurpose:
+            item.paymentPurpose,
+          count:
+            item._count.paymentPurpose,
+
+          totalAmount: toNumber(
+            item._sum.amount,
+          ),
+        })),
+
+      topPayingUsers:
+        topPayingUsers.map((item) => {
+          const user =
+            userMap.get(item.userId) ?? null;
+
+          return {
+            label:
+              user?.fullName ??
+              user?.email ??
+              'Unknown User',
+
+            userId: item.userId,
+            user,
+
+            paymentsCount:
+              item._count.userId,
+
+            totalPaid: toNumber(
+              item._sum.amount,
+            ),
+          };
+        }),
     };
   }
 
   /**
    * Exports filtered payment records as CSV.
-   *
-   * Endpoint:
-   * GET /admin/payments/export/csv
-   *
-   * Uses the same filters and sorting rules as the list endpoint.
-   *
-   * @param query - Query parameters used to filter exported records.
-   * @returns CSV string.
    */
-  async exportPaymentsCsv(query: GetPaymentsQueryDto) {
+  async exportPaymentsCsv(
+    query: GetAdminPaymentsQueryDto,
+  ) {
     const where = this.buildPaymentsWhere(query);
 
     const orderBy = buildOrderBy(
@@ -437,37 +479,12 @@ export class PaymentsService {
       'createdAt',
     );
 
-    const payments = await this.prisma.payment.findMany({
-      where,
-      orderBy,
-      select: {
-        id: true,
-        amount: true,
-        currency: true,
-        paymentMethod: true,
-        paymentPurpose: true,
-        status: true,
-        creditsAmount: true,
-        creditPriceAtPurchase: true,
-        transactionReference: true,
-        createdAt: true,
-
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-
-        idea: {
-          select: {
-            id: true,
-            title: true,
-          },
-        },
-      },
-    });
+    const payments =
+      await this.prisma.payment.findMany({
+        where,
+        orderBy,
+        select: this.paymentSelect,
+      });
 
     const headers = [
       'Payment ID',
@@ -498,13 +515,53 @@ export class PaymentsService {
       payment.paymentPurpose,
       payment.status,
       payment.creditsAmount,
-      toNumber(payment.creditPriceAtPurchase),
+      toNumber(
+        payment.creditPriceAtPurchase,
+      ),
       payment.transactionReference ?? '',
       payment.idea?.id ?? '',
       payment.idea?.title ?? '',
       payment.createdAt.toISOString(),
     ]);
 
-    return buildCsv(headers, rows);
+    return buildCsv(
+      headers,
+      rows,
+    );
+  }
+
+  /**
+   * Builds the shared administrator payment filter.
+   */
+  private buildPaymentsWhere(
+    query: GetAdminPaymentsQueryDto,
+  ): Prisma.PaymentWhereInput {
+    return {
+      ...(buildDateFilter(query) ?? {}),
+
+      ...(buildExactFilter(
+        'status',
+        query.status,
+      ) ?? {}),
+
+      ...(buildExactFilter(
+        'paymentPurpose',
+        query.purpose,
+      ) ?? {}),
+
+      ...(buildExactFilter(
+        'paymentMethod',
+        query.method,
+      ) ?? {}),
+
+      ...(buildRelationSearchFilter(
+        'user',
+        [
+          'fullName',
+          'email',
+        ],
+        query.search,
+      ) ?? {}),
+    };
   }
 }
