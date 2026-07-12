@@ -20,8 +20,6 @@ import { PlatformsService } from './platforms/platforms.service';
 import { DomainsController } from './domains/domains.controller';
 import { DomainsService } from './domains/domains.service';
 
-import { IdeasController } from './ideas/ideas.controller';
-import { IdeasService } from './ideas/ideas.service';
 
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
@@ -55,7 +53,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
   controllers: [
     DashboardController,
     AiMonitoringController,
-    IdeasController,
     UsersController,
     SettingsController,
     CommentsController,
@@ -66,7 +63,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
   providers: [
     DashboardService,
     AiMonitoringService,
-    IdeasService,
     UsersService,
     SettingsService,
     CommentsService,

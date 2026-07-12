@@ -7,7 +7,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { IdeaGenerationType, UnlockMethod, UserType } from '@prisma/client';
-import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
+import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
  * DTO for filtering, searching, sorting, and paginating generated ideas.
