@@ -54,7 +54,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
  * - Build unified inputs from collected posts and comments.
  * - Clean and normalize raw community content.
  * - Resolve or detect text language.
- * - Filter unrelated content by domain relevance.
+ * - Filter unrelated content using domain relevance.
  * - Perform lexicon-based semantic analysis.
  * - Refine sentiment through reusable scoring policies.
  * - Extract keywords, topics, recurring problems, user needs,
@@ -67,24 +67,26 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
  *
  * AI-enhancement responsibilities:
  * - Build provider-neutral NLP enhancement prompts.
- * - Execute structured NLP enhancement requests through AiModule.
- * - Validate structured AI responses before they enter the pipeline.
+ * - Execute structured enhancement requests through AiModule.
+ * - Validate AI responses before they enter the NLP pipeline.
  * - Reject unsupported or fabricated evidence references.
  * - Conservatively merge validated AI output with rule-based results.
  * - Preserve the original rule-based analysis when AI enhancement
- *   is unavailable, invalid, or fails.
+ *   is unavailable, invalid, or unsuccessful.
  *
- * The NLP layer depends on the NLP_AI_CLIENT injection token instead
- * of depending directly on provider SDK implementations.
+ * The NLP layer depends on the NLP_AI_CLIENT injection token rather
+ * than depending directly on provider SDK implementations.
  *
- * AiExecutionNlpClient is registered as the production adapter between
- * the NLP enhancement layer and the central AiExecutionService.
+ * AiExecutionNlpClient acts as the production adapter between the NLP
+ * enhancement layer and the central AiExecutionService.
  *
- * AiModule is imported because AiExecutionNlpClient depends on the
- * exported AiExecutionService.
+ * Provider selection, routing, retries, timeout handling, fallback,
+ * model-health tracking, and external API logging remain owned by
+ * AiModule.
  *
  * PrismaModule is imported because NLP services retrieve configurable
- * resources and collected data from the database, including:
+ * analysis resources and collected content from the database,
+ * including:
  * - Domain keywords.
  * - NLP lexicons.
  * - Topic rules.
@@ -97,15 +99,11 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
  * @author Eman
  */
 @Module({
-  imports: [
-    AiModule,
-    PrismaModule,
-    ProblemsModule,
-  ],
+  imports: [AiModule, PrismaModule, ProblemsModule],
 
   providers: [
     /**
-     * Text preparation and preprocessing.
+     * Text preparation and preprocessing services.
      */
     TextCleaningService,
     LanguageDetectionService,
@@ -114,7 +112,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     TextPreprocessingService,
 
     /**
-     * Lexicon and rule-based semantic analysis.
+     * Lexicon and rule-based semantic analysis services.
      */
     NlpLexiconService,
     LexiconAnalysisService,
@@ -128,7 +126,8 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     OpportunityAnalysisService,
 
     /**
-     * Statistics, evidence, quality, decision, and output construction.
+     * Statistics, evidence, quality, complexity, decision, and final
+     * output-construction services.
      */
     AnalysisStatisticsService,
     AnalysisEvidenceService,
@@ -138,7 +137,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     AnalysisOutputBuilderService,
 
     /**
-     * Optional AI-enhancement layer.
+     * Optional AI-enhancement services.
      */
     AiAnalysisPromptBuilderService,
     AiAnalysisOutputValidatorService,
@@ -146,11 +145,10 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     AiEnhancementService,
 
     /**
-     * Production NLP AI client.
+     * Production NLP-to-AI adapter.
      *
-     * This adapter delegates provider selection, retries, timeouts,
-     * fallback execution, health tracking, and external API logging
-     * to the central AiExecutionService.
+     * useExisting aliases NLP_AI_CLIENT to the same
+     * AiExecutionNlpClient instance instead of creating a duplicate.
      */
     AiExecutionNlpClient,
 
@@ -160,7 +158,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     },
 
     /**
-     * Persistence and complete pipeline orchestration.
+     * Persistence and complete pipeline orchestration services.
      */
     NlpPersistenceService,
     IntelligentAnalysisService,
@@ -187,7 +185,7 @@ import { TopicRuleService } from './topic-rules/topic-rule.service';
     TextPreprocessingService,
 
     /**
-     * Reusable analysis and output services.
+     * Reusable NLP analysis services.
      */
     AnalysisStatisticsService,
     AnalysisEvidenceService,
