@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ApiRequestType" ADD VALUE 'NLP_ENHANCEMENT';
