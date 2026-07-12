@@ -29,9 +29,6 @@ import { IdeasService } from './ideas/ideas.service';
 import { AiMonitoringController } from './ai-monitoring/ai-monitoring.controller';
 import { AiMonitoringService } from './ai-monitoring/ai-monitoring.service';
 
-import { FeedbackController } from './feedback/feedbacks.controller';
-import { FeedbackService } from './feedback/feedbacks.service';
-
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
 import { AuditModule } from '../audit-logs/audit-logs.module';
@@ -67,7 +64,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasController,
     UsersController,
     SettingsController,
-    FeedbackController,
     CreditsController,
     CommentsController,
     PlatformsController,
@@ -80,7 +76,6 @@ import { AuditModule } from '../audit-logs/audit-logs.module';
     IdeasService,
     UsersService,
     SettingsService,
-    FeedbackService,
     CreditsService,
     CommentsService,
     PaymentsService,

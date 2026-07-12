@@ -10,7 +10,6 @@ import { UserIdeasController } from './ideas/ideas.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
 import { UserFavoritesController } from './favorites/favorites.controller';
-import { UserFeedbackController } from './feedback/feedback.controller';
 import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
 
 import { UserProfileService } from './profile/profile.service';
@@ -22,7 +21,6 @@ import { UserDashboardService } from './dashboard/dashboard.service';
 import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
-import { UserFeedbackService } from './feedback/feedback.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
 
 
@@ -64,7 +62,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserDashboardController,
     UserActivityController,
     UserFavoritesController,
-    UserFeedbackController,
     UserSavedSearchesController,
   ],
   providers: [
@@ -77,7 +74,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserDashboardService,
     UserActivityService,
     UserFavoritesService,
-    UserFeedbackService,
     UserSavedSearchesService,
   ],
   exports: [
@@ -90,7 +86,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserDashboardService,
     UserActivityService,
     UserFavoritesService,
-    UserFeedbackService,
     UserSavedSearchesService,
   ],
 })
