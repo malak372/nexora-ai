@@ -61,56 +61,54 @@ const NLP_AI_ENHANCEMENT_TEMPERATURE = 0.2;
  */
 @Injectable()
 export class AiExecutionNlpClient implements NlpAiClient {
-    constructor(
-        private readonly aiExecutionService: AiExecutionService,
-        private readonly aiResponseParserService: AiResponseParserService,
-    ) { }
+  constructor(
+    private readonly aiExecutionService: AiExecutionService,
+    private readonly aiResponseParserService: AiResponseParserService,
+  ) {}
 
-    /**
-     * Executes one structured NLP AI-enhancement operation.
-     *
-     * AiExecutionService validates the provider response against
-     * AI_ENHANCEMENT_OUTPUT_SCHEMA before returning successful text.
-     * The parsed value is still returned as unknown so the NLP-specific
-     * validator can enforce evidence and business rules.
-     *
-     * The optional request operationId is not forwarded because the
-     * central AI runtime owns operation-ID generation across retries and
-     * fallback attempts. The authoritative operation identifier is
-     * returned by AiExecutionService and stored in central AI logs.
-     *
-     * @param request Fully rendered NLP AI-enhancement request.
-     * @returns Normalized parsed response and execution metadata.
-     */
-    async enhance(
-        request: NlpAiClientRequest,
-    ): Promise<NlpAiClientResponse> {
-        const result = await this.aiExecutionService.execute({
-            userPrompt: request.prompt,
+  /**
+   * Executes one structured NLP AI-enhancement operation.
+   *
+   * AiExecutionService validates the provider response against
+   * AI_ENHANCEMENT_OUTPUT_SCHEMA before returning successful text.
+   * The parsed value is still returned as unknown so the NLP-specific
+   * validator can enforce evidence and business rules.
+   *
+   * The optional request operationId is not forwarded because the
+   * central AI runtime owns operation-ID generation across retries and
+   * fallback attempts. The authoritative operation identifier is
+   * returned by AiExecutionService and stored in central AI logs.
+   *
+   * @param request Fully rendered NLP AI-enhancement request.
+   * @returns Normalized parsed response and execution metadata.
+   */
+  async enhance(request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
+    const result = await this.aiExecutionService.execute({
+      userPrompt: request.prompt,
 
-            requestType: ApiRequestType.NLP_ENHANCEMENT,
+      requestType: ApiRequestType.NLP_ENHANCEMENT,
 
-            promptType: PromptType.NLP_ANALYSIS,
+      promptType: PromptType.NLP_ANALYSIS,
 
-            responseFormat: AiResponseFormat.JSON,
+      responseFormat: AiResponseFormat.JSON,
 
-            responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
+      responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
 
-            responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
+      responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
 
-            temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
-        });
+      temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
+    });
 
-        const data = this.aiResponseParserService.parseJson(result.text);
+    const data = this.aiResponseParserService.parseJson(result.text);
 
-        return {
-            data,
-            provider: result.provider,
-            modelId: result.apiModelId,
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            responseTimeMs: result.responseTimeMs,
-            estimatedCost: result.costEstimate,
-        };
-    }
+    return {
+      data,
+      provider: result.provider,
+      modelId: result.apiModelId,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      responseTimeMs: result.responseTimeMs,
+      estimatedCost: result.costEstimate,
+    };
+  }
 }
