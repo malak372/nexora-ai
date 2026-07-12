@@ -7,12 +7,9 @@ import {
 } from 'class-validator';
 
 /**
- * DTO for creating a complaint by the authenticated user.
+ * DTO used by an authenticated user to create a complaint.
  *
- * Users can submit complaints related to:
- * - General platform issues.
- * - Payment or credit issues.
- * - A specific generated idea.
+ * A complaint may optionally be linked to one of the user's ideas.
  *
  * @author Eman
  */
@@ -30,13 +27,13 @@ export class CreateUserComplaintDto {
    */
   @IsString()
   @MinLength(10)
-  @MaxLength(2000)
+  @MaxLength(2_000)
   message!: string;
 
   /**
-   * Optional related idea ID.
+   * Optional related idea identifier.
    */
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   ideaId?: string;
 }

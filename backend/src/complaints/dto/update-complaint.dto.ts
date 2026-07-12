@@ -1,24 +1,23 @@
 import {
+  ComplaintPriority,
+  ComplaintStatus,
+} from '@prisma/client';
+
+import {
   IsEnum,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
 /**
- * DTO for updating an existing user complaint.
+ * DTO used by an administrator to update a complaint.
  *
- * Used with:
- * PATCH /admin/complaints/:id
- *
- * Allows the administrator to update:
- * - Complaint status.
- * - Complaint priority.
- * - Administrative reply.
- *
- * All properties are optional to support partial updates.
+ * Supports partial updates for:
+ * - Status.
+ * - Priority.
+ * - Administrator reply.
  *
  * @author Malak
  */
@@ -38,13 +37,11 @@ export class UpdateComplaintDto {
   priority?: ComplaintPriority;
 
   /**
-   * Optional administrative reply.
-   *
-   * Must contain between 5 and 1000 characters.
+   * Optional administrator reply.
    */
   @IsOptional()
   @IsString()
   @MinLength(5)
-  @MaxLength(1000)
+  @MaxLength(1_000)
   adminReply?: string;
 }

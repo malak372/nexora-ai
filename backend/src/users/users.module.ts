@@ -9,7 +9,6 @@ import { UserPaymentsController } from './payments/payments.controller';
 import { UserIdeasController } from './ideas/ideas.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
-import { UserComplaintsController } from './complaints/complaints.controller';
 import { UserFavoritesController } from './favorites/favorites.controller';
 import { UserFeedbackController } from './feedback/feedback.controller';
 import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
@@ -22,7 +21,6 @@ import { UserValidationService } from './validation/validation.service';
 import { UserDashboardService } from './dashboard/dashboard.service';
 import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
-import { UserComplaintsService } from './complaints/complaints.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserFeedbackService } from './feedback/feedback.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
@@ -66,7 +64,6 @@ import { ContactService } from './contact-message/contact.service';
     UserIdeasController,
     UserDashboardController,
     UserActivityController,
-    UserComplaintsController,
     UserFavoritesController,
     UserFeedbackController,
     UserSavedSearchesController,
@@ -81,7 +78,6 @@ import { ContactService } from './contact-message/contact.service';
     UserIdeasService,
     UserDashboardService,
     UserActivityService,
-    UserComplaintsService,
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,
@@ -96,7 +92,6 @@ import { ContactService } from './contact-message/contact.service';
     UserIdeasService,
     UserDashboardService,
     UserActivityService,
-    UserComplaintsService,
     UserFavoritesService,
     UserFeedbackService,
     UserSavedSearchesService,

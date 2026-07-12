@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PromptsModule } from './prompts/prompts.module';
 import { UsersModule } from './users/users.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { ComplaintsModule } from './complaints/complaints.module';
 
 /**
  * Root application module.
@@ -68,6 +69,7 @@ import { AlertsModule } from './alerts/alerts.module';
     NlpModule,
     PromptsModule,
     AlertsModule,
+    ComplaintsModule,
   ],
 
   controllers: [AppController],
