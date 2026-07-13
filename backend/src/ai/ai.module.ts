@@ -7,10 +7,9 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AiUsageAnalyticsController } from './analytics/ai-usage-analytics.controller';
 import { AiUsageAnalyticsService } from './analytics/ai-usage-analytics.service';
 
-import { AnthropicProvider } from './providers/anthropic.provider';
+import { OpenRouterProvider } from './providers/openrouter.provider';
 import { GoogleProvider } from './providers/google.provider';
 import { GroqProvider } from './providers/groq.provider';
-import { OpenAiProvider } from './providers/openai.provider';
 
 import { AiExecutionService } from './services/ai-execution.service';
 import { AiProviderCredentialsService } from './services/ai-provider-credentials.service';
@@ -29,7 +28,7 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
  * administrative AI-usage analytics.
  *
  * Responsibilities:
- * - Register OpenAI, Anthropic, Google, and Groq provider adapters.
+ * - Register Google, Groq, and OpenRouter provider adapters.
  * - Resolve provider credentials from application configuration.
  * - Select the appropriate provider adapter at runtime.
  * - Execute AI requests with timeout protection.
@@ -59,10 +58,9 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
     /**
      * Concrete external AI provider adapters.
      */
-    OpenAiProvider,
-    AnthropicProvider,
     GoogleProvider,
     GroqProvider,
+    OpenRouterProvider,
 
     /**
      * Provider infrastructure services.

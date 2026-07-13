@@ -28,7 +28,7 @@ import { AnalysisMergeService } from './analysis-merge.service';
  * orchestration layer.
  *
  * These values are intentionally provider-neutral so callers do not
- * depend on OpenAI, Anthropic, Google, or any provider-specific error
+ * depend on OpenRouter, Groq, Google, or any provider-specific error
  * contract.
  */
 const AI_ENHANCEMENT_FAILURE = {

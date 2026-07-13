@@ -29,7 +29,6 @@ enum AccountStatus {
 enum PaymentMethod {
   CARD
   PAYPAL
-  PALPAY
 }
 
 enum PaymentStatus {
@@ -107,15 +106,13 @@ enum AlertType {
 
 enum ApiProvider {
   // AI Providers
-  OPENAI
-  ANTHROPIC
   GOOGLE
   GROQ
+  OPENROUTER
 
   // Payment Providers
   STRIPE
   PAYPAL
-  PALPAY
 
   // Data Providers
   REDDIT
@@ -260,10 +257,9 @@ enum AiRoutingStrategy {
 }
 
 enum AiProviderType {
-  OPENAI
-  ANTHROPIC
   GOOGLE
   GROQ
+  OPENROUTER
 }
 
 enum AuditTargetType {
@@ -366,7 +362,6 @@ enum NlpLexiconType {
 enum PaymentProvider {
   STRIPE
   PAYPAL
-  PALPAY
 }
 
 /**
@@ -1269,7 +1264,7 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider    AiProviderType @default(OPENAI)
+  provider    AiProviderType @default(OPENROUTER)
   modelName   String         @map("model_name")
   apiModelId  String         @map("api_model_id")
   displayName String?        @map("display_name")

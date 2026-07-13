@@ -29,9 +29,9 @@ export class CreateAiModelDto {
    * AI provider associated with the model.
    *
    * Supported values:
-   * - OPENAI
-   * - ANTHROPIC
    * - GOOGLE
+   * - GROQ
+   * - OPENROUTER
    */
   @IsEnum(AiProviderType)
   provider!: AiProviderType;
@@ -56,9 +56,10 @@ export class CreateAiModelDto {
    * Exact model identifier sent to the provider API.
    *
    * Examples:
-   * - gpt-5
-   * - claude-sonnet-4
-   * - gemini-2.5-pro
+   * - gemini-2.5-flash
+   * - llama-3.3-70b-versatile
+   * - openrouter/free
+   * - meta-llama/llama-3.3-70b-instruct:free
    */
   @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,

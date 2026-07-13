@@ -10,10 +10,10 @@
  * provider-neutral contract.
  *
  * Provider adapters may optionally translate this contract into:
- * - OpenAI structured-output configuration.
- * - Google Gemini response schema.
- * - Anthropic tool-input schema.
- * - Groq JSON schema configuration.
+ *
+ * - OpenRouter structured-output configuration.
+ * - Groq JSON response configuration.
+ * - Google structured-output configuration.
  *
  * Runtime validation remains centralized inside
  * AiStructuredOutputService regardless of provider support.
