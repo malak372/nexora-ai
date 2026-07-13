@@ -3,7 +3,6 @@
  *
  * These constants centralize payment-related configuration such as:
  * - Credit purchase limits.
- * - Premium generation credit cost.
  * - Default pagination values.
  * - Payment metadata keys used by external payment providers.
  *
@@ -44,15 +43,6 @@ export const MIN_CREDITS_PER_PURCHASE = 1;
  * malformed, or abusive requests.
  */
 export const MAX_CREDITS_PER_PURCHASE = 100;
-
-/**
- * Number of credits consumed by one successful
- * premium project idea generation.
- *
- * Premium access in Nexora AI is credit-based rather than
- * subscription-based.
- */
-export const PREMIUM_IDEA_GENERATION_CREDIT_COST = 1;
 
 /**
  * Default page number used when retrieving payment history.

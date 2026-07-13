@@ -25,6 +25,12 @@ import { AppModule } from './app.module';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     /**
+     * Preserves the original request body for providers
+     * that require raw-body signature verification,
+     * such as Stripe webhooks.
+     */
+    rawBody: true,
+  });
      * Preserves the exact incoming request body.
      *
      * Required for payment providers that validate webhook
@@ -74,6 +80,10 @@ async function bootstrap(): Promise<void> {
     new ValidationPipe({
       whitelist: true,
 
+      /**
+       * Rejects the request instead of silently removing
+       * unknown properties.
+       */
       forbidNonWhitelisted: true,
 
       transform: true,

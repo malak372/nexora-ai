@@ -172,4 +172,10 @@ export enum PaymentErrorCode {
    * internal or external failure.
    */
   PAYMENT_PROCESSING_FAILED = 'PAYMENT_PROCESSING_FAILED',
+
+  /**
+   * More than one gateway implementation was registered
+   * for the same payment provider.
+   */
+  DUPLICATE_PAYMENT_GATEWAY = 'DUPLICATE_PAYMENT_GATEWAY',
 }

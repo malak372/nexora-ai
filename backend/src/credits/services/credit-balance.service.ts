@@ -21,10 +21,13 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  *
  * All credit additions and deductions must pass through this service.
  *
+ * Credit mutations are performed atomically to prevent concurrent requests
+ * from consuming the same balance.
+ *
  * Responsibilities:
  * - Validate the target user.
  * - Prevent negative balances.
- * - Update credit balance.
+ * - Update credit balance atomically.
  * - Update account status.
  * - Create CreditTransaction records.
  * - Participate in existing Prisma transactions.
@@ -43,6 +46,11 @@ export class CreditBalanceService {
 
   /**
    * Changes one user's credit balance.
+   *
+   * Negative adjustments use a conditional atomic decrement so concurrent
+   * requests cannot consume more credits than the user owns.
+   *
+   * Positive adjustments use Prisma's atomic increment operation.
    */
   async adjustBalance(
     input: AdjustCreditBalanceInput,
@@ -77,11 +85,69 @@ export class CreditBalanceService {
         );
       }
 
-      const balanceAfter = user.creditBalance + input.amount;
+      const absoluteAmount = Math.abs(input.amount);
 
-      if (balanceAfter < 0) {
-        throw new BadRequestException('Credit balance cannot be negative.');
+      if (input.amount < 0) {
+        const deductionResult = await tx.user.updateMany({
+          where: {
+            id: user.id,
+            role: UserRole.USER,
+
+            creditBalance: {
+              gte: absoluteAmount,
+            },
+          },
+
+          data: {
+            creditBalance: {
+              decrement: absoluteAmount,
+            },
+          },
+        });
+
+        if (deductionResult.count === 0) {
+          throw new BadRequestException('Insufficient credit balance.');
+        }
+      } else {
+        const additionResult = await tx.user.updateMany({
+          where: {
+            id: user.id,
+            role: UserRole.USER,
+          },
+
+          data: {
+            creditBalance: {
+              increment: absoluteAmount,
+            },
+          },
+        });
+
+        if (additionResult.count === 0) {
+          throw new BadRequestException(
+            'Unable to update the user credit balance.',
+          );
+        }
       }
+
+      const updatedUser = await tx.user.findUnique({
+        where: {
+          id: user.id,
+        },
+
+        select: {
+          creditBalance: true,
+        },
+      });
+
+      if (!updatedUser) {
+        throw new NotFoundException(
+          'User not found after credit balance update.',
+        );
+      }
+
+      const balanceAfter = updatedUser.creditBalance;
+
+      const previousBalance = balanceAfter - input.amount;
 
       const accountStatus =
         balanceAfter > 0 ? AccountStatus.PREMIUM : AccountStatus.NORMAL;
@@ -92,7 +158,6 @@ export class CreditBalanceService {
         },
 
         data: {
-          creditBalance: balanceAfter,
           accountStatus,
         },
       });
@@ -105,12 +170,12 @@ export class CreditBalanceService {
           type: input.type,
           amount: input.amount,
           balanceAfter,
-          description: input.description?.trim() ?? null,
+          description: input.description?.trim() || null,
         },
       });
 
       return {
-        previousBalance: user.creditBalance,
+        previousBalance,
         balanceAfter,
         previousAccountStatus: user.accountStatus,
         accountStatus,
@@ -127,17 +192,26 @@ export class CreditBalanceService {
 
   /**
    * Consumes credits for one premium idea generation.
+   *
+   * The deduction is executed atomically, preventing simultaneous premium
+   * generation requests from consuming the same available credits.
    */
   consumeForIdeaGeneration(
     userId: string,
     ideaId: string,
     amount: number,
     tx?: Prisma.TransactionClient,
-  ) {
+  ): Promise<CreditBalanceResult> {
+    if (amount <= 0) {
+      throw new BadRequestException(
+        'Idea generation credit amount must be greater than zero.',
+      );
+    }
+
     return this.adjustBalance({
       userId,
       ideaId,
-      amount: -Math.abs(amount),
+      amount: -amount,
       type: CreditTransactionType.DEDUCTION_GENERATION,
       description: 'Credit deducted for premium idea generation.',
       tx,
