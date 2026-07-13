@@ -542,23 +542,30 @@ model AuditLog {
 }
 
 model GuestSession {
-  id           String  @id @default(uuid())
-  sessionToken String  @unique @map("session_token")
+  id String @id @default(uuid())
+
+  /**
+   * Public random identifier stored in a secure HTTP-only cookie.
+   */
+  sessionToken String @unique @map("session_token")
+
+  /**
+   * One-way hash derived from request information.
+   * Prevents the same guest client from repeatedly creating
+   * new sessions after consuming the free guest generation.
+   */
+  fingerprintHash String @unique @map("fingerprint_hash")
+
   hasGenerated Boolean @default(false) @map("has_generated")
 
   createdAt DateTime  @default(now()) @map("created_at")
   expiresAt DateTime? @map("expires_at")
 
-  /**
-   * Ideas generated through this guest session.
-   */
   ideas Idea[]
 
-  /**
-   * Prompt-history records requested through this guest session.
-   */
   promptHistories PromptHistory[]
 
+  @@index([expiresAt])
   @@map("guest_sessions")
 }
 
@@ -1367,4 +1374,33 @@ model NlpTopicRule {
   @@index([language])
   @@index([isActive])
   @@map("nlp_topic_rules")
+}
+
+/**
+ * Distributed lock for expensive idea-generation workflows.
+ * Prevents concurrent requests from:
+ * - Calling AI more than once for the same entitlement.
+ * - Consuming the same final free attempt.
+ * - Consuming the same premium credit.
+ * The lock is stored in PostgreSQL and therefore works across
+ * multiple backend instances.
+ */
+model IdeaGenerationLock {
+  id String @id @default(uuid())
+
+  /**
+   * Examples:
+   * - user:<userId>
+   * - guest:<guestSessionId>
+   */
+  lockKey String @unique @map("lock_key")
+
+  ownerToken String @map("owner_token")
+
+  expiresAt DateTime @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("idea_generation_locks")
 }

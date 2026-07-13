@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+
 import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { GetIdeasQueryDto } from './dto/get-ideas-query.dto';
 
 import {
   buildDateFilter,
@@ -18,58 +18,73 @@ import {
   calculateTotalPages,
 } from '../../utilities/analytics/analytics.helper';
 
+import { GetIdeasQueryDto } from '../dto/get-admin-ideas-query.dto';
+
 /**
  * Service responsible for administrative idea management.
  *
  * Provides:
  * - Paginated ideas list.
- * - Filtering by domain, platform, region, generation type, unlock method, unlock status, and owner user type.
+ * - Filtering by domain, platform, region, generation type,
+ *   unlock method, unlock status, and owner user type.
  * - Search by title and problem statement.
  * - Safe sorting using whitelisted fields.
  * - Idea summary reports.
  * - Chart-ready idea analytics.
  * - CSV export.
- * - Detailed idea inspection with related collection job, social posts, comments, NLP analysis, prompts, payments, credits, outputs, and chat sessions.
+ * - Detailed idea inspection with related collection jobs,
+ *   social posts, comments, NLP analysis, prompts, payments,
+ *   credits, outputs, and chat sessions.
  *
  * Notes:
  * - The old Comment and IdeaComment models were removed.
- * - Comments used for an idea are now accessed through:
- *   Idea -> CollectionJob -> SocialPost -> SocialComment
+ * - Comments used for an idea are accessed through:
+ *   Idea -> CollectionJob -> SocialPost -> SocialComment.
  *
  * @author Malak
  */
 @Injectable()
-export class IdeasService {
+export class AdminIdeasService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Builds the shared Prisma where filter used by
-   * idea listing, summaries, charts, and CSV export.
+   * Builds the shared Prisma filter used by idea listing,
+   * summaries, charts, and CSV export.
    */
   private buildIdeasWhere(query: GetIdeasQueryDto): Prisma.IdeaWhereInput {
     const isUnlocked =
       query.isUnlocked !== undefined ? query.isUnlocked === 'true' : undefined;
 
     return {
-      ...buildDateFilter(query),
-      ...buildSearchFilter(['title', 'problemStatement'], query.search),
-      ...buildExactFilter('domainId', query.domainId),
-      ...buildExactFilter('selectedPlatformId', query.platformId),
-      ...buildExactFilter('generationType', query.generationType),
-      ...buildExactFilter('unlockMethod', query.unlockMethod),
-      ...buildExactFilter('isUnlocked', isUnlocked),
-      ...buildStringFilter('selectedRegion', query.region),
+      ...(buildDateFilter(query) ?? {}),
 
-      ...(query.userType !== undefined && {
-        user: {
-          userType: query.userType,
-        },
-      }),
+      ...(buildSearchFilter(['title', 'problemStatement'], query.search) ?? {}),
+
+      ...(buildExactFilter('domainId', query.domainId) ?? {}),
+
+      ...(buildExactFilter('selectedPlatformId', query.platformId) ?? {}),
+
+      ...(buildExactFilter('generationType', query.generationType) ?? {}),
+
+      ...(buildExactFilter('unlockMethod', query.unlockMethod) ?? {}),
+
+      ...(buildExactFilter('isUnlocked', isUnlocked) ?? {}),
+
+      ...(buildStringFilter('selectedRegion', query.region) ?? {}),
+
+      ...(query.userType !== undefined
+        ? {
+            user: {
+              userType: query.userType,
+            },
+          }
+        : {}),
     };
   }
 
   /**
-   * Adds a minimum createdAt date while preserving existing date filters.
+   * Adds a minimum createdAt date while preserving
+   * any existing createdAt filters.
    */
   private mergeCreatedAtGte(
     where: Prisma.IdeaWhereInput,
@@ -82,6 +97,7 @@ export class IdeasService {
 
     return {
       ...where,
+
       createdAt: {
         ...existingCreatedAt,
         gte,
@@ -90,11 +106,12 @@ export class IdeasService {
   }
 
   /**
-   * Retrieves generated project ideas with filtering,
+   * Retrieves generated ideas with filtering,
    * searching, sorting, and pagination.
    */
   async getIdeas(query: GetIdeasQueryDto) {
-    const { page, limit, skip } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
+
     const where = this.buildIdeasWhere(query);
 
     const orderBy = buildOrderBy(
@@ -114,8 +131,9 @@ export class IdeasService {
       this.prisma.idea.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy,
+
         select: {
           id: true,
           title: true,
@@ -160,11 +178,14 @@ export class IdeasService {
         },
       }),
 
-      this.prisma.idea.count({ where }),
+      this.prisma.idea.count({
+        where,
+      }),
     ]);
 
     return {
       data: ideas,
+
       meta: {
         page,
         limit,
@@ -188,6 +209,7 @@ export class IdeasService {
     monthStart.setHours(0, 0, 0, 0);
 
     const todayWhere = this.mergeCreatedAtGte(where, todayStart);
+
     const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
@@ -202,9 +224,17 @@ export class IdeasService {
       directPaymentUnlocks,
       creditGenerationUnlocks,
     ] = await Promise.all([
-      this.prisma.idea.count({ where }),
-      this.prisma.idea.count({ where: todayWhere }),
-      this.prisma.idea.count({ where: monthWhere }),
+      this.prisma.idea.count({
+        where,
+      }),
+
+      this.prisma.idea.count({
+        where: todayWhere,
+      }),
+
+      this.prisma.idea.count({
+        where: monthWhere,
+      }),
 
       this.prisma.idea.count({
         where: {
@@ -287,51 +317,110 @@ export class IdeasService {
       this.prisma.idea.groupBy({
         by: ['generationType'],
         where,
-        _count: { generationType: true },
-        orderBy: { _count: { generationType: 'desc' } },
+
+        _count: {
+          generationType: true,
+        },
+
+        orderBy: {
+          _count: {
+            generationType: 'desc',
+          },
+        },
       }),
 
       this.prisma.idea.groupBy({
         by: ['unlockMethod'],
         where,
-        _count: { unlockMethod: true },
-        orderBy: { _count: { unlockMethod: 'desc' } },
+
+        _count: {
+          unlockMethod: true,
+        },
+
+        orderBy: {
+          _count: {
+            unlockMethod: 'desc',
+          },
+        },
       }),
 
       this.prisma.idea.groupBy({
         by: ['isUnlocked'],
         where,
-        _count: { isUnlocked: true },
-        orderBy: { _count: { isUnlocked: 'desc' } },
+
+        _count: {
+          isUnlocked: true,
+        },
+
+        orderBy: {
+          _count: {
+            isUnlocked: 'desc',
+          },
+        },
       }),
 
       this.prisma.idea.groupBy({
         by: ['domainId'],
         where,
-        _count: { domainId: true },
-        orderBy: { _count: { domainId: 'desc' } },
+
+        _count: {
+          domainId: true,
+        },
+
+        orderBy: {
+          _count: {
+            domainId: 'desc',
+          },
+        },
+
         take: 10,
       }),
 
       this.prisma.idea.groupBy({
         by: ['selectedPlatformId'],
+
         where: {
           ...where,
-          selectedPlatformId: { not: null },
+
+          selectedPlatformId: {
+            not: null,
+          },
         },
-        _count: { selectedPlatformId: true },
-        orderBy: { _count: { selectedPlatformId: 'desc' } },
+
+        _count: {
+          selectedPlatformId: true,
+        },
+
+        orderBy: {
+          _count: {
+            selectedPlatformId: 'desc',
+          },
+        },
+
         take: 10,
       }),
 
       this.prisma.idea.groupBy({
         by: ['selectedRegion'],
+
         where: {
           ...where,
-          selectedRegion: { not: null },
+
+          selectedRegion: {
+            not: null,
+          },
         },
-        _count: { selectedRegion: true },
-        orderBy: { _count: { selectedRegion: 'desc' } },
+
+        _count: {
+          selectedRegion: true,
+        },
+
+        orderBy: {
+          _count: {
+            selectedRegion: 'desc',
+          },
+        },
+
         take: 10,
       }),
     ]);
@@ -344,13 +433,29 @@ export class IdeasService {
 
     const [domains, platforms] = await Promise.all([
       this.prisma.domain.findMany({
-        where: { id: { in: domainIds } },
-        select: { id: true, name: true },
+        where: {
+          id: {
+            in: domainIds,
+          },
+        },
+
+        select: {
+          id: true,
+          name: true,
+        },
       }),
 
       this.prisma.platform.findMany({
-        where: { id: { in: platformIds } },
-        select: { id: true, name: true },
+        where: {
+          id: {
+            in: platformIds,
+          },
+        },
+
+        select: {
+          id: true,
+          name: true,
+        },
       }),
     ]);
 
@@ -377,7 +482,9 @@ export class IdeasService {
 
       ideasByUnlockStatus: ideasByUnlockStatus.map((item) => ({
         label: item.isUnlocked ? 'UNLOCKED' : 'LOCKED',
+
         isUnlocked: item.isUnlocked,
+
         count: item._count.isUnlocked,
       })),
 
@@ -386,8 +493,11 @@ export class IdeasService {
 
         return {
           label: domainName ?? 'Unknown Domain',
+
           domainId: item.domainId,
+
           domainName,
+
           count: item._count.domainId,
         };
       }),
@@ -399,15 +509,20 @@ export class IdeasService {
 
         return {
           label: platformName ?? 'Unknown Platform',
+
           platformId: item.selectedPlatformId,
+
           platformName,
+
           count: item._count.selectedPlatformId,
         };
       }),
 
       ideasByRegion: ideasByRegion.map((item) => ({
         label: item.selectedRegion ?? 'Unknown Region',
+
         region: item.selectedRegion,
+
         count: item._count.selectedRegion,
       })),
     };
@@ -435,6 +550,7 @@ export class IdeasService {
     const ideas = await this.prisma.idea.findMany({
       where,
       orderBy,
+
       select: {
         id: true,
         title: true,
@@ -535,7 +651,7 @@ export class IdeasService {
   }
 
   /**
-   * Retrieves detailed information about a specific project idea.
+   * Retrieves detailed information about one project idea.
    *
    * Includes:
    * - Basic idea details.
@@ -544,14 +660,17 @@ export class IdeasService {
    * - Payments and credit transactions.
    * - Generated AI outputs.
    * - Collection job details.
-   * - Social posts and collected social comments.
-   * - NLP analysis results.
-   * - Prompt history records.
-   * - Chat sessions and recent messages.
+   * - Social posts and collected comments.
+   * - NLP analysis.
+   * - Prompt history.
+   * - Chat sessions and messages.
    */
-  async getIdeaById(id: string) {
+  async getIdeaById(ideaId: string) {
     const idea = await this.prisma.idea.findUnique({
-      where: { id },
+      where: {
+        id: ideaId,
+      },
+
       select: {
         id: true,
         title: true,
@@ -586,7 +705,6 @@ export class IdeasService {
         guestSession: {
           select: {
             id: true,
-            sessionToken: true,
             hasGenerated: true,
             createdAt: true,
             expiresAt: true,
@@ -636,9 +754,11 @@ export class IdeasService {
 
             posts: {
               take: 20,
+
               orderBy: {
                 collectedAt: 'desc',
               },
+
               select: {
                 id: true,
                 sourceType: true,
@@ -667,9 +787,11 @@ export class IdeasService {
 
                 comments: {
                   take: 20,
+
                   orderBy: {
                     collectedAt: 'desc',
                   },
+
                   select: {
                     id: true,
                     externalId: true,
@@ -714,7 +836,9 @@ export class IdeasService {
               orderBy: {
                 createdAt: 'desc',
               },
+
               take: 10,
+
               select: {
                 id: true,
                 promptType: true,
@@ -730,6 +854,7 @@ export class IdeasService {
           orderBy: {
             createdAt: 'desc',
           },
+
           select: {
             id: true,
             amount: true,
@@ -747,6 +872,7 @@ export class IdeasService {
           orderBy: {
             createdAt: 'desc',
           },
+
           select: {
             id: true,
             type: true,
@@ -761,6 +887,7 @@ export class IdeasService {
           orderBy: {
             createdAt: 'desc',
           },
+
           select: {
             id: true,
             outputType: true,
@@ -774,16 +901,20 @@ export class IdeasService {
           orderBy: {
             updatedAt: 'desc',
           },
+
           select: {
             id: true,
             title: true,
             createdAt: true,
             updatedAt: true,
+
             messages: {
               take: 20,
+
               orderBy: {
                 createdAt: 'desc',
               },
+
               select: {
                 id: true,
                 sender: true,

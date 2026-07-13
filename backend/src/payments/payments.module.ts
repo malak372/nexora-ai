@@ -110,4 +110,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

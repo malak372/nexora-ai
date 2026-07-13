@@ -1,51 +1,88 @@
 /**
- * Provider-neutral JSON schema describing the expected
- * response for guest idea generation.
+ * Provider-neutral schema for guest idea generation.
  *
- * This schema must remain synchronized with:
- * - GUEST_OUTPUT_FORMAT
- * - GuestIdeaSchema
+ * Only title and limitedAbstract are returned to the guest.
  *
- * AI provider adapters may transform this schema into
- * their provider-specific structured-output representation.
+ * The remaining registered free-tier fields are generated and
+ * persisted internally. They become visible only after the guest
+ * registers and ownership of the idea is transferred.
+ *
+ * This prevents a second AI request during registration.
  *
  * @author Malak
  */
 export const GUEST_OUTPUT_SCHEMA = {
   type: 'object',
+
   additionalProperties: false,
+
   properties: {
-    /**
-     * Generated software-project title.
-     */
     title: {
       type: 'string',
       minLength: 3,
       maxLength: 200,
     },
 
-    /**
-     * Limited project abstract available to guest users.
-     */
     limitedAbstract: {
       type: 'string',
       minLength: 20,
       maxLength: 1_200,
     },
+
+    problemStatement: {
+      type: 'string',
+      minLength: 20,
+      maxLength: 4_000,
+    },
+
+    objectives: {
+      type: 'string',
+      minLength: 10,
+      maxLength: 4_000,
+    },
+
+    targetUsers: {
+      type: 'string',
+      minLength: 3,
+      maxLength: 2_000,
+    },
+
+    partialAbstract: {
+      type: 'string',
+      minLength: 20,
+      maxLength: 4_000,
+    },
   },
-  required: ['title', 'limitedAbstract'],
+
+  required: [
+    'title',
+    'limitedAbstract',
+    'problemStatement',
+    'objectives',
+    'targetUsers',
+    'partialAbstract',
+  ],
 } as const;
 
 /**
- * Human-readable JSON example inserted into the prompt.
+ * Human-readable JSON structure inserted into the rendered prompt.
  *
- * The AI must return the exact field names and value types
- * demonstrated by this example.
+ * Although only title and limitedAbstract are exposed to the guest,
+ * all fields must be returned by the AI provider.
  */
 export const GUEST_OUTPUT_FORMAT = JSON.stringify(
   {
     title: 'string',
+
     limitedAbstract: 'string',
+
+    problemStatement: 'string',
+
+    objectives: 'string',
+
+    targetUsers: 'string',
+
+    partialAbstract: 'string',
   },
   null,
   2,

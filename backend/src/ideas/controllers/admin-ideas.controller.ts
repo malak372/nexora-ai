@@ -7,14 +7,15 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+
 import { UserRole } from '@prisma/client';
 
-import { IdeasService } from './ideas.service';
-import { GetIdeasQueryDto } from './dto/get-ideas-query.dto';
-
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
+
+import { GetIdeasQueryDto } from '../dto/get-admin-ideas-query.dto';
+import { AdminIdeasService } from '../services/admin-ideas.service';
 
 /**
  * Controller responsible for administrative idea management.
@@ -24,6 +25,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
  * - Filtering, searching, sorting, and paginating ideas.
  * - Viewing idea summary reports.
  * - Viewing chart-ready idea analytics.
+ * - Exporting ideas as CSV.
  * - Viewing detailed information about a specific idea.
  *
  * Base route:
@@ -34,61 +36,66 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 @Controller('admin/ideas')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
-export class IdeasController {
-  constructor(private readonly ideasService: IdeasService) {}
+export class AdminIdeasController {
+  constructor(private readonly adminIdeasService: AdminIdeasService) {}
 
   /**
    * Retrieves generated project ideas.
    *
-   * Endpoint:
    * GET /admin/ideas
    */
   @Get()
   getIdeas(@Query() query: GetIdeasQueryDto) {
-    return this.ideasService.getIdeas(query);
+    return this.adminIdeasService.getIdeas(query);
   }
 
   /**
    * Retrieves idea summary statistics.
    *
-   * Endpoint:
    * GET /admin/ideas/summary
    */
   @Get('summary')
   getIdeasSummary(@Query() query: GetIdeasQueryDto) {
-    return this.ideasService.getIdeasSummary(query);
+    return this.adminIdeasService.getIdeasSummary(query);
   }
 
   /**
    * Retrieves chart-ready idea analytics.
    *
-   * Endpoint:
    * GET /admin/ideas/charts
    */
   @Get('charts')
   getIdeasCharts(@Query() query: GetIdeasQueryDto) {
-    return this.ideasService.getIdeasCharts(query);
+    return this.adminIdeasService.getIdeasCharts(query);
   }
+
   /**
    * Exports filtered ideas as CSV.
    *
-   * Endpoint:
    * GET /admin/ideas/export/csv
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv')
   @Header('Content-Disposition', 'attachment; filename="ideas.csv"')
   exportIdeasCsv(@Query() query: GetIdeasQueryDto) {
-    return this.ideasService.exportIdeasCsv(query);
+    return this.adminIdeasService.exportIdeasCsv(query);
   }
+
   /**
-   * Retrieves detailed information about a specific project idea.
+   * Retrieves detailed information about one idea.
    *
-   * Endpoint:
    * GET /admin/ideas/:id
    */
   @Get(':id')
-  getIdeaById(@Param('id', ParseUUIDPipe) id: string) {
-    return this.ideasService.getIdeaById(id);
+  getIdeaById(
+    @Param(
+      'id',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    ideaId: string,
+  ) {
+    return this.adminIdeasService.getIdeaById(ideaId);
   }
 }

@@ -4,7 +4,6 @@ import {
   AuditAction,
   AuditTargetType,
   ContactMessageStatus,
-  Prisma,
 } from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';

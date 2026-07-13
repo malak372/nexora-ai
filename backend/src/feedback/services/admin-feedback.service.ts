@@ -16,11 +16,7 @@ import {
   calculateTotalPages,
 } from '../../utilities/analytics/analytics.helper';
 
-import {
-  MAX_FEEDBACK_RATING,
-  MIN_FEEDBACK_RATING,
-  TOP_RATED_IDEAS_LIMIT,
-} from '../constants/feedback.constants';
+import { TOP_RATED_IDEAS_LIMIT } from '../constants/feedback.constants';
 
 import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
 
