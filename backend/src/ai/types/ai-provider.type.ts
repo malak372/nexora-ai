@@ -25,12 +25,10 @@ export enum AiResponseFormat {
  * provider-specific finish reason into one of these values.
  *
  * Examples:
- * - OpenAI "stop" becomes STOP.
- * - OpenAI "length" becomes MAX_TOKENS.
- * - Anthropic "end_turn" becomes STOP.
- * - Anthropic "max_tokens" becomes MAX_TOKENS.
- * - Gemini "STOP" becomes STOP.
- * *
+ * - OpenRouter or Groq "stop" becomes STOP.
+ * - OpenRouter or Groq "length" becomes MAX_TOKENS.
+ * - Google "STOP" becomes STOP.
+ *
  * @author Malak
  */
 export enum AiFinishReason {

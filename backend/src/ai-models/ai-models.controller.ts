@@ -73,7 +73,7 @@ export class AiModelsController {
    *
    * Supported examples:
    * - /ai-models?page=1&limit=10
-   * - /ai-models?provider=OPENAI
+   * - /ai-models?provider=OPENROUTER
    * - /ai-models?isActive=true
    * - /ai-models?healthStatus=HEALTHY
    * - /ai-models?search=gpt

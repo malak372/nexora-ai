@@ -32,9 +32,9 @@ export const AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME = 'nexora_nlp_ai_enhancement';
  * - Evidence identifiers must be unique within each item.
  *
  * Provider adapters may convert this schema into:
- * - OpenAI Structured Outputs.
- * - Google Gemini responseSchema.
- * - Anthropic tool-input schema.
+ * - OpenRouter structured outputs.
+ * - Groq JSON mode.
+ * - Google structured outputs.
  *
  * @author Eman
  */

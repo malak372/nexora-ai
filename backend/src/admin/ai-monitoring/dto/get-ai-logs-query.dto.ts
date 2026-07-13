@@ -43,10 +43,9 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    * External API request type filter.
    *
    * Examples:
-   * - IDEA_GENERATION
-   * - COMMENT_ANALYSIS
-   * - AI_CHAT
-   * - PAYMENT
+   * - OPENROUTER
+   * - GOOGLE
+   * - GROQ
    */
   @IsOptional()
   @IsEnum(ApiRequestType)

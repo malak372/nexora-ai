@@ -7,8 +7,7 @@ import {
  * Common contract implemented by every AI provider adapter.
  *
  * The application depends on this interface instead of depending
- * directly on provider-specific SDK contracts such as OpenAI,
- * Anthropic, or Google Gemini.
+ * directly on provider-specific SDK contracts such as OpenRouter, Groq, or Google Gemini
  *
  * Each adapter is responsible for:
  * - Translating the normalized input into the provider SDK format.

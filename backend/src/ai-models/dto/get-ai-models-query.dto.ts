@@ -23,9 +23,9 @@ export class GetAiModelsQueryDto extends ListQueryDto {
    * Optional provider filter.
    *
    * Examples:
-   * - OPENAI
-   * - ANTHROPIC
    * - GOOGLE
+   * - GROQ
+   * - OPENROUTER
    */
   @IsOptional()
   @IsEnum(AiProviderType)
