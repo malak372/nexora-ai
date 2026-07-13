@@ -19,7 +19,7 @@ import { PaymentWebhookInput } from '../types/payment-webhook-input.type';
  * - Normalizing provider responses into internal payment contracts.
  *
  * This keeps the application services independent from Stripe, PayPal,
- * PalPay, or any future payment provider.
+ * or any future payment provider.
  *
  * @author Eman
  */

@@ -33,7 +33,6 @@ export type CreatePaymentSessionInput = {
    * external provider:
    * - CARD to Stripe.
    * - PAYPAL to PayPal.
-   * - PALPAY to PalPay.
    */
   paymentMethod: PaymentMethod;
 

@@ -770,9 +770,6 @@ export class PaymentCheckoutService {
       case PaymentMethod.PAYPAL:
         return PaymentProvider.PAYPAL;
 
-      case PaymentMethod.PALPAY:
-        return PaymentProvider.PALPAY;
-
       default:
         throw new PaymentProcessingError(
           PaymentErrorCode.UNSUPPORTED_PAYMENT_METHOD,

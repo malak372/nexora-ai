@@ -44,9 +44,6 @@ import { UserPaymentsService } from './services/user-payments.service';
  * - Stripe.
  * - PayPal.
  *
- * PalPay remains disabled until its official merchant API
- * documentation and credentials are available.
- *
  * @author Eman
  */
 @Module({
@@ -110,4 +107,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule {}
+export class PaymentsModule { }
