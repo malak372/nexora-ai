@@ -1,7 +1,4 @@
-import {
-  ComplaintPriority,
-  ComplaintStatus,
-} from '@prisma/client';
+import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
 import {
   IsEnum,

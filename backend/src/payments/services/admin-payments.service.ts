@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import {
-  PaymentPurpose,
-  PaymentStatus,
-  Prisma,
-} from '@prisma/client';
+import { PaymentPurpose, PaymentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -42,9 +38,7 @@ import { GetAdminPaymentsQueryDto } from '../dto/get-admin-payments-query.dto';
  */
 @Injectable()
 export class AdminPaymentsService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Shared selection used by payment list operations.
@@ -81,15 +75,8 @@ export class AdminPaymentsService {
   /**
    * Retrieves paginated payment records.
    */
-  async getPayments(
-    query: GetAdminPaymentsQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getPayments(query: GetAdminPaymentsQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildPaymentsWhere(query);
 
@@ -124,23 +111,16 @@ export class AdminPaymentsService {
       data: payments.map((payment) => ({
         ...payment,
 
-        amount: toNumber(
-          payment.amount,
-        ),
+        amount: toNumber(payment.amount),
 
-        creditPriceAtPurchase: toNumber(
-          payment.creditPriceAtPurchase,
-        ),
+        creditPriceAtPurchase: toNumber(payment.creditPriceAtPurchase),
       })),
 
       meta: {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -148,9 +128,7 @@ export class AdminPaymentsService {
   /**
    * Retrieves payment summary statistics.
    */
-  async getPaymentsSummary(
-    query: GetAdminPaymentsQueryDto,
-  ) {
+  async getPaymentsSummary(query: GetAdminPaymentsQueryDto) {
     const where = this.buildPaymentsWhere(query);
 
     const [
@@ -223,8 +201,7 @@ export class AdminPaymentsService {
         where: {
           ...where,
           status: PaymentStatus.SUCCESS,
-          paymentPurpose:
-            PaymentPurpose.BUY_CREDITS,
+          paymentPurpose: PaymentPurpose.BUY_CREDITS,
         },
 
         _sum: {
@@ -235,16 +212,14 @@ export class AdminPaymentsService {
       this.prisma.payment.count({
         where: {
           ...where,
-          paymentPurpose:
-            PaymentPurpose.BUY_CREDITS,
+          paymentPurpose: PaymentPurpose.BUY_CREDITS,
         },
       }),
 
       this.prisma.payment.count({
         where: {
           ...where,
-          paymentPurpose:
-            PaymentPurpose.DIRECT_UNLOCK,
+          paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
         },
       }),
     ]);
@@ -256,17 +231,11 @@ export class AdminPaymentsService {
       pendingPayments,
       refundedPayments,
 
-      totalRevenue: toNumber(
-        revenueAggregate._sum.amount,
-      ),
+      totalRevenue: toNumber(revenueAggregate._sum.amount),
 
-      totalRefunds: toNumber(
-        refundsAggregate._sum.amount,
-      ),
+      totalRefunds: toNumber(refundsAggregate._sum.amount),
 
-      creditsSold:
-        creditsSoldAggregate._sum.creditsAmount ??
-        0,
+      creditsSold: creditsSoldAggregate._sum.creditsAmount ?? 0,
 
       creditPurchasePayments,
       directUnlockPayments,
@@ -276,9 +245,7 @@ export class AdminPaymentsService {
   /**
    * Retrieves chart-ready payment analytics.
    */
-  async getPaymentsCharts(
-    query: GetAdminPaymentsQueryDto,
-  ) {
+  async getPaymentsCharts(query: GetAdminPaymentsQueryDto) {
     const where = this.buildPaymentsWhere(query);
 
     const [
@@ -370,9 +337,7 @@ export class AdminPaymentsService {
       }),
     ]);
 
-    const userIds = topPayingUsers.map(
-      (item) => item.userId,
-    );
+    const userIds = topPayingUsers.map((item) => item.userId);
 
     const users = await this.prisma.user.findMany({
       where: {
@@ -388,82 +353,54 @@ export class AdminPaymentsService {
       },
     });
 
-    const userMap = new Map(
-      users.map((user) => [
-        user.id,
-        user,
-      ]),
-    );
+    const userMap = new Map(users.map((user) => [user.id, user]));
 
     return {
-      paymentsByStatus:
-        paymentsByStatus.map((item) => ({
-          label: item.status,
-          status: item.status,
-          count: item._count.status,
+      paymentsByStatus: paymentsByStatus.map((item) => ({
+        label: item.status,
+        status: item.status,
+        count: item._count.status,
 
-          totalAmount: toNumber(
-            item._sum.amount,
-          ),
-        })),
+        totalAmount: toNumber(item._sum.amount),
+      })),
 
-      paymentsByMethod:
-        paymentsByMethod.map((item) => ({
-          label: item.paymentMethod,
-          paymentMethod:
-            item.paymentMethod,
-          count:
-            item._count.paymentMethod,
+      paymentsByMethod: paymentsByMethod.map((item) => ({
+        label: item.paymentMethod,
+        paymentMethod: item.paymentMethod,
+        count: item._count.paymentMethod,
 
-          totalAmount: toNumber(
-            item._sum.amount,
-          ),
-        })),
+        totalAmount: toNumber(item._sum.amount),
+      })),
 
-      paymentsByPurpose:
-        paymentsByPurpose.map((item) => ({
-          label: item.paymentPurpose,
-          paymentPurpose:
-            item.paymentPurpose,
-          count:
-            item._count.paymentPurpose,
+      paymentsByPurpose: paymentsByPurpose.map((item) => ({
+        label: item.paymentPurpose,
+        paymentPurpose: item.paymentPurpose,
+        count: item._count.paymentPurpose,
 
-          totalAmount: toNumber(
-            item._sum.amount,
-          ),
-        })),
+        totalAmount: toNumber(item._sum.amount),
+      })),
 
-      topPayingUsers:
-        topPayingUsers.map((item) => {
-          const user =
-            userMap.get(item.userId) ?? null;
+      topPayingUsers: topPayingUsers.map((item) => {
+        const user = userMap.get(item.userId) ?? null;
 
-          return {
-            label:
-              user?.fullName ??
-              user?.email ??
-              'Unknown User',
+        return {
+          label: user?.fullName ?? user?.email ?? 'Unknown User',
 
-            userId: item.userId,
-            user,
+          userId: item.userId,
+          user,
 
-            paymentsCount:
-              item._count.userId,
+          paymentsCount: item._count.userId,
 
-            totalPaid: toNumber(
-              item._sum.amount,
-            ),
-          };
-        }),
+          totalPaid: toNumber(item._sum.amount),
+        };
+      }),
     };
   }
 
   /**
    * Exports filtered payment records as CSV.
    */
-  async exportPaymentsCsv(
-    query: GetAdminPaymentsQueryDto,
-  ) {
+  async exportPaymentsCsv(query: GetAdminPaymentsQueryDto) {
     const where = this.buildPaymentsWhere(query);
 
     const orderBy = buildOrderBy(
@@ -479,12 +416,11 @@ export class AdminPaymentsService {
       'createdAt',
     );
 
-    const payments =
-      await this.prisma.payment.findMany({
-        where,
-        orderBy,
-        select: this.paymentSelect,
-      });
+    const payments = await this.prisma.payment.findMany({
+      where,
+      orderBy,
+      select: this.paymentSelect,
+    });
 
     const headers = [
       'Payment ID',
@@ -515,19 +451,14 @@ export class AdminPaymentsService {
       payment.paymentPurpose,
       payment.status,
       payment.creditsAmount,
-      toNumber(
-        payment.creditPriceAtPurchase,
-      ),
+      toNumber(payment.creditPriceAtPurchase),
       payment.transactionReference ?? '',
       payment.idea?.id ?? '',
       payment.idea?.title ?? '',
       payment.createdAt.toISOString(),
     ]);
 
-    return buildCsv(
-      headers,
-      rows,
-    );
+    return buildCsv(headers, rows);
   }
 
   /**
@@ -539,27 +470,15 @@ export class AdminPaymentsService {
     return {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildExactFilter(
-        'status',
-        query.status,
-      ) ?? {}),
+      ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentPurpose',
-        query.purpose,
-      ) ?? {}),
+      ...(buildExactFilter('paymentPurpose', query.purpose) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentMethod',
-        query.method,
-      ) ?? {}),
+      ...(buildExactFilter('paymentMethod', query.method) ?? {}),
 
       ...(buildRelationSearchFilter(
         'user',
-        [
-          'fullName',
-          'email',
-        ],
+        ['fullName', 'email'],
         query.search,
       ) ?? {}),
     };

@@ -34,15 +34,11 @@ import { AdminComplaintsService } from '../services/admin-complaints.service';
  * @author Malak
  */
 @Controller('admin/complaints')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminComplaintsController {
   constructor(
-    private readonly adminComplaintsService:
-      AdminComplaintsService,
+    private readonly adminComplaintsService: AdminComplaintsService,
   ) {}
 
   /**
@@ -51,12 +47,8 @@ export class AdminComplaintsController {
    * GET /admin/complaints
    */
   @Get()
-  getComplaints(
-    @Query() query: GetAdminComplaintsQueryDto,
-  ) {
-    return this.adminComplaintsService.getComplaints(
-      query,
-    );
+  getComplaints(@Query() query: GetAdminComplaintsQueryDto) {
+    return this.adminComplaintsService.getComplaints(query);
   }
 
   /**
@@ -65,11 +57,8 @@ export class AdminComplaintsController {
    * GET /admin/complaints/summary
    */
   @Get('summary')
-  getComplaintsSummary(
-    @Query() query: GetAdminComplaintsQueryDto,
-  ) {
-    return this.adminComplaintsService
-      .getComplaintsSummary(query);
+  getComplaintsSummary(@Query() query: GetAdminComplaintsQueryDto) {
+    return this.adminComplaintsService.getComplaintsSummary(query);
   }
 
   /**
@@ -78,11 +67,8 @@ export class AdminComplaintsController {
    * GET /admin/complaints/charts
    */
   @Get('charts')
-  getComplaintsCharts(
-    @Query() query: GetAdminComplaintsQueryDto,
-  ) {
-    return this.adminComplaintsService
-      .getComplaintsCharts(query);
+  getComplaintsCharts(@Query() query: GetAdminComplaintsQueryDto) {
+    return this.adminComplaintsService.getComplaintsCharts(query);
   }
 
   /**
@@ -91,19 +77,10 @@ export class AdminComplaintsController {
    * GET /admin/complaints/export/csv
    */
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="complaints.csv"',
-  )
-  exportComplaintsCsv(
-    @Query() query: GetAdminComplaintsQueryDto,
-  ) {
-    return this.adminComplaintsService
-      .exportComplaintsCsv(query);
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="complaints.csv"')
+  exportComplaintsCsv(@Query() query: GetAdminComplaintsQueryDto) {
+    return this.adminComplaintsService.exportComplaintsCsv(query);
   }
 
   /**

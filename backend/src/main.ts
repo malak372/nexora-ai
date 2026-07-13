@@ -4,7 +4,14 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    /**
+     * Preserves the original request body for providers
+     * that require raw-body signature verification,
+     * such as Stripe webhooks.
+     */
+    rawBody: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -14,8 +21,8 @@ async function bootstrap(): Promise<void> {
       whitelist: true,
 
       /**
-       * Rejects the request instead of silently removing unknown
-       * properties.
+       * Rejects the request instead of silently removing
+       * unknown properties.
        */
       forbidNonWhitelisted: true,
 

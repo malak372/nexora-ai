@@ -34,15 +34,11 @@ import { AdminContactMessagesService } from '../services/admin-contact-messages.
  * @author Malak
  */
 @Controller('admin/contact-messages')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminContactMessagesController {
   constructor(
-    private readonly adminContactMessagesService:
-      AdminContactMessagesService,
+    private readonly adminContactMessagesService: AdminContactMessagesService,
   ) {}
 
   /**
@@ -51,11 +47,8 @@ export class AdminContactMessagesController {
    * GET /admin/contact-messages
    */
   @Get()
-  getContactMessages(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.adminContactMessagesService
-      .getContactMessages(query);
+  getContactMessages(@Query() query: GetContactMessagesQueryDto) {
+    return this.adminContactMessagesService.getContactMessages(query);
   }
 
   /**
@@ -64,11 +57,8 @@ export class AdminContactMessagesController {
    * GET /admin/contact-messages/summary
    */
   @Get('summary')
-  getContactMessagesSummary(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.adminContactMessagesService
-      .getContactMessagesSummary(query);
+  getContactMessagesSummary(@Query() query: GetContactMessagesQueryDto) {
+    return this.adminContactMessagesService.getContactMessagesSummary(query);
   }
 
   /**
@@ -77,11 +67,8 @@ export class AdminContactMessagesController {
    * GET /admin/contact-messages/charts
    */
   @Get('charts')
-  getContactMessagesCharts(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.adminContactMessagesService
-      .getContactMessagesCharts(query);
+  getContactMessagesCharts(@Query() query: GetContactMessagesQueryDto) {
+    return this.adminContactMessagesService.getContactMessagesCharts(query);
   }
 
   /**
@@ -90,19 +77,10 @@ export class AdminContactMessagesController {
    * GET /admin/contact-messages/export/csv
    */
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="contact-messages.csv"',
-  )
-  exportContactMessagesCsv(
-    @Query() query: GetContactMessagesQueryDto,
-  ) {
-    return this.adminContactMessagesService
-      .exportContactMessagesCsv(query);
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="contact-messages.csv"')
+  exportContactMessagesCsv(@Query() query: GetContactMessagesQueryDto) {
+    return this.adminContactMessagesService.exportContactMessagesCsv(query);
   }
 
   /**
@@ -124,11 +102,10 @@ export class AdminContactMessagesController {
 
     @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.adminContactMessagesService
-      .updateContactMessage(
-        contactMessageId,
-        body,
-        admin.id,
-      );
+    return this.adminContactMessagesService.updateContactMessage(
+      contactMessageId,
+      body,
+      admin.id,
+    );
   }
 }

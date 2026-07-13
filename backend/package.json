@@ -51,6 +51,7 @@
     "reflect-metadata": "^0.2.2",
     "rss-parser": "^3.13.0",
     "rxjs": "^7.8.1",
+    "stripe": "^22.3.1",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   },

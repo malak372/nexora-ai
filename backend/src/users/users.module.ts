@@ -19,7 +19,6 @@ import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
 
-
 /**
  * User management module.
  *

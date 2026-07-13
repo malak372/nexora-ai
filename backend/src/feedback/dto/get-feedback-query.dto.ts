@@ -1,12 +1,6 @@
 import { Type } from 'class-transformer';
 
-import {
-  IsInt,
-  IsOptional,
-  IsUUID,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 

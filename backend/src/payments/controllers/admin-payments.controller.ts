@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -26,16 +20,10 @@ import { AdminPaymentsService } from '../services/admin-payments.service';
  * @author Malak
  */
 @Controller('admin/payments')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminPaymentsController {
-  constructor(
-    private readonly adminPaymentsService:
-      AdminPaymentsService,
-  ) {}
+  constructor(private readonly adminPaymentsService: AdminPaymentsService) {}
 
   /**
    * Retrieves paginated payment records.
@@ -47,8 +35,7 @@ export class AdminPaymentsController {
     @Query()
     query: GetAdminPaymentsQueryDto,
   ) {
-    return this.adminPaymentsService
-      .getPayments(query);
+    return this.adminPaymentsService.getPayments(query);
   }
 
   /**
@@ -61,8 +48,7 @@ export class AdminPaymentsController {
     @Query()
     query: GetAdminPaymentsQueryDto,
   ) {
-    return this.adminPaymentsService
-      .getPaymentsSummary(query);
+    return this.adminPaymentsService.getPaymentsSummary(query);
   }
 
   /**
@@ -75,8 +61,7 @@ export class AdminPaymentsController {
     @Query()
     query: GetAdminPaymentsQueryDto,
   ) {
-    return this.adminPaymentsService
-      .getPaymentsCharts(query);
+    return this.adminPaymentsService.getPaymentsCharts(query);
   }
 
   /**
@@ -85,19 +70,12 @@ export class AdminPaymentsController {
    * GET /admin/payments/export/csv
    */
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="payments-report.csv"',
-  )
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="payments-report.csv"')
   exportPaymentsCsv(
     @Query()
     query: GetAdminPaymentsQueryDto,
   ) {
-    return this.adminPaymentsService
-      .exportPaymentsCsv(query);
+    return this.adminPaymentsService.exportPaymentsCsv(query);
   }
 }

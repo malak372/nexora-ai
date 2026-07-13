@@ -1,81 +1,113 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
+import { CreditsModule } from '../credits/credits.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
+import { PAYMENT_GATEWAYS } from './constants/payment-gateway.tokens';
+
 import { AdminPaymentsController } from './controllers/admin-payments.controller';
+import { PaymentsController } from './controllers/payments.controller';
+import { PaymentWebhooksController } from './controllers/payment-webhooks.controller';
 import { UserPaymentsController } from './controllers/user-payments.controller';
 
+import { PayPalPaymentGateway } from './gateways/paypal-payment.gateway';
+import { PaymentGatewayFactory } from './gateways/payment-gateway.factory';
+import type { PaymentGateway } from './gateways/payment-gateway.interface';
+import { StripePaymentGateway } from './gateways/stripe-payment.gateway';
+
 import { AdminPaymentsService } from './services/admin-payments.service';
+import { CreditPurchaseService } from './services/credit-purchase.service';
+import { DirectUnlockPaymentService } from './services/direct-unlock-payment.service';
+import { PaymentCheckoutService } from './services/payment-checkout.service';
+import { PaymentProcessingService } from './services/payment-processing.service';
+import { PaymentWebhookService } from './services/payment-webhook.service';
 import { UserPaymentsService } from './services/user-payments.service';
 
 /**
- * Shared payments domain module.
+ * Shared payment-domain module.
  *
- * Provides:
- * - Authenticated-user payment history and analytics.
- * - Administrator payment monitoring and reports.
- * - Payment processing.
- * - Gateway integration.
- * - Payment fulfillment.
- * - Refund processing.
- * - Webhook handling.
+ * Responsibilities:
+ * - Provide authenticated-user payment history and analytics.
+ * - Provide administrator payment monitoring and reports.
+ * - Create external checkout sessions.
+ * - Process verified payment confirmations.
+ * - Fulfill successful credit purchases.
+ * - Fulfill successful direct idea-unlock payments.
+ * - Receive and verify provider webhook events.
+ * - Resolve provider-specific payment gateways.
  *
- * Reporting services remain separated from payment-processing
- * and gateway services.
+ * Credit-balance mutations and cache invalidation are delegated
+ * to CreditsModule.
  *
- * @author Malak
+ * Enabled payment gateways:
+ * - Stripe.
+ * - PayPal.
+ *
+ * PalPay remains disabled until its official merchant API
+ * documentation and credentials are available.
+ *
+ * @author Eman
  */
 @Module({
   imports: [
+    ConfigModule,
     PrismaModule,
-
-    /*
-     * Keep all existing module imports here, such as:
-     * CreditsModule,
-     * AlertsModule,
-     * AuditModule,
-     * MailModule,
-     * HttpModule,
-     * ConfigModule.
-     */
+    CreditsModule,
   ],
 
   controllers: [
     UserPaymentsController,
+    PaymentsController,
     AdminPaymentsController,
-
-    /*
-     * Keep existing controllers such as:
-     * PaymentController,
-     * PaymentWebhookController,
-     * PaymentCallbackController.
-     */
+    PaymentWebhooksController,
   ],
 
   providers: [
     UserPaymentsService,
     AdminPaymentsService,
 
-    /*
-     * Keep all existing payment providers, such as:
-     * PaymentProcessingService,
-     * PaymentCreationService,
-     * PaymentFulfillmentService,
-     * PaymentRefundService,
-     * CardPaymentGateway,
-     * PaypalPaymentGateway,
-     * PalPayPaymentGateway.
+    CreditPurchaseService,
+    DirectUnlockPaymentService,
+
+    PaymentCheckoutService,
+    PaymentProcessingService,
+    PaymentWebhookService,
+
+    StripePaymentGateway,
+    PayPalPaymentGateway,
+
+    /**
+     * Registers all enabled payment gateways as one collection.
+     *
+     * New gateways can be added here without changing
+     * PaymentGatewayFactory or payment business services.
      */
+    {
+      provide: PAYMENT_GATEWAYS,
+
+      inject: [
+        StripePaymentGateway,
+        PayPalPaymentGateway,
+      ],
+
+      useFactory: (
+        stripePaymentGateway: StripePaymentGateway,
+        payPalPaymentGateway: PayPalPaymentGateway,
+      ): readonly PaymentGateway[] => [
+          stripePaymentGateway,
+          payPalPaymentGateway,
+        ],
+    },
+
+    PaymentGatewayFactory,
   ],
 
   exports: [
-    /*
-     * Keep existing exported payment services.
-     *
-     * UserPaymentsService and AdminPaymentsService normally
-     * do not need to be exported because their controllers
-     * are located inside this module.
-     */
+    PaymentCheckoutService,
+    PaymentProcessingService,
+    PaymentWebhookService,
+    PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule {}
+export class PaymentsModule { }

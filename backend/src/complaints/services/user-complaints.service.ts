@@ -1,18 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 import type { Cache } from 'cache-manager';
 
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -85,52 +77,43 @@ export class UserComplaintsService {
   /**
    * Creates a new complaint for one authenticated user.
    */
-  async createComplaint(
-    userId: string,
-    dto: CreateUserComplaintDto,
-  ) {
+  async createComplaint(userId: string, dto: CreateUserComplaintDto) {
     await this.ensureUserExists(userId);
 
     if (dto.ideaId) {
-      await this.ensureUserOwnsIdea(
-        userId,
-        dto.ideaId,
-      );
+      await this.ensureUserOwnsIdea(userId, dto.ideaId);
     }
 
-    const complaint = await this.prisma.$transaction(
-      async (tx) => {
-        const createdComplaint =
-          await tx.complaint.create({
-            data: {
-              userId,
-              ideaId: dto.ideaId,
-              subject: dto.subject,
-              message: dto.message,
-            },
+    const complaint = await this.prisma.$transaction(async (tx) => {
+      const createdComplaint = await tx.complaint.create({
+        data: {
+          userId,
+          ideaId: dto.ideaId,
+          subject: dto.subject,
+          message: dto.message,
+        },
 
-            select: this.complaintSelect,
-          });
+        select: this.complaintSelect,
+      });
 
-        await this.auditService.createLog(
-          {
-            actorId: userId,
-            action: AuditAction.USER_CREATE_COMPLAINT,
-            targetType: AuditTargetType.COMPLAINT,
-            targetId: createdComplaint.id,
+      await this.auditService.createLog(
+        {
+          actorId: userId,
+          action: AuditAction.USER_CREATE_COMPLAINT,
+          targetType: AuditTargetType.COMPLAINT,
+          targetId: createdComplaint.id,
 
-            newValue: {
-              subject: createdComplaint.subject,
-              ideaId: createdComplaint.ideaId,
-              status: createdComplaint.status,
-            },
+          newValue: {
+            subject: createdComplaint.subject,
+            ideaId: createdComplaint.ideaId,
+            status: createdComplaint.status,
           },
-          tx,
-        );
+        },
+        tx,
+      );
 
-        return createdComplaint;
-      },
-    );
+      return createdComplaint;
+    });
 
     await this.invalidateComplaintCaches(userId);
 
@@ -140,18 +123,10 @@ export class UserComplaintsService {
   /**
    * Returns complaints belonging to the authenticated user.
    */
-  async getComplaints(
-    userId: string,
-    query: GetUserComplaintsQueryDto,
-  ) {
+  async getComplaints(userId: string, query: GetUserComplaintsQueryDto) {
     await this.ensureUserExists(userId);
 
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where: Prisma.ComplaintWhereInput = {
       userId,
@@ -159,33 +134,18 @@ export class UserComplaintsService {
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildSearchFilter(
-        [
-          'subject',
-          'message',
-          'adminReply',
-        ],
+        ['subject', 'message', 'adminReply'],
         query.search,
       ) ?? {}),
 
-      ...(buildExactFilter(
-        'status',
-        query.status,
-      ) ?? {}),
+      ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter(
-        'priority',
-        query.priority,
-      ) ?? {}),
+      ...(buildExactFilter('priority', query.priority) ?? {}),
     };
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'createdAt',
-        'updatedAt',
-        'status',
-        'priority',
-      ] as const,
+      ['createdAt', 'updatedAt', 'status', 'priority'] as const,
       'createdAt',
     );
 
@@ -218,26 +178,20 @@ export class UserComplaintsService {
   /**
    * Returns one complaint belonging to the authenticated user.
    */
-  async getComplaintById(
-    userId: string,
-    complaintId: string,
-  ) {
+  async getComplaintById(userId: string, complaintId: string) {
     await this.ensureUserExists(userId);
 
-    const complaint =
-      await this.prisma.complaint.findFirst({
-        where: {
-          id: complaintId,
-          userId,
-        },
+    const complaint = await this.prisma.complaint.findFirst({
+      where: {
+        id: complaintId,
+        userId,
+      },
 
-        select: this.complaintSelect,
-      });
+      select: this.complaintSelect,
+    });
 
     if (!complaint) {
-      throw new NotFoundException(
-        'Complaint not found',
-      );
+      throw new NotFoundException('Complaint not found');
     }
 
     return complaint;
@@ -246,9 +200,7 @@ export class UserComplaintsService {
   /**
    * Ensures that the authenticated user still exists.
    */
-  private async ensureUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -260,9 +212,7 @@ export class UserComplaintsService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found',
-      );
+      throw new NotFoundException('User not found');
     }
   }
 
@@ -285,26 +235,18 @@ export class UserComplaintsService {
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Related idea not found',
-      );
+      throw new NotFoundException('Related idea not found');
     }
   }
 
   /**
    * Invalidates user caches affected by complaint creation.
    */
-  private async invalidateComplaintCaches(
-    userId: string,
-  ): Promise<void> {
+  private async invalidateComplaintCaches(userId: string): Promise<void> {
     await Promise.all([
-      this.cacheManager.del(
-        userCacheKeys.summary(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.summary(userId)),
 
-      this.cacheManager.del(
-        userCacheKeys.activity(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.activity(userId)),
     ]);
   }
 }

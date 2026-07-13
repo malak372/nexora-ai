@@ -28,10 +28,7 @@ import { UserFeedbackService } from '../services/user-feedback.service';
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UserFeedbackController {
-  constructor(
-    private readonly userFeedbackService:
-      UserFeedbackService,
-  ) {}
+  constructor(private readonly userFeedbackService: UserFeedbackService) {}
 
   /**
    * Creates or updates feedback for one owned idea.
@@ -52,11 +49,7 @@ export class UserFeedbackController {
 
     @Body() dto: UpsertIdeaFeedbackDto,
   ) {
-    return this.userFeedbackService.upsertFeedback(
-      user.id,
-      ideaId,
-      dto,
-    );
+    return this.userFeedbackService.upsertFeedback(user.id, ideaId, dto);
   }
 
   /**
@@ -76,10 +69,7 @@ export class UserFeedbackController {
     )
     ideaId: string,
   ) {
-    return this.userFeedbackService.getFeedbackByIdea(
-      user.id,
-      ideaId,
-    );
+    return this.userFeedbackService.getFeedbackByIdea(user.id, ideaId);
   }
 
   /**
@@ -88,11 +78,7 @@ export class UserFeedbackController {
    * GET /users/feedback
    */
   @Get('feedback')
-  getMyFeedback(
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.userFeedbackService.getMyFeedback(
-      user.id,
-    );
+  getMyFeedback(@CurrentUser() user: AuthenticatedUser) {
+    return this.userFeedbackService.getMyFeedback(user.id);
   }
 }

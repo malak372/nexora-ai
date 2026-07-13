@@ -50,11 +50,9 @@ export class AdminCreditsService {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly creditBalanceService:
-      CreditBalanceService,
+    private readonly creditBalanceService: CreditBalanceService,
 
-    private readonly creditCacheService:
-      CreditCacheService,
+    private readonly creditCacheService: CreditCacheService,
 
     private readonly auditService: AuditService,
   ) {}
@@ -99,44 +97,30 @@ export class AdminCreditsService {
   /**
    * Retrieves paginated credit transaction history.
    */
-  async getCreditHistory(
-    query: GetAdminCreditHistoryQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getCreditHistory(query: GetAdminCreditHistoryQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
-    const where =
-      this.buildCreditHistoryWhere(query);
+    const where = this.buildCreditHistoryWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'amount',
-        'balanceAfter',
-        'type',
-        'createdAt',
-      ] as const,
+      ['amount', 'balanceAfter', 'type', 'createdAt'] as const,
       'createdAt',
     );
 
-    const [transactions, total] =
-      await Promise.all([
-        this.prisma.creditTransaction.findMany({
-          where,
-          skip,
-          take,
-          orderBy,
-          select: this.creditTransactionSelect,
-        }),
+    const [transactions, total] = await Promise.all([
+      this.prisma.creditTransaction.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        select: this.creditTransactionSelect,
+      }),
 
-        this.prisma.creditTransaction.count({
-          where,
-        }),
-      ]);
+      this.prisma.creditTransaction.count({
+        where,
+      }),
+    ]);
 
     return {
       data: transactions,
@@ -145,8 +129,7 @@ export class AdminCreditsService {
         page,
         limit,
         total,
-        totalPages:
-          calculateTotalPages(total, limit),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -154,11 +137,8 @@ export class AdminCreditsService {
   /**
    * Retrieves credit summary statistics.
    */
-  async getCreditsSummary(
-    query: GetAdminCreditHistoryQueryDto,
-  ) {
-    const where =
-      this.buildCreditHistoryWhere(query);
+  async getCreditsSummary(query: GetAdminCreditHistoryQueryDto) {
+    const where = this.buildCreditHistoryWhere(query);
 
     const [
       totalTransactions,
@@ -172,38 +152,22 @@ export class AdminCreditsService {
         where,
       }),
 
-      this.sumCreditsByType(
-        where,
-        CreditTransactionType.PURCHASE,
-      ),
+      this.sumCreditsByType(where, CreditTransactionType.PURCHASE),
 
-      this.sumCreditsByType(
-        where,
-        CreditTransactionType.BONUS,
-      ),
+      this.sumCreditsByType(where, CreditTransactionType.BONUS),
 
-      this.sumCreditsByType(
-        where,
-        CreditTransactionType.DEDUCTION_GENERATION,
-      ),
+      this.sumCreditsByType(where, CreditTransactionType.DEDUCTION_GENERATION),
 
-      this.sumCreditsByType(
-        where,
-        CreditTransactionType.REFUND,
-      ),
+      this.sumCreditsByType(where, CreditTransactionType.REFUND),
 
-      this.sumCreditsByType(
-        where,
-        CreditTransactionType.ADMIN_ADJUSTMENT,
-      ),
+      this.sumCreditsByType(where, CreditTransactionType.ADMIN_ADJUSTMENT),
     ]);
 
     return {
       totalTransactions,
       purchasedCredits,
       bonusCredits,
-      deductedCredits:
-        Math.abs(deductedCredits),
+      deductedCredits: Math.abs(deductedCredits),
       refundedCredits,
       adminAdjustments,
     };
@@ -213,70 +177,55 @@ export class AdminCreditsService {
    * Retrieves chart-ready analytics grouped by
    * credit transaction type.
    */
-  async getCreditsCharts(
-    query: GetAdminCreditHistoryQueryDto,
-  ) {
-    const where =
-      this.buildCreditHistoryWhere(query);
+  async getCreditsCharts(query: GetAdminCreditHistoryQueryDto) {
+    const where = this.buildCreditHistoryWhere(query);
 
-    const transactionsByType =
-      await this.prisma.creditTransaction.groupBy({
-        by: ['type'],
-        where,
+    const transactionsByType = await this.prisma.creditTransaction.groupBy({
+      by: ['type'],
+      where,
 
+      _count: {
+        type: true,
+      },
+
+      _sum: {
+        amount: true,
+      },
+
+      orderBy: {
         _count: {
-          type: true,
+          type: 'desc',
         },
-
-        _sum: {
-          amount: true,
-        },
-
-        orderBy: {
-          _count: {
-            type: 'desc',
-          },
-        },
-      });
+      },
+    });
 
     return {
-      transactionsByType:
-        transactionsByType.map((item) => ({
-          label: item.type,
-          type: item.type,
-          count: item._count.type,
-          totalAmount:
-            item._sum.amount ?? 0,
-        })),
+      transactionsByType: transactionsByType.map((item) => ({
+        label: item.type,
+        type: item.type,
+        count: item._count.type,
+        totalAmount: item._sum.amount ?? 0,
+      })),
     };
   }
 
   /**
    * Exports filtered credit transactions as CSV.
    */
-  async exportCreditsCsv(
-    query: GetAdminCreditHistoryQueryDto,
-  ) {
-    const where =
-      this.buildCreditHistoryWhere(query);
+  async exportCreditsCsv(query: GetAdminCreditHistoryQueryDto) {
+    const where = this.buildCreditHistoryWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'amount',
-        'balanceAfter',
-        'type',
-        'createdAt',
-      ] as const,
+      ['amount', 'balanceAfter', 'type', 'createdAt'] as const,
       'createdAt',
     );
 
-    const transactions =
-      await this.prisma.creditTransaction.findMany({
-        where,
-        orderBy,
-        select: this.creditTransactionSelect,
-      });
+    const transactions = await this.prisma.creditTransaction.findMany({
+      where,
+      orderBy,
+      select: this.creditTransactionSelect,
+    });
 
     const headers = [
       'Transaction ID',
@@ -296,30 +245,25 @@ export class AdminCreditsService {
       'Created At',
     ];
 
-    const rows = transactions.map(
-      (transaction) => [
-        transaction.id,
-        transaction.user.id,
-        transaction.user.fullName,
-        transaction.user.email,
-        transaction.type,
-        transaction.amount,
-        transaction.balanceAfter,
-        transaction.description ?? '',
-        transaction.payment?.id ?? '',
-        transaction.payment?.amount ?? '',
-        transaction.payment?.paymentMethod ?? '',
-        transaction.payment?.status ?? '',
-        transaction.idea?.id ?? '',
-        transaction.idea?.title ?? '',
-        transaction.createdAt.toISOString(),
-      ],
-    );
+    const rows = transactions.map((transaction) => [
+      transaction.id,
+      transaction.user.id,
+      transaction.user.fullName,
+      transaction.user.email,
+      transaction.type,
+      transaction.amount,
+      transaction.balanceAfter,
+      transaction.description ?? '',
+      transaction.payment?.id ?? '',
+      transaction.payment?.amount ?? '',
+      transaction.payment?.paymentMethod ?? '',
+      transaction.payment?.status ?? '',
+      transaction.idea?.id ?? '',
+      transaction.idea?.title ?? '',
+      transaction.createdAt.toISOString(),
+    ]);
 
-    return buildCsv(
-      headers,
-      rows,
-    );
+    return buildCsv(headers, rows);
   }
 
   /**
@@ -331,101 +275,81 @@ export class AdminCreditsService {
    * Credit-dependent caches are invalidated only after
    * the transaction completes successfully.
    */
-  async adjustUserCredits(
-    body: AdjustUserCreditsDto,
-    adminId: string,
-  ) {
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        const adjustment =
-          await this.creditBalanceService.adjustBalance({
+  async adjustUserCredits(body: AdjustUserCreditsDto, adminId: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const adjustment = await this.creditBalanceService.adjustBalance({
+        userId: body.userId,
+        amount: body.amount,
+        type: CreditTransactionType.ADMIN_ADJUSTMENT,
+        description: body.description.trim(),
+        tx,
+      });
+
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+
+          action: AuditAction.ADMIN_ADJUST_USER_CREDITS,
+
+          targetType: AuditTargetType.CREDIT_TRANSACTION,
+
+          targetId: adjustment.transaction.id,
+
+          oldValue: {
             userId: body.userId,
-            amount: body.amount,
-            type:
-              CreditTransactionType.ADMIN_ADJUSTMENT,
-            description:
-              body.description.trim(),
-            tx,
-          });
-
-        await this.auditService.createLog(
-          {
-            actorId: adminId,
-
-            action:
-              AuditAction.ADMIN_ADJUST_USER_CREDITS,
-
-            targetType:
-              AuditTargetType.CREDIT_TRANSACTION,
-
-            targetId:
-              adjustment.transaction.id,
-
-            oldValue: {
-              userId: body.userId,
-              creditBalance:
-                adjustment.previousBalance,
-              accountStatus:
-                adjustment.previousAccountStatus,
-            },
-
-            newValue: {
-              userId: body.userId,
-              creditBalance:
-                adjustment.balanceAfter,
-              accountStatus:
-                adjustment.accountStatus,
-              amount: body.amount,
-              description:
-                body.description.trim(),
-            },
+            creditBalance: adjustment.previousBalance,
+            accountStatus: adjustment.previousAccountStatus,
           },
-          tx,
-        );
 
-        const updatedUser =
-          await tx.user.findUniqueOrThrow({
-            where: {
-              id: body.userId,
-            },
+          newValue: {
+            userId: body.userId,
+            creditBalance: adjustment.balanceAfter,
+            accountStatus: adjustment.accountStatus,
+            amount: body.amount,
+            description: body.description.trim(),
+          },
+        },
+        tx,
+      );
 
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              role: true,
-              accountStatus: true,
-              creditBalance: true,
-              isActive: true,
-              isVerified: true,
-              userType: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          });
+      const updatedUser = await tx.user.findUniqueOrThrow({
+        where: {
+          id: body.userId,
+        },
 
-        return {
-          adjustment,
-          updatedUser,
-        };
-      },
-    );
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          creditBalance: true,
+          isActive: true,
+          isVerified: true,
+          userType: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return {
+        adjustment,
+        updatedUser,
+      };
+    });
 
     /*
      * Cache invalidation intentionally occurs after the
      * database transaction has committed successfully.
      */
-    await this.creditCacheService
-      .invalidateUserCreditCaches(body.userId);
+    await this.creditCacheService.invalidateUserCreditCaches(body.userId);
 
     return {
-      message:
-        'User credits adjusted successfully',
+      message: 'User credits adjusted successfully',
 
       user: result.updatedUser,
 
-      transaction:
-        result.adjustment.transaction,
+      transaction: result.adjustment.transaction,
     };
   }
 
@@ -438,10 +362,7 @@ export class AdminCreditsService {
     return {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildExactFilter(
-        'type',
-        query.type,
-      ) ?? {}),
+      ...(buildExactFilter('type', query.type) ?? {}),
 
       ...(buildRelationSearchFilter(
         'user',
@@ -459,17 +380,16 @@ export class AdminCreditsService {
     where: Prisma.CreditTransactionWhereInput,
     type: CreditTransactionType,
   ): Promise<number> {
-    const result =
-      await this.prisma.creditTransaction.aggregate({
-        where: {
-          ...where,
-          type,
-        },
+    const result = await this.prisma.creditTransaction.aggregate({
+      where: {
+        ...where,
+        type,
+      },
 
-        _sum: {
-          amount: true,
-        },
-      });
+      _sum: {
+        amount: true,
+      },
+    });
 
     return result._sum.amount ?? 0;
   }

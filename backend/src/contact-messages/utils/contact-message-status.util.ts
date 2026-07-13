@@ -13,10 +13,7 @@ export function isContactMessageReplied(
   status: ContactMessageStatus,
   adminReply: string | null,
 ): boolean {
-  return (
-    status === ContactMessageStatus.REPLIED ||
-    Boolean(adminReply?.trim())
-  );
+  return status === ContactMessageStatus.REPLIED || Boolean(adminReply?.trim());
 }
 
 /**
