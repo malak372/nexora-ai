@@ -33,7 +33,7 @@ export class GetAiLogsQueryDto extends ListQueryDto {
    * - REDDIT
    * - FACEBOOK
    * - PAYPAL
-   * - PALPAY
+   * - STRIPE
    */
   @IsOptional()
   @IsEnum(ApiProvider)

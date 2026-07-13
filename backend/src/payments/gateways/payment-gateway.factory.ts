@@ -21,7 +21,7 @@ import type { PaymentGateway } from './payment-gateway.interface';
  * - Reject unsupported providers using stable payment-domain errors.
  *
  * Application services depend on this factory instead of depending
- * directly on Stripe, PayPal, PalPay, or any future provider-specific
+ * directly on Stripe, PayPal, or any future provider-specific
  * gateway implementation.
  *
  * @author Eman
