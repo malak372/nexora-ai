@@ -1,8 +1,4 @@
-import {
-  Body,
-  Controller,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 
 import { CreateContactMessageDto } from '../dto/create-contact-message.dto';
 
@@ -21,8 +17,7 @@ import { ContactMessagesService } from '../services/contact-messages.service';
 @Controller('contact')
 export class ContactMessagesController {
   constructor(
-    private readonly contactMessagesService:
-      ContactMessagesService,
+    private readonly contactMessagesService: ContactMessagesService,
   ) {}
 
   /**
@@ -31,10 +26,7 @@ export class ContactMessagesController {
    * POST /contact
    */
   @Post()
-  createContactMessage(
-    @Body() body: CreateContactMessageDto,
-  ) {
-    return this.contactMessagesService
-      .createContactMessage(body);
+  createContactMessage(@Body() body: CreateContactMessageDto) {
+    return this.contactMessagesService.createContactMessage(body);
   }
 }

@@ -4,21 +4,18 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit-logs/audit-logs.module';
 
 import { UserProfileController } from './profile/profile.controller';
-import { UserIdeasController } from './ideas/ideas.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
 import { UserFavoritesController } from './favorites/favorites.controller';
 import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
 
 import { UserProfileService } from './profile/profile.service';
-import { UserIdeasService } from './ideas/ideas.service';
 import { UserValidationService } from './validation/validation.service';
 import { UserDashboardService } from './dashboard/dashboard.service';
 import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
-
 
 /**
  * User management module.
@@ -52,7 +49,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
   imports: [PrismaModule, AuditModule],
   controllers: [
     UserProfileController,
-    UserIdeasController,
     UserDashboardController,
     UserActivityController,
     UserFavoritesController,
@@ -62,7 +58,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserValidationService,
     UserPermissionsService,
     UserProfileService,
-    UserIdeasService,
     UserDashboardService,
     UserActivityService,
     UserFavoritesService,
@@ -72,7 +67,6 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserValidationService,
     UserPermissionsService,
     UserProfileService,
-    UserIdeasService,
     UserDashboardService,
     UserActivityService,
     UserFavoritesService,

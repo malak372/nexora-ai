@@ -1,7 +1,4 @@
-import {
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
@@ -47,21 +44,13 @@ export class CreditCacheService {
    *
    * @param userId User whose credit-related caches must be invalidated.
    */
-  async invalidateUserCreditCaches(
-    userId: string,
-  ): Promise<void> {
+  async invalidateUserCreditCaches(userId: string): Promise<void> {
     await Promise.all([
-      this.cacheManager.del(
-        userCacheKeys.credits(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.credits(userId)),
 
-      this.cacheManager.del(
-        userCacheKeys.summary(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.summary(userId)),
 
-      this.cacheManager.del(
-        userCacheKeys.activity(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.activity(userId)),
     ]);
   }
 }

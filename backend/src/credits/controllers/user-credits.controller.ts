@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -25,10 +20,7 @@ import { UserCreditsService } from '../services/user-credits.service';
 @Controller('users/credits')
 @UseGuards(JwtAuthGuard)
 export class UserCreditsController {
-  constructor(
-    private readonly userCreditsService:
-      UserCreditsService,
-  ) {}
+  constructor(private readonly userCreditsService: UserCreditsService) {}
 
   /**
    * Returns the current credit summary.
@@ -36,12 +28,8 @@ export class UserCreditsController {
    * GET /users/credits
    */
   @Get()
-  getCredits(
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.userCreditsService.getCredits(
-      user.id,
-    );
+  getCredits(@CurrentUser() user: AuthenticatedUser) {
+    return this.userCreditsService.getCredits(user.id);
   }
 
   /**
@@ -54,9 +42,6 @@ export class UserCreditsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetUserCreditHistoryQueryDto,
   ) {
-    return this.userCreditsService.getCreditHistory(
-      user.id,
-      query,
-    );
+    return this.userCreditsService.getCreditHistory(user.id, query);
   }
 }

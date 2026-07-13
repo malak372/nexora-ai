@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import {
   AuditAction,
@@ -57,25 +54,14 @@ export class AdminContactMessagesService {
   /**
    * Returns paginated contact messages.
    */
-  async getContactMessages(
-    query: GetContactMessagesQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getContactMessages(query: GetContactMessagesQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildContactMessagesWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'status',
-        'createdAt',
-        'updatedAt',
-      ] as const,
+      ['status', 'createdAt', 'updatedAt'] as const,
       'createdAt',
     );
 
@@ -119,10 +105,7 @@ export class AdminContactMessagesService {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -130,9 +113,7 @@ export class AdminContactMessagesService {
   /**
    * Returns contact-message summary statistics.
    */
-  async getContactMessagesSummary(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async getContactMessagesSummary(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
     const todayStart = new Date();
@@ -142,15 +123,9 @@ export class AdminContactMessagesService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const todayWhere = this.mergeCreatedAtGte(
-      where,
-      todayStart,
-    );
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
 
-    const monthWhere = this.mergeCreatedAtGte(
-      where,
-      monthStart,
-    );
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalMessages,
@@ -183,16 +158,14 @@ export class AdminContactMessagesService {
       this.prisma.contactMessage.count({
         where: {
           ...where,
-          status:
-            ContactMessageStatus.IN_PROGRESS,
+          status: ContactMessageStatus.IN_PROGRESS,
         },
       }),
 
       this.prisma.contactMessage.count({
         where: {
           ...where,
-          status:
-            ContactMessageStatus.REPLIED,
+          status: ContactMessageStatus.REPLIED,
         },
       }),
 
@@ -218,81 +191,69 @@ export class AdminContactMessagesService {
   /**
    * Returns chart-ready message counts grouped by status.
    */
-  async getContactMessagesCharts(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async getContactMessagesCharts(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
-    const messagesByStatus =
-      await this.prisma.contactMessage.groupBy({
-        by: ['status'],
-        where,
+    const messagesByStatus = await this.prisma.contactMessage.groupBy({
+      by: ['status'],
+      where,
 
+      _count: {
+        status: true,
+      },
+
+      orderBy: {
         _count: {
-          status: true,
+          status: 'desc',
         },
-
-        orderBy: {
-          _count: {
-            status: 'desc',
-          },
-        },
-      });
+      },
+    });
 
     return {
-      messagesByStatus: messagesByStatus.map(
-        (item) => ({
-          label: item.status,
-          status: item.status,
-          count: item._count.status,
-        }),
-      ),
+      messagesByStatus: messagesByStatus.map((item) => ({
+        label: item.status,
+        status: item.status,
+        count: item._count.status,
+      })),
     };
   }
 
   /**
    * Exports filtered contact messages as CSV.
    */
-  async exportContactMessagesCsv(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async exportContactMessagesCsv(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'status',
-        'createdAt',
-        'updatedAt',
-      ] as const,
+      ['status', 'createdAt', 'updatedAt'] as const,
       'createdAt',
     );
 
-    const messages =
-      await this.prisma.contactMessage.findMany({
-        where,
-        orderBy,
+    const messages = await this.prisma.contactMessage.findMany({
+      where,
+      orderBy,
 
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          subject: true,
-          message: true,
-          status: true,
-          adminReply: true,
-          createdAt: true,
-          updatedAt: true,
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        subject: true,
+        message: true,
+        status: true,
+        adminReply: true,
+        createdAt: true,
+        updatedAt: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
           },
         },
-      });
+      },
+    });
 
     const headers = [
       'Contact Message ID',
@@ -324,10 +285,7 @@ export class AdminContactMessagesService {
       message.updatedAt.toISOString(),
     ]);
 
-    return buildCsv(
-      headers,
-      rows,
-    );
+    return buildCsv(headers, rows);
   }
 
   /**
@@ -338,21 +296,17 @@ export class AdminContactMessagesService {
     body: UpdateContactMessageDto,
     adminId: string,
   ) {
-    const contactMessage =
-      await this.prisma.contactMessage.findUnique({
-        where: {
-          id: contactMessageId,
-        },
-      });
+    const contactMessage = await this.prisma.contactMessage.findUnique({
+      where: {
+        id: contactMessageId,
+      },
+    });
 
     if (!contactMessage) {
-      throw new NotFoundException(
-        'Contact message not found',
-      );
+      throw new NotFoundException('Contact message not found');
     }
 
-    const normalizedAdminReply =
-      body.adminReply?.trim();
+    const normalizedAdminReply = body.adminReply?.trim();
 
     const nextStatus = resolveContactMessageStatus(
       contactMessage.status,
@@ -360,9 +314,7 @@ export class AdminContactMessagesService {
       normalizedAdminReply,
     );
 
-    const nextAdminReply =
-      normalizedAdminReply ??
-      contactMessage.adminReply;
+    const nextAdminReply = normalizedAdminReply ?? contactMessage.adminReply;
 
     const hasChanges =
       nextStatus !== contactMessage.status ||
@@ -380,37 +332,36 @@ export class AdminContactMessagesService {
      * Preserve the existing behavior:
      * database update first, then email delivery, then audit log.
      */
-    const updatedContactMessage =
-      await this.prisma.contactMessage.update({
-        where: {
-          id: contactMessageId,
-        },
+    const updatedContactMessage = await this.prisma.contactMessage.update({
+      where: {
+        id: contactMessageId,
+      },
 
-        data: {
-          status: nextStatus,
-          adminReply: nextAdminReply,
-        },
+      data: {
+        status: nextStatus,
+        adminReply: nextAdminReply,
+      },
 
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          subject: true,
-          message: true,
-          status: true,
-          adminReply: true,
-          createdAt: true,
-          updatedAt: true,
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        subject: true,
+        message: true,
+        status: true,
+        adminReply: true,
+        createdAt: true,
+        updatedAt: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
           },
         },
-      });
+      },
+    });
 
     if (normalizedAdminReply) {
       await this.mailService.sendContactReplyEmail(
@@ -423,10 +374,8 @@ export class AdminContactMessagesService {
 
     await this.auditService.createLog({
       actorId: adminId,
-      action:
-        AuditAction.ADMIN_UPDATE_CONTACT_MESSAGE,
-      targetType:
-        AuditTargetType.CONTACT_MESSAGE,
+      action: AuditAction.ADMIN_UPDATE_CONTACT_MESSAGE,
+      targetType: AuditTargetType.CONTACT_MESSAGE,
       targetId: contactMessageId,
 
       oldValue: {
@@ -436,14 +385,12 @@ export class AdminContactMessagesService {
 
       newValue: {
         status: updatedContactMessage.status,
-        adminReply:
-          updatedContactMessage.adminReply,
+        adminReply: updatedContactMessage.adminReply,
       },
     });
 
     return {
-      message:
-        'Contact message updated successfully',
+      message: 'Contact message updated successfully',
       contactMessage: updatedContactMessage,
       updated: true,
     };
@@ -458,10 +405,7 @@ export class AdminContactMessagesService {
     const where: Prisma.ContactMessageWhereInput = {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildExactFilter(
-        'status',
-        query.status,
-      ) ?? {}),
+      ...(buildExactFilter('status', query.status) ?? {}),
     };
 
     const search = query.search?.trim();
@@ -539,8 +483,7 @@ export class AdminContactMessagesService {
     gte: Date,
   ): Prisma.ContactMessageWhereInput {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' &&
-      where.createdAt !== null
+      typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
         : {};
 

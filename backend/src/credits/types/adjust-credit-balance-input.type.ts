@@ -1,7 +1,4 @@
-import {
-  CreditTransactionType,
-  Prisma,
-} from '@prisma/client';
+import { CreditTransactionType, Prisma } from '@prisma/client';
 
 /**
  * Input required to change one user's credit balance.

@@ -34,14 +34,8 @@ import { UserComplaintsService } from './services/user-complaints.service';
     CacheModule.register(),
   ],
 
-  controllers: [
-    UserComplaintsController,
-    AdminComplaintsController,
-  ],
+  controllers: [UserComplaintsController, AdminComplaintsController],
 
-  providers: [
-    UserComplaintsService,
-    AdminComplaintsService,
-  ],
+  providers: [UserComplaintsService, AdminComplaintsService],
 })
 export class ComplaintsModule {}

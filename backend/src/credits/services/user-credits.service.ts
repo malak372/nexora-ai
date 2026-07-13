@@ -1,17 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 import type { Cache } from 'cache-manager';
 
-import {
-  AccountStatus,
-  Prisma,
-} from '@prisma/client';
+import { AccountStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -53,11 +46,9 @@ export class UserCreditsService {
    * Returns the user's credit summary.
    */
   async getCredits(userId: string) {
-    const cacheKey =
-      userCacheKeys.credits(userId);
+    const cacheKey = userCacheKeys.credits(userId);
 
-    const cachedCredits =
-      await this.cacheManager.get(cacheKey);
+    const cachedCredits = await this.cacheManager.get(cacheKey);
 
     if (cachedCredits) {
       return cachedCredits;
@@ -75,23 +66,16 @@ export class UserCreditsService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found.',
-      );
+      throw new NotFoundException('User not found.');
     }
 
     const credits = {
       creditBalance: user.creditBalance,
       accountStatus: user.accountStatus,
-      isPremium:
-        user.accountStatus ===
-        AccountStatus.PREMIUM,
+      isPremium: user.accountStatus === AccountStatus.PREMIUM,
     };
 
-    await this.cacheManager.set(
-      cacheKey,
-      credits,
-    );
+    await this.cacheManager.set(cacheKey, credits);
 
     return credits;
   }
@@ -99,69 +83,50 @@ export class UserCreditsService {
   /**
    * Returns the user's own credit transaction history.
    */
-  async getCreditHistory(
-    userId: string,
-    query: GetUserCreditHistoryQueryDto,
-  ) {
+  async getCreditHistory(userId: string, query: GetUserCreditHistoryQueryDto) {
     await this.ensureUserExists(userId);
 
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where: Prisma.CreditTransactionWhereInput = {
       userId,
 
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildSearchFilter(
-        ['description'],
-        query.search,
-      ) ?? {}),
+      ...(buildSearchFilter(['description'], query.search) ?? {}),
 
-      ...(buildExactFilter(
-        'type',
-        query.type,
-      ) ?? {}),
+      ...(buildExactFilter('type', query.type) ?? {}),
     };
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'createdAt',
-        'amount',
-        'type',
-      ] as const,
+      ['createdAt', 'amount', 'type'] as const,
       'createdAt',
     );
 
-    const [transactions, total] =
-      await Promise.all([
-        this.prisma.creditTransaction.findMany({
-          where,
-          skip,
-          take,
-          orderBy,
+    const [transactions, total] = await Promise.all([
+      this.prisma.creditTransaction.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
 
-          select: {
-            id: true,
-            type: true,
-            amount: true,
-            balanceAfter: true,
-            description: true,
-            createdAt: true,
-            ideaId: true,
-            paymentId: true,
-          },
-        }),
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          balanceAfter: true,
+          description: true,
+          createdAt: true,
+          ideaId: true,
+          paymentId: true,
+        },
+      }),
 
-        this.prisma.creditTransaction.count({
-          where,
-        }),
-      ]);
+      this.prisma.creditTransaction.count({
+        where,
+      }),
+    ]);
 
     return {
       data: transactions,
@@ -170,8 +135,7 @@ export class UserCreditsService {
         total,
         page,
         limit,
-        totalPages:
-          Math.ceil(total / limit),
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
@@ -179,9 +143,7 @@ export class UserCreditsService {
   /**
    * Ensures that the user exists.
    */
-  private async ensureUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -193,9 +155,7 @@ export class UserCreditsService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found.',
-      );
+      throw new NotFoundException('User not found.');
     }
   }
 }

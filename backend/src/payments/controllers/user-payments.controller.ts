@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -24,10 +18,7 @@ import { UserPaymentsService } from '../services/user-payments.service';
 @Controller('users/payments')
 @UseGuards(JwtAuthGuard)
 export class UserPaymentsController {
-  constructor(
-    private readonly userPaymentsService:
-      UserPaymentsService,
-  ) {}
+  constructor(private readonly userPaymentsService: UserPaymentsService) {}
 
   /**
    * Retrieves the authenticated user's payment history.
@@ -41,11 +32,7 @@ export class UserPaymentsController {
     @Query()
     query: GetUserPaymentsQueryDto,
   ) {
-    return this.userPaymentsService
-      .getPaymentHistory(
-        user.id,
-        query,
-      );
+    return this.userPaymentsService.getPaymentHistory(user.id, query);
   }
 
   /**
@@ -60,11 +47,7 @@ export class UserPaymentsController {
     @Query()
     query: GetUserPaymentsQueryDto,
   ) {
-    return this.userPaymentsService
-      .getPaymentSummary(
-        user.id,
-        query,
-      );
+    return this.userPaymentsService.getPaymentSummary(user.id, query);
   }
 
   /**
@@ -79,11 +62,7 @@ export class UserPaymentsController {
     @Query()
     query: GetUserPaymentsQueryDto,
   ) {
-    return this.userPaymentsService
-      .getPaymentCharts(
-        user.id,
-        query,
-      );
+    return this.userPaymentsService.getPaymentCharts(user.id, query);
   }
 
   /**
@@ -92,24 +71,14 @@ export class UserPaymentsController {
    * GET /users/payments/export/csv
    */
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="user-payments.csv"',
-  )
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="user-payments.csv"')
   exportPaymentsCsv(
     @CurrentUser() user: { id: string },
 
     @Query()
     query: GetUserPaymentsQueryDto,
   ) {
-    return this.userPaymentsService
-      .exportPaymentsCsv(
-        user.id,
-        query,
-      );
+    return this.userPaymentsService.exportPaymentsCsv(user.id, query);
   }
 }

@@ -39,9 +39,7 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  */
 @Injectable()
 export class CreditBalanceService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Changes one user's credit balance.
@@ -50,9 +48,7 @@ export class CreditBalanceService {
     input: AdjustCreditBalanceInput,
   ): Promise<CreditBalanceResult> {
     if (input.amount === 0) {
-      throw new BadRequestException(
-        'Credit adjustment amount cannot be zero.',
-      );
+      throw new BadRequestException('Credit adjustment amount cannot be zero.');
     }
 
     const execute = async (
@@ -72,9 +68,7 @@ export class CreditBalanceService {
       });
 
       if (!user) {
-        throw new NotFoundException(
-          'User not found.',
-        );
+        throw new NotFoundException('User not found.');
       }
 
       if (user.role !== UserRole.USER) {
@@ -83,19 +77,14 @@ export class CreditBalanceService {
         );
       }
 
-      const balanceAfter =
-        user.creditBalance + input.amount;
+      const balanceAfter = user.creditBalance + input.amount;
 
       if (balanceAfter < 0) {
-        throw new BadRequestException(
-          'Credit balance cannot be negative.',
-        );
+        throw new BadRequestException('Credit balance cannot be negative.');
       }
 
       const accountStatus =
-        balanceAfter > 0
-          ? AccountStatus.PREMIUM
-          : AccountStatus.NORMAL;
+        balanceAfter > 0 ? AccountStatus.PREMIUM : AccountStatus.NORMAL;
 
       await tx.user.update({
         where: {
@@ -108,25 +97,22 @@ export class CreditBalanceService {
         },
       });
 
-      const transaction =
-        await tx.creditTransaction.create({
-          data: {
-            userId: user.id,
-            paymentId: input.paymentId ?? null,
-            ideaId: input.ideaId ?? null,
-            type: input.type,
-            amount: input.amount,
-            balanceAfter,
-            description:
-              input.description?.trim() ?? null,
-          },
-        });
+      const transaction = await tx.creditTransaction.create({
+        data: {
+          userId: user.id,
+          paymentId: input.paymentId ?? null,
+          ideaId: input.ideaId ?? null,
+          type: input.type,
+          amount: input.amount,
+          balanceAfter,
+          description: input.description?.trim() ?? null,
+        },
+      });
 
       return {
         previousBalance: user.creditBalance,
         balanceAfter,
-        previousAccountStatus:
-          user.accountStatus,
+        previousAccountStatus: user.accountStatus,
         accountStatus,
         transaction,
       };
@@ -143,19 +129,18 @@ export class CreditBalanceService {
    * Consumes credits for one premium idea generation.
    */
   consumeForIdeaGeneration(
-  userId: string,
-  ideaId: string,
-  amount: number,
-  tx?: Prisma.TransactionClient,
-) {
-  return this.adjustBalance({
-    userId,
-    ideaId,
-    amount: -Math.abs(amount),
-    type: CreditTransactionType.DEDUCTION_GENERATION,
-    description:
-      'Credit deducted for premium idea generation.',
-    tx,
-  });
-}
+    userId: string,
+    ideaId: string,
+    amount: number,
+    tx?: Prisma.TransactionClient,
+  ) {
+    return this.adjustBalance({
+      userId,
+      ideaId,
+      amount: -Math.abs(amount),
+      type: CreditTransactionType.DEDUCTION_GENERATION,
+      description: 'Credit deducted for premium idea generation.',
+      tx,
+    });
+  }
 }

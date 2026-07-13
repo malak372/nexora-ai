@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -26,16 +20,10 @@ import { AdminFeedbackService } from '../services/admin-feedback.service';
  * @author Malak
  */
 @Controller('admin/feedback')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminFeedbackController {
-  constructor(
-    private readonly adminFeedbackService:
-      AdminFeedbackService,
-  ) {}
+  constructor(private readonly adminFeedbackService: AdminFeedbackService) {}
 
   /**
    * Returns paginated idea feedback.
@@ -43,12 +31,8 @@ export class AdminFeedbackController {
    * GET /admin/feedback
    */
   @Get()
-  getFeedback(
-    @Query() query: GetFeedbackQueryDto,
-  ) {
-    return this.adminFeedbackService.getFeedback(
-      query,
-    );
+  getFeedback(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.getFeedback(query);
   }
 
   /**
@@ -57,11 +41,8 @@ export class AdminFeedbackController {
    * GET /admin/feedback/summary
    */
   @Get('summary')
-  getFeedbackSummary(
-    @Query() query: GetFeedbackQueryDto,
-  ) {
-    return this.adminFeedbackService
-      .getFeedbackSummary(query);
+  getFeedbackSummary(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.getFeedbackSummary(query);
   }
 
   /**
@@ -70,11 +51,8 @@ export class AdminFeedbackController {
    * GET /admin/feedback/charts
    */
   @Get('charts')
-  getFeedbackCharts(
-    @Query() query: GetFeedbackQueryDto,
-  ) {
-    return this.adminFeedbackService
-      .getFeedbackCharts(query);
+  getFeedbackCharts(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.getFeedbackCharts(query);
   }
 
   /**
@@ -83,18 +61,9 @@ export class AdminFeedbackController {
    * GET /admin/feedback/export/csv
    */
   @Get('export/csv')
-  @Header(
-    'Content-Type',
-    'text/csv',
-  )
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="feedback.csv"',
-  )
-  exportFeedbackCsv(
-    @Query() query: GetFeedbackQueryDto,
-  ) {
-    return this.adminFeedbackService
-      .exportFeedbackCsv(query);
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="feedback.csv"')
+  exportFeedbackCsv(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.exportFeedbackCsv(query);
   }
 }

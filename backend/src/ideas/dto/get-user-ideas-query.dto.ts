@@ -2,7 +2,7 @@ import { Transform } from 'class-transformer';
 import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { IdeaGenerationType } from '@prisma/client';
 
-import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
+import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
  * DTO for retrieving the authenticated user's generated ideas.

@@ -16,11 +16,7 @@ import {
   calculateTotalPages,
 } from '../../utilities/analytics/analytics.helper';
 
-import {
-  MAX_FEEDBACK_RATING,
-  MIN_FEEDBACK_RATING,
-  TOP_RATED_IDEAS_LIMIT,
-} from '../constants/feedback.constants';
+import { TOP_RATED_IDEAS_LIMIT } from '../constants/feedback.constants';
 
 import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
 
@@ -38,32 +34,19 @@ import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
  */
 @Injectable()
 export class AdminFeedbackService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns paginated feedback for administrator monitoring.
    */
-  async getFeedback(
-    query: GetFeedbackQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getFeedback(query: GetFeedbackQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildFeedbackWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'rating',
-        'createdAt',
-        'updatedAt',
-      ] as const,
+      ['rating', 'createdAt', 'updatedAt'] as const,
       'createdAt',
     );
 
@@ -112,10 +95,7 @@ export class AdminFeedbackService {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -123,9 +103,7 @@ export class AdminFeedbackService {
   /**
    * Returns feedback summary statistics.
    */
-  async getFeedbackSummary(
-    query: GetFeedbackQueryDto,
-  ) {
+  async getFeedbackSummary(query: GetFeedbackQueryDto) {
     const where = this.buildFeedbackWhere(query);
 
     const todayStart = new Date();
@@ -135,15 +113,9 @@ export class AdminFeedbackService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const todayWhere = this.mergeCreatedAtGte(
-      where,
-      todayStart,
-    );
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
 
-    const monthWhere = this.mergeCreatedAtGte(
-      where,
-      monthStart,
-    );
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalFeedback,
@@ -219,9 +191,7 @@ export class AdminFeedbackService {
       todayFeedback,
       thisMonthFeedback,
 
-      averageRating: Number(
-        (averageResult._avg.rating ?? 0).toFixed(2),
-      ),
+      averageRating: Number((averageResult._avg.rating ?? 0).toFixed(2)),
 
       ...distribution,
     };
@@ -230,15 +200,10 @@ export class AdminFeedbackService {
   /**
    * Returns rating distribution and highest-rated ideas.
    */
-  async getFeedbackCharts(
-    query: GetFeedbackQueryDto,
-  ) {
+  async getFeedbackCharts(query: GetFeedbackQueryDto) {
     const where = this.buildFeedbackWhere(query);
 
-    const [
-      ratingDistribution,
-      topRatedIdeas,
-    ] = await Promise.all([
+    const [ratingDistribution, topRatedIdeas] = await Promise.all([
       this.prisma.ideaFeedback.groupBy({
         by: ['rating'],
         where,
@@ -256,19 +221,16 @@ export class AdminFeedbackService {
     ]);
 
     return {
-      ratingDistribution:
-        ratingDistribution.map((item) => ({
-          label: `${item.rating} Star`,
-          rating: item.rating,
-          count: item._count.rating,
-        })),
+      ratingDistribution: ratingDistribution.map((item) => ({
+        label: `${item.rating} Star`,
+        rating: item.rating,
+        count: item._count.rating,
+      })),
 
       topRatedIdeas: topRatedIdeas.map((idea) => ({
         id: idea.id,
         title: idea.title,
-        averageRating: Number(
-          idea.averageRating,
-        ),
+        averageRating: Number(idea.averageRating),
         ratingsCount: idea.ratingsCount,
       })),
     };
@@ -277,49 +239,42 @@ export class AdminFeedbackService {
   /**
    * Exports filtered feedback as CSV.
    */
-  async exportFeedbackCsv(
-    query: GetFeedbackQueryDto,
-  ) {
+  async exportFeedbackCsv(query: GetFeedbackQueryDto) {
     const where = this.buildFeedbackWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      [
-        'rating',
-        'createdAt',
-        'updatedAt',
-      ] as const,
+      ['rating', 'createdAt', 'updatedAt'] as const,
       'createdAt',
     );
 
-    const feedback =
-      await this.prisma.ideaFeedback.findMany({
-        where,
-        orderBy,
+    const feedback = await this.prisma.ideaFeedback.findMany({
+      where,
+      orderBy,
 
-        select: {
-          id: true,
-          rating: true,
-          comment: true,
-          createdAt: true,
-          updatedAt: true,
+      select: {
+        id: true,
+        rating: true,
+        comment: true,
+        createdAt: true,
+        updatedAt: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          idea: {
-            select: {
-              id: true,
-              title: true,
-            },
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
           },
         },
-      });
+
+        idea: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
+    });
 
     const headers = [
       'Feedback ID',
@@ -347,10 +302,7 @@ export class AdminFeedbackService {
       item.updatedAt.toISOString(),
     ]);
 
-    return buildCsv(
-      headers,
-      rows,
-    );
+    return buildCsv(headers, rows);
   }
 
   /**
@@ -360,11 +312,8 @@ export class AdminFeedbackService {
    * userId, ideaId, rating, and date filters are applied
    * through the related feedback records.
    */
-  private findTopRatedIdeas(
-    query: GetFeedbackQueryDto,
-  ) {
-    const feedbackWhere =
-      this.buildFeedbackWhere(query);
+  private findTopRatedIdeas(query: GetFeedbackQueryDto) {
+    const feedbackWhere = this.buildFeedbackWhere(query);
 
     return this.prisma.idea.findMany({
       where: {
@@ -406,20 +355,11 @@ export class AdminFeedbackService {
     const where: Prisma.IdeaFeedbackWhereInput = {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildExactFilter(
-        'rating',
-        query.rating,
-      ) ?? {}),
+      ...(buildExactFilter('rating', query.rating) ?? {}),
 
-      ...(buildExactFilter(
-        'userId',
-        query.userId,
-      ) ?? {}),
+      ...(buildExactFilter('userId', query.userId) ?? {}),
 
-      ...(buildExactFilter(
-        'ideaId',
-        query.ideaId,
-      ) ?? {}),
+      ...(buildExactFilter('ideaId', query.ideaId) ?? {}),
     };
 
     const search = query.search?.trim();
@@ -480,8 +420,7 @@ export class AdminFeedbackService {
     gte: Date,
   ): Prisma.IdeaFeedbackWhereInput {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' &&
-      where.createdAt !== null
+      typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
         : {};
 
