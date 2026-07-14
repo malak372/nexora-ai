@@ -15,6 +15,21 @@ datasource db {
 /**
  * ENUMS
  */
+enum IdeaGenerationRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum IdeaGenerationStageStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
 
 enum UserRole {
   USER
@@ -26,14 +41,16 @@ enum AccountStatus {
   PREMIUM
 }
 
-enum PaymentMethod {
-  CARD
-  PAYPAL
+enum ExternalServiceCategory {
+  AI
+  PAYMENT
+  DATA_COLLECTION
+  OTHER
 }
 
 enum PaymentStatus {
   PENDING
-  SUCCESS
+  SUCCEEDED
   FAILED
   REFUNDED
 }
@@ -104,42 +121,16 @@ enum AlertType {
   ADMIN
 }
 
-enum ApiProvider {
-  // AI Providers
-  GOOGLE
-  GROQ
-  OPENROUTER
+enum IdeaPublicationVisibility {
+  REGISTERED_USERS
+  SELECTED_AUDIENCE
+  PUBLIC
+}
 
-  // Payment Providers
-  STRIPE
-  PAYPAL
-
-  // Data Providers
-  REDDIT
-  FACEBOOK
-  YOUTUBE
-  LINKEDIN
-  X
-  INSTAGRAM
-  TELEGRAM
-  TIKTOK
-  GITHUB
-  STACKOVERFLOW
-  DISCORD
-  QUORA
-  FORUM
-  BLOG
-  NEWS
-  HACKER_NEWS
-  PRODUCT_HUNT
-  DEV_TO
-
-  // Application and Google Services
-  GOOGLE_PLAY
-  APP_STORE
-  GOOGLE_MAPS
-
-  OTHER
+enum IdeaPublicationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 
 enum LanguageCode {
@@ -162,28 +153,6 @@ enum ApiRequestType {
   OTHER
 }
 
-enum GeneratedOutputType {
-  FULL_ABSTRACT
-  TECHNOLOGY_STACK
-  SYSTEM_ARCHITECTURE
-  DATABASE_DESIGN
-  COMMENT_ANALYSIS
-  SAMPLE_COMMENTS
-  NLP_ANALYSIS
-  RECURRING_PROBLEMS
-  EXTRACTED_KEYWORDS
-  LOCAL_REGULATIONS
-  BUDGET_ESTIMATION
-  BUSINESS_MODEL
-  TARGET_USERS
-  VALUE_PROPOSITION
-  REVENUE_MODEL
-  FEASIBILITY_ASSESSMENT
-  IMPLEMENTATION_TIMELINE
-  MARKET_POTENTIAL
-  AI_PROMPT
-}
-
 enum AuditAction {
   // User administration
   ADMIN_UPDATE_USER_STATUS
@@ -199,9 +168,10 @@ enum AuditAction {
   ADMIN_CREATE_ALERT
 
   // Platforms
-  ADMIN_CREATE_PLATFORM
-  ADMIN_UPDATE_PLATFORM
-  ADMIN_DEACTIVATE_PLATFORM
+  ADMIN_CREATE_DATA_SOURCE
+  ADMIN_UPDATE_DATA_SOURCE
+  ADMIN_ACTIVATE_DATA_SOURCE
+  ADMIN_DEACTIVATE_DATA_SOURCE
 
   // Domains
   ADMIN_CREATE_DOMAIN
@@ -241,6 +211,11 @@ enum AuditAction {
   NLP_ANALYSIS_RUN
   ABSTRACT_GENERATION_RUN
   PROMPT_HISTORY_CREATED
+
+  USER_CREATE_PUBLICATION
+  USER_PUBLISH_IDEA
+  USER_UPDATE_PUBLICATION
+  USER_ARCHIVE_PUBLICATION
 }
 
 enum AiModelHealthStatus {
@@ -256,22 +231,17 @@ enum AiRoutingStrategy {
   BALANCED
 }
 
-enum AiProviderType {
-  GOOGLE
-  GROQ
-  OPENROUTER
-}
-
 enum AuditTargetType {
   USER
   IDEA
   PAYMENT
   DOMAIN
-  PLATFORM
+  DATA_SOURCE
   SYSTEM_SETTING
   PROMPT
   COMPLAINT
   AI_MODEL
+  IDEA_PUBLICATION
 
   CONTACT_MESSAGE
   ALERT
@@ -308,30 +278,67 @@ enum CollectionJobStatus {
   STOPPED
 }
 
-enum CollectionSourceType {
-  REDDIT
-  FACEBOOK
-  YOUTUBE
-  LINKEDIN
-  X
-  INSTAGRAM
-  TELEGRAM
-  TIKTOK
-  GITHUB
-  STACKOVERFLOW
-  DISCORD
-  QUORA
-  FORUM
-  BLOG
-  NEWS
-  APP_STORE
-  GOOGLE_PLAY
+model DataSource {
+  id String @id @default(uuid())
 
-  HACKER_NEWS
-  PRODUCT_HUNT
-  DEV_TO
+  /**
+   * Stable code identifier used by the backend registry.
+   * Examples: youtube, github, dev-to, google-play.
+   */
+  key String @unique
 
-  OTHER
+  displayName String  @map("display_name")
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  /**
+   * Indicates whether the collector implementation is currently
+   * available in the deployed backend.
+   */
+  isImplemented Boolean @default(false) @map("is_implemented")
+
+  supportsPosts    Boolean @default(true) @map("supports_posts")
+  supportsComments Boolean @default(false) @map("supports_comments")
+  supportsRegion   Boolean @default(false) @map("supports_region")
+  supportsLanguage Boolean @default(false) @map("supports_language")
+
+  configuration Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  collectionJobSources CollectionJobSource[]
+  socialPosts          SocialPost[]
+
+  @@index([isActive])
+  @@index([isImplemented])
+  @@map("data_sources")
+}
+
+model CollectionJobSource {
+  id String @id @default(uuid())
+
+  collectionJobId String        @map("collection_job_id")
+  collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+
+  dataSourceId String     @map("data_source_id")
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Restrict)
+
+  status CollectionJobStatus @default(PENDING)
+
+  totalPosts    Int @default(0) @map("total_posts")
+  totalComments Int @default(0) @map("total_comments")
+
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  failureReason String?   @map("failure_reason")
+
+  @@unique([collectionJobId, dataSourceId])
+  @@index([collectionJobId])
+  @@index([dataSourceId])
+  @@index([status])
+  @@map("collection_job_sources")
 }
 
 enum PromptType {
@@ -357,11 +364,6 @@ enum NlpLexiconType {
   SAFETY
   RELIABILITY
   OPPORTUNITY
-}
-
-enum PaymentProvider {
-  STRIPE
-  PAYPAL
 }
 
 /**
@@ -408,9 +410,8 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   authenticationLogs      AuthenticationLog[]
-  favoriteIdeas           FavoriteIdea[]
+  favoritePublications    FavoritePublication[]
   preference              UserPreference?
-  ideaFeedback            IdeaFeedback[]
   savedGenerationSearches SavedGenerationSearch[]
   contactMessages         ContactMessage[]
 
@@ -419,6 +420,12 @@ model User {
    * Guest prompts are linked through GuestSession instead.
    */
   promptHistories PromptHistory[]
+  publishedIdeas  IdeaPublication[] @relation("PublishedIdeas")
+
+  publicationRatings  IdeaPublicationRating[]
+  publicationVotes    IdeaPublicationVote[]
+  publicationFeedback IdeaPublicationFeedback[]
+  generationRuns      IdeaGenerationRun[]
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -440,7 +447,7 @@ model RefreshToken {
   userAgent  String?   @map("user_agent")
   lastUsedAt DateTime? @map("last_used_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId])
   @@index([expiresAt])
@@ -461,7 +468,7 @@ model PasswordResetToken {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId])
   @@index([expiresAt])
@@ -556,8 +563,8 @@ model GuestSession {
   createdAt DateTime  @default(now()) @map("created_at")
   expiresAt DateTime? @map("expires_at")
 
-  ideas Idea[]
-
+  ideas           Idea[]
+  generationRuns  IdeaGenerationRun[]
   promptHistories PromptHistory[]
 
   @@index([expiresAt])
@@ -571,15 +578,17 @@ model Idea {
   user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   guestSessionId String?       @map("guest_session_id")
-  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: Restrict)
 
-  title    String
+  publication   IdeaPublication?
+  generationRun IdeaGenerationRun?
+
+  title String
+
   domainId String @map("domain_id")
   domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
-  selectedPlatformId String?   @map("selected_platform_id")
-  selectedPlatform   Platform? @relation(fields: [selectedPlatformId], references: [id], onDelete: SetNull)
-  selectedRegion     String?   @map("selected_region")
+  selectedRegion String? @map("selected_region")
 
   limitedAbstract String? @map("limited_abstract")
   partialAbstract String? @map("partial_abstract")
@@ -598,69 +607,65 @@ model Idea {
   collectionJobId String?        @map("collection_job_id")
   collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
 
-  promptHistories PromptHistory[]
-
   commentsCount Int @default(0) @map("comments_count")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  promptHistories    PromptHistory[]
   payments           Payment[]
   creditTransactions CreditTransaction[]
   chatSessions       ChatSession[]
   generatedOutputs   GeneratedOutput[]
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
-  favoriteIdeas      FavoriteIdea[]
-  feedback           IdeaFeedback[]
 
-  averageRating Decimal @default(0) @map("average_rating") @db.Decimal(3, 2)
-  ratingsCount  Int     @default(0) @map("ratings_count")
-
+  @@index([userId, createdAt])
+  @@index([guestSessionId])
+  @@index([generationType])
+  @@index([isUnlocked])
   @@index([collectionJobId])
   @@map("ideas")
 }
 
-/**
- * PAYMENTS
- */
-
 model Payment {
   id String @id @default(uuid())
 
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  userId         String  @map("user_id")
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idempotencyKey String? @unique @map("idempotency_key")
+  ideaId         String? @map("idea_id")
+  idea           Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
 
   amount   Decimal @db.Decimal(10, 2)
   currency String  @default("USD")
 
-  paymentMethod PaymentMethod   @map("payment_method")
-  provider      PaymentProvider
-  status        PaymentStatus   @default(PENDING)
+  /**
+   * User-facing method.
+   * Examples: card, paypal.
+   */
+  paymentMethodKey String @map("payment_method_key")
+
+  /**
+   * Backend gateway implementation.
+   * Examples: stripe, paypal.
+   */
+  providerKey String @map("provider_key")
+
+  status PaymentStatus @default(PENDING)
 
   paymentPurpose PaymentPurpose @map("payment_purpose")
 
-  creditsAmount         Int      @default(0) @map("credits_amount")
-  bonusCreditsAmount    Int      @default(0) @map("bonus_credits_amount")
+  creditsAmount      Int @default(0) @map("credits_amount")
+  bonusCreditsAmount Int @default(0) @map("bonus_credits_amount")
+
   creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
 
-  /**
-   * Payment identifier received from the external provider.
-   * Used to prevent processing the same provider payment twice.
-   */
   providerPaymentId String? @unique @map("provider_payment_id")
-
-  /**
-   * Checkout/session identifier returned when payment is created.
-   */
   providerSessionId String? @unique @map("provider_session_id")
 
   transactionReference String? @map("transaction_reference")
-
-  failureReason String? @map("failure_reason")
+  failureReason        String? @map("failure_reason")
 
   paidAt     DateTime? @map("paid_at")
   failedAt   DateTime? @map("failed_at")
@@ -674,7 +679,8 @@ model Payment {
   @@index([userId])
   @@index([ideaId])
   @@index([status])
-  @@index([provider])
+  @@index([providerKey])
+  @@index([paymentMethodKey])
   @@index([paymentPurpose])
   @@index([createdAt])
   @@map("payments")
@@ -703,32 +709,13 @@ model CreditTransaction {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@unique([paymentId, type])
   @@index([userId])
   @@index([paymentId])
   @@index([ideaId])
   @@index([type])
   @@index([createdAt])
   @@map("credit_transactions")
-}
-
-/**
- * GENERATED OUTPUTS
- */
-
-model GeneratedOutput {
-  id String @id @default(uuid())
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  outputType GeneratedOutputType @map("output_type")
-  content    String
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([ideaId, outputType])
-  @@map("generated_outputs")
 }
 
 /**
@@ -768,8 +755,7 @@ model ChatMessage {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([sessionId])
-  @@index([createdAt])
+  @@index([sessionId, createdAt])
   @@map("chat_messages")
 }
 
@@ -827,10 +813,6 @@ model Complaint {
   @@map("complaints")
 }
 
-/**
- * EXTERNAL API LOGS
- */
-
 model ExternalApiLog {
   id String @id @default(uuid())
 
@@ -843,7 +825,13 @@ model ExternalApiLog {
   aiModelId String?  @map("ai_model_id")
   aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
 
-  provider    ApiProvider
+  serviceCategory ExternalServiceCategory @map("service_category")
+
+  /**
+   * Examples: openrouter, google, stripe, youtube.
+   */
+  providerKey String @map("provider_key")
+
   endpoint    String?
   requestId   String?        @map("request_id")
   requestType ApiRequestType @map("request_type")
@@ -865,9 +853,10 @@ model ExternalApiLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([aiModelId])
+  @@index([aiModelId, createdAt])
   @@index([operationId])
-  @@index([provider, createdAt])
+  @@index([providerKey, createdAt])
+  @@index([serviceCategory, createdAt])
   @@index([requestType, createdAt])
   @@index([isSuccess, createdAt])
   @@index([userId, createdAt])
@@ -913,24 +902,6 @@ model DomainKeyword {
   @@map("domain_keywords")
 }
 
-/**
- * Platform
- */
-
-model Platform {
-  id       String  @id @default(uuid())
-  name     String  @unique
-  isActive Boolean @default(true) @map("is_active")
-
-  createdAt   DateTime     @default(now()) @map("created_at")
-  socialPosts SocialPost[]
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-
-  ideas Idea[]
-
-  @@map("platforms")
-}
-
 model EmailVerificationToken {
   id        String @id @default(uuid())
   userId    String @map("user_id")
@@ -941,7 +912,7 @@ model EmailVerificationToken {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId])
   @@index([expiresAt])
@@ -976,18 +947,17 @@ model AuthenticationLog {
 model CollectionJob {
   id String @id @default(uuid())
 
-  domainId String       @map("domain_id")
+  domainId String @map("domain_id")
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
   language LanguageCode
-  domain   Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
-  country String
-  city    String?
-  region  String?
+  country  String?
+  city     String?
+  region   String?
+  radiusKm Int?    @map("radius_km")
 
-  radiusKm Int? @map("radius_km")
-
-  platforms Json
-  keywords  Json?
+  keywords Json?
 
   status CollectionJobStatus @default(PENDING)
 
@@ -1001,10 +971,12 @@ model CollectionJob {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  sources         CollectionJobSource[]
   posts           SocialPost[]
   nlpAnalysis     NlpAnalysis?
   ideas           Idea[]
   promptHistories PromptHistory[]
+  generationRuns  IdeaGenerationRun[]
 
   @@index([domainId])
   @@index([country])
@@ -1019,21 +991,20 @@ model SocialPost {
   collectionJobId String        @map("collection_job_id")
   collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
 
-  platformId String?   @map("platform_id")
-  platform   Platform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  dataSourceId String     @map("data_source_id")
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Restrict)
 
-  sourceType CollectionSourceType @map("source_type")
+  externalId String @map("external_id")
 
-  externalId String  @map("external_id")
-  title      String?
-  content    String
-  author     String?
-  url        String?
+  title   String?
+  content String
+  author  String?
+  url     String?
 
-  country  String
-  city     String?
-  region   String?
-  language LanguageCode?
+  country      String?
+  city         String?
+  region       String?
+  languageCode String? @map("language_code")
 
   likesCount   Int @default(0) @map("likes_count")
   repliesCount Int @default(0) @map("replies_count")
@@ -1044,12 +1015,12 @@ model SocialPost {
 
   comments SocialComment[]
 
-  @@unique([collectionJobId, sourceType, externalId])
+  @@unique([collectionJobId, dataSourceId, externalId])
   @@index([collectionJobId])
-  @@index([platformId])
+  @@index([dataSourceId])
   @@index([country])
   @@index([region])
-  @@index([language])
+  @@index([languageCode])
   @@map("social_posts")
 }
 
@@ -1059,11 +1030,11 @@ model SocialComment {
   postId String     @map("post_id")
   post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  externalId String        @map("external_id")
-  content    String
-  author     String?
-  language   LanguageCode?
-  sentiment  String?
+  externalId   String  @map("external_id")
+  content      String
+  author       String?
+  languageCode String? @map("language_code")
+  sentiment    String?
 
   likesCount Int @default(0) @map("likes_count")
 
@@ -1073,7 +1044,7 @@ model SocialComment {
 
   @@unique([postId, externalId])
   @@index([postId])
-  @@index([language])
+  @@index([languageCode])
   @@index([sentiment])
   @@map("social_comments")
 }
@@ -1174,21 +1145,21 @@ model PromptHistory {
   @@map("prompt_histories")
 }
 
-model FavoriteIdea {
+model FavoritePublication {
   id String @id @default(uuid())
 
-  userId String
-  ideaId String
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  idea Idea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([userId, ideaId])
+  @@unique([userId, publicationId])
   @@index([userId])
-  @@index([ideaId])
-  @@map("favorite_ideas")
+  @@index([publicationId])
+  @@map("favorite_publications")
 }
 
 model UserPreference {
@@ -1197,39 +1168,19 @@ model UserPreference {
   userId String @unique @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  preferredCountry  String? @map("preferred_country")
-  preferredCity     String? @map("preferred_city")
-  preferredRegion   String? @map("preferred_region")
-  preferredLanguage String? @map("preferred_language")
+  preferredCountry  String?       @map("preferred_country")
+  preferredCity     String?       @map("preferred_city")
+  preferredRegion   String?       @map("preferred_region")
+  preferredLanguage LanguageCode? @map("preferred_language")
 
   preferredDomains      Json? @map("preferred_domains")
-  preferredPlatforms    Json? @map("preferred_platforms")
+  preferredDataSources  Json? @map("preferred_data_sources")
   preferredTechnologies Json? @map("preferred_technologies")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("user_preferences")
-}
-
-model IdeaFeedback {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  rating  Int
-  comment String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([userId, ideaId])
-  @@index([ideaId])
-  @@map("idea_feedback")
 }
 
 model SavedGenerationSearch {
@@ -1248,8 +1199,8 @@ model SavedGenerationSearch {
   region   String?
   language LanguageCode?
 
-  platforms Json?
-  keywords  Json?
+  dataSourceKeys Json? @map("data_source_keys")
+  keywords       Json?
 
   lastUsedAt DateTime? @map("last_used_at")
 
@@ -1264,40 +1215,49 @@ model SavedGenerationSearch {
 model AiModel {
   id String @id @default(uuid())
 
-  provider    AiProviderType @default(OPENROUTER)
-  modelName   String         @map("model_name")
-  apiModelId  String         @map("api_model_id")
-  displayName String?        @map("display_name")
+  /**
+   * Backend provider-registry key.
+   * Examples: openrouter, google.
+   */
+  providerKey String @map("provider_key")
+
+  modelName   String  @map("model_name")
+  apiModelId  String  @map("api_model_id")
+  displayName String? @map("display_name")
   description String?
 
   priority Int @default(0)
   weight   Int @default(1)
 
-  maxOutputTokens Int @default(2048) @map("max_output_tokens")
+  maxOutputTokens    Int     @default(2048) @map("max_output_tokens")
+  supportsJsonOutput Boolean @default(false) @map("supports_json_output")
+  supportsTools      Boolean @default(false) @map("supports_tools")
+  supportsVision     Boolean @default(false) @map("supports_vision")
+  contextWindow      Int?    @map("context_window")
 
-  inputCostPerMillion  Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
+  iinputCostPerMillion Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
+
   outputCostPerMillion Decimal @default(0) @map("output_cost_per_million") @db.Decimal(12, 6)
 
   isActive  Boolean @default(true) @map("is_active")
   isDefault Boolean @default(false) @map("is_default")
 
-  healthStatus        AiModelHealthStatus @default(UNKNOWN) @map("health_status")
-  consecutiveFailures Int                 @default(0) @map("consecutive_failures")
-  lastHealthCheckAt   DateTime?           @map("last_health_check_at")
-  lastFailureAt       DateTime?           @map("last_failure_at")
+  healthStatus AiModelHealthStatus @default(UNKNOWN) @map("health_status")
+
+  consecutiveFailures Int @default(0) @map("consecutive_failures")
+
+  lastHealthCheckAt DateTime? @map("last_health_check_at")
+  lastFailureAt     DateTime? @map("last_failure_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   externalApiLogs ExternalApiLog[]
 
-  @@unique([provider, modelName])
-  @@unique([provider, apiModelId])
-  @@index([provider, isActive])
-  @@index([isActive, healthStatus])
+  @@unique([providerKey, apiModelId])
+  @@index([providerKey, isActive])
   @@index([isActive, healthStatus, priority])
   @@index([priority])
-  @@index([createdAt])
   @@map("ai_models")
 }
 
@@ -1398,4 +1358,319 @@ model IdeaGenerationLock {
 
   @@index([expiresAt])
   @@map("idea_generation_locks")
+}
+
+model IdeaPublication {
+  id String @id @default(uuid())
+
+  ideaId String @unique @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  publisherId String @map("publisher_id")
+  publisher   User   @relation("PublishedIdeas", fields: [publisherId], references: [id], onDelete: Cascade)
+
+  status IdeaPublicationStatus @default(DRAFT)
+
+  visibility IdeaPublicationVisibility
+
+  /**
+   * Safe public snapshot.
+   * These fields are copied from Idea when publishing.
+   * Internal paid details are never exposed directly.
+   */
+  publicTitle       String                    @map("public_title")
+  publicAbstract    String?                   @map("public_abstract")
+  publicProblem     String?                   @map("public_problem")
+  publicObjectives  String?                   @map("public_objectives")
+  revisions         IdeaPublicationRevision[]
+  publicTargetUsers String?                   @map("public_target_users")
+
+  allowRatings  Boolean               @default(true) @map("allow_ratings")
+  allowFeedback Boolean               @default(true) @map("allow_feedback")
+  allowVoting   Boolean               @default(true) @map("allow_voting")
+  favorites     FavoritePublication[]
+
+  averageRating Decimal @default(0) @map("average_rating") @db.Decimal(3, 2)
+
+  ratingsCount Int @default(0) @map("ratings_count")
+
+  upvotesCount   Int @default(0) @map("upvotes_count")
+  downvotesCount Int @default(0) @map("downvotes_count")
+  feedbackCount  Int @default(0) @map("feedback_count")
+
+  publishedAt DateTime? @map("published_at")
+  archivedAt  DateTime? @map("archived_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  audiences IdeaPublicationAudience[]
+  ratings   IdeaPublicationRating[]
+  votes     IdeaPublicationVote[]
+  feedback  IdeaPublicationFeedback[]
+
+  @@index([status, visibility, publishedAt])
+  @@index([publisherId, status, createdAt])
+  @@index([status, publishedAt])
+  @@index([publisherId])
+  @@index([averageRating])
+  @@index([upvotesCount])
+  @@map("idea_publications")
+}
+
+model IdeaPublicationAudience {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  /**
+   * Examples:
+   * user-type
+   * domain-interest
+   * specific-user
+   */
+  audienceType String @map("audience_type")
+
+  /**
+   * Examples:
+   * STUDENT
+   * DEVELOPER
+   * <userId>
+   */
+  audienceValue String @map("audience_value")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([publicationId, audienceType, audienceValue])
+  @@index([audienceType, audienceValue])
+  @@map("idea_publication_audiences")
+}
+
+enum IdeaVoteValue {
+  UP
+  DOWN
+}
+
+model IdeaPublicationVote {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  value IdeaVoteValue
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([publicationId, userId])
+  @@index([userId])
+  @@map("idea_publication_votes")
+}
+
+model IdeaPublicationRating {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  value Int
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([publicationId, userId])
+  @@index([publicationId])
+  @@index([userId])
+  @@map("idea_publication_ratings")
+}
+
+enum PublicationFeedbackStatus {
+  VISIBLE
+  HIDDEN
+  REPORTED
+}
+
+model IdeaPublicationFeedback {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  comment String
+
+  status PublicationFeedbackStatus @default(VISIBLE)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([publicationId, userId])
+  @@index([publicationId, status])
+  @@index([userId])
+  @@map("idea_publication_feedback")
+}
+
+model IdeaGenerationRun {
+  id String @id @default(uuid())
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  guestSessionId    String?       @map("guest_session_id")
+  lastHeartbeatAt   DateTime?     @map("last_heartbeat_at")
+  cancelRequestedAt DateTime?     @map("cancel_requested_at")
+  guestSession      GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+
+  ideaId String? @unique @map("idea_id")
+  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+
+  collectionJobId String?        @map("collection_job_id")
+  collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
+
+  generationType IdeaGenerationType @map("generation_type")
+
+  status IdeaGenerationRunStatus @default(QUEUED)
+
+  currentStageKey String? @map("current_stage_key")
+  progressPercent Int     @default(0) @map("progress_percent")
+
+  errorCode    String? @map("error_code")
+  errorMessage String? @map("error_message")
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stages IdeaGenerationStage[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([collectionJobId])
+  @@map("idea_generation_runs")
+}
+
+model IdeaGenerationStage {
+  id String @id @default(uuid())
+
+  runId String            @map("run_id")
+  run   IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /**
+   * Extensible stage identifier.
+   * Examples:
+   * request-validation
+   * data-source-selection
+   * data-collection
+   * nlp-analysis
+   * idea-generation
+   * abstract-generation
+   * business-model
+   * technology-stack
+   * feasibility
+   */
+  stageKey String @map("stage_key")
+
+  displayName String @map("display_name")
+  sequence    Int
+
+  status IdeaGenerationStageStatus @default(PENDING)
+
+  progressPercent Int @default(0) @map("progress_percent")
+
+  /**
+   * Safe summary displayed to the user.
+   */
+  resultPreview Json? @map("result_preview")
+
+  errorMessage String? @map("error_message")
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  attemptCount Int      @default(0) @map("attempt_count")
+  maxAttempts  Int      @default(1) @map("max_attempts")
+
+  @@unique([runId, stageKey])
+  @@index([runId, sequence])
+  @@index([status])
+  @@map("idea_generation_stages")
+}
+
+enum GeneratedOutputStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model GeneratedOutput {
+  id String @id @default(uuid())
+
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  /**
+   * Examples:
+   * full-abstract
+   * technology-stack
+   * system-architecture
+   * database-design
+   * business-model
+   */
+  outputKey String @map("output_key")
+
+  title String
+
+  sequence Int @default(0)
+
+  status GeneratedOutputStatus @default(PENDING)
+
+  content           String?
+  structuredContent Json?   @map("structured_content")
+
+  errorMessage String? @map("error_message")
+
+  generatedAt DateTime? @map("generated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([ideaId, outputKey])
+  @@index([ideaId, sequence])
+  @@index([status])
+  @@map("generated_outputs")
+}
+
+model IdeaPublicationRevision {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  version Int
+
+  publicTitle       String  @map("public_title")
+  publicAbstract    String  @map("public_abstract")
+  publicProblem     String? @map("public_problem")
+  publicObjectives  String? @map("public_objectives")
+  publicTargetUsers String? @map("public_target_users")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([publicationId, version])
+  @@index([publicationId, createdAt])
+  @@map("idea_publication_revisions")
 }

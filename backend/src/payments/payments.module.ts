@@ -90,18 +90,15 @@ import { UserPaymentsService } from './services/user-payments.service';
     {
       provide: PAYMENT_GATEWAYS,
 
-      inject: [
-        StripePaymentGateway,
-        PayPalPaymentGateway,
-      ],
+      inject: [StripePaymentGateway, PayPalPaymentGateway],
 
       useFactory: (
         stripePaymentGateway: StripePaymentGateway,
         payPalPaymentGateway: PayPalPaymentGateway,
       ): readonly PaymentGateway[] => [
-          stripePaymentGateway,
-          payPalPaymentGateway,
-        ],
+        stripePaymentGateway,
+        payPalPaymentGateway,
+      ],
     },
 
     PaymentGatewayFactory,

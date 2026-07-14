@@ -151,9 +151,7 @@ export class IdeaGenerationSelectionService {
       return alias;
     }
 
-    const enumValues = Object.values(
-      CollectionSourceType,
-    ) as CollectionSourceType[];
+    const enumValues = Object.values(CollectionSourceType);
 
     return enumValues.find((value) => value === normalizedName);
   }
