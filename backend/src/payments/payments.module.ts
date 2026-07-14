@@ -47,11 +47,7 @@ import { UserPaymentsService } from './services/user-payments.service';
  * @author Eman
  */
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-    CreditsModule,
-  ],
+  imports: [ConfigModule, PrismaModule, CreditsModule],
 
   controllers: [
     UserPaymentsController,
@@ -83,18 +79,15 @@ import { UserPaymentsService } from './services/user-payments.service';
     {
       provide: PAYMENT_GATEWAYS,
 
-      inject: [
-        StripePaymentGateway,
-        PayPalPaymentGateway,
-      ],
+      inject: [StripePaymentGateway, PayPalPaymentGateway],
 
       useFactory: (
         stripePaymentGateway: StripePaymentGateway,
         payPalPaymentGateway: PayPalPaymentGateway,
       ): readonly PaymentGateway[] => [
-          stripePaymentGateway,
-          payPalPaymentGateway,
-        ],
+        stripePaymentGateway,
+        payPalPaymentGateway,
+      ],
     },
 
     PaymentGatewayFactory,
@@ -107,4 +100,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}
