@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   PaymentProvider,
@@ -18,6 +18,7 @@ import type { PaymentProcessingResult } from '../types/payment-processing-result
 
 import { CreditPurchaseService } from './credit-purchase.service';
 import { DirectUnlockPaymentService } from './direct-unlock-payment.service';
+import { PaymentNotificationService } from './payment-notification.service';
 
 /**
  * Internal payment representation required while processing
@@ -57,6 +58,7 @@ type ProcessablePayment = {
  * - Delegate credit-purchase fulfillment.
  * - Delegate direct-unlock fulfillment.
  * - Invalidate credit-related caches after successful commits.
+ * - Dispatch payment email notifications after successful commits.
  *
  * Provider-specific webhook verification remains owned by
  * PaymentGateway implementations and PaymentWebhookService.
@@ -65,6 +67,14 @@ type ProcessablePayment = {
  */
 @Injectable()
 export class PaymentProcessingService {
+  /**
+   * Logger used for post-commit notification failures that must not
+   * change the result of an already committed payment operation.
+   */
+  private readonly logger = new Logger(
+    PaymentProcessingService.name,
+  );
+
   constructor(
     private readonly prisma: PrismaService,
 
@@ -73,7 +83,9 @@ export class PaymentProcessingService {
     private readonly directUnlockPaymentService: DirectUnlockPaymentService,
 
     private readonly creditCacheService: CreditCacheService,
-  ) {}
+
+    private readonly paymentNotificationService: PaymentNotificationService,
+  ) { }
 
   /**
    * Processes one verified provider payment confirmation.
@@ -181,9 +193,99 @@ export class PaymentProcessingService {
         await this.creditCacheService.invalidateUserCreditCaches(result.userId);
       }
 
+      /*
+       * Notification delivery occurs only after the payment transaction
+       * commits. Repeated webhook events do not resend notifications.
+       */
+      if (!result.alreadyProcessed) {
+        await this.notifyPaymentResultSafely(result);
+      }
+
       return result;
     } catch (error) {
       this.rethrowKnownPaymentError(error);
+    }
+  }
+
+  /**
+   * Sends the email notification associated with a newly processed
+   * payment result.
+   *
+   * Notification data is read only after the payment transaction commits.
+   * Any lookup or delivery failure is logged and suppressed because it must
+   * not change the outcome of an already committed payment operation.
+   *
+   * @param result Newly processed payment result.
+   */
+  private async notifyPaymentResultSafely(
+    result: PaymentProcessingResult,
+  ): Promise<void> {
+    try {
+      const payment = await this.prisma.payment.findUnique({
+        where: {
+          id: result.paymentId,
+        },
+
+        select: {
+          id: true,
+          amount: true,
+          currency: true,
+          paymentMethod: true,
+          paymentPurpose: true,
+          transactionReference: true,
+          failureReason: true,
+
+          user: {
+            select: {
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!payment) {
+        this.logger.error(
+          `Payment notification data was not found for payment ${result.paymentId}.`,
+        );
+
+        return;
+      }
+
+      const notificationInput = {
+        paymentId: payment.id,
+        recipientEmail: payment.user.email,
+        amount: payment.amount.toNumber(),
+        currency: payment.currency,
+        paymentMethod: payment.paymentMethod,
+        paymentPurpose: payment.paymentPurpose,
+        transactionReference: payment.transactionReference ?? undefined,
+      };
+
+      switch (result.status) {
+        case PaymentStatus.SUCCESS:
+          await this.paymentNotificationService.notifyPaymentSucceeded(
+            notificationInput,
+          );
+          return;
+
+        case PaymentStatus.FAILED:
+          await this.paymentNotificationService.notifyPaymentFailed({
+            ...notificationInput,
+            failureReason:
+              payment.failureReason ??
+              result.failureReason ??
+              undefined,
+          });
+          return;
+
+        default:
+          return;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to prepare payment notification for payment ${result.paymentId}.`,
+        error instanceof Error ? error.stack : undefined,
+      );
     }
   }
 
@@ -819,15 +921,15 @@ export class PaymentProcessingService {
 
       const target = Array.isArray(rawTarget)
         ? rawTarget
-            .filter((value): value is string => typeof value === 'string')
-            .join(',')
+          .filter((value): value is string => typeof value === 'string')
+          .join(',')
         : typeof rawTarget === 'string'
           ? rawTarget
           : '';
 
       const errorCode =
         target.includes('provider_session_id') ||
-        target.includes('providerSessionId')
+          target.includes('providerSessionId')
           ? PaymentErrorCode.DUPLICATE_PROVIDER_SESSION
           : PaymentErrorCode.DUPLICATE_PROVIDER_PAYMENT;
 
