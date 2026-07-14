@@ -325,6 +325,97 @@ This email was sent automatically by Nexora AI. Please do not reply.
   }
 
   /**
+   * Sends an email when a payment attempt fails.
+   *
+   * This method should be called only after the payment
+   * status is confirmed as FAILED.
+   *
+   * @param email Recipient email address.
+   * @param amount Attempted payment amount.
+   * @param currency Payment currency.
+   * @param paymentMethod Payment method used.
+   * @param paymentPurpose Purpose of the payment.
+   * @param _failureReason Provider failure reason retained for API compatibility.
+   * It is intentionally not exposed to the recipient.
+   * @param transactionReference Optional transaction reference.
+   */
+  async sendPaymentFailedEmail(
+    email: string,
+    amount: number,
+    currency: string,
+    paymentMethod: PaymentMethod,
+    paymentPurpose: PaymentPurpose,
+    _failureReason?: string,
+    transactionReference?: string,
+  ): Promise<void> {
+    const safeFailureReason =
+      'Your payment could not be completed. Please verify your payment details or try again using another payment method. If the problem persists, please contact your payment provider or Nexora AI support.';
+    await this.sendEmail({
+      to: email,
+      subject: 'Nexora AI Payment Failed',
+      text: `
+Nexora AI Payment Failed
+
+Unfortunately, your payment could not be completed.
+
+Amount: ${amount} ${currency}
+Payment Method: ${paymentMethod}
+Purpose: ${paymentPurpose}
+Transaction Reference: ${transactionReference ?? 'N/A'}
+Reason: ${safeFailureReason}
+
+No credits were added and no idea was unlocked.
+
+Please try again or use another payment method.
+
+This email was sent automatically by Nexora AI.
+Please do not reply.
+    `.trim(),
+      html: this.buildEmailTemplate(
+        'Payment Failed',
+        `
+        <p>
+          Unfortunately, your payment could not be completed.
+        </p>
+
+        <p>
+          <strong>Amount:</strong>
+          ${amount} ${currency}
+        </p>
+
+        <p>
+          <strong>Payment Method:</strong>
+          ${paymentMethod}
+        </p>
+
+        <p>
+          <strong>Purpose:</strong>
+          ${paymentPurpose}
+        </p>
+
+        <p>
+          <strong>Transaction Reference:</strong>
+          ${transactionReference ?? 'N/A'}
+        </p>
+
+        <p>
+          <strong>Reason:</strong>
+          ${safeFailureReason}
+        </p>
+
+        <p>
+          No credits were added and no idea was unlocked.
+        </p>
+
+        <p>
+          Please try again or use another available payment method.
+        </p>
+      `,
+      ),
+    });
+  }
+
+  /**
    * Sends a credit purchase confirmation email.
    *
    * This method should be called after credits are successfully

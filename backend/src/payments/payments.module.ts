@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { CreditsModule } from '../credits/credits.module';
+import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 import { PAYMENT_GATEWAYS } from './constants/payment-gateway.tokens';
@@ -20,6 +21,7 @@ import { AdminPaymentsService } from './services/admin-payments.service';
 import { CreditPurchaseService } from './services/credit-purchase.service';
 import { DirectUnlockPaymentService } from './services/direct-unlock-payment.service';
 import { PaymentCheckoutService } from './services/payment-checkout.service';
+import { PaymentNotificationService } from './services/payment-notification.service';
 import { PaymentProcessingService } from './services/payment-processing.service';
 import { PaymentWebhookService } from './services/payment-webhook.service';
 import { UserPaymentsService } from './services/user-payments.service';
@@ -34,11 +36,14 @@ import { UserPaymentsService } from './services/user-payments.service';
  * - Process verified payment confirmations.
  * - Fulfill successful credit purchases.
  * - Fulfill successful direct idea-unlock payments.
+ * - Send payment-related email notifications.
  * - Receive and verify provider webhook events.
  * - Resolve provider-specific payment gateways.
  *
  * Credit-balance mutations and cache invalidation are delegated
  * to CreditsModule.
+ *
+ * Email delivery is delegated to MailModule.
  *
  * Enabled payment gateways:
  * - Stripe.
@@ -51,6 +56,7 @@ import { UserPaymentsService } from './services/user-payments.service';
     ConfigModule,
     PrismaModule,
     CreditsModule,
+    MailModule,
   ],
 
   controllers: [
@@ -68,6 +74,7 @@ import { UserPaymentsService } from './services/user-payments.service';
     DirectUnlockPaymentService,
 
     PaymentCheckoutService,
+    PaymentNotificationService,
     PaymentProcessingService,
     PaymentWebhookService,
 
