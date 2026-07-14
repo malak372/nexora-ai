@@ -40,7 +40,7 @@ export class UserCreditsService {
 
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-  ) {}
+  ) { }
 
   /**
    * Returns the user's credit summary.
@@ -48,7 +48,11 @@ export class UserCreditsService {
   async getCredits(userId: string) {
     const cacheKey = userCacheKeys.credits(userId);
 
-    const cachedCredits = await this.cacheManager.get(cacheKey);
+    const cachedCredits = await this.cacheManager.get<{
+      creditBalance: number;
+      accountStatus: AccountStatus;
+      isPremium: boolean;
+    }>(cacheKey);
 
     if (cachedCredits) {
       return cachedCredits;

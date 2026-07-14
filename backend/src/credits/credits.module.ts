@@ -45,4 +45,4 @@ import { UserCreditsService } from './services/user-credits.service';
 
   exports: [CreditBalanceService, CreditCacheService],
 })
-export class CreditsModule {}
+export class CreditsModule { }

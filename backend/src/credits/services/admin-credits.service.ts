@@ -55,7 +55,7 @@ export class AdminCreditsService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly auditService: AuditService,
-  ) {}
+  ) { }
 
   /**
    * Shared Prisma selection used by administrator
@@ -275,13 +275,17 @@ export class AdminCreditsService {
    * Credit-dependent caches are invalidated only after
    * the transaction completes successfully.
    */
-  async adjustUserCredits(body: AdjustUserCreditsDto, adminId: string) {
+  async adjustUserCredits(
+    dto: AdjustUserCreditsDto,
+    adminId: string,
+  ) {
+    const description = dto.description.trim();
     const result = await this.prisma.$transaction(async (tx) => {
       const adjustment = await this.creditBalanceService.adjustBalance({
-        userId: body.userId,
-        amount: body.amount,
+        userId: dto.userId,
+        amount: dto.amount,
         type: CreditTransactionType.ADMIN_ADJUSTMENT,
-        description: body.description.trim(),
+        description: description,
         tx,
       });
 
@@ -296,17 +300,17 @@ export class AdminCreditsService {
           targetId: adjustment.transaction.id,
 
           oldValue: {
-            userId: body.userId,
+            userId: dto.userId,
             creditBalance: adjustment.previousBalance,
             accountStatus: adjustment.previousAccountStatus,
           },
 
           newValue: {
-            userId: body.userId,
+            userId: dto.userId,
             creditBalance: adjustment.balanceAfter,
             accountStatus: adjustment.accountStatus,
-            amount: body.amount,
-            description: body.description.trim(),
+            amount: dto.amount,
+            description: description,
           },
         },
         tx,
@@ -314,7 +318,7 @@ export class AdminCreditsService {
 
       const updatedUser = await tx.user.findUniqueOrThrow({
         where: {
-          id: body.userId,
+          id: dto.userId,
         },
 
         select: {
@@ -342,7 +346,7 @@ export class AdminCreditsService {
      * Cache invalidation intentionally occurs after the
      * database transaction has committed successfully.
      */
-    await this.creditCacheService.invalidateUserCreditCaches(body.userId);
+    await this.creditCacheService.invalidateUserCreditCaches(dto.userId);
 
     return {
       message: 'User credits adjusted successfully',

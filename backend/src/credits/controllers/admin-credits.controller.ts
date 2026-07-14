@@ -24,7 +24,18 @@ import { GetAdminCreditHistoryQueryDto } from '../dto/get-admin-credit-history-q
 import { AdminCreditsService } from '../services/admin-credits.service';
 
 /**
- * Handles administrator credit-management endpoints.
+ * Provides administrator-only endpoints for monitoring
+ * and managing user credit balances and transactions.
+ *
+ * Responsibilities:
+ * - Retrieve credit transaction history.
+ * - Retrieve credit analytics and chart data.
+ * - Adjust user credit balances manually.
+ * - Export filtered credit transactions as CSV.
+ *
+ * All endpoints require:
+ * - A valid authenticated session.
+ * - The ADMIN user role.
  *
  * Base route:
  * /admin/credits
@@ -35,35 +46,86 @@ import { AdminCreditsService } from '../services/admin-credits.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminCreditsController {
-  constructor(private readonly adminCreditsService: AdminCreditsService) {}
+  constructor(
+    private readonly adminCreditsService: AdminCreditsService,
+  ) { }
 
+  /**
+   * Returns aggregated credit statistics based on
+   * the supplied filters.
+   *
+   * GET /admin/credits/summary
+   */
   @Get('summary')
-  getCreditsSummary(@Query() query: GetAdminCreditHistoryQueryDto) {
+  getCreditsSummary(
+    @Query() query: GetAdminCreditHistoryQueryDto,
+  ) {
     return this.adminCreditsService.getCreditsSummary(query);
   }
 
+  /**
+   * Returns credit analytics formatted for administrative charts.
+   *
+   * GET /admin/credits/charts
+   */
   @Get('charts')
-  getCreditsCharts(@Query() query: GetAdminCreditHistoryQueryDto) {
+  getCreditsCharts(
+    @Query() query: GetAdminCreditHistoryQueryDto,
+  ) {
     return this.adminCreditsService.getCreditsCharts(query);
   }
 
+  /**
+   * Returns paginated and filtered credit transaction history.
+   *
+   * GET /admin/credits/history
+   */
   @Get('history')
-  getCreditHistory(@Query() query: GetAdminCreditHistoryQueryDto) {
+  getCreditHistory(
+    @Query() query: GetAdminCreditHistoryQueryDto,
+  ) {
     return this.adminCreditsService.getCreditHistory(query);
   }
 
+  /**
+   * Applies an administrator-authorized credit adjustment
+   * to a target user's balance.
+   *
+   * The service is responsible for:
+   * - Validating the target user.
+   * - Preventing invalid negative balances.
+   * - Updating the balance atomically.
+   * - Creating an ADMIN_ADJUSTMENT transaction.
+   * - Recording the administrator audit log.
+   *
+   * POST /admin/credits/adjust
+   */
   @Post('adjust')
   adjustUserCredits(
-    @Body() body: AdjustUserCreditsDto,
+    @Body() dto: AdjustUserCreditsDto,
     @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.adminCreditsService.adjustUserCredits(body, admin.id);
+    return this.adminCreditsService.adjustUserCredits(
+      dto,
+      admin.id,
+    );
   }
 
+  /**
+   * Exports filtered credit transaction history as a CSV file.
+   *
+   * GET /admin/credits/export/csv
+   */
   @Get('export/csv')
-  @Header('Content-Type', 'text/csv')
-  @Header('Content-Disposition', 'attachment; filename="credits.csv"')
-  exportCreditsCsv(@Query() query: GetAdminCreditHistoryQueryDto) {
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="credit-transactions.csv"',
+  )
+  exportCreditsCsv(
+    @Query() query: GetAdminCreditHistoryQueryDto,
+  ) {
     return this.adminCreditsService.exportCreditsCsv(query);
   }
 }
+

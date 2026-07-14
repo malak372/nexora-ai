@@ -10,22 +10,28 @@ import {
 } from 'class-validator';
 
 /**
- * DTO used by an administrator to adjust a user's credits.
+ * Request DTO used by administrators to manually
+ * adjust a user's credit balance.
  *
- * Positive values add credits.
- * Negative values deduct credits.
+ * Positive amounts add credits.
+ * Negative amounts deduct credits.
  *
  * @author Malak
  */
 export class AdjustUserCreditsDto {
   /**
-   * Target user identifier.
+   * Identifier of the user whose credit balance
+   * will be adjusted.
    */
   @IsUUID('4')
   userId!: string;
 
   /**
-   * Signed non-zero credit adjustment.
+   * Signed credit adjustment amount.
+   *
+   * Positive values add credits.
+   * Negative values deduct credits.
+   * Zero is not allowed.
    */
   @Type(() => Number)
   @IsInt()
@@ -33,7 +39,8 @@ export class AdjustUserCreditsDto {
   amount!: number;
 
   /**
-   * Administrative reason for the adjustment.
+   * Administrative reason recorded in the
+   * credit transaction history and audit log.
    */
   @IsString()
   @MinLength(5)
