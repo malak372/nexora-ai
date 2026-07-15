@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 import gplay from 'google-play-scraper';
 
 import { BaseCollector } from '../base/base.collector';
@@ -9,17 +8,15 @@ import { CollectorExternalCacheUtil } from '../base/collector-external-cache.uti
 import { SocialCollector } from '../base/collector.interface';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
+
 import {
   CollectorComment,
   CollectorInput,
   CollectorPost,
 } from '../base/collector.types';
+
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
-/**
- * Represents a Google Play application returned by
- * google-play-scraper.
- */
 type GooglePlayApp = {
   appId?: string;
   title?: string;
@@ -29,9 +26,6 @@ type GooglePlayApp = {
   ratings?: number;
 };
 
-/**
- * Represents a public Google Play application review.
- */
 type GooglePlayReview = {
   id?: string;
   text?: string;
@@ -40,16 +34,10 @@ type GooglePlayReview = {
   date?: string | Date;
 };
 
-/**
- * Represents the Google Play reviews response.
- */
 type GooglePlayReviewsResponse = {
   data?: GooglePlayReview[];
 };
 
-/**
- * Options required by the Google Play search operation.
- */
 type GooglePlaySearchOptions = {
   term: string;
   num: number;
@@ -57,9 +45,6 @@ type GooglePlaySearchOptions = {
   country: string;
 };
 
-/**
- * Options required by the Google Play reviews operation.
- */
 type GooglePlayReviewsOptions = {
   appId: string;
   num: number;
@@ -68,14 +53,10 @@ type GooglePlayReviewsOptions = {
   country: string;
 };
 
-/**
- * Minimal type definition required from google-play-scraper.
- *
- * A local contract is used because the package typings may
- * expose some members as any depending on the installed version.
- */
 type GooglePlayClient = {
-  search(options: GooglePlaySearchOptions): Promise<GooglePlayApp[]>;
+  search(
+    options: GooglePlaySearchOptions,
+  ): Promise<GooglePlayApp[]>;
 
   reviews(
     options: GooglePlayReviewsOptions,
@@ -86,16 +67,13 @@ type GooglePlayClient = {
   };
 };
 
-/**
- * Strictly typed google-play-scraper client.
- */
-const googlePlayClient = gplay as unknown as GooglePlayClient;
+const googlePlayClient =
+  gplay as unknown as GooglePlayClient;
 
 /**
  * Google Play collector.
  *
- * Collects public Google Play apps and public app reviews
- * using google-play-scraper.
+ * Collects public Google Play applications and reviews.
  *
  * @author Malak
  */
@@ -105,25 +83,16 @@ export class GooglePlayCollector
   implements SocialCollector
 {
   /**
-   * Platform source type stored with collected records.
+   * Must match DataSource.key.
    */
-  readonly sourceType = CollectionSourceType.GOOGLE_PLAY;
-
-  /**
-   * Human-readable platform name.
-   */
-  private readonly platformName = 'Google Play';
+  readonly sourceKey = 'google-play';
 
   constructor(configService: ConfigService) {
     super(configService, GooglePlayCollector.name);
   }
 
   /**
-   * Collects Google Play apps, ranks them by relevance,
-   * attaches useful public reviews, and maps them to CollectorPost.
-   *
-   * @param input Collection job configuration.
-   * @returns Relevant Google Play applications and reviews.
+   * Collects, ranks, and maps Google Play applications.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -150,7 +119,9 @@ export class GooglePlayCollector
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
+        rankedApps.map((item) =>
+          this.mapAppToCollectorPost(item.app, input),
+        ),
       );
 
       this.logger.log(
@@ -169,21 +140,21 @@ export class GooglePlayCollector
   }
 
   /**
-   * Searches Google Play applications with cache support.
-   *
-   * @param searchQuery Search phrase.
-   * @param input Collection job configuration.
-   * @returns Matching Google Play applications.
+   * Searches Google Play applications.
    */
   private async searchApps(
     searchQuery: string,
     input: CollectorInput,
   ): Promise<GooglePlayApp[]> {
-    const cacheKey = CollectorCacheUtil.build('google-play', 'search', [
-      searchQuery,
-      input.country,
-      input.language,
-    ]);
+    const cacheKey = CollectorCacheUtil.build(
+      this.sourceKey,
+      'search',
+      [
+        searchQuery,
+        input.country,
+        input.language,
+      ],
+    );
 
     return CollectorExternalCacheUtil.remember<GooglePlayApp[]>(
       cacheKey,
@@ -199,11 +170,7 @@ export class GooglePlayCollector
   }
 
   /**
-   * Builds a search query from domain keywords,
-   * domain name, and custom user keywords.
-   *
-   * @param input Collection job configuration.
-   * @returns Normalized Google Play search query.
+   * Builds the Google Play search query.
    */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
@@ -216,20 +183,20 @@ export class GooglePlayCollector
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([...domainKeywords, ...fallbackDomain, ...userKeywords])
+    return this.unique([
+      ...userKeywords,
+      ...domainKeywords,
+      ...fallbackDomain,
+    ])
       .slice(0, 4)
       .join(' ');
   }
 
   /**
-   * Validates a Google Play application before ranking.
-   *
-   * @param app Google Play application.
-   * @returns True when the application contains valid content.
+   * Validates a Google Play application.
    */
   private isValidApp(app: GooglePlayApp): boolean {
     const title = this.cleanPlainText(app.title);
-
     const summary = this.cleanPlainText(app.summary);
 
     if (!app.appId || !title) {
@@ -250,11 +217,7 @@ export class GooglePlayCollector
   }
 
   /**
-   * Detects game-like applications that may pollute
-   * domain-specific Google Play results.
-   *
-   * @param content Normalized application content.
-   * @returns True when the application appears to be a game.
+   * Detects game-like applications.
    */
   private isLikelyGameApp(content: string): boolean {
     const gameTerms = [
@@ -278,12 +241,7 @@ export class GooglePlayCollector
   }
 
   /**
-   * Calculates application relevance using the
-   * shared relevance scoring utility.
-   *
-   * @param app Google Play application.
-   * @param input Collection job configuration.
-   * @returns Relevance score.
+   * Calculates application relevance.
    */
   private calculateAppRelevanceScore(
     app: GooglePlayApp,
@@ -296,57 +254,44 @@ export class GooglePlayCollector
       problemTerms: this.getProblemWords(),
       likes: app.ratings ?? 0,
       replies: app.ratings ?? 0,
-      publishedAt: undefined,
     });
   }
 
   /**
-   * Maps a Google Play application to the unified
-   * collector post format.
-   *
-   * @param app Google Play application.
-   * @param input Collection job configuration.
-   * @returns Unified collector post.
+   * Maps a Google Play application.
    */
   private async mapAppToCollectorPost(
     app: GooglePlayApp,
     input: CollectorInput,
   ): Promise<CollectorPost> {
     const appId = app.appId ?? '';
-
     const title = this.cleanPlainText(app.title);
-
     const summary = this.cleanPlainText(app.summary);
-
-    const author = this.cleanPlainText(app.developer);
 
     const comments = await this.collectAppReviews(appId, input);
 
     return {
-      sourceType: CollectionSourceType.GOOGLE_PLAY,
-      platformName: this.platformName,
       externalId: appId,
       title,
       content: summary || title,
-      author,
+      author: this.cleanPlainText(app.developer),
       url: app.url,
+
       country: input.country,
       city: input.city,
       region: input.region,
-      language: input.language,
+
+      languageCode: this.resolveStoredLanguageCode(input.language),
+
       likesCount: app.ratings ?? 0,
       repliesCount: comments.length,
-      publishedAt: undefined,
+
       comments,
     };
   }
 
   /**
-   * Collects useful public reviews for one Google Play app.
-   *
-   * @param appId Google Play application identifier.
-   * @param input Collection job configuration.
-   * @returns Unified collector comments.
+   * Collects useful public reviews.
    */
   private async collectAppReviews(
     appId: string,
@@ -357,11 +302,15 @@ export class GooglePlayCollector
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build('google-play', 'reviews', [
-        appId,
-        input.country,
-        input.language,
-      ]);
+      const cacheKey = CollectorCacheUtil.build(
+        this.sourceKey,
+        'reviews',
+        [
+          appId,
+          input.country,
+          input.language,
+        ],
+      );
 
       const response =
         await CollectorExternalCacheUtil.remember<GooglePlayReviewsResponse>(
@@ -378,32 +327,40 @@ export class GooglePlayCollector
         );
 
       return (response.data ?? [])
-        .filter((review) => this.isUsefulReview(review, input.language))
+        .filter((review) =>
+          this.isUsefulReview(review, input.language),
+        )
         .slice(0, this.maxSavedComments)
         .map(
           (review): CollectorComment => ({
-            externalId: this.buildReviewExternalId(appId, review),
+            externalId: this.buildReviewExternalId(
+              appId,
+              review,
+            ),
+
             content: this.cleanPlainText(review.text),
             author: this.cleanPlainText(review.userName),
-            language: input.language,
+
+            languageCode: this.resolveStoredLanguageCode(
+              input.language,
+            ),
+
             likesCount: review.thumbsUp ?? 0,
             publishedAt: this.resolveReviewDate(review),
           }),
         );
-    } catch {
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Google Play reviews collection failed for app ${appId}`,
+        this.getErrorMessage(error),
+      );
+
       return [];
     }
   }
 
   /**
-   * Builds a stable external identifier for a review.
-   *
-   * The original review ID is preferred. When it is missing,
-   * the application ID and normalized review date are used.
-   *
-   * @param appId Google Play application identifier.
-   * @param review Google Play review.
-   * @returns Stable external review identifier.
+   * Builds a stable review external ID.
    */
   private buildReviewExternalId(
     appId: string,
@@ -413,45 +370,57 @@ export class GooglePlayCollector
       return review.id;
     }
 
-    const datePart = review.date
-      ? new Date(review.date).toISOString()
-      : 'unknown-date';
+    const datePart =
+      this.resolveReviewDate(review)?.toISOString() ??
+      'unknown-date';
 
-    return `${appId}-${datePart}`;
+    const textPart = this.cleanNormalizedText(review.text)
+      .slice(0, 50);
+
+    return `${appId}-${datePart}-${textPart}`;
   }
 
   /**
-   * Resolves the publication date of a Google Play review.
-   *
-   * @param review Google Play review.
-   * @returns Parsed date when available.
+   * Resolves a review date safely.
    */
-  private resolveReviewDate(review: GooglePlayReview): Date | undefined {
-    return review.date ? new Date(review.date) : undefined;
+  private resolveReviewDate(
+    review: GooglePlayReview,
+  ): Date | undefined {
+    if (!review.date) {
+      return undefined;
+    }
+
+    const date = new Date(review.date);
+
+    return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
   /**
-   * Filters short, low-value, blocked, or
-   * language-mismatched reviews.
-   *
-   * @param review Google Play review.
-   * @param language Requested collection language.
-   * @returns True when the review is useful.
+   * Filters low-value reviews.
    */
-  private isUsefulReview(review: GooglePlayReview, language?: string): boolean {
+  private isUsefulReview(
+    review: GooglePlayReview,
+    language?: string,
+  ): boolean {
     const rawContent = this.cleanPlainText(review.text);
-
     const content = this.cleanNormalizedText(rawContent);
 
-    if (!review.id || content.length < 40) {
+    if (content.length < 40) {
       return false;
     }
 
-    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
+    if (
+      !CollectorLanguageUtil.matchesRequestedLanguage(
+        rawContent,
+        language,
+      )
+    ) {
       return false;
     }
 
-    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+    const cleaned = content
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .trim();
 
     if (!cleaned) {
       return false;
@@ -485,66 +454,51 @@ export class GooglePlayCollector
   }
 
   /**
-   * Reads common blocked words and
-   * Google Play-specific blocked words.
-   *
-   * @returns Normalized blocked words.
+   * Reads Google Play blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords('GOOGLE_PLAY_BLOCKED_WORDS');
+    return super.getBlockedWords(
+      'GOOGLE_PLAY_BLOCKED_WORDS',
+    );
   }
 
   /**
-   * Resolves the requested language to a
-   * Google Play language code.
-   *
-   * @param language Requested language.
-   * @returns Google Play language code.
+   * Resolves the Google Play language code.
    */
   private resolveLanguage(language?: string): string {
-    return CollectorLanguageUtil.resolveLanguageCode(language) ?? 'en';
+    return (
+      CollectorLanguageUtil.resolveLanguageCode(language) ??
+      'en'
+    );
   }
 
   /**
-   * Resolves the requested country to a
-   * Google Play country code.
-   *
-   * @param country Requested country.
-   * @returns Lowercase country code.
+   * Resolves the Google Play country code.
    */
   private resolveCountry(country?: string): string {
-    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
+    const regionCode =
+      CollectorRegionUtil.resolveRegionCode(country);
 
     return regionCode?.toLowerCase() ?? 'us';
   }
 
   /**
-   * Returns the newest review sort value.
-   *
-   * A string fallback is used when the installed scraper
-   * version does not expose its sort constants.
-   *
-   * @returns Google Play newest review sort value.
+   * Returns the newest-review sort value.
    */
   private getNewestSort(): string | number {
     return googlePlayClient.sort?.NEWEST ?? 'NEWEST';
   }
 
   /**
-   * Extracts a readable message from an unknown error.
-   *
-   * @param error Unknown caught value.
-   * @returns Safe log message.
+   * Extracts a safe error message.
    */
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    if (typeof error === 'string') {
-      return error;
-    }
-
-    return 'Unknown Google Play collector error.';
+    return typeof error === 'string'
+      ? error
+      : 'Unknown Google Play collector error.';
   }
 }

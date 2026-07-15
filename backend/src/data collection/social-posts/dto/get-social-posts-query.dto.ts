@@ -1,30 +1,41 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { CollectionSourceType, LanguageCode } from '@prisma/client';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for filtering, searching, sorting,
- * date filtering, and paginating collected social posts.
+ * Query DTO for filtering collected posts.
  *
  * @author Malak
  */
-export class GetSocialPostsQueryDto extends ListQueryDto {
+export class GetSocialPostsQueryDto
+  extends ListQueryDto
+{
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   collectionJobId?: string;
 
   @IsOptional()
-  @IsUUID()
-  platformId?: string;
+  @IsUUID('4')
+  dataSourceId?: string;
+
+  /**
+   * Filters posts using DataSource.key.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+  )
+  dataSourceKey?: string;
 
   @IsOptional()
-  @IsEnum(CollectionSourceType)
-  sourceType?: CollectionSourceType;
-
-  @IsOptional()
-  @IsEnum(LanguageCode)
-  language?: LanguageCode;
+  @IsString()
+  languageCode?: string;
 
   @IsOptional()
   @IsString()

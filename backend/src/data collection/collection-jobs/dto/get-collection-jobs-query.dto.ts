@@ -1,30 +1,28 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import {
   CollectionJobStatus,
-  CollectionSourceType,
   LanguageCode,
 } from '@prisma/client';
+
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for filtering, searching, sorting,
- * date filtering, and paginating collection jobs.
- *
- * Inherits common list query parameters from ListQueryDto:
- * - page
- * - limit
- * - search
- * - sortBy
- * - sortOrder
- * - fromDate
- * - toDate
+ * Query DTO for filtering collection jobs.
  *
  * @author Malak
  */
-export class GetCollectionJobsQueryDto extends ListQueryDto {
+export class GetCollectionJobsQueryDto
+  extends ListQueryDto
+{
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   domainId?: string;
 
   @IsOptional()
@@ -47,7 +45,13 @@ export class GetCollectionJobsQueryDto extends ListQueryDto {
   @IsEnum(LanguageCode)
   language?: LanguageCode;
 
+  /**
+   * Filters jobs by DataSource.key.
+   */
   @IsOptional()
-  @IsEnum(CollectionSourceType)
-  platform?: CollectionSourceType;
+  @IsString()
+  @Matches(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+  )
+  dataSourceKey?: string;
 }

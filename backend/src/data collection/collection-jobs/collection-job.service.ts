@@ -3,50 +3,69 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import {
   CollectionJobStatus,
-  CollectionSourceType,
   LanguageCode,
   Prisma,
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { RunCollectionDto } from '../dto/run-collection.dto';
-import { GetCollectionJobsQueryDto } from './dto/get-collection-jobs-query.dto';
+
 import { CollectorsFactory } from '../../collectors/collectors.factory';
+
+import { RunCollectionDto } from '../dto/run-collection.dto';
+
+import { GetCollectionJobsQueryDto } from './dto/get-collection-jobs-query.dto';
 
 import {
   buildDateFilter,
   buildOrderBy,
   buildPagination,
 } from '../../utilities/base-query/builder';
+
 import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
-import { PLATFORM_NAMES } from '../../collectors/base/platform-name.constant';
 
-type CollectionJobWithRelations = Prisma.CollectionJobGetPayload<{
-  include: {
-    domain: {
-      select: {
-        id: true;
-        name: true;
-      };
-    };
-    nlpAnalysis: true;
-    _count: {
-      select: {
-        posts: true;
-      };
-    };
-  };
-}>;
+const collectionJobInclude = {
+  domain: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
 
-type CollectionJobResponseInput = CollectionJobWithRelations & {
-  domainKeywords?: string[];
-  userKeywords?: Prisma.JsonValue | null;
-};
+  sources: {
+    include: {
+      dataSource: {
+        select: {
+          id: true,
+          key: true,
+          displayName: true,
+          isActive: true,
+          isImplemented: true,
+        },
+      },
+    },
+  },
+
+  nlpAnalysis: true,
+
+  _count: {
+    select: {
+      posts: true,
+    },
+  },
+} satisfies Prisma.CollectionJobInclude;
+
+type CollectionJobWithRelations =
+  Prisma.CollectionJobGetPayload<{
+    include:
+      typeof collectionJobInclude;
+  }>;
 
 /**
- * Service responsible for collection job persistence and status management.
+ * Service responsible for CollectionJob persistence,
+ * source validation, and source-level status management.
  *
  * @author Malak
  */
@@ -54,164 +73,367 @@ type CollectionJobResponseInput = CollectionJobWithRelations & {
 export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly collectorsFactory: CollectorsFactory,
+
+    private readonly collectorsFactory:
+      CollectorsFactory,
   ) {}
 
-  async validateActiveDomain(domainId: string) {
-    const domain = await this.prisma.domain.findFirst({
-      where: {
-        id: domainId,
-        isActive: true,
-      },
-      include: {
-        domainKeywords: true,
-      },
-    });
+  /**
+   * Validates the selected active domain.
+   */
+  async validateActiveDomain(
+    domainId: string,
+  ) {
+    const domain =
+      await this.prisma.domain.findFirst({
+        where: {
+          id: domainId,
+          isActive: true,
+        },
+
+        include: {
+          domainKeywords: true,
+        },
+      });
 
     if (!domain) {
-      throw new NotFoundException('Domain not found or inactive.');
+      throw new NotFoundException(
+        'Domain not found or inactive.',
+      );
     }
 
     return domain;
   }
 
-  validateSupportedPlatforms(platforms: CollectionSourceType[]): void {
-    const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
-
-    const unsupportedPlatforms = platforms.filter(
-      (platform) => !supportedPlatforms.includes(platform),
+  /**
+   * Resolves requested DataSource.key values against:
+   * - Backend collector implementations.
+   * - Active database rows.
+   * - isImplemented database state.
+   *
+   * When no keys are supplied, all active and implemented
+   * backend-supported data sources are selected.
+   */
+  async resolveActiveImplementedDataSources(
+    requestedKeys?: string[],
+  ) {
+    const implementedKeys = new Set(
+      this.collectorsFactory
+        .getImplementedSourceKeys(),
     );
 
-    if (unsupportedPlatforms.length > 0) {
+    const selectedKeys =
+      requestedKeys?.length
+        ? [
+            ...new Set(
+              requestedKeys.map((key) =>
+                key
+                  .trim()
+                  .toLowerCase(),
+              ),
+            ),
+          ]
+        : [...implementedKeys];
+
+    if (!selectedKeys.length) {
       throw new BadRequestException(
-        `Unsupported collection platforms: ${unsupportedPlatforms.join(', ')}`,
-      );
-    }
-  }
-
-  async validateActivePlatform(sourceType: CollectionSourceType) {
-    const platformName = PLATFORM_NAMES[sourceType];
-
-    const platform = await this.prisma.platform.findFirst({
-      where: {
-        name: platformName,
-        isActive: true,
-      },
-    });
-
-    if (!platform) {
-      throw new BadRequestException(
-        `Platform ${platformName} is inactive or not found.`,
+        'No collector implementations are currently available.',
       );
     }
 
-    return platform;
-  }
+    const missingImplementations =
+      selectedKeys.filter(
+        (key) =>
+          !implementedKeys.has(key),
+      );
 
-  async getActiveSupportedPlatforms(): Promise<CollectionSourceType[]> {
-    const supportedPlatforms = this.collectorsFactory.getSupportedPlatforms();
+    if (
+      missingImplementations.length > 0
+    ) {
+      throw new BadRequestException(
+        `Collector implementations not found: ${missingImplementations.join(
+          ', ',
+        )}`,
+      );
+    }
 
-    const activePlatforms = await this.prisma.platform.findMany({
-      where: {
-        isActive: true,
-        name: {
-          in: supportedPlatforms.map(
-            (sourceType) => PLATFORM_NAMES[sourceType],
-          ),
+    const dataSources =
+      await this.prisma.dataSource.findMany({
+        where: {
+          key: {
+            in: selectedKeys,
+          },
+
+          isActive: true,
+          isImplemented: true,
         },
-      },
-      select: {
-        name: true,
-      },
-    });
 
-    const activePlatformNames = new Set(
-      activePlatforms.map((platform) => platform.name),
+        select: {
+          id: true,
+          key: true,
+          displayName: true,
+          supportsPosts: true,
+          supportsComments: true,
+          supportsRegion: true,
+          supportsLanguage: true,
+        },
+      });
+
+    const foundKeys = new Set(
+      dataSources.map(
+        (source) => source.key,
+      ),
     );
 
-    return supportedPlatforms.filter((sourceType) =>
-      activePlatformNames.has(PLATFORM_NAMES[sourceType]),
+    const unavailableKeys =
+      selectedKeys.filter(
+        (key) => !foundKeys.has(key),
+      );
+
+    if (unavailableKeys.length > 0) {
+      throw new BadRequestException(
+        `Inactive, missing, or unimplemented data sources: ${unavailableKeys.join(
+          ', ',
+        )}`,
+      );
+    }
+
+    const dataSourceByKey = new Map(
+      dataSources.map((source) => [
+        source.key,
+        source,
+      ]),
+    );
+
+    return selectedKeys.map(
+      (key) => dataSourceByKey.get(key)!,
     );
   }
 
-  createRunningJob(
-    dto: Omit<RunCollectionDto, 'platforms'> & {
-      platforms?: CollectionSourceType[];
-    },
-    platforms: CollectionSourceType[],
+  /**
+   * Creates a running CollectionJob and one
+   * CollectionJobSource row per selected source.
+   */
+  async createRunningJob(
+    dto: RunCollectionDto,
+
+    dataSources: Array<{
+      id: string;
+      key: string;
+      displayName: string;
+    }>,
   ) {
     return this.prisma.collectionJob.create({
       data: {
         domainId: dto.domainId,
-        platforms,
+
         language: dto.language,
+
         country: dto.country,
         city: dto.city,
         region: dto.region,
         radiusKm: dto.radiusKm,
+
         keywords: dto.keywords ?? [],
-        status: CollectionJobStatus.RUNNING,
+
+        status:
+          CollectionJobStatus.RUNNING,
+
         startedAt: new Date(),
+
+        sources: {
+          create: dataSources.map(
+            (source) => ({
+              dataSourceId:
+                source.id,
+
+              status:
+                CollectionJobStatus.PENDING,
+            }),
+          ),
+        },
       },
+
+      include: collectionJobInclude,
     });
   }
 
+  /**
+   * Returns a job or throws NotFoundException.
+   */
   async findJobOrThrow(id: string) {
-    const job = await this.prisma.collectionJob.findUnique({
-      where: { id },
-    });
+    const job =
+      await this.prisma.collectionJob
+        .findUnique({
+          where: { id },
+
+          include: {
+            sources: {
+              include: {
+                dataSource: true,
+              },
+            },
+          },
+        });
 
     if (!job) {
-      throw new NotFoundException('Collection job was not found.');
+      throw new NotFoundException(
+        'Collection job was not found.',
+      );
     }
 
     return job;
   }
 
+  /**
+   * Returns detailed job information.
+   */
   async findJobDetails(id: string) {
-    const job = await this.prisma.collectionJob.findUnique({
-      where: { id },
-      include: {
-        domain: {
-          select: {
-            id: true,
-            name: true,
-            domainKeywords: {
+    const job =
+      await this.prisma.collectionJob
+        .findUnique({
+          where: { id },
+
+          include: {
+            ...collectionJobInclude,
+
+            domain: {
               select: {
                 id: true,
-                keyword: true,
-                language: true,
+                name: true,
+
+                domainKeywords: {
+                  select: {
+                    id: true,
+                    keyword: true,
+                    language: true,
+                  },
+                },
               },
             },
           },
-        },
-        nlpAnalysis: true,
-        _count: {
-          select: {
-            posts: true,
-          },
-        },
-      },
-    });
+        });
 
     if (!job) {
-      throw new NotFoundException('Collection job was not found.');
+      throw new NotFoundException(
+        'Collection job was not found.',
+      );
     }
 
-    const domainKeywords = this.getDomainKeywordsByLanguage(
-      job.domain.domainKeywords,
-      job.language,
-    );
+    const domainKeywords =
+      this.getDomainKeywordsByLanguage(
+        job.domain.domainKeywords,
+        job.language,
+      );
 
-    return this.mapJobResponse({
-      ...job,
+    return this.mapJobResponse(
+      job,
       domainKeywords,
-      userKeywords: job.keywords,
-    });
+    );
   }
 
+  /**
+   * Marks one source as running.
+   */
+  markSourceRunning(
+    collectionJobId: string,
+    dataSourceId: string,
+  ) {
+    return this.prisma
+      .collectionJobSource.update({
+        where: {
+          collectionJobId_dataSourceId:
+            {
+              collectionJobId,
+              dataSourceId,
+            },
+        },
+
+        data: {
+          status:
+            CollectionJobStatus.RUNNING,
+
+          startedAt: new Date(),
+          completedAt: null,
+          failureReason: null,
+        },
+      });
+  }
+
+  /**
+   * Marks one source as completed.
+   */
+  markSourceCompleted(
+    collectionJobId: string,
+    dataSourceId: string,
+
+    totals: {
+      totalPosts: number;
+      totalComments: number;
+    },
+  ) {
+    return this.prisma
+      .collectionJobSource.update({
+        where: {
+          collectionJobId_dataSourceId:
+            {
+              collectionJobId,
+              dataSourceId,
+            },
+        },
+
+        data: {
+          status:
+            CollectionJobStatus.COMPLETED,
+
+          totalPosts:
+            totals.totalPosts,
+
+          totalComments:
+            totals.totalComments,
+
+          completedAt: new Date(),
+          failureReason: null,
+        },
+      });
+  }
+
+  /**
+   * Marks one source as failed.
+   */
+  markSourceFailed(
+    collectionJobId: string,
+    dataSourceId: string,
+    error: unknown,
+  ) {
+    return this.prisma
+      .collectionJobSource.update({
+        where: {
+          collectionJobId_dataSourceId:
+            {
+              collectionJobId,
+              dataSourceId,
+            },
+        },
+
+        data: {
+          status:
+            CollectionJobStatus.FAILED,
+
+          completedAt: new Date(),
+
+          failureReason:
+            this.getErrorMessage(error),
+        },
+      });
+  }
+
+  /**
+   * Completes the parent CollectionJob.
+   */
   completeJob(
     id: string,
+
     totals: {
       totalPosts: number;
       totalComments: number;
@@ -219,66 +441,144 @@ export class CollectionJobService {
   ) {
     return this.prisma.collectionJob.update({
       where: { id },
+
       data: {
-        status: CollectionJobStatus.COMPLETED,
-        totalPosts: totals.totalPosts,
-        totalComments: totals.totalComments,
+        status:
+          CollectionJobStatus.COMPLETED,
+
+        totalPosts:
+          totals.totalPosts,
+
+        totalComments:
+          totals.totalComments,
+
         completedAt: new Date(),
+        failedReason: null,
       },
-      include: {
-        domain: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+
+      include: collectionJobInclude,
     });
   }
 
-  failJob(id: string, error: unknown) {
+  /**
+   * Marks the parent job as failed.
+   */
+  failJob(
+    id: string,
+    error: unknown,
+  ) {
     return this.prisma.collectionJob.update({
       where: { id },
+
       data: {
-        status: CollectionJobStatus.FAILED,
+        status:
+          CollectionJobStatus.FAILED,
+
         failedReason:
-          error instanceof Error ? error.message : 'Unknown collection error.',
+          this.getErrorMessage(error),
+
         completedAt: new Date(),
       },
+
+      include: collectionJobInclude,
     });
   }
 
+  /**
+   * Stops a running CollectionJob and its unfinished sources.
+   */
   async stopJob(id: string) {
-    const job = await this.findJobOrThrow(id);
+    const job =
+      await this.findJobOrThrow(id);
 
-    if (job.status !== CollectionJobStatus.RUNNING) {
+    if (
+      job.status !==
+      CollectionJobStatus.RUNNING
+    ) {
       throw new BadRequestException(
         'Only running collection jobs can be stopped.',
       );
     }
 
-    return this.prisma.collectionJob.update({
-      where: { id },
-      data: {
-        status: CollectionJobStatus.STOPPED,
-        completedAt: new Date(),
+    const completedAt = new Date();
+
+    return this.prisma.$transaction(
+      async (transaction) => {
+        await transaction
+          .collectionJobSource.updateMany({
+            where: {
+              collectionJobId: id,
+
+              status: {
+                in: [
+                  CollectionJobStatus.PENDING,
+                  CollectionJobStatus.RUNNING,
+                ],
+              },
+            },
+
+            data: {
+              status:
+                CollectionJobStatus.STOPPED,
+
+              completedAt,
+            },
+          });
+
+        return transaction
+          .collectionJob.update({
+            where: { id },
+
+            data: {
+              status:
+                CollectionJobStatus.STOPPED,
+
+              completedAt,
+            },
+
+            include:
+              collectionJobInclude,
+          });
       },
-    });
+    );
   }
 
+  /**
+   * Returns collection status counters.
+   */
   async getStatus() {
-    const [running, completed, failed, stopped] = await Promise.all([
+    const [
+      running,
+      completed,
+      failed,
+      stopped,
+    ] = await Promise.all([
       this.prisma.collectionJob.count({
-        where: { status: CollectionJobStatus.RUNNING },
+        where: {
+          status:
+            CollectionJobStatus.RUNNING,
+        },
       }),
+
       this.prisma.collectionJob.count({
-        where: { status: CollectionJobStatus.COMPLETED },
+        where: {
+          status:
+            CollectionJobStatus.COMPLETED,
+        },
       }),
+
       this.prisma.collectionJob.count({
-        where: { status: CollectionJobStatus.FAILED },
+        where: {
+          status:
+            CollectionJobStatus.FAILED,
+        },
       }),
+
       this.prisma.collectionJob.count({
-        where: { status: CollectionJobStatus.STOPPED },
+        where: {
+          status:
+            CollectionJobStatus.STOPPED,
+        },
       }),
     ]);
 
@@ -291,91 +591,123 @@ export class CollectionJobService {
     };
   }
 
-  async findJobs(query: GetCollectionJobsQueryDto) {
-    const { skip, take, page, limit } = buildPagination(query);
+  /**
+   * Returns paginated collection jobs.
+   */
+  async findJobs(
+    query: GetCollectionJobsQueryDto,
+  ) {
+    const {
+      skip,
+      take,
+      page,
+      limit,
+    } = buildPagination(query);
 
-    const where = this.buildJobsWhere(query);
+    const where =
+      this.buildJobsWhere(query);
 
-    const [data, total] = await Promise.all([
-      this.prisma.collectionJob.findMany({
-        where,
-        skip,
-        take,
-        orderBy: buildOrderBy(
-          query,
-          [
-            'createdAt',
-            'updatedAt',
-            'startedAt',
-            'completedAt',
-            'totalPosts',
-            'totalComments',
-          ] as const,
-          'createdAt',
-        ),
-        include: {
-          domain: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          nlpAnalysis: true,
-          _count: {
-            select: {
-              posts: true,
-            },
-          },
-        },
-      }),
-      this.prisma.collectionJob.count({ where }),
-    ]);
+    const [data, total] =
+      await Promise.all([
+        this.prisma.collectionJob
+          .findMany({
+            where,
+            skip,
+            take,
+
+            orderBy: buildOrderBy(
+              query,
+              [
+                'createdAt',
+                'updatedAt',
+                'startedAt',
+                'completedAt',
+                'totalPosts',
+                'totalComments',
+              ] as const,
+              'createdAt',
+            ),
+
+            include:
+              collectionJobInclude,
+          }),
+
+        this.prisma.collectionJob.count({
+          where,
+        }),
+      ]);
 
     return {
-      data: data.map((job) => this.mapJobResponse(job)),
+      data: data.map((job) =>
+        this.mapJobResponse(job),
+      ),
+
       meta: {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(total, limit),
+
+        totalPages:
+          calculateTotalPages(
+            total,
+            limit,
+          ),
       },
     };
   }
 
   /**
-   * Builds CollectionJob filtering query.
+   * Builds CollectionJob filters.
    */
   private buildJobsWhere(
     query: GetCollectionJobsQueryDto,
   ): Prisma.CollectionJobWhereInput {
-    const dateFilter = buildDateFilter(query);
+    const dateFilter =
+      buildDateFilter(query);
 
     return {
-      ...(query.domainId && { domainId: query.domainId }),
-      ...(query.status && { status: query.status }),
+      ...(query.domainId && {
+        domainId: query.domainId,
+      }),
+
+      ...(query.status && {
+        status: query.status,
+      }),
+
       ...(query.country && {
         country: {
           contains: query.country,
           mode: 'insensitive',
         },
       }),
+
       ...(query.city && {
         city: {
           contains: query.city,
           mode: 'insensitive',
         },
       }),
+
       ...(query.region && {
         region: {
           contains: query.region,
           mode: 'insensitive',
         },
       }),
-      ...(query.language && { language: query.language }),
 
-      ...(query.platform && {
-        platforms: {
-          array_contains: [query.platform],
+      ...(query.language && {
+        language: query.language,
+      }),
+
+      ...(query.dataSourceKey && {
+        sources: {
+          some: {
+            dataSource: {
+              key: query.dataSourceKey
+                .trim()
+                .toLowerCase(),
+            },
+          },
         },
       }),
 
@@ -385,27 +717,62 @@ export class CollectionJobService {
         OR: [
           {
             country: {
-              contains: query.search,
+              contains:
+                query.search,
               mode: 'insensitive',
             },
           },
+
           {
             city: {
-              contains: query.search,
+              contains:
+                query.search,
               mode: 'insensitive',
             },
           },
+
           {
             region: {
-              contains: query.search,
+              contains:
+                query.search,
               mode: 'insensitive',
             },
           },
+
           {
             domain: {
               name: {
-                contains: query.search,
+                contains:
+                  query.search,
                 mode: 'insensitive',
+              },
+            },
+          },
+
+          {
+            sources: {
+              some: {
+                dataSource: {
+                  OR: [
+                    {
+                      key: {
+                        contains:
+                          query.search,
+                        mode:
+                          'insensitive',
+                      },
+                    },
+
+                    {
+                      displayName: {
+                        contains:
+                          query.search,
+                        mode:
+                          'insensitive',
+                      },
+                    },
+                  ],
+                },
               },
             },
           },
@@ -415,125 +782,236 @@ export class CollectionJobService {
   }
 
   /**
-   * Returns unique keywords from all active domains.
-   *
-   * Used when the selected domain is General.
+   * Returns unique keywords from active domains.
    */
-  async getAllActiveDomainKeywords(language: LanguageCode): Promise<string[]> {
-    const keywords = await this.prisma.domainKeyword.findMany({
-      where: {
-        domain: {
-          isActive: true,
-        },
-        OR:
-          language === LanguageCode.ANY
-            ? [{ language: LanguageCode.ANY }]
-            : [{ language: LanguageCode.ANY }, { language }],
-      },
-      select: {
-        keyword: true,
-      },
-    });
+  async getAllActiveDomainKeywords(
+    language: LanguageCode,
+  ): Promise<string[]> {
+    const keywords =
+      await this.prisma.domainKeyword
+        .findMany({
+          where: {
+            domain: {
+              isActive: true,
+            },
 
-    return [...new Set(keywords.map((item) => item.keyword))];
+            OR:
+              language ===
+              LanguageCode.ANY
+                ? [
+                    {
+                      language:
+                        LanguageCode.ANY,
+                    },
+                  ]
+                : [
+                    {
+                      language:
+                        LanguageCode.ANY,
+                    },
+
+                    { language },
+                  ],
+          },
+
+          select: {
+            keyword: true,
+          },
+        });
+
+    return [
+      ...new Set(
+        keywords.map(
+          (item) => item.keyword,
+        ),
+      ),
+    ];
   }
 
   /**
-   * Returns all configured collection platforms with activation status.
+   * Returns configured data-source statuses.
    */
-  async getPlatformsStatus() {
-    return this.prisma.platform.findMany({
+  getDataSourcesStatus() {
+    return this.prisma.dataSource.findMany({
       select: {
         id: true,
-        name: true,
+        key: true,
+        displayName: true,
+        description: true,
+
         isActive: true,
+        isImplemented: true,
+
+        supportsPosts: true,
+        supportsComments: true,
+        supportsRegion: true,
+        supportsLanguage: true,
       },
+
       orderBy: {
-        name: 'asc',
+        displayName: 'asc',
       },
     });
   }
 
+  /**
+   * Filters domain keywords by language.
+   */
   private getDomainKeywordsByLanguage(
-    domainKeywords: { keyword: string; language: LanguageCode }[],
+    domainKeywords: Array<{
+      keyword: string;
+      language: LanguageCode;
+    }>,
+
     language: LanguageCode,
   ): string[] {
     return domainKeywords
       .filter((item) => {
-        if (language === LanguageCode.ANY) return true;
+        if (
+          language ===
+          LanguageCode.ANY
+        ) {
+          return true;
+        }
 
-        return item.language === LanguageCode.ANY || item.language === language;
+        return (
+          item.language ===
+            LanguageCode.ANY ||
+          item.language === language
+        );
       })
       .map((item) => item.keyword);
   }
 
   /**
-   * Maps CollectionJob entity into a cleaner API response.
+   * Maps CollectionJob to an API response.
    */
-  private mapJobResponse(job: CollectionJobResponseInput) {
-    const platforms = Array.isArray(job.platforms) ? job.platforms : [];
-    const keywords = Array.isArray(job.keywords) ? job.keywords : [];
+  private mapJobResponse(
+    job: CollectionJobWithRelations,
+    domainKeywords?: string[],
+  ) {
+    const keywords =
+      Array.isArray(job.keywords)
+        ? job.keywords
+        : [];
 
     return {
       id: job.id,
       domainId: job.domainId,
+
       language: job.language,
+
       country: job.country,
       city: job.city,
       region: job.region,
       radiusKm: job.radiusKm,
 
-      platforms,
-      platformCount: platforms.length,
       keywords,
 
       status: job.status,
-      totalPosts: job.totalPosts,
-      totalComments: job.totalComments,
-      actualPostsCount: job._count?.posts ?? 0,
 
-      durationSeconds: this.calculateDurationSeconds(
-        job.startedAt,
-        job.completedAt,
-      ),
+      totalPosts: job.totalPosts,
+      totalComments:
+        job.totalComments,
+
+      actualPostsCount:
+        job._count.posts,
+
+      durationSeconds:
+        this.calculateDurationSeconds(
+          job.startedAt,
+          job.completedAt,
+        ),
 
       failedReason:
-        job.status === CollectionJobStatus.FAILED
+        job.status ===
+        CollectionJobStatus.FAILED
           ? job.failedReason
           : undefined,
 
       startedAt: job.startedAt,
-      completedAt: job.completedAt,
+      completedAt:
+        job.completedAt,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
 
-      domain: job.domain
-        ? {
-            id: job.domain.id,
-            name: job.domain.name,
-          }
-        : null,
+      domain: {
+        id: job.domain.id,
+        name: job.domain.name,
+      },
 
-      nlpStatus: job.nlpAnalysis ? 'COMPLETED' : 'NOT_STARTED',
+      sources: job.sources.map(
+        (source) => ({
+          id: source.id,
 
-      ...(job.domainKeywords && { domainKeywords: job.domainKeywords }),
-      ...(Array.isArray(job.userKeywords) && {
-        userKeywords: job.userKeywords,
+          status: source.status,
+
+          totalPosts:
+            source.totalPosts,
+
+          totalComments:
+            source.totalComments,
+
+          startedAt:
+            source.startedAt,
+
+          completedAt:
+            source.completedAt,
+
+          failureReason:
+            source.failureReason,
+
+          dataSource:
+            source.dataSource,
+        }),
+      ),
+
+      sourceCount:
+        job.sources.length,
+
+      nlpStatus:
+        job.nlpAnalysis
+          ? 'COMPLETED'
+          : 'NOT_STARTED',
+
+      ...(domainKeywords && {
+        domainKeywords,
       }),
     };
   }
 
   /**
-   * Calculates job execution duration in seconds.
+   * Calculates execution duration.
    */
   private calculateDurationSeconds(
     startedAt?: Date | null,
     completedAt?: Date | null,
   ): number | null {
-    if (!startedAt || !completedAt) {
+    if (
+      !startedAt ||
+      !completedAt
+    ) {
       return null;
     }
 
-    return Math.round((completedAt.getTime() - startedAt.getTime()) / 1000);
+    return Math.max(
+      0,
+      Math.round(
+        (completedAt.getTime() -
+          startedAt.getTime()) /
+          1000,
+      ),
+    );
+  }
+
+  /**
+   * Converts unknown errors to safe messages.
+   */
+  private getErrorMessage(
+    error: unknown,
+  ): string {
+    return error instanceof Error
+      ? error.message
+      : 'Unknown collection error.';
   }
 }

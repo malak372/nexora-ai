@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 
 import { BaseCollector } from '../../base/base.collector';
 import { CollectorCacheUtil } from '../../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../../base/collector-header.util';
 import { CollectorHttpUtil } from '../../base/collector-http.util';
+
 import {
   CollectorComment,
   CollectorInput,
@@ -14,10 +14,6 @@ import {
 
 import { ForumAdapter } from './forum-adapter.interface';
 
-/**
- * Represents a Discourse topic returned by
- * the public Discourse search API.
- */
 type DiscourseTopic = {
   id?: number;
   slug?: string;
@@ -27,10 +23,6 @@ type DiscourseTopic = {
   last_poster_username?: string;
 };
 
-/**
- * Represents a matching post returned alongside
- * a Discourse search topic.
- */
 type DiscourseSearchPost = {
   topic_id?: number;
   blurb?: string;
@@ -38,9 +30,6 @@ type DiscourseSearchPost = {
   username?: string;
 };
 
-/**
- * Represents a reply returned by a Discourse topic endpoint.
- */
 type DiscourseReply = {
   id?: number;
   cooked?: string;
@@ -50,19 +39,11 @@ type DiscourseReply = {
   created_at?: string;
 };
 
-/**
- * Represents the response returned by the
- * Discourse search endpoint.
- */
 type DiscourseSearchResponse = {
   topics?: DiscourseTopic[];
   posts?: DiscourseSearchPost[];
 };
 
-/**
- * Represents the response returned by the
- * Discourse topic endpoint.
- */
 type DiscourseTopicResponse = {
   post_stream?: {
     posts?: DiscourseReply[];
@@ -72,9 +53,8 @@ type DiscourseTopicResponse = {
 /**
  * Adapter for Discourse-based forums.
  *
- * Uses public Discourse JSON endpoints:
- * - /search.json
- * - /t/{topicId}.json
+ * The adapter does not expose a sourceKey because the parent
+ * ForumCollector owns DataSource.key = "forum".
  *
  * @author Malak
  */
@@ -83,33 +63,17 @@ export class DiscourseForumAdapter
   extends BaseCollector
   implements ForumAdapter
 {
-  /**
-   * Platform source type stored with collected records.
-   */
-  readonly sourceType = CollectionSourceType.FORUM;
-
-  /**
-   * Forum engine handled by this adapter.
-   */
   readonly engineName = 'Discourse';
 
-  /**
-   * Human-readable platform name.
-   */
-  private readonly platformName = 'Forum';
-
   constructor(configService: ConfigService) {
-    super(configService, DiscourseForumAdapter.name);
+    super(
+      configService,
+      DiscourseForumAdapter.name,
+    );
   }
 
   /**
-   * Collects public Discourse topics and maps them
-   * to the unified collector post format.
-   *
-   * @param forumUrl Base URL of the Discourse forum.
-   * @param searchQuery Search query used by Discourse.
-   * @param input Collection job configuration.
-   * @returns Collected forum topics and replies.
+   * Collects public Discourse topics.
    */
   async collect(
     forumUrl: string,
@@ -117,12 +81,16 @@ export class DiscourseForumAdapter
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     try {
-      const cacheKey = CollectorCacheUtil.build('forum', 'discourse-search', [
-        forumUrl,
-        searchQuery,
-        input.country,
-        input.language,
-      ]);
+      const cacheKey = CollectorCacheUtil.build(
+        'forum',
+        'discourse-search',
+        [
+          forumUrl,
+          searchQuery,
+          input.country,
+          input.language,
+        ],
+      );
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<DiscourseSearchResponse>(
@@ -152,20 +120,22 @@ export class DiscourseForumAdapter
       const posts: CollectorPost[] = [];
 
       for (const topic of validTopics) {
-        const post = await this.mapTopicToCollectorPost(
-          topic,
-          searchPosts,
-          forumUrl,
-          input,
+        posts.push(
+          await this.mapTopicToCollectorPost(
+            topic,
+            searchPosts,
+            forumUrl,
+            input,
+          ),
         );
-
-        posts.push(post);
       }
 
       return posts;
     } catch (error: unknown) {
       this.logger.warn(
-        `Discourse forum skipped: ${forumUrl} - ${this.getErrorMessage(error)}`,
+        `Discourse forum skipped: ${forumUrl} - ${this.getErrorMessage(
+          error,
+        )}`,
       );
 
       return [];
@@ -173,14 +143,7 @@ export class DiscourseForumAdapter
   }
 
   /**
-   * Maps a Discourse topic to the unified
-   * collector post format.
-   *
-   * @param topic Discourse topic.
-   * @param searchPosts Search result posts.
-   * @param forumUrl Base forum URL.
-   * @param input Collection job configuration.
-   * @returns Unified collector post.
+   * Maps one Discourse topic.
    */
   private async mapTopicToCollectorPost(
     topic: DiscourseTopic,
@@ -188,39 +151,55 @@ export class DiscourseForumAdapter
     forumUrl: string,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const matchedPost = searchPosts.find((post) => post.topic_id === topic.id);
+    const matchedPost = searchPosts.find(
+      (post) => post.topic_id === topic.id,
+    );
 
     const topicId = topic.id ?? 0;
 
-    const comments = await this.collectTopicReplies(forumUrl, topicId);
+    const comments = await this.collectTopicReplies(
+      forumUrl,
+      topicId,
+    );
+
+    const title = this.cleanPlainText(topic.title);
 
     return {
-      sourceType: CollectionSourceType.FORUM,
-      platformName: `${this.platformName} - ${this.engineName}`,
-      externalId: String(topicId),
-      title: topic.title,
-      content: this.stripHtml(
-        matchedPost?.blurb ?? matchedPost?.excerpt ?? topic.title ?? '',
-      ),
-      author: topic.last_poster_username ?? matchedPost?.username,
+      externalId: `${this.normalizeForumUrl(forumUrl)}-${topicId}`,
+
+      title,
+
+      content:
+        this.cleanPlainText(
+          matchedPost?.blurb ??
+            matchedPost?.excerpt,
+        ) || title,
+
+      author:
+        topic.last_poster_username ??
+        matchedPost?.username,
+
       url: `${forumUrl}/t/${topic.slug}/${topicId}`,
+
       country: input.country,
       city: input.city,
       region: input.region,
-      language: input.language,
+
+      languageCode: this.resolveStoredLanguageCode(
+        input.language,
+      ),
+
       likesCount: topic.like_count ?? 0,
       repliesCount: comments.length,
-      publishedAt: topic.created_at ? new Date(topic.created_at) : undefined,
+
+      publishedAt: this.parseDate(topic.created_at),
+
       comments,
     };
   }
 
   /**
-   * Collects useful replies for one Discourse topic.
-   *
-   * @param forumUrl Base forum URL.
-   * @param topicId Discourse topic identifier.
-   * @returns Unified collector comments.
+   * Collects useful Discourse replies.
    */
   private async collectTopicReplies(
     forumUrl: string,
@@ -231,10 +210,14 @@ export class DiscourseForumAdapter
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build('forum', 'discourse-replies', [
-        forumUrl,
-        topicId,
-      ]);
+      const cacheKey = CollectorCacheUtil.build(
+        'forum',
+        'discourse-replies',
+        [
+          forumUrl,
+          topicId,
+        ],
+      );
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<DiscourseTopicResponse>(
@@ -252,7 +235,6 @@ export class DiscourseForumAdapter
         );
 
       const topicPosts = data.post_stream?.posts ?? [];
-
       const seenCommentIds = new Set<string>();
 
       return topicPosts
@@ -271,13 +253,17 @@ export class DiscourseForumAdapter
         .slice(0, this.maxSavedComments)
         .map(
           (post): CollectorComment => ({
-            externalId: post.id?.toString() ?? '',
-            content: this.stripHtml(post.cooked ?? post.excerpt ?? ''),
-            author: post.username,
+            externalId: `${this.normalizeForumUrl(
+              forumUrl,
+            )}-${post.id?.toString() ?? ''}`,
+
+            content: this.cleanPlainText(
+              post.cooked ?? post.excerpt,
+            ),
+
+            author: this.cleanPlainText(post.username),
             likesCount: post.like_count ?? 0,
-            publishedAt: post.created_at
-              ? new Date(post.created_at)
-              : undefined,
+            publishedAt: this.parseDate(post.created_at),
           }),
         );
     } catch (error: unknown) {
@@ -291,13 +277,10 @@ export class DiscourseForumAdapter
   }
 
   /**
-   * Validates a Discourse topic before mapping.
-   *
-   * @param topic Discourse topic.
-   * @returns True when the topic contains valid data.
+   * Validates one Discourse topic.
    */
   private isValidTopic(topic: DiscourseTopic): boolean {
-    const title = this.normalizeText(topic.title ?? '');
+    const title = this.cleanNormalizedText(topic.title);
 
     if (!topic.id || !topic.slug || !title) {
       return false;
@@ -305,31 +288,32 @@ export class DiscourseForumAdapter
 
     const blockedWords = this.getBlockedWords();
 
-    return !blockedWords.some((word) => title.includes(word));
+    return !blockedWords.some((word) =>
+      title.includes(this.cleanNormalizedText(word)),
+    );
   }
 
   /**
-   * Filters short, low-value, system, or blocked replies.
-   *
-   * @param post Discourse reply.
-   * @returns True when the reply is useful.
+   * Filters low-value replies.
    */
   private isUsefulReply(post: DiscourseReply): boolean {
-    const content = this.normalizeText(
-      this.stripHtml(post.cooked ?? post.excerpt ?? ''),
+    const content = this.cleanNormalizedText(
+      post.cooked ?? post.excerpt,
     );
 
     if (!post.id || content.length < 30) {
       return false;
     }
 
-    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
+    const cleaned = content
+      .replace(/[^\p{L}\p{N}\s+]/gu, '')
+      .trim();
 
     if (!cleaned) {
       return false;
     }
 
-    const author = this.normalizeText(post.username ?? '');
+    const author = this.cleanNormalizedText(post.username);
 
     if (author === 'system') {
       return false;
@@ -356,23 +340,20 @@ export class DiscourseForumAdapter
 
     const blockedWords = this.getBlockedWords();
 
-    return !blockedWords.some((word) => content.includes(word));
+    return !blockedWords.some((word) =>
+      content.includes(this.cleanNormalizedText(word)),
+    );
   }
 
   /**
-   * Reads common blocked words and
-   * forum-specific blocked words.
-   *
-   * @returns Normalized blocked words.
+   * Reads forum-specific blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('FORUM_BLOCKED_WORDS');
   }
 
   /**
-   * Builds headers for public forum requests.
-   *
-   * @returns HTTP request headers.
+   * Builds public Discourse request headers.
    */
   private buildHeaders(): Record<string, string> {
     return {
@@ -382,20 +363,39 @@ export class DiscourseForumAdapter
   }
 
   /**
-   * Extracts a readable message from an unknown error.
-   *
-   * @param error Unknown caught value.
-   * @returns Safe error message.
+   * Normalizes a forum URL for external identifiers.
+   */
+  private normalizeForumUrl(forumUrl: string): string {
+    return forumUrl
+      .replace(/^https?:\/\//i, '')
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-|-$/g, '')
+      .toLowerCase();
+  }
+
+  /**
+   * Parses an external date safely.
+   */
+  private parseDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = new Date(value);
+
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  /**
+   * Extracts a safe error message.
    */
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    if (typeof error === 'string') {
-      return error;
-    }
-
-    return 'Unknown Discourse forum error.';
+    return typeof error === 'string'
+      ? error
+      : 'Unknown Discourse forum error.';
   }
 }

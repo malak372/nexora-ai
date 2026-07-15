@@ -1,108 +1,98 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { CollectionSourceType } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
 import { SocialCollector } from './base/collector.interface';
 
 import { AppStoreCollector } from './app-store/app-store.collector';
 import { BlogCollector } from './blog/blog.collector';
 import { DevToCollector } from './dev-to/dev-to.collector';
-import { DiscordCollector } from './discord/discord.collector';
-import { FacebookCollector } from './facebook/facebook.collector';
 import { ForumCollector } from './forum/forum.collector';
 import { GitHubCollector } from './github/github.collector';
 import { GooglePlayCollector } from './google-play/google-play.collector';
 import { HackerNewsCollector } from './hacker-news/hacker-news.collector';
-import { InstagramCollector } from './instagram/instagram.collector';
-import { LinkedInCollector } from './linkedin/linkedin.collector';
 import { NewsCollector } from './news/news.collector';
 import { ProductHuntCollector } from './product-hunt/product-hunt.collector';
-import { QuoraCollector } from './quora/quora.collector';
 import { RedditCollector } from './reddit/reddit.collector';
 import { StackOverflowCollector } from './stackoverflow/stackoverflow.collector';
-import { TelegramCollector } from './telegram/telegram.collector';
-import { TikTokCollector } from './tiktok/tiktok.collector';
-import { XCollector } from './x/x.collector';
 import { YouTubeCollector } from './youtube/youtube.collector';
 
 /**
- * Factory responsible for returning the correct collector
- * for each requested platform.
+ * Runtime registry for collector implementations.
+ *
+ * Collector implementations are indexed using sourceKey.
+ * Each sourceKey must match DataSource.key in the database.
+ *
+ * This registry is independent from Prisma enums, allowing new
+ * collectors to be added without modifying the database schema.
  *
  * @author Malak
  */
 @Injectable()
 export class CollectorsFactory {
   /**
-   * Maps each supported platform to its corresponding collector.
+   * Runtime collector registry.
+   *
+   * DataSource.key -> SocialCollector implementation
    */
-  private readonly collectors = new Map<
-    CollectionSourceType,
-    SocialCollector
-  >();
+  private readonly collectors =
+    new Map<string, SocialCollector>();
 
   constructor(
-    private readonly redditCollector: RedditCollector,
-    private readonly facebookCollector: FacebookCollector,
-    private readonly youtubeCollector: YouTubeCollector,
-    private readonly linkedInCollector: LinkedInCollector,
-    private readonly xCollector: XCollector,
-    private readonly instagramCollector: InstagramCollector,
-    private readonly telegramCollector: TelegramCollector,
-    private readonly tiktokCollector: TikTokCollector,
-    private readonly gitHubCollector: GitHubCollector,
-    private readonly stackOverflowCollector: StackOverflowCollector,
-    private readonly discordCollector: DiscordCollector,
-    private readonly quoraCollector: QuoraCollector,
-    private readonly forumCollector: ForumCollector,
-    private readonly blogCollector: BlogCollector,
-    private readonly newsCollector: NewsCollector,
-    private readonly appStoreCollector: AppStoreCollector,
-    private readonly googlePlayCollector: GooglePlayCollector,
-    private readonly hackerNewsCollector: HackerNewsCollector,
-    private readonly productHuntCollector: ProductHuntCollector,
-    private readonly devToCollector: DevToCollector,
+    redditCollector: RedditCollector,
+    youtubeCollector: YouTubeCollector,
+    gitHubCollector: GitHubCollector,
+    stackOverflowCollector: StackOverflowCollector,
+    forumCollector: ForumCollector,
+    blogCollector: BlogCollector,
+    newsCollector: NewsCollector,
+    appStoreCollector: AppStoreCollector,
+    googlePlayCollector: GooglePlayCollector,
+    hackerNewsCollector: HackerNewsCollector,
+    productHuntCollector: ProductHuntCollector,
+    devToCollector: DevToCollector,
   ) {
     const collectors: SocialCollector[] = [
-      this.redditCollector,
-      this.facebookCollector,
-      this.youtubeCollector,
-      this.linkedInCollector,
-      this.xCollector,
-      this.instagramCollector,
-      this.telegramCollector,
-      this.tiktokCollector,
-      this.gitHubCollector,
-      this.stackOverflowCollector,
-      this.discordCollector,
-      this.quoraCollector,
-      this.forumCollector,
-      this.blogCollector,
-      this.newsCollector,
-      this.appStoreCollector,
-      this.googlePlayCollector,
-      this.hackerNewsCollector,
-      this.productHuntCollector,
-      this.devToCollector,
+      redditCollector,
+      youtubeCollector,
+      gitHubCollector,
+      stackOverflowCollector,
+      forumCollector,
+      blogCollector,
+      newsCollector,
+      appStoreCollector,
+      googlePlayCollector,
+      hackerNewsCollector,
+      productHuntCollector,
+      devToCollector,
     ];
 
     for (const collector of collectors) {
-      this.collectors.set(collector.sourceType, collector);
+      this.register(collector);
     }
   }
 
   /**
-   * Returns the collector registered for the requested source type.
+   * Returns the collector registered for a DataSource.key.
    *
-   * @param sourceType Platform type.
-   * @returns Matching collector.
-   * @throws BadRequestException If the platform is not supported.
+   * @param sourceKey Data-source registry key.
+   * @returns Matching collector implementation.
+   * @throws BadRequestException When no implementation exists.
    */
-  getCollector(sourceType: CollectionSourceType): SocialCollector {
-    const collector = this.collectors.get(sourceType);
+  getCollector(
+    sourceKey: string,
+  ): SocialCollector {
+    const normalizedKey =
+      this.normalizeSourceKey(sourceKey);
+
+    const collector =
+      this.collectors.get(normalizedKey);
 
     if (!collector) {
       throw new BadRequestException(
-        `${sourceType} collector is not supported.`,
+        `Collector implementation for data source "${normalizedKey}" was not found.`,
       );
     }
 
@@ -110,11 +100,101 @@ export class CollectorsFactory {
   }
 
   /**
-   * Returns all platforms supported by the current backend.
+   * Returns all data-source keys implemented
+   * by the deployed backend.
    *
-   * @returns List of supported platform types.
+   * The returned values can be used to synchronize
+   * DataSource.isImplemented in the database.
    */
-  getSupportedPlatforms(): CollectionSourceType[] {
-    return [...this.collectors.keys()];
+  getImplementedSourceKeys(): string[] {
+    return [...this.collectors.keys()]
+      .sort();
+  }
+
+
+  /**
+ * Returns all collector keys registered in the runtime registry.
+ *
+ * In the current architecture, the factory contains only
+ * implemented collectors. Therefore, this list is equivalent
+ * to getImplementedSourceKeys().
+ *
+ * The separate method keeps the factory API explicit and allows
+ * placeholder collectors to be supported later without changing
+ * DataSourcesService.
+ *
+ * @returns Sorted registered source keys.
+ */
+  getRegisteredSourceKeys(): string[] {
+    return [...this.collectors.keys()].sort();
+  }
+
+
+  /**
+   * Checks whether the deployed backend contains
+   * an implementation for the supplied source key.
+   *
+   * @param sourceKey Data-source registry key.
+   * @returns True when a collector is registered.
+   */
+  isImplemented(
+    sourceKey: string,
+  ): boolean {
+    return this.collectors.has(
+      this.normalizeSourceKey(
+        sourceKey,
+      ),
+    );
+  }
+
+  /**
+   * Registers one collector implementation.
+   *
+   * Duplicate or empty keys indicate a backend configuration
+   * error and prevent the application from starting.
+   *
+   * @param collector Collector implementation.
+   */
+  private register(
+    collector: SocialCollector,
+  ): void {
+    const sourceKey =
+      this.normalizeSourceKey(
+        collector.sourceKey,
+      );
+
+    if (!sourceKey) {
+      throw new InternalServerErrorException(
+        `${collector.constructor.name} exposes an invalid empty sourceKey.`,
+      );
+    }
+
+    if (this.collectors.has(sourceKey)) {
+      throw new InternalServerErrorException(
+        `Duplicate collector sourceKey registration: "${sourceKey}".`,
+      );
+    }
+
+    this.collectors.set(
+      sourceKey,
+      collector,
+    );
+  }
+
+  /**
+   * Normalizes a data-source registry key.
+   *
+   * Collector keys and DataSource.key values should use
+   * lowercase kebab-case.
+   *
+   * @param sourceKey Raw source key.
+   * @returns Normalized source key.
+   */
+  private normalizeSourceKey(
+    sourceKey: string,
+  ): string {
+    return sourceKey
+      .trim()
+      .toLowerCase();
   }
 }

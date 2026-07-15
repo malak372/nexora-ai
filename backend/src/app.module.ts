@@ -22,6 +22,7 @@ import { ContactMessagesModule } from './contact-messages/contact-messages.modul
 import { FeedbackModule } from './feedback/feedback.module';
 import { PaymentsModule } from './payments/payments.module';
 import { IdeasModule } from './ideas/ideas.module';
+import { DataSourcesModule } from './data-sources/data-sources.module';
 /**
  * Root application module.
  *
@@ -77,6 +78,7 @@ import { IdeasModule } from './ideas/ideas.module';
     FeedbackModule,
     PaymentsModule,
     IdeasModule,
+    DataSourcesModule,
   ],
 
   controllers: [AppController],

@@ -1,62 +1,111 @@
-import { CollectionSourceType, LanguageCode } from '@prisma/client';
+import { LanguageCode } from '@prisma/client';
 
 /**
- * Input passed to all social platform collectors.
+ * Input passed to every collector implementation.
  *
  * @author Malak
  */
 export type CollectorInput = {
+  /**
+   * Selected software-domain name.
+   */
   domainName: string;
+
+  /**
+   * Keywords configured for the selected domain.
+   */
   domainKeywords?: string[];
 
-  country: string;
-  language: LanguageCode;
+  /**
+   * Optional geographical collection context.
+   *
+   * Some external platforms do not support location filtering.
+   * In that case, these values remain collection metadata.
+   */
+  country?: string;
   city?: string;
   region?: string;
   radiusKm?: number;
 
+  /**
+   * Requested project language.
+   */
+  language: LanguageCode;
+
+  /**
+   * Optional custom keywords supplied by the user.
+   */
   keywords?: string[];
 };
 
 /**
- * Unified comment format returned by any collector.
+ * Unified comment returned by every collector.
  *
- * externalId is required because it is used with postId
- * to prevent duplicate comments.
+ * languageCode is stored as a string because the database field
+ * SocialComment.languageCode is a nullable String.
  *
  * @author Malak
  */
 export type CollectorComment = {
+  /**
+   * External platform comment identifier.
+   *
+   * Combined with postId to prevent duplicate comments.
+   */
   externalId: string;
+
   content: string;
   author?: string;
-  language?: LanguageCode;
+
+  /**
+   * ISO or project language code.
+   *
+   * Examples:
+   * - en
+   * - ar
+   * - EN
+   * - AR
+   */
+  languageCode?: string;
+
   likesCount?: number;
   publishedAt?: Date;
 };
 
 /**
- * Unified post format returned by any collector.
+ * Unified post returned by every collector.
  *
- * externalId is required because it is used with sourceType
- * to prevent duplicate posts.
+ * The data-source identity is not included in every post because
+ * the orchestration layer already knows which collector produced it.
+ *
+ * DataCollectionService resolves the collector sourceKey to
+ * DataSource.id before saving the post.
  *
  * @author Malak
  */
 export type CollectorPost = {
-  sourceType: CollectionSourceType;
-  platformName: string;
+  /**
+   * External platform post identifier.
+   *
+   * Combined with collectionJobId and dataSourceId to prevent
+   * duplicate posts.
+   */
   externalId: string;
+
   title?: string;
   content: string;
   author?: string;
   url?: string;
+
   country?: string;
   city?: string;
   region?: string;
-  language?: LanguageCode;
+  languageCode?: string;
+
   likesCount?: number;
   repliesCount?: number;
+
   publishedAt?: Date;
+
   comments: CollectorComment[];
 };

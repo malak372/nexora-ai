@@ -1,24 +1,29 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { SocialCollector } from '../base/collector.interface';
+
 import {
   CollectorComment,
   CollectorInput,
   CollectorPost,
 } from '../base/collector.types';
+
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
- * Represents a Hacker News item returned by the official
- * Hacker News Firebase API.
+ * Represents a Hacker News item returned by
+ * the official Firebase API.
  *
- * Hacker News uses the same structure for stories and comments.
+ * Hacker News uses the same structure for
+ * stories and comments.
  */
 type HackerNewsItem = {
   id?: number;
@@ -38,22 +43,12 @@ type HackerNewsItem = {
 /**
  * Hacker News collector.
  *
- * Collects public Hacker News stories and top-level comments using
- * the official Hacker News Firebase API.
+ * Collects public Hacker News stories and top-level comments.
  *
- * This collector is useful for technical domains such as:
- * - Artificial Intelligence.
- * - Software Engineering.
- * - Cybersecurity.
- * - Developer tools.
- * - Startups and technology trends.
+ * The sourceKey must match DataSource.key in the database.
  *
- * Notes:
- * - Hacker News does not support country, city, or radius filtering.
- * - Location fields are therefore stored as undefined on posts.
- * - The request location remains available on the CollectionJob itself.
- * - Hacker News stories often contain only a title and URL, so comments
- *   are especially important for NLP analysis.
+ * Hacker News does not expose geographical filtering,
+ * so location fields remain undefined on collected posts.
  *
  * @author Malak
  */
@@ -63,41 +58,49 @@ export class HackerNewsCollector
   implements SocialCollector
 {
   /**
-   * Platform source type stored with collected records.
+   * Stable collector registry key.
+   *
+   * Must match:
+   * DataSource.key = "hacker-news"
    */
-  readonly sourceType = CollectionSourceType.HACKER_NEWS;
+  readonly sourceKey = 'hacker-news';
 
   /**
-   * Human-readable platform name.
+   * Official Hacker News Firebase API.
    */
-  private readonly platformName = 'Hacker News';
+  private readonly apiBaseUrl =
+    'https://hacker-news.firebaseio.com/v0';
 
   /**
-   * Official Hacker News Firebase API base URL.
+   * Public Hacker News site URL.
    */
-  private readonly apiBaseUrl = 'https://hacker-news.firebaseio.com/v0';
-
-  /**
-   * Hacker News public website base URL.
-   */
-  private readonly siteBaseUrl = 'https://news.ycombinator.com';
+  private readonly siteBaseUrl =
+    'https://news.ycombinator.com';
 
   constructor(configService: ConfigService) {
-    super(configService, HackerNewsCollector.name);
+    super(
+      configService,
+      HackerNewsCollector.name,
+    );
   }
 
   /**
-   * Collects Hacker News stories, ranks them by relevance,
-   * attaches useful comments, and maps them to CollectorPost.
+   * Collects Hacker News stories, ranks them,
+   * attaches useful comments, and maps them.
    *
    * @param input Collection request input.
-   * @returns Relevant Hacker News posts with useful comments.
+   * @returns Relevant Hacker News posts.
    */
-  async collect(input: CollectorInput): Promise<CollectorPost[]> {
+  async collect(
+    input: CollectorInput,
+  ): Promise<CollectorPost[]> {
     try {
-      const searchTerms = this.buildSearchTerms(input);
+      const searchTerms =
+        this.buildSearchTerms(input);
 
-      if (searchTerms.length === 0) {
+      if (
+        searchTerms.length === 0
+      ) {
         this.logger.warn(
           'Hacker News collection skipped because no search keywords exist.',
         );
@@ -105,28 +108,56 @@ export class HackerNewsCollector
         return [];
       }
 
-      const storyIds = await this.getStoryIds();
+      const storyIds =
+        await this.getStoryIds();
 
-      const stories = await this.collectCandidateStories(storyIds);
+      const stories =
+        await this.collectCandidateStories(
+          storyIds,
+        );
 
       const rankedStories = stories
         .map((story) => ({
           story,
-          score: this.calculateFinalStoryScore(story, input, searchTerms),
+
+          score:
+            this.calculateFinalStoryScore(
+              story,
+              input,
+              searchTerms,
+            ),
         }))
-        .filter((item) => item.score > 0)
-        .sort((first, second) => second.score - first.score);
+        .filter(
+          (item) => item.score > 0,
+        )
+        .sort(
+          (first, second) =>
+            second.score - first.score,
+        );
 
       const posts: CollectorPost[] = [];
 
       for (const item of rankedStories) {
-        if (posts.length >= this.maxSavedPosts) {
+        if (
+          posts.length >=
+          this.maxSavedPosts
+        ) {
           break;
         }
 
-        const post = await this.mapStoryToCollectorPost(item.story, input);
+        const post =
+          await this.mapStoryToCollectorPost(
+            item.story,
+            input,
+          );
 
-        if (post.comments.length === 0) {
+        /*
+         * Hacker News comments are important because many
+         * stories contain only a title and URL.
+         */
+        if (
+          post.comments.length === 0
+        ) {
           continue;
         }
 
@@ -153,13 +184,11 @@ export class HackerNewsCollector
   /**
    * Collects story IDs from multiple Hacker News feeds.
    *
-   * Combining several feeds gives better coverage than depending only
-   * on topstories, because relevant AI or developer discussions may appear
-   * in Ask HN, Show HN, Best, or New.
-   *
    * @returns Deduplicated story IDs.
    */
-  private async getStoryIds(): Promise<number[]> {
+  private async getStoryIds(): Promise<
+    number[]
+  > {
     const feeds = [
       'topstories',
       'newstories',
@@ -171,23 +200,38 @@ export class HackerNewsCollector
     const allIds: number[] = [];
 
     for (const feed of feeds) {
-      const cacheKey = CollectorCacheUtil.build('hacker-news', 'story-ids', [
-        feed,
-      ]);
+      const cacheKey =
+        CollectorCacheUtil.build(
+          this.sourceKey,
+          'story-ids',
+          [feed],
+        );
 
-      const ids = await CollectorHttpUtil.getWithRetryAndCache<number[]>(
-        `${this.apiBaseUrl}/${feed}.json`,
-        {
-          headers: this.buildHeaders(),
-          timeout: 10_000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
-      );
+      const ids =
+        await CollectorHttpUtil
+          .getWithRetryAndCache<
+            number[]
+          >(
+            `${this.apiBaseUrl}/${feed}.json`,
+            {
+              headers:
+                this.buildHeaders(),
+
+              timeout: 10_000,
+            },
+            {
+              cacheKey,
+
+              cacheTtlMs:
+                this.cacheTtlMs,
+
+              retryAttempts:
+                this.retryAttempts,
+
+              retryDelayMs:
+                this.retryDelayMs,
+            },
+          );
 
       allIds.push(...(ids ?? []));
     }
@@ -196,35 +240,52 @@ export class HackerNewsCollector
   }
 
   /**
-   * Fetches and validates candidate stories before scoring.
+   * Fetches and validates candidate stories.
    *
-   * This method intentionally limits the number of inspected stories to avoid
-   * excessive API calls while still giving the ranking algorithm enough data.
-   *
-   * @param storyIds Candidate story IDs from Hacker News feeds.
-   * @returns Valid unique Hacker News stories.
+   * @param storyIds Story identifiers.
+   * @returns Valid unique stories.
    */
   private async collectCandidateStories(
     storyIds: number[],
   ): Promise<HackerNewsItem[]> {
-    const stories: HackerNewsItem[] = [];
+    const stories: HackerNewsItem[] =
+      [];
 
-    const seenStoryIds = new Set<string>();
+    const seenStoryIds =
+      new Set<string>();
 
-    for (const storyId of storyIds.slice(0, this.maxFetchedPosts * 8)) {
-      if (stories.length >= this.maxFetchedPosts * 10) {
+    const candidateLimit =
+      this.maxFetchedPosts * 8;
+
+    for (
+      const storyId of storyIds.slice(
+        0,
+        candidateLimit,
+      )
+    ) {
+      if (
+        stories.length >=
+        this.maxFetchedPosts * 10
+      ) {
         break;
       }
 
-      const story = await this.getItem(storyId);
+      const story =
+        await this.getItem(storyId);
 
-      if (!this.isValidStory(story)) {
+      if (
+        !this.isValidStory(story)
+      ) {
         continue;
       }
 
-      const id = story.id?.toString();
+      const id =
+        story.id?.toString();
 
-      if (!id || seenStoryIds.has(id)) {
+      if (
+        !id ||
+        seenStoryIds.has(id)
+      ) {
         continue;
       }
 
@@ -236,180 +297,270 @@ export class HackerNewsCollector
   }
 
   /**
-   * Fetches a single Hacker News item by ID.
+   * Fetches one Hacker News item.
    *
-   * Hacker News uses the same item endpoint for stories and comments.
-   *
-   * @param id Hacker News item ID.
-   * @returns Hacker News item or null if the request fails.
+   * @param id Hacker News item identifier.
+   * @returns Item or null when the request fails.
    */
-  private async getItem(id: number): Promise<HackerNewsItem | null> {
+  private async getItem(
+    id: number,
+  ): Promise<HackerNewsItem | null> {
     try {
-      const cacheKey = CollectorCacheUtil.build('hacker-news', 'item', [id]);
+      const cacheKey =
+        CollectorCacheUtil.build(
+          this.sourceKey,
+          'item',
+          [id],
+        );
 
-      return await CollectorHttpUtil.getWithRetryAndCache<HackerNewsItem>(
-        `${this.apiBaseUrl}/item/${id}.json`,
-        {
-          headers: this.buildHeaders(),
-          timeout: 10_000,
-        },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts: this.retryAttempts,
-          retryDelayMs: this.retryDelayMs,
-        },
+      return await CollectorHttpUtil
+        .getWithRetryAndCache<HackerNewsItem>(
+          `${this.apiBaseUrl}/item/${id}.json`,
+          {
+            headers:
+              this.buildHeaders(),
+
+            timeout: 10_000,
+          },
+          {
+            cacheKey,
+
+            cacheTtlMs:
+              this.cacheTtlMs,
+
+            retryAttempts:
+              this.retryAttempts,
+
+            retryDelayMs:
+              this.retryDelayMs,
+          },
+        );
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Hacker News item ${id} could not be collected: ${this.getErrorMessage(
+          error,
+        )}`,
       );
-    } catch {
+
       return null;
     }
   }
 
   /**
-   * Builds search terms from user keywords, domain keywords,
-   * and the domain name.
-   *
-   * User keywords are placed first because they represent the most explicit
-   * intent from the collection request.
+   * Builds search terms from user keywords,
+   * domain keywords, and domain name.
    *
    * @param input Collection request input.
    * @returns Deduplicated normalized search terms.
    */
-  private buildSearchTerms(input: CollectorInput): string[] {
-    const domainKeywords = this.getDomainKeywords(input);
+  private buildSearchTerms(
+    input: CollectorInput,
+  ): string[] {
+    const domainKeywords =
+      this.getDomainKeywords(input);
 
-    const fallbackDomain = input.domainName
-      ? [this.cleanNormalizedText(input.domainName)]
-      : [];
+    const fallbackDomain =
+      input.domainName
+        ? [
+            this.cleanNormalizedText(
+              input.domainName,
+            ),
+          ]
+        : [];
 
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.cleanNormalizedText(keyword))
-      .filter(Boolean);
+    const userKeywords =
+      (input.keywords ?? [])
+        .map((keyword) =>
+          this.cleanNormalizedText(
+            keyword,
+          ),
+        )
+        .filter(Boolean);
 
-    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
-      .filter((term) => term.length >= 2)
+    return this.unique([
+      ...userKeywords,
+      ...domainKeywords,
+      ...fallbackDomain,
+    ])
+      .filter(
+        (term) => term.length >= 2,
+      )
       .slice(0, 8);
   }
 
   /**
-   * Validates Hacker News stories before ranking.
-   *
-   * Deleted, dead, empty, or blocked stories are ignored.
+   * Validates Hacker News stories.
    *
    * @param story Raw Hacker News story.
-   * @returns True when the story can be scored.
+   * @returns True when valid.
    */
-  private isValidStory(story: HackerNewsItem | null): story is HackerNewsItem {
-    if (!story?.id || story.type !== 'story' || !story.title) {
+  private isValidStory(
+    story: HackerNewsItem | null,
+  ): story is HackerNewsItem {
+    if (
+      !story?.id ||
+      story.type !== 'story' ||
+      !story.title
+    ) {
       return false;
     }
 
-    if (story.deleted || story.dead) {
+    if (
+      story.deleted ||
+      story.dead
+    ) {
       return false;
     }
 
-    const title = this.cleanPlainText(story.title);
+    const title =
+      this.cleanPlainText(
+        story.title,
+      );
 
-    const text = this.cleanPlainText(story.text);
+    const text =
+      this.cleanPlainText(
+        story.text,
+      );
 
-    const url = story.url ?? `${this.siteBaseUrl}/item?id=${story.id}`;
+    const url =
+      story.url ??
+      `${this.siteBaseUrl}/item?id=${story.id}`;
 
-    const content = this.cleanNormalizedText(`${title} ${text}`);
+    const content =
+      this.cleanNormalizedText(
+        `${title} ${text}`,
+      );
 
-    const blockedWords = this.getBlockedWords();
-
-    if (!url || content.length < 10) {
+    if (
+      !url ||
+      content.length < 10
+    ) {
       return false;
     }
+
+    const blockedWords =
+      this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(this.cleanNormalizedText(word)),
+      content.includes(
+        this.cleanNormalizedText(word),
+      ),
     );
   }
 
   /**
    * Calculates the final story score.
    *
-   * Stories that do not match the domain or user search terms
-   * are ignored.
-   *
-   * @param story Hacker News story.
-   * @param input Collection input.
-   * @param searchTerms Terms used to identify relevant stories.
-   * @returns Final relevance score.
+   * Stories that do not match search terms are excluded.
    */
   private calculateFinalStoryScore(
     story: HackerNewsItem,
     input: CollectorInput,
     searchTerms: string[],
   ): number {
-    const keywordBonus = this.calculateKeywordBonus(story, searchTerms);
+    const keywordBonus =
+      this.calculateKeywordBonus(
+        story,
+        searchTerms,
+      );
 
     if (keywordBonus <= 0) {
       return 0;
     }
 
-    const baseScore = this.calculateStoryRelevanceScore(story, input);
+    const baseScore =
+      this.calculateStoryRelevanceScore(
+        story,
+        input,
+      );
 
-    const problemBonus = this.calculateProblemBonus(story);
+    const problemBonus =
+      this.calculateProblemBonus(
+        story,
+      );
 
-    return baseScore + keywordBonus + problemBonus;
+    return (
+      baseScore +
+      keywordBonus +
+      problemBonus
+    );
   }
 
   /**
-   * Calculates base relevance score using the
-   * shared scoring utility.
-   *
-   * Engagement and recency are included through RelevanceScoreUtil.
-   *
-   * @param story Hacker News story.
-   * @param input Collection input.
-   * @returns Base relevance score.
+   * Calculates base story relevance.
    */
   private calculateStoryRelevanceScore(
     story: HackerNewsItem,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: this.cleanPlainText(story.title),
-      body: this.cleanPlainText(story.text),
-      domainTerms: this.getDomainKeywords(input),
-      problemTerms: this.getProblemWords(),
-      likes: story.score ?? 0,
-      replies: story.descendants ?? 0,
-      publishedAt: story.time ? new Date(story.time * 1_000) : undefined,
+      title:
+        this.cleanPlainText(
+          story.title,
+        ),
+
+      body:
+        this.cleanPlainText(
+          story.text,
+        ),
+
+      domainTerms:
+        this.getDomainKeywords(input),
+
+      problemTerms:
+        this.getProblemWords(),
+
+      likes:
+        story.score ?? 0,
+
+      replies:
+        story.descendants ?? 0,
+
+      publishedAt:
+        this.parseUnixDate(
+          story.time,
+        ),
     });
   }
 
   /**
-   * Adds score when search terms appear in the title,
-   * body, or URL.
-   *
-   * Title matches are weighted highest because Hacker News stories often use
-   * concise titles that represent the main discussion topic.
-   *
-   * @param story Hacker News story.
-   * @param searchTerms Normalized search terms.
-   * @returns Keyword relevance bonus.
+   * Adds score for search-term matches.
    */
   private calculateKeywordBonus(
     story: HackerNewsItem,
     searchTerms: string[],
   ): number {
-    const title = this.cleanNormalizedText(story.title);
+    const title =
+      this.cleanNormalizedText(
+        story.title,
+      );
 
-    const body = this.cleanNormalizedText(story.text);
+    const body =
+      this.cleanNormalizedText(
+        story.text,
+      );
 
-    const url = this.cleanNormalizedText(story.url);
+    const url =
+      this.cleanNormalizedText(
+        story.url,
+      );
 
-    const content = `${title} ${body} ${url}`;
+    const content =
+      `${title} ${body} ${url}`;
 
     let bonus = 0;
 
     for (const term of searchTerms) {
-      const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedTerm =
+        term.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&',
+        );
 
-      const pattern = new RegExp(`(^|\\W)${escapedTerm}(\\W|$)`, 'i');
+      const pattern = new RegExp(
+        `(^|\\W)${escapedTerm}(\\W|$)`,
+        'i',
+      );
 
       if (pattern.test(title)) {
         bonus += 40;
@@ -432,20 +583,26 @@ export class HackerNewsCollector
   }
 
   /**
-   * Adds score for Hacker News terms that often indicate problems,
-   * needs, feature requests, developer pain points, or technical friction.
-   *
-   * @param story Hacker News story.
-   * @returns Problem or need relevance bonus.
+   * Adds score for problem, need, feature,
+   * cost, security, and workflow terms.
    */
-  private calculateProblemBonus(story: HackerNewsItem): number {
-    const title = this.cleanNormalizedText(story.title);
+  private calculateProblemBonus(
+    story: HackerNewsItem,
+  ): number {
+    const title =
+      this.cleanNormalizedText(
+        story.title,
+      );
 
-    const body = this.cleanNormalizedText(story.text);
+    const body =
+      this.cleanNormalizedText(
+        story.text,
+      );
 
-    const content = `${title} ${body}`;
+    const content =
+      `${title} ${body}`;
 
-    const hackerNewsProblemTerms = [
+    const problemTerms = [
       'ask hn',
       'show hn',
       'problem',
@@ -481,7 +638,9 @@ export class HackerNewsCollector
 
     let bonus = 0;
 
-    for (const term of hackerNewsProblemTerms) {
+    for (
+      const term of problemTerms
+    ) {
       if (content.includes(term)) {
         bonus += 6;
       }
@@ -491,79 +650,121 @@ export class HackerNewsCollector
   }
 
   /**
-   * Maps a Hacker News story to the unified
-   * collector post format.
+   * Maps a Hacker News story to CollectorPost.
    *
-   * Location fields are stored as undefined because Hacker News does not
-   * provide country, city, region filtering, or user location metadata.
-   *
-   * @param story Hacker News story.
-   * @param input Collection input.
-   * @returns CollectorPost with useful comments.
+   * Hacker News does not expose geographical metadata,
+   * so post location fields remain undefined.
    */
   private async mapStoryToCollectorPost(
     story: HackerNewsItem,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments = await this.collectStoryComments(story);
+    const comments =
+      await this.collectStoryComments(
+        story,
+      );
 
-    const title = this.cleanPlainText(story.title);
+    const title =
+      this.cleanPlainText(
+        story.title,
+      );
 
-    const content = this.cleanPlainText(story.text ?? story.title);
-
-    const author = this.cleanPlainText(story.by);
+    const content =
+      this.cleanPlainText(
+        story.text ?? story.title,
+      );
 
     return {
-      sourceType: CollectionSourceType.HACKER_NEWS,
-      platformName: this.platformName,
-      externalId: story.id?.toString() ?? '',
+      externalId:
+        story.id?.toString() ?? '',
+
       title,
+
       content: content || title,
-      author,
-      url: story.url ?? `${this.siteBaseUrl}/item?id=${story.id}`,
+
+      author:
+        this.cleanPlainText(
+          story.by,
+        ),
+
+      url:
+        story.url ??
+        `${this.siteBaseUrl}/item?id=${story.id}`,
+
       country: undefined,
       city: undefined,
       region: undefined,
-      language: input.language,
-      likesCount: story.score ?? 0,
-      repliesCount: story.descendants ?? comments.length,
-      publishedAt: story.time ? new Date(story.time * 1_000) : undefined,
+
+      languageCode:
+        this.resolveStoredLanguageCode(
+          input.language,
+        ),
+
+      likesCount:
+        story.score ?? 0,
+
+      repliesCount:
+        story.descendants ??
+        comments.length,
+
+      publishedAt:
+        this.parseUnixDate(
+          story.time,
+        ),
+
       comments,
     };
   }
 
   /**
-   * Collects useful top-level comments for a Hacker News story.
-   *
-   * Hacker News comment trees can be deeply nested. This collector currently
-   * collects only direct child comments to keep collection predictable and fast.
+   * Collects useful top-level comments.
    *
    * @param story Hacker News story.
-   * @returns Useful comments for NLP analysis.
+   * @returns Useful comments.
    */
   private async collectStoryComments(
     story: HackerNewsItem,
   ): Promise<CollectorComment[]> {
-    const commentIds = (story.kids ?? []).slice(0, this.maxFetchedComments);
+    const commentIds =
+      (story.kids ?? []).slice(
+        0,
+        this.maxFetchedComments,
+      );
 
-    const comments: CollectorComment[] = [];
+    const comments:
+      CollectorComment[] = [];
 
-    const seenCommentIds = new Set<string>();
+    const seenCommentIds =
+      new Set<string>();
 
-    for (const commentId of commentIds) {
-      if (comments.length >= this.maxSavedComments) {
+    for (
+      const commentId of commentIds
+    ) {
+      if (
+        comments.length >=
+        this.maxSavedComments
+      ) {
         break;
       }
 
-      const comment = await this.getItem(commentId);
+      const comment =
+        await this.getItem(commentId);
 
-      if (!this.isUsefulComment(comment)) {
+      if (
+        !this.isUsefulComment(
+          comment,
+        )
+      ) {
         continue;
       }
 
-      const id = comment.id?.toString();
+      const id =
+        comment.id?.toString();
 
-      if (!id || seenCommentIds.has(id)) {
+      if (
+        !id ||
+        seenCommentIds.has(id)
+      ) {
         continue;
       }
 
@@ -571,11 +772,30 @@ export class HackerNewsCollector
 
       comments.push({
         externalId: id,
-        content: this.cleanPlainText(comment.text),
-        author: this.cleanPlainText(comment.by),
-        language: undefined,
+
+        content:
+          this.cleanPlainText(
+            comment.text,
+          ),
+
+        author:
+          this.cleanPlainText(
+            comment.by,
+          ),
+
+        /*
+         * Comment language is not detected independently.
+         * Leaving it undefined is more accurate than copying
+         * a requested ANY language value.
+         */
+        languageCode: undefined,
+
         likesCount: 0,
-        publishedAt: comment.time ? new Date(comment.time * 1_000) : undefined,
+
+        publishedAt:
+          this.parseUnixDate(
+            comment.time,
+          ),
       });
     }
 
@@ -583,46 +803,59 @@ export class HackerNewsCollector
   }
 
   /**
-   * Validates Hacker News comments before saving.
-   *
-   * Filters deleted or dead comments, short comments,
-   * low-value comments, and comments containing blocked terms.
+   * Validates Hacker News comments.
    *
    * @param comment Raw Hacker News comment.
-   * @returns True when the comment is useful for NLP.
+   * @returns True when useful for NLP.
    */
   private isUsefulComment(
     comment: HackerNewsItem | null,
   ): comment is HackerNewsItem {
-    if (!comment?.id || comment.type !== 'comment' || comment.deleted) {
+    if (
+      !comment?.id ||
+      comment.type !== 'comment' ||
+      comment.deleted
+    ) {
       return false;
     }
 
-    const content = this.cleanNormalizedText(comment.text);
+    const content =
+      this.cleanNormalizedText(
+        comment.text,
+      );
 
-    if (comment.dead || content.length < 40) {
+    if (
+      comment.dead ||
+      content.length < 40
+    ) {
       return false;
     }
 
-    if (this.isLowValueComment(content)) {
+    if (
+      this.isLowValueComment(
+        content,
+      )
+    ) {
       return false;
     }
 
-    const blockedWords = this.getBlockedWords();
+    const blockedWords =
+      this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(this.cleanNormalizedText(word)),
+      content.includes(
+        this.cleanNormalizedText(word),
+      ),
     );
   }
 
   /**
-   * Detects comments that are too generic
-   * to help idea discovery.
-   *
-   * @param content Normalized comment content.
-   * @returns True when the comment is low-value.
+   * Detects generic comments that are not
+   * useful for idea discovery.
    */
-  private isLowValueComment(content: string): boolean {
+  private isLowValueComment(
+    content: string,
+  ): boolean {
     const lowValuePatterns = [
       /^thanks$/i,
       /^thank you$/i,
@@ -641,40 +874,64 @@ export class HackerNewsCollector
       /\bwell done\b/i,
     ];
 
-    return lowValuePatterns.some((pattern) => pattern.test(content));
+    return lowValuePatterns.some(
+      (pattern) =>
+        pattern.test(content),
+    );
   }
 
   /**
-   * Reads common blocked words and
-   * Hacker News-specific blocked words.
-   *
-   * @returns Merged blocked words list.
+   * Reads common and Hacker News-specific blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords('HACKER_NEWS_BLOCKED_WORDS');
+    return super.getBlockedWords(
+      'HACKER_NEWS_BLOCKED_WORDS',
+    );
   }
 
   /**
    * Builds Hacker News API headers.
-   *
-   * @returns JSON HTTP headers.
    */
-  private buildHeaders(): Record<string, string> {
+  private buildHeaders(): Record<
+    string,
+    string
+  > {
     return CollectorHeaderUtil.json();
   }
 
   /**
-   * Extracts a readable message from an unknown error.
-   *
-   * @param error Unknown caught error.
-   * @returns Safe error message.
+   * Parses a Unix timestamp safely.
    */
-  private getErrorMessage(error: unknown): string {
+  private parseUnixDate(
+    value?: number,
+  ): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date =
+      new Date(value * 1_000);
+
+    return Number.isNaN(
+      date.getTime(),
+    )
+      ? undefined
+      : date;
+  }
+
+  /**
+   * Extracts a safe error message.
+   */
+  private getErrorMessage(
+    error: unknown,
+  ): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    if (typeof error === 'string') {
+    if (
+      typeof error === 'string'
+    ) {
       return error;
     }
 

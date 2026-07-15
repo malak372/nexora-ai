@@ -1,11 +1,13 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
+
 import {
-  CollectorComment,
   CollectorInput,
   CollectorPost,
 } from '../base/collector.types';
@@ -43,26 +45,27 @@ type NewsApiResponse = {
  *
  * Collects public news articles using NewsAPI.
  *
- * Notes:
- * - NewsAPI does not provide article comments.
- * - Language resolving is centralized in CollectorLanguageUtil.
- * - Relevance is handled by scoring and ranking.
- *
  * @author Malak
  */
 @Injectable()
-export class NewsCollector extends BaseCollector implements SocialCollector {
-  readonly sourceType = CollectionSourceType.NEWS;
+export class NewsCollector
+  extends BaseCollector
+  implements SocialCollector
+{
+  /**
+   * Must match DataSource.key.
+   */
+  readonly sourceKey = 'news';
 
-  private readonly platformName = 'News';
-  private readonly apiBaseUrl = 'https://newsapi.org/v2';
+  private readonly apiBaseUrl =
+    'https://newsapi.org/v2';
 
   constructor(configService: ConfigService) {
     super(configService, NewsCollector.name);
   }
 
   /**
-   * Collects public news articles and returns ranked normalized posts.
+   * Collects and ranks public news articles.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -73,6 +76,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         this.logger.warn(
           'News collection skipped because NEWS_API_KEY is missing.',
         );
+
         return [];
       }
 
@@ -80,17 +84,25 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
         this.logger.warn(
           'News collection skipped because no search keywords exist.',
         );
+
         return [];
       }
 
       const collectedArticles: NewsApiArticle[] = [];
 
       for (const searchQuery of searchQueries) {
-        if (collectedArticles.length >= this.maxFetchedPosts) {
+        if (
+          collectedArticles.length >=
+          this.maxFetchedPosts
+        ) {
           break;
         }
 
-        const articles = await this.searchArticles(searchQuery, input);
+        const articles = await this.searchArticles(
+          searchQuery,
+          input,
+        );
+
         collectedArticles.push(...articles);
       }
 
@@ -106,16 +118,25 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
           }
 
           seenArticleUrls.add(url);
+
           return true;
         })
         .map((article) => ({
           article,
-          score: this.calculateArticleRelevanceScore(article, input),
+          score: this.calculateArticleRelevanceScore(
+            article,
+            input,
+          ),
         }))
         .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score)
+        .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts)
-        .map((item) => this.mapArticleToCollectorPost(item.article, input));
+        .map((item) =>
+          this.mapArticleToCollectorPost(
+            item.article,
+            input,
+          ),
+        );
 
       this.logger.log(
         `News collection completed. Posts: ${rankedArticles.length}`,
@@ -123,7 +144,10 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
 
       return rankedArticles;
     } catch (error: unknown) {
-      this.logger.error('News collection failed', this.getErrorMessage(error));
+      this.logger.error(
+        'News collection failed',
+        this.getErrorMessage(error),
+      );
 
       throw new ServiceUnavailableException(
         'News collection failed. Check NEWS_API_KEY, API limits, collector limits, or network connection.',
@@ -132,57 +156,71 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Searches NewsAPI using one prepared query.
+   * Searches NewsAPI using one query.
    */
   private async searchArticles(
     searchQuery: string,
     input: CollectorInput,
   ): Promise<NewsApiArticle[]> {
-    const cacheKey = CollectorCacheUtil.build('news', 'articles', [
-      searchQuery,
-      input.country,
-      input.language,
-    ]);
-
-    const data = await CollectorHttpUtil.getWithRetryAndCache<NewsApiResponse>(
-      `${this.apiBaseUrl}/everything`,
-      {
-        headers: this.buildHeaders(),
-        params: {
-          q: searchQuery,
-          language: CollectorLanguageUtil.resolveNewsApiLanguage(
-            input.language,
-          ),
-          sortBy: 'relevancy',
-          pageSize: Math.min(this.maxFetchedPosts, 100),
-        },
-        timeout: 10000,
-      },
-      {
-        cacheKey,
-        cacheTtlMs: this.cacheTtlMs,
-        retryAttempts: this.retryAttempts,
-        retryDelayMs: this.retryDelayMs,
-      },
+    const cacheKey = CollectorCacheUtil.build(
+      this.sourceKey,
+      'articles',
+      [
+        searchQuery,
+        input.country,
+        input.language,
+      ],
     );
+
+    const data =
+      await CollectorHttpUtil.getWithRetryAndCache<NewsApiResponse>(
+        `${this.apiBaseUrl}/everything`,
+        {
+          headers: this.buildHeaders(),
+
+          params: {
+            q: searchQuery,
+
+            language:
+              CollectorLanguageUtil.resolveNewsApiLanguage(
+                input.language,
+              ),
+
+            sortBy: 'relevancy',
+
+            pageSize: Math.min(
+              this.maxFetchedPosts,
+              100,
+            ),
+          },
+
+          timeout: 10_000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
     return data.articles ?? [];
   }
 
   /**
-   * Builds multiple search queries to improve search coverage.
+   * Builds search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
     const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
     const domainKeywords = this.getDomainKeywords(input)
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
     const fallbackDomain = input.domainName
-      ? [this.normalizeText(input.domainName)]
+      ? [this.cleanNormalizedText(input.domainName)]
       : [];
 
     const baseTerms = this.unique([
@@ -196,62 +234,81 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
     }
 
     const problemTerms = this.getProblemWords()
-      .map((word) => this.normalizeText(word))
+      .map((word) => this.cleanNormalizedText(word))
       .filter(Boolean)
       .slice(0, 4);
 
     const queries = [
       baseTerms.join(' OR '),
+
       ...baseTerms.slice(0, 3),
+
       ...baseTerms
         .slice(0, 3)
-        .flatMap((term) => problemTerms.map((problem) => `${term} ${problem}`)),
+        .flatMap((term) =>
+          problemTerms.map(
+            (problem) => `${term} ${problem}`,
+          ),
+        ),
     ];
 
     return this.unique(queries).slice(0, 8);
   }
 
   /**
-   * Keeps only articles that are safe enough to store.
+   * Validates a NewsAPI article.
    */
   private isUsableArticle(article: NewsApiArticle): boolean {
-    const title = article.title ?? '';
-    const url = article.url ?? '';
-    const description = article.description ?? '';
+    const title = this.cleanPlainText(article.title);
+    const description = this.cleanPlainText(
+      article.description,
+    );
 
-    if (!title || !url) {
+    if (!title || !article.url) {
       return false;
     }
 
-    if (title === '[Removed]' || description === '[Removed]') {
+    if (
+      title === '[Removed]' ||
+      description === '[Removed]'
+    ) {
       return false;
     }
 
-    const blockedWords = this.getBlockedWords();
-    const text = this.normalizeText(
+    const text = this.cleanNormalizedText(
       `${title} ${description} ${article.content ?? ''}`,
     );
 
-    return !blockedWords.some((word) => text.includes(word));
+    const blockedWords = this.getBlockedWords();
+
+    return !blockedWords.some((word) =>
+      text.includes(this.cleanNormalizedText(word)),
+    );
   }
 
   /**
-   * Calculates the final relevance score for a news article.
+   * Calculates article relevance.
    */
   private calculateArticleRelevanceScore(
     article: NewsApiArticle,
     input: CollectorInput,
   ): number {
     const baseScore = RelevanceScoreUtil.scoreText({
-      title: article.title ?? '',
-      body: `${article.description ?? ''} ${article.content ?? ''}`,
+      title: this.cleanPlainText(article.title),
+
+      body: this.cleanPlainText(
+        `${article.description ?? ''} ${
+          article.content ?? ''
+        }`,
+      ),
+
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
+
       likes: 0,
       replies: 0,
-      publishedAt: article.publishedAt
-        ? new Date(article.publishedAt)
-        : undefined,
+
+      publishedAt: this.parseDate(article.publishedAt),
     });
 
     return (
@@ -262,23 +319,22 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Gives extra score when user keywords appear in title or body.
+   * Adds score for user-keyword matches.
    */
   private calculateKeywordBonus(
     article: NewsApiArticle,
     input: CollectorInput,
   ): number {
     const keywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    if (!keywords.length) {
-      return 0;
-    }
+    const title = this.cleanNormalizedText(article.title);
 
-    const title = this.normalizeText(article.title ?? '');
-    const body = this.normalizeText(
-      `${article.description ?? ''} ${article.content ?? ''}`,
+    const body = this.cleanNormalizedText(
+      `${article.description ?? ''} ${
+        article.content ?? ''
+      }`,
     );
 
     let bonus = 0;
@@ -297,9 +353,7 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Improves Arabic news ranking using simple contextual weighting.
-   *
-   * This method does not reject articles.
+   * Adds lightweight Arabic context weighting.
    */
   private getArabicContextScore(
     article: NewsApiArticle,
@@ -309,13 +363,13 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       return 0;
     }
 
-    const text = this.normalizeText(`
+    const text = this.cleanNormalizedText(`
       ${article.title ?? ''}
       ${article.description ?? ''}
       ${article.content ?? ''}
     `);
 
-    const educationTerms = [
+    const relevantTerms = [
       'تعليم',
       'التعليم',
       'تعليمي',
@@ -370,14 +424,14 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
 
     let score = 0;
 
-    for (const word of educationTerms) {
-      if (text.includes(word)) {
+    for (const term of relevantTerms) {
+      if (text.includes(term)) {
         score += 6;
       }
     }
 
-    for (const word of unrelatedTerms) {
-      if (text.includes(word)) {
+    for (const term of unrelatedTerms) {
+      if (text.includes(term)) {
         score -= 5;
       }
     }
@@ -386,78 +440,93 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Maps a NewsAPI article into CollectorPost format.
+   * Maps one NewsAPI article.
    */
   private mapArticleToCollectorPost(
     article: NewsApiArticle,
     input: CollectorInput,
   ): CollectorPost {
     return {
-      sourceType: CollectionSourceType.NEWS,
-      platformName: this.platformName,
       externalId: this.buildExternalId(article),
-      title: article.title,
+
+      title: this.cleanPlainText(article.title),
+
       content: this.buildArticleContent(article),
-      author: article.author ?? article.source?.name,
+
+      author: this.cleanPlainText(
+        article.author ?? article.source?.name,
+      ),
+
       url: article.url,
 
       country: input.country,
       city: input.city,
       region: input.region,
 
-      language: input.language,
+      languageCode: this.resolveStoredLanguageCode(
+        input.language,
+      ),
+
       likesCount: 0,
       repliesCount: 0,
-      publishedAt: article.publishedAt
-        ? new Date(article.publishedAt)
-        : undefined,
-      comments: this.collectArticleComments(),
-    };
-  }
 
-  /**
-   * NewsAPI does not provide article comments.
-   */
-  private collectArticleComments(): CollectorComment[] {
-    return [];
+      publishedAt: this.parseDate(article.publishedAt),
+
+      comments: [],
+    };
   }
 
   /**
    * Builds clean article content.
    */
-  private buildArticleContent(article: NewsApiArticle): string {
-    const content = [article.description, article.content, article.title]
-      .filter(Boolean)
-      .join('\n\n');
-
-    return this.stripHtml(content);
+  private buildArticleContent(
+    article: NewsApiArticle,
+  ): string {
+    return this.cleanPlainText(
+      [
+        article.description,
+        article.content,
+        article.title,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    );
   }
 
   /**
-   * Builds stable external ID for article.
+   * Builds a stable article external ID.
    */
-  private buildExternalId(article: NewsApiArticle): string {
-    return Buffer.from(article.url ?? article.title ?? Date.now().toString())
-      .toString('base64')
-      .slice(0, 64);
+  private buildExternalId(
+    article: NewsApiArticle,
+  ): string {
+    const identity =
+      article.url ??
+      `${article.title ?? ''}-${article.publishedAt ?? ''}`;
+
+    return Buffer.from(identity)
+      .toString('base64url')
+      .slice(0, 100);
   }
 
   /**
-   * Reads NewsAPI key from environment variables.
+   * Reads NEWS_API_KEY.
    */
   private getApiKey(): string {
-    return this.configService.get<string>('NEWS_API_KEY') ?? '';
+    return (
+      this.configService.get<string>('NEWS_API_KEY') ??
+      ''
+    );
   }
 
   /**
-   * Reads common and News-specific blocked words.
+   * Reads News-specific blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('NEWS_BLOCKED_WORDS');
   }
 
   /**
-   * Builds NewsAPI request headers.
+   * Builds NewsAPI headers.
    */
   private buildHeaders(): Record<string, string> {
     return {
@@ -468,13 +537,28 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Extracts readable message from unknown errors.
+   * Parses an external date safely.
    */
-  private getErrorMessage(error: unknown): unknown {
+  private parseDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = new Date(value);
+
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  /**
+   * Extracts a safe error message.
+   */
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    return error;
+    return typeof error === 'string'
+      ? error
+      : 'Unknown News collector error.';
   }
 }
