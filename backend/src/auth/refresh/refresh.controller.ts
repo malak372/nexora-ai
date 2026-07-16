@@ -6,16 +6,19 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { RefreshDto } from '../dto/refresh.dto';
 import { AuthRefreshService } from './refresh.service';
 
+const REFRESH_RATE_LIMIT_TTL_MS = 60_000;
+
 /**
- * Controller responsible for authentication token refresh operations.
+ * Controller responsible for authentication-token refresh operations.
  *
- * Handles issuing new access and refresh tokens using
- * a valid refresh token.
+ * Issues a new access token and rotates the provided refresh token
+ * when the current refresh token is valid.
  *
  * Base route:
  * /auth/refresh
@@ -24,27 +27,41 @@ import { AuthRefreshService } from './refresh.service';
  */
 @Controller('auth/refresh')
 export class RefreshController {
-  constructor(private readonly authRefreshService: AuthRefreshService) {}
+  constructor(
+    private readonly authRefreshService: AuthRefreshService,
+  ) { }
 
   /**
    * Refreshes authentication tokens using a valid refresh token.
    *
-   * Returns 200 OK because this operation rotates tokens
-   * without creating a new API resource.
+   * Returns 200 OK because the operation rotates an existing
+   * authentication session without creating a new API resource.
+   *
+   * Rate limit:
+   * - 10 requests per minute.
    *
    * Endpoint:
    * POST /auth/refresh
    *
-   * @param dto Refresh token request data.
-   * @param req HTTP request metadata.
-   * @returns New access token and refresh token.
+   * @param dto - Refresh-token request data.
+   * @param request - Current HTTP request containing client metadata.
+   * @returns New access token and rotated refresh token.
    */
   @Post()
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() dto: RefreshDto, @Req() req: Request) {
+  @Throttle({
+    default: {
+      limit: 10,
+      ttl: REFRESH_RATE_LIMIT_TTL_MS,
+    },
+  })
+  refresh(
+    @Body() dto: RefreshDto,
+    @Req() request: Request,
+  ) {
     return this.authRefreshService.refresh(dto, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
     });
   }
 }

@@ -14,8 +14,8 @@ import { AuthLogoutService } from './logout.service';
 /**
  * Controller responsible for user logout.
  *
- * Handles user logout by revoking the provided
- * refresh token to prevent further authentication.
+ * Revokes the provided refresh token to terminate
+ * the associated authenticated session.
  *
  * Base route:
  * /auth/logout
@@ -24,27 +24,27 @@ import { AuthLogoutService } from './logout.service';
  */
 @Controller('auth/logout')
 export class LogoutController {
-  constructor(private readonly authLogoutService: AuthLogoutService) {}
+  constructor(private readonly authLogoutService: AuthLogoutService) { }
 
   /**
-   * Logs out the user by revoking the provided refresh token.
+   * Revokes the provided refresh token.
    *
-   * Returns 200 OK because logout revokes an existing session
-   * without creating a new API resource.
+   * Returns 200 OK because the operation updates an existing
+   * authentication session without creating a new resource.
    *
    * Endpoint:
    * POST /auth/logout
    *
-   * @param dto Refresh token to revoke.
-   * @param req HTTP request metadata.
+   * @param dto - Refresh token to revoke.
+   * @param request - Current HTTP request containing client metadata.
    * @returns Logout confirmation message.
    */
   @Post()
   @HttpCode(HttpStatus.OK)
-  logout(@Body() dto: RefreshDto, @Req() req: Request) {
+  logout(@Body() dto: RefreshDto, @Req() request: Request) {
     return this.authLogoutService.logout(dto, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
     });
   }
 }

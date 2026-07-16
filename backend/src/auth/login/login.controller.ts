@@ -25,7 +25,7 @@ import { AuthLoginService } from './login.service';
  */
 @Controller('auth/login')
 export class LoginController {
-  constructor(private readonly authLoginService: AuthLoginService) {}
+  constructor(private readonly authLoginService: AuthLoginService) { }
 
   /**
    * Authenticates an active and verified user.
@@ -36,17 +36,22 @@ export class LoginController {
    * Endpoint:
    * POST /auth/login
    *
-   * @param dto User login credentials.
-   * @param req HTTP request metadata.
+   * @param dto - User login credentials.
+   * @param request - Current HTTP request containing client metadata.
    * @returns Access token, refresh token, and authenticated user data.
    */
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  @HttpCode(HttpStatus.OK)
   @Post()
-  login(@Body() dto: LoginDto, @Req() req: Request) {
+  @HttpCode(HttpStatus.OK)
+  @Throttle({
+    default: {
+      limit: 5,
+      ttl: 60_000,
+    },
+  })
+  login(@Body() dto: LoginDto, @Req() request: Request) {
     return this.authLoginService.login(dto, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
     });
   }
 }

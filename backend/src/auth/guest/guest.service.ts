@@ -11,24 +11,26 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { AttachGuestIdeasResult } from './types/attach-guest-ideas-result.type';
 
 /**
- * Transfers guest-owned activity to a newly registered account.
+ * Transfers guest-owned idea activity to a registered user.
  *
- * A transferred guest idea counts as one of the user's three free
- * generations.
+ * Each transferred guest idea counts as one of the user's
+ * available free idea generations.
  *
- * The service accepts an optional Prisma transaction client so account
- * creation and ownership transfer can execute atomically.
+ * The service accepts an optional Prisma transaction client,
+ * allowing account creation and guest-activity transfer to
+ * execute atomically.
  *
  * @author Eman
  */
 @Injectable()
 export class AuthGuestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Transfers guest ideas, prompt histories, and AI logs.
+   * Transfers guest ideas and their related activity
+   * to a registered user.
    *
-   * The transferred Idea changes from:
+   * A transferred idea changes from:
    *
    * GUEST_FREE + guestSessionId
    *
@@ -36,14 +38,17 @@ export class AuthGuestService {
    *
    * NORMAL_FREE + userId
    *
-   * No AI request is executed during registration because the regular
-   * free-tier fields were already generated and persisted internally.
+   * No additional AI request is executed because the generated
+   * idea data and pipeline results already exist.
+   *
+   * @param guestSessionToken - Guest-session token stored by the client.
+   * @param userId - Identifier of the registered user.
+   * @param tx - Optional existing Prisma transaction client.
+   * @returns Information about the transferred ideas.
    */
   async attachGuestIdeasToUser(
     guestSessionToken: string | undefined,
-
     userId: string,
-
     tx?: Prisma.TransactionClient,
   ): Promise<AttachGuestIdeasResult> {
     const normalizedToken = guestSessionToken?.trim();
@@ -62,12 +67,9 @@ export class AuthGuestService {
         where: {
           id: userId,
         },
-
         select: {
           id: true,
-
           freeGenerationLimit: true,
-
           freeGenerationsUsed: true,
         },
       });
@@ -80,10 +82,8 @@ export class AuthGuestService {
         where: {
           sessionToken: normalizedToken,
         },
-
         select: {
           id: true,
-
           hasGenerated: true,
         },
       });
@@ -98,22 +98,18 @@ export class AuthGuestService {
       const guestIdeas = await client.idea.findMany({
         where: {
           guestSessionId: guestSession.id,
-
           userId: null,
-
           generationType: IdeaGenerationType.GUEST_FREE,
         },
-
         select: {
           id: true,
         },
-
         orderBy: {
           createdAt: 'asc',
         },
       });
 
-      if (guestIdeas.length === 0) {
+      if (!guestIdeas.length) {
         return {
           transferredCount: 0,
           ideaIds: [],
@@ -123,32 +119,26 @@ export class AuthGuestService {
       const remainingAllowance =
         user.freeGenerationLimit - user.freeGenerationsUsed;
 
-      if (remainingAllowance < guestIdeas.length) {
+      if (guestIdeas.length > remainingAllowance) {
         throw new ConflictException(
-          'The guest idea cannot be attached because the free-generation allowance would be exceeded.',
+          'The guest ideas cannot be attached because the free-generation allowance would be exceeded.',
         );
       }
 
-      const ideaIds = guestIdeas.map((idea) => idea.id);
+      const ideaIds = guestIdeas.map(({ id }) => id);
 
       const transferResult = await client.idea.updateMany({
         where: {
           id: {
             in: ideaIds,
           },
-
           guestSessionId: guestSession.id,
-
           userId: null,
-
           generationType: IdeaGenerationType.GUEST_FREE,
         },
-
         data: {
           userId: user.id,
-
           guestSessionId: null,
-
           generationType: IdeaGenerationType.NORMAL_FREE,
         },
       });
@@ -163,7 +153,6 @@ export class AuthGuestService {
         where: {
           id: user.id,
         },
-
         data: {
           freeGenerationsUsed: {
             increment: transferResult.count,
@@ -172,34 +161,52 @@ export class AuthGuestService {
       });
 
       /**
-       * Transfer every prompt related to the guest session.
+       * Transfers the idea-generation pipeline runs.
+       *
+       * The related stages remain connected automatically
+       * through their IdeaGenerationRun relation.
+       */
+      await client.ideaGenerationRun.updateMany({
+        where: {
+          ideaId: {
+            in: ideaIds,
+          },
+          guestSessionId: guestSession.id,
+          userId: null,
+          generationType: IdeaGenerationType.GUEST_FREE,
+        },
+        data: {
+          userId: user.id,
+          guestSessionId: null,
+          generationType: IdeaGenerationType.NORMAL_FREE,
+        },
+      });
+
+      /**
+       * Transfers prompt histories created by the guest session.
        */
       await client.promptHistory.updateMany({
         where: {
           guestSessionId: guestSession.id,
-
           userId: null,
         },
-
         data: {
           userId: user.id,
-
           guestSessionId: null,
         },
       });
 
       /**
-       * Attach external AI execution logs to the registered user.
+       * Attaches external API execution logs related
+       * to the transferred ideas.
        */
       await client.externalApiLog.updateMany({
         where: {
           ideaId: {
             in: ideaIds,
           },
-
           userId: null,
         },
-
         data: {
           userId: user.id,
         },
@@ -207,7 +214,6 @@ export class AuthGuestService {
 
       return {
         transferredCount: transferResult.count,
-
         ideaIds,
       };
     };

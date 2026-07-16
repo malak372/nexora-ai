@@ -2,13 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
 /**
- * Guard that protects routes using JWT authentication.
+ * JWT authentication guard.
  *
- * This guard validates the JWT access token provided in the
- * request. If the token is valid, the authenticated user is
- * attached to the request object; otherwise, access is denied.
+ * Validates the access token using the registered JWT strategy
+ * and attaches the authenticated user to the request.
  *
  * @author Eman
  */
 @Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {}
+export class JwtAuthGuard extends AuthGuard('jwt') { }
