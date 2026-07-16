@@ -1,195 +1,366 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+
 import { AuthAction } from '@prisma/client';
+
 import { randomBytes } from 'crypto';
 
-import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
-import { AuthTokenService } from '../token/token.service';
-import { AuthAuditService, AuthRequestMeta } from '../audit/audit.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
+import {
+  AuthAuditService,
+  AuthRequestMeta,
+} from '../audit/audit.service';
+
+import { AuthTokenService } from '../token/token.service';
+
+/**
+ * Number of random bytes used to generate
+ * an email-verification token.
+ */
 const EMAIL_VERIFICATION_TOKEN_BYTES = 32;
+
+/**
+ * Email-verification token lifetime in hours.
+ */
 const EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS = 24;
 
 /**
- * Service responsible for email verification operations.
+ * Minimum duration between verification-email deliveries.
+ */
+const EMAIL_VERIFICATION_COOLDOWN_MS = 60_000;
+
+/**
+ * Generic response used to prevent account enumeration.
+ */
+const VERIFICATION_EMAIL_REQUEST_MESSAGE =
+  'If the account is eligible, a verification email has been sent.';
+
+/**
+ * Result returned by email-verification operations.
+ */
+type AuthEmailMessage = {
+  readonly message: string;
+};
+
+/**
+ * Service responsible for email-verification operations.
  *
  * Handles:
- * - Creating secure email verification tokens.
- * - Invalidating old unused verification tokens.
- * - Sending verification emails.
- * - Resending verification links for unverified users.
- * - Verifying user email addresses.
- * - Marking accounts as verified.
- * - Sending welcome emails after successful verification.
- * - Recording authentication audit logs for email events.
+ * - Secure verification-token creation.
+ * - Verification-email delivery.
+ * - Verification-email resend cooldowns.
+ * - Email-address verification.
+ * - Token invalidation.
+ * - Welcome-email delivery.
+ * - Authentication audit logging.
  *
  * @author Eman
  */
 @Injectable()
 export class AuthEmailService {
+  private readonly logger = new Logger(
+    AuthEmailService.name,
+  );
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) {}
+  ) { }
 
   /**
-   * Generates and sends an email verification link.
+   * Generates and sends an email-verification link.
    *
-   * Any previous unused verification tokens for the same user
-   * are invalidated before creating a new token. The plain token
-   * is sent only through email, while its hashed value is stored
-   * in the database for security.
+   * Only the token hash is persisted. The plain token
+   * is included exclusively in the verification email.
    *
-   * After the verification email is sent, an authentication audit
-   * log is recorded.
+   * Previous unused verification tokens are invalidated
+   * after the new verification email is delivered.
    *
-   * @param userId User ID that requires email verification.
-   * @param email Email address that will receive the verification link.
-   * @returns A promise that resolves after the email is sent.
+   * @param userId User requiring email verification.
+   * @param email Recipient email address.
+   * @param meta Optional request metadata.
+   * @param claimedAt Cooldown timestamp already reserved
+   * by the resend operation.
    */
   async sendEmailVerificationLink(
     userId: string,
     email: string,
+    meta?: AuthRequestMeta,
+    claimedAt: Date = new Date(),
   ): Promise<void> {
-    await this.prisma.emailVerificationToken.updateMany({
-      where: {
-        userId,
-        usedAt: null,
-      },
-      data: {
-        usedAt: new Date(),
-      },
-    });
-
     const verificationToken = randomBytes(
       EMAIL_VERIFICATION_TOKEN_BYTES,
     ).toString('hex');
 
-    const tokenHash = this.authTokenService.hashToken(verificationToken);
+    const tokenHash =
+      this.authTokenService.hashToken(
+        verificationToken,
+      );
 
-    const expiresAt = new Date();
-    expiresAt.setHours(
-      expiresAt.getHours() + EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS,
+    const expiresAt = new Date(
+      Date.now() +
+      EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS *
+      60 *
+      60 *
+      1000,
     );
 
-    await this.prisma.emailVerificationToken.create({
-      data: {
+    const storedToken =
+      await this.prisma.emailVerificationToken.create({
+        data: {
+          userId,
+          tokenHash,
+          expiresAt,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    try {
+      const frontendUrl =
+        process.env.APP_FRONTEND_URL ??
+        'http://localhost:3000';
+
+      const verificationLink =
+        `${frontendUrl}/verify-email` +
+        `?email=${encodeURIComponent(email)}` +
+        `&token=${encodeURIComponent(
+          verificationToken,
+        )}`;
+
+      await this.mailService.sendVerificationEmail(
+        email,
+        verificationLink,
+      );
+
+      const now = new Date();
+
+      await this.prisma.$transaction([
+        this.prisma.emailVerificationToken.updateMany({
+          where: {
+            userId,
+            id: {
+              not: storedToken.id,
+            },
+            usedAt: null,
+          },
+          data: {
+            usedAt: now,
+          },
+        }),
+
+        this.prisma.user.update({
+          where: {
+            id: userId,
+          },
+          data: {
+            verificationEmailSentAt: claimedAt,
+          },
+        }),
+      ]);
+
+      await this.authAuditService.createLog({
         userId,
-        tokenHash,
-        expiresAt,
-      },
-    });
+        email,
+        action:
+          AuthAction.VERIFICATION_EMAIL_SENT,
+        isSuccess: true,
+        message:
+          'Verification email sent successfully',
+        ...meta,
+      });
+    } catch (error: unknown) {
+      /*
+       * The new token must not remain active when
+       * its email could not be delivered.
+       */
+      await this.prisma.emailVerificationToken
+        .delete({
+          where: {
+            id: storedToken.id,
+          },
+        })
+        .catch(() => undefined);
 
-    const frontendUrl = process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
+      /*
+       * Release the cooldown only when this request
+       * still owns the stored timestamp.
+       */
+      await this.prisma.user
+        .updateMany({
+          where: {
+            id: userId,
+            verificationEmailSentAt: claimedAt,
+          },
+          data: {
+            verificationEmailSentAt: null,
+          },
+        })
+        .catch(() => undefined);
 
-    const verificationLink =
-      `${frontendUrl}/verify-email?email=${encodeURIComponent(email)}` +
-      `&token=${verificationToken}`;
+      await this.authAuditService
+        .createLog({
+          userId,
+          email,
+          action:
+            AuthAction.VERIFICATION_EMAIL_SENT,
+          isSuccess: false,
+          message:
+            'Verification email delivery failed',
+          ...meta,
+        })
+        .catch(() => undefined);
 
-    await this.mailService.sendVerificationEmail(email, verificationLink);
-
-    await this.authAuditService.createLog({
-      userId,
-      email,
-      action: AuthAction.VERIFICATION_EMAIL_SENT,
-      isSuccess: true,
-      message: 'Verification email sent successfully',
-    });
+      throw error;
+    }
   }
 
   /**
-   * Resends an email verification link for an unverified active user.
+   * Requests a new verification email for an
+   * active and unverified account.
    *
-   * The request is rejected if the account does not exist,
-   * is inactive, or is already verified. After a new verification
-   * link is sent, an authentication audit log is recorded.
+   * A database-backed cooldown ensures that only
+   * one email can be delivered during the configured
+   * cooldown period, including when multiple requests
+   * arrive concurrently.
+   *
+   * A generic response is always returned to prevent
+   * disclosure of registered email addresses.
    *
    * @param email User email address.
-   * @param meta Optional request metadata such as IP address and user agent.
-   * @returns Verification email resend confirmation message.
-   *
-   * @throws BadRequestException if the verification request is invalid.
+   * @param meta Optional request metadata.
+   * @returns Generic request confirmation.
    */
-  async resendVerificationEmail(email: string, meta?: AuthRequestMeta) {
+  async resendVerificationEmail(
+    email: string,
+    meta?: AuthRequestMeta,
+  ): Promise<AuthEmailMessage> {
+    const genericResponse: AuthEmailMessage = {
+      message: VERIFICATION_EMAIL_REQUEST_MESSAGE,
+    };
+
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: {
+        email,
+      },
       select: {
         id: true,
         email: true,
         isActive: true,
         isVerified: true,
+        emailVerifiedAt: true,
       },
     });
 
-    if (!user || !user.isActive) {
-      throw new BadRequestException('Invalid verification request');
+    /*
+     * Do not reveal whether:
+     * - The account does not exist.
+     * - The account is inactive.
+     * - The account is already verified.
+     */
+    if (
+      !user ||
+      !user.isActive ||
+      user.isVerified ||
+      user.emailVerifiedAt
+    ) {
+      return genericResponse;
     }
 
-    if (user.isVerified) {
-      return {
-        message: 'Email is already verified',
-      };
+    const claimedAt = new Date();
+
+    const cooldownThreshold = new Date(
+      claimedAt.getTime() -
+      EMAIL_VERIFICATION_COOLDOWN_MS,
+    );
+
+    /*
+     * Atomically reserve the email-delivery attempt.
+     *
+     * If two requests arrive together, only one of
+     * them can update the timestamp and send an email.
+     */
+    const cooldownClaim =
+      await this.prisma.user.updateMany({
+        where: {
+          id: user.id,
+          isActive: true,
+          isVerified: false,
+          emailVerifiedAt: null,
+          OR: [
+            {
+              verificationEmailSentAt: null,
+            },
+            {
+              verificationEmailSentAt: {
+                lte: cooldownThreshold,
+              },
+            },
+          ],
+        },
+        data: {
+          verificationEmailSentAt: claimedAt,
+        },
+      });
+
+    if (cooldownClaim.count === 0) {
+      return genericResponse;
     }
 
-    await this.sendEmailVerificationLink(user.id, user.email);
+    await this.sendEmailVerificationLink(
+      user.id,
+      user.email,
+      meta,
+      claimedAt,
+    );
 
     await this.authAuditService.createLog({
       userId: user.id,
       email: user.email,
-      action: AuthAction.RESEND_VERIFICATION_EMAIL,
+      action:
+        AuthAction.RESEND_VERIFICATION_EMAIL,
       isSuccess: true,
-      message: 'Verification email resent successfully',
+      message:
+        'Verification email resend request processed successfully',
       ...meta,
     });
 
-    return {
-      message: 'Verification email has been resent successfully',
-    };
+    return genericResponse;
   }
 
   /**
-   * Verifies a user's email address using a verification token.
-   *
-   * The email and token must be provided. The user must exist,
-   * be active, and not already verified. The verification token
-   * must exist, belong to the requested user, be unused, and
-   * not be expired.
-   *
-   * Failed verification attempts are recorded in authentication
-   * audit logs before rejecting the request. After successful
-   * verification, the user's account is marked as verified,
-   * the token is marked as used, a welcome email is sent, and
-   * a successful verification audit log is recorded.
+   * Verifies a user's email address using a valid
+   * email-verification token.
    *
    * @param email User email address.
-   * @param token Plain verification token received from the verification link.
-   * @param meta Optional request metadata such as IP address and user agent.
-   * @returns Email verification confirmation message.
+   * @param token Plain verification token.
+   * @param meta Optional request metadata.
+   * @returns Email-verification result.
    *
-   * @throws BadRequestException if the email or token is missing,
-   * the request is invalid, or the token is invalid, expired,
-   * or already used.
+   * @throws BadRequestException When the request or
+   * token is invalid.
    */
-  async verifyEmail(email: string, token: string, meta?: AuthRequestMeta) {
-    if (!email || !token) {
-      await this.authAuditService.createLog({
-        email,
-        action: AuthAction.VERIFY_EMAIL_FAILED,
-        isSuccess: false,
-        message: 'Email or verification token is missing',
-        ...meta,
-      });
-
-      throw new BadRequestException('Email and token are required');
-    }
-
+  async verifyEmail(
+    email: string,
+    token: string,
+    meta?: AuthRequestMeta,
+  ): Promise<AuthEmailMessage> {
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: {
+        email,
+      },
       select: {
         id: true,
         email: true,
+        fullName: true,
         isVerified: true,
         isActive: true,
       },
@@ -205,7 +376,9 @@ export class AuthEmailService {
         ...meta,
       });
 
-      throw new BadRequestException('Invalid verification request');
+      throw new BadRequestException(
+        'Invalid verification request',
+      );
     }
 
     if (user.isVerified) {
@@ -214,59 +387,107 @@ export class AuthEmailService {
       };
     }
 
-    const tokenHash = this.authTokenService.hashToken(token);
+    const tokenHash =
+      this.authTokenService.hashToken(token);
 
-    const storedToken = await this.prisma.emailVerificationToken.findUnique({
-      where: { tokenHash },
-    });
+    const storedToken =
+      await this.prisma.emailVerificationToken.findUnique({
+        where: {
+          tokenHash,
+        },
+        select: {
+          id: true,
+          userId: true,
+          usedAt: true,
+          expiresAt: true,
+        },
+      });
+
+    const now = new Date();
 
     if (
       !storedToken ||
       storedToken.userId !== user.id ||
       storedToken.usedAt ||
-      storedToken.expiresAt < new Date()
+      storedToken.expiresAt <= now
     ) {
       await this.authAuditService.createLog({
         userId: user.id,
         email: user.email,
         action: AuthAction.VERIFY_EMAIL_FAILED,
         isSuccess: false,
-        message: 'Invalid or expired verification token',
+        message:
+          'Invalid or expired verification token',
         ...meta,
       });
 
-      throw new BadRequestException('Invalid or expired verification token');
+      throw new BadRequestException(
+        'Invalid or expired verification token',
+      );
     }
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          isVerified: true,
-          emailVerifiedAt: new Date(),
+    /*
+     * Mark the token as used atomically.
+     *
+     * This prevents two simultaneous requests from
+     * successfully using the same verification token.
+     */
+    const consumedToken =
+      await this.prisma.emailVerificationToken.updateMany(
+        {
+          where: {
+            id: storedToken.id,
+            userId: user.id,
+            usedAt: null,
+            expiresAt: {
+              gt: now,
+            },
+          },
+          data: {
+            usedAt: now,
+          },
         },
-      }),
+      );
 
-      this.prisma.emailVerificationToken.update({
-        where: { id: storedToken.id },
-        data: {
-          usedAt: new Date(),
-        },
-      }),
-    ]);
+    if (consumedToken.count === 0) {
+      await this.authAuditService.createLog({
+        userId: user.id,
+        email: user.email,
+        action: AuthAction.VERIFY_EMAIL_FAILED,
+        isSuccess: false,
+        message:
+          'Verification token was already consumed',
+        ...meta,
+      });
 
-    const verifiedUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        email: true,
-        fullName: true,
+      throw new BadRequestException(
+        'Invalid or expired verification token',
+      );
+    }
+
+    await this.prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        isVerified: true,
+        emailVerifiedAt: now,
+        verificationEmailSentAt: null,
       },
     });
 
-    if (verifiedUser) {
+    /*
+     * Email verification must remain successful even
+     * if the optional welcome email cannot be delivered.
+     */
+    try {
       await this.mailService.sendWelcomeEmail(
-        verifiedUser.email,
-        verifiedUser.fullName,
+        user.email,
+        user.fullName,
+      );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Welcome email could not be sent for user ${user.id}.`,
       );
     }
 
