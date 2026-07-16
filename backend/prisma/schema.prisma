@@ -414,6 +414,7 @@ model User {
   preference              UserPreference?
   savedGenerationSearches SavedGenerationSearch[]
   contactMessages         ContactMessage[]
+  deletedAt               DateTime?                @map("deleted_at")
 
   /**
    * Prompts requested by this authenticated user.
@@ -426,6 +427,7 @@ model User {
   publicationVotes    IdeaPublicationVote[]
   publicationFeedback IdeaPublicationFeedback[]
   generationRuns      IdeaGenerationRun[]
+  collectionJobs      CollectionJob[]           @relation("CollectionJobsCreatedBy")
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -582,6 +584,7 @@ model Idea {
 
   publication   IdeaPublication?
   generationRun IdeaGenerationRun?
+  deletedAt     DateTime?          @map("deleted_at")
 
   title String
 
@@ -791,8 +794,9 @@ model Complaint {
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  ideaId    String?   @map("idea_id")
+  idea      Idea?     @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  deletedAt DateTime? @map("deleted_at")
 
   subject  String
   message  String
@@ -947,8 +951,17 @@ model AuthenticationLog {
 model CollectionJob {
   id String @id @default(uuid())
 
+  /**
+   * User who started or owns this collection job.
+   * Nullable to support guest, internal, and legacy jobs.
+   */
+  createdById String? @map("created_by_id")
+
+  createdBy User? @relation("CollectionJobsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
   domainId String @map("domain_id")
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
 
   language LanguageCode
 
@@ -964,20 +977,24 @@ model CollectionJob {
   totalPosts    Int @default(0) @map("total_posts")
   totalComments Int @default(0) @map("total_comments")
 
-  startedAt    DateTime? @map("started_at")
-  completedAt  DateTime? @map("completed_at")
-  failedReason String?   @map("failed_reason")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  failedReason String? @map("failed_reason")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  sources         CollectionJobSource[]
-  posts           SocialPost[]
-  nlpAnalysis     NlpAnalysis?
-  ideas           Idea[]
+  sources CollectionJobSource[]
+  posts   SocialPost[]
+
+  nlpAnalysis NlpAnalysis?
+  ideas       Idea[]
+
   promptHistories PromptHistory[]
   generationRuns  IdeaGenerationRun[]
 
+  @@index([createdById])
   @@index([domainId])
   @@index([country])
   @@index([status])
@@ -1235,7 +1252,7 @@ model AiModel {
   supportsVision     Boolean @default(false) @map("supports_vision")
   contextWindow      Int?    @map("context_window")
 
-  iinputCostPerMillion Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
+  inputCostPerMillion Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
 
   outputCostPerMillion Decimal @default(0) @map("output_cost_per_million") @db.Decimal(12, 6)
 
@@ -1269,8 +1286,9 @@ model ContactMessage {
   subject  String
   message  String
 
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?   @map("user_id")
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  deletedAt DateTime? @map("deleted_at")
 
   status ContactMessageStatus @default(NEW)
 
