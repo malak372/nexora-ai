@@ -1,10 +1,15 @@
+
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 
-import { Prisma, PromptHistory, PromptType } from '@prisma/client';
+import {
+  Prisma,
+  PromptHistory,
+  PromptType,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -26,10 +31,10 @@ import {
 import { SavePromptParams } from '../types/save-prompt-params.type';
 
 /**
- * Safe PromptHistory fields supported for administrative sorting.
+ * PromptHistory fields permitted for administrator-controlled sorting.
  *
- * Any unsupported sortBy value must be rejected or replaced
- * by buildOrderBy().
+ * Restricting sorting to known scalar fields prevents unsupported
+ * query values from being passed directly to Prisma.
  *
  * @author Malak
  */
@@ -40,49 +45,61 @@ const PROMPT_HISTORY_SORT_FIELDS = [
 ] as const;
 
 /**
- * Prompt types that represent user-requested AI operations.
+ * Prompt types representing user-requested AI operations.
  *
  * These operations must belong to exactly one requester:
  * - An authenticated user.
  * - A guest session.
  *
- * Internal system operations such as NLP_ANALYSIS and
- * ABSTRACT_GENERATION may be persisted without a requester.
- *
- * @author Malak
+ * Internal operations such as NLP_ANALYSIS and
+ * ABSTRACT_GENERATION may be saved without a requester.
  */
-const REQUESTER_REQUIRED_PROMPT_TYPES = new Set<PromptType>([
-  PromptType.IDEA_GENERATION,
-  PromptType.IDEA_UNLOCK,
-  PromptType.CHAT_RESPONSE,
-]);
+const REQUESTER_REQUIRED_PROMPT_TYPES =
+  new Set<PromptType>([
+    PromptType.IDEA_GENERATION,
+    PromptType.IDEA_UNLOCK,
+    PromptType.CHAT_RESPONSE,
+  ]);
 
 /**
- * Prompt types that require an authenticated registered user.
+ * Prompt types restricted to authenticated users.
  *
- * Guest sessions are not permitted to:
- * - Unlock an existing idea.
- * - Access AI chat.
- *
- * @author Malak
+ * Guest sessions cannot:
+ * - Unlock existing ideas.
+ * - Access the idea AI chat.
  */
-const AUTHENTICATED_USER_PROMPT_TYPES = new Set<PromptType>([
-  PromptType.IDEA_UNLOCK,
-  PromptType.CHAT_RESPONSE,
-]);
+const AUTHENTICATED_USER_PROMPT_TYPES =
+  new Set<PromptType>([
+    PromptType.IDEA_UNLOCK,
+    PromptType.CHAT_RESPONSE,
+  ]);
 
 /**
- * Handles prompt-history persistence and administrative retrieval.
+ * Prompt types that must be connected to a collection job.
  *
- * Prompt history supports:
- * - AI debugging.
+ * Idea generation and direct unlock depend on the persisted
+ * collection and NLP stages.
+ */
+const COLLECTION_JOB_REQUIRED_PROMPT_TYPES =
+  new Set<PromptType>([
+    PromptType.IDEA_GENERATION,
+    PromptType.IDEA_UNLOCK,
+  ]);
+
+/**
+ * Handles prompt-history persistence and administrator retrieval.
+ *
+ * Prompt history provides:
+ * - AI debugging information.
  * - Prompt auditing.
  * - Template-version tracking.
- * - Estimated token and cost analysis.
- * - User and guest-session ownership tracking.
- * - Linking a generated idea after successful AI generation.
+ * - Estimated token monitoring.
+ * - User and guest ownership tracking.
+ * - Collection-job traceability.
+ * - Linking the generated Idea after successful generation.
  *
  * This service does not:
+ * - Build prompts.
  * - Call AI providers.
  * - Create ideas.
  * - Deduct credits.
@@ -98,190 +115,193 @@ export class PromptHistoryService {
   /**
    * Persists one rendered prompt prepared for an AI provider.
    *
-   * Requester rules:
-   * - IDEA_GENERATION must belong to exactly one user or guest session.
-   * - IDEA_UNLOCK must belong to an authenticated user.
-   * - CHAT_RESPONSE must belong to an authenticated user.
-   * - Internal operations may be stored without a requester.
+   * Validation rules:
+   * - A prompt cannot belong to both a user and a guest session.
+   * - User-facing prompts must have exactly one requester.
+   * - IDEA_UNLOCK and CHAT_RESPONSE require a registered user.
+   * - IDEA_GENERATION and IDEA_UNLOCK require a collection job.
+   * - The rendered prompt must not be blank.
+   * - Estimated token usage cannot be negative.
+   * - Template hashes must be valid SHA-256 hashes when supplied.
    *
-   * The relation to Idea is optional because the prompt may be
-   * persisted before the generated Idea record exists.
+   * PromptHistory may initially have no ideaId because the prompt
+   * is normally saved before the AI result and Idea record exist.
    *
-   * @param params Rendered prompt and ownership metadata.
-   * @returns The persisted PromptHistory record.
+   * @param params Prompt text, type, ownership, and trace metadata.
+   * @returns Newly created PromptHistory record.
    */
-  async savePrompt(params: SavePromptParams): Promise<PromptHistory> {
-    this.validateRequester(params);
+  async savePrompt(
+    params: SavePromptParams,
+  ): Promise<PromptHistory> {
+    const normalizedParams =
+      this.normalizeSaveParams(params);
+
+    this.validatePromptPersistence(normalizedParams);
 
     return this.prisma.promptHistory.create({
       data: {
-        userId: this.normalizeOptionalId(params.userId),
-
-        guestSessionId: this.normalizeOptionalId(params.guestSessionId),
-
-        collectionJobId: this.normalizeOptionalId(params.collectionJobId),
-
-        ideaId: this.normalizeOptionalId(params.ideaId),
-
-        promptType: params.promptType,
-
-        promptText: params.promptText,
-
-        templateHash: params.templateHash?.trim() || undefined,
-
-        estimatedInputTokens: params.estimatedInputTokens ?? undefined,
+        userId: normalizedParams.userId,
+        guestSessionId:
+          normalizedParams.guestSessionId,
+        collectionJobId:
+          normalizedParams.collectionJobId,
+        ideaId: normalizedParams.ideaId,
+        promptType: normalizedParams.promptType,
+        promptText: normalizedParams.promptText,
+        templateHash:
+          normalizedParams.templateHash,
+        estimatedInputTokens:
+          normalizedParams.estimatedInputTokens,
       },
     });
   }
 
   /**
    * Associates a saved PromptHistory record with the Idea created
-   * from that prompt.
+   * or expanded from that prompt.
    *
-   * This method is used when the generation workflow is:
+   * Expected generation workflow:
    *
-   * 1. Build prompt.
+   * 1. Build the prompt.
    * 2. Save PromptHistory.
-   * 3. Call AI provider.
-   * 4. Create Idea.
-   * 5. Attach Idea to PromptHistory.
+   * 3. Call the AI provider.
+   * 4. Validate the AI result.
+   * 5. Create or update the Idea.
+   * 6. Attach the Idea to PromptHistory.
    *
-   * The method prevents:
-   * - Linking one prompt history to multiple ideas.
-   * - Linking prompts and ideas owned by different users.
-   * - Linking prompts and ideas from different guest sessions.
-   * - Linking prompts and ideas from different collection jobs.
+   * Validation prevents:
+   * - Linking a prompt to more than one idea.
+   * - Linking a soft-deleted idea.
+   * - Linking records belonging to different users.
+   * - Linking records belonging to different guest sessions.
+   * - Linking records associated with different collection jobs.
    *
-   * @param promptHistoryId Prompt-history record identifier.
-   * @param ideaId Generated idea identifier.
-   * @returns The updated PromptHistory record.
+   * Calling the method repeatedly with the same relationship
+   * is idempotent.
+   *
+   * @param promptHistoryId PromptHistory identifier.
+   * @param ideaId Active Idea identifier.
+   * @returns Updated or already-associated PromptHistory record.
    */
   async attachIdea(
     promptHistoryId: string,
     ideaId: string,
   ): Promise<PromptHistory> {
-    const [promptHistory, idea] = await Promise.all([
-      this.prisma.promptHistory.findUnique({
-        where: {
-          id: promptHistoryId,
-        },
-        select: {
-          id: true,
-          ideaId: true,
-          userId: true,
-          guestSessionId: true,
-          collectionJobId: true,
-        },
-      }),
+    const normalizedPromptHistoryId =
+      this.requireIdentifier(
+        promptHistoryId,
+        'Prompt history ID',
+      );
 
-      this.prisma.idea.findUnique({
-        where: {
-          id: ideaId,
-        },
-        select: {
-          id: true,
-          userId: true,
-          guestSessionId: true,
-          collectionJobId: true,
-        },
-      }),
-    ]);
+    const normalizedIdeaId =
+      this.requireIdentifier(ideaId, 'Idea ID');
+
+    const [promptHistory, idea] =
+      await Promise.all([
+        this.prisma.promptHistory.findUnique({
+          where: {
+            id: normalizedPromptHistoryId,
+          },
+          select: {
+            id: true,
+            promptType: true,
+            ideaId: true,
+            userId: true,
+            guestSessionId: true,
+            collectionJobId: true,
+          },
+        }),
+
+        /**
+         * findFirst is used because deletedAt is not part of
+         * the unique identifier. Soft-deleted ideas must not
+         * be attached to prompt history.
+         */
+        this.prisma.idea.findFirst({
+          where: {
+            id: normalizedIdeaId,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            userId: true,
+            guestSessionId: true,
+            collectionJobId: true,
+          },
+        }),
+      ]);
 
     if (!promptHistory) {
-      throw new NotFoundException('Prompt history record not found.');
+      throw new NotFoundException(
+        'Prompt history record not found.',
+      );
     }
 
     if (!idea) {
-      throw new NotFoundException('Idea not found.');
+      throw new NotFoundException(
+        'Active idea not found.',
+      );
     }
 
     /**
-     * Allows idempotent attachment to the same idea, but prevents
-     * changing the relation to a different idea.
+     * Allows idempotent attachment to the same idea while
+     * preventing the prompt from being reassigned.
      */
-    if (promptHistory.ideaId !== null && promptHistory.ideaId !== ideaId) {
+    if (
+      promptHistory.ideaId !== null &&
+      promptHistory.ideaId !== idea.id
+    ) {
       throw new BadRequestException(
         'Prompt history is already associated with another idea.',
       );
     }
 
-    /**
-     * Prevents accidentally linking a registered user's prompt
-     * to an idea owned by another user.
-     */
-    if (promptHistory.userId !== null && promptHistory.userId !== idea.userId) {
-      throw new BadRequestException(
-        'Prompt history and idea belong to different users.',
-      );
-    }
+    this.validatePromptIdeaOwnership(
+      promptHistory,
+      idea,
+    );
 
-    /**
-     * Prevents accidentally linking a guest prompt to an idea
-     * created by another guest session.
-     */
-    if (
-      promptHistory.guestSessionId !== null &&
-      promptHistory.guestSessionId !== idea.guestSessionId
-    ) {
-      throw new BadRequestException(
-        'Prompt history and idea belong to different guest sessions.',
-      );
-    }
-
-    /**
-     * The generated idea must originate from the same collection job
-     * used to build the original prompt.
-     */
-    if (
-      promptHistory.collectionJobId !== null &&
-      promptHistory.collectionJobId !== idea.collectionJobId
-    ) {
-      throw new BadRequestException(
-        'Prompt history and idea belong to different collection jobs.',
-      );
-    }
-
-    /**
-     * Return the existing record when it is already attached
-     * to the requested idea.
-     */
-    if (promptHistory.ideaId === ideaId) {
+    if (promptHistory.ideaId === idea.id) {
       return this.prisma.promptHistory.findUniqueOrThrow({
         where: {
-          id: promptHistoryId,
+          id: promptHistory.id,
         },
       });
     }
 
     return this.prisma.promptHistory.update({
       where: {
-        id: promptHistoryId,
+        id: promptHistory.id,
       },
       data: {
-        ideaId,
+        ideaId: idea.id,
       },
     });
   }
 
   /**
    * Returns filtered, sorted, and paginated PromptHistory records
-   * for the administrative prompt-history view.
+   * for the administrator history view.
    *
-   * Included relations:
-   * - Requesting user.
+   * Included context:
+   * - Authenticated requester.
    * - Guest-session metadata.
    * - Related idea.
-   * - Related collection job.
+   * - Collection job.
+   * - Domain.
+   * - Collection data sources.
    *
-   * Sensitive guest-session tokens are never selected.
+   * Sensitive values such as password hashes, guest tokens,
+   * and guest fingerprints are intentionally excluded.
    *
-   * @param query Administrative prompt-history filters.
-   * @returns Paginated prompt-history records.
+   * @param query Administrator filtering and pagination values.
+   * @returns Paginated prompt-history result.
    */
   async findAll(
     query: GetPromptHistoryQueryDto,
   ): Promise<PaginatedPromptHistory> {
-    const { page, limit, skip, take } = buildPagination(query);
+    const { page, limit, skip, take } =
+      buildPagination(query);
 
     const where = this.buildWhereClause(query);
 
@@ -291,52 +311,47 @@ export class PromptHistoryService {
       'createdAt',
     );
 
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.promptHistory.findMany({
-        where,
-        skip,
-        take,
-        orderBy,
-        include: PROMPT_HISTORY_INCLUDE,
-      }),
+    const [data, total] =
+      await this.prisma.$transaction([
+        this.prisma.promptHistory.findMany({
+          where,
+          skip,
+          take,
+          orderBy,
+          include: PROMPT_HISTORY_INCLUDE,
+        }),
 
-      this.prisma.promptHistory.count({
-        where,
-      }),
-    ]);
+        this.prisma.promptHistory.count({
+          where,
+        }),
+      ]);
 
     return {
       data,
-
       meta: {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(total, limit),
+        totalPages:
+          calculateTotalPages(total, limit),
       },
     };
   }
 
   /**
-   * Validates requester ownership before prompt persistence.
+   * Validates normalized values before prompt persistence.
    *
-   * Rules:
-   * - A prompt cannot belong to both a user and guest session.
-   * - User-facing operations must have exactly one requester.
-   * - Unlock and chat operations require an authenticated user.
-   * - Internal operations may be persisted without a requester.
-   *
-   * @param params Prompt persistence parameters.
+   * @param params Normalized prompt persistence values.
    */
-  private validateRequester(params: SavePromptParams): void {
-    const userId = this.normalizeOptionalId(params.userId);
-    const guestSessionId = this.normalizeOptionalId(params.guestSessionId);
-
-    const hasUser = userId !== undefined;
-    const hasGuestSession = guestSessionId !== undefined;
+  private validatePromptPersistence(
+    params: NormalizedSavePromptParams,
+  ): void {
+    const hasUser = params.userId !== undefined;
+    const hasGuestSession =
+      params.guestSessionId !== undefined;
 
     /**
-     * A prompt must never belong to both requester types.
+     * A single prompt cannot have two different requester types.
      */
     if (hasUser && hasGuestSession) {
       throw new BadRequestException(
@@ -345,10 +360,12 @@ export class PromptHistoryService {
     }
 
     /**
-     * User-facing AI operations must belong to exactly one requester.
+     * User-requested AI operations must identify one requester.
      */
     if (
-      REQUESTER_REQUIRED_PROMPT_TYPES.has(params.promptType) &&
+      REQUESTER_REQUIRED_PROMPT_TYPES.has(
+        params.promptType,
+      ) &&
       !hasUser &&
       !hasGuestSession
     ) {
@@ -358,22 +375,129 @@ export class PromptHistoryService {
     }
 
     /**
-     * Idea unlock and AI chat are authenticated-user-only operations.
+     * Direct unlock and chat cannot be requested by guests.
      */
-    if (AUTHENTICATED_USER_PROMPT_TYPES.has(params.promptType) && !hasUser) {
+    if (
+      AUTHENTICATED_USER_PROMPT_TYPES.has(
+        params.promptType,
+      ) &&
+      !hasUser
+    ) {
       throw new BadRequestException(
         `${params.promptType} prompt history must belong to an authenticated user.`,
+      );
+    }
+
+    /**
+     * Generation and unlock depend on collection and NLP context.
+     */
+    if (
+      COLLECTION_JOB_REQUIRED_PROMPT_TYPES.has(
+        params.promptType,
+      ) &&
+      params.collectionJobId === undefined
+    ) {
+      throw new BadRequestException(
+        `${params.promptType} prompt history must be associated with a collection job.`,
+      );
+    }
+
+    if (params.promptText.length === 0) {
+      throw new BadRequestException(
+        'Prompt text cannot be empty.',
+      );
+    }
+
+    if (
+      params.estimatedInputTokens !== undefined &&
+      params.estimatedInputTokens < 0
+    ) {
+      throw new BadRequestException(
+        'Estimated input tokens cannot be negative.',
+      );
+    }
+
+    if (
+      params.templateHash !== undefined &&
+      !/^[a-f0-9]{64}$/i.test(
+        params.templateHash,
+      )
+    ) {
+      throw new BadRequestException(
+        'Template hash must be a valid SHA-256 hash.',
       );
     }
   }
 
   /**
-   * Builds the Prisma filter used for prompt-history queries.
+   * Verifies that PromptHistory and Idea represent the same
+   * requester and collection-job context.
    *
-   * Search is applied to the rendered prompt text.
+   * @param promptHistory Saved PromptHistory ownership values.
+   * @param idea Active Idea ownership values.
+   */
+  private validatePromptIdeaOwnership(
+    promptHistory: {
+      promptType: PromptType;
+      userId: string | null;
+      guestSessionId: string | null;
+      collectionJobId: string | null;
+    },
+    idea: {
+      userId: string | null;
+      guestSessionId: string | null;
+      collectionJobId: string | null;
+    },
+  ): void {
+    if (
+      promptHistory.userId !== null &&
+      promptHistory.userId !== idea.userId
+    ) {
+      throw new BadRequestException(
+        'Prompt history and idea belong to different users.',
+      );
+    }
+
+    if (
+      promptHistory.guestSessionId !== null &&
+      promptHistory.guestSessionId !==
+        idea.guestSessionId
+    ) {
+      throw new BadRequestException(
+        'Prompt history and idea belong to different guest sessions.',
+      );
+    }
+
+    if (
+      promptHistory.collectionJobId !== null &&
+      promptHistory.collectionJobId !==
+        idea.collectionJobId
+    ) {
+      throw new BadRequestException(
+        'Prompt history and idea belong to different collection jobs.',
+      );
+    }
+
+    /**
+     * Unlock prompts must belong to registered users.
+     */
+    if (
+      promptHistory.promptType ===
+        PromptType.IDEA_UNLOCK &&
+      idea.userId === null
+    ) {
+      throw new BadRequestException(
+        'An idea unlock prompt cannot be attached to a guest-owned idea.',
+      );
+    }
+  }
+
+  /**
+   * Builds the Prisma filter used by the administrator history view.
    *
-   * @param query Administrative filtering parameters.
-   * @returns Prisma-compatible PromptHistory filter.
+   * Search is applied to the complete rendered prompt.
+   *
+   * @param query Prompt-history query options.
    */
   private buildWhereClause(
     query: GetPromptHistoryQueryDto,
@@ -383,49 +507,134 @@ export class PromptHistoryService {
     return {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(query.promptType !== undefined && {
-        promptType: query.promptType,
-      }),
+      ...(query.promptType !== undefined
+        ? {
+            promptType: query.promptType,
+          }
+        : {}),
 
-      ...(query.ideaId !== undefined && {
-        ideaId: query.ideaId,
-      }),
+      ...(query.ideaId !== undefined
+        ? {
+            ideaId: query.ideaId,
+          }
+        : {}),
 
-      ...(query.collectionJobId !== undefined && {
-        collectionJobId: query.collectionJobId,
-      }),
+      ...(query.collectionJobId !== undefined
+        ? {
+            collectionJobId:
+              query.collectionJobId,
+          }
+        : {}),
 
-      ...(query.templateHash !== undefined && {
-        templateHash: query.templateHash,
-      }),
+      ...(query.templateHash !== undefined
+        ? {
+            templateHash:
+              query.templateHash.toLowerCase(),
+          }
+        : {}),
 
-      ...(search && {
-        promptText: {
-          contains: search,
-          mode: 'insensitive',
-        },
-      }),
+      ...(search
+        ? {
+            promptText: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          }
+        : {}),
     };
   }
 
   /**
-   * Normalizes an optional identifier before Prisma persistence.
+   * Normalizes all prompt persistence inputs before validation.
    *
-   * Null, undefined, and blank strings are converted to undefined.
-   * Valid identifiers are trimmed before use.
-   *
-   * @param value Optional database identifier.
-   * @returns Trimmed identifier or undefined.
+   * Optional blank identifiers and hashes are converted to
+   * undefined so Prisma stores database NULL values.
    */
-  private normalizeOptionalId(
+  private normalizeSaveParams(
+    params: SavePromptParams,
+  ): NormalizedSavePromptParams {
+    return {
+      userId:
+        this.normalizeOptionalString(params.userId),
+
+      guestSessionId:
+        this.normalizeOptionalString(
+          params.guestSessionId,
+        ),
+
+      collectionJobId:
+        this.normalizeOptionalString(
+          params.collectionJobId,
+        ),
+
+      ideaId:
+        this.normalizeOptionalString(params.ideaId),
+
+      promptType: params.promptType,
+
+      promptText: params.promptText.trim(),
+
+      templateHash:
+        this.normalizeOptionalString(
+          params.templateHash,
+        )?.toLowerCase(),
+
+      estimatedInputTokens:
+        params.estimatedInputTokens ?? undefined,
+    };
+  }
+
+  /**
+   * Normalizes an optional string.
+   *
+   * Null, undefined, and blank strings become undefined.
+   */
+  private normalizeOptionalString(
     value: string | null | undefined,
   ): string | undefined {
-    if (value === null || value === undefined) {
+    if (
+      value === null ||
+      value === undefined
+    ) {
       return undefined;
     }
 
     const normalizedValue = value.trim();
 
-    return normalizedValue.length > 0 ? normalizedValue : undefined;
+    return normalizedValue.length > 0
+      ? normalizedValue
+      : undefined;
+  }
+
+  /**
+   * Normalizes and validates a required identifier.
+   */
+  private requireIdentifier(
+    value: string,
+    fieldName: string,
+  ): string {
+    const normalizedValue = value.trim();
+
+    if (normalizedValue.length === 0) {
+      throw new BadRequestException(
+        `${fieldName} is required.`,
+      );
+    }
+
+    return normalizedValue;
   }
 }
+
+/**
+ * Internal normalized representation of SavePromptParams.
+ */
+type NormalizedSavePromptParams = {
+  readonly userId?: string;
+  readonly guestSessionId?: string;
+  readonly collectionJobId?: string;
+  readonly ideaId?: string;
+  readonly promptType: PromptType;
+  readonly promptText: string;
+  readonly templateHash?: string;
+  readonly estimatedInputTokens?: number;
+};

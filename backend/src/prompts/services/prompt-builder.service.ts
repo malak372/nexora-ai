@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   Injectable,
@@ -8,8 +9,8 @@ import { createHash } from 'crypto';
 
 import {
   CollectionJobStatus,
-  Idea,
   IdeaGenerationType,
+  Prisma,
   PromptType,
 } from '@prisma/client';
 
@@ -35,65 +36,164 @@ import { PromptBuilderOutput } from '../types/prompt-builder-output.type';
 import { PromptTemplateService } from './prompt-template.service';
 
 /**
- * Approximate character-to-token ratio used when Arabic text
- * appears in a prompt.
+ * Approximate character-to-token ratio used when Arabic
+ * text appears in the rendered prompt.
  *
- * Arabic and mixed-language text commonly require more tokens per
- * character than English. This conservative ratio reduces the risk
- * of underestimating prompt size.
+ * Arabic and mixed-language prompts commonly require more
+ * tokens per character than English-only prompts.
  *
- * This remains an approximation. Exact token usage must be obtained
- * later from the selected AI provider when available.
+ * Provider-reported usage remains the final source of truth.
  */
 const ARABIC_TOKEN_RATIO = 2.5;
 
 /**
- * Matches Arabic Unicode characters commonly found in:
- * - Community posts.
- * - Community comments.
- * - NLP output.
- * - Existing idea content.
+ * Detects Arabic Unicode characters in rendered prompt content.
  */
-const ARABIC_TEXT_PATTERN = /[\u0600-\u06FF]/;
+const ARABIC_TEXT_PATTERN = /[\u0600-\u06ff]/;
 
 /**
- * Internal structured-output contract selected according to:
- * - Prompt purpose.
- * - User generation level.
+ * Maximum number of collection sources included in one prompt.
+ *
+ * Collection jobs normally contain a much smaller source list,
+ * but the limit protects the prompt from unexpected growth.
+ */
+const MAX_PROMPT_DATA_SOURCES = 50;
+
+/**
+ * Provider-neutral structured-output contract selected according
+ * to the generation level and prompt purpose.
  */
 type OutputContract = {
   /**
-   * Stable provider-neutral name for the response schema.
+   * Stable name passed to the selected AI adapter.
    */
   readonly schemaName: string;
 
   /**
-   * Human-readable JSON structure inserted into the prompt.
+   * Human-readable JSON example inserted in the prompt.
    */
   readonly format: string;
 
   /**
-   * Provider-neutral JSON schema supplied to the AI adapter.
+   * Provider-neutral response schema.
    */
   readonly schema: JsonSchema;
 };
 
 /**
- * Builds provider-neutral AI prompts from persisted application data.
+ * Prisma selection used to retrieve the exact CollectionJob
+ * context required by PromptBuilderService.
+ *
+ * Platforms are resolved through:
+ *
+ * CollectionJob
+ * → CollectionJobSource
+ * → DataSource
+ *
+ * CollectionJob does not contain a direct platforms field.
+ */
+const COLLECTION_JOB_PROMPT_QUERY = {
+  select: {
+    id: true,
+    createdById: true,
+    status: true,
+    country: true,
+    city: true,
+    region: true,
+
+    domain: {
+      select: {
+        id: true,
+        name: true,
+      },
+    },
+
+    nlpAnalysis: true,
+
+    sources: {
+      take: MAX_PROMPT_DATA_SOURCES,
+      orderBy: {
+        dataSource: {
+          displayName: Prisma.SortOrder.asc,
+        },
+      },
+      select: {
+        dataSource: {
+          select: {
+            key: true,
+            displayName: true,
+            isActive: true,
+            isImplemented: true,
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.CollectionJobDefaultArgs;
+
+/**
+ * Result type inferred directly from COLLECTION_JOB_PROMPT_QUERY.
+ */
+type CollectionJobPromptContext =
+  Prisma.CollectionJobGetPayload<
+    typeof COLLECTION_JOB_PROMPT_QUERY
+  >;
+
+/**
+ * Existing idea fields required for direct-unlock context.
+ */
+const EXISTING_IDEA_SELECT = {
+  id: true,
+  userId: true,
+  collectionJobId: true,
+  generationType: true,
+  isUnlocked: true,
+  title: true,
+  problemStatement: true,
+  objectives: true,
+  targetUsers: true,
+  limitedAbstract: true,
+  partialAbstract: true,
+} satisfies Prisma.IdeaSelect;
+
+/**
+ * Existing idea shape inferred from Prisma.
+ */
+type ExistingIdeaContext =
+  Prisma.IdeaGetPayload<{
+    select: typeof EXISTING_IDEA_SELECT;
+  }>;
+
+/**
+ * Builds provider-neutral prompts from persisted collection
+ * and NLP pipeline results.
  *
  * Reads:
  * - CollectionJob.
  * - Domain.
+ * - CollectionJobSource.
+ * - DataSource.
  * - NlpAnalysis.
- * - Existing Idea for unlock requests.
+ * - Existing Idea for direct unlock.
  *
- * Does not:
+ * Responsibilities:
+ * - Validate prerequisite pipeline stages.
+ * - Resolve the correct output access contract.
+ * - Render the configurable prompt template.
+ * - Estimate prompt token usage.
+ * - Calculate the prompt-template hash.
+ *
+ * This service is the prompt-building stage of the wider
+ * idea-generation pipeline.
+ *
+ * It does not:
+ * - Start collection.
+ * - Execute NLP.
+ * - Save PromptHistory.
  * - Call an AI provider.
+ * - Create an Idea.
  * - Deduct credits.
  * - Process payments.
- * - Persist ideas.
- * - Persist prompt history.
- * - Execute NLP analysis.
  *
  * @author Malak
  */
@@ -101,147 +201,252 @@ type OutputContract = {
 export class PromptBuilderService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly promptTemplateService: PromptTemplateService,
-  ) {}
+    private readonly promptTemplateService:
+      PromptTemplateService,
+  ) { }
 
   /**
-   * Builds a complete provider-neutral idea prompt and its expected
-   * structured-output contract.
+   * Builds one complete idea-generation or unlock prompt.
    *
-   * The collection job must:
-   * - Exist.
-   * - Be completed.
-   * - Have a persisted NLP analysis.
+   * Requirements:
+   * - CollectionJob exists.
+   * - CollectionJob status is COMPLETED.
+   * - NlpAnalysis exists.
+   * - Direct unlock references an eligible active idea.
+   *
+   * @param input Type-safe prompt-building request.
+   * @returns Rendered prompt and response contract.
    */
   async buildIdeaPrompt(
     input: PromptBuilderInput,
   ): Promise<PromptBuilderOutput> {
-    const collectionJob = await this.prisma.collectionJob.findUnique({
-      where: {
-        id: input.collectionJobId,
-      },
-      include: {
-        domain: true,
-        nlpAnalysis: true,
-      },
-    });
-
-    if (!collectionJob) {
-      throw new NotFoundException('Collection job not found.');
-    }
-
-    if (collectionJob.status !== CollectionJobStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Collection job must be completed before building an idea prompt.',
+    const collectionJob =
+      await this.getCollectionJobContext(
+        input.collectionJobId,
       );
-    }
 
-    if (!collectionJob.nlpAnalysis) {
-      throw new BadRequestException('NLP analysis is not ready yet.');
-    }
+    this.validateCollectionJob(
+      collectionJob,
+      input,
+    );
 
-    /**
-     * For new idea generation, this returns null.
-     * For unlock requests, it verifies and returns the existing idea.
-     */
-    const existingIdea = await this.getExistingIdea(input);
+    const existingIdea =
+      await this.getExistingIdea(input);
 
-    const template = await this.promptTemplateService.getIdeaPromptTemplate();
+    const template =
+      await this.promptTemplateService
+        .getIdeaPromptTemplate();
 
-    const outputContract = this.getOutputContract(input);
+    const outputContract =
+      this.getOutputContract(input);
 
-    const renderedPrompt = this.promptTemplateService.renderTemplate(template, {
-      domain: collectionJob.domain.name,
+    const renderedPrompt =
+      this.promptTemplateService.renderTemplate(
+        template,
+        {
+          domain: collectionJob.domain.name,
 
-      country: collectionJob.country || 'Not specified',
+          country:
+            collectionJob.country?.trim() ||
+            'Not specified',
 
-      city: collectionJob.city || 'Not specified',
+          city:
+            collectionJob.city?.trim() ||
+            'Not specified',
 
-      region: collectionJob.region || 'Not specified',
+          region:
+            collectionJob.region?.trim() ||
+            'Not specified',
 
-      platforms: this.formatJsonArray(collectionJob.platforms),
+          platforms: this.formatDataSources(
+            collectionJob,
+          ),
 
-      /**
-       * Uses the number of comments actually analyzed by NLP,
-       * not merely the number of collected comments.
-       */
-      commentsCount: String(collectionJob.nlpAnalysis.totalCommentsAnalyzed),
+          commentsCount: String(
+            collectionJob.nlpAnalysis!
+              .totalCommentsAnalyzed,
+          ),
 
-      sentimentStats: this.formatJson(collectionJob.nlpAnalysis.sentimentStats),
+          sentimentStats: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .sentimentStats,
+          ),
 
-      keywords: this.formatJson(collectionJob.nlpAnalysis.keywords),
+          keywords: this.formatJson(
+            collectionJob.nlpAnalysis!.keywords,
+          ),
 
-      topics: this.formatJson(collectionJob.nlpAnalysis.topics),
+          topics: this.formatJson(
+            collectionJob.nlpAnalysis!.topics,
+          ),
 
-      recurringProblems: this.formatJson(
-        collectionJob.nlpAnalysis.recurringProblems,
-      ),
+          recurringProblems: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .recurringProblems,
+          ),
 
-      extractedNeeds: this.formatJson(collectionJob.nlpAnalysis.extractedNeeds),
+          extractedNeeds: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .extractedNeeds,
+          ),
 
-      featureRequests: this.formatJson(
-        collectionJob.nlpAnalysis.featureRequests,
-      ),
+          featureRequests: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .featureRequests,
+          ),
 
-      opportunities: this.formatJson(collectionJob.nlpAnalysis.opportunities),
+          opportunities: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .opportunities,
+          ),
 
-      insights: this.formatJson(collectionJob.nlpAnalysis.insights),
+          insights: this.formatJson(
+            collectionJob.nlpAnalysis!.insights,
+          ),
 
-      dataQuality: this.formatJson(collectionJob.nlpAnalysis.dataQuality),
+          dataQuality: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .dataQuality,
+          ),
 
-      samplePosts: this.formatJson(collectionJob.nlpAnalysis.samplePosts),
+          samplePosts: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .samplePosts,
+          ),
 
-      sampleComments: this.formatJson(collectionJob.nlpAnalysis.sampleComments),
+          sampleComments: this.formatJson(
+            collectionJob.nlpAnalysis!
+              .sampleComments,
+          ),
 
-      existingIdea: this.formatExistingIdea(existingIdea),
+          existingIdea:
+            this.formatExistingIdea(existingIdea),
 
-      requestedOutputFormat: outputContract.format,
-    });
+          requestedOutputFormat:
+            outputContract.format,
+        },
+      );
 
-    const compactPrompt = this.compactPrompt(renderedPrompt);
+    const compactPrompt =
+      this.compactPrompt(renderedPrompt);
 
     return {
       promptType: this.getPromptType(input),
 
       promptText: compactPrompt,
 
-      estimatedInputTokens: this.estimateApproximateInputTokens(compactPrompt),
+      estimatedInputTokens:
+        this.estimateApproximateInputTokens(
+          compactPrompt,
+        ),
 
-      templateHash: this.createTemplateHash(template),
+      templateHash:
+        this.createTemplateHash(template),
 
-      responseSchemaName: outputContract.schemaName,
+      responseSchemaName:
+        outputContract.schemaName,
 
-      responseSchema: outputContract.schema,
+      responseSchema:
+        outputContract.schema,
     };
   }
 
   /**
-   * Returns and verifies the existing idea for direct-unlock requests.
+   * Retrieves the persisted collection and NLP context.
+   */
+  private async getCollectionJobContext(
+    collectionJobId: string,
+  ): Promise<CollectionJobPromptContext> {
+    const normalizedCollectionJobId =
+      collectionJobId.trim();
+
+    if (!normalizedCollectionJobId) {
+      throw new BadRequestException(
+        'Collection job ID is required.',
+      );
+    }
+
+    const collectionJob =
+      await this.prisma.collectionJob.findUnique({
+        where: {
+          id: normalizedCollectionJobId,
+        },
+        ...COLLECTION_JOB_PROMPT_QUERY,
+      });
+
+    if (!collectionJob) {
+      throw new NotFoundException(
+        'Collection job not found.',
+      );
+    }
+
+    return collectionJob;
+  }
+
+  /**
+   * Validates collection and NLP pipeline prerequisites.
    *
-   * Ownership is verified here as defense in depth, even when
-   * IdeasService already performs authorization before calling
-   * PromptBuilderService.
+   * For direct unlock, collection-job ownership is also checked
+   * against the authenticated requester when ownership exists.
+   */
+  private validateCollectionJob(
+    collectionJob: CollectionJobPromptContext,
+    input: PromptBuilderInput,
+  ): void {
+    if (
+      collectionJob.status !==
+      CollectionJobStatus.COMPLETED
+    ) {
+      throw new BadRequestException(
+        'Collection job must be completed before building an idea prompt.',
+      );
+    }
+
+    if (!collectionJob.nlpAnalysis) {
+      throw new BadRequestException(
+        'NLP analysis is not ready yet.',
+      );
+    }
+
+    if (
+      input.purpose === 'IDEA_UNLOCK' &&
+      collectionJob.createdById !== null &&
+      collectionJob.createdById !==
+      input.requesterUserId
+    ) {
+      throw new NotFoundException(
+        'Collection job was not found for the requester.',
+      );
+    }
+  }
+
+  /**
+   * Returns and validates the active existing idea for direct unlock.
    *
-   * Unlock requirements:
-   * - The idea must exist.
-   * - The idea must belong to the requester.
-   * - The idea must belong to the provided collection job.
-   * - The idea must have been generated as NORMAL_FREE.
-   * - The idea must not already be unlocked.
+   * Requirements:
+   * - The idea exists.
+   * - The idea is not soft-deleted.
+   * - The requester owns the idea.
+   * - It belongs to the supplied collection job.
+   * - It was generated as NORMAL_FREE.
+   * - It is not already unlocked.
    */
   private async getExistingIdea(
     input: PromptBuilderInput,
-  ): Promise<Idea | null> {
+  ): Promise<ExistingIdeaContext | null> {
     if (input.purpose !== 'IDEA_UNLOCK') {
       return null;
     }
 
-    const idea = await this.prisma.idea.findFirst({
-      where: {
-        id: input.existingIdeaId,
-        userId: input.requesterUserId,
-      },
-    });
+    const idea =
+      await this.prisma.idea.findFirst({
+        where: {
+          id: input.existingIdeaId,
+          userId: input.requesterUserId,
+          deletedAt: null,
+        },
+        select: EXISTING_IDEA_SELECT,
+      });
 
     if (!idea) {
       throw new NotFoundException(
@@ -249,49 +454,63 @@ export class PromptBuilderService {
       );
     }
 
-    if (idea.collectionJobId !== input.collectionJobId) {
+    if (
+      idea.collectionJobId !==
+      input.collectionJobId
+    ) {
       throw new BadRequestException(
         'Idea does not belong to the provided collection job.',
       );
     }
 
-    if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
+    if (
+      idea.generationType !==
+      IdeaGenerationType.NORMAL_FREE
+    ) {
       throw new BadRequestException(
         'Only registered free-tier ideas can be directly unlocked.',
       );
     }
 
     if (idea.isUnlocked) {
-      throw new BadRequestException('The idea is already unlocked.');
+      throw new BadRequestException(
+        'The idea is already unlocked.',
+      );
     }
 
     return idea;
   }
 
   /**
-   * Converts the type-safe prompt purpose into the corresponding
-   * Prisma PromptType value.
+   * Converts the input purpose into a persisted PromptType.
    */
-  private getPromptType(input: PromptBuilderInput): PromptType {
+  private getPromptType(
+    input: PromptBuilderInput,
+  ): PromptType {
     return input.purpose === 'IDEA_UNLOCK'
       ? PromptType.IDEA_UNLOCK
       : PromptType.IDEA_GENERATION;
   }
 
   /**
-   * Selects the permitted output contract.
-   *
-   * Direct unlock always receives UNLOCK_OUTPUT_SCHEMA.
-   *
-   * New generation receives an output contract according to:
-   * - GUEST_FREE.
-   * - NORMAL_FREE.
-   * - PREMIUM_CREDIT.
-   *
-   * The switch is exhaustive so a future generation type cannot
-   * silently receive an incorrect access level.
-   */
-  private getOutputContract(input: PromptBuilderInput): OutputContract {
+ * Selects the provider-neutral structured-output contract
+ * according to the prompt purpose and generation access level.
+ *
+ * Rules:
+ * - Direct unlock always uses the unlock output contract.
+ * - Guest generation uses the guest output contract.
+ * - Registered free generation uses the free output contract.
+ * - Premium credit generation uses the premium output contract.
+ *
+ * Storing generationType in a local variable allows TypeScript
+ * to narrow that value exhaustively inside the switch statement.
+ *
+ * @param input Type-safe prompt-building input.
+ * @returns Structured-output contract permitted for the request.
+ */
+  private getOutputContract(
+    input: PromptBuilderInput,
+  ): OutputContract {
     if (input.purpose === 'IDEA_UNLOCK') {
       return {
         schemaName: 'nexora_idea_unlock',
@@ -300,6 +519,10 @@ export class PromptBuilderService {
       };
     }
 
+    /**
+     * At this point, input is narrowed to IdeaGenerationPromptInput,
+     * so generationType is guaranteed to exist.
+     */
     const generationType = input.generationType;
 
     switch (generationType) {
@@ -330,8 +553,7 @@ export class PromptBuilderService {
   }
 
   /**
-   * Produces a compile-time error when an IdeaGenerationType value
-   * is not handled by getOutputContract().
+   * Enforces exhaustive IdeaGenerationType handling.
    */
   private assertNever(value: never): never {
     throw new BadRequestException(
@@ -340,13 +562,11 @@ export class PromptBuilderService {
   }
 
   /**
-   * Converts the existing free-tier idea into readable context
-   * for a direct-unlock prompt.
-   *
-   * The AI must expand this idea instead of replacing it with
-   * an unrelated project.
+   * Formats the existing free-tier idea as context for unlock.
    */
-  private formatExistingIdea(idea: Idea | null): string {
+  private formatExistingIdea(
+    idea: ExistingIdeaContext | null,
+  ): string {
     if (!idea) {
       return 'Not applicable. This is a new idea generation request.';
     }
@@ -358,21 +578,57 @@ export class PromptBuilderService {
 - Target users: ${idea.targetUsers ?? 'Not available'}
 - Limited abstract: ${idea.limitedAbstract ?? 'Not available'}
 - Partial abstract: ${idea.partialAbstract ?? 'Not available'}
-`);
+    `);
   }
 
   /**
-   * Formats a persisted JSON value for prompt readability.
-   *
-   * Missing values and empty arrays are represented explicitly
-   * to prevent the AI from assuming that data was supplied.
+   * Formats the DataSource records selected for collection.
+   */
+  private formatDataSources(
+    collectionJob: CollectionJobPromptContext,
+  ): string {
+    if (collectionJob.sources.length === 0) {
+      return 'Not specified';
+    }
+
+    return collectionJob.sources
+      .map(({ dataSource }) => {
+        const availability =
+          dataSource.isActive &&
+            dataSource.isImplemented
+            ? 'available'
+            : 'unavailable';
+
+        return `${dataSource.displayName} (${dataSource.key}, ${availability})`;
+      })
+      .join(', ');
+  }
+
+  /**
+   * Formats JSON values for readable prompt inclusion.
    */
   private formatJson(value: unknown): string {
-    if (value === null || value === undefined) {
+    if (
+      value === null ||
+      value === undefined
+    ) {
       return 'Not enough data';
     }
 
-    if (Array.isArray(value) && value.length === 0) {
+    if (
+      Array.isArray(value) &&
+      value.length === 0
+    ) {
+      return 'Not enough data';
+    }
+
+    if (
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(
+        value as Record<string, unknown>,
+      ).length === 0
+    ) {
       return 'Not enough data';
     }
 
@@ -380,57 +636,37 @@ export class PromptBuilderService {
   }
 
   /**
-   * Formats the CollectionJob platforms JSON value.
-   *
-   * Array values are converted into a comma-separated list.
-   * Other valid JSON values fall back to formatted JSON.
-   */
-  private formatJsonArray(value: unknown): string {
-    if (value === null || value === undefined) {
-      return 'Not specified';
-    }
-
-    if (Array.isArray(value)) {
-      return value.length > 0 ? value.map(String).join(', ') : 'Not specified';
-    }
-
-    return this.formatJson(value);
-  }
-
-  /**
-   * Removes excessive blank lines while preserving readable
-   * paragraph separation.
+   * Removes excessive blank lines while preserving paragraphs.
    */
   private compactPrompt(prompt: string): string {
-    return prompt.replace(/\n{3,}/g, '\n\n').trim();
+    return prompt
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**
-   * Estimates the approximate number of input tokens.
-   *
-   * English-only content uses DEFAULT_TOKEN_RATIO.
-   * Arabic or mixed-language content uses a more conservative ratio.
-   *
-   * This value is for:
-   * - Preliminary cost estimation.
-   * - Monitoring.
-   * - Input-size protection.
-   *
-   * Provider-reported token usage remains the source of truth.
+   * Estimates rendered prompt input tokens.
    */
-  private estimateApproximateInputTokens(text: string): number {
-    const ratio = ARABIC_TEXT_PATTERN.test(text)
-      ? ARABIC_TOKEN_RATIO
-      : DEFAULT_TOKEN_RATIO;
+  private estimateApproximateInputTokens(
+    text: string,
+  ): number {
+    const ratio =
+      ARABIC_TEXT_PATTERN.test(text)
+        ? ARABIC_TOKEN_RATIO
+        : DEFAULT_TOKEN_RATIO;
 
     return Math.ceil(text.length / ratio);
   }
 
   /**
-   * Creates a stable SHA-256 hash identifying the source
-   * prompt-template version.
+   * Creates the SHA-256 template-version hash.
    */
-  private createTemplateHash(template: string): string {
-    return createHash('sha256').update(template).digest('hex');
+  private createTemplateHash(
+    template: string,
+  ): string {
+    return createHash('sha256')
+      .update(template)
+      .digest('hex');
   }
 }
+

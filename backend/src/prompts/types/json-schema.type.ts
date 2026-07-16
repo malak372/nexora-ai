@@ -1,11 +1,19 @@
+
 /**
  * Provider-neutral JSON Schema representation.
  *
- * Provider adapters may convert this schema into:
- * - OpenRouter structured outputs.
- * - Groq JSON mode.
- * - Google structured outputs.
+ * PromptBuilderService produces this generic schema without
+ * depending on one specific AI provider.
+ *
+ * Provider adapters may transform it into:
+ * - OpenRouter structured-output configuration.
+ * - Google response-schema configuration.
+ *
+ * Keeping this type provider-neutral allows AI providers to be
+ * replaced or extended without changing the prompt-building domain.
  *
  * @author Malak
  */
-export type JsonSchema = Readonly<Record<string, unknown>>;
+export type JsonSchema =
+  Readonly<Record<string, unknown>>;
+
