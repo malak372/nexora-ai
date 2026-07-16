@@ -1,4 +1,3 @@
-import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../audit-logs/audit-logs.module';
@@ -14,11 +13,14 @@ import { UserComplaintsService } from './services/user-complaints.service';
  * Shared complaints domain module.
  *
  * Provides:
- * - User complaint submission and retrieval.
+ * - Authenticated-user complaint submission and retrieval.
  * - Administrator complaint management.
  * - Complaint analytics and CSV export.
  * - Audit logging.
  * - Complaint-related cache invalidation.
+ *
+ * CacheModule is not registered locally because it is configured
+ * globally in AppModule.
  *
  * @author Malak
  */
@@ -26,16 +28,14 @@ import { UserComplaintsService } from './services/user-complaints.service';
   imports: [
     PrismaModule,
     AuditModule,
-
-    /**
-     * Remove this local registration when CacheModule
-     * is already configured globally in AppModule.
-     */
-    CacheModule.register(),
   ],
-
-  controllers: [UserComplaintsController, AdminComplaintsController],
-
-  providers: [UserComplaintsService, AdminComplaintsService],
+  controllers: [
+    UserComplaintsController,
+    AdminComplaintsController,
+  ],
+  providers: [
+    UserComplaintsService,
+    AdminComplaintsService,
+  ],
 })
 export class ComplaintsModule {}

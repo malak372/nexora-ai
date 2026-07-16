@@ -1,5 +1,5 @@
 import { ValidationPipe } from '@nestjs/common';
-
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
 import cookieParser from 'cookie-parser';
@@ -17,85 +17,97 @@ import { AppModule } from './app.module';
  * - Cookie parsing.
  * - Global API prefix.
  * - CORS with credentials.
- * - Global DTO validation.
+ * - Global DTO validation and transformation.
+ * - Graceful application shutdown hooks.
  * - Application port.
- *
  */
 async function bootstrap(): Promise<void> {
+  /**
+   * rawBody preserves the exact incoming request payload.
+   *
+   * This is required by payment providers such as Stripe
+   * when validating webhook signatures.
+   */
   const app = await NestFactory.create(AppModule, {
-    /**
-     * Preserves the original request body for providers
-     * that require raw-body signature verification,
-     * such as Stripe webhooks.
-     */
-    rawBody: true,
-  });
-     * Preserves the exact incoming request body.
-     *
-     * Required for payment providers that validate webhook
-     * signatures against the original raw payload.
-     */
     rawBody: true,
   });
 
+  const configService = app.get(ConfigService);
+
   /**
-   * Retrieve the underlying Express application with an explicit
-   * type instead of allowing getInstance() to return any.
+   * Retrieves the underlying Express application with an
+   * explicit type instead of allowing getInstance() to
+   * return an untyped value.
    */
-  const expressApplication = app.getHttpAdapter().getInstance() as Express;
+  const expressApplication =
+    app.getHttpAdapter().getInstance() as Express;
 
   /**
    * Trusts the first reverse proxy in front of the backend.
    *
-   * This affects request IP resolution, protocol detection,
-   * and secure-cookie behavior behind a proxy.
+   * This affects:
+   * - Request IP resolution.
+   * - HTTPS protocol detection.
+   * - Secure-cookie behavior behind a reverse proxy.
    */
   expressApplication.set('trust proxy', 1);
 
   /**
-   * Parses Cookie headers.
+   * Parses Cookie request headers.
    */
   app.use(cookieParser());
 
   /**
-   * Adds a versioned prefix to application endpoints.
+   * Adds a versioned prefix to all application endpoints.
    */
   app.setGlobalPrefix('api/v1');
 
   /**
-   * Allows the configured frontend to send authenticated requests
-   * and secure guest-session cookies.
+   * Allows the configured frontend application to send
+   * authenticated requests and secure session cookies.
    */
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
-
+    origin: configService.get<string>(
+      'FRONTEND_URL',
+      'http://localhost:3000',
+    ),
     credentials: true,
   });
 
   /**
-   * Applies strict validation and transformation globally.
+   * Applies strict global DTO validation.
+   *
+   * whitelist:
+   * Removes properties that are not declared in a DTO.
+   *
+   * forbidNonWhitelisted:
+   * Rejects requests containing undeclared properties rather
+   * than silently removing them.
+   *
+   * transform:
+   * Converts request values into DTO class instances.
    */
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-
-      /**
-       * Rejects the request instead of silently removing
-       * unknown properties.
-       */
       forbidNonWhitelisted: true,
-
       transform: true,
-
       transformOptions: {
         enableImplicitConversion: false,
       },
     }),
   );
 
-  const port = Number(process.env.PORT) || 3000;
+  /**
+   * Enables graceful resource cleanup when the process receives
+   * a supported operating-system shutdown signal.
+   */
+  app.enableShutdownHooks();
+
+  const port = configService.get<number>('PORT', 3000);
 
   await app.listen(port);
 }
 
 void bootstrap();
+

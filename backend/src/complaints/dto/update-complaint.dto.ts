@@ -1,4 +1,9 @@
-import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
+import {
+  ComplaintPriority,
+  ComplaintStatus,
+} from '@prisma/client';
+
+import { Transform } from 'class-transformer';
 
 import {
   IsEnum,
@@ -12,9 +17,11 @@ import {
  * DTO used by an administrator to update a complaint.
  *
  * Supports partial updates for:
- * - Status.
- * - Priority.
+ * - Complaint status.
+ * - Complaint priority.
  * - Administrator reply.
+ *
+ * The administrator reply is trimmed before validation.
  *
  * @author Malak
  */
@@ -35,8 +42,13 @@ export class UpdateComplaintDto {
 
   /**
    * Optional administrator reply.
+   *
+   * Leading and trailing whitespace is removed before validation.
    */
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(5)
   @MaxLength(1_000)

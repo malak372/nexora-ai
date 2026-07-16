@@ -811,6 +811,7 @@ model Complaint {
   resolvedAt DateTime? @map("resolved_at")
 
   @@index([userId])
+  @@index([userId, deletedAt, createdAt])
   @@index([ideaId])
   @@index([status])
   @@index([priority])

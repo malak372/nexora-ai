@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   AuditAction,
@@ -8,8 +14,12 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import type { Cache } from 'cache-manager';
+
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
+import { userCacheKeys } from '../../users/cache/user-cache.keys';
 
 import {
   buildDateFilter,
@@ -32,25 +42,72 @@ import { resolveComplaintResolvedAt } from '../utils/complaint-status.util';
  * Handles administrator complaint-management operations.
  *
  * Responsibilities:
- * - List complaints.
+ * - List active complaints.
  * - Search, filter, sort, and paginate complaints.
  * - Generate summary statistics.
  * - Generate chart-ready analytics.
- * - Export complaints as CSV.
- * - Update status, priority, and administrator reply.
+ * - Export active complaints as CSV.
+ * - Update complaint status, priority, and administrator reply.
  * - Record complaint updates in audit logs.
+ * - Invalidate affected user caches.
+ *
+ * Soft-deleted complaints are excluded from normal administrator
+ * operations and analytics.
  *
  * @author Malak
  */
 @Injectable()
 export class AdminComplaintsService {
+  /**
+   * Maximum number of complaints returned by one CSV export.
+   *
+   * Prevents an unbounded query from loading excessive data
+   * into application memory.
+   */
+  private static readonly MAX_CSV_EXPORT_ROWS = 50_000;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
   /**
-   * Returns paginated complaints for administrator monitoring.
+   * Shared administrator complaint selection.
+   */
+  private readonly complaintSelect = {
+    id: true,
+    subject: true,
+    message: true,
+    status: true,
+    priority: true,
+    adminReply: true,
+    createdAt: true,
+    updatedAt: true,
+    resolvedAt: true,
+
+    user: {
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+      },
+    },
+
+    idea: {
+      select: {
+        id: true,
+        title: true,
+      },
+    },
+  } satisfies Prisma.ComplaintSelect;
+
+  /**
+   * Returns paginated active complaints for administrator monitoring.
+   *
+   * @param query Filtering, sorting, and pagination options.
    */
   async getComplaints(query: GetAdminComplaintsQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
@@ -69,33 +126,7 @@ export class AdminComplaintsService {
         skip,
         take,
         orderBy,
-
-        select: {
-          id: true,
-          subject: true,
-          message: true,
-          status: true,
-          priority: true,
-          adminReply: true,
-          createdAt: true,
-          updatedAt: true,
-          resolvedAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          idea: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
+        select: this.complaintSelect,
       }),
 
       this.prisma.complaint.count({
@@ -105,7 +136,6 @@ export class AdminComplaintsService {
 
     return {
       data: complaints,
-
       meta: {
         page,
         limit,
@@ -117,8 +147,16 @@ export class AdminComplaintsService {
 
   /**
    * Returns complaint summary metrics.
+   *
+   * Every breakdown respects the base filters supplied by the
+   * administrator. AND is used so status and priority conditions
+   * do not accidentally overwrite query filters.
+   *
+   * @param query Complaint filters.
    */
-  async getComplaintsSummary(query: GetAdminComplaintsQueryDto) {
+  async getComplaintsSummary(
+    query: GetAdminComplaintsQueryDto,
+  ) {
     const where = this.buildComplaintsWhere(query);
 
     const todayStart = new Date();
@@ -127,10 +165,6 @@ export class AdminComplaintsService {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
-
-    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
-
-    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalComplaints,
@@ -147,46 +181,49 @@ export class AdminComplaintsService {
       }),
 
       this.prisma.complaint.count({
-        where: todayWhere,
+        where: this.andWhere(where, {
+          createdAt: {
+            gte: todayStart,
+          },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: monthWhere,
+        where: this.andWhere(where, {
+          createdAt: {
+            gte: monthStart,
+          },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: {
-          ...where,
+        where: this.andWhere(where, {
           status: ComplaintStatus.OPEN,
-        },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: {
-          ...where,
+        where: this.andWhere(where, {
           status: ComplaintStatus.IN_PROGRESS,
-        },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: {
-          ...where,
+        where: this.andWhere(where, {
           status: ComplaintStatus.RESOLVED,
-        },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: {
-          ...where,
+        where: this.andWhere(where, {
           status: ComplaintStatus.REJECTED,
-        },
+        }),
       }),
 
       this.prisma.complaint.count({
-        where: {
-          ...where,
+        where: this.andWhere(where, {
           priority: ComplaintPriority.HIGH,
-        },
+        }),
       }),
     ]);
 
@@ -204,41 +241,42 @@ export class AdminComplaintsService {
 
   /**
    * Returns complaint counts grouped by status and priority.
+   *
+   * @param query Complaint filters.
    */
-  async getComplaintsCharts(query: GetAdminComplaintsQueryDto) {
+  async getComplaintsCharts(
+    query: GetAdminComplaintsQueryDto,
+  ) {
     const where = this.buildComplaintsWhere(query);
 
-    const [complaintsByStatus, complaintsByPriority] = await Promise.all([
-      this.prisma.complaint.groupBy({
-        by: ['status'],
-        where,
-
-        _count: {
-          status: true,
-        },
-
-        orderBy: {
+    const [complaintsByStatus, complaintsByPriority] =
+      await Promise.all([
+        this.prisma.complaint.groupBy({
+          by: ['status'],
+          where,
           _count: {
-            status: 'desc',
+            status: true,
           },
-        },
-      }),
+          orderBy: {
+            _count: {
+              status: 'desc',
+            },
+          },
+        }),
 
-      this.prisma.complaint.groupBy({
-        by: ['priority'],
-        where,
-
-        _count: {
-          priority: true,
-        },
-
-        orderBy: {
+        this.prisma.complaint.groupBy({
+          by: ['priority'],
+          where,
           _count: {
-            priority: 'desc',
+            priority: true,
           },
-        },
-      }),
-    ]);
+          orderBy: {
+            _count: {
+              priority: 'desc',
+            },
+          },
+        }),
+      ]);
 
     return {
       complaintsByStatus: complaintsByStatus.map((item) => ({
@@ -256,9 +294,13 @@ export class AdminComplaintsService {
   }
 
   /**
-   * Exports filtered complaints as CSV.
+   * Exports filtered active complaints as CSV.
+   *
+   * @param query Complaint filters and sorting options.
    */
-  async exportComplaintsCsv(query: GetAdminComplaintsQueryDto) {
+  async exportComplaintsCsv(
+    query: GetAdminComplaintsQueryDto,
+  ) {
     const where = this.buildComplaintsWhere(query);
 
     const orderBy = buildOrderBy(
@@ -270,33 +312,8 @@ export class AdminComplaintsService {
     const complaints = await this.prisma.complaint.findMany({
       where,
       orderBy,
-
-      select: {
-        id: true,
-        subject: true,
-        message: true,
-        status: true,
-        priority: true,
-        adminReply: true,
-        createdAt: true,
-        updatedAt: true,
-        resolvedAt: true,
-
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-
-        idea: {
-          select: {
-            id: true,
-            title: true,
-          },
-        },
-      },
+      take: AdminComplaintsService.MAX_CSV_EXPORT_ROWS,
+      select: this.complaintSelect,
     });
 
     const headers = [
@@ -337,74 +354,80 @@ export class AdminComplaintsService {
   }
 
   /**
-   * Updates one complaint.
+   * Updates one active complaint.
+   *
+   * Reading, updating, and audit logging occur inside one
+   * transaction to reduce the possibility of recording stale
+   * old values during concurrent administrator updates.
+   *
+   * @param complaintId Complaint identifier.
+   * @param body Validated partial update.
+   * @param adminId Authenticated administrator identifier.
    */
   async updateComplaint(
     complaintId: string,
     body: UpdateComplaintDto,
     adminId: string,
   ) {
-    const complaint = await this.prisma.complaint.findUnique({
-      where: {
-        id: complaintId,
-      },
-    });
-
-    if (!complaint) {
-      throw new NotFoundException('Complaint not found');
+    if (
+      body.status === undefined &&
+      body.priority === undefined &&
+      body.adminReply === undefined
+    ) {
+      throw new BadRequestException(
+        'At least one complaint field must be provided',
+      );
     }
 
-    const hasChanges =
-      (body.status !== undefined && body.status !== complaint.status) ||
-      (body.priority !== undefined && body.priority !== complaint.priority) ||
-      (body.adminReply !== undefined &&
-        body.adminReply !== complaint.adminReply);
-
-    if (!hasChanges) {
-      return {
-        message: 'No changes detected',
-        complaint,
-        updated: false,
-      };
-    }
-
-    const updatedComplaint = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.complaint.update({
+    const result = await this.prisma.$transaction(async (tx) => {
+      const complaint = await tx.complaint.findFirst({
         where: {
           id: complaintId,
+          deletedAt: null,
         },
+      });
 
+      if (!complaint) {
+        throw new NotFoundException('Complaint not found');
+      }
+
+      const hasChanges =
+        (body.status !== undefined &&
+          body.status !== complaint.status) ||
+        (body.priority !== undefined &&
+          body.priority !== complaint.priority) ||
+        (body.adminReply !== undefined &&
+          body.adminReply !== complaint.adminReply);
+
+      if (!hasChanges) {
+        return {
+          message: 'No changes detected',
+          complaint,
+          updated: false as const,
+          affectedUserId: complaint.userId,
+        };
+      }
+
+      const updated = await tx.complaint.update({
+        where: {
+          id: complaint.id,
+        },
         data: {
           status: body.status ?? complaint.status,
-
           priority: body.priority ?? complaint.priority,
-
-          adminReply: body.adminReply ?? complaint.adminReply,
-
+          adminReply:
+            body.adminReply !== undefined
+              ? body.adminReply
+              : complaint.adminReply,
           resolvedAt: resolveComplaintResolvedAt(
             body.status,
             complaint.status,
             complaint.resolvedAt,
           ),
         },
-
         select: {
-          id: true,
-          subject: true,
-          message: true,
-          status: true,
-          priority: true,
-          adminReply: true,
-          resolvedAt: true,
-          updatedAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
+          ...this.complaintSelect,
+          userId: true,
         },
       });
 
@@ -413,42 +436,60 @@ export class AdminComplaintsService {
           actorId: adminId,
           action: AuditAction.ADMIN_UPDATE_COMPLAINT,
           targetType: AuditTargetType.COMPLAINT,
-          targetId: complaintId,
-
+          targetId: complaint.id,
           oldValue: {
             status: complaint.status,
             priority: complaint.priority,
             adminReply: complaint.adminReply,
-            resolvedAt: complaint.resolvedAt?.toISOString() ?? null,
+            resolvedAt:
+              complaint.resolvedAt?.toISOString() ?? null,
           },
-
           newValue: {
             status: updated.status,
             priority: updated.priority,
             adminReply: updated.adminReply,
-            resolvedAt: updated.resolvedAt?.toISOString() ?? null,
+            resolvedAt:
+              updated.resolvedAt?.toISOString() ?? null,
           },
         },
         tx,
       );
 
-      return updated;
+      const { userId, ...safeComplaint } = updated;
+
+      return {
+        message: 'Complaint updated successfully',
+        complaint: safeComplaint,
+        updated: true as const,
+        affectedUserId: userId,
+      };
     });
 
-    return {
-      message: 'Complaint updated successfully',
-      complaint: updatedComplaint,
-      updated: true,
-    };
+    if (result.updated) {
+      await this.invalidateComplaintCaches(
+        result.affectedUserId,
+      );
+    }
+
+    const { affectedUserId: _affectedUserId, ...response } =
+      result;
+
+    return response;
   }
 
   /**
    * Builds the shared administrator complaint filter.
+   *
+   * Soft-deleted complaints are always excluded.
+   *
+   * @param query Complaint query options.
    */
   private buildComplaintsWhere(
     query: GetAdminComplaintsQueryDto,
   ): Prisma.ComplaintWhereInput {
     const where: Prisma.ComplaintWhereInput = {
+      deletedAt: null,
+
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildExactFilter('status', query.status) ?? {}),
@@ -466,21 +507,18 @@ export class AdminComplaintsService {
             mode: 'insensitive',
           },
         },
-
         {
           message: {
             contains: search,
             mode: 'insensitive',
           },
         },
-
         {
           adminReply: {
             contains: search,
             mode: 'insensitive',
           },
         },
-
         {
           user: {
             is: {
@@ -491,7 +529,6 @@ export class AdminComplaintsService {
                     mode: 'insensitive',
                   },
                 },
-
                 {
                   email: {
                     contains: search,
@@ -502,7 +539,6 @@ export class AdminComplaintsService {
             },
           },
         },
-
         {
           idea: {
             is: {
@@ -520,25 +556,32 @@ export class AdminComplaintsService {
   }
 
   /**
-   * Adds a minimum createdAt value while preserving
-   * an existing date filter.
+   * Combines a base Prisma filter with an additional condition.
+   *
+   * Using AND prevents additional summary conditions from
+   * overwriting status, priority, search, or date filters.
    */
-  private mergeCreatedAtGte(
-    where: Prisma.ComplaintWhereInput,
-    gte: Date,
+  private andWhere(
+    baseWhere: Prisma.ComplaintWhereInput,
+    additionalWhere: Prisma.ComplaintWhereInput,
   ): Prisma.ComplaintWhereInput {
-    const existingCreatedAt =
-      typeof where.createdAt === 'object' && where.createdAt !== null
-        ? where.createdAt
-        : {};
-
     return {
-      ...where,
-
-      createdAt: {
-        ...existingCreatedAt,
-        gte,
-      },
+      AND: [baseWhere, additionalWhere],
     };
   }
+
+  /**
+   * Invalidates user caches affected by complaint updates.
+   *
+   * @param userId User whose complaint data changed.
+   */
+  private async invalidateComplaintCaches(
+    userId: string,
+  ): Promise<void> {
+    await Promise.all([
+      this.cacheManager.del(userCacheKeys.summary(userId)),
+      this.cacheManager.del(userCacheKeys.activity(userId)),
+    ]);
+  }
 }
+
