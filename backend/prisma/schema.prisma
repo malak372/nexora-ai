@@ -377,6 +377,7 @@ model User {
   passwordHash      String        @map("password_hash")
   role              UserRole      @default(USER)
   emailVerifiedAt   DateTime?     @map("email_verified_at")
+  verificationEmailSentAt DateTime? @map("verification_email_sent_at")
   lastLoginAt       DateTime?     @map("last_login_at")
   passwordChangedAt DateTime?     @map("password_changed_at")
   accountStatus     AccountStatus @default(NORMAL) @map("account_status")

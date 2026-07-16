@@ -8,17 +8,22 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
+
 import { Throttle } from '@nestjs/throttler';
+
 import type { Request } from 'express';
 
 import { ResendVerificationEmailDto } from '../dto/resend-verification-email.dto';
+import { VerifyEmailDto } from '../dto/verify-email.dto';
+
 import { AuthEmailService } from './email.service';
 
 /**
  * Controller responsible for authentication email operations.
  *
- * Handles email verification and resending verification links
- * for registered users.
+ * Handles:
+ * - Email-address verification.
+ * - Verification-email resend requests.
  *
  * Base route:
  * /auth/email
@@ -27,59 +32,88 @@ import { AuthEmailService } from './email.service';
  */
 @Controller('auth/email')
 export class EmailController {
-  constructor(private readonly authEmailService: AuthEmailService) {}
+  constructor(
+    private readonly authEmailService: AuthEmailService,
+  ) { }
 
   /**
-   * Verifies a user's email address using a verification token.
+   * Verifies a user's email address using a valid
+   * email-verification token.
+   *
+   * Rate limit:
+   * - Maximum 10 requests per minute per client.
    *
    * Endpoint:
    * GET /auth/email/verify
    *
-   * @param email User email address.
-   * @param token Email verification token.
-   * @param req HTTP request metadata.
-   * @returns Email verification confirmation message.
+   * @param query Validated email and verification token.
+   * @param request Current HTTP request.
+   * @returns Email-verification result.
    */
+  @Throttle({
+    default: {
+      limit: 10,
+      ttl: 60_000,
+    },
+  })
   @Get('verify')
+  @HttpCode(HttpStatus.OK)
   verifyEmail(
-    @Query('email') email: string,
-    @Query('token') token: string,
-    @Req() req: Request,
+    @Query() query: VerifyEmailDto,
+    @Req() request: Request,
   ) {
-    return this.authEmailService.verifyEmail(email, token, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    return this.authEmailService.verifyEmail(
+      query.email,
+      query.token,
+      {
+        ipAddress: request.ip,
+        userAgent: request.get('user-agent'),
+      },
+    );
   }
 
   /**
-   * Resends an email verification link to an unverified user.
+   * Requests a new email-verification email.
    *
    * Rate limit:
-   * - 3 requests per minute.
+   * - Maximum 3 requests per minute per client.
+   *
+   * This rate limit protects the endpoint from excessive
+   * requests. The service must separately enforce an
+   * email-delivery cooldown to prevent duplicate emails.
+   *
+   * The endpoint should return a generic successful response
+   * regardless of whether:
+   * - The account does not exist.
+   * - The account is already verified.
+   * - An email was sent recently.
+   * - A new email was sent.
    *
    * Endpoint:
    * POST /auth/email/resend-verification
    *
-   * Returns:
-   * - 200 OK when the request is processed successfully,
-   *   regardless of whether a new verification email is sent
-   *   or the email is already verified.
-   *
-   * @param dto User email address.
-   * @param req HTTP request metadata.
-   * @returns Verification email resend confirmation message.
+   * @param dto Validated user email address.
+   * @param request Current HTTP request.
+   * @returns Generic verification-email request result.
    */
-  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Throttle({
+    default: {
+      limit: 3,
+      ttl: 60_000,
+    },
+  })
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   resendVerificationEmail(
     @Body() dto: ResendVerificationEmailDto,
-    @Req() req: Request,
+    @Req() request: Request,
   ) {
-    return this.authEmailService.resendVerificationEmail(dto.email, {
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+    return this.authEmailService.resendVerificationEmail(
+      dto.email,
+      {
+        ipAddress: request.ip,
+        userAgent: request.get('user-agent'),
+      },
+    );
   }
 }
