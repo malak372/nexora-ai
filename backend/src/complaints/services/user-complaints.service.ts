@@ -1,15 +1,7 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import type { Cache } from 'cache-manager';
 
@@ -96,10 +88,7 @@ export class UserComplaintsService {
    * @param userId Authenticated user identifier.
    * @param dto Validated complaint input.
    */
-  async createComplaint(
-    userId: string,
-    dto: CreateUserComplaintDto,
-  ) {
+  async createComplaint(userId: string, dto: CreateUserComplaintDto) {
     await this.ensureActiveUserExists(userId);
 
     if (dto.ideaId) {
@@ -150,10 +139,7 @@ export class UserComplaintsService {
    * @param userId Authenticated user identifier.
    * @param query Filtering, sorting, and pagination options.
    */
-  async getComplaints(
-    userId: string,
-    query: GetUserComplaintsQueryDto,
-  ) {
+  async getComplaints(userId: string, query: GetUserComplaintsQueryDto) {
     await this.ensureActiveUserExists(userId);
 
     const { page, limit, skip, take } = buildPagination(query);
@@ -214,10 +200,7 @@ export class UserComplaintsService {
    * @param userId Authenticated user identifier.
    * @param complaintId Complaint identifier.
    */
-  async getComplaintById(
-    userId: string,
-    complaintId: string,
-  ) {
+  async getComplaintById(userId: string, complaintId: string) {
     await this.ensureActiveUserExists(userId);
 
     const complaint = await this.prisma.complaint.findFirst({
@@ -242,9 +225,7 @@ export class UserComplaintsService {
    *
    * @param userId User identifier.
    */
-  private async ensureActiveUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureActiveUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
@@ -295,9 +276,7 @@ export class UserComplaintsService {
    *
    * @param userId User whose cached information changed.
    */
-  private async invalidateComplaintCaches(
-    userId: string,
-  ): Promise<void> {
+  private async invalidateComplaintCaches(userId: string): Promise<void> {
     await Promise.all([
       this.cacheManager.del(userCacheKeys.summary(userId)),
       this.cacheManager.del(userCacheKeys.activity(userId)),

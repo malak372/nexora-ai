@@ -1,59 +1,67 @@
-import { Injectable } from '@nestjs/common';
-import { AiProviderType, ApiProvider, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+
+import { ExternalServiceCategory, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { AI_PROVIDER_TO_API_PROVIDER } from '../constants';
-
 import { GetAiAnalyticsQueryDto } from './dto/get-ai-analytics-query.dto';
 
-import { AiUsageAnalyticsSummary } from './types/ai-usage-analytics.type';
+import type { AiUsageAnalyticsSummary } from './types/ai-usage-analytics.type';
 
 /**
- * Aggregation selection used for per-model usage analytics.
+ * Per-model usage aggregation configuration.
  *
- * Defining the arguments with Prisma validator preserves precise
- * return types for _count, _sum, and _avg.
+ * Defining the aggregation shape with Prisma.validator preserves the
+ * exact inferred groupBy result type.
  */
 const AI_USAGE_BY_MODEL_GROUP_ARGS =
   Prisma.validator<Prisma.ExternalApiLogGroupByArgs>()({
     by: ['aiModelId'],
+
     orderBy: {
-      aiModelId: 'asc',
+      aiModelId: Prisma.SortOrder.asc,
     },
+
     _count: {
       _all: true,
     },
+
     _sum: {
       inputTokens: true,
       outputTokens: true,
       costEstimate: true,
     },
+
     _avg: {
       responseTimeMs: true,
     },
   });
 
 /**
- * Aggregation selection used to count successful requests
- * for every AI model.
+ * Per-model successful-request aggregation configuration.
  */
 const AI_SUCCESS_BY_MODEL_GROUP_ARGS =
   Prisma.validator<Prisma.ExternalApiLogGroupByArgs>()({
     by: ['aiModelId'],
+
     orderBy: {
-      aiModelId: 'asc',
+      aiModelId: Prisma.SortOrder.asc,
     },
+
     _count: {
       _all: true,
     },
   });
 
 /**
- * Provides aggregated AI request, usage, cost,
- * latency, and fallback analytics.
+ * Provides aggregated analytics for individual external AI-provider
+ * attempts.
  *
- * Analytics are calculated from ExternalApiLog records.
+ * Only ExternalApiLog records belonging to
+ * ExternalServiceCategory.AI are included.
+ *
+ * Payment, data-collection, and other external service logs are
+ * intentionally excluded.
  *
  * @author Malak
  */
@@ -62,10 +70,13 @@ export class AiUsageAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns an aggregated AI usage summary.
+   * Returns administrator-facing AI usage analytics.
    *
-   * @param query Optional date, provider, request-type,
-   * and model filters.
+   * Counts represent individual provider attempts, including:
+   * - Initial requests.
+   * - Retries.
+   * - Structured-output repair attempts.
+   * - Fallback requests.
    */
   async getSummary(
     query: GetAiAnalyticsQueryDto,
@@ -81,14 +92,14 @@ export class AiUsageAnalyticsService {
       successfulByModel,
     ] = await this.prisma.$transaction([
       /**
-       * Total external AI-provider calls.
+       * Total matching external AI attempts.
        */
       this.prisma.externalApiLog.count({
         where,
       }),
 
       /**
-       * Successful external AI-provider calls.
+       * Successful matching attempts.
        */
       this.prisma.externalApiLog.count({
         where: {
@@ -98,7 +109,7 @@ export class AiUsageAnalyticsService {
       }),
 
       /**
-       * Calls that used a fallback model.
+       * Attempts made using a fallback model.
        */
       this.prisma.externalApiLog.count({
         where: {
@@ -112,21 +123,20 @@ export class AiUsageAnalyticsService {
        */
       this.prisma.externalApiLog.aggregate({
         where,
+
         _sum: {
           inputTokens: true,
           outputTokens: true,
           costEstimate: true,
         },
+
         _avg: {
           responseTimeMs: true,
         },
       }),
 
       /**
-       * Usage aggregates grouped by AI model.
-       *
-       * orderBy is included explicitly because the generated Prisma
-       * client requires it for this groupBy argument shape.
+       * Usage grouped by AI-model relation.
        */
       this.prisma.externalApiLog.groupBy({
         ...AI_USAGE_BY_MODEL_GROUP_ARGS,
@@ -134,10 +144,11 @@ export class AiUsageAnalyticsService {
       }),
 
       /**
-       * Successful request counts grouped by AI model.
+       * Successful-attempt counts grouped by AI model.
        */
       this.prisma.externalApiLog.groupBy({
         ...AI_SUCCESS_BY_MODEL_GROUP_ARGS,
+
         where: {
           ...where,
           isSuccess: true,
@@ -145,26 +156,35 @@ export class AiUsageAnalyticsService {
       }),
     ]);
 
-    const modelIds = byModel
-      .map((item) => item.aiModelId)
-      .filter((id): id is string => id !== null);
+    /**
+     * Remove null model identifiers and duplicate IDs before loading
+     * model metadata.
+     */
+    const modelIds = [
+      ...new Set(
+        byModel
+          .map((item) => item.aiModelId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
 
     const models =
-      modelIds.length > 0
-        ? await this.prisma.aiModel.findMany({
+      modelIds.length === 0
+        ? []
+        : await this.prisma.aiModel.findMany({
             where: {
               id: {
                 in: modelIds,
               },
             },
+
             select: {
               id: true,
-              provider: true,
+              providerKey: true,
               modelName: true,
               apiModelId: true,
             },
-          })
-        : [];
+          });
 
     const modelMap = new Map(models.map((model) => [model.id, model]));
 
@@ -202,7 +222,10 @@ export class AiUsageAnalyticsService {
         return {
           aiModelId: item.aiModelId,
 
-          model: item.aiModelId ? (modelMap.get(item.aiModelId) ?? null) : null,
+          model:
+            item.aiModelId === null
+              ? null
+              : (modelMap.get(item.aiModelId) ?? null),
 
           requests,
 
@@ -223,25 +246,44 @@ export class AiUsageAnalyticsService {
   }
 
   /**
-   * Builds ExternalApiLog query filters.
+   * Builds the ExternalApiLog query filter.
    */
   private buildWhere(
     query: GetAiAnalyticsQueryDto,
   ): Prisma.ExternalApiLogWhereInput {
-    const fromDate = query.fromDate ? new Date(query.fromDate) : undefined;
+    const fromDate = query.fromDate
+      ? this.parseStartDate(query.fromDate)
+      : undefined;
 
-    const toDate = query.toDate ? new Date(query.toDate) : undefined;
+    const toDate = query.toDate ? this.parseEndDate(query.toDate) : undefined;
+
+    if (
+      fromDate !== undefined &&
+      toDate !== undefined &&
+      fromDate.getTime() > toDate.getTime()
+    ) {
+      throw new BadRequestException(
+        'fromDate must be earlier than or equal to toDate.',
+      );
+    }
 
     return {
-      ...(fromDate || toDate
+      /**
+       * Prevent payment, data-collection, and unrelated provider logs
+       * from appearing in AI analytics.
+       */
+      serviceCategory: ExternalServiceCategory.AI,
+
+      ...(fromDate !== undefined || toDate !== undefined
         ? {
             createdAt: {
-              ...(fromDate
+              ...(fromDate !== undefined
                 ? {
                     gte: fromDate,
                   }
                 : {}),
-              ...(toDate
+
+              ...(toDate !== undefined
                 ? {
                     lte: toDate,
                   }
@@ -250,9 +292,9 @@ export class AiUsageAnalyticsService {
           }
         : {}),
 
-      ...(query.provider !== undefined
+      ...(query.providerKey !== undefined
         ? {
-            provider: this.mapProvider(query.provider),
+            providerKey: query.providerKey,
           }
         : {}),
 
@@ -271,11 +313,27 @@ export class AiUsageAnalyticsService {
   }
 
   /**
-   * Maps AiProviderType into the provider enum stored
-   * by ExternalApiLog.
+   * Parses the inclusive beginning of an analytics date range.
+   *
+   * Date-only values naturally resolve to the beginning of the given
+   * UTC calendar day.
    */
-  private mapProvider(provider: AiProviderType): ApiProvider {
-    return AI_PROVIDER_TO_API_PROVIDER[provider];
+  private parseStartDate(value: string): Date {
+    return new Date(value);
+  }
+
+  /**
+   * Parses the inclusive end of an analytics date range.
+   *
+   * Date-time values are preserved exactly.
+   * Date-only values are converted to 23:59:59.999 UTC.
+   */
+  private parseEndDate(value: string): Date {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return new Date(`${value}T23:59:59.999Z`);
+    }
+
+    return new Date(value);
   }
 
   /**
@@ -290,7 +348,7 @@ export class AiUsageAnalyticsService {
   }
 
   /**
-   * Converts Decimal or numeric aggregate values into rounded
+   * Converts Prisma Decimal or numeric aggregates into rounded
    * JavaScript numbers.
    */
   private toRoundedNumber(

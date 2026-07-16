@@ -1,66 +1,68 @@
-import { AiModelHealthStatus, AiProviderType } from '@prisma/client';
-import { IsBooleanString, IsEnum, IsOptional } from 'class-validator';
+import { AiModelHealthStatus } from '@prisma/client';
+
+import { Transform } from 'class-transformer';
+
+import {
+  IsBooleanString,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+
+import {
+  SUPPORTED_AI_PROVIDER_KEYS,
+  type AiProviderKey,
+} from '../../ai/constants/ai-provider.constants';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for listing and filtering AI models.
+ * Query DTO used for administrator AI-model listing and filtering.
  *
- * Supports:
- * - Pagination.
- * - Search.
- * - Date filtering.
- * - Sorting.
- * - Provider filtering.
- * - Health-status filtering.
- * - Active-state filtering.
- * - Default-state filtering.
+ * Pagination, search, date-range filtering, and sorting are inherited
+ * from ListQueryDto.
  *
  * @author Malak
  */
 export class GetAiModelsQueryDto extends ListQueryDto {
   /**
-   * Optional provider filter.
+   * Filters models by backend provider-registry key.
    *
-   * Examples:
-   * - GOOGLE
-   * - GROQ
-   * - OPENROUTER
+   * Input is normalized to lowercase before validation.
    */
   @IsOptional()
-  @IsEnum(AiProviderType)
-  provider?: AiProviderType;
+  @Transform(({ value }: { value: unknown }): unknown =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsString()
+  @IsIn(SUPPORTED_AI_PROVIDER_KEYS)
+  providerKey?: AiProviderKey;
 
   /**
-   * Optional model-health filter.
-   *
-   * Examples:
-   * - UNKNOWN
-   * - HEALTHY
-   * - DEGRADED
-   * - UNAVAILABLE
+   * Filters models by operational health status.
    */
   @IsOptional()
   @IsEnum(AiModelHealthStatus)
   healthStatus?: AiModelHealthStatus;
 
   /**
-   * Optional active-state filter.
+   * Filters models by active state.
    *
-   * Query examples:
-   * - true
-   * - false
+   * Query-string examples:
+   * - isActive=true
+   * - isActive=false
    */
   @IsOptional()
   @IsBooleanString()
   isActive?: string;
 
   /**
-   * Optional default-state filter.
+   * Filters models by default-model state.
    *
-   * Query examples:
-   * - true
-   * - false
+   * Query-string examples:
+   * - isDefault=true
+   * - isDefault=false
    */
   @IsOptional()
   @IsBooleanString()

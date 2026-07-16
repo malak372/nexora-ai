@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import {
   AlertType,
@@ -57,7 +53,7 @@ export class AdminAlertsService {
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
     private readonly systemAlertsService: SystemAlertsService,
-  ) { }
+  ) {}
 
   /**
    * Retrieves a paginated and filtered list of in-app alerts.
@@ -69,37 +65,37 @@ export class AdminAlertsService {
 
     const searchFilter: Prisma.AlertWhereInput = search
       ? {
-        OR: [
-          {
-            title: {
-              contains: search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            message: {
-              contains: search,
-              mode: 'insensitive',
-            },
-          },
-          {
-            user: {
-              fullName: {
+          OR: [
+            {
+              title: {
                 contains: search,
                 mode: 'insensitive',
               },
             },
-          },
-          {
-            user: {
-              email: {
+            {
+              message: {
                 contains: search,
                 mode: 'insensitive',
               },
             },
-          },
-        ],
-      }
+            {
+              user: {
+                fullName: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              user: {
+                email: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+          ],
+        }
       : {};
 
     const where: Prisma.AlertWhereInput = {
@@ -160,42 +156,23 @@ export class AdminAlertsService {
    * Creates an in-app alert for one user or broadcasts
    * it to all eligible users.
    */
-  async createAlert(
-    body: CreateAlertDto,
-    adminId: string,
-  ) {
+  async createAlert(body: CreateAlertDto, adminId: string) {
     const alertType = body.type ?? AlertType.SYSTEM;
 
     if (body.userId) {
-      return this.createSingleUserAlert(
-        body,
-        body.userId,
-        adminId,
-        alertType,
-      );
+      return this.createSingleUserAlert(body, body.userId, adminId, alertType);
     }
 
-    return this.createBroadcastAlert(
-      body,
-      adminId,
-      alertType,
-    );
+    return this.createBroadcastAlert(body, adminId, alertType);
   }
 
   /**
    * Sends an email alert to one user or broadcasts
    * it to all eligible users.
    */
-  async sendEmailAlert(
-    body: CreateEmailAlertDto,
-    adminId: string,
-  ) {
+  async sendEmailAlert(body: CreateEmailAlertDto, adminId: string) {
     if (body.userId) {
-      return this.sendSingleUserEmailAlert(
-        body,
-        body.userId,
-        adminId,
-      );
+      return this.sendSingleUserEmailAlert(body, body.userId, adminId);
     }
 
     return this.sendBroadcastEmailAlert(body, adminId);
@@ -278,16 +255,15 @@ export class AdminAlertsService {
     const message = body.message.trim();
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const creationResult =
-        await this.systemAlertsService.createMany(
-          users.map((user) => ({
-            userId: user.id,
-            title,
-            message,
-            type: alertType,
-          })),
-          tx,
-        );
+      const creationResult = await this.systemAlertsService.createMany(
+        users.map((user) => ({
+          userId: user.id,
+          title,
+          message,
+          type: alertType,
+        })),
+        tx,
+      );
 
       await this.auditService.createLog(
         {
@@ -398,10 +374,7 @@ export class AdminAlertsService {
       index < users.length;
       index += EMAIL_BROADCAST_BATCH_SIZE
     ) {
-      const batch = users.slice(
-        index,
-        index + EMAIL_BROADCAST_BATCH_SIZE,
-      );
+      const batch = users.slice(index, index + EMAIL_BROADCAST_BATCH_SIZE);
 
       const results = await Promise.allSettled(
         batch.map((user) =>

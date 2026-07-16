@@ -154,9 +154,7 @@ export class AdminComplaintsService {
    *
    * @param query Complaint filters.
    */
-  async getComplaintsSummary(
-    query: GetAdminComplaintsQueryDto,
-  ) {
+  async getComplaintsSummary(query: GetAdminComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
     const todayStart = new Date();
@@ -244,39 +242,36 @@ export class AdminComplaintsService {
    *
    * @param query Complaint filters.
    */
-  async getComplaintsCharts(
-    query: GetAdminComplaintsQueryDto,
-  ) {
+  async getComplaintsCharts(query: GetAdminComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
-    const [complaintsByStatus, complaintsByPriority] =
-      await Promise.all([
-        this.prisma.complaint.groupBy({
-          by: ['status'],
-          where,
+    const [complaintsByStatus, complaintsByPriority] = await Promise.all([
+      this.prisma.complaint.groupBy({
+        by: ['status'],
+        where,
+        _count: {
+          status: true,
+        },
+        orderBy: {
           _count: {
-            status: true,
+            status: 'desc',
           },
-          orderBy: {
-            _count: {
-              status: 'desc',
-            },
-          },
-        }),
+        },
+      }),
 
-        this.prisma.complaint.groupBy({
-          by: ['priority'],
-          where,
+      this.prisma.complaint.groupBy({
+        by: ['priority'],
+        where,
+        _count: {
+          priority: true,
+        },
+        orderBy: {
           _count: {
-            priority: true,
+            priority: 'desc',
           },
-          orderBy: {
-            _count: {
-              priority: 'desc',
-            },
-          },
-        }),
-      ]);
+        },
+      }),
+    ]);
 
     return {
       complaintsByStatus: complaintsByStatus.map((item) => ({
@@ -298,9 +293,7 @@ export class AdminComplaintsService {
    *
    * @param query Complaint filters and sorting options.
    */
-  async exportComplaintsCsv(
-    query: GetAdminComplaintsQueryDto,
-  ) {
+  async exportComplaintsCsv(query: GetAdminComplaintsQueryDto) {
     const where = this.buildComplaintsWhere(query);
 
     const orderBy = buildOrderBy(
@@ -392,10 +385,8 @@ export class AdminComplaintsService {
       }
 
       const hasChanges =
-        (body.status !== undefined &&
-          body.status !== complaint.status) ||
-        (body.priority !== undefined &&
-          body.priority !== complaint.priority) ||
+        (body.status !== undefined && body.status !== complaint.status) ||
+        (body.priority !== undefined && body.priority !== complaint.priority) ||
         (body.adminReply !== undefined &&
           body.adminReply !== complaint.adminReply);
 
@@ -441,15 +432,13 @@ export class AdminComplaintsService {
             status: complaint.status,
             priority: complaint.priority,
             adminReply: complaint.adminReply,
-            resolvedAt:
-              complaint.resolvedAt?.toISOString() ?? null,
+            resolvedAt: complaint.resolvedAt?.toISOString() ?? null,
           },
           newValue: {
             status: updated.status,
             priority: updated.priority,
             adminReply: updated.adminReply,
-            resolvedAt:
-              updated.resolvedAt?.toISOString() ?? null,
+            resolvedAt: updated.resolvedAt?.toISOString() ?? null,
           },
         },
         tx,
@@ -466,13 +455,10 @@ export class AdminComplaintsService {
     });
 
     if (result.updated) {
-      await this.invalidateComplaintCaches(
-        result.affectedUserId,
-      );
+      await this.invalidateComplaintCaches(result.affectedUserId);
     }
 
-    const { affectedUserId: _affectedUserId, ...response } =
-      result;
+    const { affectedUserId: _affectedUserId, ...response } = result;
 
     return response;
   }
@@ -575,13 +561,10 @@ export class AdminComplaintsService {
    *
    * @param userId User whose complaint data changed.
    */
-  private async invalidateComplaintCaches(
-    userId: string,
-  ): Promise<void> {
+  private async invalidateComplaintCaches(userId: string): Promise<void> {
     await Promise.all([
       this.cacheManager.del(userCacheKeys.summary(userId)),
       this.cacheManager.del(userCacheKeys.activity(userId)),
     ]);
   }
 }
-

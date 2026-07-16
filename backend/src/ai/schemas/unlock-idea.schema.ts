@@ -2,17 +2,25 @@ import { z } from 'zod';
 
 /**
  * Validates structured output returned when unlocking an existing
- * registered free idea.
+ * authenticated free idea.
  *
- * Basic idea fields are intentionally excluded because they already
- * exist on the original idea and must not be regenerated.
+ * Existing basic idea fields are intentionally excluded because they
+ * must remain unchanged:
+ * - title
+ * - problemStatement
+ * - objectives
+ * - targetUsers
+ * - partialAbstract
  *
  * Trusted NLP data is also excluded and must be loaded directly from
- * NlpAnalysis and appended by the application.
+ * NlpAnalysis.
  *
  * This schema must remain synchronized with:
  * - UNLOCK_OUTPUT_SCHEMA
  * - UNLOCK_OUTPUT_FORMAT
+ * - The idea-unlock prompt template
+ *
+ * Unknown properties are rejected.
  *
  * @author Malak
  */
@@ -54,12 +62,12 @@ export const UnlockIdeaSchema = z
     revenueModel: z.string().trim().min(20).max(2_000),
 
     /**
-     * Preliminary project budget range and assumptions.
+     * Preliminary budget range and relevant assumptions.
      */
     budgetEstimation: z.string().trim().min(20).max(2_000),
 
     /**
-     * Suggested project implementation timeline.
+     * Suggested implementation timeline.
      */
     implementationTimeline: z.string().trim().min(20).max(2_000),
 
@@ -69,12 +77,14 @@ export const UnlockIdeaSchema = z
     feasibilityAssessment: z.string().trim().min(20).max(2_500),
 
     /**
-     * Preliminary assessment of the project's market opportunity.
+     * Preliminary assessment of market opportunity.
      */
     marketPotential: z.string().trim().min(20).max(2_500),
 
     /**
      * High-level local regulatory considerations.
+     *
+     * This value must not be presented as verified legal advice.
      */
     localRegulations: z.string().trim().min(20).max(2_000),
 
@@ -96,6 +106,6 @@ export const UnlockIdeaSchema = z
   .strict();
 
 /**
- * Validated direct-unlock idea output.
+ * Validated idea-unlock output.
  */
 export type UnlockIdeaOutput = z.infer<typeof UnlockIdeaSchema>;

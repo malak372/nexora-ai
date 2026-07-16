@@ -1,4 +1,3 @@
-
 import {
   Injectable,
   InternalServerErrorException,
@@ -127,17 +126,14 @@ export class MailService {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      const errorStack =
-        error instanceof Error ? error.stack : undefined;
+      const errorStack = error instanceof Error ? error.stack : undefined;
 
       this.logger.error(
         `Failed to send email to ${options.to}: ${errorMessage}`,
         errorStack,
       );
 
-      throw new InternalServerErrorException(
-        'Failed to send email.',
-      );
+      throw new InternalServerErrorException('Failed to send email.');
     }
   }
 
@@ -158,10 +154,7 @@ export class MailService {
    * @param content Safe email body HTML.
    * @returns Complete HTML email document.
    */
-  private buildEmailTemplate(
-    title: string,
-    content: string,
-  ): string {
+  private buildEmailTemplate(title: string, content: string): string {
     return `
       <!doctype html>
       <html lang="en">
@@ -242,10 +235,7 @@ export class MailService {
    * @param url Button destination URL.
    * @returns HTML anchor styled as an action button.
    */
-  private buildActionButton(
-    label: string,
-    url: string,
-  ): string {
+  private buildActionButton(label: string, url: string): string {
     const safeLabel = this.escapeHtml(label);
     const safeUrl = this.escapeHtml(url);
 
@@ -299,9 +289,7 @@ export class MailService {
    * @param paymentPurpose Payment purpose stored in Prisma.
    * @returns User-friendly payment-purpose label.
    */
-  private formatPaymentPurpose(
-    paymentPurpose: PaymentPurpose,
-  ): string {
+  private formatPaymentPurpose(paymentPurpose: PaymentPurpose): string {
     switch (paymentPurpose) {
       case PaymentPurpose.BUY_CREDITS:
         return 'Credit Purchase';
@@ -325,16 +313,12 @@ export class MailService {
    * @param paymentMethodKey Payment method registry key.
    * @returns Human-readable payment-method name.
    */
-  private formatPaymentMethod(
-    paymentMethodKey: string,
-  ): string {
+  private formatPaymentMethod(paymentMethodKey: string): string {
     return paymentMethodKey
       .trim()
       .replaceAll('-', ' ')
       .replaceAll('_', ' ')
-      .replace(/\b\w/g, (character) =>
-        character.toUpperCase(),
-      );
+      .replace(/\b\w/g, (character) => character.toUpperCase());
   }
 
   /**
@@ -347,13 +331,8 @@ export class MailService {
    * @param currency ISO currency code.
    * @returns Formatted monetary value.
    */
-  private formatAmount(
-    amount: number,
-    currency: string,
-  ): string {
-    const normalizedCurrency = currency
-      .trim()
-      .toUpperCase();
+  private formatAmount(amount: number, currency: string): string {
+    const normalizedCurrency = currency.trim().toUpperCase();
 
     try {
       return new Intl.NumberFormat('en-US', {
@@ -415,10 +394,7 @@ Please do not reply.
             Otherwise, you can safely ignore this email.
           </p>
 
-          ${this.buildActionButton(
-            'Reset Password',
-            resetLink,
-          )}
+          ${this.buildActionButton('Reset Password', resetLink)}
 
           <p>
             This link expires in
@@ -446,12 +422,8 @@ Please do not reply.
    * @param email Recipient email address.
    * @param fullName Registered user's full name.
    */
-  async sendWelcomeEmail(
-    email: string,
-    fullName: string,
-  ): Promise<void> {
-    const safeFullName =
-      this.escapeHtml(fullName.trim()) || 'User';
+  async sendWelcomeEmail(email: string, fullName: string): Promise<void> {
+    const safeFullName = this.escapeHtml(fullName.trim()) || 'User';
 
     await this.sendEmail({
       to: email,
@@ -520,10 +492,7 @@ Please do not reply.
             the button below:
           </p>
 
-          ${this.buildActionButton(
-            'Verify Email',
-            verificationLink,
-          )}
+          ${this.buildActionButton('Verify Email', verificationLink)}
 
           <p>
             If you did not create this account, you can
@@ -556,18 +525,11 @@ Please do not reply.
     paymentPurpose: PaymentPurpose,
     transactionReference?: string,
   ): Promise<void> {
-    const formattedAmount = this.formatAmount(
-      amount,
-      currency,
-    );
+    const formattedAmount = this.formatAmount(amount, currency);
 
-    const formattedMethod = this.formatPaymentMethod(
-      paymentMethodKey,
-    );
+    const formattedMethod = this.formatPaymentMethod(paymentMethodKey);
 
-    const formattedPurpose = this.formatPaymentPurpose(
-      paymentPurpose,
-    );
+    const formattedPurpose = this.formatPaymentPurpose(paymentPurpose);
 
     const safeTransactionReference = this.escapeHtml(
       transactionReference?.trim() || 'N/A',
@@ -657,18 +619,11 @@ Please do not reply.
     const safeFailureReason =
       'Your payment could not be completed. Please verify your payment details or try again using another available payment method. If the problem persists, contact your payment provider or Nexora AI support.';
 
-    const formattedAmount = this.formatAmount(
-      amount,
-      currency,
-    );
+    const formattedAmount = this.formatAmount(amount, currency);
 
-    const formattedMethod = this.formatPaymentMethod(
-      paymentMethodKey,
-    );
+    const formattedMethod = this.formatPaymentMethod(paymentMethodKey);
 
-    const formattedPurpose = this.formatPaymentPurpose(
-      paymentPurpose,
-    );
+    const formattedPurpose = this.formatPaymentPurpose(paymentPurpose);
 
     const normalizedTransactionReference =
       transactionReference?.trim() || 'N/A';
@@ -718,9 +673,7 @@ Please do not reply.
 
           <p>
             <strong>Transaction Reference:</strong>
-            ${this.escapeHtml(
-              normalizedTransactionReference,
-            )}
+            ${this.escapeHtml(normalizedTransactionReference)}
           </p>
 
           <p>
@@ -763,8 +716,7 @@ Please do not reply.
   ): Promise<void> {
     await this.sendEmail({
       to: email,
-      subject:
-        'Credits Added to Your Nexora AI Account',
+      subject: 'Credits Added to Your Nexora AI Account',
       text: `
 Nexora AI Credits Added
 
@@ -889,25 +841,17 @@ Please do not reply.
     message: string,
     fullName?: string,
   ): Promise<void> {
-    const normalizedSubject =
-      subject.trim() || 'Nexora AI Notification';
+    const normalizedSubject = subject.trim() || 'Nexora AI Notification';
 
     const normalizedMessage = message.trim();
 
-    const recipientName =
-      fullName?.trim() || 'User';
+    const recipientName = fullName?.trim() || 'User';
 
-    const safeSubject = this.escapeHtml(
-      normalizedSubject,
-    );
+    const safeSubject = this.escapeHtml(normalizedSubject);
 
-    const safeMessage = this.escapeHtml(
-      normalizedMessage,
-    );
+    const safeMessage = this.escapeHtml(normalizedMessage);
 
-    const safeRecipientName = this.escapeHtml(
-      recipientName,
-    );
+    const safeRecipientName = this.escapeHtml(recipientName);
 
     await this.sendEmail({
       to: email,
@@ -967,23 +911,15 @@ Please do not reply.
   ): Promise<void> {
     const normalizedReply = reply.trim();
 
-    const recipientName =
-      fullName.trim() || 'User';
+    const recipientName = fullName.trim() || 'User';
 
-    const normalizedSubject =
-      originalSubject.trim() || 'Contact Request';
+    const normalizedSubject = originalSubject.trim() || 'Contact Request';
 
-    const safeRecipientName = this.escapeHtml(
-      recipientName,
-    );
+    const safeRecipientName = this.escapeHtml(recipientName);
 
-    const safeSubject = this.escapeHtml(
-      normalizedSubject,
-    );
+    const safeSubject = this.escapeHtml(normalizedSubject);
 
-    const safeReply = this.escapeHtml(
-      normalizedReply,
-    );
+    const safeReply = this.escapeHtml(normalizedReply);
 
     await this.sendEmail({
       to: email,
@@ -1059,4 +995,3 @@ Please do not reply directly to this email.
     });
   }
 }
-

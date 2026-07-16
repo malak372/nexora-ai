@@ -55,7 +55,7 @@ export class AdminCreditsService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly auditService: AuditService,
-  ) { }
+  ) {}
 
   /**
    * Shared Prisma selection used by administrator
@@ -275,10 +275,7 @@ export class AdminCreditsService {
    * Credit-dependent caches are invalidated only after
    * the transaction completes successfully.
    */
-  async adjustUserCredits(
-    dto: AdjustUserCreditsDto,
-    adminId: string,
-  ) {
+  async adjustUserCredits(dto: AdjustUserCreditsDto, adminId: string) {
     const description = dto.description.trim();
     const result = await this.prisma.$transaction(async (tx) => {
       const adjustment = await this.creditBalanceService.adjustBalance({

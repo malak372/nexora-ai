@@ -1,14 +1,16 @@
 import { z } from 'zod';
 
 /**
- * Validates structured output returned for registered free generation.
+ * Validates structured output returned for authenticated free idea
+ * generation.
  *
  * This schema must remain synchronized with:
  * - FREE_OUTPUT_SCHEMA
  * - FREE_OUTPUT_FORMAT
+ * - The free-generation prompt template
  *
- * Unknown fields are rejected to prevent providers from returning
- * unexpected or unsupported data.
+ * Unknown properties are rejected to prevent AI providers from
+ * returning unexpected or unsupported fields.
  *
  * @author Malak
  */
@@ -35,13 +37,13 @@ export const FreeIdeaSchema = z
     targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
 
     /**
-     * Partial project abstract available to registered free users.
+     * Partial project abstract available to authenticated free users.
      */
     partialAbstract: z.string().trim().min(30).max(2_500),
   })
   .strict();
 
 /**
- * Validated registered free idea output.
+ * Validated authenticated free idea output.
  */
 export type FreeIdeaOutput = z.infer<typeof FreeIdeaSchema>;

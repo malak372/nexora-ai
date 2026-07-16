@@ -19,6 +19,4 @@ export const ROLES_KEY = 'roles';
  *
  * @param roles Allowed user roles.
  */
-export const Roles = (
-    ...roles: UserRole[]
-) => SetMetadata(ROLES_KEY, roles);
+export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);

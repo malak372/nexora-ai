@@ -4,13 +4,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import {
-  AiModel,
   AiModelHealthStatus,
   AuditAction,
   AuditTargetType,
   Prisma,
 } from '@prisma/client';
+
+import type { AiModel } from '@prisma/client';
+
+import {
+  normalizeAiProviderKey,
+  SUPPORTED_AI_PROVIDER_KEYS,
+  type AiProviderKey,
+} from '../ai/constants/ai-provider.constants';
 
 import { AuditService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,38 +31,35 @@ import {
   buildPagination,
 } from '../utilities/base-query/builder';
 
+import { AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS } from './constants/ai-model-health.constants';
+
+import {
+  DEFAULT_AI_MODEL_MAX_OUTPUT_TOKENS,
+  DEFAULT_AI_MODEL_PRIORITY,
+  DEFAULT_AI_MODEL_WEIGHT,
+} from './constants/ai-model.constants';
+
 import { CreateAiModelDto } from './dto/create-ai-model.dto';
 import { GetAiModelsQueryDto } from './dto/get-ai-models-query.dto';
 import { UpdateAiModelDto } from './dto/update-ai-model.dto';
 
-import { PaginatedAiModelsResult } from './types/ai-models.type';
+import type { PaginatedAiModelsResult } from './types/ai-models.type';
 
 /**
- * Maximum number of attempts used for serializable transactions.
- *
- * PostgreSQL may reject one of two concurrent serializable
- * transactions to preserve data consistency.
- *
- * Retryable transaction conflicts are retried up to this limit.
- */
-const MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS = 3;
-
-/**
- * Minimal Prisma client shape required for AI-model lookup.
+ * Prisma client shape required for AI-model lookup operations.
  *
  * Both PrismaService and Prisma.TransactionClient satisfy this
- * structural type.
+ * structural contract.
  */
 type AiModelLookupClient = Pick<Prisma.TransactionClient, 'aiModel'>;
 
 /**
- * Health states that remain eligible for runtime routing.
+ * Operational health states eligible for runtime routing.
  *
- * UNKNOWN is included because newly configured and reactivated
- * models have not yet completed a successful request or health check.
+ * UNKNOWN remains routable because newly created or reactivated models
+ * have not yet completed a successful provider execution.
  *
- * UNAVAILABLE is intentionally excluded because the model should not
- * receive new provider requests until it is reset or reactivated.
+ * UNAVAILABLE is intentionally excluded.
  */
 const ROUTABLE_HEALTH_STATUSES: readonly AiModelHealthStatus[] = [
   AiModelHealthStatus.HEALTHY,
@@ -63,51 +68,34 @@ const ROUTABLE_HEALTH_STATUSES: readonly AiModelHealthStatus[] = [
 ];
 
 /**
- * Default fallback ordering.
+ * Deterministic fallback ordering.
  *
- * Higher-priority models are selected first.
- *
- * Older models are preferred when priorities are equal, providing
- * deterministic ordering.
+ * Models with a higher priority are returned first. Older models are
+ * preferred when two models have the same priority.
  */
 const AI_MODEL_FALLBACK_ORDER = [
   {
-    priority: 'desc',
+    priority: Prisma.SortOrder.desc,
   },
   {
-    createdAt: 'asc',
+    createdAt: Prisma.SortOrder.asc,
   },
-] as const satisfies readonly Prisma.AiModelOrderByWithRelationInput[];
+] satisfies Prisma.AiModelOrderByWithRelationInput[];
 
 /**
- * Service responsible for managing AI-model configurations.
+ * Service responsible for administrator AI-model management.
  *
- * Responsibilities:
- * - Create AI-model configurations.
- * - List, filter, sort, and search models.
- * - Update editable model metadata.
- * - Activate and deactivate models safely.
- * - Select one active and routable default model.
- * - Return fallback and routable models.
- * - Audit sensitive administrative changes.
+ * Provider keys are persisted as strings to keep the database
+ * extensible, while this service validates them against provider
+ * adapters implemented by the deployed backend.
  *
  * Business rules:
- * - Models are always created as non-default.
- * - isActive cannot be changed through the generic update endpoint.
- * - Only active models may become default.
- * - UNAVAILABLE models cannot become default.
+ * - Models are created as non-default.
+ * - Generic updates cannot change isActive.
+ * - Only active and routable models may become default.
  * - The default model cannot be deactivated.
- * - Only one model may be default at database level.
- * - Model changes and audit records are committed atomically.
- * - Changing provider connection data resets operational health.
- *
- * This service does not:
- * - Call external AI providers.
- * - Generate project ideas.
- * - Execute fallback requests.
- * - Record provider request success or failure.
- *
- * Runtime execution belongs to the central AI execution layer.
+ * - Model changes and audit records are persisted atomically.
+ * - Changing providerKey or apiModelId resets operational health.
  *
  * @author Malak
  */
@@ -115,37 +103,49 @@ const AI_MODEL_FALLBACK_ORDER = [
 export class AiModelsService {
   constructor(
     private readonly prisma: PrismaService,
+
     private readonly auditService: AuditService,
   ) {}
 
   /**
-   * Creates a non-default AI-model configuration.
+   * Creates a new non-default AI-model configuration.
    *
-   * The model and its audit record are created in the same
-   * transaction.
-   *
-   * If either operation fails, both operations are rolled back.
+   * @param dto Validated administrator model configuration.
+   * @param actorId Administrator performing the operation.
    */
   async create(dto: CreateAiModelDto, actorId: string): Promise<AiModel> {
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
+    const providerKey = this.resolveProviderKey(dto.providerKey);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const createdModel = await tx.aiModel.create({
           data: {
-            provider: dto.provider,
+            providerKey,
 
-            modelName: dto.modelName,
+            modelName: dto.modelName.trim(),
 
-            apiModelId: dto.apiModelId,
+            apiModelId: dto.apiModelId.trim(),
 
             displayName: this.normalizeOptionalText(dto.displayName),
 
             description: this.normalizeOptionalText(dto.description),
 
-            priority: dto.priority ?? 0,
+            priority: dto.priority ?? DEFAULT_AI_MODEL_PRIORITY,
 
-            weight: dto.weight ?? 1,
+            weight: dto.weight ?? DEFAULT_AI_MODEL_WEIGHT,
 
-            maxOutputTokens: dto.maxOutputTokens ?? 2048,
+            maxOutputTokens:
+              dto.maxOutputTokens ?? DEFAULT_AI_MODEL_MAX_OUTPUT_TOKENS,
+
+            supportsJsonOutput: dto.supportsJsonOutput ?? false,
+
+            supportsTools: dto.supportsTools ?? false,
+
+            supportsVision: dto.supportsVision ?? false,
+
+            contextWindow: dto.contextWindow ?? null,
 
             inputCostPerMillion: dto.inputCostPerMillion ?? 0,
 
@@ -154,9 +154,7 @@ export class AiModelsService {
             isActive: dto.isActive ?? true,
 
             /*
-             * Default selection is never allowed during creation.
-             *
-             * It must use the dedicated setDefault() operation.
+             * Default-model selection uses a dedicated endpoint.
              */
             isDefault: false,
           },
@@ -164,7 +162,7 @@ export class AiModelsService {
 
         await this.auditService.createLog(
           {
-            actorId,
+            actorId: normalizedActorId,
 
             action: AuditAction.ADMIN_CREATE_AI_MODEL,
 
@@ -186,9 +184,6 @@ export class AiModelsService {
 
   /**
    * Returns paginated and filtered AI-model configurations.
-   *
-   * The data query and count query are executed inside one Prisma
-   * batch transaction to provide consistent pagination metadata.
    */
   async findAll(query: GetAiModelsQueryDto): Promise<PaginatedAiModelsResult> {
     const { page, limit, skip, take } = buildPagination(query);
@@ -198,50 +193,70 @@ export class AiModelsService {
     const where: Prisma.AiModelWhereInput = {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(query.provider !== undefined && {
-        provider: query.provider,
-      }),
+      ...(query.providerKey !== undefined
+        ? {
+            providerKey: query.providerKey,
+          }
+        : {}),
 
-      ...(query.healthStatus !== undefined && {
-        healthStatus: query.healthStatus,
-      }),
+      ...(query.healthStatus !== undefined
+        ? {
+            healthStatus: query.healthStatus,
+          }
+        : {}),
 
-      ...(query.isActive !== undefined && {
-        isActive: query.isActive === 'true',
-      }),
+      ...(query.isActive !== undefined
+        ? {
+            isActive: query.isActive === 'true',
+          }
+        : {}),
 
-      ...(query.isDefault !== undefined && {
-        isDefault: query.isDefault === 'true',
-      }),
+      ...(query.isDefault !== undefined
+        ? {
+            isDefault: query.isDefault === 'true',
+          }
+        : {}),
 
       ...(search
         ? {
             OR: [
               {
+                providerKey: {
+                  contains: search,
+
+                  mode: Prisma.QueryMode.insensitive,
+                },
+              },
+
+              {
                 modelName: {
                   contains: search,
-                  mode: 'insensitive',
+
+                  mode: Prisma.QueryMode.insensitive,
                 },
               },
 
               {
                 apiModelId: {
                   contains: search,
-                  mode: 'insensitive',
+
+                  mode: Prisma.QueryMode.insensitive,
                 },
               },
 
               {
                 displayName: {
                   contains: search,
-                  mode: 'insensitive',
+
+                  mode: Prisma.QueryMode.insensitive,
                 },
               },
 
               {
                 description: {
                   contains: search,
-                  mode: 'insensitive',
+
+                  mode: Prisma.QueryMode.insensitive,
                 },
               },
             ],
@@ -251,11 +266,12 @@ export class AiModelsService {
 
     const orderBy = buildOrderBy(
       query,
+
       [
         'createdAt',
         'updatedAt',
         'modelName',
-        'provider',
+        'providerKey',
         'priority',
         'weight',
         'maxOutputTokens',
@@ -265,6 +281,7 @@ export class AiModelsService {
         'isActive',
         'isDefault',
       ] as const,
+
       'createdAt',
     );
 
@@ -288,136 +305,173 @@ export class AiModelsService {
         page,
         limit,
         total,
+
         totalPages: calculateTotalPages(total, limit),
       },
     };
   }
 
   /**
-   * Returns one AI model by ID.
-   *
-   * Throws NotFoundException when no matching record exists.
+   * Returns one AI model by identifier.
    */
   async findOne(id: string): Promise<AiModel> {
-    return this.findOneOrThrow(this.prisma, id);
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+
+    return this.findOneOrThrow(this.prisma, normalizedId);
   }
 
   /**
    * Updates editable AI-model metadata.
    *
-   * Activation, deactivation, default selection, and operational
-   * health fields are intentionally not directly supported here.
-   *
-   * When provider connection information changes, operational health
-   * is automatically reset because the new configuration has not yet
-   * been validated by a successful provider request.
-   *
-   * Connection-related fields:
-   * - provider
-   * - apiModelId
-   *
-   * The update and audit log are committed atomically.
+   * providerKey and apiModelId changes reset operational health because
+   * the previous health state no longer describes the updated provider
+   * connection.
    */
   async update(
     id: string,
     dto: UpdateAiModelDto,
     actorId: string,
   ): Promise<AiModel> {
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
     if (Object.keys(dto).length === 0) {
       throw new BadRequestException(
         'At least one AI model field must be provided.',
       );
     }
 
+    const nextProviderKey =
+      dto.providerKey !== undefined
+        ? this.resolveProviderKey(dto.providerKey)
+        : undefined;
+
+    const nextApiModelId = dto.apiModelId?.trim();
+
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const oldModel = await this.findOneOrThrow(tx, id);
+        const oldModel = await this.findOneOrThrow(tx, normalizedId);
 
-        /*
-         * A change to the provider or the external API model
-         * identifier means the previous health state is no longer
-         * valid.
-         *
-         * The model must return to UNKNOWN until a real provider
-         * request succeeds.
-         */
         const shouldResetHealth =
-          dto.provider !== undefined || dto.apiModelId !== undefined;
+          (nextProviderKey !== undefined &&
+            nextProviderKey !== oldModel.providerKey) ||
+          (nextApiModelId !== undefined &&
+            nextApiModelId !== oldModel.apiModelId);
 
         const updatedModel = await tx.aiModel.update({
           where: {
-            id,
+            id: normalizedId,
           },
 
           data: {
-            ...(dto.provider !== undefined && {
-              provider: dto.provider,
-            }),
+            ...(nextProviderKey !== undefined
+              ? {
+                  providerKey: nextProviderKey,
+                }
+              : {}),
 
-            ...(dto.modelName !== undefined && {
-              modelName: dto.modelName,
-            }),
+            ...(dto.modelName !== undefined
+              ? {
+                  modelName: dto.modelName.trim(),
+                }
+              : {}),
 
-            ...(dto.apiModelId !== undefined && {
-              apiModelId: dto.apiModelId,
-            }),
+            ...(nextApiModelId !== undefined
+              ? {
+                  apiModelId: nextApiModelId,
+                }
+              : {}),
 
-            ...(dto.displayName !== undefined && {
-              displayName: this.normalizeOptionalText(dto.displayName),
-            }),
+            ...(dto.displayName !== undefined
+              ? {
+                  displayName: this.normalizeOptionalText(dto.displayName),
+                }
+              : {}),
 
-            ...(dto.description !== undefined && {
-              description: this.normalizeOptionalText(dto.description),
-            }),
+            ...(dto.description !== undefined
+              ? {
+                  description: this.normalizeOptionalText(dto.description),
+                }
+              : {}),
 
-            ...(dto.priority !== undefined && {
-              priority: dto.priority,
-            }),
+            ...(dto.priority !== undefined
+              ? {
+                  priority: dto.priority,
+                }
+              : {}),
 
-            ...(dto.weight !== undefined && {
-              weight: dto.weight,
-            }),
+            ...(dto.weight !== undefined
+              ? {
+                  weight: dto.weight,
+                }
+              : {}),
 
-            ...(dto.maxOutputTokens !== undefined && {
-              maxOutputTokens: dto.maxOutputTokens,
-            }),
+            ...(dto.maxOutputTokens !== undefined
+              ? {
+                  maxOutputTokens: dto.maxOutputTokens,
+                }
+              : {}),
 
-            ...(dto.inputCostPerMillion !== undefined && {
-              inputCostPerMillion: dto.inputCostPerMillion,
-            }),
+            ...(dto.supportsJsonOutput !== undefined
+              ? {
+                  supportsJsonOutput: dto.supportsJsonOutput,
+                }
+              : {}),
 
-            ...(dto.outputCostPerMillion !== undefined && {
-              outputCostPerMillion: dto.outputCostPerMillion,
-            }),
+            ...(dto.supportsTools !== undefined
+              ? {
+                  supportsTools: dto.supportsTools,
+                }
+              : {}),
 
-            /*
-             * Reset internal health state only when provider
-             * connection configuration changes.
-             *
-             * Administrative fields such as displayName, priority,
-             * weight, or pricing do not require a health reset.
-             */
-            ...(shouldResetHealth && {
-              healthStatus: AiModelHealthStatus.UNKNOWN,
+            ...(dto.supportsVision !== undefined
+              ? {
+                  supportsVision: dto.supportsVision,
+                }
+              : {}),
 
-              consecutiveFailures: 0,
+            ...(dto.contextWindow !== undefined
+              ? {
+                  contextWindow: dto.contextWindow,
+                }
+              : {}),
 
-              lastHealthCheckAt: null,
+            ...(dto.inputCostPerMillion !== undefined
+              ? {
+                  inputCostPerMillion: dto.inputCostPerMillion,
+                }
+              : {}),
 
-              lastFailureAt: null,
-            }),
+            ...(dto.outputCostPerMillion !== undefined
+              ? {
+                  outputCostPerMillion: dto.outputCostPerMillion,
+                }
+              : {}),
+
+            ...(shouldResetHealth
+              ? {
+                  healthStatus: AiModelHealthStatus.UNKNOWN,
+
+                  consecutiveFailures: 0,
+
+                  lastHealthCheckAt: null,
+
+                  lastFailureAt: null,
+                }
+              : {}),
           },
         });
 
         await this.auditService.createLog(
           {
-            actorId,
+            actorId: normalizedActorId,
 
             action: AuditAction.ADMIN_UPDATE_AI_MODEL,
 
             targetType: AuditTargetType.AI_MODEL,
 
-            targetId: id,
+            targetId: normalizedId,
 
             oldValue: this.toAuditJson(oldModel),
 
@@ -434,21 +488,15 @@ export class AiModelsService {
   }
 
   /**
-   * Sets one AI model as the system default.
-   *
-   * Requirements:
-   * - The model must exist.
-   * - The model must be active.
-   * - The model must not be UNAVAILABLE.
-   *
-   * The operation uses serializable isolation to protect against
-   * concurrent default-model changes.
-   *
-   * PostgreSQL serialization conflicts are retried automatically.
+   * Sets one active and routable model as the default model.
    */
   async setDefault(id: string, actorId: string): Promise<AiModel> {
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
     return this.runSerializableTransaction(async (tx) => {
-      const selectedModel = await this.findOneOrThrow(tx, id);
+      const selectedModel = await this.findOneOrThrow(tx, normalizedId);
 
       if (!selectedModel.isActive) {
         throw new BadRequestException(
@@ -463,8 +511,8 @@ export class AiModelsService {
       }
 
       /*
-       * The requested state already exists, so no database update
-       * or duplicate audit entry is required.
+       * No database mutation or duplicate audit log is required when
+       * the selected model is already default.
        */
       if (selectedModel.isDefault) {
         return selectedModel;
@@ -476,9 +524,6 @@ export class AiModelsService {
         },
       });
 
-      /*
-       * Clear the previous default inside the same transaction.
-       */
       await tx.aiModel.updateMany({
         where: {
           isDefault: true,
@@ -491,7 +536,7 @@ export class AiModelsService {
 
       const newDefault = await tx.aiModel.update({
         where: {
-          id,
+          id: normalizedId,
         },
 
         data: {
@@ -501,15 +546,15 @@ export class AiModelsService {
 
       await this.auditService.createLog(
         {
-          actorId,
+          actorId: normalizedActorId,
 
           action: AuditAction.ADMIN_SET_DEFAULT_AI_MODEL,
 
           targetType: AuditTargetType.AI_MODEL,
 
-          targetId: id,
+          targetId: normalizedId,
 
-          oldValue: this.toAuditJson(oldDefault),
+          oldValue: oldDefault ? this.toAuditJson(oldDefault) : undefined,
 
           newValue: this.toAuditJson(newDefault),
         },
@@ -521,51 +566,25 @@ export class AiModelsService {
   }
 
   /**
-   * Returns the configured active default AI model.
-   *
-   * This method is intended for administrative inspection.
-   *
-   * Runtime AI execution should use AiModelRoutingService because
-   * routing also considers model health and fallback models.
-   */
-  async getDefaultModel(): Promise<AiModel> {
-    const model = await this.prisma.aiModel.findFirst({
-      where: {
-        isDefault: true,
-        isActive: true,
-      },
-    });
-
-    if (!model) {
-      throw new NotFoundException('No active default AI model is configured.');
-    }
-
-    return model;
-  }
-
-  /**
-   * Deactivates a non-default AI model.
-   *
-   * The default model cannot be deactivated because that would
-   * leave the system default configuration invalid.
-   *
-   * The update and audit log are committed atomically.
+   * Deactivates one non-default AI model.
    */
   async deactivate(id: string, actorId: string): Promise<AiModel> {
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const oldModel = await this.findOneOrThrow(tx, id);
+        const oldModel = await this.findOneOrThrow(tx, normalizedId);
 
         if (oldModel.isDefault) {
-          throw new BadRequestException(
-            'The default AI model cannot be deactivated. Select another default model first.',
+          throw new ConflictException(
+            'The default AI model cannot be deactivated.',
           );
         }
 
         /*
-         * The model is already inactive.
-         *
-         * Return it without creating a redundant audit log.
+         * Avoid an unnecessary update and duplicate audit log.
          */
         if (!oldModel.isActive) {
           return oldModel;
@@ -573,7 +592,7 @@ export class AiModelsService {
 
         const updatedModel = await tx.aiModel.update({
           where: {
-            id,
+            id: normalizedId,
           },
 
           data: {
@@ -583,13 +602,13 @@ export class AiModelsService {
 
         await this.auditService.createLog(
           {
-            actorId,
+            actorId: normalizedActorId,
 
             action: AuditAction.ADMIN_DEACTIVATE_AI_MODEL,
 
             targetType: AuditTargetType.AI_MODEL,
 
-            targetId: id,
+            targetId: normalizedId,
 
             oldValue: this.toAuditJson(oldModel),
 
@@ -606,24 +625,19 @@ export class AiModelsService {
   }
 
   /**
-   * Activates an inactive AI model.
-   *
-   * Activation does not automatically make the model default.
-   *
-   * A reactivated model returns to UNKNOWN health because its
-   * provider availability must be established again.
-   *
-   * The update and audit log are committed atomically.
+   * Activates one inactive AI model and resets its health state.
    */
   async activate(id: string, actorId: string): Promise<AiModel> {
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const oldModel = await this.findOneOrThrow(tx, id);
+        const oldModel = await this.findOneOrThrow(tx, normalizedId);
 
         /*
-         * The model is already active.
-         *
-         * Return it without creating a redundant audit log.
+         * Avoid an unnecessary update and duplicate audit log.
          */
         if (oldModel.isActive) {
           return oldModel;
@@ -631,7 +645,7 @@ export class AiModelsService {
 
         const updatedModel = await tx.aiModel.update({
           where: {
-            id,
+            id: normalizedId,
           },
 
           data: {
@@ -649,13 +663,13 @@ export class AiModelsService {
 
         await this.auditService.createLog(
           {
-            actorId,
+            actorId: normalizedActorId,
 
             action: AuditAction.ADMIN_ACTIVATE_AI_MODEL,
 
             targetType: AuditTargetType.AI_MODEL,
 
-            targetId: id,
+            targetId: normalizedId,
 
             oldValue: this.toAuditJson(oldModel),
 
@@ -672,62 +686,91 @@ export class AiModelsService {
   }
 
   /**
-   * Returns active and routable fallback models.
-   *
-   * Excludes:
-   * - The configured default model.
-   * - Inactive models.
-   * - UNAVAILABLE models.
-   *
-   * Higher-priority models are returned first.
+   * Returns the active and routable default model.
    */
-  async getFallbackModels(): Promise<AiModel[]> {
-    return this.prisma.aiModel.findMany({
+  async getDefaultModel(): Promise<AiModel> {
+    const model = await this.prisma.aiModel.findFirst({
       where: {
+        isDefault: true,
+
         isActive: true,
 
-        isDefault: false,
+        providerKey: {
+          in: [...SUPPORTED_AI_PROVIDER_KEYS],
+        },
 
         healthStatus: {
           in: [...ROUTABLE_HEALTH_STATUSES],
         },
       },
-
-      orderBy: [...AI_MODEL_FALLBACK_ORDER],
     });
+
+    if (!model) {
+      throw new NotFoundException(
+        'No active and routable default AI model is configured.',
+      );
+    }
+
+    return model;
   }
 
   /**
    * Returns all active and routable AI models.
-   *
-   * The configured default model is returned first, followed by
-   * fallback models ordered by priority.
    */
   async getRoutableModels(): Promise<AiModel[]> {
     return this.prisma.aiModel.findMany({
       where: {
         isActive: true,
 
+        providerKey: {
+          in: [...SUPPORTED_AI_PROVIDER_KEYS],
+        },
+
         healthStatus: {
           in: [...ROUTABLE_HEALTH_STATUSES],
         },
       },
 
-      orderBy: [
-        {
-          isDefault: 'desc',
-        },
-
-        ...AI_MODEL_FALLBACK_ORDER,
-      ],
+      orderBy: AI_MODEL_FALLBACK_ORDER,
     });
   }
 
   /**
-   * Finds one AI model using either PrismaService or a Prisma
-   * transaction client.
+   * Returns active and routable fallback models.
    *
-   * Throws NotFoundException when the model does not exist.
+   * @param excludedModelId Optional model identifier excluded from
+   * the returned results.
+   */
+  async getFallbackModels(excludedModelId?: string): Promise<AiModel[]> {
+    const normalizedExcludedId = this.normalizeOptionalText(excludedModelId);
+
+    return this.prisma.aiModel.findMany({
+      where: {
+        isActive: true,
+
+        providerKey: {
+          in: [...SUPPORTED_AI_PROVIDER_KEYS],
+        },
+
+        healthStatus: {
+          in: [...ROUTABLE_HEALTH_STATUSES],
+        },
+
+        ...(normalizedExcludedId
+          ? {
+              id: {
+                not: normalizedExcludedId,
+              },
+            }
+          : {}),
+      },
+
+      orderBy: AI_MODEL_FALLBACK_ORDER,
+    });
+  }
+
+  /**
+   * Finds one model using either PrismaService or a Prisma transaction.
    */
   private async findOneOrThrow(
     client: AiModelLookupClient,
@@ -747,11 +790,8 @@ export class AiModelsService {
   }
 
   /**
-   * Executes a serializable Prisma transaction.
-   *
-   * PostgreSQL serialization conflicts use Prisma error P2034.
-   *
-   * Retryable conflicts are retried up to the configured limit.
+   * Runs a serializable transaction with retry support for Prisma
+   * transaction-conflict error P2034.
    */
   private async runSerializableTransaction<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -760,7 +800,7 @@ export class AiModelsService {
 
     for (
       let attempt = 1;
-      attempt <= MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS;
+      attempt <= AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
       attempt += 1
     ) {
       try {
@@ -770,132 +810,84 @@ export class AiModelsService {
       } catch (error: unknown) {
         lastError = error;
 
-        const isRetryableConflict = this.isPrismaErrorCode(error, 'P2034');
+        const retryable =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034';
 
         if (
-          !isRetryableConflict ||
-          attempt === MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS
+          !retryable ||
+          attempt === AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS
         ) {
           this.handlePrismaError(error);
         }
       }
     }
 
-    /*
-     * This line is theoretically unreachable, but it satisfies
-     * strict TypeScript control-flow analysis.
-     */
     this.handlePrismaError(lastError);
   }
 
   /**
-   * Converts a value into Prisma-compatible JSON.
+   * Normalizes and verifies one backend provider-registry key.
    *
-   * Date and Prisma Decimal values are serialized safely.
+   * @throws BadRequestException When no provider adapter is registered
+   * for the supplied key.
    */
-  private toAuditJson(value: unknown): Prisma.InputJsonValue | null {
+  private resolveProviderKey(providerKey: string): AiProviderKey {
+    const normalizedProviderKey = normalizeAiProviderKey(providerKey);
+
+    if (!normalizedProviderKey) {
+      throw new BadRequestException(
+        `Unsupported AI provider key: ${providerKey}`,
+      );
+    }
+
+    return normalizedProviderKey;
+  }
+
+  /**
+   * Normalizes optional text to a trimmed string or null.
+   */
+  private normalizeOptionalText(
+    value: string | null | undefined,
+  ): string | null {
     if (value === null || value === undefined) {
       return null;
     }
 
+    const normalizedValue = value.trim();
+
+    return normalizedValue || null;
+  }
+
+  /**
+   * Validates and normalizes a required identifier.
+   */
+  private requireIdentifier(value: string, fieldName: string): string {
+    const normalizedValue = value.trim();
+
+    if (!normalizedValue) {
+      throw new BadRequestException(`${fieldName} is required.`);
+    }
+
+    return normalizedValue;
+  }
+
+  /**
+   * Converts a JavaScript value into a Prisma-compatible audit JSON
+   * value.
+   */
+  private toAuditJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
   /**
-   * Normalizes optional text for persistence.
-   *
-   * Rules:
-   * - undefined means the property was not provided.
-   * - Empty or whitespace-only values become null.
-   * - Non-empty values have already been trimmed by the DTO.
-   */
-  private normalizeOptionalText(value?: string): string | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    return value.length > 0 ? value : null;
-  }
-
-  /**
-   * Checks whether an unknown error is a Prisma known-request
-   * error with the provided code.
-   */
-  private isPrismaErrorCode(error: unknown, code: string): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === code
-    );
-  }
-
-  /**
-   * Checks whether unique-constraint metadata contains one of the
-   * possible field or database-column names.
-   *
-   * Prisma may return:
-   * - Prisma field names such as modelName.
-   * - Database column names such as model_name.
-   * - A database index name.
-   *
-   * Supporting both forms keeps conflict handling stable across
-   * Prisma and PostgreSQL versions.
-   */
-  private includesUniqueField(
-    target: readonly string[],
-    ...possibleNames: string[]
-  ): boolean {
-    return possibleNames.some((name) => target.includes(name));
-  }
-
-  /**
-   * Maps known Prisma errors into safe HTTP exceptions.
+   * Maps known Prisma errors to safe HTTP exceptions.
    */
   private handlePrismaError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
-        const target = this.getUniqueTarget(error);
-
-        const hasProvider = this.includesUniqueField(target, 'provider');
-
-        const hasModelName = this.includesUniqueField(
-          target,
-          'modelName',
-          'model_name',
-        );
-
-        const hasApiModelId = this.includesUniqueField(
-          target,
-          'apiModelId',
-          'api_model_id',
-        );
-
-        const hasDefaultConstraint = this.includesUniqueField(
-          target,
-          'isDefault',
-          'is_default',
-          'ai_models_single_default_idx',
-        );
-
-        if (hasProvider && hasModelName) {
-          throw new ConflictException(
-            'An AI model with the same provider and model name already exists.',
-          );
-        }
-
-        if (hasProvider && hasApiModelId) {
-          throw new ConflictException(
-            'An AI model with the same provider and API model identifier already exists.',
-          );
-        }
-
-        if (hasDefaultConstraint) {
-          throw new ConflictException(
-            'Another AI model is already configured as default.',
-          );
-        }
-
         throw new ConflictException(
-          'An AI model with the same unique configuration already exists.',
+          'An AI model with the same provider key and API model ID already exists.',
         );
       }
 
@@ -911,30 +903,5 @@ export class AiModelsService {
     }
 
     throw error;
-  }
-
-  /**
-   * Normalizes Prisma unique-constraint metadata.
-   *
-   * Depending on the database and Prisma version, meta.target may
-   * be returned as:
-   * - A string field name.
-   * - An array of field names.
-   * - A database index name.
-   */
-  private getUniqueTarget(
-    error: Prisma.PrismaClientKnownRequestError,
-  ): string[] {
-    const target = error.meta?.target;
-
-    if (typeof target === 'string') {
-      return [target];
-    }
-
-    if (Array.isArray(target)) {
-      return target.filter((item): item is string => typeof item === 'string');
-    }
-
-    return [];
   }
 }

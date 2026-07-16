@@ -1,8 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
@@ -11,9 +7,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  *
  * @author Malak
  */
-export class GetSocialCommentsQueryDto
-  extends ListQueryDto
-{
+export class GetSocialCommentsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsUUID('4')
   postId?: string;

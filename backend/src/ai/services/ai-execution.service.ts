@@ -3,8 +3,11 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
+
 import { ConfigService } from '@nestjs/config';
+
 import { AiModel, AiRoutingStrategy } from '@prisma/client';
+
 import { randomUUID } from 'crypto';
 
 import { AiModelHealthService } from '../../ai-models/ai-model-health.service';
@@ -18,14 +21,24 @@ import {
   DEFAULT_AI_MAX_RETRIES_PER_MODEL,
   DEFAULT_AI_REQUEST_TIMEOUT_MS,
   DEFAULT_AI_RETRY_BASE_DELAY_MS,
+  MAX_AI_REQUEST_TIMEOUT_MS,
   MAX_AI_STRUCTURED_OUTPUT_REPAIRS,
+  MIN_AI_REQUEST_TIMEOUT_MS,
 } from '../constants';
+
+import {
+  normalizeAiProviderKey,
+  type AiProviderKey,
+} from '../constants/ai-provider.constants';
 
 import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../errors/ai-provider.error';
+
 import { AiProvider } from '../providers/ai-provider.interface';
+
 import { AiExecutionInput } from '../types/ai-execution-input.type';
 import { AiExecutionResult } from '../types/ai-execution-result.type';
+
 import {
   AiProviderGenerateResult,
   AiResponseFormat,
@@ -33,45 +46,102 @@ import {
 
 import { AiProviderFactoryService } from './ai-provider-factory.service';
 import { AiResponseRepairService } from './ai-response-repair.service';
+
 import {
   AiStructuredOutputService,
   StructuredOutputValidationFailure,
 } from './ai-structured-output.service';
+
 import { AiTimeoutService } from './ai-timeout.service';
 import { ExternalAiLogService } from './external-ai-log.service';
 
+/**
+ * Validated response text and its original provider metadata.
+ */
 type ValidatedProviderResult = {
   readonly text: string;
   readonly providerResult: AiProviderGenerateResult;
 };
 
 /**
+ * Internal provider-request contract.
+ *
+ * This contract prevents the execution service from passing arbitrary
+ * business values directly to provider adapters.
+ */
+type ExecuteProviderRequestInput = {
+  readonly userPrompt: string;
+  readonly systemInstruction?: string;
+  readonly maxOutputTokens: number;
+  readonly temperature?: number;
+  readonly responseFormat?: AiResponseFormat;
+  readonly responseSchema?: AiExecutionInput['responseSchema'];
+  readonly responseSchemaName?: string;
+};
+
+/**
  * Central service responsible for executing logical AI operations.
+ *
+ * Responsibilities:
+ * - Validate execution input.
+ * - Route available AI models.
+ * - Resolve provider adapters through providerKey.
+ * - Apply one cancellable timeout per external request.
+ * - Retry temporary provider failures.
+ * - Validate structured output.
+ * - Perform one bounded structured-output repair request.
+ * - Fall back to other routable models.
+ * - Update model health.
+ * - Persist one ExternalApiLog per external request.
+ *
+ * The service does not:
+ * - Build business prompts.
+ * - Persist generated ideas.
+ * - Deduct credits.
+ * - Resolve administrator permissions.
  *
  * @author Malak
  */
 @Injectable()
 export class AiExecutionService {
+  /**
+   * Maximum duration of one external provider request.
+   */
   private readonly timeoutMs: number;
 
+  /**
+   * Maximum retries after the first attempt for one model.
+   */
   private readonly maxRetriesPerModel: number;
 
+  /**
+   * Base delay used for exponential retry backoff.
+   */
   private readonly retryBaseDelayMs: number;
 
   constructor(
     private readonly providerFactory: AiProviderFactoryService,
+
     private readonly modelRoutingService: AiModelRoutingService,
+
     private readonly modelHealthService: AiModelHealthService,
+
     private readonly timeoutService: AiTimeoutService,
+
     private readonly externalLogService: ExternalAiLogService,
+
     private readonly structuredOutputService: AiStructuredOutputService,
+
     private readonly responseRepairService: AiResponseRepairService,
+
     configService: ConfigService,
   ) {
-    this.timeoutMs = this.resolvePositiveIntegerConfig(
+    this.timeoutMs = this.resolveBoundedPositiveIntegerConfig(
       configService,
       'AI_REQUEST_TIMEOUT_MS',
       DEFAULT_AI_REQUEST_TIMEOUT_MS,
+      MIN_AI_REQUEST_TIMEOUT_MS,
+      MAX_AI_REQUEST_TIMEOUT_MS,
     );
 
     this.maxRetriesPerModel = this.resolveNonNegativeIntegerConfig(
@@ -87,6 +157,15 @@ export class AiExecutionService {
     );
   }
 
+  /**
+   * Executes one complete logical AI operation.
+   *
+   * One logical operation may contain multiple external requests due
+   * to retries, structured-output repair, or model fallback.
+   *
+   * @param input Business and provider execution contract.
+   * @returns Final successful normalized AI response.
+   */
   async execute(input: AiExecutionInput): Promise<AiExecutionResult> {
     this.validateExecutionInput(input);
 
@@ -122,9 +201,14 @@ export class AiExecutionService {
 
     for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
       const model = models[modelIndex];
+
       const fallbackUsed = modelIndex > 0;
 
-      const provider = this.providerFactory.getProvider(model.provider);
+      /**
+       * Prisma stores providerKey as a string. The factory performs
+       * normalization, validation, and adapter resolution.
+       */
+      const provider = this.providerFactory.getProvider(model.providerKey);
 
       const totalAttemptsForModel = this.maxRetriesPerModel + 1;
 
@@ -147,20 +231,35 @@ export class AiExecutionService {
             model,
             {
               userPrompt: input.userPrompt,
+
               systemInstruction: input.systemInstruction,
+
               maxOutputTokens: this.resolveMaxOutputTokens(
                 input.maxOutputTokens,
                 model,
               ),
+
               temperature: input.temperature,
+
               responseFormat: input.responseFormat,
+
+              /**
+               * Providers that support native structured output may
+               * use the schema. AJV remains the final application-level
+               * validator.
+               */
+              responseSchema: input.responseSchema,
+
+              responseSchemaName: input.responseSchemaName,
             },
           );
+
+          this.validateProviderMetadata(provider, model, providerResult);
 
           const validation = this.validateProviderResult(providerResult, input);
 
           if (validation.success) {
-            const successfulResult = {
+            const successfulResult: ValidatedProviderResult = {
               text: validation.text,
               providerResult,
             };
@@ -172,7 +271,7 @@ export class AiExecutionService {
               model,
               input,
               successfulResult,
-              Date.now() - attemptStartedAt,
+              providerResult.providerLatencyMs,
             );
 
             return this.buildExecutionResult(
@@ -201,7 +300,7 @@ export class AiExecutionService {
             input,
             providerResult,
             invalidOutputError,
-            Date.now() - attemptStartedAt,
+            providerResult.providerLatencyMs,
           );
 
           if (MAX_AI_STRUCTURED_OUTPUT_REPAIRS > 0) {
@@ -221,6 +320,11 @@ export class AiExecutionService {
             );
 
             if (repairResult.success) {
+              /**
+               * The repair logging call does not update health directly.
+               * Health is updated here after the complete model flow
+               * succeeds.
+               */
               await Promise.allSettled([
                 this.modelHealthService.recordSuccess(model.id),
               ]);
@@ -240,6 +344,10 @@ export class AiExecutionService {
             lastError = repairResult.error;
           }
 
+          /**
+           * Invalid structured output is not processed by the normal
+           * retry loop. A dedicated repair request was already used.
+           */
           break;
         } catch (error: unknown) {
           const normalizedError = this.normalizeError(error);
@@ -292,44 +400,82 @@ export class AiExecutionService {
     );
   }
 
+  /**
+   * Executes one provider request with a cancellable per-attempt
+   * timeout.
+   */
   private executeProviderRequest(
     provider: AiProvider,
     model: AiModel,
-    request: {
-      readonly userPrompt: string;
-      readonly systemInstruction?: string;
-      readonly maxOutputTokens: number;
-      readonly temperature?: number;
-      readonly responseFormat?: AiResponseFormat;
-    },
+    request: ExecuteProviderRequestInput,
   ): Promise<AiProviderGenerateResult> {
     return this.timeoutService.execute(
       (signal) =>
         provider.generate({
           apiModelId: model.apiModelId,
+
           userPrompt: request.userPrompt,
+
           systemInstruction: request.systemInstruction,
+
           maxOutputTokens: request.maxOutputTokens,
+
           temperature: request.temperature,
+
           responseFormat: request.responseFormat,
+
+          responseSchema: request.responseSchema,
+
+          responseSchemaName: request.responseSchemaName,
+
           signal,
         }),
+
       this.timeoutMs,
     );
   }
 
   /**
-   * Validates one provider result according to the response format
-   * requested by the calling business module.
+   * Verifies that adapter and response metadata match the model selected
+   * by the routing layer.
    *
-   * Plain-text responses are accepted without JSON parsing.
-   *
-   * JSON responses are parsed and validated against the caller-supplied
-   * provider-neutral response schema. Validation is therefore no
-   * longer coupled to idea generation or unlock prompt types.
+   * This protects logging and result metadata from an incorrectly
+   * implemented provider adapter.
+   */
+  private validateProviderMetadata(
+    provider: AiProvider,
+    model: AiModel,
+    result: AiProviderGenerateResult,
+  ): void {
+    const expectedProviderKey = this.requireProviderKey(model.providerKey);
+
+    if (
+      provider.providerKey !== expectedProviderKey ||
+      result.providerKey !== expectedProviderKey
+    ) {
+      throw new AiProviderError(
+        'The AI provider returned inconsistent provider metadata.',
+        AiProviderErrorCode.UNKNOWN,
+        false,
+      );
+    }
+
+    if (result.apiModelId !== model.apiModelId) {
+      throw new AiProviderError(
+        'The AI provider returned inconsistent model metadata.',
+        AiProviderErrorCode.UNKNOWN,
+        false,
+      );
+    }
+  }
+
+  /**
+   * Validates one provider result according to the expected response
+   * format and the caller-supplied JSON Schema.
    */
   private validateProviderResult(
     providerResult: AiProviderGenerateResult,
+
     input: AiExecutionInput,
   ):
     | {
@@ -347,11 +493,12 @@ export class AiExecutionService {
       };
     }
 
-    /*
-     * validateExecutionInput guarantees that both values exist for
-     * structured JSON operations.
+    /**
+     * validateExecutionInput guarantees both values are available for
+     * JSON structured-output operations.
      */
     const responseSchema = input.responseSchema!;
+
     const responseSchemaName = input.responseSchemaName!.trim();
 
     const validation = this.structuredOutputService.safeValidateSchema(
@@ -367,22 +514,28 @@ export class AiExecutionService {
       };
     }
 
-    /*
-     * Return normalized validated JSON without Markdown fences or
-     * provider commentary.
-     */
     return {
       success: true,
+
+      /**
+       * Return normalized validated JSON without provider commentary,
+       * Markdown fences, or additional unsupported text.
+       */
       text: JSON.stringify(validation.data),
     };
   }
 
+  /**
+   * Executes one bounded structured-output repair request.
+   */
   private async executeRepairAttempt(
     provider: AiProvider,
     model: AiModel,
     input: AiExecutionInput,
     invalidResponse: string,
+
     validationFailure: StructuredOutputValidationFailure,
+
     operationId: string,
     attemptNumber: number,
     fallbackUsed: boolean,
@@ -398,7 +551,9 @@ export class AiExecutionService {
   > {
     const repairPrompt = this.responseRepairService.buildRepairPrompt({
       originalPrompt: input.userPrompt,
+
       invalidResponse,
+
       validationIssues: validationFailure.issues,
     });
 
@@ -410,16 +565,30 @@ export class AiExecutionService {
         model,
         {
           userPrompt: repairPrompt,
+
           systemInstruction:
             this.responseRepairService.buildSystemInstruction(),
+
           maxOutputTokens: this.resolveMaxOutputTokens(
             input.maxOutputTokens,
             model,
           ),
+
           temperature: AI_STRUCTURED_OUTPUT_REPAIR_TEMPERATURE,
+
           responseFormat: AiResponseFormat.JSON,
+
+          /**
+           * Repair must target the same structured-output contract as
+           * the original operation.
+           */
+          responseSchema: input.responseSchema,
+
+          responseSchemaName: input.responseSchemaName,
         },
       );
+
+      this.validateProviderMetadata(provider, model, providerResult);
 
       const validation = this.validateProviderResult(providerResult, input);
 
@@ -434,7 +603,7 @@ export class AiExecutionService {
           input,
           providerResult,
           error,
-          Date.now() - repairStartedAt,
+          providerResult.providerLatencyMs,
         );
 
         return {
@@ -455,7 +624,12 @@ export class AiExecutionService {
         model,
         input,
         result,
-        Date.now() - repairStartedAt,
+        providerResult.providerLatencyMs,
+
+        /**
+         * Model health is updated by the caller after the complete
+         * repair flow succeeds.
+         */
         false,
       );
 
@@ -483,6 +657,10 @@ export class AiExecutionService {
     }
   }
 
+  /**
+   * Persists one successful provider request and optionally updates
+   * model health.
+   */
   private async recordSuccessfulAttempt(
     operationId: string,
     attemptNumber: number,
@@ -493,6 +671,8 @@ export class AiExecutionService {
     responseTimeMs: number,
     updateHealth = true,
   ): Promise<void> {
+    const providerKey = this.requireProviderKey(model.providerKey);
+
     const costEstimate = this.calculateActualCost(
       model,
       result.providerResult.inputTokens,
@@ -504,18 +684,31 @@ export class AiExecutionService {
         operationId,
         attemptNumber,
         fallbackUsed,
+
         aiModelId: model.id,
-        provider: model.provider,
+
+        providerKey,
+
         apiModelId: model.apiModelId,
+
         requestType: input.requestType,
+
         userId: input.userId,
+
         ideaId: input.ideaId,
+
         requestId: result.providerResult.requestId,
+
         endpoint: AI_TEXT_GENERATION_ENDPOINT,
+
         isSuccess: true,
+
         responseTimeMs,
+
         inputTokens: result.providerResult.inputTokens,
+
         outputTokens: result.providerResult.outputTokens,
+
         costEstimate,
       }),
     ];
@@ -524,19 +717,31 @@ export class AiExecutionService {
       operations.push(this.modelHealthService.recordSuccess(model.id));
     }
 
+    /**
+     * Logging or health maintenance must not invalidate a provider
+     * response that already completed successfully.
+     */
     await Promise.allSettled(operations);
   }
 
+  /**
+   * Persists a provider response that failed structured-output
+   * validation.
+   */
   private async recordFailedStructuredAttempt(
     operationId: string,
     attemptNumber: number,
     fallbackUsed: boolean,
     model: AiModel,
     input: AiExecutionInput,
+
     providerResult: AiProviderGenerateResult,
+
     error: AiProviderError,
     responseTimeMs: number,
   ): Promise<void> {
+    const providerKey = this.requireProviderKey(model.providerKey);
+
     const costEstimate = this.calculateActualCost(
       model,
       providerResult.inputTokens,
@@ -548,24 +753,42 @@ export class AiExecutionService {
         operationId,
         attemptNumber,
         fallbackUsed,
+
         aiModelId: model.id,
-        provider: model.provider,
+
+        providerKey,
+
         apiModelId: model.apiModelId,
+
         requestType: input.requestType,
+
         userId: input.userId,
+
         ideaId: input.ideaId,
+
         requestId: providerResult.requestId,
+
         endpoint: AI_TEXT_GENERATION_ENDPOINT,
+
         isSuccess: false,
+
         responseTimeMs,
+
         inputTokens: providerResult.inputTokens,
+
         outputTokens: providerResult.outputTokens,
+
         costEstimate,
+
         errorMessage: `[${error.code}] ${error.message}`,
       }),
     ]);
   }
 
+  /**
+   * Persists one provider request that failed before producing a usable
+   * response.
+   */
   private async recordFailedProviderAttempt(
     operationId: string,
     attemptNumber: number,
@@ -575,27 +798,44 @@ export class AiExecutionService {
     error: AiProviderError,
     responseTimeMs: number,
   ): Promise<void> {
+    const providerKey = this.requireProviderKey(model.providerKey);
+
     await Promise.allSettled([
       this.externalLogService.create({
         operationId,
         attemptNumber,
         fallbackUsed,
+
         aiModelId: model.id,
-        provider: model.provider,
+
+        providerKey,
+
         apiModelId: model.apiModelId,
+
         requestType: input.requestType,
+
         userId: input.userId,
+
         ideaId: input.ideaId,
+
         requestId: error.requestId,
+
         endpoint: AI_TEXT_GENERATION_ENDPOINT,
+
         statusCode: error.statusCode,
+
         isSuccess: false,
+
         responseTimeMs,
+
         errorMessage: `[${error.code}] ${error.message}`,
       }),
     ]);
   }
 
+  /**
+   * Creates the final successful logical-operation result.
+   */
   private buildExecutionResult(
     result: ValidatedProviderResult,
     operationId: string,
@@ -604,6 +844,8 @@ export class AiExecutionService {
     attemptCount: number,
     operationStartedAt: number,
   ): AiExecutionResult {
+    const providerKey = this.requireProviderKey(model.providerKey);
+
     const costEstimate = this.calculateActualCost(
       model,
       result.providerResult.inputTokens,
@@ -612,20 +854,35 @@ export class AiExecutionService {
 
     return {
       text: result.text,
+
       operationId,
+
       aiModelId: model.id,
-      provider: model.provider,
+
+      providerKey,
+
       apiModelId: model.apiModelId,
+
       inputTokens: result.providerResult.inputTokens,
+
       outputTokens: result.providerResult.outputTokens,
+
       costEstimate,
+
       responseTimeMs: Date.now() - operationStartedAt,
+
       finishReason: result.providerResult.finishReason,
+
       fallbackUsed,
+
       attemptCount,
     };
   }
 
+  /**
+   * Converts structured-output validation issues into a normalized
+   * provider error.
+   */
   private createStructuredOutputError(
     failure: StructuredOutputValidationFailure,
   ): AiProviderError {
@@ -638,25 +895,49 @@ export class AiExecutionService {
       issueSummary
         ? `The AI provider returned invalid structured output. ${issueSummary}`
         : 'The AI provider returned invalid structured output.',
+
       AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT,
+
       false,
     );
   }
 
   /**
-   * Validates the AI execution contract before model routing or
-   * provider calls begin.
-   *
-   * Structured JSON validation is schema-driven and does not depend
-   * on a specific PromptType. This allows the same runtime to serve:
-   * - Idea generation.
-   * - Idea unlock.
-   * - NLP enhancement.
-   * - Future structured AI operations.
+   * Validates the complete execution contract before model routing.
    */
   private validateExecutionInput(input: AiExecutionInput): void {
     if (!input.userPrompt.trim()) {
       throw new BadRequestException('userPrompt must not be empty.');
+    }
+
+    if (
+      input.systemInstruction !== undefined &&
+      !input.systemInstruction.trim()
+    ) {
+      throw new BadRequestException(
+        'systemInstruction must not be blank when provided.',
+      );
+    }
+
+    this.validateOptionalPositiveInteger(
+      input.maxOutputTokens,
+      'maxOutputTokens',
+    );
+
+    this.validateOptionalPositiveInteger(
+      input.estimatedOutputTokens,
+      'estimatedOutputTokens',
+    );
+
+    if (
+      input.temperature !== undefined &&
+      (!Number.isFinite(input.temperature) ||
+        input.temperature < 0 ||
+        input.temperature > 2)
+    ) {
+      throw new BadRequestException(
+        'temperature must be a finite number between 0 and 2.',
+      );
     }
 
     if (input.responseFormat !== AiResponseFormat.JSON) {
@@ -665,8 +946,7 @@ export class AiExecutionService {
         input.responseSchemaName !== undefined
       ) {
         throw new BadRequestException(
-          'responseSchema and responseSchemaName may only be used ' +
-            'when responseFormat is JSON.',
+          'responseSchema and responseSchemaName may only be used when responseFormat is JSON.',
         );
       }
 
@@ -695,8 +975,7 @@ export class AiExecutionService {
 
     if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(responseSchemaName)) {
       throw new BadRequestException(
-        'responseSchemaName must start with a letter and contain ' +
-          'only letters, numbers, underscores, or hyphens.',
+        'responseSchemaName must start with a letter and contain only letters, numbers, underscores, or hyphens.',
       );
     }
 
@@ -711,8 +990,13 @@ export class AiExecutionService {
     }
   }
 
+  /**
+   * Resolves the request output-token limit without exceeding the
+   * selected model configuration.
+   */
   private resolveMaxOutputTokens(
     requestedTokens: number | undefined,
+
     model: AiModel,
   ): number {
     if (requestedTokens === undefined) {
@@ -722,54 +1006,68 @@ export class AiExecutionService {
     return Math.min(requestedTokens, model.maxOutputTokens);
   }
 
+  /**
+   * Validates and narrows a provider key loaded from the database.
+   */
+  private requireProviderKey(providerKey: string): AiProviderKey {
+    const normalizedProviderKey = normalizeAiProviderKey(providerKey);
+
+    if (!normalizedProviderKey) {
+      throw new ServiceUnavailableException(
+        `AI model references an unsupported provider: ${providerKey}`,
+      );
+    }
+
+    return normalizedProviderKey;
+  }
+
+  /**
+   * Converts unknown exceptions into normalized provider errors.
+   */
   private normalizeError(error: unknown): AiProviderError {
     if (error instanceof AiProviderError) {
       return error;
     }
 
     return new AiProviderError(
-      error instanceof Error ? error.message : 'Unexpected AI provider error.',
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Unexpected AI provider error.',
+
       AiProviderErrorCode.UNKNOWN,
+
       true,
+
       undefined,
+
       undefined,
+
       error,
     );
   }
 
   /**
-   * Determines whether execution may continue with another candidate
-   * model.
+   * Determines whether another routed model may be attempted.
    *
-   * Insufficient quota is permanent for the current provider account,
-   * but fallback to another configured provider is permitted.
+   * Errors caused by the original request itself are not sent to another
+   * provider because fallback would reproduce the same invalid request.
    */
   private shouldFallback(error: AiProviderError): boolean {
-    switch (error.code) {
-      case AiProviderErrorCode.INVALID_PROMPT:
-      case AiProviderErrorCode.CANCELLED:
-      case AiProviderErrorCode.CONTENT_FILTERED:
-        return false;
+    const nonFallbackCodes: readonly AiProviderErrorCode[] = [
+      AiProviderErrorCode.INVALID_PROMPT,
+      AiProviderErrorCode.CANCELLED,
+      AiProviderErrorCode.CONTENT_FILTERED,
+    ];
 
-      case AiProviderErrorCode.TIMEOUT:
-      case AiProviderErrorCode.NETWORK:
-      case AiProviderErrorCode.RATE_LIMIT:
-      case AiProviderErrorCode.INSUFFICIENT_QUOTA:
-      case AiProviderErrorCode.PROVIDER_UNAVAILABLE:
-      case AiProviderErrorCode.INVALID_CREDENTIALS:
-      case AiProviderErrorCode.FORBIDDEN:
-      case AiProviderErrorCode.MODEL_NOT_FOUND:
-      case AiProviderErrorCode.INVALID_MODEL_CONFIGURATION:
-      case AiProviderErrorCode.EMPTY_RESPONSE:
-      case AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT:
-      case AiProviderErrorCode.UNKNOWN:
-        return true;
-
-      default:
-        return this.assertNeverErrorCode(error.code);
-    }
+    return !nonFallbackCodes.includes(error.code);
   }
 
+  /**
+   * Calculates provider cost from reported token usage.
+   *
+   * The result is rounded to six decimal places to match common
+   * Decimal(12, 6) database storage.
+   */
   private calculateActualCost(
     model: AiModel,
     inputTokens: number,
@@ -781,55 +1079,101 @@ export class AiExecutionService {
     const outputCost =
       (model.outputCostPerMillion.toNumber() * outputTokens) / 1_000_000;
 
-    return inputCost + outputCost;
+    return Number((inputCost + outputCost).toFixed(6));
   }
 
+  /**
+   * Produces a pre-request token estimate.
+   */
   private estimateTokens(text: string): number {
     return Math.max(
       1,
+
       Math.ceil(text.length / APPROXIMATE_CHARACTERS_PER_TOKEN),
     );
   }
 
+  /**
+   * Calculates exponential retry delay.
+   */
   private calculateRetryDelay(failedAttemptNumber: number): number {
     return this.retryBaseDelayMs * 2 ** (failedAttemptNumber - 1);
   }
 
+  /**
+   * Waits before the next retry.
+   */
   private delay(milliseconds: number): Promise<void> {
     return new Promise((resolve) => {
       setTimeout(resolve, milliseconds);
     });
   }
 
-  private resolvePositiveIntegerConfig(
+  /**
+   * Validates an optional positive integer request value.
+   */
+  private validateOptionalPositiveInteger(
+    value: number | undefined,
+    fieldName: string,
+  ): void {
+    if (value === undefined) {
+      return;
+    }
+
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new BadRequestException(`${fieldName} must be a positive integer.`);
+    }
+  }
+
+  /**
+   * Reads a bounded positive integer from application configuration.
+   */
+  private resolveBoundedPositiveIntegerConfig(
     configService: ConfigService,
     key: string,
     fallback: number,
+    minimum: number,
+    maximum: number,
   ): number {
-    const configured = Number(configService.get<string | number>(key));
+    const rawValue = configService.get<string | number>(key);
 
-    if (!Number.isInteger(configured) || configured <= 0) {
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      return fallback;
+    }
+
+    const configured = Number(rawValue);
+
+    if (
+      !Number.isInteger(configured) ||
+      configured < minimum ||
+      configured > maximum
+    ) {
       return fallback;
     }
 
     return configured;
   }
 
+  /**
+   * Reads a non-negative integer from application configuration.
+   */
   private resolveNonNegativeIntegerConfig(
     configService: ConfigService,
     key: string,
     fallback: number,
   ): number {
-    const configured = Number(configService.get<string | number>(key));
+    const rawValue = configService.get<string | number>(key);
+
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      return fallback;
+    }
+
+    const configured = Number(rawValue);
 
     if (!Number.isInteger(configured) || configured < 0) {
       return fallback;
     }
 
     return configured;
-  }
-
-  private assertNeverErrorCode(value: never): never {
-    throw new Error(`Unsupported AI provider error code: ${String(value)}.`);
   }
 }

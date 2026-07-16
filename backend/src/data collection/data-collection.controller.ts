@@ -61,24 +61,15 @@ type AuthenticatedUser = {
  * @author Malak
  */
 @Controller('data-collection')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class DataCollectionController {
-  constructor(
-    private readonly dataCollectionService:
-      DataCollectionService,
-  ) {}
+  constructor(private readonly dataCollectionService: DataCollectionService) {}
 
   /**
    * Starts Data Collection manually.
    */
   @Post('run')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   run(
     @Body()
     dto: RunCollectionDto,
@@ -86,43 +77,30 @@ export class DataCollectionController {
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .run(
-        dto,
-        user.id,
-      );
+    return this.dataCollectionService.run(dto, user.id);
   }
 
   /**
    * Returns queue, source, and caller-scoped job status.
    */
   @Get('status')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   getStatus(
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .getStatus({
-        userId:
-          user.id,
+    return this.dataCollectionService.getStatus({
+      userId: user.id,
 
-        role:
-          user.role,
-      });
+      role: user.role,
+    });
   }
 
   /**
    * Returns paginated jobs visible to the caller.
    */
   @Get('jobs')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   getJobs(
     @Query()
     query: GetCollectionJobsQueryDto,
@@ -130,60 +108,45 @@ export class DataCollectionController {
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .getJobs(
-        query,
+    return this.dataCollectionService.getJobs(
+      query,
 
-        {
-          userId:
-            user.id,
+      {
+        userId: user.id,
 
-          role:
-            user.role,
-        },
-      );
+        role: user.role,
+      },
+    );
   }
 
   /**
    * Returns detailed information about one visible job.
    */
   @Get('jobs/:id')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   getJobDetails(
-    @Param(
-      'id',
-      ParseUUIDPipe,
-    )
+    @Param('id', ParseUUIDPipe)
     id: string,
 
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .getJobDetails(
-        id,
+    return this.dataCollectionService.getJobDetails(
+      id,
 
-        {
-          userId:
-            user.id,
+      {
+        userId: user.id,
 
-          role:
-            user.role,
-        },
-      );
+        role: user.role,
+      },
+    );
   }
 
   /**
    * Returns collected posts visible to the caller.
    */
   @Get('posts')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   getPosts(
     @Query()
     query: GetSocialPostsQueryDto,
@@ -191,28 +154,22 @@ export class DataCollectionController {
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .getPosts(
-        query,
+    return this.dataCollectionService.getPosts(
+      query,
 
-        {
-          userId:
-            user.id,
+      {
+        userId: user.id,
 
-          role:
-            user.role,
-        },
-      );
+        role: user.role,
+      },
+    );
   }
 
   /**
    * Returns collected comments visible to the caller.
    */
   @Get('comments')
-  @Roles(
-    UserRole.USER,
-    UserRole.ADMIN,
-  )
+  @Roles(UserRole.USER, UserRole.ADMIN)
   getComments(
     @Query()
     query: GetSocialCommentsQueryDto,
@@ -220,18 +177,15 @@ export class DataCollectionController {
     @CurrentUser()
     user: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .getComments(
-        query,
+    return this.dataCollectionService.getComments(
+      query,
 
-        {
-          userId:
-            user.id,
+      {
+        userId: user.id,
 
-          role:
-            user.role,
-        },
-      );
+        role: user.role,
+      },
+    );
   }
 
   /**
@@ -242,19 +196,12 @@ export class DataCollectionController {
   @Post(':id/stop')
   @Roles(UserRole.ADMIN)
   stop(
-    @Param(
-      'id',
-      ParseUUIDPipe,
-    )
+    @Param('id', ParseUUIDPipe)
     id: string,
 
     @CurrentUser()
     admin: AuthenticatedUser,
   ) {
-    return this.dataCollectionService
-      .stop(
-        id,
-        admin.id,
-      );
+    return this.dataCollectionService.stop(id, admin.id);
   }
 }

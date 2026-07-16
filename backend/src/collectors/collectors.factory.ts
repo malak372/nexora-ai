@@ -37,8 +37,7 @@ export class CollectorsFactory {
    *
    * DataSource.key -> SocialCollector implementation
    */
-  private readonly collectors =
-    new Map<string, SocialCollector>();
+  private readonly collectors = new Map<string, SocialCollector>();
 
   constructor(
     redditCollector: RedditCollector,
@@ -81,14 +80,10 @@ export class CollectorsFactory {
    * @returns Matching collector implementation.
    * @throws BadRequestException When no implementation exists.
    */
-  getCollector(
-    sourceKey: string,
-  ): SocialCollector {
-    const normalizedKey =
-      this.normalizeSourceKey(sourceKey);
+  getCollector(sourceKey: string): SocialCollector {
+    const normalizedKey = this.normalizeSourceKey(sourceKey);
 
-    const collector =
-      this.collectors.get(normalizedKey);
+    const collector = this.collectors.get(normalizedKey);
 
     if (!collector) {
       throw new BadRequestException(
@@ -107,28 +102,25 @@ export class CollectorsFactory {
    * DataSource.isImplemented in the database.
    */
   getImplementedSourceKeys(): string[] {
-    return [...this.collectors.keys()]
-      .sort();
-  }
-
-
-  /**
- * Returns all collector keys registered in the runtime registry.
- *
- * In the current architecture, the factory contains only
- * implemented collectors. Therefore, this list is equivalent
- * to getImplementedSourceKeys().
- *
- * The separate method keeps the factory API explicit and allows
- * placeholder collectors to be supported later without changing
- * DataSourcesService.
- *
- * @returns Sorted registered source keys.
- */
-  getRegisteredSourceKeys(): string[] {
     return [...this.collectors.keys()].sort();
   }
 
+  /**
+   * Returns all collector keys registered in the runtime registry.
+   *
+   * In the current architecture, the factory contains only
+   * implemented collectors. Therefore, this list is equivalent
+   * to getImplementedSourceKeys().
+   *
+   * The separate method keeps the factory API explicit and allows
+   * placeholder collectors to be supported later without changing
+   * DataSourcesService.
+   *
+   * @returns Sorted registered source keys.
+   */
+  getRegisteredSourceKeys(): string[] {
+    return [...this.collectors.keys()].sort();
+  }
 
   /**
    * Checks whether the deployed backend contains
@@ -137,14 +129,8 @@ export class CollectorsFactory {
    * @param sourceKey Data-source registry key.
    * @returns True when a collector is registered.
    */
-  isImplemented(
-    sourceKey: string,
-  ): boolean {
-    return this.collectors.has(
-      this.normalizeSourceKey(
-        sourceKey,
-      ),
-    );
+  isImplemented(sourceKey: string): boolean {
+    return this.collectors.has(this.normalizeSourceKey(sourceKey));
   }
 
   /**
@@ -155,13 +141,8 @@ export class CollectorsFactory {
    *
    * @param collector Collector implementation.
    */
-  private register(
-    collector: SocialCollector,
-  ): void {
-    const sourceKey =
-      this.normalizeSourceKey(
-        collector.sourceKey,
-      );
+  private register(collector: SocialCollector): void {
+    const sourceKey = this.normalizeSourceKey(collector.sourceKey);
 
     if (!sourceKey) {
       throw new InternalServerErrorException(
@@ -175,10 +156,7 @@ export class CollectorsFactory {
       );
     }
 
-    this.collectors.set(
-      sourceKey,
-      collector,
-    );
+    this.collectors.set(sourceKey, collector);
   }
 
   /**
@@ -190,11 +168,7 @@ export class CollectorsFactory {
    * @param sourceKey Raw source key.
    * @returns Normalized source key.
    */
-  private normalizeSourceKey(
-    sourceKey: string,
-  ): string {
-    return sourceKey
-      .trim()
-      .toLowerCase();
+  private normalizeSourceKey(sourceKey: string): string {
+    return sourceKey.trim().toLowerCase();
   }
 }

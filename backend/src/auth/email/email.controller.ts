@@ -32,9 +32,7 @@ import { AuthEmailService } from './email.service';
  */
 @Controller('auth/email')
 export class EmailController {
-  constructor(
-    private readonly authEmailService: AuthEmailService,
-  ) { }
+  constructor(private readonly authEmailService: AuthEmailService) {}
 
   /**
    * Verifies a user's email address using a valid
@@ -58,18 +56,11 @@ export class EmailController {
   })
   @Get('verify')
   @HttpCode(HttpStatus.OK)
-  verifyEmail(
-    @Query() query: VerifyEmailDto,
-    @Req() request: Request,
-  ) {
-    return this.authEmailService.verifyEmail(
-      query.email,
-      query.token,
-      {
-        ipAddress: request.ip,
-        userAgent: request.get('user-agent'),
-      },
-    );
+  verifyEmail(@Query() query: VerifyEmailDto, @Req() request: Request) {
+    return this.authEmailService.verifyEmail(query.email, query.token, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent'),
+    });
   }
 
   /**
@@ -108,12 +99,9 @@ export class EmailController {
     @Body() dto: ResendVerificationEmailDto,
     @Req() request: Request,
   ) {
-    return this.authEmailService.resendVerificationEmail(
-      dto.email,
-      {
-        ipAddress: request.ip,
-        userAgent: request.get('user-agent'),
-      },
-    );
+    return this.authEmailService.resendVerificationEmail(dto.email, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent'),
+    });
   }
 }

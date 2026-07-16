@@ -46,9 +46,7 @@ import { AdminCreditsService } from '../services/admin-credits.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminCreditsController {
-  constructor(
-    private readonly adminCreditsService: AdminCreditsService,
-  ) { }
+  constructor(private readonly adminCreditsService: AdminCreditsService) {}
 
   /**
    * Returns aggregated credit statistics based on
@@ -57,9 +55,7 @@ export class AdminCreditsController {
    * GET /admin/credits/summary
    */
   @Get('summary')
-  getCreditsSummary(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
+  getCreditsSummary(@Query() query: GetAdminCreditHistoryQueryDto) {
     return this.adminCreditsService.getCreditsSummary(query);
   }
 
@@ -69,9 +65,7 @@ export class AdminCreditsController {
    * GET /admin/credits/charts
    */
   @Get('charts')
-  getCreditsCharts(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
+  getCreditsCharts(@Query() query: GetAdminCreditHistoryQueryDto) {
     return this.adminCreditsService.getCreditsCharts(query);
   }
 
@@ -81,9 +75,7 @@ export class AdminCreditsController {
    * GET /admin/credits/history
    */
   @Get('history')
-  getCreditHistory(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
+  getCreditHistory(@Query() query: GetAdminCreditHistoryQueryDto) {
     return this.adminCreditsService.getCreditHistory(query);
   }
 
@@ -105,10 +97,7 @@ export class AdminCreditsController {
     @Body() dto: AdjustUserCreditsDto,
     @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.adminCreditsService.adjustUserCredits(
-      dto,
-      admin.id,
-    );
+    return this.adminCreditsService.adjustUserCredits(dto, admin.id);
   }
 
   /**
@@ -122,10 +111,7 @@ export class AdminCreditsController {
     'Content-Disposition',
     'attachment; filename="credit-transactions.csv"',
   )
-  exportCreditsCsv(
-    @Query() query: GetAdminCreditHistoryQueryDto,
-  ) {
+  exportCreditsCsv(@Query() query: GetAdminCreditHistoryQueryDto) {
     return this.adminCreditsService.exportCreditsCsv(query);
   }
 }
-

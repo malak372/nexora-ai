@@ -1,62 +1,62 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+
 import {
-  AiProviderType,
   ApiRequestType,
-  ExternalApiLog,
+  ExternalServiceCategory,
   Prisma,
 } from '@prisma/client';
+
+import type { ExternalApiLog } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
 import {
-  AI_PROVIDER_TO_API_PROVIDER,
   AI_TEXT_GENERATION_ENDPOINT,
   MAX_AI_ERROR_MESSAGE_LENGTH,
 } from '../constants';
 
+import {
+  isAiProviderKey,
+  type AiProviderKey,
+} from '../constants/ai-provider.constants';
+
 /**
  * Input required to persist one external AI-provider attempt.
  *
- * One logical AI operation may create multiple records when:
- * - The same model is retried.
- * - A fallback model is selected.
- * - A fallback provider is selected.
- *
- * Only the model values required for logging are accepted instead of
- * the complete Prisma AiModel entity. This reduces coupling between
- * logging and model-management concerns.
+ * One logical AI operation may create multiple log records because of:
+ * - Provider retries.
+ * - Structured-output repair.
+ * - Model fallback.
+ * - Provider fallback.
  *
  * @author Malak
  */
 export type CreateExternalAiLogInput = {
   /**
-   * Identifier shared by all attempts belonging to the same logical
-   * AI operation.
+   * Identifier shared by all attempts belonging to one logical AI
+   * operation.
    */
   readonly operationId: string;
 
   /**
-   * Sequential attempt number inside the logical operation.
-   *
-   * The initial external request uses attempt number one.
+   * Sequential external-request number inside the operation.
    */
   readonly attemptNumber: number;
 
   /**
-   * Indicates whether this attempt used a model other than the first
-   * candidate selected for the logical operation.
+   * Indicates whether this request used a fallback model.
    */
   readonly fallbackUsed: boolean;
 
   /**
-   * Database identifier of the AI model used for this attempt.
+   * Database identifier of the selected AI model.
    */
   readonly aiModelId: string;
 
   /**
-   * Provider associated with the selected AI model.
+   * Stable backend provider-registry key.
    */
-  readonly provider: AiProviderType;
+  readonly providerKey: AiProviderKey;
 
   /**
    * Exact provider-side model identifier.
@@ -64,7 +64,7 @@ export type CreateExternalAiLogInput = {
   readonly apiModelId: string;
 
   /**
-   * Business-level category of the external API request.
+   * Business-level external request category.
    */
   readonly requestType: ApiRequestType;
 
@@ -79,14 +79,12 @@ export type CreateExternalAiLogInput = {
   readonly ideaId?: string;
 
   /**
-   * Optional provider request identifier used for tracing and support.
+   * Optional provider request identifier.
    */
   readonly requestId?: string;
 
   /**
-   * Optional internal endpoint or operation label.
-   *
-   * Defaults to AI_TEXT_GENERATION_ENDPOINT.
+   * Optional endpoint or internal operation label.
    */
   readonly endpoint?: string;
 
@@ -96,61 +94,48 @@ export type CreateExternalAiLogInput = {
   readonly statusCode?: number;
 
   /**
-   * Indicates whether this individual provider attempt succeeded.
+   * Whether this individual provider request succeeded.
    */
   readonly isSuccess: boolean;
 
   /**
-   * Duration of this individual provider attempt in milliseconds.
-   *
-   * This excludes other retries and fallback requests.
+   * Duration of this individual provider request in milliseconds.
    */
   readonly responseTimeMs: number;
 
   /**
-   * Actual input-token count reported by the provider.
+   * Provider-reported input-token count.
    */
   readonly inputTokens?: number;
 
   /**
-   * Actual output-token count reported by the provider.
+   * Provider-reported output-token count.
    */
   readonly outputTokens?: number;
 
   /**
-   * Estimated monetary cost of this individual attempt.
-   *
-   * Nexora AI should use one consistent currency, preferably USD.
+   * Estimated monetary cost of this individual provider request.
    */
   readonly costEstimate?: number;
 
   /**
-   * Optional safe normalized error message.
-   *
-   * Stack traces, API keys, raw provider bodies, and sensitive
-   * application information must not be stored here.
+   * Safe normalized error message.
    */
   readonly errorMessage?: string;
 };
 
 /**
- * Persists external AI-provider execution attempts.
+ * Persists individual external AI-provider attempts.
  *
- * One ExternalApiLog record is created for every individual provider
- * call, including failed retries and fallback attempts.
- *
- * Responsibilities:
- * - Persist normalized attempt metadata.
- * - Map AiProviderType to ApiProvider.
- * - Convert cost values to Prisma Decimal.
- * - Normalize and limit stored error messages.
+ * One ExternalApiLog record is created for every actual external
+ * provider request, including failed retries and repair requests.
  *
  * This service does not:
  * - Select AI models.
- * - Execute provider requests.
+ * - Execute providers.
+ * - Decide retry eligibility.
  * - Calculate token usage.
  * - Calculate provider cost.
- * - Decide retry or fallback eligibility.
  *
  * @author Malak
  */
@@ -159,36 +144,47 @@ export class ExternalAiLogService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Persists one external AI-provider attempt.
+   * Persists one normalized provider request.
    *
-   * Retries and fallback attempts invoke this method separately while
-   * preserving the same operationId.
-   *
-   * @param input Normalized attempt logging data.
+   * @param input External AI request metadata.
    * @returns Persisted ExternalApiLog record.
    */
   async create(input: CreateExternalAiLogInput): Promise<ExternalApiLog> {
+    this.validateInput(input);
+
+    const operationId = input.operationId.trim();
+
+    const aiModelId = input.aiModelId.trim();
+
+    const apiModelId = input.apiModelId.trim();
+
+    const endpoint = input.endpoint?.trim() || AI_TEXT_GENERATION_ENDPOINT;
+
+    const requestId = input.requestId?.trim() || null;
+
     return this.prisma.externalApiLog.create({
       data: {
-        operationId: input.operationId,
+        serviceCategory: ExternalServiceCategory.AI,
+
+        operationId,
 
         attemptNumber: input.attemptNumber,
 
         fallbackUsed: input.fallbackUsed,
 
-        userId: input.userId ?? null,
+        userId: this.normalizeOptionalString(input.userId),
 
-        ideaId: input.ideaId ?? null,
+        ideaId: this.normalizeOptionalString(input.ideaId),
 
-        aiModelId: input.aiModelId,
+        aiModelId,
 
-        provider: AI_PROVIDER_TO_API_PROVIDER[input.provider],
+        providerKey: input.providerKey,
 
-        apiModelId: input.apiModelId,
+        apiModelId,
 
-        endpoint: input.endpoint?.trim() || AI_TEXT_GENERATION_ENDPOINT,
+        endpoint,
 
-        requestId: input.requestId ?? null,
+        requestId,
 
         requestType: input.requestType,
 
@@ -213,16 +209,110 @@ export class ExternalAiLogService {
   }
 
   /**
+   * Validates log values before persistence.
+   */
+  private validateInput(input: CreateExternalAiLogInput): void {
+    if (!input.operationId.trim()) {
+      throw new BadRequestException('AI log operationId is required.');
+    }
+
+    if (!input.aiModelId.trim()) {
+      throw new BadRequestException('AI log aiModelId is required.');
+    }
+
+    if (!input.apiModelId.trim()) {
+      throw new BadRequestException('AI log apiModelId is required.');
+    }
+
+    if (!Number.isInteger(input.attemptNumber) || input.attemptNumber < 1) {
+      throw new BadRequestException(
+        'AI log attemptNumber must be a positive integer.',
+      );
+    }
+
+    if (!Number.isInteger(input.responseTimeMs) || input.responseTimeMs < 0) {
+      throw new BadRequestException(
+        'AI log responseTimeMs must be a non-negative integer.',
+      );
+    }
+
+    if (!isAiProviderKey(input.providerKey)) {
+      throw new BadRequestException(
+        `Unsupported AI provider key: ${String(input.providerKey)}`,
+      );
+    }
+
+    if (input.endpoint !== undefined && !input.endpoint.trim()) {
+      throw new BadRequestException(
+        'AI log endpoint must not be blank when provided.',
+      );
+    }
+
+    this.validateOptionalNonNegativeInteger(input.inputTokens, 'inputTokens');
+
+    this.validateOptionalNonNegativeInteger(input.outputTokens, 'outputTokens');
+
+    if (
+      input.costEstimate !== undefined &&
+      (!Number.isFinite(input.costEstimate) || input.costEstimate < 0)
+    ) {
+      throw new BadRequestException(
+        'AI log costEstimate must be a non-negative finite number.',
+      );
+    }
+
+    if (
+      input.statusCode !== undefined &&
+      (!Number.isInteger(input.statusCode) ||
+        input.statusCode < 100 ||
+        input.statusCode > 599)
+    ) {
+      throw new BadRequestException(
+        'AI log statusCode must be a valid HTTP status code.',
+      );
+    }
+  }
+
+  /**
+   * Validates an optional non-negative integer.
+   *
+   * @param value Value being validated.
+   * @param fieldName Field name used in the validation message.
+   */
+  private validateOptionalNonNegativeInteger(
+    value: number | undefined,
+    fieldName: string,
+  ): void {
+    if (value === undefined) {
+      return;
+    }
+
+    if (!Number.isInteger(value) || value < 0) {
+      throw new BadRequestException(
+        `AI log ${fieldName} must be a non-negative integer.`,
+      );
+    }
+  }
+
+  /**
+   * Normalizes an optional database identifier.
+   *
+   * Blank optional values become null.
+   */
+  private normalizeOptionalString(value: string | undefined): string | null {
+    const normalizedValue = value?.trim();
+
+    return normalizedValue || null;
+  }
+
+  /**
    * Normalizes an error message before persistence.
    *
-   * Blank messages become null. Non-empty messages are trimmed and
-   * limited to MAX_AI_ERROR_MESSAGE_LENGTH.
-   *
-   * @param errorMessage Optional normalized provider error message.
-   * @returns Safe database value.
+   * Blank messages become null. Non-empty messages are whitespace
+   * normalized and truncated to the configured database-safe limit.
    */
   private normalizeErrorMessage(errorMessage?: string): string | null {
-    const normalizedMessage = errorMessage?.trim();
+    const normalizedMessage = errorMessage?.replace(/\s+/g, ' ').trim();
 
     if (!normalizedMessage) {
       return null;

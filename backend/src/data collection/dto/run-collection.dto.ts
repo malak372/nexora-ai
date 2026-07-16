@@ -86,12 +86,9 @@ export class RunCollectionDto {
   @ArrayUnique()
   @ArrayMaxSize(30)
   @IsString({ each: true })
-  @Matches(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-    {
-      each: true,
-    },
-  )
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    each: true,
+  })
   dataSourceKeys?: string[];
 
   /**

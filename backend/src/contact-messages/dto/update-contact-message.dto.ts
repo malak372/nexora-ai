@@ -35,9 +35,7 @@ export class UpdateContactMessageDto {
    * Leading and trailing whitespace is removed before validation.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(5)
   @MaxLength(1_000)

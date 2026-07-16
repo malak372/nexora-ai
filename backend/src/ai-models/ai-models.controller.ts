@@ -9,7 +9,14 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { AiModel, UserRole } from '@prisma/client';
+
+import { UserRole } from '@prisma/client';
+import type { AiModel } from '@prisma/client';
+
+import {
+  SUPPORTED_AI_PROVIDERS,
+  type SupportedAiProvider,
+} from '../ai/constants/ai-provider.constants';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -25,20 +32,13 @@ import { CreateAiModelDto } from './dto/create-ai-model.dto';
 import { GetAiModelsQueryDto } from './dto/get-ai-models-query.dto';
 import { UpdateAiModelDto } from './dto/update-ai-model.dto';
 
-import { PaginatedAiModelsResult } from './types/ai-models.type';
+import type { PaginatedAiModelsResult } from './types/ai-models.type';
 
 /**
  * Administrator-only AI-model management controller.
  *
  * Base route:
  * /ai-models
- *
- * All routes require:
- * - A valid JWT access token.
- * - ADMIN role.
- *
- * Runtime model routing and health operations are intentionally not
- * exposed from this controller.
  *
  * @author Malak
  */
@@ -49,9 +49,19 @@ export class AiModelsController {
   constructor(private readonly aiModelsService: AiModelsService) {}
 
   /**
-   * Creates a new AI-model configuration.
+   * Returns providers implemented by the deployed backend.
    *
-   * The model is always created as non-default.
+   * This static route must remain declared before GET /:id.
+   *
+   * GET /ai-models/providers
+   */
+  @Get('providers')
+  getSupportedProviders(): readonly SupportedAiProvider[] {
+    return SUPPORTED_AI_PROVIDERS;
+  }
+
+  /**
+   * Creates a new non-default AI-model configuration.
    *
    * POST /ai-models
    */
@@ -67,16 +77,9 @@ export class AiModelsController {
   }
 
   /**
-   * Returns paginated and filtered AI models.
+   * Returns filtered and paginated AI-model configurations.
    *
    * GET /ai-models
-   *
-   * Supported examples:
-   * - /ai-models?page=1&limit=10
-   * - /ai-models?provider=OPENROUTER
-   * - /ai-models?isActive=true
-   * - /ai-models?healthStatus=HEALTHY
-   * - /ai-models?search=gpt
    */
   @Get()
   findAll(
@@ -87,10 +90,9 @@ export class AiModelsController {
   }
 
   /**
-   * Returns the configured active default model.
+   * Returns the active and routable default model.
    *
-   * This route must be declared before GET /:id so the word
-   * "default" is not interpreted as a UUID parameter.
+   * This static route must remain declared before GET /:id.
    *
    * GET /ai-models/default
    */
@@ -100,7 +102,7 @@ export class AiModelsController {
   }
 
   /**
-   * Returns one AI model by its UUID.
+   * Returns one AI model by UUID.
    *
    * GET /ai-models/:id
    */
@@ -119,11 +121,6 @@ export class AiModelsController {
 
   /**
    * Updates editable AI-model metadata.
-   *
-   * This endpoint cannot:
-   * - Activate or deactivate a model.
-   * - Set a model as default.
-   * - Change operational health fields.
    *
    * PATCH /ai-models/:id
    */
@@ -147,7 +144,7 @@ export class AiModelsController {
   }
 
   /**
-   * Sets one active and routable model as default.
+   * Sets one model as the system default.
    *
    * PATCH /ai-models/:id/default
    */
@@ -168,33 +165,7 @@ export class AiModelsController {
   }
 
   /**
-   * Deactivates one non-default AI model.
-   *
-   * The current default model cannot be deactivated.
-   *
-   * PATCH /ai-models/:id/deactivate
-   */
-  @Patch(':id/deactivate')
-  deactivate(
-    @Param(
-      'id',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
-    id: string,
-
-    @CurrentUser()
-    user: AuthenticatedUser,
-  ): Promise<AiModel> {
-    return this.aiModelsService.deactivate(id, user.id);
-  }
-
-  /**
-   * Activates one inactive AI model.
-   *
-   * The model returns to UNKNOWN health and does not automatically
-   * become the default model.
+   * Activates one AI model.
    *
    * PATCH /ai-models/:id/activate
    */
@@ -212,5 +183,26 @@ export class AiModelsController {
     user: AuthenticatedUser,
   ): Promise<AiModel> {
     return this.aiModelsService.activate(id, user.id);
+  }
+
+  /**
+   * Deactivates one non-default AI model.
+   *
+   * PATCH /ai-models/:id/deactivate
+   */
+  @Patch(':id/deactivate')
+  deactivate(
+    @Param(
+      'id',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ): Promise<AiModel> {
+    return this.aiModelsService.deactivate(id, user.id);
   }
 }

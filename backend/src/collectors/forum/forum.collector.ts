@@ -4,10 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
 
-import {
-  CollectorInput,
-  CollectorPost,
-} from '../base/collector.types';
+import { CollectorInput, CollectorPost } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
@@ -27,10 +24,7 @@ type ForumSource = {
  * @author Malak
  */
 @Injectable()
-export class ForumCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class ForumCollector extends BaseCollector implements SocialCollector {
   /**
    * Must match DataSource.key.
    */
@@ -41,8 +35,7 @@ export class ForumCollector
   constructor(
     configService: ConfigService,
 
-    private readonly discourseForumAdapter:
-      DiscourseForumAdapter,
+    private readonly discourseForumAdapter: DiscourseForumAdapter,
   ) {
     super(configService, ForumCollector.name);
 
@@ -113,10 +106,7 @@ export class ForumCollector
         collectedPosts.push(...posts);
       }
 
-      const rankedPosts = this.rankAndDeduplicatePosts(
-        collectedPosts,
-        input,
-      );
+      const rankedPosts = this.rankAndDeduplicatePosts(collectedPosts, input);
 
       this.logger.log(
         `Forum collection completed. Posts: ${rankedPosts.length}`,
@@ -124,10 +114,7 @@ export class ForumCollector
 
       return rankedPosts;
     } catch (error: unknown) {
-      this.logger.warn(
-        'Forum collection failed',
-        this.getErrorMessage(error),
-      );
+      this.logger.warn('Forum collection failed', this.getErrorMessage(error));
 
       return [];
     }
@@ -156,10 +143,7 @@ export class ForumCollector
       })
       .map((post) => ({
         post,
-        score: this.calculatePostRelevanceScore(
-          post,
-          input,
-        ),
+        score: this.calculatePostRelevanceScore(post, input),
       }))
       .filter((item) => item.score >= 3)
       .sort((first, second) => second.score - first.score)
@@ -181,11 +165,7 @@ export class ForumCollector
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
       .slice(0, 4)
       .join(' ');
   }
@@ -223,8 +203,6 @@ export class ForumCollector
       return error.message;
     }
 
-    return typeof error === 'string'
-      ? error
-      : 'Unknown Forum collector error.';
+    return typeof error === 'string' ? error : 'Unknown Forum collector error.';
   }
 }

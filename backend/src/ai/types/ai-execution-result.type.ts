@@ -1,103 +1,95 @@
-import { AiProviderType } from '@prisma/client';
-
-import { AiFinishReason } from './ai-provider.type';
+import type { AiProviderKey } from '../constants/ai-provider.constants';
+import type { AiFinishReason } from './ai-provider.type';
 
 /**
- * Normalized result returned by AiExecutionService.
+ * Final successful result returned by AiExecutionService.
  *
- * This result represents the final successful AI execution after
- * model selection, provider execution, retries, structured-output
- * validation, optional response repair, and fallback execution.
+ * This result represents the complete logical operation after:
+ * - Model routing.
+ * - Provider execution.
+ * - Temporary retries.
+ * - Structured-output validation.
+ * - Optional response repair.
+ * - Model or provider fallback.
  *
- * Provider-specific SDK response objects must never escape through
- * this contract.
+ * Provider-specific SDK objects must never be returned through this
+ * contract.
  *
  * @author Malak
  */
 export type AiExecutionResult = {
   /**
-   * Final generated response text.
+   * Final generated response.
    *
-   * For JSON operations, this value contains normalized validated
-   * JSON serialized as a string.
-   *
-   * For plain-text operations, it contains the provider text.
+   * JSON operations return normalized validated JSON serialized as a
+   * string. Text operations return provider-generated text.
    */
   readonly text: string;
 
   /**
-   * Unique identifier shared by every provider attempt belonging
-   * to the same logical AI operation.
+   * Identifier shared by every external attempt belonging to the same
+   * logical AI operation.
    */
   readonly operationId: string;
 
   /**
-   * Database identifier of the AI model that produced the final
-   * successful response.
+   * Database identifier of the successful AI model.
    */
   readonly aiModelId: string;
 
   /**
-   * Provider associated with the successful AI model.
+   * Stable backend provider-registry key.
    */
-  readonly provider: AiProviderType;
+  readonly providerKey: AiProviderKey;
 
   /**
-   * Exact provider-side model identifier used for generation.
+   * Exact provider-side model identifier.
    *
    * Examples:
-   * - gpt-4.1-mini
-   * - claude-sonnet-4
    * - gemini-2.5-flash
-   * - llama-3.3-70b-versatile
+   * - openai/gpt-4.1-mini
    */
   readonly apiModelId: string;
 
   /**
-   * Actual input-token count reported by the final successful
-   * provider request.
+   * Input-token count reported by the final successful provider call.
    */
   readonly inputTokens: number;
 
   /**
-   * Actual output-token count reported by the final successful
-   * provider request.
+   * Output-token count reported by the final successful provider call.
    */
   readonly outputTokens: number;
 
   /**
-   * Estimated monetary cost of the final successful provider
-   * request.
+   * Estimated cost of the final successful external request.
    *
-   * The project should use one consistent currency, preferably USD.
+   * The application should use one consistent currency, preferably USD.
    */
   readonly costEstimate: number;
 
   /**
    * Total logical-operation duration in milliseconds.
    *
-   * This includes retries, structured-output repair attempts,
-   * fallback execution, and the final successful request.
+   * This includes retries, repair requests, and fallback execution.
    */
   readonly responseTimeMs: number;
 
   /**
-   * Normalized reason explaining why generation stopped.
+   * Normalized completion reason.
    */
   readonly finishReason: AiFinishReason;
 
   /**
-   * Indicates whether the final response was produced by a fallback
-   * model rather than the first routed model.
+   * Whether the successful response came from a fallback model.
    */
   readonly fallbackUsed: boolean;
 
   /**
-   * Total number of external provider calls executed during the
-   * logical operation.
+   * Total number of external provider requests executed.
    *
-   * Initial calls, retries, repair requests, and fallback calls are
-   * all included.
+   * Initial attempts, retries, repair attempts, and fallback attempts
+   * are all included.
    */
   readonly attemptCount: number;
 };

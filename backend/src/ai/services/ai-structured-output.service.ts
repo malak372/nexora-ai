@@ -1,26 +1,36 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
+
 import { IdeaGenerationType, PromptType } from '@prisma/client';
-import Ajv, { ErrorObject, ValidateFunction } from 'ajv';
 
-import { FreeIdeaOutput, FreeIdeaSchema } from '../schemas/free-idea.schema';
-import { GuestIdeaOutput, GuestIdeaSchema } from '../schemas/guest-idea.schema';
-import {
-  PremiumIdeaOutput,
-  PremiumIdeaSchema,
-} from '../schemas/premium-idea.schema';
-import {
-  UnlockIdeaOutput,
-  UnlockIdeaSchema,
-} from '../schemas/unlock-idea.schema';
+import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 
-import { AiJsonSchema } from '../types/ai-json-schema.type';
+import { FreeIdeaSchema } from '../schemas/free-idea.schema';
+
+import type { FreeIdeaOutput } from '../schemas/free-idea.schema';
+
+import { GuestIdeaSchema } from '../schemas/guest-idea.schema';
+
+import type { GuestIdeaOutput } from '../schemas/guest-idea.schema';
+
+import { PremiumIdeaSchema } from '../schemas/premium-idea.schema';
+
+import type { PremiumIdeaOutput } from '../schemas/premium-idea.schema';
+
+import { UnlockIdeaSchema } from '../schemas/unlock-idea.schema';
+
+import type { UnlockIdeaOutput } from '../schemas/unlock-idea.schema';
+
+import type { AiJsonSchema } from '../types/ai-json-schema.type';
+
 import { AiResponseParserService } from './ai-response-parser.service';
 
 /**
  * Union of all validated structured idea outputs.
  *
- * Kept for backward compatibility with idea business services
+ * Retained for backward compatibility with idea business services
  * that call validateIdeaOutput directly.
+ *
+ * @author Malak
  */
 export type StructuredIdeaOutput =
   | GuestIdeaOutput
@@ -31,8 +41,10 @@ export type StructuredIdeaOutput =
 /**
  * One normalized parsing or schema-validation issue.
  *
- * These issues are safe to include in the bounded
- * structured-output repair prompt.
+ * These issues may be included in the bounded structured-output repair
+ * prompt.
+ *
+ * @author Malak
  */
 export type StructuredOutputValidationIssue = {
   /**
@@ -79,8 +91,8 @@ export type StructuredOutputValidationResult<T = unknown> =
 /**
  * Cached compiled JSON Schema validator.
  *
- * The fingerprint protects against accidentally reusing the same
- * responseSchemaName for two different schemas.
+ * The fingerprint prevents one schema name from being reused with a
+ * different schema definition.
  */
 type CachedSchemaValidator = {
   readonly fingerprint: string;
@@ -90,38 +102,34 @@ type CachedSchemaValidator = {
 /**
  * Parses and validates structured AI responses.
  *
- * The service supports two validation paths:
+ * Supported validation paths:
  *
- * 1. Generic JSON Schema validation:
- *    Used by AiExecutionService for every business module.
- *
- * 2. Existing idea-specific Zod validation:
- *    Retained for backward compatibility with business services
- *    that validate idea responses directly.
+ * 1. Generic JSON Schema validation using AJV.
+ * 2. Existing idea-specific validation using Zod.
  *
  * Responsibilities:
- * - Parse provider text into JSON.
- * - Compile provider-neutral JSON Schemas.
- * - Cache compiled schema validators.
- * - Validate any structured business response.
+ * - Parse provider text as JSON.
+ * - Compile JSON Schemas.
+ * - Cache compiled validators.
+ * - Validate structured provider responses.
  * - Normalize AJV and Zod validation issues.
- * - Reject malformed and unexpected output safely.
  *
  * This service does not:
- * - Execute AI providers.
- * - Select AI models.
- * - Retry or repair responses.
- * - Persist business records.
+ * - Execute providers.
+ * - Select models.
+ * - Retry provider requests.
+ * - Repair provider responses.
+ * - Persist business data.
  *
  * @author Malak
  */
 @Injectable()
 export class AiStructuredOutputService {
   /**
-   * JSON Schema validator shared across AI operations.
+   * Shared AJV instance.
    *
-   * allErrors allows the repair request to receive multiple useful
-   * validation issues rather than only the first failure.
+   * allErrors allows repair requests to receive more than one useful
+   * validation issue.
    */
   private readonly ajv = new Ajv({
     allErrors: true,
@@ -129,35 +137,48 @@ export class AiStructuredOutputService {
   });
 
   /**
-   * Compiled schemas cached by their stable schema name.
+   * Compiled validators cached by normalized schema name.
    */
   private readonly validatorCache = new Map<string, CachedSchemaValidator>();
 
   constructor(private readonly parser: AiResponseParserService) {}
 
   /**
-   * Parses and validates provider output using any supplied
-   * provider-neutral JSON Schema.
+   * Parses and validates provider output using a supplied JSON Schema.
    *
-   * This is the main validation method used by AiExecutionService.
+   * This is the primary validation path used by AiExecutionService.
    *
    * @param rawText Raw provider response.
    * @param schema Expected provider-neutral JSON Schema.
    * @param schemaName Stable schema identifier.
-   * @returns Non-throwing validation result.
    */
   safeValidateSchema(
     rawText: string,
     schema: AiJsonSchema,
     schemaName: string,
   ): StructuredOutputValidationResult {
+    const normalizedSchemaName = schemaName.trim();
+
+    if (!normalizedSchemaName) {
+      return {
+        success: false,
+        issues: [
+          {
+            path: '$',
+            code: 'missing_schema_name',
+            message: 'A response schema name is required.',
+          },
+        ],
+      };
+    }
+
     const parsedResult = this.safeParseJson(rawText);
 
     if (!parsedResult.success) {
       return parsedResult;
     }
 
-    const validatorResult = this.resolveValidator(schema, schemaName);
+    const validatorResult = this.resolveValidator(schema, normalizedSchemaName);
 
     if (!validatorResult.success) {
       return validatorResult;
@@ -168,7 +189,12 @@ export class AiStructuredOutputService {
     if (!isValid) {
       return {
         success: false,
-        issues: this.mapAjvErrors(validatorResult.validator.errors, schemaName),
+
+        issues: this.mapAjvErrors(
+          validatorResult.validator.errors,
+
+          normalizedSchemaName,
+        ),
       };
     }
 
@@ -179,11 +205,9 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Parses and validates provider output using a supplied JSON
-   * Schema and throws when the response is invalid.
+   * Parses and validates provider output using a JSON Schema.
    *
-   * This method is convenient for business services that prefer
-   * exception-based validation.
+   * @throws BadGatewayException When the provider response is invalid.
    */
   validateSchema(
     rawText: string,
@@ -196,7 +220,8 @@ export class AiStructuredOutputService {
       throw new BadGatewayException({
         message:
           `The AI provider returned an invalid ` +
-          `${schemaName} structured response.`,
+          `${schemaName.trim()} structured response.`,
+
         validationErrors: validation.issues,
       });
     }
@@ -207,14 +232,16 @@ export class AiStructuredOutputService {
   /**
    * Parses and validates one structured idea response.
    *
-   * Retained for existing idea-generation business services.
+   * Retained for existing idea-generation services.
    *
-   * AiExecutionService no longer depends on this method because
-   * central execution now accepts caller-supplied JSON Schemas.
+   * New generic execution flows should use validateSchema or
+   * safeValidateSchema.
    */
   validateIdeaOutput(
     rawText: string,
+
     generationType: IdeaGenerationType | undefined,
+
     promptType: PromptType,
   ): StructuredIdeaOutput {
     const validation = this.safeValidateIdeaOutput(
@@ -227,6 +254,7 @@ export class AiStructuredOutputService {
       throw new BadGatewayException({
         message:
           'The AI provider returned an invalid structured idea response.',
+
         validationErrors: validation.issues,
       });
     }
@@ -235,14 +263,15 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Parses and validates idea structured output without throwing.
+   * Parses and validates idea output without throwing.
    *
-   * Retained for backward compatibility. New central execution
-   * should use safeValidateSchema instead.
+   * Retained for backward compatibility.
    */
   safeValidateIdeaOutput(
     rawText: string,
+
     generationType: IdeaGenerationType | undefined,
+
     promptType: PromptType,
   ): StructuredOutputValidationResult<StructuredIdeaOutput> {
     const parsedResult = this.safeParseJson(rawText);
@@ -262,9 +291,12 @@ export class AiStructuredOutputService {
     if (!result.success) {
       return {
         success: false,
+
         issues: result.error.issues.map((issue) => ({
           path: issue.path.length > 0 ? issue.path.map(String).join('.') : '$',
+
           code: issue.code,
+
           message: issue.message,
         })),
       };
@@ -277,7 +309,7 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Parses raw provider output safely.
+   * Parses raw provider output without throwing.
    */
   private safeParseJson(rawText: string): StructuredOutputValidationResult {
     try {
@@ -288,10 +320,13 @@ export class AiStructuredOutputService {
     } catch (error: unknown) {
       return {
         success: false,
+
         issues: [
           {
             path: '$',
+
             code: 'invalid_json',
+
             message: this.readSafeErrorMessage(
               error,
               'The response could not be parsed as valid JSON.',
@@ -303,11 +338,9 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Returns a cached AJV validator or compiles a new one.
+   * Returns a cached AJV validator or compiles a new validator.
    *
-   * Schema names must remain stable and unique. Reusing one name
-   * for different schemas is rejected because it may otherwise
-   * validate a response against the wrong contract.
+   * Reusing the same schema name with a different schema is rejected.
    */
   private resolveValidator(
     schema: AiJsonSchema,
@@ -319,16 +352,20 @@ export class AiStructuredOutputService {
       }
     | StructuredOutputValidationFailure {
     const fingerprint = this.createSchemaFingerprint(schema);
+
     const cached = this.validatorCache.get(schemaName);
 
     if (cached) {
       if (cached.fingerprint !== fingerprint) {
         return {
           success: false,
+
           issues: [
             {
               path: '$',
+
               code: 'schema_name_conflict',
+
               message:
                 `Response schema name "${schemaName}" ` +
                 'was reused with a different JSON Schema.',
@@ -358,10 +395,13 @@ export class AiStructuredOutputService {
     } catch (error: unknown) {
       return {
         success: false,
+
         issues: [
           {
             path: '$',
+
             code: 'invalid_response_schema',
+
             message: this.readSafeErrorMessage(
               error,
               `Response schema "${schemaName}" is invalid.`,
@@ -373,38 +413,73 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Converts AJV validation errors into the normalized validation
-   * issue structure used by response repair.
+   * Converts AJV errors into normalized validation issues.
    */
   private mapAjvErrors(
     errors: ErrorObject[] | null | undefined,
+
     schemaName: string,
   ): StructuredOutputValidationIssue[] {
     if (!errors || errors.length === 0) {
       return [
         {
           path: '$',
+
           code: 'schema_validation_failed',
+
           message: `The response does not match schema "${schemaName}".`,
         },
       ];
     }
 
-    return errors.map((error) => ({
-      path: this.normalizeAjvPath(error.instancePath),
-      code: error.keyword,
-      message:
-        error.message ?? `The value does not match schema "${schemaName}".`,
-    }));
+    return errors.map((error) => {
+      const path = this.resolveAjvErrorPath(error);
+
+      return {
+        path,
+
+        code: error.keyword,
+
+        message:
+          error.message ?? `The value does not match schema "${schemaName}".`,
+      };
+    });
+  }
+
+  /**
+   * Resolves a readable field path from one AJV error.
+   *
+   * Required-property errors are extended with the missing property
+   * name because their instancePath normally points only to the parent.
+   */
+  private resolveAjvErrorPath(error: ErrorObject): string {
+    const basePath = this.normalizeAjvPath(error.instancePath);
+
+    if (
+      error.keyword === 'required' &&
+      typeof error.params === 'object' &&
+      error.params !== null &&
+      'missingProperty' in error.params &&
+      typeof error.params.missingProperty === 'string'
+    ) {
+      const missingProperty = error.params.missingProperty;
+
+      return basePath === '$'
+        ? missingProperty
+        : `${basePath}.${missingProperty}`;
+    }
+
+    return basePath;
   }
 
   /**
    * Converts an AJV JSON Pointer into a readable property path.
    *
    * Example:
-   * /recurringProblems/0/title
-   * becomes:
-   * recurringProblems.0.title
+   * /objectives/0
+   *
+   * Becomes:
+   * objectives.0
    */
   private normalizeAjvPath(instancePath: string): string {
     if (!instancePath) {
@@ -419,7 +494,7 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Produces a stable JSON representation used to detect schema-name
+   * Produces a JSON representation used to detect schema-name
    * collisions.
    */
   private createSchemaFingerprint(schema: AiJsonSchema): string {
@@ -427,14 +502,16 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Resolves the existing Zod schema for idea operations.
+   * Resolves an idea-specific Zod schema.
    */
   private resolveIdeaSchema(
     generationType: IdeaGenerationType | undefined,
+
     promptType: PromptType,
   ):
     | {
         readonly success: true;
+
         readonly schema:
           | typeof GuestIdeaSchema
           | typeof FreeIdeaSchema
@@ -452,10 +529,13 @@ export class AiStructuredOutputService {
     if (promptType !== PromptType.IDEA_GENERATION) {
       return {
         success: false,
+
         issues: [
           {
             path: '$',
+
             code: 'unsupported_prompt_type',
+
             message:
               `Structured idea output is not supported for ` +
               `prompt type ${promptType}.`,
@@ -467,10 +547,13 @@ export class AiStructuredOutputService {
     if (generationType === undefined) {
       return {
         success: false,
+
         issues: [
           {
             path: '$',
+
             code: 'missing_generation_type',
+
             message:
               'generationType is required for structured idea generation.',
           },
@@ -516,10 +599,17 @@ export class AiStructuredOutputService {
       if (
         typeof response === 'object' &&
         response !== null &&
-        'message' in response &&
-        typeof response.message === 'string'
+        'message' in response
       ) {
-        return response.message;
+        const message = response.message;
+
+        if (typeof message === 'string') {
+          return message;
+        }
+
+        if (Array.isArray(message)) {
+          return message.map(String).join('; ');
+        }
       }
     }
 
@@ -531,8 +621,7 @@ export class AiStructuredOutputService {
   }
 
   /**
-   * Ensures exhaustive handling when new idea generation types
-   * are added.
+   * Enforces exhaustive idea generation type handling.
    */
   private assertNeverIdeaGenerationType(value: never): never {
     throw new Error(`Unsupported idea generation type: ${String(value)}.`);

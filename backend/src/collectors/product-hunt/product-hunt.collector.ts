@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -100,9 +97,7 @@ type ProductHuntCommentsResponse = {
  *
  * @template T Expected response type.
  */
-type GraphqlResponseValidator<T> = (
-  value: unknown,
-) => value is T;
+type GraphqlResponseValidator<T> = (value: unknown) => value is T;
 
 /**
  * Product Hunt collector.
@@ -138,8 +133,7 @@ export class ProductHuntCollector
   /**
    * Product Hunt GraphQL API endpoint.
    */
-  private readonly apiUrl =
-    'https://api.producthunt.com/v2/api/graphql';
+  private readonly apiUrl = 'https://api.producthunt.com/v2/api/graphql';
 
   /**
    * Number of posts requested per GraphQL page.
@@ -157,10 +151,7 @@ export class ProductHuntCollector
   private readonly requestDelayMs = 500;
 
   constructor(configService: ConfigService) {
-    super(
-      configService,
-      ProductHuntCollector.name,
-    );
+    super(configService, ProductHuntCollector.name);
   }
 
   /**
@@ -171,14 +162,11 @@ export class ProductHuntCollector
    * @param input Collection job configuration.
    * @returns Relevant Product Hunt posts and comments.
    */
-  async collect(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]> {
+  async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
       const token = this.getToken();
 
-      const searchTerms =
-        this.buildSearchTerms(input);
+      const searchTerms = this.buildSearchTerms(input);
 
       if (!token) {
         this.logger.warn(
@@ -196,32 +184,22 @@ export class ProductHuntCollector
         return [];
       }
 
-      const rawPosts =
-        await this.collectPostsByPagination(
-          token,
-        );
+      const rawPosts = await this.collectPostsByPagination(token);
 
-      const filteredPosts =
-        this.filterPostsByInput(
-          rawPosts,
-          input,
-          searchTerms,
-        );
+      const filteredPosts = this.filterPostsByInput(
+        rawPosts,
+        input,
+        searchTerms,
+      );
 
-      const seenPostIds =
-        new Set<string>();
+      const seenPostIds = new Set<string>();
 
       const rankedPosts = filteredPosts
-        .filter((post) =>
-          this.isValidPost(post),
-        )
+        .filter((post) => this.isValidPost(post))
         .filter((post) => {
           const postId = post.id;
 
-          if (
-            !postId ||
-            seenPostIds.has(postId)
-          ) {
+          if (!postId || seenPostIds.has(postId)) {
             return false;
           }
 
@@ -232,36 +210,24 @@ export class ProductHuntCollector
         .map((post) => ({
           post,
 
-          score:
-            this.calculatePostRelevanceScore(
-              post,
-              input,
-            ),
+          score: this.calculatePostRelevanceScore(post, input),
         }))
-        .filter(
-          (item) => item.score > 0,
-        )
-        .sort(
-          (first, second) =>
-            second.score - first.score,
-        )
+        .filter((item) => item.score > 0)
+        .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts);
 
       const result: CollectorPost[] = [];
 
       for (const item of rankedPosts) {
-        const mappedPost =
-          await this.mapProductToCollectorPost(
-            item.post,
-            input,
-            token,
-          );
+        const mappedPost = await this.mapProductToCollectorPost(
+          item.post,
+          input,
+          token,
+        );
 
         result.push(mappedPost);
 
-        await this.delay(
-          this.requestDelayMs,
-        );
+        await this.delay(this.requestDelayMs);
       }
 
       this.logger.log(
@@ -317,64 +283,42 @@ export class ProductHuntCollector
       }
     `;
 
-    const collectedPosts:
-      ProductHuntPost[] = [];
+    const collectedPosts: ProductHuntPost[] = [];
 
     let after: string | null = null;
 
-    while (
-      collectedPosts.length <
-      this.maxFetchedPosts
-    ) {
-      const response =
-        await this.graphqlRequest<ProductHuntPostsResponse>(
-          query,
-          {
-            first: this.pageSize,
-            after,
-          },
-          token,
-          (
-            value: unknown,
-          ): value is ProductHuntPostsResponse =>
-            this.isProductHuntPostsResponse(
-              value,
-            ),
-        );
-
-      const postsConnection =
-        response.data?.posts;
-
-      const edges =
-        postsConnection?.edges ?? [];
-
-      const pageInfo =
-        postsConnection?.pageInfo;
-
-      const posts = edges.map(
-        (edge) => edge.node,
+    while (collectedPosts.length < this.maxFetchedPosts) {
+      const response = await this.graphqlRequest<ProductHuntPostsResponse>(
+        query,
+        {
+          first: this.pageSize,
+          after,
+        },
+        token,
+        (value: unknown): value is ProductHuntPostsResponse =>
+          this.isProductHuntPostsResponse(value),
       );
+
+      const postsConnection = response.data?.posts;
+
+      const edges = postsConnection?.edges ?? [];
+
+      const pageInfo = postsConnection?.pageInfo;
+
+      const posts = edges.map((edge) => edge.node);
 
       collectedPosts.push(...posts);
 
-      if (
-        pageInfo?.hasNextPage !== true ||
-        !pageInfo.endCursor
-      ) {
+      if (pageInfo?.hasNextPage !== true || !pageInfo.endCursor) {
         break;
       }
 
       after = pageInfo.endCursor;
 
-      await this.delay(
-        this.requestDelayMs,
-      );
+      await this.delay(this.requestDelayMs);
     }
 
-    return collectedPosts.slice(
-      0,
-      this.maxFetchedPosts,
-    );
+    return collectedPosts.slice(0, this.maxFetchedPosts);
   }
 
   /**
@@ -391,35 +335,22 @@ export class ProductHuntCollector
     input: CollectorInput,
     searchTerms: string[],
   ): ProductHuntPost[] {
-    const normalizedTerms =
-      searchTerms.map((term) =>
-        this.cleanNormalizedText(term),
-      );
+    const normalizedTerms = searchTerms.map((term) =>
+      this.cleanNormalizedText(term),
+    );
 
-    const domainKeywords =
-      this.getDomainKeywords(input).map(
-        (keyword) =>
-          this.cleanNormalizedText(
-            keyword,
-          ),
-      );
+    const domainKeywords = this.getDomainKeywords(input).map((keyword) =>
+      this.cleanNormalizedText(keyword),
+    );
 
-    const allTerms = this.unique([
-      ...normalizedTerms,
-      ...domainKeywords,
-    ]);
+    const allTerms = this.unique([...normalizedTerms, ...domainKeywords]);
 
     return posts.filter((post) => {
-      const content =
-        this.cleanNormalizedText(
-          `${post.name ?? ''} ${
-            post.tagline ?? ''
-          } ${post.description ?? ''}`,
-        );
-
-      return allTerms.some((term) =>
-        content.includes(term),
+      const content = this.cleanNormalizedText(
+        `${post.name ?? ''} ${post.tagline ?? ''} ${post.description ?? ''}`,
       );
+
+      return allTerms.some((term) => content.includes(term));
     });
   }
 
@@ -459,63 +390,36 @@ export class ProductHuntCollector
     `;
 
     try {
-      const response =
-        await this.graphqlRequest<ProductHuntCommentsResponse>(
-          query,
-          {
-            id: postId,
-            first:
-              this.commentsPageSize,
-          },
-          token,
-          (
-            value: unknown,
-          ): value is ProductHuntCommentsResponse =>
-            this.isProductHuntCommentsResponse(
-              value,
-            ),
-        );
+      const response = await this.graphqlRequest<ProductHuntCommentsResponse>(
+        query,
+        {
+          id: postId,
+          first: this.commentsPageSize,
+        },
+        token,
+        (value: unknown): value is ProductHuntCommentsResponse =>
+          this.isProductHuntCommentsResponse(value),
+      );
 
-      const edges =
-        response.data?.post?.comments
-          ?.edges ?? [];
+      const edges = response.data?.post?.comments?.edges ?? [];
 
       return edges
         .map((edge) => edge.node)
-        .filter((comment) =>
-          this.isUsefulComment(comment),
-        )
-        .slice(
-          0,
-          this.maxSavedComments,
-        )
+        .filter((comment) => this.isUsefulComment(comment))
+        .slice(0, this.maxSavedComments)
         .map(
-          (
-            comment,
-          ): CollectorComment => ({
-            externalId:
-              this.buildCommentExternalId(
-                postId,
-                comment,
-              ),
+          (comment): CollectorComment => ({
+            externalId: this.buildCommentExternalId(postId, comment),
 
-            content:
-              this.cleanPlainText(
-                comment.body,
-              ),
+            content: this.cleanPlainText(comment.body),
 
-            author:
-              this.cleanPlainText(
-                comment.user?.username ??
-                  comment.user?.name,
-              ),
+            author: this.cleanPlainText(
+              comment.user?.username ?? comment.user?.name,
+            ),
 
             likesCount: 0,
 
-            publishedAt:
-              this.parseDate(
-                comment.createdAt,
-              ),
+            publishedAt: this.parseDate(comment.createdAt),
           }),
         );
     } catch (error: unknown) {
@@ -540,27 +444,20 @@ export class ProductHuntCollector
    */
   private async graphqlRequest<T>(
     query: string,
-    variables: Record<
-      string,
-      unknown
-    >,
+    variables: Record<string, unknown>,
     token: string,
     validator: GraphqlResponseValidator<T>,
   ): Promise<T> {
-    const response = await fetch(
-      this.apiUrl,
-      {
-        method: 'POST',
+    const response = await fetch(this.apiUrl, {
+      method: 'POST',
 
-        headers:
-          this.buildHeaders(token),
+      headers: this.buildHeaders(token),
 
-        body: JSON.stringify({
-          query,
-          variables,
-        }),
-      },
-    );
+      body: JSON.stringify({
+        query,
+        variables,
+      }),
+    });
 
     if (!response.ok) {
       throw new Error(
@@ -568,31 +465,20 @@ export class ProductHuntCollector
       );
     }
 
-    const rawResponse: unknown =
-      await response.json();
+    const rawResponse: unknown = await response.json();
 
     if (!this.isRecord(rawResponse)) {
-      throw new Error(
-        'Product Hunt API returned an invalid response.',
-      );
+      throw new Error('Product Hunt API returned an invalid response.');
     }
 
-    const errors =
-      rawResponse.errors;
+    const errors = rawResponse.errors;
 
-    if (
-      Array.isArray(errors) &&
-      errors.length > 0
-    ) {
+    if (Array.isArray(errors) && errors.length > 0) {
       this.logger.warn(
-        `Product Hunt GraphQL errors: ${this.stringifySafely(
-          errors,
-        )}`,
+        `Product Hunt GraphQL errors: ${this.stringifySafely(errors)}`,
       );
 
-      throw new Error(
-        'Product Hunt GraphQL returned one or more errors.',
-      );
+      throw new Error('Product Hunt GraphQL returned one or more errors.');
     }
 
     if (!validator(rawResponse)) {
@@ -611,38 +497,19 @@ export class ProductHuntCollector
    * @param input Collection job configuration.
    * @returns Unique normalized search terms.
    */
-  private buildSearchTerms(
-    input: CollectorInput,
-  ): string[] {
-    const domainKeywords =
-      this.getDomainKeywords(input);
+  private buildSearchTerms(input: CollectorInput): string[] {
+    const domainKeywords = this.getDomainKeywords(input);
 
-    const fallbackDomain =
-      input.domainName
-        ? [
-            this.cleanNormalizedText(
-              input.domainName,
-            ),
-          ]
-        : [];
+    const fallbackDomain = input.domainName
+      ? [this.cleanNormalizedText(input.domainName)]
+      : [];
 
-    const userKeywords =
-      (input.keywords ?? [])
-        .map((keyword) =>
-          this.cleanNormalizedText(
-            keyword,
-          ),
-        )
-        .filter(Boolean);
+    const userKeywords = (input.keywords ?? [])
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
-      .filter(
-        (term) => term.length >= 2,
-      )
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
+      .filter((term) => term.length >= 2)
       .slice(0, 10);
   }
 
@@ -652,39 +519,23 @@ export class ProductHuntCollector
    * @param post Product Hunt post.
    * @returns True when useful.
    */
-  private isValidPost(
-    post: ProductHuntPost,
-  ): boolean {
-    const title =
-      this.cleanPlainText(post.name);
+  private isValidPost(post: ProductHuntPost): boolean {
+    const title = this.cleanPlainText(post.name);
 
-    const body =
-      this.cleanPlainText(
-        `${post.tagline ?? ''} ${
-          post.description ?? ''
-        }`,
-      );
+    const body = this.cleanPlainText(
+      `${post.tagline ?? ''} ${post.description ?? ''}`,
+    );
 
-    const content =
-      this.cleanNormalizedText(
-        `${title} ${body}`,
-      );
+    const content = this.cleanNormalizedText(`${title} ${body}`);
 
-    if (
-      !post.id ||
-      !title ||
-      content.length < 20
-    ) {
+    if (!post.id || !title || content.length < 20) {
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -700,34 +551,21 @@ export class ProductHuntCollector
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title:
-        this.cleanPlainText(
-          post.name,
-        ),
+      title: this.cleanPlainText(post.name),
 
-      body:
-        this.cleanPlainText(
-          `${post.tagline ?? ''} ${
-            post.description ?? ''
-          }`,
-        ),
+      body: this.cleanPlainText(
+        `${post.tagline ?? ''} ${post.description ?? ''}`,
+      ),
 
-      domainTerms:
-        this.getDomainKeywords(input),
+      domainTerms: this.getDomainKeywords(input),
 
-      problemTerms:
-        this.getProblemWords(),
+      problemTerms: this.getProblemWords(),
 
-      likes:
-        post.votesCount ?? 0,
+      likes: post.votesCount ?? 0,
 
-      replies:
-        post.commentsCount ?? 0,
+      replies: post.commentsCount ?? 0,
 
-      publishedAt:
-        this.parseDate(
-          post.createdAt,
-        ),
+      publishedAt: this.parseDate(post.createdAt),
     });
   }
 
@@ -749,24 +587,13 @@ export class ProductHuntCollector
   ): Promise<CollectorPost> {
     const postId = post.id ?? '';
 
-    const comments =
-      await this.collectProductComments(
-        postId,
-        token,
-      );
+    const comments = await this.collectProductComments(postId, token);
 
-    const title =
-      this.cleanPlainText(post.name);
+    const title = this.cleanPlainText(post.name);
 
-    const content =
-      this.cleanPlainText(
-        [
-          post.tagline,
-          post.description,
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-      );
+    const content = this.cleanPlainText(
+      [post.tagline, post.description].filter(Boolean).join('\n\n'),
+    );
 
     return {
       externalId: postId,
@@ -775,11 +602,7 @@ export class ProductHuntCollector
 
       content: content || title,
 
-      author:
-        this.cleanPlainText(
-          post.user?.username ??
-            post.user?.name,
-        ),
+      author: this.cleanPlainText(post.user?.username ?? post.user?.name),
 
       url: post.url,
 
@@ -787,22 +610,13 @@ export class ProductHuntCollector
       city: input.city,
       region: input.region,
 
-      languageCode:
-        this.resolveStoredLanguageCode(
-          input.language,
-        ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
-      likesCount:
-        post.votesCount ?? 0,
+      likesCount: post.votesCount ?? 0,
 
-      repliesCount:
-        post.commentsCount ??
-        comments.length,
+      repliesCount: post.commentsCount ?? comments.length,
 
-      publishedAt:
-        this.parseDate(
-          post.createdAt,
-        ),
+      publishedAt: this.parseDate(post.createdAt),
 
       comments,
     };
@@ -824,15 +638,9 @@ export class ProductHuntCollector
     }
 
     const datePart =
-      this.parseDate(
-        comment.createdAt,
-      )?.toISOString() ??
-      'unknown-date';
+      this.parseDate(comment.createdAt)?.toISOString() ?? 'unknown-date';
 
-    const contentPart =
-      this.cleanNormalizedText(
-        comment.body,
-      ).slice(0, 50);
+    const contentPart = this.cleanNormalizedText(comment.body).slice(0, 50);
 
     return `${postId}-${datePart}-${contentPart}`;
   }
@@ -843,25 +651,17 @@ export class ProductHuntCollector
    * @param comment Product Hunt comment.
    * @returns True when useful.
    */
-  private isUsefulComment(
-    comment: ProductHuntComment,
-  ): boolean {
-    const content =
-      this.cleanNormalizedText(
-        comment.body,
-      );
+  private isUsefulComment(comment: ProductHuntComment): boolean {
+    const content = this.cleanNormalizedText(comment.body);
 
     if (content.length < 10) {
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -869,55 +669,39 @@ export class ProductHuntCollector
    * Reads the Product Hunt API token.
    */
   private getToken(): string {
-    return (
-      this.configService.get<string>(
-        'PRODUCT_HUNT_TOKEN',
-      ) ?? ''
-    );
+    return this.configService.get<string>('PRODUCT_HUNT_TOKEN') ?? '';
   }
 
   /**
    * Reads Product Hunt-specific blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'PRODUCT_HUNT_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('PRODUCT_HUNT_BLOCKED_WORDS');
   }
 
   /**
    * Builds Product Hunt API headers.
    */
-  private buildHeaders(
-    token: string,
-  ): Record<string, string> {
+  private buildHeaders(token: string): Record<string, string> {
     return {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
-      'Content-Type':
-        'application/json',
-      'User-Agent':
-        'NexoraAI/1.0.0 academic-project',
+      'Content-Type': 'application/json',
+      'User-Agent': 'NexoraAI/1.0.0 academic-project',
     };
   }
 
   /**
    * Parses an external date safely.
    */
-  private parseDate(
-    value?: string,
-  ): Date | undefined {
+  private parseDate(value?: string): Date | undefined {
     if (!value) {
       return undefined;
     }
 
     const date = new Date(value);
 
-    return Number.isNaN(
-      date.getTime(),
-    )
-      ? undefined
-      : date;
+    return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
   /**
@@ -952,31 +736,20 @@ export class ProductHuntCollector
 
     const edges = posts.edges;
 
-    if (
-      edges !== undefined &&
-      !Array.isArray(edges)
-    ) {
+    if (edges !== undefined && !Array.isArray(edges)) {
       return false;
     }
 
     if (
       Array.isArray(edges) &&
-      !edges.every((edge) =>
-        this.isGraphqlEdge(edge),
-      )
+      !edges.every((edge) => this.isGraphqlEdge(edge))
     ) {
       return false;
     }
 
-    const pageInfo =
-      posts.pageInfo;
+    const pageInfo = posts.pageInfo;
 
-    if (
-      pageInfo !== undefined &&
-      !this.isProductHuntPageInfo(
-        pageInfo,
-      )
-    ) {
+    if (pageInfo !== undefined && !this.isProductHuntPageInfo(pageInfo)) {
       return false;
     }
 
@@ -1005,10 +778,7 @@ export class ProductHuntCollector
 
     const post = data.post;
 
-    if (
-      post === undefined ||
-      post === null
-    ) {
+    if (post === undefined || post === null) {
       return true;
     }
 
@@ -1016,13 +786,9 @@ export class ProductHuntCollector
       return false;
     }
 
-    const comments =
-      post.comments;
+    const comments = post.comments;
 
-    if (
-      comments === undefined ||
-      comments === null
-    ) {
+    if (comments === undefined || comments === null) {
       return true;
     }
 
@@ -1030,80 +796,53 @@ export class ProductHuntCollector
       return false;
     }
 
-    const edges =
-      comments.edges;
+    const edges = comments.edges;
 
     if (edges === undefined) {
       return true;
     }
 
     return (
-      Array.isArray(edges) &&
-      edges.every((edge) =>
-        this.isGraphqlEdge(edge),
-      )
+      Array.isArray(edges) && edges.every((edge) => this.isGraphqlEdge(edge))
     );
   }
 
   /**
    * Validates pagination information.
    */
-  private isProductHuntPageInfo(
-    value: unknown,
-  ): value is ProductHuntPageInfo {
+  private isProductHuntPageInfo(value: unknown): value is ProductHuntPageInfo {
     if (!this.isRecord(value)) {
       return false;
     }
 
-    const hasNextPage =
-      value.hasNextPage;
+    const hasNextPage = value.hasNextPage;
 
-    const endCursor =
-      value.endCursor;
+    const endCursor = value.endCursor;
 
     return (
-      (hasNextPage === undefined ||
-        typeof hasNextPage ===
-          'boolean') &&
-      (endCursor === undefined ||
-        typeof endCursor ===
-          'string')
+      (hasNextPage === undefined || typeof hasNextPage === 'boolean') &&
+      (endCursor === undefined || typeof endCursor === 'string')
     );
   }
 
   /**
    * Validates one GraphQL connection edge.
    */
-  private isGraphqlEdge(
-    value: unknown,
-  ): value is ProductHuntEdge<unknown> {
-    return (
-      this.isRecord(value) &&
-      'node' in value
-    );
+  private isGraphqlEdge(value: unknown): value is ProductHuntEdge<unknown> {
+    return this.isRecord(value) && 'node' in value;
   }
 
   /**
    * Determines whether a value is a non-null record.
    */
-  private isRecord(
-    value: unknown,
-  ): value is Record<
-    string,
-    unknown
-  > {
-    return (
-      typeof value === 'object' &&
-      value !== null
-    );
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
   }
 
   /**
    * Extracts a safe error message.
    */
-  private getErrorMessage(
-    error: unknown,
-  ): string {
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
@@ -1118,20 +857,13 @@ export class ProductHuntCollector
   /**
    * Converts an unknown value to a safe log string.
    */
-  private stringifySafely(
-    value: unknown,
-  ): string {
-    if (
-      typeof value === 'string'
-    ) {
+  private stringifySafely(value: unknown): string {
+    if (typeof value === 'string') {
       return value;
     }
 
     try {
-      return (
-        JSON.stringify(value) ??
-        'Unknown GraphQL error'
-      );
+      return JSON.stringify(value) ?? 'Unknown GraphQL error';
     } catch {
       return 'Unknown GraphQL error';
     }
@@ -1140,9 +872,7 @@ export class ProductHuntCollector
   /**
    * Adds a delay between API requests.
    */
-  private delay(
-    ms: number,
-  ): Promise<void> {
+  private delay(ms: number): Promise<void> {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });

@@ -1,11 +1,6 @@
 import { Transform } from 'class-transformer';
 
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
@@ -25,20 +20,12 @@ import { ListQueryDto } from '../../utilities/dto/list-query.dto';
  * @returns A boolean when the value is valid; otherwise,
  * the original value.
  */
-function transformBooleanQueryValue(
-  value: unknown,
-): unknown {
-  if (
-    value === true ||
-    value === 'true'
-  ) {
+function transformBooleanQueryValue(value: unknown): unknown {
+  if (value === true || value === 'true') {
     return true;
   }
 
-  if (
-    value === false ||
-    value === 'false'
-  ) {
+  if (value === false || value === 'false') {
     return false;
   }
 
@@ -69,9 +56,7 @@ function transformBooleanQueryValue(
  *
  * @author Malak
  */
-export class GetDataSourcesQueryDto
-  extends ListQueryDto
-{
+export class GetDataSourcesQueryDto extends ListQueryDto {
   /**
    * Optional data-source key filter.
    *
@@ -96,9 +81,7 @@ export class GetDataSourcesQueryDto
    * - ?isActive=false
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   isActive?: boolean;
 
@@ -109,9 +92,7 @@ export class GetDataSourcesQueryDto
    * a matching sourceKey exists in CollectorsFactory.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   isImplemented?: boolean;
 
@@ -120,9 +101,7 @@ export class GetDataSourcesQueryDto
    * they return post-like records.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   supportsPosts?: boolean;
 
@@ -131,9 +110,7 @@ export class GetDataSourcesQueryDto
    * they return comments, reviews, or replies.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   supportsComments?: boolean;
 
@@ -143,9 +120,7 @@ export class GetDataSourcesQueryDto
    * geographical filtering.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   supportsRegion?: boolean;
 
@@ -154,9 +129,7 @@ export class GetDataSourcesQueryDto
    * their external platform supports language filtering.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    transformBooleanQueryValue(value),
-  )
+  @Transform(({ value }) => transformBooleanQueryValue(value))
   @IsBoolean()
   supportsLanguage?: boolean;
 }

@@ -1,4 +1,4 @@
-import {
+import type {
   AiRoutingStrategy,
   ApiRequestType,
   IdeaGenerationType,
@@ -6,28 +6,28 @@ import {
 } from '@prisma/client';
 
 import type { AiJsonSchema } from './ai-json-schema.type';
-import { AiResponseFormat } from './ai-provider.type';
+import type { AiResponseFormat } from './ai-provider.type';
 
 /**
  * Input required to execute one logical AI operation.
  *
  * This contract is consumed by AiExecutionService.
  *
- * Model selection, provider selection, retries, fallback,
- * timeout management, response repair, and structured-output
- * validation are handled centrally by the AI runtime.
+ * Model selection, provider selection, retries, fallback, timeout
+ * management, response repair, and structured-output validation are
+ * handled centrally by the AI runtime.
  *
  * Business modules remain responsible for:
- * - Building the prompt.
+ * - Building the final prompt.
  * - Defining the expected response schema.
- * - Selecting the request and prompt categories.
+ * - Selecting request and prompt categories.
  * - Persisting the final business result.
  *
  * @author Malak
  */
 export type AiExecutionInput = {
   /**
-   * Final rendered user prompt sent to the selected AI provider.
+   * Final rendered user prompt sent to the selected provider.
    */
   readonly userPrompt: string;
 
@@ -37,7 +37,7 @@ export type AiExecutionInput = {
   readonly systemInstruction?: string;
 
   /**
-   * Business category used by ExternalApiLog.
+   * Business category stored in ExternalApiLog.
    *
    * Examples:
    * - IDEA_GENERATION
@@ -47,7 +47,7 @@ export type AiExecutionInput = {
   readonly requestType: ApiRequestType;
 
   /**
-   * Prompt category used by prompt history and business flows.
+   * Optional business prompt category.
    *
    * Examples:
    * - IDEA_GENERATION
@@ -57,34 +57,31 @@ export type AiExecutionInput = {
   readonly promptType?: PromptType;
 
   /**
-   * Guest, registered-free, or premium idea tier.
+   * Optional idea-generation access level.
    *
-   * This remains useful business metadata for idea-generation
-   * flows, but structured-output validation is no longer coupled
-   * to this field.
+   * Structured-output validation does not depend directly on this
+   * value. The calling business module supplies the required schema.
    */
   readonly generationType?: IdeaGenerationType;
 
   /**
-   * Expected high-level provider response format.
+   * Requested high-level provider response format.
    *
-   * JSON responses require responseSchema and responseSchemaName.
+   * JSON responses require:
+   * - responseSchema
+   * - responseSchemaName
    */
   readonly responseFormat?: AiResponseFormat;
 
   /**
-   * Provider-neutral JSON Schema describing the expected output.
+   * Provider-neutral JSON Schema describing the expected response.
    *
    * Required when responseFormat is JSON.
-   *
-   * The schema is supplied by the calling business module instead
-   * of being resolved internally from PromptType. This allows the
-   * central AI runtime to support any structured response.
    */
   readonly responseSchema?: AiJsonSchema;
 
   /**
-   * Stable diagnostic identifier for responseSchema.
+   * Stable identifier assigned to responseSchema.
    *
    * Examples:
    * - guest_idea
@@ -98,16 +95,14 @@ export type AiExecutionInput = {
   readonly responseSchemaName?: string;
 
   /**
-   * Optional authenticated user related to the operation.
+   * Optional authenticated user associated with the operation.
    */
   readonly userId?: string;
 
   /**
-   * Optional guest session related to the operation.
+   * Optional guest session associated with the operation.
    *
-   * This field is business metadata and is not written directly
-   * to ExternalApiLog because the log model currently has no
-   * guest-session relation.
+   * ExternalApiLog currently does not persist guestSessionId directly.
    */
   readonly guestSessionId?: string;
 
@@ -122,10 +117,10 @@ export type AiExecutionInput = {
   readonly strategy?: AiRoutingStrategy;
 
   /**
-   * Maximum number of output tokens requested from the provider.
+   * Requested maximum output-token count.
    *
-   * AiExecutionService never exceeds the selected model's
-   * configured maximum.
+   * AiExecutionService limits this value using the selected model's
+   * configured maxOutputTokens.
    */
   readonly maxOutputTokens?: number;
 
@@ -135,8 +130,8 @@ export type AiExecutionInput = {
   readonly temperature?: number;
 
   /**
-   * Estimated output token count used only for routing and
-   * pre-request cost estimation.
+   * Estimated output-token count used only for routing and
+   * pre-request cost calculations.
    */
   readonly estimatedOutputTokens?: number;
 };

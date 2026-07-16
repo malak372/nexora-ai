@@ -1,7 +1,4 @@
-import {
-  CollectorInput,
-  CollectorPost,
-} from '../../base/collector.types';
+import { CollectorInput, CollectorPost } from '../../base/collector.types';
 
 /**
  * Forum adapter contract.

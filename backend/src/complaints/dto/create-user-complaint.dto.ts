@@ -23,9 +23,7 @@ export class CreateUserComplaintDto {
    *
    * Leading and trailing whitespace is removed before validation.
    */
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(3)
   @MaxLength(150)
@@ -36,9 +34,7 @@ export class CreateUserComplaintDto {
    *
    * Leading and trailing whitespace is removed before validation.
    */
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(10)
   @MaxLength(2_000)

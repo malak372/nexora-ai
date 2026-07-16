@@ -7,9 +7,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AiUsageAnalyticsController } from './analytics/ai-usage-analytics.controller';
 import { AiUsageAnalyticsService } from './analytics/ai-usage-analytics.service';
 
-import { OpenRouterProvider } from './providers/openrouter.provider';
 import { GoogleProvider } from './providers/google.provider';
-import { GroqProvider } from './providers/groq.provider';
+import { OpenRouterProvider } from './providers/openrouter.provider';
 
 import { AiExecutionService } from './services/ai-execution.service';
 import { AiProviderCredentialsService } from './services/ai-provider-credentials.service';
@@ -21,31 +20,20 @@ import { AiTimeoutService } from './services/ai-timeout.service';
 import { ExternalAiLogService } from './services/external-ai-log.service';
 
 /**
- * Runtime AI integration module.
+ * Central AI runtime module.
  *
- * This module contains the infrastructure required to execute AI
- * requests through configured external providers and expose
- * administrative AI-usage analytics.
+ * Registered providers:
+ * - Google AI.
+ * - OpenRouter.
  *
  * Responsibilities:
- * - Register Google, Groq, and OpenRouter provider adapters.
- * - Resolve provider credentials from application configuration.
- * - Select the appropriate provider adapter at runtime.
- * - Execute AI requests with timeout protection.
- * - Apply same-model retries and cross-model fallback.
- * - Validate structured AI output.
- * - Repair malformed structured output once before fallback.
- * - Persist one external API log for every provider call.
- * - Expose usage, cost, latency, error, and fallback analytics.
+ * - Register provider adapters.
+ * - Register central AI execution services.
+ * - Register AI analytics.
+ * - Integrate AI model routing and health management.
  *
- * Administrative AI-model CRUD and model configuration remain
- * inside AiModelsModule.
- *
- * This module does not:
- * - Build original idea prompts.
- * - Persist generated Idea records.
- * - Deduct user credits.
- * - Manage AI-model CRUD endpoints.
+ * Provider credentials are read from environment variables and are
+ * never stored inside AiModel records.
  *
  * @author Malak
  */
@@ -56,46 +44,57 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
 
   providers: [
     /**
-     * Concrete external AI provider adapters.
+     * External provider adapters.
      */
     GoogleProvider,
-    GroqProvider,
     OpenRouterProvider,
 
     /**
-     * Provider infrastructure services.
+     * Provider registry and credentials.
      */
     AiProviderCredentialsService,
     AiProviderFactoryService,
 
     /**
-     * Execution-support services.
+     * Execution infrastructure.
      */
     AiTimeoutService,
     ExternalAiLogService,
 
     /**
-     * Response-processing services.
+     * Structured-output parsing, validation, and repair.
      */
     AiResponseParserService,
     AiStructuredOutputService,
     AiResponseRepairService,
 
     /**
-     * Main AI runtime orchestrator.
+     * Main AI runtime and analytics services.
      */
     AiExecutionService,
-
-    /**
-     * Administrative AI usage analytics.
-     */
     AiUsageAnalyticsService,
   ],
 
   exports: [
+    /**
+     * Used by business modules to execute AI operations.
+     */
     AiExecutionService,
+
+    /**
+     * Useful for provider availability and registry checks.
+     */
+    AiProviderFactoryService,
+
+    /**
+     * Exposed for modules that need independent response processing.
+     */
     AiResponseParserService,
     AiStructuredOutputService,
+
+    /**
+     * Exposed for administrator analytics integrations.
+     */
     AiUsageAnalyticsService,
   ],
 })

@@ -11,7 +11,7 @@ import { AiModelsService } from './ai-models.service';
 /**
  * AI Models module.
  *
- * Provides three separated responsibilities:
+ * Responsibilities are separated between:
  *
  * AiModelsService:
  * - Administrative model configuration.
@@ -25,12 +25,12 @@ import { AiModelsService } from './ai-models.service';
  * - Health-state calculation.
  *
  * AiModelRoutingService:
- * - Default model routing.
+ * - Default routing.
  * - Lowest-cost routing.
  * - Balanced weighted routing.
  *
- * These services are exported so the central AiModule and provider
- * adapters can resolve models and update operational health.
+ * These services are exported so the central AiModule can resolve
+ * models and update operational health.
  *
  * @author Malak
  */

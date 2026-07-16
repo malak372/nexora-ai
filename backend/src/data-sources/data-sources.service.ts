@@ -6,11 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit-logs/audit-logs.service';
 import { CollectorsFactory } from '../collectors/collectors.factory';
@@ -51,17 +47,13 @@ import { UpdateDataSourceDto } from './dto/update-data-source.dto';
  * @author Malak
  */
 @Injectable()
-export class DataSourcesService
-  implements OnModuleInit
-{
+export class DataSourcesService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly collectorsFactory:
-      CollectorsFactory,
+    private readonly collectorsFactory: CollectorsFactory,
 
-    private readonly auditService:
-      AuditService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -81,18 +73,13 @@ export class DataSourcesService
    * @param dto Data-source metadata.
    * @param adminId Administrator performing the operation.
    */
-  async create(
-    dto: CreateDataSourceDto,
-    adminId: string,
-  ) {
-    const key =
-      this.normalizeSourceKey(dto.key);
+  async create(dto: CreateDataSourceDto, adminId: string) {
+    const key = this.normalizeSourceKey(dto.key);
 
-    const existing =
-      await this.prisma.dataSource.findUnique({
-        where: { key },
-        select: { id: true },
-      });
+    const existing = await this.prisma.dataSource.findUnique({
+      where: { key },
+      select: { id: true },
+    });
 
     if (existing) {
       throw new ConflictException(
@@ -100,150 +87,101 @@ export class DataSourcesService
       );
     }
 
-    const isImplemented =
-      this.collectorsFactory.isImplemented(
-        key,
-      );
+    const isImplemented = this.collectorsFactory.isImplemented(key);
 
-    const requestedActiveState =
-      dto.isActive ?? false;
+    const requestedActiveState = dto.isActive ?? false;
 
-    if (
-      requestedActiveState &&
-      !isImplemented
-    ) {
+    if (requestedActiveState && !isImplemented) {
       throw new BadRequestException(
         `Data source "${key}" cannot be activated because its collector is not implemented.`,
       );
     }
 
-    const dataSource =
-      await this.prisma.dataSource.create({
-        data: {
-          key,
+    const dataSource = await this.prisma.dataSource.create({
+      data: {
+        key,
 
-          displayName:
-            dto.displayName.trim(),
+        displayName: dto.displayName.trim(),
 
-          description:
-            this.normalizeOptionalText(
-              dto.description,
-            ),
+        description: this.normalizeOptionalText(dto.description),
 
-          isActive:
-            requestedActiveState,
+        isActive: requestedActiveState,
 
-          isImplemented,
+        isImplemented,
 
-          supportsPosts:
-            dto.supportsPosts ?? true,
+        supportsPosts: dto.supportsPosts ?? true,
 
-          supportsComments:
-            dto.supportsComments ?? false,
+        supportsComments: dto.supportsComments ?? false,
 
-          supportsRegion:
-            dto.supportsRegion ?? false,
+        supportsRegion: dto.supportsRegion ?? false,
 
-          supportsLanguage:
-            dto.supportsLanguage ?? false,
+        supportsLanguage: dto.supportsLanguage ?? false,
 
-          ...(dto.configuration !==
-            undefined && {
-            configuration:
-              dto.configuration as Prisma.InputJsonValue,
-          }),
-        },
-      });
+        ...(dto.configuration !== undefined && {
+          configuration: dto.configuration as Prisma.InputJsonValue,
+        }),
+      },
+    });
 
     await this.auditService.createLog({
       actorId: adminId,
 
-      action:
-        AuditAction.ADMIN_CREATE_DATA_SOURCE,
+      action: AuditAction.ADMIN_CREATE_DATA_SOURCE,
 
-      targetType:
-        AuditTargetType.DATA_SOURCE,
+      targetType: AuditTargetType.DATA_SOURCE,
 
       targetId: dataSource.id,
 
-      newValue:
-        this.toAuditSnapshot(
-          dataSource,
-        ),
+      newValue: this.toAuditSnapshot(dataSource),
     });
 
-    return this.mapDataSourceResponse(
-      dataSource,
-    );
+    return this.mapDataSourceResponse(dataSource);
   }
 
   /**
    * Returns a paginated administrative list.
    */
-  async findAllForAdmin(
-    query: GetDataSourcesQueryDto,
-  ) {
-    const {
-      skip,
-      take,
-      page,
-      limit,
-    } = buildPagination(query);
+  async findAllForAdmin(query: GetDataSourcesQueryDto) {
+    const { skip, take, page, limit } = buildPagination(query);
 
-    const where =
-      this.buildWhere(query);
+    const where = this.buildWhere(query);
 
-    const [data, total] =
-      await Promise.all([
-        this.prisma.dataSource.findMany({
-          where,
-          skip,
-          take,
+    const [data, total] = await Promise.all([
+      this.prisma.dataSource.findMany({
+        where,
+        skip,
+        take,
 
-          orderBy: buildOrderBy(
-            query,
-            [
-              'key',
-              'displayName',
-              'createdAt',
-              'updatedAt',
-            ] as const,
-            'displayName',
-          ),
+        orderBy: buildOrderBy(
+          query,
+          ['key', 'displayName', 'createdAt', 'updatedAt'] as const,
+          'displayName',
+        ),
 
-          include: {
-            _count: {
-              select: {
-                collectionJobSources:
-                  true,
-                socialPosts: true,
-              },
+        include: {
+          _count: {
+            select: {
+              collectionJobSources: true,
+              socialPosts: true,
             },
           },
-        }),
+        },
+      }),
 
-        this.prisma.dataSource.count({
-          where,
-        }),
-      ]);
+      this.prisma.dataSource.count({
+        where,
+      }),
+    ]);
 
     return {
-      data: data.map((dataSource) =>
-        this.mapDataSourceResponse(
-          dataSource,
-        ),
-      ),
+      data: data.map((dataSource) => this.mapDataSourceResponse(dataSource)),
 
       meta: {
         page,
         limit,
         total,
 
-        totalPages:
-          calculateTotalPages(
-            total,
-            limit,
-          ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -257,41 +195,38 @@ export class DataSourcesService
    * - An operational collector exists at runtime.
    */
   async findAvailable() {
-    const implementedKeys =
-      this.collectorsFactory
-        .getImplementedSourceKeys();
+    const implementedKeys = this.collectorsFactory.getImplementedSourceKeys();
 
     if (!implementedKeys.length) {
       return [];
     }
 
-    const dataSources =
-      await this.prisma.dataSource.findMany({
-        where: {
-          isActive: true,
-          isImplemented: true,
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: {
+        isActive: true,
+        isImplemented: true,
 
-          key: {
-            in: implementedKeys,
-          },
+        key: {
+          in: implementedKeys,
         },
+      },
 
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-          description: true,
+      select: {
+        id: true,
+        key: true,
+        displayName: true,
+        description: true,
 
-          supportsPosts: true,
-          supportsComments: true,
-          supportsRegion: true,
-          supportsLanguage: true,
-        },
+        supportsPosts: true,
+        supportsComments: true,
+        supportsRegion: true,
+        supportsLanguage: true,
+      },
 
-        orderBy: {
-          displayName: 'asc',
-        },
-      });
+      orderBy: {
+        displayName: 'asc',
+      },
+    });
 
     return dataSources;
   }
@@ -300,124 +235,87 @@ export class DataSourcesService
    * Returns one data source by database identifier.
    */
   async findOneForAdmin(id: string) {
-    const dataSource =
-      await this.prisma.dataSource.findUnique({
-        where: { id },
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { id },
 
-        include: {
-          _count: {
-            select: {
-              collectionJobSources:
-                true,
-              socialPosts: true,
-            },
+      include: {
+        _count: {
+          select: {
+            collectionJobSources: true,
+            socialPosts: true,
           },
         },
-      });
+      },
+    });
 
     if (!dataSource) {
-      throw new NotFoundException(
-        'Data source was not found.',
-      );
+      throw new NotFoundException('Data source was not found.');
     }
 
-    return this.mapDataSourceResponse(
-      dataSource,
-    );
+    return this.mapDataSourceResponse(dataSource);
   }
 
   /**
    * Updates editable data-source metadata.
    */
-  async update(
-    id: string,
-    dto: UpdateDataSourceDto,
-    adminId: string,
-  ) {
-    const existing =
-      await this.findEntityOrThrow(id);
+  async update(id: string, dto: UpdateDataSourceDto, adminId: string) {
+    const existing = await this.findEntityOrThrow(id);
 
-    const updated =
-      await this.prisma.dataSource.update({
-        where: { id },
+    const updated = await this.prisma.dataSource.update({
+      where: { id },
 
-        data: {
-          ...(dto.displayName !==
-            undefined && {
-            displayName:
-              dto.displayName.trim(),
-          }),
+      data: {
+        ...(dto.displayName !== undefined && {
+          displayName: dto.displayName.trim(),
+        }),
 
-          ...(dto.description !==
-            undefined && {
-            description:
-              this.normalizeOptionalText(
-                dto.description,
-              ),
-          }),
+        ...(dto.description !== undefined && {
+          description: this.normalizeOptionalText(dto.description),
+        }),
 
-          ...(dto.supportsPosts !==
-            undefined && {
-            supportsPosts:
-              dto.supportsPosts,
-          }),
+        ...(dto.supportsPosts !== undefined && {
+          supportsPosts: dto.supportsPosts,
+        }),
 
-          ...(dto.supportsComments !==
-            undefined && {
-            supportsComments:
-              dto.supportsComments,
-          }),
+        ...(dto.supportsComments !== undefined && {
+          supportsComments: dto.supportsComments,
+        }),
 
-          ...(dto.supportsRegion !==
-            undefined && {
-            supportsRegion:
-              dto.supportsRegion,
-          }),
+        ...(dto.supportsRegion !== undefined && {
+          supportsRegion: dto.supportsRegion,
+        }),
 
-          ...(dto.supportsLanguage !==
-            undefined && {
-            supportsLanguage:
-              dto.supportsLanguage,
-          }),
+        ...(dto.supportsLanguage !== undefined && {
+          supportsLanguage: dto.supportsLanguage,
+        }),
 
-          ...(dto.configuration !==
-            undefined && {
-            configuration:
-              dto.configuration as Prisma.InputJsonValue,
-          }),
+        ...(dto.configuration !== undefined && {
+          configuration: dto.configuration as Prisma.InputJsonValue,
+        }),
 
-          /*
-           * Keep the database state synchronized with
-           * the deployed collector registry.
-           */
-          isImplemented:
-            this.collectorsFactory.isImplemented(
-              existing.key,
-            ),
-        },
-      });
+        /*
+         * Keep the database state synchronized with
+         * the deployed collector registry.
+         */
+        isImplemented: this.collectorsFactory.isImplemented(existing.key),
+      },
+    });
 
     await this.auditService.createLog({
       actorId: adminId,
 
-      action:
-        AuditAction.ADMIN_UPDATE_DATA_SOURCE,
+      action: AuditAction.ADMIN_UPDATE_DATA_SOURCE,
 
-      targetType:
-        AuditTargetType.DATA_SOURCE,
+      targetType: AuditTargetType.DATA_SOURCE,
 
       targetId: id,
 
-      oldValue:
-        this.toAuditSnapshot(existing),
+      oldValue: this.toAuditSnapshot(existing),
 
-      newValue:
-        this.toAuditSnapshot(updated),
+      newValue: this.toAuditSnapshot(updated),
     });
 
-    return this.mapDataSourceResponse(
-      updated,
-    );
+    return this.mapDataSourceResponse(updated);
   }
 
   /**
@@ -430,45 +328,34 @@ export class DataSourcesService
     dto: UpdateDataSourceStatusDto,
     adminId: string,
   ) {
-    const existing =
-      await this.findEntityOrThrow(id);
+    const existing = await this.findEntityOrThrow(id);
 
-    const runtimeImplemented =
-      this.collectorsFactory.isImplemented(
-        existing.key,
-      );
+    const runtimeImplemented = this.collectorsFactory.isImplemented(
+      existing.key,
+    );
 
-    if (
-      dto.isActive &&
-      !runtimeImplemented
-    ) {
+    if (dto.isActive && !runtimeImplemented) {
       throw new BadRequestException(
         `Data source "${existing.key}" cannot be activated because its collector is not implemented.`,
       );
     }
 
     if (
-      existing.isActive ===
-        dto.isActive &&
-      existing.isImplemented ===
-        runtimeImplemented
+      existing.isActive === dto.isActive &&
+      existing.isImplemented === runtimeImplemented
     ) {
-      return this.mapDataSourceResponse(
-        existing,
-      );
+      return this.mapDataSourceResponse(existing);
     }
 
-    const updated =
-      await this.prisma.dataSource.update({
-        where: { id },
+    const updated = await this.prisma.dataSource.update({
+      where: { id },
 
-        data: {
-          isActive: dto.isActive,
+      data: {
+        isActive: dto.isActive,
 
-          isImplemented:
-            runtimeImplemented,
-        },
-      });
+        isImplemented: runtimeImplemented,
+      },
+    });
 
     await this.auditService.createLog({
       actorId: adminId,
@@ -477,21 +364,16 @@ export class DataSourcesService
         ? AuditAction.ADMIN_ACTIVATE_DATA_SOURCE
         : AuditAction.ADMIN_DEACTIVATE_DATA_SOURCE,
 
-      targetType:
-        AuditTargetType.DATA_SOURCE,
+      targetType: AuditTargetType.DATA_SOURCE,
 
       targetId: id,
 
-      oldValue:
-        this.toAuditSnapshot(existing),
+      oldValue: this.toAuditSnapshot(existing),
 
-      newValue:
-        this.toAuditSnapshot(updated),
+      newValue: this.toAuditSnapshot(updated),
     });
 
-    return this.mapDataSourceResponse(
-      updated,
-    );
+    return this.mapDataSourceResponse(updated);
   }
 
   /**
@@ -500,79 +382,62 @@ export class DataSourcesService
    * Useful after adding or removing a collector from the backend.
    */
   async synchronizeImplementationStates() {
-    const dataSources =
-      await this.prisma.dataSource.findMany({
-        select: {
-          id: true,
-          key: true,
-          isImplemented: true,
-          isActive: true,
-        },
-      });
+    const dataSources = await this.prisma.dataSource.findMany({
+      select: {
+        id: true,
+        key: true,
+        isImplemented: true,
+        isActive: true,
+      },
+    });
 
     let updatedCount = 0;
     let automaticallyDeactivatedCount = 0;
 
-    await this.prisma.$transaction(
-      async (transaction) => {
-        for (const source of dataSources) {
-          const runtimeImplemented =
-            this.collectorsFactory.isImplemented(
-              source.key,
-            );
+    await this.prisma.$transaction(async (transaction) => {
+      for (const source of dataSources) {
+        const runtimeImplemented = this.collectorsFactory.isImplemented(
+          source.key,
+        );
 
-          const mustDeactivate =
-            source.isActive &&
-            !runtimeImplemented;
+        const mustDeactivate = source.isActive && !runtimeImplemented;
 
-          if (
-            source.isImplemented ===
-              runtimeImplemented &&
-            !mustDeactivate
-          ) {
-            continue;
-          }
-
-          await transaction.dataSource.update({
-            where: {
-              id: source.id,
-            },
-
-            data: {
-              isImplemented:
-                runtimeImplemented,
-
-              ...(mustDeactivate && {
-                isActive: false,
-              }),
-            },
-          });
-
-          updatedCount += 1;
-
-          if (mustDeactivate) {
-            automaticallyDeactivatedCount +=
-              1;
-          }
+        if (source.isImplemented === runtimeImplemented && !mustDeactivate) {
+          continue;
         }
-      },
-    );
+
+        await transaction.dataSource.update({
+          where: {
+            id: source.id,
+          },
+
+          data: {
+            isImplemented: runtimeImplemented,
+
+            ...(mustDeactivate && {
+              isActive: false,
+            }),
+          },
+        });
+
+        updatedCount += 1;
+
+        if (mustDeactivate) {
+          automaticallyDeactivatedCount += 1;
+        }
+      }
+    });
 
     return {
-      totalDataSources:
-        dataSources.length,
+      totalDataSources: dataSources.length,
 
       updatedCount,
 
       automaticallyDeactivatedCount,
 
-      implementedSourceKeys:
-        this.collectorsFactory
-          .getImplementedSourceKeys(),
+      implementedSourceKeys: this.collectorsFactory.getImplementedSourceKeys(),
 
-      registeredSourceKeys:
-        this.collectorsFactory
-          .getRegisteredSourceKeys(),
+      registeredSourceKeys: this.collectorsFactory.getRegisteredSourceKeys(),
     };
   }
 
@@ -581,39 +446,24 @@ export class DataSourcesService
    *
    * Used internally by the collection pipeline.
    */
-  async findAvailableByKey(
-    sourceKey: string,
-  ) {
-    const key =
-      this.normalizeSourceKey(
-        sourceKey,
-      );
+  async findAvailableByKey(sourceKey: string) {
+    const key = this.normalizeSourceKey(sourceKey);
 
-    if (
-      !this.collectorsFactory.isImplemented(
-        key,
-      )
-    ) {
+    if (!this.collectorsFactory.isImplemented(key)) {
       throw new BadRequestException(
         `The "${key}" collector is not implemented.`,
       );
     }
 
-    const dataSource =
-      await this.prisma.dataSource.findUnique({
-        where: { key },
-      });
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { key },
+    });
 
     if (!dataSource) {
-      throw new NotFoundException(
-        `Data source "${key}" is not configured.`,
-      );
+      throw new NotFoundException(`Data source "${key}" is not configured.`);
     }
 
-    if (
-      !dataSource.isActive ||
-      !dataSource.isImplemented
-    ) {
+    if (!dataSource.isActive || !dataSource.isImplemented) {
       throw new BadRequestException(
         `Data source "${key}" is currently unavailable.`,
       );
@@ -628,55 +478,41 @@ export class DataSourcesService
   private buildWhere(
     query: GetDataSourcesQueryDto,
   ): Prisma.DataSourceWhereInput {
-    const dateFilter =
-      buildDateFilter(query);
+    const dateFilter = buildDateFilter(query);
 
-    const search =
-      query.search?.trim();
+    const search = query.search?.trim();
 
     return {
       ...(query.key?.trim() && {
         key: {
-          contains:
-            query.key.trim(),
+          contains: query.key.trim(),
 
           mode: 'insensitive',
         },
       }),
 
-      ...(query.isActive !==
-        undefined && {
+      ...(query.isActive !== undefined && {
         isActive: query.isActive,
       }),
 
-      ...(query.isImplemented !==
-        undefined && {
-        isImplemented:
-          query.isImplemented,
+      ...(query.isImplemented !== undefined && {
+        isImplemented: query.isImplemented,
       }),
 
-      ...(query.supportsPosts !==
-        undefined && {
-        supportsPosts:
-          query.supportsPosts,
+      ...(query.supportsPosts !== undefined && {
+        supportsPosts: query.supportsPosts,
       }),
 
-      ...(query.supportsComments !==
-        undefined && {
-        supportsComments:
-          query.supportsComments,
+      ...(query.supportsComments !== undefined && {
+        supportsComments: query.supportsComments,
       }),
 
-      ...(query.supportsRegion !==
-        undefined && {
-        supportsRegion:
-          query.supportsRegion,
+      ...(query.supportsRegion !== undefined && {
+        supportsRegion: query.supportsRegion,
       }),
 
-      ...(query.supportsLanguage !==
-        undefined && {
-        supportsLanguage:
-          query.supportsLanguage,
+      ...(query.supportsLanguage !== undefined && {
+        supportsLanguage: query.supportsLanguage,
       }),
 
       ...(dateFilter ?? {}),
@@ -709,18 +545,13 @@ export class DataSourcesService
   /**
    * Returns one DataSource entity or throws.
    */
-  private async findEntityOrThrow(
-    id: string,
-  ) {
-    const dataSource =
-      await this.prisma.dataSource.findUnique({
-        where: { id },
-      });
+  private async findEntityOrThrow(id: string) {
+    const dataSource = await this.prisma.dataSource.findUnique({
+      where: { id },
+    });
 
     if (!dataSource) {
-      throw new NotFoundException(
-        'Data source was not found.',
-      );
+      throw new NotFoundException('Data source was not found.');
     }
 
     return dataSource;
@@ -750,145 +581,107 @@ export class DataSourcesService
       };
     },
   >(dataSource: T) {
-    const runtimeImplemented =
-      this.collectorsFactory.isImplemented(
-        dataSource.key,
-      );
+    const runtimeImplemented = this.collectorsFactory.isImplemented(
+      dataSource.key,
+    );
 
     return {
       id: dataSource.id,
       key: dataSource.key,
 
-      displayName:
-        dataSource.displayName,
+      displayName: dataSource.displayName,
 
-      description:
-        dataSource.description,
+      description: dataSource.description,
 
-      isActive:
-        dataSource.isActive,
+      isActive: dataSource.isActive,
 
-      isImplemented:
-        dataSource.isImplemented,
+      isImplemented: dataSource.isImplemented,
 
       runtimeImplemented,
 
       isAvailable:
-        dataSource.isActive &&
-        dataSource.isImplemented &&
-        runtimeImplemented,
+        dataSource.isActive && dataSource.isImplemented && runtimeImplemented,
 
-      supportsPosts:
-        dataSource.supportsPosts,
+      supportsPosts: dataSource.supportsPosts,
 
-      supportsComments:
-        dataSource.supportsComments,
+      supportsComments: dataSource.supportsComments,
 
-      supportsRegion:
-        dataSource.supportsRegion,
+      supportsRegion: dataSource.supportsRegion,
 
-      supportsLanguage:
-        dataSource.supportsLanguage,
+      supportsLanguage: dataSource.supportsLanguage,
 
-      configuration:
-        dataSource.configuration,
+      configuration: dataSource.configuration,
 
       usage: {
-        collectionJobs:
-          dataSource._count
-            ?.collectionJobSources ?? 0,
+        collectionJobs: dataSource._count?.collectionJobSources ?? 0,
 
-        socialPosts:
-          dataSource._count
-            ?.socialPosts ?? 0,
+        socialPosts: dataSource._count?.socialPosts ?? 0,
       },
 
-      createdAt:
-        dataSource.createdAt,
+      createdAt: dataSource.createdAt,
 
-      updatedAt:
-        dataSource.updatedAt,
+      updatedAt: dataSource.updatedAt,
     };
   }
 
   /**
    * Produces a safe audit snapshot.
    */
-  private toAuditSnapshot(
-    dataSource: {
-      id: string;
-      key: string;
-      displayName: string;
-      description: string | null;
-      isActive: boolean;
-      isImplemented: boolean;
-      supportsPosts: boolean;
-      supportsComments: boolean;
-      supportsRegion: boolean;
-      supportsLanguage: boolean;
-      configuration: Prisma.JsonValue | null;
-      createdAt: Date;
-      updatedAt: Date;
-    },
-  ): Prisma.InputJsonObject {
+  private toAuditSnapshot(dataSource: {
+    id: string;
+    key: string;
+    displayName: string;
+    description: string | null;
+    isActive: boolean;
+    isImplemented: boolean;
+    supportsPosts: boolean;
+    supportsComments: boolean;
+    supportsRegion: boolean;
+    supportsLanguage: boolean;
+    configuration: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): Prisma.InputJsonObject {
     return {
       id: dataSource.id,
       key: dataSource.key,
 
-      displayName:
-        dataSource.displayName,
+      displayName: dataSource.displayName,
 
-      description:
-        dataSource.description,
+      description: dataSource.description,
 
-      isActive:
-        dataSource.isActive,
+      isActive: dataSource.isActive,
 
-      isImplemented:
-        dataSource.isImplemented,
+      isImplemented: dataSource.isImplemented,
 
-      supportsPosts:
-        dataSource.supportsPosts,
+      supportsPosts: dataSource.supportsPosts,
 
-      supportsComments:
-        dataSource.supportsComments,
+      supportsComments: dataSource.supportsComments,
 
-      supportsRegion:
-        dataSource.supportsRegion,
+      supportsRegion: dataSource.supportsRegion,
 
-      supportsLanguage:
-        dataSource.supportsLanguage,
+      supportsLanguage: dataSource.supportsLanguage,
 
-      configuration:
-        dataSource.configuration,
+      configuration: dataSource.configuration,
 
-      createdAt:
-        dataSource.createdAt.toISOString(),
+      createdAt: dataSource.createdAt.toISOString(),
 
-      updatedAt:
-        dataSource.updatedAt.toISOString(),
+      updatedAt: dataSource.updatedAt.toISOString(),
     };
   }
 
   /**
    * Normalizes a backend registry key.
    */
-  private normalizeSourceKey(
-    sourceKey: string,
-  ): string {
-    return sourceKey
-      .trim()
-      .toLowerCase();
+  private normalizeSourceKey(sourceKey: string): string {
+    return sourceKey.trim().toLowerCase();
   }
 
   /**
    * Normalizes optional text.
    */
-  private normalizeOptionalText(
-    value?: string,
-  ): string | null {
-    const normalized =
-      value?.trim();
+  private normalizeOptionalText(value?: string): string | null {
+    const normalized = value?.trim();
 
     return normalized || null;
   }

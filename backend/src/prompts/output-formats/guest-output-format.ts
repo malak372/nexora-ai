@@ -1,4 +1,3 @@
-
 /**
  * Provider-neutral JSON schema for guest idea generation.
  *

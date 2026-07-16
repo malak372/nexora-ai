@@ -66,10 +66,7 @@ export class DiscourseForumAdapter
   readonly engineName = 'Discourse';
 
   constructor(configService: ConfigService) {
-    super(
-      configService,
-      DiscourseForumAdapter.name,
-    );
+    super(configService, DiscourseForumAdapter.name);
   }
 
   /**
@@ -81,16 +78,12 @@ export class DiscourseForumAdapter
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        'forum',
-        'discourse-search',
-        [
-          forumUrl,
-          searchQuery,
-          input.country,
-          input.language,
-        ],
-      );
+      const cacheKey = CollectorCacheUtil.build('forum', 'discourse-search', [
+        forumUrl,
+        searchQuery,
+        input.country,
+        input.language,
+      ]);
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<DiscourseSearchResponse>(
@@ -133,9 +126,7 @@ export class DiscourseForumAdapter
       return posts;
     } catch (error: unknown) {
       this.logger.warn(
-        `Discourse forum skipped: ${forumUrl} - ${this.getErrorMessage(
-          error,
-        )}`,
+        `Discourse forum skipped: ${forumUrl} - ${this.getErrorMessage(error)}`,
       );
 
       return [];
@@ -151,16 +142,11 @@ export class DiscourseForumAdapter
     forumUrl: string,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const matchedPost = searchPosts.find(
-      (post) => post.topic_id === topic.id,
-    );
+    const matchedPost = searchPosts.find((post) => post.topic_id === topic.id);
 
     const topicId = topic.id ?? 0;
 
-    const comments = await this.collectTopicReplies(
-      forumUrl,
-      topicId,
-    );
+    const comments = await this.collectTopicReplies(forumUrl, topicId);
 
     const title = this.cleanPlainText(topic.title);
 
@@ -170,14 +156,10 @@ export class DiscourseForumAdapter
       title,
 
       content:
-        this.cleanPlainText(
-          matchedPost?.blurb ??
-            matchedPost?.excerpt,
-        ) || title,
+        this.cleanPlainText(matchedPost?.blurb ?? matchedPost?.excerpt) ||
+        title,
 
-      author:
-        topic.last_poster_username ??
-        matchedPost?.username,
+      author: topic.last_poster_username ?? matchedPost?.username,
 
       url: `${forumUrl}/t/${topic.slug}/${topicId}`,
 
@@ -185,9 +167,7 @@ export class DiscourseForumAdapter
       city: input.city,
       region: input.region,
 
-      languageCode: this.resolveStoredLanguageCode(
-        input.language,
-      ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
       likesCount: topic.like_count ?? 0,
       repliesCount: comments.length,
@@ -210,14 +190,10 @@ export class DiscourseForumAdapter
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        'forum',
-        'discourse-replies',
-        [
-          forumUrl,
-          topicId,
-        ],
-      );
+      const cacheKey = CollectorCacheUtil.build('forum', 'discourse-replies', [
+        forumUrl,
+        topicId,
+      ]);
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<DiscourseTopicResponse>(
@@ -257,9 +233,7 @@ export class DiscourseForumAdapter
               forumUrl,
             )}-${post.id?.toString() ?? ''}`,
 
-            content: this.cleanPlainText(
-              post.cooked ?? post.excerpt,
-            ),
+            content: this.cleanPlainText(post.cooked ?? post.excerpt),
 
             author: this.cleanPlainText(post.username),
             likesCount: post.like_count ?? 0,
@@ -297,17 +271,13 @@ export class DiscourseForumAdapter
    * Filters low-value replies.
    */
   private isUsefulReply(post: DiscourseReply): boolean {
-    const content = this.cleanNormalizedText(
-      post.cooked ?? post.excerpt,
-    );
+    const content = this.cleanNormalizedText(post.cooked ?? post.excerpt);
 
     if (!post.id || content.length < 30) {
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s+]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -394,8 +364,6 @@ export class DiscourseForumAdapter
       return error.message;
     }
 
-    return typeof error === 'string'
-      ? error
-      : 'Unknown Discourse forum error.';
+    return typeof error === 'string' ? error : 'Unknown Discourse forum error.';
   }
 }

@@ -54,20 +54,11 @@ export abstract class BaseCollector {
       30,
     );
 
-    this.retryAttempts = this.getPositiveNumber(
-      'COLLECTOR_RETRY_ATTEMPTS',
-      3,
-    );
+    this.retryAttempts = this.getPositiveNumber('COLLECTOR_RETRY_ATTEMPTS', 3);
 
-    this.retryDelayMs = this.getPositiveNumber(
-      'COLLECTOR_RETRY_DELAY_MS',
-      800,
-    );
+    this.retryDelayMs = this.getPositiveNumber('COLLECTOR_RETRY_DELAY_MS', 800);
 
-    this.cacheTtlMs = this.getPositiveNumber(
-      'COLLECTOR_CACHE_TTL_MS',
-      300_000,
-    );
+    this.cacheTtlMs = this.getPositiveNumber('COLLECTOR_CACHE_TTL_MS', 300_000);
   }
 
   /**
@@ -76,25 +67,16 @@ export abstract class BaseCollector {
    * Missing, non-numeric, zero, and negative values fall back
    * to the supplied default.
    */
-  protected getPositiveNumber(
-    key: string,
-    defaultValue: number,
-  ): number {
-    const value = Number(
-      this.configService.get<unknown>(key),
-    );
+  protected getPositiveNumber(key: string, defaultValue: number): number {
+    const value = Number(this.configService.get<unknown>(key));
 
-    return Number.isFinite(value) && value > 0
-      ? value
-      : defaultValue;
+    return Number.isFinite(value) && value > 0 ? value : defaultValue;
   }
 
   /**
    * Extracts normalized domain keywords.
    */
-  protected getDomainKeywords(
-    input: CollectorInput,
-  ): string[] {
+  protected getDomainKeywords(input: CollectorInput): string[] {
     return (input.domainKeywords ?? [])
       .map((keyword) => this.normalizeText(keyword))
       .filter(Boolean);
@@ -113,9 +95,7 @@ export abstract class BaseCollector {
   /**
    * Merges global and platform-specific blocked words.
    */
-  protected getBlockedWords(
-    platformBlockedWordsKey: string,
-  ): string[] {
+  protected getBlockedWords(platformBlockedWordsKey: string): string[] {
     return CollectorConfigUtil.getMergedCsv(
       this.configService,
       'COLLECTOR_BLOCKED_WORDS',
@@ -127,10 +107,7 @@ export abstract class BaseCollector {
    * Normalizes text for searching and matching.
    */
   protected normalizeText(text: string): string {
-    return text
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+    return text.replace(/\s+/g, ' ').trim().toLowerCase();
   }
 
   /**
@@ -158,18 +135,14 @@ export abstract class BaseCollector {
    * Removes HTML tags and decodes common entities.
    */
   protected stripHtml(text = ''): string {
-    return this.decodeHtml(
-      text.replace(/<[^>]*>/g, ' '),
-    );
+    return this.decodeHtml(text.replace(/<[^>]*>/g, ' '));
   }
 
   /**
    * Converts external API content to safe plain text
    * while preserving letter casing.
    */
-  protected cleanPlainText(
-    text?: string | null,
-  ): string {
+  protected cleanPlainText(text?: string | null): string {
     return this.stripHtml(text ?? '')
       .replace(/\s+/g, ' ')
       .trim();
@@ -179,12 +152,8 @@ export abstract class BaseCollector {
    * Converts external API content to normalized
    * lowercase plain text.
    */
-  protected cleanNormalizedText(
-    text?: string | null,
-  ): string {
-    return this.normalizeText(
-      this.cleanPlainText(text),
-    );
+  protected cleanNormalizedText(text?: string | null): string {
+    return this.normalizeText(this.cleanPlainText(text));
   }
 
   /**
@@ -194,9 +163,7 @@ export abstract class BaseCollector {
    * ANY is not a real detected content language, so it is
    * stored as undefined.
    */
-  protected resolveStoredLanguageCode(
-    language?: string,
-  ): string | undefined {
+  protected resolveStoredLanguageCode(language?: string): string | undefined {
     if (!language || language.toUpperCase() === 'ANY') {
       return undefined;
     }

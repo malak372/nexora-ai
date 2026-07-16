@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -40,9 +33,7 @@ import { AdminAlertsService } from '../services/admin-alerts.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminAlertsController {
-  constructor(
-    private readonly adminAlertsService: AdminAlertsService,
-  ) { }
+  constructor(private readonly adminAlertsService: AdminAlertsService) {}
 
   /**
    * Retrieves a paginated and filtered list of in-app alerts.
@@ -65,10 +56,7 @@ export class AdminAlertsController {
     @Body() dto: CreateAlertDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.adminAlertsService.createAlert(
-      dto,
-      currentUser.id,
-    );
+    return this.adminAlertsService.createAlert(dto, currentUser.id);
   }
 
   /**
@@ -82,9 +70,6 @@ export class AdminAlertsController {
     @Body() dto: CreateEmailAlertDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.adminAlertsService.sendEmailAlert(
-      dto,
-      currentUser.id,
-    );
+    return this.adminAlertsService.sendEmailAlert(dto, currentUser.id);
   }
 }

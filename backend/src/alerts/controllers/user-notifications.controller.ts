@@ -35,7 +35,7 @@ import { UserNotificationsService } from '../services/user-notifications.service
 export class UserNotificationsController {
   constructor(
     private readonly userNotificationsService: UserNotificationsService,
-  ) { }
+  ) {}
 
   /**
    * Retrieves the authenticated user's paginated notifications.
@@ -60,9 +60,7 @@ export class UserNotificationsController {
    * PATCH /users/notifications/read-all
    */
   @Patch('read-all')
-  markAllNotificationsAsRead(
-    @CurrentUser() currentUser: AuthenticatedUser,
-  ) {
+  markAllNotificationsAsRead(@CurrentUser() currentUser: AuthenticatedUser) {
     return this.userNotificationsService.markAllNotificationsAsRead(
       currentUser.id,
     );

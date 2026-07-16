@@ -1,45 +1,83 @@
-import { GoogleGenAI } from '@google/genai';
+import {
+  GoogleGenAI,
+  type GenerateContentConfig,
+} from '@google/genai';
+
 import { Injectable } from '@nestjs/common';
-import { AiProviderType } from '@prisma/client';
+
+import {
+  AI_PROVIDER_KEYS,
+  type AiProviderKey,
+} from '../constants/ai-provider.constants';
 
 import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../errors/ai-provider.error';
+
 import { AiProviderCredentialsService } from '../services/ai-provider-credentials.service';
+
 import {
   AiFinishReason,
-  AiProviderGenerateInput,
-  AiProviderGenerateResult,
   AiResponseFormat,
+  type AiProviderGenerateInput,
+  type AiProviderGenerateResult,
 } from '../types/ai-provider.type';
 
-import { AiProvider } from './ai-provider.interface';
+import type { AiProvider } from './ai-provider.interface';
 
 /**
- * Google Gemini generateContent API adapter.
+ * Exact responseJsonSchema type expected by the installed Google
+ * Gen AI SDK.
  *
- * This adapter translates the application's provider-independent
- * generation contract into the Google Gen AI SDK request format.
+ * AiJsonSchema remains provider-neutral throughout the application.
+ * Conversion into Google's SDK-specific type is restricted to this
+ * provider adapter.
+ */
+type GoogleResponseJsonSchema = NonNullable<
+  GenerateContentConfig['responseJsonSchema']
+>;
+
+/**
+ * Google Gemini AI-provider adapter.
  *
- * Provider-specific responses, finish reasons, token usage, and errors
- * are normalized before leaving this class.
+ * Responsibilities:
+ * - Convert provider-neutral requests into Google Gen AI requests.
+ * - Normalize generated text, usage metadata, and finish reasons.
+ * - Convert provider-specific exceptions into AiProviderError.
+ *
+ * Model selection remains database-driven through:
+ * - AiModel.providerKey
+ * - AiModel.apiModelId
  *
  * @author Malak
  */
 @Injectable()
 export class GoogleProvider implements AiProvider {
   /**
-   * Google Gen AI SDK client configured with the server-side API key.
+   * Stable backend provider-registry key.
+   */
+  readonly providerKey: AiProviderKey =
+    AI_PROVIDER_KEYS.GOOGLE;
+
+  /**
+   * Google Gen AI SDK client.
    */
   private readonly client: GoogleGenAI;
 
-  constructor(credentialsService: AiProviderCredentialsService) {
+  constructor(
+    credentialsService: AiProviderCredentialsService,
+  ) {
     this.client = new GoogleGenAI({
-      apiKey: credentialsService.getApiKey(AiProviderType.GOOGLE),
+      apiKey: credentialsService.getApiKey(
+        this.providerKey,
+      ),
     });
   }
 
   /**
-   * Generates one response through Gemini generateContent.
+   * Generates one response through Google Gemini.
+   *
+   * @param input Provider-neutral generation request.
+   * @returns Normalized provider result.
    */
   async generate(
     input: AiProviderGenerateInput,
@@ -47,98 +85,199 @@ export class GoogleProvider implements AiProvider {
     const startedAt = Date.now();
 
     try {
-      const response = await this.client.models.generateContent({
-        model: input.apiModelId,
+      const config =
+        this.buildGenerateConfig(input);
 
-        contents: input.userPrompt,
+      const response =
+        await this.client.models.generateContent({
+          model: input.apiModelId,
 
-        config: {
-          ...(input.systemInstruction && {
-            systemInstruction: input.systemInstruction,
-          }),
+          contents: input.userPrompt,
 
-          maxOutputTokens: input.maxOutputTokens,
+          config,
+        });
 
-          ...(input.temperature !== undefined && {
-            temperature: input.temperature,
-          }),
+      const finishReason =
+        this.mapFinishReason(
+          response.candidates?.[0]
+            ?.finishReason,
+        );
 
-          ...(input.responseFormat === AiResponseFormat.JSON && {
-            responseMimeType: 'application/json',
-          }),
-
-          abortSignal: input.signal,
-        },
-      });
-
-      const candidateFinishReason = response.candidates?.[0]?.finishReason;
-
-      const finishReason = this.mapFinishReason(candidateFinishReason);
-
-      const text = response.text?.trim();
+      const text =
+        response.text?.trim();
 
       if (!text) {
-        if (finishReason === AiFinishReason.CONTENT_FILTER) {
+        if (
+          finishReason ===
+          AiFinishReason.CONTENT_FILTER
+        ) {
           throw new AiProviderError(
-            'Google AI blocked the generated response because of content safety policies.',
+            'Google AI blocked the response because of content-safety policies.',
+
             AiProviderErrorCode.CONTENT_FILTERED,
+
             false,
           );
         }
 
         throw new AiProviderError(
           'Google AI returned an empty textual response.',
+
           AiProviderErrorCode.EMPTY_RESPONSE,
+
           true,
         );
       }
 
       return {
+        providerKey:
+          this.providerKey,
+
+        apiModelId:
+          input.apiModelId,
+
         text,
 
-        requestId: undefined,
+        /**
+         * The current generateContent SDK response does not expose a
+         * consistent provider request identifier.
+         */
+        requestId:
+          undefined,
 
-        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+        inputTokens:
+          response.usageMetadata
+            ?.promptTokenCount ??
+          0,
 
-        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+        outputTokens:
+          response.usageMetadata
+            ?.candidatesTokenCount ??
+          0,
 
         finishReason,
 
-        providerLatencyMs: Date.now() - startedAt,
+        providerLatencyMs:
+          Date.now() - startedAt,
       };
     } catch (error: unknown) {
-      if (error instanceof AiProviderError) {
+      if (
+        error instanceof AiProviderError
+      ) {
         throw error;
       }
 
-      const statusCode = this.readStatusCode(error);
+      const statusCode =
+        this.readStatusCode(error);
 
-      const errorCode = this.resolveErrorCode(error, statusCode);
+      const errorCode =
+        this.resolveErrorCode(
+          error,
+          statusCode,
+        );
 
       throw new AiProviderError(
-        this.readMessage(error, 'Google AI request failed.'),
+        this.readMessage(
+          error,
+          'Google AI request failed.',
+        ),
+
         errorCode,
-        this.isRetryableCode(errorCode),
+
+        this.isRetryableCode(
+          errorCode,
+        ),
+
         statusCode,
+
         this.readRequestId(error),
+
         error,
       );
     }
   }
 
   /**
-   * Maps a Gemini finish reason into the normalized application enum.
+   * Builds the Google-specific generation configuration.
+   *
+   * Provider-neutral JSON Schema conversion happens only at this
+   * boundary. Runtime AJV validation remains mandatory after the
+   * provider returns its response.
    */
-  private mapFinishReason(finishReason: unknown): AiFinishReason {
+  private buildGenerateConfig(
+    input: AiProviderGenerateInput,
+  ): GenerateContentConfig {
+    return {
+      ...(input.systemInstruction?.trim()
+        ? {
+            systemInstruction:
+              input.systemInstruction.trim(),
+          }
+        : {}),
+
+      maxOutputTokens:
+        input.maxOutputTokens,
+
+      ...(input.temperature !== undefined
+        ? {
+            temperature:
+              input.temperature,
+          }
+        : {}),
+
+      ...(input.responseFormat ===
+      AiResponseFormat.JSON
+        ? {
+            responseMimeType:
+              'application/json',
+
+            ...(input.responseSchema
+              ? {
+                  /**
+                   * AiJsonSchema is intentionally provider-neutral.
+                   *
+                   * This cast is isolated inside the Google adapter so
+                   * the rest of the application does not depend on
+                   * Google SDK schema types.
+                   */
+                  responseJsonSchema:
+                    input.responseSchema as
+                      GoogleResponseJsonSchema,
+                }
+              : {}),
+          }
+        : {}),
+
+      ...(input.signal
+        ? {
+            abortSignal:
+              input.signal,
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * Maps a Google finish reason into the provider-neutral application
+   * enum.
+   */
+  private mapFinishReason(
+    finishReason: unknown,
+  ): AiFinishReason {
     const normalizedReason =
-      typeof finishReason === 'string' ? finishReason.toUpperCase() : '';
+      typeof finishReason === 'string'
+        ? finishReason
+            .trim()
+            .toUpperCase()
+        : '';
 
     switch (normalizedReason) {
       case 'STOP':
         return AiFinishReason.STOP;
 
       case 'MAX_TOKENS':
-        return AiFinishReason.MAX_TOKENS;
+        return AiFinishReason
+          .MAX_TOKENS;
 
       case 'SAFETY':
       case 'BLOCKLIST':
@@ -146,104 +285,156 @@ export class GoogleProvider implements AiProvider {
       case 'SPII':
       case 'RECITATION':
       case 'IMAGE_SAFETY':
-        return AiFinishReason.CONTENT_FILTER;
+        return AiFinishReason
+          .CONTENT_FILTER;
 
       case 'MALFORMED_FUNCTION_CALL':
       case 'UNEXPECTED_TOOL_CALL':
       case 'TOO_MANY_TOOL_CALLS':
-        return AiFinishReason.TOOL_CALL;
+        return AiFinishReason
+          .TOOL_CALL;
 
       default:
-        return AiFinishReason.UNKNOWN;
+        return AiFinishReason
+          .UNKNOWN;
     }
   }
 
   /**
-   * Converts a Google SDK failure into a normalized error category.
+   * Converts a Google SDK exception into a provider-independent error
+   * category.
    */
   private resolveErrorCode(
     error: unknown,
     statusCode?: number,
   ): AiProviderErrorCode {
     if (this.isAbortError(error)) {
-      return AiProviderErrorCode.CANCELLED;
+      return AiProviderErrorCode
+        .CANCELLED;
     }
 
-    if (this.isInsufficientQuotaError(error)) {
-      return AiProviderErrorCode.INSUFFICIENT_QUOTA;
+    if (
+      this.isInsufficientQuotaError(
+        error,
+      )
+    ) {
+      return AiProviderErrorCode
+        .INSUFFICIENT_QUOTA;
     }
 
-    if (statusCode === undefined && this.isNetworkError(error)) {
-      return AiProviderErrorCode.NETWORK;
+    if (
+      statusCode === undefined &&
+      this.isNetworkError(error)
+    ) {
+      return AiProviderErrorCode
+        .NETWORK;
     }
 
     switch (statusCode) {
       case 400:
-        return this.isModelConfigurationError(error)
-          ? AiProviderErrorCode.INVALID_MODEL_CONFIGURATION
-          : AiProviderErrorCode.INVALID_PROMPT;
+      case 422:
+        return this.isModelConfigurationError(
+          error,
+        )
+          ? AiProviderErrorCode
+              .INVALID_MODEL_CONFIGURATION
+          : AiProviderErrorCode
+              .INVALID_PROMPT;
 
       case 401:
-        return AiProviderErrorCode.INVALID_CREDENTIALS;
+        return AiProviderErrorCode
+          .INVALID_CREDENTIALS;
 
       case 403:
-        return AiProviderErrorCode.FORBIDDEN;
+        return AiProviderErrorCode
+          .FORBIDDEN;
 
       case 404:
-        return AiProviderErrorCode.MODEL_NOT_FOUND;
+        return AiProviderErrorCode
+          .MODEL_NOT_FOUND;
 
       case 408:
-        return AiProviderErrorCode.TIMEOUT;
+        return AiProviderErrorCode
+          .TIMEOUT;
 
       case 409:
-        return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
+        return AiProviderErrorCode
+          .PROVIDER_UNAVAILABLE;
 
       case 429:
-        return AiProviderErrorCode.RATE_LIMIT;
+        return AiProviderErrorCode
+          .RATE_LIMIT;
 
       default:
-        if (statusCode !== undefined && statusCode >= 500) {
-          return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
+        if (
+          statusCode !== undefined &&
+          statusCode >= 500 &&
+          statusCode <= 599
+        ) {
+          return AiProviderErrorCode
+            .PROVIDER_UNAVAILABLE;
         }
 
-        return AiProviderErrorCode.UNKNOWN;
+        return AiProviderErrorCode
+          .UNKNOWN;
     }
   }
 
   /**
-   * Determines whether the same Gemini model may be retried.
+   * Determines whether another request may be made using the same
+   * Google model.
    */
-  private isRetryableCode(code: AiProviderErrorCode): boolean {
+  private isRetryableCode(
+    code: AiProviderErrorCode,
+  ): boolean {
     switch (code) {
       case AiProviderErrorCode.TIMEOUT:
       case AiProviderErrorCode.NETWORK:
       case AiProviderErrorCode.RATE_LIMIT:
-      case AiProviderErrorCode.PROVIDER_UNAVAILABLE:
-      case AiProviderErrorCode.EMPTY_RESPONSE:
-      case AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT:
+      case AiProviderErrorCode
+        .PROVIDER_UNAVAILABLE:
+      case AiProviderErrorCode
+        .EMPTY_RESPONSE:
+      case AiProviderErrorCode
+        .INVALID_STRUCTURED_OUTPUT:
       case AiProviderErrorCode.UNKNOWN:
         return true;
 
-      case AiProviderErrorCode.INSUFFICIENT_QUOTA:
-      case AiProviderErrorCode.INVALID_CREDENTIALS:
+      case AiProviderErrorCode
+        .INSUFFICIENT_QUOTA:
+      case AiProviderErrorCode
+        .INVALID_CREDENTIALS:
       case AiProviderErrorCode.FORBIDDEN:
-      case AiProviderErrorCode.MODEL_NOT_FOUND:
-      case AiProviderErrorCode.INVALID_MODEL_CONFIGURATION:
-      case AiProviderErrorCode.INVALID_PROMPT:
-      case AiProviderErrorCode.CONTENT_FILTERED:
-      case AiProviderErrorCode.CANCELLED:
+      case AiProviderErrorCode
+        .MODEL_NOT_FOUND:
+      case AiProviderErrorCode
+        .INVALID_MODEL_CONFIGURATION:
+      case AiProviderErrorCode
+        .INVALID_PROMPT:
+      case AiProviderErrorCode
+        .CONTENT_FILTERED:
+      case AiProviderErrorCode
+        .CANCELLED:
         return false;
 
       default:
-        return this.assertNeverErrorCode(code);
+        return this.assertNeverErrorCode(
+          code,
+        );
     }
   }
 
   /**
-   * Detects Gemini quota, billing, or resource-exhaustion failures.
+   * Detects quota, credit, billing, and resource-exhaustion errors.
    */
-  private isInsufficientQuotaError(error: unknown): boolean {
-    const message = this.readMessage(error, '').toLowerCase();
+  private isInsufficientQuotaError(
+    error: unknown,
+  ): boolean {
+    const message =
+      this.readMessage(
+        error,
+        '',
+      ).toLowerCase();
 
     return [
       'quota exceeded',
@@ -253,14 +444,23 @@ export class GoogleProvider implements AiProvider {
       'billing',
       'free tier quota',
       'limit: 0',
-    ].some((term) => message.includes(term));
+    ].some((term) =>
+      message.includes(term),
+    );
   }
 
   /**
-   * Detects likely Gemini model-configuration failures.
+   * Detects likely model or generation-parameter configuration
+   * failures.
    */
-  private isModelConfigurationError(error: unknown): boolean {
-    const message = this.readMessage(error, '').toLowerCase();
+  private isModelConfigurationError(
+    error: unknown,
+  ): boolean {
+    const message =
+      this.readMessage(
+        error,
+        '',
+      ).toLowerCase();
 
     return [
       'model',
@@ -269,74 +469,152 @@ export class GoogleProvider implements AiProvider {
       'max output tokens',
       'responsemimetype',
       'response mime type',
+      'responsejsonschema',
+      'response json schema',
       'unsupported parameter',
-    ].some((term) => message.includes(term));
-  }
-
-  /**
-   * Extracts an HTTP-like status code from a Google SDK error.
-   */
-  private readStatusCode(error: unknown): number | undefined {
-    if (typeof error !== 'object' || error === null) {
-      return undefined;
-    }
-
-    if ('status' in error && typeof error.status === 'number') {
-      return error.status;
-    }
-
-    if ('code' in error && typeof error.code === 'number') {
-      return error.code;
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Extracts a provider request identifier when available.
-   */
-  private readRequestId(error: unknown): string | undefined {
-    if (typeof error !== 'object' || error === null) {
-      return undefined;
-    }
-
-    if ('request_id' in error && typeof error.request_id === 'string') {
-      return error.request_id;
-    }
-
-    if ('requestId' in error && typeof error.requestId === 'string') {
-      return error.requestId;
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Extracts a human-readable error message.
-   */
-  private readMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
-  }
-
-  /**
-   * Determines whether the request was cancelled.
-   */
-  private isAbortError(error: unknown): boolean {
-    return (
-      error instanceof Error &&
-      (error.name === 'AbortError' || error.name === 'TimeoutError')
+      'schema',
+    ].some((term) =>
+      message.includes(term),
     );
   }
 
   /**
-   * Detects temporary network and connection errors.
+   * Reads an HTTP-like status code from an unknown SDK exception.
    */
-  private isNetworkError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null) {
+  private readStatusCode(
+    error: unknown,
+  ): number | undefined {
+    if (
+      typeof error !== 'object' ||
+      error === null
+    ) {
+      return undefined;
+    }
+
+    const record =
+      error as Record<
+        string,
+        unknown
+      >;
+
+    if (
+      typeof record.status === 'number' &&
+      Number.isFinite(
+        record.status,
+      )
+    ) {
+      return record.status;
+    }
+
+    if (
+      typeof record.code === 'number' &&
+      Number.isFinite(
+        record.code,
+      )
+    ) {
+      return record.code;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Reads an optional provider request identifier.
+   */
+  private readRequestId(
+    error: unknown,
+  ): string | undefined {
+    if (
+      typeof error !== 'object' ||
+      error === null
+    ) {
+      return undefined;
+    }
+
+    const record =
+      error as Record<
+        string,
+        unknown
+      >;
+
+    const requestId =
+      record.request_id ??
+      record.requestId;
+
+    if (
+      typeof requestId !== 'string'
+    ) {
+      return undefined;
+    }
+
+    const normalizedRequestId =
+      requestId.trim();
+
+    return normalizedRequestId ||
+      undefined;
+  }
+
+  /**
+   * Reads a human-readable provider error message.
+   */
+  private readMessage(
+    error: unknown,
+    fallback: string,
+  ): string {
+    if (error instanceof Error) {
+      const normalizedMessage =
+        error.message.trim();
+
+      if (normalizedMessage) {
+        return normalizedMessage;
+      }
+    }
+
+    return fallback;
+  }
+
+  /**
+   * Detects request cancellation.
+   *
+   * AiTimeoutService distinguishes an application timeout from other
+   * cancellation reasons.
+   */
+  private isAbortError(
+    error: unknown,
+  ): boolean {
+    return (
+      error instanceof Error &&
+      (
+        error.name ===
+          'AbortError' ||
+        error.name ===
+          'TimeoutError'
+      )
+    );
+  }
+
+  /**
+   * Detects temporary network and transport failures.
+   */
+  private isNetworkError(
+    error: unknown,
+  ): boolean {
+    if (
+      typeof error !== 'object' ||
+      error === null
+    ) {
       return false;
     }
 
-    if ('code' in error && typeof error.code === 'string') {
+    const record =
+      error as Record<
+        string,
+        unknown
+      >;
+
+    if (
+      typeof record.code === 'string'
+    ) {
       return [
         'ECONNRESET',
         'ETIMEDOUT',
@@ -344,19 +622,28 @@ export class GoogleProvider implements AiProvider {
         'ENOTFOUND',
         'EAI_AGAIN',
         'UND_ERR_CONNECT_TIMEOUT',
-      ].includes(error.code);
+      ].includes(record.code);
     }
 
     return (
       error instanceof Error &&
-      (error.name === 'FetchError' || error.name === 'TypeError')
+      (
+        error.name ===
+          'FetchError' ||
+        error.name ===
+          'TypeError'
+      )
     );
   }
 
   /**
-   * Enforces exhaustive handling of normalized error categories.
+   * Enforces exhaustive AiProviderErrorCode handling.
    */
-  private assertNeverErrorCode(value: never): never {
-    throw new Error(`Unsupported AI provider error code: ${String(value)}.`);
+  private assertNeverErrorCode(
+    value: never,
+  ): never {
+    throw new Error(
+      `Unsupported AI provider error code: ${String(value)}.`,
+    );
   }
 }

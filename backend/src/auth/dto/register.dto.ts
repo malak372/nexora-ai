@@ -2,13 +2,7 @@ import { UserType } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
-import {
-  IsEmail,
-  IsEnum,
-  IsString,
-  Matches,
-  MinLength,
-} from 'class-validator';
+import { IsEmail, IsEnum, IsString, Matches, MinLength } from 'class-validator';
 
 /**
  * Minimum allowed password length.
@@ -19,8 +13,7 @@ const MIN_PASSWORD_LENGTH = 6;
  * Password must contain at least one letter
  * and one number.
  */
-const PASSWORD_COMPLEXITY_REGEX =
-  /^(?=.*[A-Za-z])(?=.*\d).+$/;
+const PASSWORD_COMPLEXITY_REGEX = /^(?=.*[A-Za-z])(?=.*\d).+$/;
 
 /**
  * DTO used for user registration.
@@ -36,9 +29,7 @@ export class RegisterDto {
    * User's full name.
    */
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+    typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   fullName!: string;
@@ -47,9 +38,7 @@ export class RegisterDto {
    * User's email address.
    */
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : value,
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
   @IsEmail()
@@ -61,8 +50,7 @@ export class RegisterDto {
   @IsString()
   @MinLength(MIN_PASSWORD_LENGTH)
   @Matches(PASSWORD_COMPLEXITY_REGEX, {
-    message:
-      'Password must contain at least one letter and one number.',
+    message: 'Password must contain at least one letter and one number.',
   })
   password!: string;
 

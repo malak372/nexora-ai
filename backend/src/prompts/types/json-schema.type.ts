@@ -33,9 +33,7 @@ export type JsonSchema = {
 
   readonly description?: string;
 
-  readonly properties?: Readonly<
-    Record<string, JsonSchema>
-  >;
+  readonly properties?: Readonly<Record<string, JsonSchema>>;
 
   readonly required?: readonly string[];
 

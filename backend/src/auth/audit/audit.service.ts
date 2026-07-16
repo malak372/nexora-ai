@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import {
-  AuthenticationLog,
-  AuthAction,
-} from '@prisma/client';
+import { AuthenticationLog, AuthAction } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -93,9 +90,7 @@ export type CreateAuthLogInput = AuthRequestMeta & {
  */
 @Injectable()
 export class AuthAuditService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Creates an authentication audit-log entry.
@@ -103,9 +98,7 @@ export class AuthAuditService {
    * @param input Authentication event information.
    * @returns The newly created authentication log.
    */
-  async createLog(
-    input: CreateAuthLogInput,
-  ): Promise<AuthenticationLog> {
+  async createLog(input: CreateAuthLogInput): Promise<AuthenticationLog> {
     return this.prisma.authenticationLog.create({
       data: {
         userId: input.userId,

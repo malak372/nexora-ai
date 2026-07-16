@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -173,10 +170,7 @@ type RedditCredentials = {
  * @author Malak
  */
 @Injectable()
-export class RedditCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class RedditCollector extends BaseCollector implements SocialCollector {
   /**
    * Stable collector registry key.
    *
@@ -188,14 +182,12 @@ export class RedditCollector
   /**
    * Reddit OAuth token endpoint.
    */
-  private readonly tokenUrl =
-    'https://www.reddit.com/api/v1/access_token';
+  private readonly tokenUrl = 'https://www.reddit.com/api/v1/access_token';
 
   /**
    * Authenticated Reddit API base URL.
    */
-  private readonly oauthApiBaseUrl =
-    'https://oauth.reddit.com';
+  private readonly oauthApiBaseUrl = 'https://oauth.reddit.com';
 
   /**
    * Maximum number of search queries executed
@@ -222,20 +214,14 @@ export class RedditCollector
   private cachedToken?: CachedRedditToken;
 
   constructor(configService: ConfigService) {
-    super(
-      configService,
-      RedditCollector.name,
-    );
+    super(configService, RedditCollector.name);
 
     this.maxSearchQueries = this.getPositiveNumber(
       'REDDIT_MAX_SEARCH_QUERIES',
       5,
     );
 
-    this.maxSubreddits = this.getPositiveNumber(
-      'REDDIT_MAX_SUBREDDITS',
-      5,
-    );
+    this.maxSubreddits = this.getPositiveNumber('REDDIT_MAX_SUBREDDITS', 5);
 
     this.requestDelayMs = this.getPositiveNumber(
       'REDDIT_REQUEST_DELAY_MS',
@@ -258,11 +244,8 @@ export class RedditCollector
    * @param input Collection job configuration.
    * @returns Relevant public Reddit posts and comments.
    */
-  async collect(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]> {
-    const credentials =
-      this.getCredentials();
+  async collect(input: CollectorInput): Promise<CollectorPost[]> {
+    const credentials = this.getCredentials();
 
     if (!credentials) {
       this.logger.warn(
@@ -272,8 +255,7 @@ export class RedditCollector
       return [];
     }
 
-    const searchQueries =
-      this.buildSearchQueries(input);
+    const searchQueries = this.buildSearchQueries(input);
 
     if (!searchQueries.length) {
       this.logger.warn(
@@ -284,22 +266,14 @@ export class RedditCollector
     }
 
     try {
-      const accessToken =
-        await this.getAccessToken(
-          credentials,
-        );
+      const accessToken = await this.getAccessToken(credentials);
 
-      const subreddits =
-        this.getConfiguredSubreddits();
+      const subreddits = this.getConfiguredSubreddits();
 
-      const collectedPosts:
-        RedditPostData[] = [];
+      const collectedPosts: RedditPostData[] = [];
 
       for (const query of searchQueries) {
-        if (
-          collectedPosts.length >=
-          this.maxFetchedPosts
-        ) {
+        if (collectedPosts.length >= this.maxFetchedPosts) {
           break;
         }
 
@@ -320,34 +294,24 @@ export class RedditCollector
 
         collectedPosts.push(...posts);
 
-        await this.delay(
-          this.requestDelayMs,
-        );
+        await this.delay(this.requestDelayMs);
       }
 
-      const rankedPosts =
-        this.rankAndDeduplicatePosts(
-          collectedPosts,
-          input,
-        );
+      const rankedPosts = this.rankAndDeduplicatePosts(collectedPosts, input);
 
       const result: CollectorPost[] = [];
 
       for (const item of rankedPosts) {
-        if (
-          result.length >=
-          this.maxSavedPosts
-        ) {
+        if (result.length >= this.maxSavedPosts) {
           break;
         }
 
-        const mappedPost =
-          await this.mapPostToCollectorPost(
-            item.post,
-            input,
-            accessToken,
-            credentials.userAgent,
-          );
+        const mappedPost = await this.mapPostToCollectorPost(
+          item.post,
+          input,
+          accessToken,
+          credentials.userAgent,
+        );
 
         /*
          * Comments are especially useful for extracting
@@ -365,14 +329,10 @@ export class RedditCollector
 
         result.push(mappedPost);
 
-        await this.delay(
-          this.requestDelayMs,
-        );
+        await this.delay(this.requestDelayMs);
       }
 
-      this.logger.log(
-        `Reddit collection completed. Posts: ${result.length}`,
-      );
+      this.logger.log(`Reddit collection completed. Posts: ${result.length}`);
 
       return result;
     } catch (error: unknown) {
@@ -404,32 +364,21 @@ export class RedditCollector
   ): Promise<RedditPostData[]> {
     const posts: RedditPostData[] = [];
 
-    for (
-      const subreddit of subreddits.slice(
-        0,
-        this.maxSubreddits,
-      )
-    ) {
-      if (
-        posts.length >=
-        this.maxFetchedPosts
-      ) {
+    for (const subreddit of subreddits.slice(0, this.maxSubreddits)) {
+      if (posts.length >= this.maxFetchedPosts) {
         break;
       }
 
-      const subredditPosts =
-        await this.searchReddit(
-          query,
-          subreddit,
-          accessToken,
-          userAgent,
-        );
+      const subredditPosts = await this.searchReddit(
+        query,
+        subreddit,
+        accessToken,
+        userAgent,
+      );
 
       posts.push(...subredditPosts);
 
-      await this.delay(
-        this.requestDelayMs,
-      );
+      await this.delay(this.requestDelayMs);
     }
 
     return posts;
@@ -450,93 +399,60 @@ export class RedditCollector
     accessToken: string,
     userAgent: string,
   ): Promise<RedditPostData[]> {
-    const normalizedSubreddit =
-      this.normalizeSubredditName(
-        subreddit,
-      );
+    const normalizedSubreddit = this.normalizeSubredditName(subreddit);
 
-    const scope =
-      normalizedSubreddit
-        ? `r/${normalizedSubreddit}`
-        : 'all';
+    const scope = normalizedSubreddit ? `r/${normalizedSubreddit}` : 'all';
 
-    const endpoint =
-      normalizedSubreddit
-        ? `${this.oauthApiBaseUrl}/r/${normalizedSubreddit}/search`
-        : `${this.oauthApiBaseUrl}/search`;
+    const endpoint = normalizedSubreddit
+      ? `${this.oauthApiBaseUrl}/r/${normalizedSubreddit}/search`
+      : `${this.oauthApiBaseUrl}/search`;
 
-    const cacheKey =
-      CollectorCacheUtil.build(
-        this.sourceKey,
-        'search',
-        [
-          scope,
-          query,
-        ],
-      );
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
+      scope,
+      query,
+    ]);
 
-    const response =
-      await CollectorHttpUtil.getWithRetryAndCache<
-        RedditListing<RedditPostData>
-      >(
-        endpoint,
-        {
-          headers:
-            this.buildAuthenticatedHeaders(
-              accessToken,
-              userAgent,
-            ),
+    const response = await CollectorHttpUtil.getWithRetryAndCache<
+      RedditListing<RedditPostData>
+    >(
+      endpoint,
+      {
+        headers: this.buildAuthenticatedHeaders(accessToken, userAgent),
 
-          params: {
-            q: query,
+        params: {
+          q: query,
 
-            restrict_sr:
-              normalizedSubreddit
-                ? 'true'
-                : 'false',
+          restrict_sr: normalizedSubreddit ? 'true' : 'false',
 
-            sort: 'relevance',
+          sort: 'relevance',
 
-            /*
-             * Recent content is generally more useful for
-             * discovering current software problems.
-             */
-            t: 'year',
+          /*
+           * Recent content is generally more useful for
+           * discovering current software problems.
+           */
+          t: 'year',
 
-            limit: Math.min(
-              this.maxFetchedPosts,
-              100,
-            ),
+          limit: Math.min(this.maxFetchedPosts, 100),
 
-            raw_json: 1,
-          },
-
-          timeout: 10_000,
+          raw_json: 1,
         },
-        {
-          cacheKey,
 
-          cacheTtlMs:
-            this.cacheTtlMs,
+        timeout: 10_000,
+      },
+      {
+        cacheKey,
 
-          retryAttempts:
-            this.retryAttempts,
+        cacheTtlMs: this.cacheTtlMs,
 
-          retryDelayMs:
-            this.retryDelayMs,
-        },
-      );
+        retryAttempts: this.retryAttempts,
 
-    return (
-      response.data?.children ?? []
-    )
+        retryDelayMs: this.retryDelayMs,
+      },
+    );
+
+    return (response.data?.children ?? [])
       .map((child) => child.data)
-      .filter(
-        (
-          post,
-        ): post is RedditPostData =>
-          Boolean(post),
-      );
+      .filter((post): post is RedditPostData => Boolean(post));
   }
 
   /**
@@ -546,49 +462,31 @@ export class RedditCollector
    * @param input Collection job configuration.
    * @returns Normalized search queries.
    */
-  private buildSearchQueries(
-    input: CollectorInput,
-  ): string[] {
-    const domainKeywords =
-      this.getDomainKeywords(input);
+  private buildSearchQueries(input: CollectorInput): string[] {
+    const domainKeywords = this.getDomainKeywords(input);
 
-    const domainName =
-      this.cleanNormalizedText(
-        input.domainName,
-      );
+    const domainName = this.cleanNormalizedText(input.domainName);
 
-    const userKeywords =
-      (input.keywords ?? [])
-        .map((keyword) =>
-          this.cleanNormalizedText(
-            keyword,
-          ),
-        )
-        .filter(Boolean);
+    const userKeywords = (input.keywords ?? [])
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
 
     const baseTerms = this.unique([
       ...userKeywords,
       ...domainKeywords,
       domainName,
     ])
-      .filter(
-        (term) => term.length >= 2,
-      )
+      .filter((term) => term.length >= 2)
       .slice(0, 6);
 
     if (!baseTerms.length) {
       return [];
     }
 
-    const problemTerms =
-      this.getProblemWords()
-        .map((term) =>
-          this.cleanNormalizedText(
-            term,
-          ),
-        )
-        .filter(Boolean)
-        .slice(0, 4);
+    const problemTerms = this.getProblemWords()
+      .map((term) => this.cleanNormalizedText(term))
+      .filter(Boolean)
+      .slice(0, 4);
 
     const queries = [
       ...baseTerms,
@@ -596,18 +494,11 @@ export class RedditCollector
       ...baseTerms
         .slice(0, 3)
         .flatMap((term) =>
-          problemTerms.map(
-            (problemTerm) =>
-              `${term} ${problemTerm}`,
-          ),
+          problemTerms.map((problemTerm) => `${term} ${problemTerm}`),
         ),
     ];
 
-    return this.unique(queries)
-      .slice(
-        0,
-        this.maxSearchQueries,
-      );
+    return this.unique(queries).slice(0, this.maxSearchQueries);
   }
 
   /**
@@ -624,21 +515,14 @@ export class RedditCollector
     post: RedditPostData;
     score: number;
   }> {
-    const seenPostIds =
-      new Set<string>();
+    const seenPostIds = new Set<string>();
 
     return posts
-      .filter((post) =>
-        this.isValidPost(post),
-      )
+      .filter((post) => this.isValidPost(post))
       .filter((post) => {
-        const id =
-          this.getPostId(post);
+        const id = this.getPostId(post);
 
-        if (
-          !id ||
-          seenPostIds.has(id)
-        ) {
+        if (!id || seenPostIds.has(id)) {
           return false;
         }
 
@@ -649,23 +533,11 @@ export class RedditCollector
       .map((post) => ({
         post,
 
-        score:
-          this.calculatePostRelevanceScore(
-            post,
-            input,
-          ),
+        score: this.calculatePostRelevanceScore(post, input),
       }))
-      .filter(
-        (item) => item.score > 0,
-      )
-      .sort(
-        (first, second) =>
-          second.score - first.score,
-      )
-      .slice(
-        0,
-        this.maxSavedPosts,
-      );
+      .filter((item) => item.score > 0)
+      .sort((first, second) => second.score - first.score)
+      .slice(0, this.maxSavedPosts);
   }
 
   /**
@@ -682,30 +554,16 @@ export class RedditCollector
    * @param post Reddit post.
    * @returns True when the post is useful.
    */
-  private isValidPost(
-    post: RedditPostData,
-  ): boolean {
+  private isValidPost(post: RedditPostData): boolean {
     const id = this.getPostId(post);
 
-    const title =
-      this.cleanPlainText(
-        post.title,
-      );
+    const title = this.cleanPlainText(post.title);
 
-    const body =
-      this.cleanPlainText(
-        post.selftext,
-      );
+    const body = this.cleanPlainText(post.selftext);
 
-    const author =
-      this.cleanNormalizedText(
-        post.author,
-      );
+    const author = this.cleanNormalizedText(post.author);
 
-    const content =
-      this.cleanNormalizedText(
-        `${title} ${body}`,
-      );
+    const content = this.cleanNormalizedText(`${title} ${body}`);
 
     if (
       !id ||
@@ -721,15 +579,10 @@ export class RedditCollector
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(
-          word,
-        ),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -744,47 +597,23 @@ export class RedditCollector
     post: RedditPostData,
     input: CollectorInput,
   ): number {
-    const baseScore =
-      RelevanceScoreUtil.scoreText({
-        title:
-          this.cleanPlainText(
-            post.title,
-          ),
+    const baseScore = RelevanceScoreUtil.scoreText({
+      title: this.cleanPlainText(post.title),
 
-        body:
-          this.cleanPlainText(
-            post.selftext,
-          ),
+      body: this.cleanPlainText(post.selftext),
 
-        domainTerms:
-          this.getDomainKeywords(
-            input,
-          ),
+      domainTerms: this.getDomainKeywords(input),
 
-        problemTerms:
-          this.getProblemWords(),
+      problemTerms: this.getProblemWords(),
 
-        likes:
-          post.score ??
-          post.ups ??
-          0,
+      likes: post.score ?? post.ups ?? 0,
 
-        replies:
-          post.num_comments ?? 0,
+      replies: post.num_comments ?? 0,
 
-        publishedAt:
-          this.parseUnixDate(
-            post.created_utc,
-          ),
-      });
+      publishedAt: this.parseUnixDate(post.created_utc),
+    });
 
-    return (
-      baseScore +
-      this.calculateUserKeywordBonus(
-        post,
-        input,
-      )
-    );
+    return baseScore + this.calculateUserKeywordBonus(post, input);
   }
 
   /**
@@ -798,24 +627,13 @@ export class RedditCollector
     post: RedditPostData,
     input: CollectorInput,
   ): number {
-    const keywords =
-      (input.keywords ?? [])
-        .map((keyword) =>
-          this.cleanNormalizedText(
-            keyword,
-          ),
-        )
-        .filter(Boolean);
+    const keywords = (input.keywords ?? [])
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
 
-    const title =
-      this.cleanNormalizedText(
-        post.title,
-      );
+    const title = this.cleanNormalizedText(post.title);
 
-    const body =
-      this.cleanNormalizedText(
-        post.selftext,
-      );
+    const body = this.cleanNormalizedText(post.selftext);
 
     let bonus = 0;
 
@@ -850,26 +668,18 @@ export class RedditCollector
     accessToken: string,
     userAgent: string,
   ): Promise<CollectorPost> {
-    const postId =
-      this.getPostId(post);
+    const postId = this.getPostId(post);
 
-    const title =
-      this.cleanPlainText(
-        post.title,
-      );
+    const title = this.cleanPlainText(post.title);
 
-    const body =
-      this.cleanPlainText(
-        post.selftext,
-      );
+    const body = this.cleanPlainText(post.selftext);
 
-    const comments =
-      await this.collectPostComments(
-        post,
-        accessToken,
-        userAgent,
-        input,
-      );
+    const comments = await this.collectPostComments(
+      post,
+      accessToken,
+      userAgent,
+      input,
+    );
 
     return {
       externalId: postId,
@@ -878,36 +688,21 @@ export class RedditCollector
 
       content: body || title,
 
-      author:
-        this.cleanPlainText(
-          post.author,
-        ),
+      author: this.cleanPlainText(post.author),
 
-      url:
-        this.resolvePostUrl(post),
+      url: this.resolvePostUrl(post),
 
       country: undefined,
       city: undefined,
       region: undefined,
 
-      languageCode:
-        this.resolveStoredLanguageCode(
-          input.language,
-        ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
-      likesCount:
-        post.score ??
-        post.ups ??
-        0,
+      likesCount: post.score ?? post.ups ?? 0,
 
-      repliesCount:
-        post.num_comments ??
-        comments.length,
+      repliesCount: post.num_comments ?? comments.length,
 
-      publishedAt:
-        this.parseUnixDate(
-          post.created_utc,
-        ),
+      publishedAt: this.parseUnixDate(post.created_utc),
 
       comments,
     };
@@ -933,117 +728,67 @@ export class RedditCollector
     userAgent: string,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
-    const postId =
-      this.getPostId(post);
+    const postId = this.getPostId(post);
 
-    const subreddit =
-      this.normalizeSubredditName(
-        post.subreddit,
-      );
+    const subreddit = this.normalizeSubredditName(post.subreddit);
 
-    if (
-      !postId ||
-      !subreddit ||
-      (post.num_comments ?? 0) <= 0
-    ) {
+    if (!postId || !subreddit || (post.num_comments ?? 0) <= 0) {
       return [];
     }
 
     try {
-      const cacheKey =
-        CollectorCacheUtil.build(
-          this.sourceKey,
-          'comments',
-          [
-            subreddit,
-            postId,
-          ],
-        );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'comments', [
+        subreddit,
+        postId,
+      ]);
 
-      const response =
-        await CollectorHttpUtil.getWithRetryAndCache<
-          Array<
-            RedditListing<
-              RedditPostData |
-              RedditCommentData
-            >
-          >
-        >(
-          `${this.oauthApiBaseUrl}/r/${subreddit}/comments/${postId}`,
-          {
-            headers:
-              this.buildAuthenticatedHeaders(
-                accessToken,
-                userAgent,
-              ),
+      const response = await CollectorHttpUtil.getWithRetryAndCache<
+        Array<RedditListing<RedditPostData | RedditCommentData>>
+      >(
+        `${this.oauthApiBaseUrl}/r/${subreddit}/comments/${postId}`,
+        {
+          headers: this.buildAuthenticatedHeaders(accessToken, userAgent),
 
-            params: {
-              sort: 'top',
+          params: {
+            sort: 'top',
 
-              limit: Math.min(
-                this.maxFetchedComments,
-                100,
-              ),
+            limit: Math.min(this.maxFetchedComments, 100),
 
-              depth: 1,
+            depth: 1,
 
-              raw_json: 1,
-            },
-
-            timeout: 10_000,
+            raw_json: 1,
           },
-          {
-            cacheKey,
 
-            cacheTtlMs:
-              this.cacheTtlMs,
+          timeout: 10_000,
+        },
+        {
+          cacheKey,
 
-            retryAttempts:
-              this.retryAttempts,
+          cacheTtlMs: this.cacheTtlMs,
 
-            retryDelayMs:
-              this.retryDelayMs,
-          },
-        );
+          retryAttempts: this.retryAttempts,
 
-      const commentsListing =
-        response[1] as
-          | RedditListing<RedditCommentData>
-          | undefined;
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
-      const rawComments =
-        commentsListing?.data
-          ?.children ?? [];
+      const commentsListing = response[1] as
+        | RedditListing<RedditCommentData>
+        | undefined;
 
-      const seenCommentIds =
-        new Set<string>();
+      const rawComments = commentsListing?.data?.children ?? [];
+
+      const seenCommentIds = new Set<string>();
 
       return rawComments
-        .filter(
-          (thing) =>
-            thing.kind === 't1',
-        )
+        .filter((thing) => thing.kind === 't1')
         .map((thing) => thing.data)
-        .filter(
-          (
-            comment,
-          ): comment is RedditCommentData =>
-            Boolean(comment),
-        )
-        .filter((comment) =>
-          this.isUsefulComment(
-            comment,
-            input,
-          ),
-        )
+        .filter((comment): comment is RedditCommentData => Boolean(comment))
+        .filter((comment) => this.isUsefulComment(comment, input))
         .filter((comment) => {
-          const id =
-            this.getCommentId(comment);
+          const id = this.getCommentId(comment);
 
-          if (
-            !id ||
-            seenCommentIds.has(id)
-          ) {
+          if (!id || seenCommentIds.has(id)) {
             return false;
           }
 
@@ -1053,50 +798,22 @@ export class RedditCollector
         })
         .sort(
           (first, second) =>
-            (second.score ??
-              second.ups ??
-              0) -
-            (first.score ??
-              first.ups ??
-              0),
+            (second.score ?? second.ups ?? 0) - (first.score ?? first.ups ?? 0),
         )
-        .slice(
-          0,
-          this.maxSavedComments,
-        )
+        .slice(0, this.maxSavedComments)
         .map(
-          (
-            comment,
-          ): CollectorComment => ({
-            externalId:
-              this.getCommentId(
-                comment,
-              ),
+          (comment): CollectorComment => ({
+            externalId: this.getCommentId(comment),
 
-            content:
-              this.cleanPlainText(
-                comment.body,
-              ),
+            content: this.cleanPlainText(comment.body),
 
-            author:
-              this.cleanPlainText(
-                comment.author,
-              ),
+            author: this.cleanPlainText(comment.author),
 
-            languageCode:
-              this.resolveStoredLanguageCode(
-                input.language,
-              ),
+            languageCode: this.resolveStoredLanguageCode(input.language),
 
-            likesCount:
-              comment.score ??
-              comment.ups ??
-              0,
+            likesCount: comment.score ?? comment.ups ?? 0,
 
-            publishedAt:
-              this.parseUnixDate(
-                comment.created_utc,
-              ),
+            publishedAt: this.parseUnixDate(comment.created_utc),
           }),
         );
     } catch (error: unknown) {
@@ -1120,18 +837,11 @@ export class RedditCollector
     comment: RedditCommentData,
     input: CollectorInput,
   ): boolean {
-    const body =
-      this.cleanPlainText(
-        comment.body,
-      );
+    const body = this.cleanPlainText(comment.body);
 
-    const content =
-      this.cleanNormalizedText(body);
+    const content = this.cleanNormalizedText(body);
 
-    const author =
-      this.cleanNormalizedText(
-        comment.author,
-      );
+    const author = this.cleanNormalizedText(comment.author);
 
     if (
       !this.getCommentId(comment) ||
@@ -1145,33 +855,18 @@ export class RedditCollector
       return false;
     }
 
-    if (
-      !CollectorLanguageUtil
-        .matchesRequestedLanguage(
-          body,
-          input.language,
-        )
-    ) {
+    if (!CollectorLanguageUtil.matchesRequestedLanguage(body, input.language)) {
       return false;
     }
 
-    if (
-      this.isLowValueComment(
-        content,
-      )
-    ) {
+    if (this.isLowValueComment(content)) {
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(
-          word,
-        ),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -1182,9 +877,7 @@ export class RedditCollector
    * @param content Normalized comment content.
    * @returns True when low-value.
    */
-  private isLowValueComment(
-    content: string,
-  ): boolean {
+  private isLowValueComment(content: string): boolean {
     const lowValuePatterns = [
       /^thanks$/i,
       /^thank you$/i,
@@ -1205,10 +898,7 @@ export class RedditCollector
       /\bexactly this\b/i,
     ];
 
-    return lowValuePatterns.some(
-      (pattern) =>
-        pattern.test(content),
-    );
+    return lowValuePatterns.some((pattern) => pattern.test(content));
   }
 
   /**
@@ -1223,86 +913,60 @@ export class RedditCollector
   private async getAccessToken(
     credentials: RedditCredentials,
   ): Promise<string> {
-    if (
-      this.cachedToken &&
-      this.cachedToken.expiresAt >
-        Date.now() + 60_000
-    ) {
+    if (this.cachedToken && this.cachedToken.expiresAt > Date.now() + 60_000) {
       return this.cachedToken.accessToken;
     }
 
-    const basicCredentials =
-      Buffer.from(
-        `${credentials.clientId}:${credentials.clientSecret}`,
-      ).toString('base64');
+    const basicCredentials = Buffer.from(
+      `${credentials.clientId}:${credentials.clientSecret}`,
+    ).toString('base64');
 
-    const formBody =
-      new URLSearchParams({
-        grant_type:
-          'client_credentials',
-      });
+    const formBody = new URLSearchParams({
+      grant_type: 'client_credentials',
+    });
 
-    const response = await fetch(
-      this.tokenUrl,
-      {
-        method: 'POST',
+    const response = await fetch(this.tokenUrl, {
+      method: 'POST',
 
-        headers: {
-          Authorization:
-            `Basic ${basicCredentials}`,
+      headers: {
+        Authorization: `Basic ${basicCredentials}`,
 
-          'Content-Type':
-            'application/x-www-form-urlencoded',
+        'Content-Type': 'application/x-www-form-urlencoded',
 
-          Accept:
-            'application/json',
+        Accept: 'application/json',
 
-          'User-Agent':
-            credentials.userAgent,
-        },
-
-        body: formBody.toString(),
+        'User-Agent': credentials.userAgent,
       },
-    );
+
+      body: formBody.toString(),
+    });
 
     if (!response.ok) {
-      const responseBody =
-        await response.text();
+      const responseBody = await response.text();
 
       throw new Error(
         `Reddit OAuth failed with status ${response.status}: ${responseBody}`,
       );
     }
 
-    const rawResponse: unknown =
-      await response.json();
+    const rawResponse: unknown = await response.json();
 
-    if (
-      !this.isRedditTokenResponse(
-        rawResponse,
-      ) ||
-      !rawResponse.access_token
-    ) {
+    if (!this.isRedditTokenResponse(rawResponse) || !rawResponse.access_token) {
       throw new Error(
         'Reddit OAuth returned an invalid access-token response.',
       );
     }
 
     const expiresInSeconds =
-      Number.isFinite(
-        rawResponse.expires_in,
-      ) &&
+      Number.isFinite(rawResponse.expires_in) &&
       (rawResponse.expires_in ?? 0) > 0
         ? rawResponse.expires_in!
         : 3_600;
 
     this.cachedToken = {
-      accessToken:
-        rawResponse.access_token,
+      accessToken: rawResponse.access_token,
 
-      expiresAt:
-        Date.now() +
-        expiresInSeconds * 1_000,
+      expiresAt: Date.now() + expiresInSeconds * 1_000,
     };
 
     return rawResponse.access_token;
@@ -1313,35 +977,18 @@ export class RedditCollector
    *
    * @returns Credentials or undefined when incomplete.
    */
-  private getCredentials():
-    | RedditCredentials
-    | undefined {
-    const clientId =
-      this.configService
-        .get<string>(
-          'REDDIT_CLIENT_ID',
-        )
-        ?.trim();
+  private getCredentials(): RedditCredentials | undefined {
+    const clientId = this.configService.get<string>('REDDIT_CLIENT_ID')?.trim();
 
-    const clientSecret =
-      this.configService
-        .get<string>(
-          'REDDIT_CLIENT_SECRET',
-        )
-        ?.trim();
+    const clientSecret = this.configService
+      .get<string>('REDDIT_CLIENT_SECRET')
+      ?.trim();
 
-    const userAgent =
-      this.configService
-        .get<string>(
-          'REDDIT_USER_AGENT',
-        )
-        ?.trim();
+    const userAgent = this.configService
+      .get<string>('REDDIT_USER_AGENT')
+      ?.trim();
 
-    if (
-      !clientId ||
-      !clientSecret ||
-      !userAgent
-    ) {
+    if (!clientId || !clientSecret || !userAgent) {
       return undefined;
     }
 
@@ -1360,21 +1007,14 @@ export class RedditCollector
    *
    * @returns Normalized unique subreddit names.
    */
-  private getConfiguredSubreddits():
-    string[] {
+  private getConfiguredSubreddits(): string[] {
     const rawValue =
-      this.configService.get<string>(
-        'REDDIT_DEFAULT_SUBREDDITS',
-      ) ?? '';
+      this.configService.get<string>('REDDIT_DEFAULT_SUBREDDITS') ?? '';
 
     return this.unique(
       rawValue
         .split(',')
-        .map((subreddit) =>
-          this.normalizeSubredditName(
-            subreddit,
-          ),
-        )
+        .map((subreddit) => this.normalizeSubredditName(subreddit))
         .filter(Boolean),
     );
   }
@@ -1390,16 +1030,11 @@ export class RedditCollector
    * @param subreddit Raw subreddit name.
    * @returns Safe subreddit name.
    */
-  private normalizeSubredditName(
-    subreddit?: string,
-  ): string {
+  private normalizeSubredditName(subreddit?: string): string {
     return (subreddit ?? '')
       .trim()
       .replace(/^\/?r\//i, '')
-      .replace(
-        /[^a-z0-9_]/gi,
-        '',
-      )
+      .replace(/[^a-z0-9_]/gi, '')
       .toLowerCase();
   }
 
@@ -1416,16 +1051,12 @@ export class RedditCollector
    * @param post Reddit post.
    * @returns Stable post identifier.
    */
-  private getPostId(
-    post: RedditPostData,
-  ): string {
+  private getPostId(post: RedditPostData): string {
     if (post.id) {
       return post.id;
     }
 
-    if (
-      post.name?.startsWith('t3_')
-    ) {
+    if (post.name?.startsWith('t3_')) {
       return post.name.slice(3);
     }
 
@@ -1438,18 +1069,12 @@ export class RedditCollector
    * @param comment Reddit comment.
    * @returns Stable comment identifier.
    */
-  private getCommentId(
-    comment: RedditCommentData,
-  ): string {
+  private getCommentId(comment: RedditCommentData): string {
     if (comment.id) {
       return comment.id;
     }
 
-    if (
-      comment.name?.startsWith(
-        't1_',
-      )
-    ) {
+    if (comment.name?.startsWith('t1_')) {
       return comment.name.slice(3);
     }
 
@@ -1462,9 +1087,7 @@ export class RedditCollector
    * @param post Reddit post.
    * @returns Public Reddit URL.
    */
-  private resolvePostUrl(
-    post: RedditPostData,
-  ): string | undefined {
+  private resolvePostUrl(post: RedditPostData): string | undefined {
     if (post.permalink) {
       return `https://www.reddit.com${post.permalink}`;
     }
@@ -1484,9 +1107,7 @@ export class RedditCollector
     userAgent: string,
   ): Record<string, string> {
     return {
-      ...CollectorHeaderUtil.bearer(
-        accessToken,
-      ),
+      ...CollectorHeaderUtil.bearer(accessToken),
 
       'User-Agent': userAgent,
     };
@@ -1498,9 +1119,7 @@ export class RedditCollector
    * @returns Merged blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'REDDIT_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('REDDIT_BLOCKED_WORDS');
   }
 
   /**
@@ -1509,24 +1128,14 @@ export class RedditCollector
    * @param value Unix timestamp in seconds.
    * @returns Parsed date.
    */
-  private parseUnixDate(
-    value?: number,
-  ): Date | undefined {
-    if (
-      !value ||
-      !Number.isFinite(value)
-    ) {
+  private parseUnixDate(value?: number): Date | undefined {
+    if (!value || !Number.isFinite(value)) {
       return undefined;
     }
 
-    const date =
-      new Date(value * 1_000);
+    const date = new Date(value * 1_000);
 
-    return Number.isNaN(
-      date.getTime(),
-    )
-      ? undefined
-      : date;
+    return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
   /**
@@ -1535,29 +1144,19 @@ export class RedditCollector
    * @param value Unknown response.
    * @returns True when the structure is valid.
    */
-  private isRedditTokenResponse(
-    value: unknown,
-  ): value is RedditTokenResponse {
+  private isRedditTokenResponse(value: unknown): value is RedditTokenResponse {
     if (!this.isRecord(value)) {
       return false;
     }
 
     return (
-      (value.access_token ===
-        undefined ||
-        typeof value.access_token ===
-          'string') &&
-      (value.token_type ===
-        undefined ||
-        typeof value.token_type ===
-          'string') &&
-      (value.expires_in ===
-        undefined ||
-        typeof value.expires_in ===
-          'number') &&
-      (value.scope === undefined ||
-        typeof value.scope ===
-          'string')
+      (value.access_token === undefined ||
+        typeof value.access_token === 'string') &&
+      (value.token_type === undefined ||
+        typeof value.token_type === 'string') &&
+      (value.expires_in === undefined ||
+        typeof value.expires_in === 'number') &&
+      (value.scope === undefined || typeof value.scope === 'string')
     );
   }
 
@@ -1567,16 +1166,8 @@ export class RedditCollector
    * @param value Unknown value.
    * @returns True when value is a record.
    */
-  private isRecord(
-    value: unknown,
-  ): value is Record<
-    string,
-    unknown
-  > {
-    return (
-      typeof value === 'object' &&
-      value !== null
-    );
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
   }
 
   /**
@@ -1584,9 +1175,7 @@ export class RedditCollector
    *
    * @param ms Delay in milliseconds.
    */
-  private delay(
-    ms: number,
-  ): Promise<void> {
+  private delay(ms: number): Promise<void> {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
@@ -1598,16 +1187,12 @@ export class RedditCollector
    * @param error Unknown caught error.
    * @returns Readable error message.
    */
-  private getErrorMessage(
-    error: unknown,
-  ): string {
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    if (
-      typeof error === 'string'
-    ) {
+    if (typeof error === 'string') {
       return error;
     }
 

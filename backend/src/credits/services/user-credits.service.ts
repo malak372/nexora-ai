@@ -40,7 +40,7 @@ export class UserCreditsService {
 
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-  ) { }
+  ) {}
 
   /**
    * Returns the user's credit summary.

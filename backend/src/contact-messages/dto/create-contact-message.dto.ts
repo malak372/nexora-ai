@@ -1,10 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-  IsEmail,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 
 /**
  * DTO used to submit a Contact Us message.
@@ -27,9 +22,7 @@ export class CreateContactMessageDto {
    *
    * Used directly only for guest submissions.
    */
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(2)
   @MaxLength(100)
@@ -42,9 +35,7 @@ export class CreateContactMessageDto {
    * The value is trimmed and converted to lowercase.
    */
   @Transform(({ value }) =>
-    typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : value,
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsEmail()
   @MaxLength(150)
@@ -53,9 +44,7 @@ export class CreateContactMessageDto {
   /**
    * Contact-message subject.
    */
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(3)
   @MaxLength(150)
@@ -64,9 +53,7 @@ export class CreateContactMessageDto {
   /**
    * Detailed contact-message body.
    */
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(10)
   @MaxLength(2_000)

@@ -1,7 +1,4 @@
-import {
-  CollectorInput,
-  CollectorPost,
-} from './collector.types';
+import { CollectorInput, CollectorPost } from './collector.types';
 
 /**
  * Base contract implemented by every data collector.
@@ -53,7 +50,5 @@ export interface SocialCollector {
    * @param input Collection request configuration.
    * @returns Unified collected posts.
    */
-  collect(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]>;
+  collect(input: CollectorInput): Promise<CollectorPost[]>;
 }
