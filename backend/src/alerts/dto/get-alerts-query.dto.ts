@@ -2,19 +2,23 @@ import { AlertType } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
-import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
- * DTO for filtering administrator alert results.
+ * DTO used to filter administrator alert results.
  *
  * Supports:
  * - Pagination.
  * - Search.
- * - Date range filtering.
+ * - Date-range filtering.
  * - Sorting.
- * - Alert type filtering.
+ * - Alert-type filtering.
  * - Read-status filtering.
  *
  * @author Malak
@@ -29,6 +33,9 @@ export class GetAlertsQueryDto extends ListQueryDto {
 
   /**
    * Optional read-status filter.
+   *
+   * Converts the query-string values "true" and "false"
+   * into their corresponding boolean values.
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown => {
@@ -36,13 +43,13 @@ export class GetAlertsQueryDto extends ListQueryDto {
       return value;
     }
 
-    const normalized = value.trim().toLowerCase();
+    const normalizedValue = value.trim().toLowerCase();
 
-    if (normalized === 'true') {
+    if (normalizedValue === 'true') {
       return true;
     }
 
-    if (normalized === 'false') {
+    if (normalizedValue === 'false') {
       return false;
     }
 

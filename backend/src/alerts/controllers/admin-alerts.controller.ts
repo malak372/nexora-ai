@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -17,10 +24,15 @@ import { GetAlertsQueryDto } from '../dto/get-alerts-query.dto';
 import { AdminAlertsService } from '../services/admin-alerts.service';
 
 /**
- * Administrator-only alert controller.
+ * Handles administrator-only alert operations.
  *
  * Base route:
  * /admin/alerts
+ *
+ * Supported operations:
+ * - Retrieve in-app alerts.
+ * - Create an individual or broadcast in-app alert.
+ * - Send an individual or broadcast email alert.
  *
  * @author Malak
  */
@@ -28,10 +40,12 @@ import { AdminAlertsService } from '../services/admin-alerts.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminAlertsController {
-  constructor(private readonly adminAlertsService: AdminAlertsService) {}
+  constructor(
+    private readonly adminAlertsService: AdminAlertsService,
+  ) { }
 
   /**
-   * Retrieves alerts.
+   * Retrieves a paginated and filtered list of in-app alerts.
    *
    * GET /admin/alerts
    */
@@ -41,28 +55,36 @@ export class AdminAlertsController {
   }
 
   /**
-   * Creates one in-app alert or broadcast.
+   * Creates an in-app alert for one user or broadcasts
+   * the alert to multiple eligible users.
    *
    * POST /admin/alerts
    */
   @Post()
   createAlert(
-    @Body() body: CreateAlertDto,
+    @Body() dto: CreateAlertDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.adminAlertsService.createAlert(body, currentUser.id);
+    return this.adminAlertsService.createAlert(
+      dto,
+      currentUser.id,
+    );
   }
 
   /**
-   * Sends one email alert or broadcast.
+   * Sends an email alert to one user or broadcasts
+   * the email to multiple eligible users.
    *
    * POST /admin/alerts/email
    */
   @Post('email')
   sendEmailAlert(
-    @Body() body: CreateEmailAlertDto,
+    @Body() dto: CreateEmailAlertDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.adminAlertsService.sendEmailAlert(body, currentUser.id);
+    return this.adminAlertsService.sendEmailAlert(
+      dto,
+      currentUser.id,
+    );
   }
 }

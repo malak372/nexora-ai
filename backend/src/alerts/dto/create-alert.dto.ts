@@ -10,10 +10,11 @@ import {
 } from 'class-validator';
 
 /**
- * DTO used by an administrator to create an in-app alert.
+ * DTO used by administrators to create an in-app alert.
  *
- * If userId is provided, the alert is sent to one user.
- * If userId is omitted, the alert is broadcast to all active users.
+ * If a recipient user ID is provided, the alert is sent to
+ * that user only. Otherwise, the alert is broadcast to all
+ * eligible users.
  *
  * @author Malak
  */
@@ -31,21 +32,18 @@ export class CreateAlertDto {
    */
   @IsString()
   @MinLength(5)
-  @MaxLength(1_000)
+  @MaxLength(1000)
   message!: string;
 
   /**
-   * Optional alert type.
-   *
-   * Defaults to SYSTEM inside the service to preserve
-   * the existing application behavior.
+   * Alert category.
    */
   @IsOptional()
   @IsEnum(AlertType)
-  type?: AlertType;
+  type: AlertType = AlertType.SYSTEM;
 
   /**
-   * Optional recipient user ID.
+   * Optional recipient user identifier.
    *
    * When omitted, the alert is broadcast.
    */

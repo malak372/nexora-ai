@@ -2,17 +2,21 @@ import { AlertType } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
-import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
- * DTO for retrieving authenticated-user notifications.
+ * DTO used to retrieve notifications for the authenticated user.
  *
  * Supports:
  * - Pagination.
- * - Date filtering.
  * - Search.
+ * - Date-range filtering.
  * - Sorting.
  * - Read-status filtering.
  * - Notification-type filtering.
@@ -22,6 +26,9 @@ import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 export class GetUserNotificationsQueryDto extends ListQueryDto {
   /**
    * Optional read-status filter.
+   *
+   * Converts the query-string values "true" and "false"
+   * into their corresponding boolean values.
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown => {
@@ -29,13 +36,13 @@ export class GetUserNotificationsQueryDto extends ListQueryDto {
       return value;
     }
 
-    const normalized = value.trim().toLowerCase();
+    const normalizedValue = value.trim().toLowerCase();
 
-    if (normalized === 'true') {
+    if (normalizedValue === 'true') {
       return true;
     }
 
-    if (normalized === 'false') {
+    if (normalizedValue === 'false') {
       return false;
     }
 
