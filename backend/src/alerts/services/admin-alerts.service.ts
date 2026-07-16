@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   AlertType,
@@ -12,6 +16,8 @@ import { AuditService } from '../../audit-logs/audit-logs.service';
 import { MailService } from '../../mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+
 import {
   buildDateFilter,
   buildExactFilter,
@@ -19,79 +25,81 @@ import {
   buildPagination,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
-
 import { CreateAlertDto } from '../dto/create-alert.dto';
 import { CreateEmailAlertDto } from '../dto/create-email-alert.dto';
 import { GetAlertsQueryDto } from '../dto/get-alerts-query.dto';
 
 import { SystemAlertsService } from './system-alerts.service';
 
+const EMAIL_BROADCAST_BATCH_SIZE = 10;
+
 /**
- * Service responsible for administrator alert operations.
+ * Handles administrator alert operations.
  *
  * Supports:
- * - In-app alerts.
- * - Email alerts.
- * - Single-user alerts.
- * - Broadcast alerts.
- * - Alert monitoring.
- * - Audit logging.
+ * - Retrieving and monitoring in-app alerts.
+ * - Creating single-user in-app alerts.
+ * - Broadcasting in-app alerts.
+ * - Sending single-user email alerts.
+ * - Broadcasting email alerts.
+ * - Recording administrator operations in the audit log.
  *
- * Actual in-app alert persistence is delegated to
- * SystemAlertsService.
+ * In-app alert persistence is delegated to SystemAlertsService.
  *
  * @author Malak
  */
 @Injectable()
 export class AdminAlertsService {
+  private readonly logger = new Logger(AdminAlertsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
     private readonly systemAlertsService: SystemAlertsService,
-  ) {}
+  ) { }
 
   /**
-   * Retrieves alerts with filtering, searching,
-   * sorting, and pagination.
+   * Retrieves a paginated and filtered list of in-app alerts.
    */
   async getAlerts(query: GetAlertsQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
 
-    const searchFilter: Prisma.AlertWhereInput = query.search?.trim()
+    const search = query.search?.trim();
+
+    const searchFilter: Prisma.AlertWhereInput = search
       ? {
-          OR: [
-            {
-              title: {
-                contains: query.search.trim(),
+        OR: [
+          {
+            title: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            message: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            user: {
+              fullName: {
+                contains: search,
                 mode: 'insensitive',
               },
             },
-            {
-              message: {
-                contains: query.search.trim(),
+          },
+          {
+            user: {
+              email: {
+                contains: search,
                 mode: 'insensitive',
               },
             },
-            {
-              user: {
-                fullName: {
-                  contains: query.search.trim(),
-                  mode: 'insensitive',
-                },
-              },
-            },
-            {
-              user: {
-                email: {
-                  contains: query.search.trim(),
-                  mode: 'insensitive',
-                },
-              },
-            },
-          ],
-        }
+          },
+        ],
+      }
       : {};
 
     const where: Prisma.AlertWhereInput = {
@@ -149,45 +157,70 @@ export class AdminAlertsService {
   }
 
   /**
-   * Creates one in-app alert or broadcasts it.
+   * Creates an in-app alert for one user or broadcasts
+   * it to all eligible users.
    */
-  async createAlert(body: CreateAlertDto, adminId: string) {
+  async createAlert(
+    body: CreateAlertDto,
+    adminId: string,
+  ) {
     const alertType = body.type ?? AlertType.SYSTEM;
 
     if (body.userId) {
-      return this.createSingleUserAlert(body, adminId, alertType);
+      return this.createSingleUserAlert(
+        body,
+        body.userId,
+        adminId,
+        alertType,
+      );
     }
 
-    return this.createBroadcastAlert(body, adminId, alertType);
+    return this.createBroadcastAlert(
+      body,
+      adminId,
+      alertType,
+    );
   }
 
   /**
-   * Sends one email alert or broadcasts it.
+   * Sends an email alert to one user or broadcasts
+   * it to all eligible users.
    */
-  async sendEmailAlert(body: CreateEmailAlertDto, adminId: string) {
+  async sendEmailAlert(
+    body: CreateEmailAlertDto,
+    adminId: string,
+  ) {
     if (body.userId) {
-      return this.sendSingleUserEmailAlert(body, adminId);
+      return this.sendSingleUserEmailAlert(
+        body,
+        body.userId,
+        adminId,
+      );
     }
 
     return this.sendBroadcastEmailAlert(body, adminId);
   }
 
   /**
-   * Creates an in-app alert for one active user.
+   * Creates an in-app alert for one active registered user.
    */
   private async createSingleUserAlert(
     body: CreateAlertDto,
+    userId: string,
     adminId: string,
     alertType: AlertType,
   ) {
-    const user = await this.findActiveRegisteredUser(body.userId!);
+    const user = await this.findActiveRegisteredUser(userId);
+
+    const title = body.title.trim();
+    const message = body.message.trim();
 
     const alert = await this.prisma.$transaction(async (tx) => {
       const createdAlert = await this.systemAlertsService.create(
         {
           userId: user.id,
-          title: body.title,
-          message: body.message,
+          title,
+          message,
           type: alertType,
         },
         tx,
@@ -223,7 +256,7 @@ export class AdminAlertsService {
   }
 
   /**
-   * Broadcasts an in-app alert to all active users.
+   * Broadcasts an in-app alert to all active registered users.
    */
   private async createBroadcastAlert(
     body: CreateAlertDto,
@@ -241,16 +274,20 @@ export class AdminAlertsService {
       },
     });
 
+    const title = body.title.trim();
+    const message = body.message.trim();
+
     const result = await this.prisma.$transaction(async (tx) => {
-      const creationResult = await this.systemAlertsService.createMany(
-        users.map((user) => ({
-          userId: user.id,
-          title: body.title,
-          message: body.message,
-          type: alertType,
-        })),
-        tx,
-      );
+      const creationResult =
+        await this.systemAlertsService.createMany(
+          users.map((user) => ({
+            userId: user.id,
+            title,
+            message,
+            type: alertType,
+          })),
+          tx,
+        );
 
       await this.auditService.createLog(
         {
@@ -262,8 +299,8 @@ export class AdminAlertsService {
           newValue: {
             broadcast: true,
             sentCount: creationResult.count,
-            title: body.title.trim(),
-            message: body.message.trim(),
+            title,
+            message,
             type: alertType,
           },
         },
@@ -274,24 +311,29 @@ export class AdminAlertsService {
     });
 
     return {
-      message: 'Alert sent to all active users successfully',
+      message: 'Alert broadcast completed successfully',
+      totalUsers: users.length,
       sentCount: result.count,
     };
   }
 
   /**
-   * Sends an email alert to one active user.
+   * Sends an email alert to one active registered user.
    */
   private async sendSingleUserEmailAlert(
     body: CreateEmailAlertDto,
+    userId: string,
     adminId: string,
   ) {
-    const user = await this.findActiveRegisteredUser(body.userId!);
+    const user = await this.findActiveRegisteredUser(userId);
+
+    const subject = body.subject.trim();
+    const message = body.message.trim();
 
     await this.mailService.sendAdminAlertEmail(
       user.email,
-      body.subject.trim(),
-      body.message.trim(),
+      subject,
+      message,
       user.fullName,
     );
 
@@ -305,9 +347,7 @@ export class AdminAlertsService {
         emailAlert: true,
         broadcast: false,
         userId: user.id,
-        email: user.email,
-        subject: body.subject.trim(),
-        message: body.message.trim(),
+        subject,
       },
     });
 
@@ -323,9 +363,12 @@ export class AdminAlertsService {
   }
 
   /**
-   * Sends an email alert to all active users.
+   * Sends an email alert to all active registered users.
    *
-   * One failed email does not stop the remaining deliveries.
+   * Emails are processed in controlled batches to avoid
+   * overwhelming the mail provider.
+   *
+   * A failed delivery does not stop the remaining deliveries.
    */
   private async sendBroadcastEmailAlert(
     body: CreateEmailAlertDto,
@@ -344,22 +387,50 @@ export class AdminAlertsService {
       },
     });
 
+    const subject = body.subject.trim();
+    const message = body.message.trim();
+
     let sentCount = 0;
     let failedCount = 0;
 
-    for (const user of users) {
-      try {
-        await this.mailService.sendAdminAlertEmail(
-          user.email,
-          body.subject.trim(),
-          body.message.trim(),
-          user.fullName,
-        );
+    for (
+      let index = 0;
+      index < users.length;
+      index += EMAIL_BROADCAST_BATCH_SIZE
+    ) {
+      const batch = users.slice(
+        index,
+        index + EMAIL_BROADCAST_BATCH_SIZE,
+      );
 
-        sentCount += 1;
-      } catch {
+      const results = await Promise.allSettled(
+        batch.map((user) =>
+          this.mailService.sendAdminAlertEmail(
+            user.email,
+            subject,
+            message,
+            user.fullName,
+          ),
+        ),
+      );
+
+      results.forEach((result, resultIndex) => {
+        const user = batch[resultIndex];
+
+        if (result.status === 'fulfilled') {
+          sentCount += 1;
+          return;
+        }
+
         failedCount += 1;
-      }
+
+        this.logger.error(
+          `Failed to send administrator alert email to user ${user.id}`,
+          result.reason instanceof Error
+            ? result.reason.stack
+            : String(result.reason),
+        );
+      });
     }
 
     await this.auditService.createLog({
@@ -374,8 +445,7 @@ export class AdminAlertsService {
         totalUsers: users.length,
         sentCount,
         failedCount,
-        subject: body.subject.trim(),
-        message: body.message.trim(),
+        subject,
       },
     });
 
@@ -388,7 +458,10 @@ export class AdminAlertsService {
   }
 
   /**
-   * Finds one active registered user.
+   * Retrieves one active registered user.
+   *
+   * Throws NotFoundException when the user does not exist,
+   * is inactive, or is not a normal application user.
    */
   private async findActiveRegisteredUser(userId: string) {
     const user = await this.prisma.user.findFirst({

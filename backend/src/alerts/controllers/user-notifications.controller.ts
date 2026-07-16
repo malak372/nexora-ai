@@ -18,10 +18,15 @@ import { GetUserNotificationsQueryDto } from '../dto/get-user-notifications-quer
 import { UserNotificationsService } from '../services/user-notifications.service';
 
 /**
- * Controller responsible for authenticated-user notifications.
+ * Handles notification operations for authenticated users.
  *
  * Base route:
  * /users/notifications
+ *
+ * Supported operations:
+ * - Retrieve the authenticated user's notifications.
+ * - Mark one notification as read.
+ * - Mark all unread notifications as read.
  *
  * @author Eman
  */
@@ -30,50 +35,53 @@ import { UserNotificationsService } from '../services/user-notifications.service
 export class UserNotificationsController {
   constructor(
     private readonly userNotificationsService: UserNotificationsService,
-  ) {}
+  ) { }
 
   /**
-   * Retrieves the authenticated user's notifications.
+   * Retrieves the authenticated user's paginated notifications.
    *
    * GET /users/notifications
    */
   @Get()
   getNotifications(
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() currentUser: AuthenticatedUser,
     @Query() query: GetUserNotificationsQueryDto,
   ) {
-    return this.userNotificationsService.getNotifications(user.id, query);
+    return this.userNotificationsService.getNotifications(
+      currentUser.id,
+      query,
+    );
   }
 
   /**
-   * Marks all unread notifications as read.
+   * Marks all unread notifications belonging to the
+   * authenticated user as read.
    *
    * PATCH /users/notifications/read-all
    */
   @Patch('read-all')
-  markAllNotificationsAsRead(@CurrentUser() user: AuthenticatedUser) {
-    return this.userNotificationsService.markAllNotificationsAsRead(user.id);
+  markAllNotificationsAsRead(
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.userNotificationsService.markAllNotificationsAsRead(
+      currentUser.id,
+    );
   }
 
   /**
-   * Marks one notification as read.
+   * Marks one notification belonging to the
+   * authenticated user as read.
    *
    * PATCH /users/notifications/:id/read
    */
   @Patch(':id/read')
   markNotificationAsRead(
-    @CurrentUser() user: AuthenticatedUser,
-
-    @Param(
-      'id',
-      new ParseUUIDPipe({
-        version: '4',
-      }),
-    )
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' }))
     notificationId: string,
   ) {
     return this.userNotificationsService.markNotificationAsRead(
-      user.id,
+      currentUser.id,
       notificationId,
     );
   }

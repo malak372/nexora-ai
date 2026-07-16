@@ -7,12 +7,13 @@ import {
 } from 'class-validator';
 
 /**
- * DTO used by an administrator to send an email alert.
+ * DTO used by administrators to send email alerts.
  *
- * If userId is provided, the email is sent to one user.
- * If userId is omitted, the email is sent to all active users.
+ * If a recipient user ID is provided, the email is sent
+ * only to that user. Otherwise, the email is broadcast
+ * to all eligible users.
  *
- * Email alerts do not create Alert database records.
+ * Email alerts do not create records in the Alert table.
  *
  * @author Malak
  */
@@ -26,15 +27,17 @@ export class CreateEmailAlertDto {
   subject!: string;
 
   /**
-   * Email message body.
+   * Email body.
    */
   @IsString()
   @MinLength(5)
-  @MaxLength(3_000)
+  @MaxLength(3000)
   message!: string;
 
   /**
-   * Optional recipient user ID.
+   * Optional recipient user identifier.
+   *
+   * When omitted, the email is broadcast.
    */
   @IsOptional()
   @IsUUID('4')
