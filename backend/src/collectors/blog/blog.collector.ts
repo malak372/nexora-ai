@@ -1,17 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 import Parser from 'rss-parser';
 
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
 import { SocialCollector } from '../base/collector.interface';
-import { CollectorInput, CollectorPost } from '../base/collector.types';
+import {
+  CollectorInput,
+  CollectorPost,
+} from '../base/collector.types';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
- * Represents an RSS feed item used by the Blog collector.
+ * Represents an RSS feed item.
  */
 type RssItem = {
   guid?: string;
@@ -29,32 +31,22 @@ type RssItem = {
 /**
  * Blog collector.
  *
- * Collects public blog articles from RSS feeds only.
- *
- * Dev.to is handled by DevToCollector to avoid:
- * - Duplicate posts.
- * - Duplicate comments.
- * - Duplicate NLP analysis.
- *
- * Notes:
- * - RSS feeds usually do not expose comments or likes.
+ * Collects public blog articles from RSS feeds.
  *
  * @author Malak
  */
 @Injectable()
-export class BlogCollector extends BaseCollector implements SocialCollector {
+export class BlogCollector
+  extends BaseCollector
+  implements SocialCollector
+{
   /**
-   * Platform source type stored with collected records.
+   * Must match DataSource.key.
    */
-  readonly sourceType = CollectionSourceType.BLOG;
+  readonly sourceKey = 'blog';
 
   /**
-   * Human-readable platform name.
-   */
-  private readonly platformName = 'Blog';
-
-  /**
-   * RSS parser used to fetch and parse public feeds.
+   * RSS parser instance.
    */
   private readonly parser = new Parser();
 
@@ -63,11 +55,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Collects blog articles, removes duplicates, ranks them,
-   * and returns the most relevant posts.
-   *
-   * @param input Collection job configuration.
-   * @returns Relevant blog posts.
+   * Collects and ranks RSS blog articles.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -82,12 +70,11 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       }
 
       const rssPosts = await this.collectFromRssFeeds(input);
-
       const seenPostIds = new Set<string>();
 
       const rankedPosts = rssPosts
         .filter((post) => {
-          const key = `${post.platformName}-${post.externalId}-${post.url}`;
+          const key = `${post.url ?? ''}-${post.externalId}`;
 
           if (seenPostIds.has(key)) {
             return false;
@@ -112,24 +99,22 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
       return rankedPosts;
     } catch (error: unknown) {
-      this.logger.warn('Blog collection failed', this.getErrorMessage(error));
+      this.logger.warn(
+        'Blog collection failed',
+        this.getErrorMessage(error),
+      );
 
       return [];
     }
   }
 
   /**
-   * Collects blog articles from RSS feeds selected
-   * according to the requested domain.
-   *
-   * @param input Collection job configuration.
-   * @returns Collected RSS posts.
+   * Collects articles from configured RSS feeds.
    */
   private async collectFromRssFeeds(
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     const feeds = this.getFeedsForDomain(input.domainName);
-
     const collectedPosts: CollectorPost[] = [];
 
     for (const feedUrl of feeds) {
@@ -137,7 +122,7 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
       collectedPosts.push(...posts);
 
-      if (collectedPosts.length >= this.maxSavedPosts) {
+      if (collectedPosts.length >= this.maxFetchedPosts) {
         break;
       }
     }
@@ -147,17 +132,17 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
   /**
    * Collects articles from one RSS feed.
-   *
-   * @param feedUrl Public RSS feed URL.
-   * @param input Collection job configuration.
-   * @returns Collected posts from the feed.
    */
   private async collectFromFeed(
     feedUrl: string,
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     try {
-      const cacheKey = CollectorCacheUtil.build('blog', 'rss-feed', [feedUrl]);
+      const cacheKey = CollectorCacheUtil.build(
+        this.sourceKey,
+        'rss-feed',
+        [feedUrl],
+      );
 
       const feed = await CollectorExternalCacheUtil.remember(
         cacheKey,
@@ -166,42 +151,61 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
       );
 
       return (feed.items ?? [])
-        .filter((item) => this.isValidRssArticle(item as RssItem))
+        .filter((item) =>
+          this.isValidRssArticle(item as RssItem),
+        )
         .slice(0, this.maxFetchedPosts)
         .map((item): CollectorPost => {
           const rssItem = item as RssItem;
 
+          const title = this.cleanPlainText(rssItem.title);
+
           return {
-            sourceType: CollectionSourceType.BLOG,
-            platformName: `${this.platformName} - RSS`,
-            externalId: rssItem.guid ?? rssItem.link ?? rssItem.title ?? '',
-            title: rssItem.title,
+            externalId:
+              rssItem.guid ??
+              rssItem.link ??
+              title,
+
+            title,
+
             content: this.cleanPlainText(
               rssItem.contentSnippet ??
                 rssItem.content ??
                 rssItem.summary ??
-                rssItem.title ??
-                '',
+                title,
             ),
-            author: rssItem.creator ?? rssItem.author ?? feed.title,
+
+            author: this.cleanPlainText(
+              rssItem.creator ??
+                rssItem.author ??
+                feed.title,
+            ),
+
             url: rssItem.link,
+
             country: input.country,
             city: input.city,
             region: input.region,
-            language: input.language,
+
+            languageCode: this.resolveStoredLanguageCode(
+              input.language,
+            ),
+
             likesCount: 0,
             repliesCount: 0,
-            publishedAt: rssItem.isoDate
-              ? new Date(rssItem.isoDate)
-              : rssItem.pubDate
-                ? new Date(rssItem.pubDate)
-                : undefined,
+
+            publishedAt: this.parseDate(
+              rssItem.isoDate ?? rssItem.pubDate,
+            ),
+
             comments: [],
           };
         });
     } catch (error: unknown) {
       this.logger.warn(
-        `Blog feed skipped: ${feedUrl} - ${this.getErrorMessage(error)}`,
+        `Blog feed skipped: ${feedUrl} - ${this.getErrorMessage(
+          error,
+        )}`,
       );
 
       return [];
@@ -209,50 +213,49 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Builds the primary blog search query.
-   *
-   * Priority:
-   * 1. First custom keyword.
-   * 2. Domain name.
-   * 3. First configured domain keyword.
-   *
-   * @param input Collection job configuration.
-   * @returns Normalized search query.
+   * Builds the primary blog query.
    */
   private buildSearchQuery(input: CollectorInput): string {
     const userKeyword = input.keywords?.[0]
-      ? this.normalizeText(input.keywords[0])
+      ? this.cleanNormalizedText(input.keywords[0])
       : '';
 
     if (userKeyword) {
       return userKeyword;
     }
 
-    if (input.domainName) {
-      return this.normalizeText(input.domainName);
+    const domainName = this.cleanNormalizedText(input.domainName);
+
+    if (domainName) {
+      return domainName;
     }
 
     return this.getDomainKeywords(input)[0] ?? '';
   }
 
   /**
-   * Validates an RSS article before mapping.
-   *
-   * @param item RSS feed item.
-   * @returns True when the article is useful.
+   * Validates an RSS article.
    */
   private isValidRssArticle(item: RssItem): boolean {
-    const title = this.normalizeText(item.title ?? '');
+    const title = this.cleanPlainText(item.title);
 
-    const content = this.normalizeText(
-      item.contentSnippet ?? item.content ?? item.summary ?? '',
+    const content = this.cleanPlainText(
+      item.contentSnippet ??
+        item.content ??
+        item.summary,
     );
 
     if (!title || !item.link || content.length < 80) {
       return false;
     }
 
-    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+    const normalizedContent = this.cleanNormalizedText(
+      `${title} ${content}`,
+    );
+
+    const cleaned = normalizedContent
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .trim();
 
     if (!cleaned) {
       return false;
@@ -260,25 +263,23 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
 
     const blockedWords = this.getBlockedWords();
 
-    const text = `${title} ${content}`;
-
-    return !blockedWords.some((word) => text.includes(word));
+    return !blockedWords.some((word) =>
+      normalizedContent.includes(
+        this.cleanNormalizedText(word),
+      ),
+    );
   }
 
   /**
-   * Calculates relevance score for a collected blog post.
-   *
-   * @param post Collected blog post.
-   * @param input Collection job configuration.
-   * @returns Relevance score.
+   * Calculates blog-post relevance.
    */
   private calculatePostRelevanceScore(
     post: CollectorPost,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: post.title ?? '',
-      body: post.content ?? '',
+      title: post.title,
+      body: post.content,
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: post.likesCount ?? 0,
@@ -288,54 +289,61 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Returns RSS feeds based on the selected domain.
-   *
-   * @param domainName Requested domain name.
-   * @returns Matching RSS feed URLs.
+   * Returns RSS feeds for the selected domain.
    */
   private getFeedsForDomain(domainName?: string): string[] {
-    const domain = this.normalizeText(domainName ?? '');
+    const domain = this.cleanNormalizedText(domainName);
 
     const dictionary: Record<string, string[]> = {
       education: [
         'https://www.edutopia.org/rss.xml',
         'https://www.edsurge.com/articles_rss',
       ],
+
       healthcare: [
         'https://www.health.harvard.edu/blog/feed',
         'https://www.medicalnewstoday.com/rss',
       ],
+
       health: [
         'https://www.health.harvard.edu/blog/feed',
         'https://www.medicalnewstoday.com/rss',
       ],
+
       finance: [
         'https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_headline',
       ],
+
       cybersecurity: [
         'https://krebsonsecurity.com/feed/',
         'https://www.schneier.com/feed/atom/',
       ],
+
       security: [
         'https://krebsonsecurity.com/feed/',
         'https://www.schneier.com/feed/atom/',
       ],
+
       'artificial intelligence': [
         'https://machinelearningmastery.com/feed/',
         'https://openai.com/news/rss.xml',
       ],
+
       ai: [
         'https://machinelearningmastery.com/feed/',
         'https://openai.com/news/rss.xml',
       ],
+
       technology: [
         'https://techcrunch.com/feed/',
         'https://www.theverge.com/rss/index.xml',
       ],
+
       tech: [
         'https://techcrunch.com/feed/',
         'https://www.theverge.com/rss/index.xml',
       ],
+
       other: [
         'https://techcrunch.com/feed/',
         'https://www.theverge.com/rss/index.xml',
@@ -346,30 +354,35 @@ export class BlogCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Reads common blocked words and
-   * Blog-specific blocked words.
-   *
-   * @returns Normalized blocked words.
+   * Reads Blog-specific blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('BLOG_BLOCKED_WORDS');
   }
 
   /**
-   * Extracts a readable message from an unknown error.
-   *
-   * @param error Unknown caught value.
-   * @returns Safe error message.
+   * Parses an external date safely.
+   */
+  private parseDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = new Date(value);
+
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  /**
+   * Extracts a safe error message.
    */
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    if (typeof error === 'string') {
-      return error;
-    }
-
-    return 'Unknown Blog collector error.';
+    return typeof error === 'string'
+      ? error
+      : 'Unknown Blog collector error.';
   }
 }

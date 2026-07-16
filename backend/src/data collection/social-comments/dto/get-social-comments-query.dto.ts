@@ -1,35 +1,30 @@
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { LanguageCode } from '@prisma/client';
+import {
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
- * Query DTO for filtering, searching, sorting,
- * date filtering, and paginating social comments.
- *
- * Inherits from ListQueryDto:
- * - page
- * - limit
- * - search
- * - sortBy
- * - sortOrder
- * - fromDate
- * - toDate
+ * Query DTO for filtering collected comments.
  *
  * @author Malak
  */
-export class GetSocialCommentsQueryDto extends ListQueryDto {
+export class GetSocialCommentsQueryDto
+  extends ListQueryDto
+{
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   postId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsUUID('4')
   collectionJobId?: string;
 
   @IsOptional()
-  @IsEnum(LanguageCode)
-  language?: LanguageCode;
+  @IsString()
+  languageCode?: string;
 
   @IsOptional()
   @IsString()

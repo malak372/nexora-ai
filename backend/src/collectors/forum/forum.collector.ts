@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
-import { CollectorInput, CollectorPost } from '../base/collector.types';
+
+import {
+  CollectorInput,
+  CollectorPost,
+} from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
@@ -19,28 +22,27 @@ type ForumSource = {
 /**
  * Generic forum collector.
  *
- * Collects public discussions and replies from supported forum engines.
- *
- * Current supported engine:
- * - Discourse
- *
- * Future supported engines:
- * - phpBB
- * - NodeBB
- * - Flarum
- * - Vanilla
+ * The collector currently supports Discourse forums.
  *
  * @author Malak
  */
 @Injectable()
-export class ForumCollector extends BaseCollector implements SocialCollector {
-  readonly sourceType = CollectionSourceType.FORUM;
+export class ForumCollector
+  extends BaseCollector
+  implements SocialCollector
+{
+  /**
+   * Must match DataSource.key.
+   */
+  readonly sourceKey = 'forum';
 
   private readonly forumSources: ForumSource[];
 
   constructor(
     configService: ConfigService,
-    private readonly discourseForumAdapter: DiscourseForumAdapter,
+
+    private readonly discourseForumAdapter:
+      DiscourseForumAdapter,
   ) {
     super(configService, ForumCollector.name);
 
@@ -73,7 +75,10 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         url: 'https://community.grafana.com',
         adapter: this.discourseForumAdapter,
       },
-      { url: 'https://forums.docker.com', adapter: this.discourseForumAdapter },
+      {
+        url: 'https://forums.docker.com',
+        adapter: this.discourseForumAdapter,
+      },
       {
         url: 'https://discuss.elastic.co',
         adapter: this.discourseForumAdapter,
@@ -82,8 +87,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Collects forum posts from all configured forum sources,
-   * ranks them, removes duplicates, and returns the best results.
+   * Collects posts from configured forum sources.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -93,6 +97,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         this.logger.warn(
           'Forum collection skipped because no search keywords exist.',
         );
+
         return [];
       }
 
@@ -108,7 +113,10 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         collectedPosts.push(...posts);
       }
 
-      const rankedPosts = this.rankAndDeduplicatePosts(collectedPosts, input);
+      const rankedPosts = this.rankAndDeduplicatePosts(
+        collectedPosts,
+        input,
+      );
 
       this.logger.log(
         `Forum collection completed. Posts: ${rankedPosts.length}`,
@@ -116,13 +124,17 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
       return rankedPosts;
     } catch (error: unknown) {
-      this.logger.warn('Forum collection failed', this.getErrorMessage(error));
+      this.logger.warn(
+        'Forum collection failed',
+        this.getErrorMessage(error),
+      );
+
       return [];
     }
   }
 
   /**
-   * Removes duplicated forum posts and ranks them by relevance.
+   * Removes duplicate forum posts and ranks them.
    */
   private rankAndDeduplicatePosts(
     posts: CollectorPost[],
@@ -132,52 +144,62 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
     return posts
       .filter((post) => {
-        const key = `${post.platformName}-${post.url}-${post.externalId}`;
+        const key = `${post.url ?? ''}-${post.externalId}`;
 
-        if (seenPostIds.has(key)) return false;
+        if (seenPostIds.has(key)) {
+          return false;
+        }
 
         seenPostIds.add(key);
+
         return true;
       })
       .map((post) => ({
         post,
-        score: this.calculatePostRelevanceScore(post, input),
+        score: this.calculatePostRelevanceScore(
+          post,
+          input,
+        ),
       }))
       .filter((item) => item.score >= 3)
-      .sort((a, b) => b.score - a.score)
+      .sort((first, second) => second.score - first.score)
       .slice(0, this.maxSavedPosts)
       .map((item) => item.post);
   }
 
   /**
-   * Builds forum search query from domain and user keywords.
+   * Builds the forum search query.
    */
   private buildSearchQuery(input: CollectorInput): string {
     const domainKeywords = this.getDomainKeywords(input);
 
     const fallbackDomain = input.domainName
-      ? [this.normalizeText(input.domainName)]
+      ? [this.cleanNormalizedText(input.domainName)]
       : [];
 
     const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.normalizeText(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([...domainKeywords, ...fallbackDomain, ...userKeywords])
+    return this.unique([
+      ...userKeywords,
+      ...domainKeywords,
+      ...fallbackDomain,
+    ])
       .slice(0, 4)
       .join(' ');
   }
 
   /**
-   * Calculates relevance score for a forum post.
+   * Calculates forum-post relevance.
    */
   private calculatePostRelevanceScore(
     post: CollectorPost,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: post.title ?? '',
-      body: post.content ?? '',
+      title: post.title,
+      body: post.content,
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: post.likesCount ?? 0,
@@ -187,20 +209,22 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Reads common blocked words and forum-specific blocked words.
+   * Reads forum-specific blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('FORUM_BLOCKED_WORDS');
   }
 
   /**
-   * Extracts readable message from unknown errors.
+   * Extracts a safe error message.
    */
-  private getErrorMessage(error: unknown): unknown {
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    return error;
+    return typeof error === 'string'
+      ? error
+      : 'Unknown Forum collector error.';
   }
 }

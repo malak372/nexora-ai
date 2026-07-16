@@ -1,59 +1,69 @@
-import { CollectionSourceType, LanguageCode } from '@prisma/client';
+import { LanguageCode } from '@prisma/client';
+
 import { Type } from 'class-transformer';
+
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsEnum,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  MaxLength,
   Min,
 } from 'class-validator';
 
 /**
- * DTO used by admins to manually start a data collection job.
+ * DTO used to manually start the Data Collection
+ * pipeline stage.
  *
- * Notes:
- * - Admin must explicitly choose platforms.
- * - User idea generation can use optional platforms in GenerateIdeaDto later.
+ * A registered user or administrator may select DataSource.key
+ * values directly.
  *
  * @author Malak
  */
 export class RunCollectionDto {
   /**
-   * Domain identifier used for the collection job.
+   * Selected software-domain identifier.
    */
-  @IsUUID()
+  @IsUUID('4')
   domainId!: string;
 
   /**
-   * Country associated with the collection job.
-   */
-  @IsString()
-  country!: string;
-
-  /**
-   * Optional city filter.
+   * Optional country context.
    */
   @IsOptional()
   @IsString()
+  @MaxLength(100)
+  country?: string;
+
+  /**
+   * Optional city context.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
   city?: string;
 
   /**
-   * Optional region filter.
+   * Optional region context.
    */
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   region?: string;
 
   /**
-   * Language used for data collection and analysis.
+   * Requested collection and analysis language.
    */
   @IsEnum(LanguageCode)
   language!: LanguageCode;
 
   /**
-   * Optional search radius in kilometers.
+   * Optional geographical radius.
    */
   @IsOptional()
   @Type(() => Number)
@@ -62,18 +72,36 @@ export class RunCollectionDto {
   radiusKm?: number;
 
   /**
-   * Optional collection platforms selected by the admin.
+   * Stable DataSource.key values.
+   *
+   * Examples:
+   * - youtube
+   * - github
+   * - app-store
+   * - google-play
+   * - dev-to
    */
   @IsOptional()
   @IsArray()
-  @IsEnum(CollectionSourceType, { each: true })
-  platforms?: CollectionSourceType[];
+  @ArrayUnique()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @Matches(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    {
+      each: true,
+    },
+  )
+  dataSourceKeys?: string[];
 
   /**
-   * Optional custom keywords used during collection.
+   * Optional custom collection keywords.
    */
   @IsOptional()
   @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(30)
   @IsString({ each: true })
+  @MaxLength(100, { each: true })
   keywords?: string[];
 }

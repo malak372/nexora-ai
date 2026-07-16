@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 import appStore from 'app-store-scraper';
 
 import { BaseCollector } from '../base/base.collector';
@@ -9,16 +8,18 @@ import { CollectorExternalCacheUtil } from '../base/collector-external-cache.uti
 import { SocialCollector } from '../base/collector.interface';
 import { CollectorLanguageUtil } from '../base/collector-language.util';
 import { CollectorRegionUtil } from '../base/collector-region.util';
+
 import {
   CollectorComment,
   CollectorInput,
   CollectorPost,
 } from '../base/collector.types';
+
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
  * Represents an App Store application returned by
- * the app-store-scraper library.
+ * app-store-scraper.
  */
 type AppStoreApp = {
   id?: string | number;
@@ -35,7 +36,7 @@ type AppStoreApp = {
 
 /**
  * Represents an App Store review returned by
- * the app-store-scraper library.
+ * app-store-scraper.
  */
 type AppStoreReview = {
   id?: string | number;
@@ -47,7 +48,7 @@ type AppStoreReview = {
 };
 
 /**
- * Options supported by the App Store search operation.
+ * App Store search options used by the collector.
  */
 type AppStoreSearchOptions = {
   term: string;
@@ -56,7 +57,7 @@ type AppStoreSearchOptions = {
 };
 
 /**
- * Options supported by the App Store reviews operation.
+ * App Store reviews options used by the collector.
  */
 type AppStoreReviewsOptions = {
   id: string | number;
@@ -65,38 +66,30 @@ type AppStoreReviewsOptions = {
 
 /**
  * Minimal typed contract required from app-store-scraper.
- *
- * The package does not always expose sufficiently strict
- * TypeScript definitions, so this local contract prevents
- * unsafe calls and member access.
  */
 type AppStoreClient = {
-  search(options: AppStoreSearchOptions): Promise<AppStoreApp[]>;
+  search(
+    options: AppStoreSearchOptions,
+  ): Promise<AppStoreApp[]>;
 
-  reviews(options: AppStoreReviewsOptions): Promise<AppStoreReview[]>;
+  reviews(
+    options: AppStoreReviewsOptions,
+  ): Promise<AppStoreReview[]>;
 };
 
 /**
- * Typed App Store scraper client.
- *
- * The runtime object is provided by app-store-scraper,
- * while the local interface supplies the strict TypeScript
- * contract needed by the collector.
+ * Strictly typed App Store scraper client.
  */
-const appStoreClient = appStore as unknown as AppStoreClient;
+const appStoreClient =
+  appStore as unknown as AppStoreClient;
 
 /**
  * Apple App Store collector.
  *
- * Collects public App Store applications and public user reviews
- * using app-store-scraper.
+ * Collects public applications and public reviews using
+ * app-store-scraper.
  *
- * Notes:
- * - External app-store-scraper calls are cached through
- *   CollectorExternalCacheUtil.
- * - App Store search requires a supported storefront country code.
- * - If a country is not supported or not provided, US is used
- *   as the fallback storefront.
+ * The sourceKey must match DataSource.key in the database.
  *
  * @author Malak
  */
@@ -106,28 +99,29 @@ export class AppStoreCollector
   implements SocialCollector
 {
   /**
-   * Platform source type stored with collected records.
+   * Stable collector registry key.
+   *
+   * Must match:
+   * DataSource.key = "app-store"
    */
-  readonly sourceType = CollectionSourceType.APP_STORE;
-
-  /**
-   * Human-readable platform name.
-   */
-  private readonly platformName = 'App Store';
+  readonly sourceKey = 'app-store';
 
   constructor(configService: ConfigService) {
-    super(configService, AppStoreCollector.name);
+    super(
+      configService,
+      AppStoreCollector.name,
+    );
   }
 
   /**
-   * Collects relevant App Store applications and their reviews.
-   *
-   * @param input Collection job configuration.
-   * @returns Unified collector posts.
+   * Collects relevant App Store applications and reviews.
    */
-  async collect(input: CollectorInput): Promise<CollectorPost[]> {
+  async collect(
+    input: CollectorInput,
+  ): Promise<CollectorPost[]> {
     try {
-      const searchQuery = this.buildSearchQuery(input);
+      const searchQuery =
+        this.buildSearchQuery(input);
 
       if (!searchQuery) {
         this.logger.warn(
@@ -137,29 +131,45 @@ export class AppStoreCollector
         return [];
       }
 
-      const apps = await this.searchApps(searchQuery, input);
+      const apps = await this.searchApps(
+        searchQuery,
+        input,
+      );
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
         .map((app) => ({
           app,
-          score: this.calculateAppRelevanceScore(app, input),
+          score: this.calculateAppRelevanceScore(
+            app,
+            input,
+          ),
         }))
         .filter((item) => item.score > 0)
-        .sort((first, second) => second.score - first.score)
+        .sort(
+          (first, second) =>
+            second.score - first.score,
+        )
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
+        rankedApps.map((item) =>
+          this.mapAppToCollectorPost(
+            item.app,
+            input,
+          ),
+        ),
       );
 
-      this.logger.log(`App Store collection completed. Apps: ${posts.length}`);
+      this.logger.log(
+        `App Store collection completed. Apps: ${posts.length}`,
+      );
 
       return posts;
     } catch (error: unknown) {
       this.logger.warn(
         'App Store collection failed',
-        error instanceof Error ? error.message : String(error),
+        this.getErrorMessage(error),
       );
 
       return [];
@@ -167,29 +177,33 @@ export class AppStoreCollector
   }
 
   /**
-   * Searches the App Store using a cached external call.
-   *
-   * @param searchQuery Search phrase.
-   * @param input Collection job configuration.
-   * @returns Matching App Store applications.
+   * Searches the App Store through a cached external call.
    */
   private async searchApps(
     searchQuery: string,
     input: CollectorInput,
   ): Promise<AppStoreApp[]> {
-    const cacheKey = CollectorCacheUtil.build('app-store', 'search', [
-      searchQuery,
-      input.country,
-      input.language,
-    ]);
+    const cacheKey = CollectorCacheUtil.build(
+      this.sourceKey,
+      'search',
+      [
+        searchQuery,
+        input.country,
+        input.language,
+      ],
+    );
 
-    return CollectorExternalCacheUtil.remember<AppStoreApp[]>(
+    return CollectorExternalCacheUtil.remember<
+      AppStoreApp[]
+    >(
       cacheKey,
       this.cacheTtlMs,
       () =>
         appStoreClient.search({
           term: searchQuery,
-          country: this.resolveCountry(input.country),
+          country: this.resolveCountry(
+            input.country,
+          ),
           num: this.maxFetchedPosts,
         }),
     );
@@ -199,83 +213,107 @@ export class AppStoreCollector
    * Builds the primary App Store search query.
    *
    * Priority:
-   * 1. First custom keyword.
+   * 1. First user keyword.
    * 2. Domain name.
-   * 3. First configured domain keyword.
-   *
-   * @param input Collection job configuration.
-   * @returns Normalized search query.
+   * 3. First domain keyword.
    */
-  private buildSearchQuery(input: CollectorInput): string {
-    const userKeyword = input.keywords?.[0]
-      ? this.normalizeText(input.keywords[0])
-      : '';
+  private buildSearchQuery(
+    input: CollectorInput,
+  ): string {
+    const userKeyword =
+      input.keywords?.[0]
+        ? this.cleanNormalizedText(
+            input.keywords[0],
+          )
+        : '';
 
     if (userKeyword) {
       return userKeyword;
     }
 
-    if (input.domainName) {
-      return this.normalizeText(input.domainName);
+    const domainName =
+      this.cleanNormalizedText(
+        input.domainName,
+      );
+
+    if (domainName) {
+      return domainName;
     }
 
-    return this.getDomainKeywords(input)[0] ?? '';
+    return (
+      this.getDomainKeywords(input)[0] ?? ''
+    );
   }
 
   /**
-   * Determines whether an App Store application contains
-   * the minimum required data and is not blocked.
-   *
-   * @param app App Store application.
-   * @returns True when the application is valid.
+   * Validates an application before ranking.
    */
-  private isValidApp(app: AppStoreApp): boolean {
+  private isValidApp(
+    app: AppStoreApp,
+  ): boolean {
     const appId = this.getAppId(app);
-    const title = this.normalizeText(app.title ?? '');
-    const description = this.normalizeText(
-      app.description ?? app.summary ?? '',
+
+    const title = this.cleanPlainText(
+      app.title,
+    );
+
+    const description = this.cleanPlainText(
+      app.description ?? app.summary,
     );
 
     if (!appId || !title) {
       return false;
     }
 
-    const blockedWords = this.getAppStoreBlockedWords();
+    const content =
+      this.cleanNormalizedText(
+        `${title} ${description}`,
+      );
 
-    const content = `${title} ${description}`;
+    const blockedWords =
+      this.getAppStoreBlockedWords();
 
-    return !blockedWords.some((word) => content.includes(word));
+    return !blockedWords.some((word) =>
+      content.includes(
+        this.cleanNormalizedText(word),
+      ),
+    );
   }
 
   /**
-   * Calculates the application's relevance score.
-   *
-   * @param app App Store application.
-   * @param input Collection job configuration.
-   * @returns Relevance score.
+   * Calculates application relevance.
    */
   private calculateAppRelevanceScore(
     app: AppStoreApp,
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: app.title ?? '',
-      body: app.description ?? app.summary ?? '',
-      domainTerms: this.getDomainKeywords(input),
-      problemTerms: this.getProblemWords(),
-      likes: app.reviews ?? app.ratings ?? 0,
-      replies: app.reviews ?? app.ratings ?? 0,
-      publishedAt: app.released ? new Date(app.released) : undefined,
+      title: this.cleanPlainText(app.title),
+
+      body: this.cleanPlainText(
+        app.description ?? app.summary,
+      ),
+
+      domainTerms:
+        this.getDomainKeywords(input),
+
+      problemTerms:
+        this.getProblemWords(),
+
+      likes:
+        app.reviews ?? app.ratings ?? 0,
+
+      replies:
+        app.reviews ?? app.ratings ?? 0,
+
+      publishedAt: this.parseDate(
+        app.released,
+      ),
     });
   }
 
   /**
-   * Maps one App Store application into the unified
-   * collector post structure.
-   *
-   * @param app App Store application.
-   * @param input Collection job configuration.
-   * @returns Unified collector post.
+   * Maps one App Store application to CollectorPost.
    */
   private async mapAppToCollectorPost(
     app: AppStoreApp,
@@ -283,70 +321,139 @@ export class AppStoreCollector
   ): Promise<CollectorPost> {
     const appId = this.getAppId(app);
 
-    const comments = await this.collectAppReviews(appId, input);
+    const title = this.cleanPlainText(
+      app.title,
+    );
+
+    const description =
+      this.cleanPlainText(
+        app.description ?? app.summary,
+      );
+
+    const comments =
+      await this.collectAppReviews(
+        appId,
+        input,
+      );
 
     return {
-      sourceType: CollectionSourceType.APP_STORE,
-      platformName: this.platformName,
       externalId: String(appId),
-      title: app.title,
-      content: app.description ?? app.summary ?? app.title ?? '',
-      author: app.developer,
+
+      title,
+      content: description || title,
+
+      author: this.cleanPlainText(
+        app.developer,
+      ),
+
       url: app.url,
+
       country: input.country,
       city: input.city,
       region: input.region,
-      language: input.language,
-      likesCount: app.reviews ?? app.ratings ?? 0,
+
+      languageCode:
+        this.resolveStoredLanguageCode(
+          input.language,
+        ),
+
+      likesCount:
+        app.reviews ?? app.ratings ?? 0,
+
       repliesCount: comments.length,
-      publishedAt: app.released ? new Date(app.released) : undefined,
+
+      publishedAt: this.parseDate(
+        app.released,
+      ),
+
       comments,
     };
   }
 
   /**
-   * Collects and maps useful public reviews for one application.
-   *
-   * @param appId App Store application identifier.
-   * @param input Collection job configuration.
-   * @returns Unified collector comments.
+   * Collects useful public reviews.
    */
   private async collectAppReviews(
     appId: string | number,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
-    try {
-      const cacheKey = CollectorCacheUtil.build('app-store', 'reviews', [
-        appId,
-        input.country,
-      ]);
+    if (!appId) {
+      return [];
+    }
 
-      const reviews = await CollectorExternalCacheUtil.remember<
-        AppStoreReview[]
-      >(cacheKey, this.cacheTtlMs, () =>
-        appStoreClient.reviews({
-          id: appId,
-          country: this.resolveCountry(input.country),
-        }),
-      );
+    try {
+      const cacheKey =
+        CollectorCacheUtil.build(
+          this.sourceKey,
+          'reviews',
+          [
+            appId,
+            input.country,
+            input.language,
+          ],
+        );
+
+      const reviews =
+        await CollectorExternalCacheUtil.remember<
+          AppStoreReview[]
+        >(
+          cacheKey,
+          this.cacheTtlMs,
+          () =>
+            appStoreClient.reviews({
+              id: appId,
+              country: this.resolveCountry(
+                input.country,
+              ),
+            }),
+        );
 
       return reviews
-        .filter((review) => this.isUsefulReview(review, input.language))
+        .filter((review) =>
+          this.isUsefulReview(
+            review,
+            input.language,
+          ),
+        )
         .slice(0, this.maxSavedComments)
         .map(
-          (review): CollectorComment => ({
-            externalId: this.buildReviewExternalId(appId, review),
-            content: review.text ?? '',
-            author: review.userName,
-            language: input.language,
-            likesCount: review.score ?? 0,
-            publishedAt: this.resolveReviewDate(review),
+          (
+            review,
+          ): CollectorComment => ({
+            externalId:
+              this.buildReviewExternalId(
+                appId,
+                review,
+              ),
+
+            content: this.cleanPlainText(
+              review.text,
+            ),
+
+            author: this.cleanPlainText(
+              review.userName,
+            ),
+
+            languageCode:
+              this.resolveStoredLanguageCode(
+                input.language,
+              ),
+
+            likesCount:
+              review.score ?? 0,
+
+            publishedAt:
+              this.resolveReviewDate(
+                review,
+              ),
           }),
         );
     } catch (error: unknown) {
       this.logger.warn(
-        `Failed to collect reviews for app ${String(appId)}`,
-        error instanceof Error ? error.message : String(error),
+        `Failed to collect reviews for app ${String(
+          appId,
+        )}`,
+        this.getErrorMessage(error),
       );
 
       return [];
@@ -354,14 +461,7 @@ export class AppStoreCollector
   }
 
   /**
-   * Builds a stable external identifier for an App Store review.
-   *
-   * The review ID is preferred. When it is unavailable,
-   * the application ID and normalized review date are used.
-   *
-   * @param appId App Store application identifier.
-   * @param review App Store review.
-   * @returns Stable review identifier.
+   * Builds a stable review external ID.
    */
   private buildReviewExternalId(
     appId: string | number,
@@ -371,50 +471,63 @@ export class AppStoreCollector
       return String(review.id);
     }
 
-    const reviewDate = review.updated ?? review.date;
+    const reviewDate =
+      this.resolveReviewDate(review);
 
     const datePart = reviewDate
-      ? new Date(reviewDate).toISOString()
+      ? reviewDate.toISOString()
       : 'unknown-date';
 
-    return `${String(appId)}-${datePart}`;
+    const contentPart =
+      this.cleanNormalizedText(
+        review.text,
+      ).slice(0, 50);
+
+    return `${String(appId)}-${datePart}-${contentPart}`;
   }
 
   /**
-   * Resolves the publication date of an App Store review.
-   *
-   * The updated date is preferred over the original date.
-   *
-   * @param review App Store review.
-   * @returns Parsed review date when available.
+   * Resolves the review publication date.
    */
-  private resolveReviewDate(review: AppStoreReview): Date | undefined {
-    const dateValue = review.updated ?? review.date;
-
-    return dateValue ? new Date(dateValue) : undefined;
+  private resolveReviewDate(
+    review: AppStoreReview,
+  ): Date | undefined {
+    return this.parseDate(
+      review.updated ?? review.date,
+    );
   }
 
   /**
-   * Determines whether a review contains useful content
-   * for later NLP analysis.
-   *
-   * @param review App Store review.
-   * @param language Requested collection language.
-   * @returns True when the review should be retained.
+   * Filters short, low-value, blocked, or
+   * language-mismatched reviews.
    */
-  private isUsefulReview(review: AppStoreReview, language?: string): boolean {
-    const rawContent = review.text ?? '';
-    const content = this.normalizeText(rawContent);
+  private isUsefulReview(
+    review: AppStoreReview,
+    language?: string,
+  ): boolean {
+    const rawContent =
+      this.cleanPlainText(review.text);
 
-    if (!review.id || content.length < 40) {
+    const content =
+      this.cleanNormalizedText(rawContent);
+
+    if (content.length < 40) {
       return false;
     }
 
-    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
+    if (
+      !CollectorLanguageUtil
+        .matchesRequestedLanguage(
+          rawContent,
+          language,
+        )
+    ) {
       return false;
     }
 
-    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+    const cleaned = content
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .trim();
 
     if (!cleaned) {
       return false;
@@ -440,34 +553,42 @@ export class AppStoreCollector
       return false;
     }
 
-    const blockedWords = this.getAppStoreBlockedWords();
+    const blockedWords =
+      this.getAppStoreBlockedWords();
 
-    return !blockedWords.some((word) => content.includes(word));
+    return !blockedWords.some((word) =>
+      content.includes(
+        this.cleanNormalizedText(word),
+      ),
+    );
   }
 
   /**
-   * Returns the best available application identifier.
-   *
-   * @param app App Store application.
-   * @returns Application identifier or an empty string.
+   * Returns the best available application ID.
    */
-  private getAppId(app: AppStoreApp): string | number {
+  private getAppId(
+    app: AppStoreApp,
+  ): string | number {
     return app.id ?? app.appId ?? '';
   }
 
   /**
-   * Resolves the App Store storefront country code.
+   * Resolves the App Store storefront country.
    *
-   * Palestine and unresolved regions currently fall back
-   * to the United States storefront.
-   *
-   * @param country Requested country.
-   * @returns Lowercase App Store country code.
+   * Palestine and unresolved values fall back to US.
    */
-  private resolveCountry(country?: string): string {
-    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
+  private resolveCountry(
+    country?: string,
+  ): string {
+    const regionCode =
+      CollectorRegionUtil.resolveRegionCode(
+        country,
+      );
 
-    if (!regionCode || regionCode === 'PS') {
+    if (
+      !regionCode ||
+      regionCode === 'PS'
+    ) {
       return 'us';
     }
 
@@ -475,11 +596,42 @@ export class AppStoreCollector
   }
 
   /**
-   * Returns App Store-specific blocked words.
-   *
-   * @returns Normalized blocked words.
+   * Parses an external date safely.
+   */
+  private parseDate(
+    value?: string | Date,
+  ): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date =
+      value instanceof Date
+        ? value
+        : new Date(value);
+
+    return Number.isNaN(date.getTime())
+      ? undefined
+      : date;
+  }
+
+  /**
+   * Reads App Store-specific blocked words.
    */
   private getAppStoreBlockedWords(): string[] {
-    return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
+    return super.getBlockedWords(
+      'APP_STORE_BLOCKED_WORDS',
+    );
+  }
+
+  /**
+   * Extracts a safe error message.
+   */
+  private getErrorMessage(
+    error: unknown,
+  ): string {
+    return error instanceof Error
+      ? error.message
+      : String(error);
   }
 }

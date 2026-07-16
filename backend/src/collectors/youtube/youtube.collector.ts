@@ -1,9 +1,12 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CollectionSourceType } from '@prisma/client';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
+
 import {
   CollectorComment,
   CollectorInput,
@@ -77,17 +80,23 @@ type YouTubeCommentsResponse = {
 /**
  * YouTube collector.
  *
- * Collects public YouTube videos and top-level comments using
+ * Collects public videos and top-level comments using
  * YouTube Data API v3.
  *
  * @author Malak
  */
 @Injectable()
-export class YouTubeCollector extends BaseCollector implements SocialCollector {
-  readonly sourceType = CollectionSourceType.YOUTUBE;
+export class YouTubeCollector
+  extends BaseCollector
+  implements SocialCollector
+{
+  /**
+   * Must match DataSource.key.
+   */
+  readonly sourceKey = 'youtube';
 
-  private readonly platformName = 'YouTube';
-  private readonly apiBaseUrl = 'https://www.googleapis.com/youtube/v3';
+  private readonly apiBaseUrl =
+    'https://www.googleapis.com/youtube/v3';
 
   private readonly maxSearchQueries: number;
 
@@ -101,20 +110,19 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Collects public YouTube videos and useful top-level comments.
+   * Collects public YouTube videos and comments.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     const apiKey = this.getApiKey();
 
-    const searchQueries = this.buildSearchQueries(input).slice(
-      0,
-      this.maxSearchQueries,
-    );
+    const searchQueries = this.buildSearchQueries(input)
+      .slice(0, this.maxSearchQueries);
 
     if (!searchQueries.length) {
       this.logger.warn(
         'YouTube collection skipped because no domain keywords exist.',
       );
+
       return [];
     }
 
@@ -123,19 +131,37 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
     try {
       for (const query of searchQueries) {
-        if (collectedPosts.length >= this.maxSavedPosts) break;
+        if (
+          collectedPosts.length >=
+          this.maxSavedPosts
+        ) {
+          break;
+        }
 
-        const videos = await this.searchVideos(input, apiKey, query);
+        const videos = await this.searchVideos(
+          input,
+          apiKey,
+          query,
+        );
 
         const validVideos = videos
           .filter((video) => this.isValidVideo(video))
-          .filter((video) => this.matchesInputContext(video, input));
+          .filter((video) =>
+            this.matchesInputContext(video, input),
+          );
 
         const videoIds = validVideos
           .map((video) => video.id?.videoId)
-          .filter((videoId): videoId is string => Boolean(videoId));
+          .filter(
+            (videoId): videoId is string =>
+              Boolean(videoId),
+          );
 
-        const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
+        const statisticsMap =
+          await this.fetchVideoStatistics(
+            videoIds,
+            apiKey,
+          );
 
         const rankedVideos = validVideos
           .map((video) => {
@@ -143,29 +169,45 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
             return {
               video,
+
               score: this.calculateVideoRelevanceScore(
                 video,
                 input,
-                videoId ? statisticsMap.get(videoId) : undefined,
+                videoId
+                  ? statisticsMap.get(videoId)
+                  : undefined,
               ),
             };
           })
           .filter((item) => item.score > 5)
-          .sort((a, b) => b.score - a.score);
+          .sort(
+            (first, second) =>
+              second.score - first.score,
+          );
 
         for (const item of rankedVideos) {
-          if (collectedPosts.length >= this.maxSavedPosts) break;
+          if (
+            collectedPosts.length >=
+            this.maxSavedPosts
+          ) {
+            break;
+          }
 
-          const video = item.video;
-          const videoId = video.id?.videoId;
+          const videoId =
+            item.video.id?.videoId;
 
-          if (!videoId || seenVideoIds.has(videoId)) continue;
+          if (
+            !videoId ||
+            seenVideoIds.has(videoId)
+          ) {
+            continue;
+          }
 
           seenVideoIds.add(videoId);
 
           collectedPosts.push(
             await this.mapVideoToCollectorPost(
-              video,
+              item.video,
               input,
               statisticsMap.get(videoId),
             ),
@@ -191,25 +233,33 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Searches YouTube videos using a prepared search query.
+   * Searches YouTube videos.
    */
   private async searchVideos(
     input: CollectorInput,
     apiKey: string,
     query: string,
   ): Promise<YouTubeSearchVideo[]> {
-    const cacheKey = CollectorCacheUtil.build('youtube', 'search', [
-      query,
-      input.country,
-      input.language,
-    ]);
+    const cacheKey = CollectorCacheUtil.build(
+      this.sourceKey,
+      'search',
+      [
+        query,
+        input.country,
+        input.language,
+      ],
+    );
 
     const data =
       await CollectorHttpUtil.getWithRetryAndCache<YouTubeSearchResponse>(
         `${this.apiBaseUrl}/search`,
         {
-          params: this.buildSearchParams(input, apiKey, query),
-          timeout: 10000,
+          params: this.buildSearchParams(
+            input,
+            apiKey,
+            query,
+          ),
+          timeout: 10_000,
         },
         {
           cacheKey,
@@ -223,7 +273,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Builds YouTube Data API search parameters.
+   * Builds YouTube API search parameters.
    */
   private buildSearchParams(
     input: CollectorInput,
@@ -242,35 +292,45 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       videoEmbeddable: 'true',
     };
 
-    const regionCode = CollectorRegionUtil.resolveRegionCode(input.country);
-    const relevanceLanguage = CollectorLanguageUtil.resolveLanguageCode(
-      input.language,
-    );
+    const regionCode =
+      CollectorRegionUtil.resolveRegionCode(
+        input.country,
+      );
 
-    if (regionCode) params.regionCode = regionCode;
-    if (relevanceLanguage) params.relevanceLanguage = relevanceLanguage;
+    const relevanceLanguage =
+      CollectorLanguageUtil.resolveLanguageCode(
+        input.language,
+      );
+
+    if (regionCode) {
+      params.regionCode = regionCode;
+    }
+
+    if (relevanceLanguage) {
+      params.relevanceLanguage = relevanceLanguage;
+    }
 
     return params;
   }
 
   /**
-   * Builds search queries from domain keywords, user keywords,
-   * and problem-related generated queries.
+   * Builds YouTube search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
     const domainKeywords = this.getDomainKeywords(input);
 
-    if (!domainKeywords.length) return [];
+    if (!domainKeywords.length) {
+      return [];
+    }
 
-    const problemWords = this.getProblemWords();
-
-    const problemQueries = CollectorQueryBuilderUtil.buildProblemQueries(
-      domainKeywords,
-      problemWords,
-    );
+    const problemQueries =
+      CollectorQueryBuilderUtil.buildProblemQueries(
+        domainKeywords,
+        this.getProblemWords(),
+      );
 
     const userQueries = (input.keywords ?? [])
-      .map((keyword) => this.normalizeQuery(keyword))
+      .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
     return this.unique([
@@ -281,14 +341,22 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Performs lightweight validation before mapping videos.
+   * Validates one search result.
    */
   private isValidVideo(video: YouTubeSearchVideo): boolean {
     const videoId = video.id?.videoId;
 
-    const title = this.cleanPlainText(video.snippet?.title);
-    const description = this.cleanPlainText(video.snippet?.description);
-    const channelTitle = this.cleanPlainText(video.snippet?.channelTitle);
+    const title = this.cleanPlainText(
+      video.snippet?.title,
+    );
+
+    const description = this.cleanPlainText(
+      video.snippet?.description,
+    );
+
+    const channelTitle = this.cleanPlainText(
+      video.snippet?.channelTitle,
+    );
 
     const content = this.cleanNormalizedText(
       `${title} ${description} ${channelTitle}`,
@@ -299,20 +367,24 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     return (
       Boolean(videoId) &&
       Boolean(title) &&
-      !blockedWords.some((word) => content.includes(this.normalizeText(word)))
+      !blockedWords.some((word) =>
+        content.includes(this.cleanNormalizedText(word)),
+      )
     );
   }
 
   /**
-   * Checks whether the video matches requested language/context.
+   * Validates requested language context.
    */
   private matchesInputContext(
     video: YouTubeSearchVideo,
     input: CollectorInput,
   ): boolean {
-    const title = this.cleanPlainText(video.snippet?.title);
-    const description = this.cleanPlainText(video.snippet?.description);
-    const content = this.cleanNormalizedText(`${title} ${description}`);
+    const content = this.cleanPlainText(
+      `${video.snippet?.title ?? ''} ${
+        video.snippet?.description ?? ''
+      }`,
+    );
 
     return CollectorLanguageUtil.matchesRequestedLanguage(
       content,
@@ -321,7 +393,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Calculates a lightweight relevance score for a YouTube video.
+   * Calculates video relevance.
    */
   private calculateVideoRelevanceScore(
     video: YouTubeSearchVideo,
@@ -330,19 +402,25 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   ): number {
     return RelevanceScoreUtil.scoreText({
       title: this.cleanPlainText(video.snippet?.title),
-      body: this.cleanPlainText(video.snippet?.description),
+
+      body: this.cleanPlainText(
+        video.snippet?.description,
+      ),
+
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
+
       likes: statistics?.likeCount ?? 0,
       replies: statistics?.commentCount ?? 0,
-      publishedAt: video.snippet?.publishedAt
-        ? new Date(video.snippet.publishedAt)
-        : undefined,
+
+      publishedAt: this.parseDate(
+        video.snippet?.publishedAt,
+      ),
     });
   }
 
   /**
-   * Maps a YouTube video into the common CollectorPost format.
+   * Maps one YouTube video.
    */
   private async mapVideoToCollectorPost(
     video: YouTubeSearchVideo,
@@ -353,49 +431,68 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const snippet = video.snippet ?? {};
 
     const title = this.cleanPlainText(snippet.title);
-    const description = this.cleanPlainText(snippet.description);
-    const author = this.cleanPlainText(snippet.channelTitle);
+    const description = this.cleanPlainText(
+      snippet.description,
+    );
 
-    const comments = await this.collectVideoComments(videoId, input);
+    const comments = await this.collectVideoComments(
+      videoId,
+      input,
+    );
 
     return {
-      sourceType: CollectionSourceType.YOUTUBE,
-      platformName: this.platformName,
       externalId: videoId,
       title,
       content: description || title,
-      author,
+
+      author: this.cleanPlainText(
+        snippet.channelTitle,
+      ),
+
       url: `https://www.youtube.com/watch?v=${videoId}`,
 
       country: input.country,
       city: input.city,
       region: input.region,
 
-      language: input.language,
+      languageCode: this.resolveStoredLanguageCode(
+        input.language,
+      ),
+
       likesCount: statistics?.likeCount ?? 0,
-      repliesCount: statistics?.commentCount ?? comments.length,
-      publishedAt: snippet.publishedAt
-        ? new Date(snippet.publishedAt)
-        : undefined,
+
+      repliesCount:
+        statistics?.commentCount ??
+        comments.length,
+
+      publishedAt: this.parseDate(
+        snippet.publishedAt,
+      ),
+
       comments,
     };
   }
 
   /**
-   * Fetches like and comment statistics for selected videos.
+   * Fetches video engagement statistics.
    */
   private async fetchVideoStatistics(
     videoIds: string[],
     apiKey: string,
   ): Promise<Map<string, YouTubeVideoStatistics>> {
-    const statisticsMap = new Map<string, YouTubeVideoStatistics>();
+    const statisticsMap =
+      new Map<string, YouTubeVideoStatistics>();
 
-    if (!videoIds.length) return statisticsMap;
+    if (!videoIds.length) {
+      return statisticsMap;
+    }
 
     try {
-      const cacheKey = CollectorCacheUtil.build('youtube', 'statistics', [
-        videoIds.join(','),
-      ]);
+      const cacheKey = CollectorCacheUtil.build(
+        this.sourceKey,
+        'statistics',
+        [videoIds.join(',')],
+      );
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<YouTubeStatisticsResponse>(
@@ -406,7 +503,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
               part: 'statistics',
               id: videoIds.join(','),
             },
-            timeout: 10000,
+            timeout: 10_000,
           },
           {
             cacheKey,
@@ -416,52 +513,67 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           },
         );
 
-      const videos = data.items ?? [];
-
-      videos.forEach((video) => {
-        if (!video.id) return;
+      for (const video of data.items ?? []) {
+        if (!video.id) {
+          continue;
+        }
 
         statisticsMap.set(video.id, {
-          likeCount: Number(video.statistics?.likeCount ?? 0),
-          commentCount: Number(video.statistics?.commentCount ?? 0),
+          likeCount: this.toNonNegativeNumber(
+            video.statistics?.likeCount,
+          ),
+
+          commentCount: this.toNonNegativeNumber(
+            video.statistics?.commentCount,
+          ),
         });
-      });
+      }
 
       return statisticsMap;
-    } catch {
+    } catch (error: unknown) {
+      this.logger.warn(
+        'YouTube video-statistics collection failed.',
+        this.getErrorMessage(error),
+      );
+
       return statisticsMap;
     }
   }
 
   /**
-   * Collects useful top-level comments for a YouTube video.
+   * Collects useful top-level comments.
    */
   private async collectVideoComments(
     videoId: string,
     input: CollectorInput,
   ): Promise<CollectorComment[]> {
-    if (!videoId) return [];
-
-    const apiKey = this.getApiKey();
+    if (!videoId) {
+      return [];
+    }
 
     try {
-      const cacheKey = CollectorCacheUtil.build('youtube', 'comments', [
-        videoId,
-      ]);
+      const cacheKey = CollectorCacheUtil.build(
+        this.sourceKey,
+        'comments',
+        [videoId],
+      );
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<YouTubeCommentsResponse>(
           `${this.apiBaseUrl}/commentThreads`,
           {
             params: {
-              key: apiKey,
+              key: this.getApiKey(),
               part: 'snippet',
               videoId,
-              maxResults: Math.min(this.maxFetchedComments, 100),
+              maxResults: Math.min(
+                this.maxFetchedComments,
+                100,
+              ),
               order: 'relevance',
               textFormat: 'plainText',
             },
-            timeout: 10000,
+            timeout: 10_000,
           },
           {
             cacheKey,
@@ -471,66 +583,103 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
           },
         );
 
-      const comments = data.items ?? [];
       const seenCommentIds = new Set<string>();
 
-      return comments
-        .map((item) => item.snippet?.topLevelComment)
-        .filter((comment): comment is YouTubeTopLevelComment =>
-          Boolean(comment),
+      return (data.items ?? [])
+        .map(
+          (item) =>
+            item.snippet?.topLevelComment,
         )
-        .filter((comment) => this.isUsefulComment(comment, input))
+        .filter(
+          (
+            comment,
+          ): comment is YouTubeTopLevelComment =>
+            Boolean(comment),
+        )
+        .filter((comment) =>
+          this.isUsefulComment(comment, input),
+        )
         .filter((comment) => {
           const id = comment.id;
 
-          if (!id || seenCommentIds.has(id)) return false;
+          if (!id || seenCommentIds.has(id)) {
+            return false;
+          }
 
           seenCommentIds.add(id);
+
           return true;
         })
         .sort(
-          (a, b) => (b.snippet?.likeCount ?? 0) - (a.snippet?.likeCount ?? 0),
+          (first, second) =>
+            (second.snippet?.likeCount ?? 0) -
+            (first.snippet?.likeCount ?? 0),
         )
         .slice(0, this.maxSavedComments)
-        .map((comment): CollectorComment => {
-          const snippet = comment.snippet ?? {};
-
-          return {
+        .map(
+          (comment): CollectorComment => ({
             externalId: comment.id ?? '',
-            content: this.cleanPlainText(snippet.textDisplay),
-            author: this.cleanPlainText(snippet.authorDisplayName),
-            likesCount: snippet.likeCount ?? 0,
-            publishedAt: snippet.publishedAt
-              ? new Date(snippet.publishedAt)
-              : undefined,
-          };
-        });
-    } catch {
+
+            content: this.cleanPlainText(
+              comment.snippet?.textDisplay,
+            ),
+
+            author: this.cleanPlainText(
+              comment.snippet?.authorDisplayName,
+            ),
+
+            languageCode: this.resolveStoredLanguageCode(
+              input.language,
+            ),
+
+            likesCount:
+              comment.snippet?.likeCount ?? 0,
+
+            publishedAt: this.parseDate(
+              comment.snippet?.publishedAt,
+            ),
+          }),
+        );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `YouTube comments collection failed for video ${videoId}`,
+        this.getErrorMessage(error),
+      );
+
       return [];
     }
   }
 
   /**
-   * Filters YouTube comments before storage.
+   * Filters low-value YouTube comments.
    */
   private isUsefulComment(
     comment: YouTubeTopLevelComment,
     input: CollectorInput,
   ): boolean {
-    const content = this.cleanNormalizedText(comment.snippet?.textDisplay);
+    const rawContent = this.cleanPlainText(
+      comment.snippet?.textDisplay,
+    );
+
+    const content = this.cleanNormalizedText(rawContent);
 
     if (!comment.id || content.length < 50) {
       return false;
     }
 
-    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+    const cleaned = content
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .trim();
 
     if (!cleaned) {
       return false;
     }
 
     if (
-      !CollectorLanguageUtil.matchesRequestedLanguage(content, input.language)
+      !CollectorLanguageUtil.matchesRequestedLanguage(
+        rawContent,
+        input.language,
+      )
     ) {
       return false;
     }
@@ -556,29 +705,25 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
     const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(this.normalizeText(word)),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
   /**
-   * Reads common blocked words and YouTube-specific blocked words.
+   * Reads YouTube-specific blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('YOUTUBE_BLOCKED_WORDS');
   }
 
   /**
-   * Normalizes a YouTube search query.
-   */
-  private normalizeQuery(query: string): string {
-    return this.cleanNormalizedText(query);
-  }
-
-  /**
-   * Reads YouTube API key from environment variables.
+   * Reads the YouTube API key.
    */
   private getApiKey(): string {
-    const apiKey = this.configService.get<string>('YOUTUBE_API_KEY');
+    const apiKey =
+      this.configService.get<string>(
+        'YOUTUBE_API_KEY',
+      );
 
     if (!apiKey) {
       throw new ServiceUnavailableException(
@@ -590,13 +735,41 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Extracts readable message from unknown errors.
+   * Parses an external date safely.
    */
-  private getErrorMessage(error: unknown): unknown {
+  private parseDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const date = new Date(value);
+
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  /**
+   * Parses non-negative API counters.
+   */
+  private toNonNegativeNumber(
+    value?: string,
+  ): number {
+    const parsed = Number(value ?? 0);
+
+    return Number.isFinite(parsed) && parsed > 0
+      ? parsed
+      : 0;
+  }
+
+  /**
+   * Extracts a safe error message.
+   */
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    return error;
+    return typeof error === 'string'
+      ? error
+      : 'Unknown YouTube collector error.';
   }
 }
