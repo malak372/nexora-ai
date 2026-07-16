@@ -42,7 +42,7 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  */
 @Injectable()
 export class CreditBalanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Changes one user's credit balance.
@@ -86,6 +86,7 @@ export class CreditBalanceService {
       }
 
       const absoluteAmount = Math.abs(input.amount);
+      const description = input.description?.trim() ?? null;
 
       if (input.amount < 0) {
         const deductionResult = await tx.user.updateMany({
@@ -152,15 +153,17 @@ export class CreditBalanceService {
       const accountStatus =
         balanceAfter > 0 ? AccountStatus.PREMIUM : AccountStatus.NORMAL;
 
-      await tx.user.update({
-        where: {
-          id: user.id,
-        },
+      if (user.accountStatus !== accountStatus) {
+        await tx.user.update({
+          where: {
+            id: user.id,
+          },
 
-        data: {
-          accountStatus,
-        },
-      });
+          data: {
+            accountStatus,
+          },
+        });
+      }
 
       const transaction = await tx.creditTransaction.create({
         data: {
@@ -170,7 +173,7 @@ export class CreditBalanceService {
           type: input.type,
           amount: input.amount,
           balanceAfter,
-          description: input.description?.trim() || null,
+          description,
         },
       });
 
