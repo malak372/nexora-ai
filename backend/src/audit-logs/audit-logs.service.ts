@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
+import {
+  AuditAction,
+  AuditTargetType,
+  Prisma,
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { GetAuditLogsQueryDto } from './dto/get-audit-logs-query.dto';
 
 import {
   buildDateFilter,
@@ -15,48 +18,101 @@ import {
   calculateTotalPages,
 } from '../utilities/analytics/analytics.helper';
 
+import { GetAuditLogsQueryDto } from './dto/get-audit-logs-query.dto';
+
 /**
- * Input used when creating an audit log.
+ * Input required to create an audit-log record.
+ *
+ * Audit logs may be created by:
+ * - An authenticated administrator.
+ * - An authenticated user.
+ * - An internal system process.
+ *
+ * The actor and target identifiers are nullable to support
+ * system-generated operations and targets without a specific ID.
  *
  * @author Malak
  */
 export type CreateAuditLogInput = {
+  /**
+   * Identifier of the user who performed the operation.
+   *
+   * Null or undefined represents an internal system action.
+   */
   actorId?: string | null;
+
+  /**
+   * Type of operation that was performed.
+   */
   action: AuditAction;
+
+  /**
+   * Type of entity affected by the operation.
+   */
   targetType: AuditTargetType;
+
+  /**
+   * Optional identifier of the affected entity.
+   */
   targetId?: string | null;
+
+  /**
+   * Entity state before the operation.
+   */
   oldValue?: Prisma.InputJsonValue | null;
+
+  /**
+   * Entity state after the operation.
+   */
   newValue?: Prisma.InputJsonValue | null;
 };
 
 /**
- * Shared audit service for the whole system.
+ * Shared service responsible for audit-log operations.
  *
  * Responsibilities:
- * - Create audit logs.
+ * - Create audit records.
  * - Participate in existing Prisma transactions.
- * - List and filter audit logs.
- * - Generate audit summaries.
+ * - List, search, filter, sort, and paginate audit logs.
+ * - Generate audit-log summaries.
  * - Generate chart-ready analytics.
- * - Export audit logs as CSV.
+ * - Export filtered logs as CSV.
+ *
+ * Audit records should be treated as append-only records.
+ * Existing audit logs should not normally be modified or deleted.
  *
  * @author Malak
  */
 @Injectable()
 export class AuditService {
+  /**
+   * Maximum number of records included in one CSV export.
+   *
+   * Prevents an unbounded query from loading an excessive number
+   * of audit records into application memory.
+   */
+  private static readonly MAX_CSV_EXPORT_ROWS = 50_000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Creates a new audit log.
+   * Creates a new audit-log record.
    *
-   * When a transaction client is provided, the audit log is created
-   * inside the caller's transaction. This guarantees that the business
-   * operation and its audit record either both succeed or both roll back.
+   * When a transaction client is supplied, the audit record is
+   * created inside the caller's existing database transaction.
    *
-   * @param input Audit log values.
+   * This ensures that:
+   * - The business operation and its audit record both succeed.
+   * - Or both operations are rolled back together.
+   *
+   * @param input Values stored in the audit record.
    * @param tx Optional Prisma transaction client.
+   * @returns The newly created audit-log record.
    */
-  async createLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient) {
+  async createLog(
+    input: CreateAuditLogInput,
+    tx?: Prisma.TransactionClient,
+  ) {
     const client = tx ?? this.prisma;
 
     return client.auditLog.create({
@@ -72,7 +128,12 @@ export class AuditService {
   }
 
   /**
-   * Returns paginated and filtered audit logs.
+   * Returns paginated audit logs matching the supplied filters.
+   *
+   * The actor relation is included using a limited field selection
+   * to avoid returning sensitive user data such as password hashes.
+   *
+   * @param query Filtering, searching, sorting, and pagination options.
    */
   async getAuditLogs(query: GetAuditLogsQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
@@ -101,7 +162,10 @@ export class AuditService {
           },
         },
       }),
-      this.prisma.auditLog.count({ where }),
+
+      this.prisma.auditLog.count({
+        where,
+      }),
     ]);
 
     return {
@@ -116,30 +180,51 @@ export class AuditService {
   }
 
   /**
-   * Returns summary counts for audit logs.
+   * Returns summary counts for the filtered audit-log dataset.
+   *
+   * The same base filters are applied to:
+   * - Total logs.
+   * - Logs created by a user.
+   * - Logs created by the internal system.
+   *
+   * Using AND prevents actor-specific filters from being accidentally
+   * overwritten when calculating the summary breakdown.
+   *
+   * @param query Audit-log filters.
    */
   async getAuditLogsSummary(query: GetAuditLogsQueryDto) {
     const where = this.buildWhere(query);
 
-    const [totalLogs, logsWithActor, logsWithoutActor] = await Promise.all([
-      this.prisma.auditLog.count({ where }),
+    const [totalLogs, logsWithActor, logsWithoutActor] =
+      await Promise.all([
+        this.prisma.auditLog.count({
+          where,
+        }),
 
-      this.prisma.auditLog.count({
-        where: {
-          ...where,
-          actorId: {
-            not: null,
+        this.prisma.auditLog.count({
+          where: {
+            AND: [
+              where,
+              {
+                actorId: {
+                  not: null,
+                },
+              },
+            ],
           },
-        },
-      }),
+        }),
 
-      this.prisma.auditLog.count({
-        where: {
-          ...where,
-          actorId: null,
-        },
-      }),
-    ]);
+        this.prisma.auditLog.count({
+          where: {
+            AND: [
+              where,
+              {
+                actorId: null,
+              },
+            ],
+          },
+        }),
+      ]);
 
     return {
       totalLogs,
@@ -149,7 +234,13 @@ export class AuditService {
   }
 
   /**
-   * Returns chart-ready audit log analytics.
+   * Returns chart-ready audit-log analytics.
+   *
+   * Results are grouped by:
+   * - Audit action.
+   * - Target entity type.
+   *
+   * @param query Audit-log filters.
    */
   async getAuditLogsCharts(query: GetAuditLogsQueryDto) {
     const where = this.buildWhere(query);
@@ -161,6 +252,11 @@ export class AuditService {
         _count: {
           action: true,
         },
+        orderBy: {
+          _count: {
+            action: 'desc',
+          },
+        },
       }),
 
       this.prisma.auditLog.groupBy({
@@ -168,6 +264,11 @@ export class AuditService {
         where,
         _count: {
           targetType: true,
+        },
+        orderBy: {
+          _count: {
+            targetType: 'desc',
+          },
         },
       }),
     ]);
@@ -187,12 +288,19 @@ export class AuditService {
 
   /**
    * Exports filtered audit logs as CSV.
+   *
+   * A maximum record limit is applied to protect application memory
+   * when the audit-log table contains a large number of rows.
+   *
+   * @param query Audit-log filters.
+   * @returns CSV content.
    */
   async exportAuditLogsCsv(query: GetAuditLogsQueryDto) {
     const where = this.buildWhere(query);
 
     const logs = await this.prisma.auditLog.findMany({
       where,
+      take: AuditService.MAX_CSV_EXPORT_ROWS,
       orderBy: {
         createdAt: 'desc',
       },
@@ -236,30 +344,51 @@ export class AuditService {
   }
 
   /**
-   * Builds the Prisma filter used by audit-log endpoints.
+   * Builds the shared Prisma where condition used by all
+   * audit-log read and analytics endpoints.
+   *
+   * Supports:
+   * - Date-range filtering.
+   * - Actor filtering.
+   * - Audit-action filtering.
+   * - Target-type filtering.
+   * - Target-ID filtering.
+   * - Case-insensitive searching by target ID, actor name, or email.
+   *
+   * @param query Audit-log query options.
    */
-  private buildWhere(query: GetAuditLogsQueryDto): Prisma.AuditLogWhereInput {
+  private buildWhere(
+    query: GetAuditLogsQueryDto,
+  ): Prisma.AuditLogWhereInput {
     const dateFilter = buildDateFilter(query);
     const search = query.search?.trim();
 
     return {
       ...(dateFilter ?? {}),
 
-      ...(query.actorId && {
-        actorId: query.actorId,
-      }),
+      ...(query.actorId
+        ? {
+            actorId: query.actorId,
+          }
+        : {}),
 
-      ...(query.action && {
-        action: query.action,
-      }),
+      ...(query.action
+        ? {
+            action: query.action,
+          }
+        : {}),
 
-      ...(query.targetType && {
-        targetType: query.targetType,
-      }),
+      ...(query.targetType
+        ? {
+            targetType: query.targetType,
+          }
+        : {}),
 
-      ...(query.targetId && {
-        targetId: query.targetId,
-      }),
+      ...(query.targetId
+        ? {
+            targetId: query.targetId,
+          }
+        : {}),
 
       ...(search
         ? {
@@ -272,17 +401,21 @@ export class AuditService {
               },
               {
                 actor: {
-                  fullName: {
-                    contains: search,
-                    mode: 'insensitive',
+                  is: {
+                    fullName: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
                   },
                 },
               },
               {
                 actor: {
-                  email: {
-                    contains: search,
-                    mode: 'insensitive',
+                  is: {
+                    email: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
                   },
                 },
               },
@@ -293,11 +426,22 @@ export class AuditService {
   }
 
   /**
-   * Normalizes nullable JSON values for Prisma.
+   * Converts absent JSON values to a database NULL value.
+   *
+   * Prisma distinguishes between:
+   * - Prisma.DbNull: the database column contains SQL NULL.
+   * - Prisma.JsonNull: the column contains a JSON null value.
+   *
+   * For audit records, an omitted old or new value represents
+   * missing data and is therefore stored as database NULL.
+   *
+   * @param value Optional JSON-compatible value.
    */
   private normalizeJsonValue(
     value?: Prisma.InputJsonValue | null,
   ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-    return value === undefined || value === null ? Prisma.JsonNull : value;
+    return value === undefined || value === null
+      ? Prisma.DbNull
+      : value;
   }
 }
