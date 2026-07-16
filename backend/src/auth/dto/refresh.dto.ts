@@ -1,12 +1,16 @@
 import { Transform } from 'class-transformer';
-import { IsString } from 'class-validator';
+
+import {
+  IsString,
+  IsNotEmpty,
+} from 'class-validator';
 
 /**
- * Data Transfer Object (DTO) used to validate
- * the refresh token provided by the client.
+ * DTO used to validate a refresh token
+ * received from the client.
  *
- * The refresh token is automatically trimmed
- * before validation.
+ * The refresh token is normalized by
+ * trimming surrounding whitespace before validation.
  *
  * @author Eman
  */
@@ -14,9 +18,12 @@ export class RefreshDto {
   /**
    * Refresh token issued during authentication.
    */
-  @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim() : value,
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.trim()
+      : value,
   )
   @IsString()
+  @IsNotEmpty()
   refreshToken!: string;
 }
