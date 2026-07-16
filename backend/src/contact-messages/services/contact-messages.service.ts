@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   AuditAction,
@@ -12,27 +15,29 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContactMessageDto } from '../dto/create-contact-message.dto';
 
 /**
- * Input used internally when creating a contact message.
- *
- * userId is obtained from a trusted authenticated context,
- * never directly from the public request body.
+ * Normalized sender information used internally when creating
+ * a Contact Us message.
  */
-export type CreateContactMessageInput = {
+type ContactMessageSender = {
   readonly fullName: string;
   readonly email: string;
-  readonly subject: string;
-  readonly message: string;
-  readonly userId?: string;
+  readonly userId: string | null;
 };
 
 /**
- * Handles public Contact Us message submission.
+ * Handles Contact Us message submission.
  *
  * Supports:
- * - Guest submissions.
+ * - Public guest submissions.
  * - Authenticated-user submissions.
  * - Optional user relation.
  * - Audit logging for authenticated submissions.
+ *
+ * Security rules:
+ * - userId is accepted only from the authenticated request context.
+ * - Authenticated-user name and email are loaded from the database.
+ * - Request-body identity fields cannot impersonate another user.
+ * - Inactive and soft-deleted users cannot create linked messages.
  *
  * This service does not:
  * - List messages.
@@ -49,53 +54,69 @@ export class ContactMessagesService {
   ) {}
 
   /**
-   * Creates one contact message.
+   * Creates one Contact Us message.
    *
-   * @param dto Validated public request values.
+   * For guest submissions, identity fields are taken from the
+   * validated request DTO.
+   *
+   * For authenticated submissions, identity fields are loaded from
+   * the verified user account instead of trusting the request body.
+   *
+   * Message creation and audit logging are executed inside one
+   * Prisma transaction.
+   *
+   * @param dto Validated contact-message values.
    * @param userId Optional authenticated user identifier.
    */
-  async createContactMessage(dto: CreateContactMessageDto, userId?: string) {
-    const contactMessage = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.contactMessage.create({
-        data: {
-          fullName: dto.fullName.trim(),
-          email: dto.email.trim().toLowerCase(),
-          subject: dto.subject.trim(),
-          message: dto.message.trim(),
-          userId: userId ?? null,
-          status: ContactMessageStatus.NEW,
-        },
+  async createContactMessage(
+    dto: CreateContactMessageDto,
+    userId?: string,
+  ) {
+    const sender = await this.resolveSender(dto, userId);
 
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          subject: true,
-          message: true,
-          status: true,
-          createdAt: true,
-        },
-      });
-
-      if (userId) {
-        await this.auditService.createLog(
-          {
-            actorId: userId,
-            action: AuditAction.USER_CREATE_CONTACT_MESSAGE,
-            targetType: AuditTargetType.CONTACT_MESSAGE,
-            targetId: created.id,
-
-            newValue: {
-              subject: created.subject,
-              status: created.status,
-            },
+    const contactMessage = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.contactMessage.create({
+          data: {
+            fullName: sender.fullName,
+            email: sender.email,
+            subject: dto.subject,
+            message: dto.message,
+            userId: sender.userId,
+            status: ContactMessageStatus.NEW,
           },
-          tx,
-        );
-      }
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            subject: true,
+            message: true,
+            status: true,
+            createdAt: true,
+          },
+        });
 
-      return created;
-    });
+        if (sender.userId) {
+          await this.auditService.createLog(
+            {
+              actorId: sender.userId,
+              action:
+                AuditAction.USER_CREATE_CONTACT_MESSAGE,
+              targetType:
+                AuditTargetType.CONTACT_MESSAGE,
+              targetId: created.id,
+              newValue: {
+                subject: created.subject,
+                status: created.status,
+              },
+            },
+            tx,
+          );
+        }
+
+        return created;
+      },
+    );
 
     return {
       message: 'Contact message submitted successfully',
@@ -104,25 +125,50 @@ export class ContactMessagesService {
   }
 
   /**
-   * Ensures that an optional authenticated user still exists.
+   * Resolves the trusted sender information.
+   *
+   * Guest submissions use the normalized DTO values.
+   * Authenticated submissions use the persisted account values.
+   *
+   * @param dto Validated contact-message input.
+   * @param userId Optional authenticated user identifier.
    */
-  private async ensureUserExists(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+  private async resolveSender(
+    dto: CreateContactMessageDto,
+    userId?: string,
+  ): Promise<ContactMessageSender> {
+    if (!userId) {
+      return {
+        fullName: dto.fullName,
+        email: dto.email,
+        userId: null,
+      };
+    }
+
+    const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
+        isActive: true,
+        deletedAt: null,
       },
-
       select: {
         id: true,
+        fullName: true,
+        email: true,
       },
     });
 
     if (!user) {
-      /*
-       * Normally this cannot happen after valid JWT authentication,
-       * but the check protects against deleted or stale accounts.
-       */
-      return;
+      throw new NotFoundException(
+        'Active user account not found',
+      );
     }
+
+    return {
+      fullName: user.fullName,
+      email: user.email.toLowerCase(),
+      userId: user.id,
+    };
   }
 }
+

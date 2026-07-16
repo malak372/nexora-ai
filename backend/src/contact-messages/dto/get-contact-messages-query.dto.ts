@@ -5,20 +5,21 @@ import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
 /**
  * Query DTO used by administrators to retrieve and analyze
- * contact messages.
+ * Contact Us messages.
  *
- * Used by:
- * - Message listing.
- * - Summary statistics.
- * - Chart analytics.
- * - CSV export.
- *
- * Supports:
+ * Inherits common query options from ListQueryDto:
  * - Pagination.
  * - Search.
  * - Sorting.
- * - Date filtering.
- * - Status filtering.
+ * - Date-range filtering.
+ *
+ * Adds contact-message-specific filtering by status.
+ *
+ * Used by:
+ * - GET /admin/contact-messages
+ * - GET /admin/contact-messages/summary
+ * - GET /admin/contact-messages/charts
+ * - GET /admin/contact-messages/export/csv
  *
  * @author Malak
  */
