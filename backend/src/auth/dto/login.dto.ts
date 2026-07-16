@@ -1,14 +1,15 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString } from 'class-validator';
+
+import {
+  IsEmail,
+  IsString,
+} from 'class-validator';
 
 /**
- * Data Transfer Object (DTO) used for user authentication.
+ * DTO used to authenticate a registered user.
  *
- * This DTO validates the credentials required for user login,
- * including a valid email address and password.
- *
- * The email address is automatically trimmed and converted
- * to lowercase before validation.
+ * The email address is normalized before validation
+ * by trimming whitespace and converting it to lowercase.
  *
  * @author Eman
  */
@@ -16,9 +17,12 @@ export class LoginDto {
   /**
    * User email address.
    */
-  @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.trim().toLowerCase()
+      : value,
   )
+  @IsString()
   @IsEmail()
   email!: string;
 
