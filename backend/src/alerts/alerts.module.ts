@@ -1,4 +1,3 @@
-import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../audit-logs/audit-logs.module';
@@ -13,17 +12,17 @@ import { SystemAlertsService } from './services/system-alerts.service';
 import { UserNotificationsService } from './services/user-notifications.service';
 
 /**
- * Shared alerts and notifications module.
+ * Shared alerts and notifications domain module.
  *
  * Provides:
- * - Administrator alert management.
- * - Administrator email alert delivery.
- * - Authenticated-user notification access.
+ * - Administrator in-app alert management.
+ * - Administrator email-alert delivery.
+ * - Authenticated-user notification retrieval.
  * - Notification read-state management.
- * - Internal system-generated alerts.
+ * - Centralized internal system-alert persistence.
  *
- * Business modules such as Ideas and Payments should depend on
- * SystemAlertsService instead of depending on AdminModule or UsersModule.
+ * Business modules should use SystemAlertsService to create
+ * in-app alerts instead of accessing the Alert model directly.
  *
  * @author Malak
  */
@@ -32,17 +31,12 @@ import { UserNotificationsService } from './services/user-notifications.service'
     PrismaModule,
     AuditModule,
     MailModule,
-
-    /**
-     * Provides CACHE_MANAGER for notification cache invalidation.
-     *
-     * If CacheModule is already configured globally inside AppModule,
-     * this import may be omitted.
-     */
-    CacheModule.register(),
   ],
 
-  controllers: [AdminAlertsController, UserNotificationsController],
+  controllers: [
+    AdminAlertsController,
+    UserNotificationsController,
+  ],
 
   providers: [
     AdminAlertsService,
@@ -51,11 +45,7 @@ import { UserNotificationsService } from './services/user-notifications.service'
   ],
 
   exports: [
-    /**
-     * Used by IdeasModule, PaymentsModule, and other
-     * business modules to create alerts.
-     */
     SystemAlertsService,
   ],
 })
-export class AlertsModule {}
+export class AlertsModule { }

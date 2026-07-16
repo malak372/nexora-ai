@@ -23,12 +23,12 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { PaymentsModule } from './payments/payments.module';
 import { IdeasModule } from './ideas/ideas.module';
 import { DataSourcesModule } from './data-sources/data-sources.module';
+
 /**
  * Root application module.
  *
  * Registers global infrastructure and application feature modules.
  *
- * @author Malak
  */
 @Module({
   imports: [
@@ -42,18 +42,21 @@ import { DataSourcesModule } from './data-sources/data-sources.module';
 
     /**
      * Registers the global application cache.
+     *
+     * The default cache entry lifetime is 100 seconds.
      */
     CacheModule.register({
       isGlobal: true,
-      ttl: 100000,
+      ttl: 100_000,
     }),
 
     /**
-     * Applies a default application-wide request limit.
+     * Applies an application-wide rate limit of
+     * 10 requests per 60-second window.
      */
     ThrottlerModule.forRoot([
       {
-        ttl: 60000,
+        ttl: 60_000,
         limit: 10,
       },
     ]),
@@ -85,4 +88,4 @@ import { DataSourcesModule } from './data-sources/data-sources.module';
 
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
