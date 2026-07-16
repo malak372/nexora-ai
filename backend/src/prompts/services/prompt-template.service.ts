@@ -4,7 +4,12 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
+
+import {
+  AuditAction,
+  AuditTargetType,
+  Prisma,
+} from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -34,7 +39,7 @@ import { DEFAULT_IDEA_PROMPT_TEMPLATE } from '../templates/default-idea-prompt.t
 const PROMPT_PLACEHOLDER_PATTERN = /{{([a-zA-Z0-9_]+)}}/g;
 
 /**
- * Public response returned by the prompt-template endpoints.
+ * Public response returned by prompt-template endpoints.
  *
  * @author Malak
  */
@@ -55,12 +60,13 @@ export type PromptTemplateResponse = {
  * - Validate template length.
  * - Validate required placeholders.
  * - Reject unsupported placeholders.
+ * - Reject duplicated required placeholders.
  * - Render placeholder values.
  * - Update the template transactionally.
  * - Audit administrator template changes.
  *
- * Template validation always occurs before external values such as
- * posts, comments, NLP results, or existing idea content are inserted.
+ * Template validation occurs before external values such as posts,
+ * comments, NLP results, or existing Idea content are inserted.
  *
  * @author Malak
  */
@@ -94,13 +100,21 @@ export class PromptTemplateService {
    * template is identical to the currently active template.
    *
    * @param ideaPromptTemplate New configurable prompt template.
-   * @param adminId Identifier of the administrator performing the update.
+   * @param adminId Administrator performing the update.
    */
   async updateTemplate(
     ideaPromptTemplate: string,
     adminId: string,
   ): Promise<PromptTemplateResponse> {
     const normalizedTemplate = ideaPromptTemplate.trim();
+
+    const normalizedAdminId = adminId.trim();
+
+    if (!normalizedAdminId) {
+      throw new BadRequestException(
+        'Administrator ID is required.',
+      );
+    }
 
     this.validateTemplate(normalizedTemplate);
 
@@ -112,13 +126,17 @@ export class PromptTemplateService {
       });
 
       if (!settings) {
-        throw new NotFoundException('System settings were not initialized.');
+        throw new NotFoundException(
+          'System settings were not initialized.',
+        );
       }
 
-      const previousTemplate =
-        settings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE;
+      const previousTemplate = (
+        settings.ideaPromptTemplate ??
+        DEFAULT_IDEA_PROMPT_TEMPLATE
+      ).trim();
 
-      /**
+      /*
        * Avoid unnecessary database writes and audit records.
        */
       if (previousTemplate === normalizedTemplate) {
@@ -131,10 +149,12 @@ export class PromptTemplateService {
         where: {
           key: GLOBAL_SYSTEM_SETTINGS_KEY,
         },
+
         data: {
           ideaPromptTemplate: normalizedTemplate,
-          updatedById: adminId,
+          updatedById: normalizedAdminId,
         },
+
         select: {
           id: true,
           ideaPromptTemplate: true,
@@ -143,7 +163,7 @@ export class PromptTemplateService {
 
       await this.auditService.createLog(
         {
-          actorId: adminId,
+          actorId: normalizedAdminId,
           action: AuditAction.ADMIN_UPDATE_PROMPT,
           targetType: AuditTargetType.PROMPT,
           targetId: updatedSettings.id,
@@ -161,7 +181,8 @@ export class PromptTemplateService {
 
       return {
         ideaPromptTemplate:
-          updatedSettings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE,
+          updatedSettings.ideaPromptTemplate ??
+          DEFAULT_IDEA_PROMPT_TEMPLATE,
       };
     });
   }
@@ -170,7 +191,8 @@ export class PromptTemplateService {
    * Returns the configured idea-generation prompt template.
    *
    * The application default is used when:
-   * - The global SystemSetting record has no custom template.
+   * - The global SystemSetting record does not exist yet.
+   * - The record has no custom ideaPromptTemplate.
    * - ideaPromptTemplate is null.
    *
    * The selected template is always validated before being returned.
@@ -180,13 +202,15 @@ export class PromptTemplateService {
       where: {
         key: GLOBAL_SYSTEM_SETTINGS_KEY,
       },
+
       select: {
         ideaPromptTemplate: true,
       },
     });
 
     const template = (
-      settings?.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE
+      settings?.ideaPromptTemplate ??
+      DEFAULT_IDEA_PROMPT_TEMPLATE
     ).trim();
 
     this.validateTemplate(template);
@@ -195,17 +219,20 @@ export class PromptTemplateService {
   }
 
   /**
-   * Replaces every supported placeholder with its provided value.
+   * Replaces every supported placeholder with its supplied value.
    *
    * The original template is validated before external data is
-   * inserted. This prevents placeholder-like content contained inside
-   * posts, comments, NLP evidence, or existing ideas from being treated
-   * as unresolved application placeholders.
+   * inserted. This prevents placeholder-like content contained in
+   * posts, comments, NLP evidence, or existing Ideas from being
+   * treated as unresolved application placeholders.
    *
    * @param template Valid prompt template.
-   * @param values Values required to render every placeholder.
+   * @param values Values required to render all placeholders.
    */
-  renderTemplate(template: string, values: PromptTemplateValues): string {
+  renderTemplate(
+    template: string,
+    values: PromptTemplateValues,
+  ): string {
     const normalizedTemplate = template.trim();
 
     this.validateTemplate(normalizedTemplate);
@@ -214,6 +241,7 @@ export class PromptTemplateService {
       PROMPT_PLACEHOLDER_PATTERN,
       (_match: string, key: string) => {
         const placeholder = key as PromptPlaceholder;
+
         const value = values[placeholder];
 
         if (value === undefined) {
@@ -228,20 +256,31 @@ export class PromptTemplateService {
   }
 
   /**
-   * Runs all validations required for a configurable prompt template.
+   * Runs all validations required for a configurable prompt
+   * template.
+   *
+   * @param template Normalized template.
    */
   private validateTemplate(template: string): void {
     this.validateTemplateLength(template);
-    this.validateRequiredPlaceholders(template);
-    this.validateSupportedPlaceholders(template);
+
+    const placeholders =
+      this.extractTemplatePlaceholders(template);
+
+    this.validateRequiredPlaceholders(placeholders);
+
+    this.validateSupportedPlaceholders(placeholders);
+
+    this.validateDuplicatePlaceholders(placeholders);
   }
 
   /**
-   * Ensures that the template length remains within the configured
-   * application limits.
+   * Ensures the template length remains within configured limits.
    *
-   * Validation is repeated inside the service because service methods
-   * may be called internally without passing through an HTTP DTO.
+   * Validation is repeated inside the service because service
+   * methods may be called internally without an HTTP DTO.
+   *
+   * @param template Normalized template.
    */
   private validateTemplateLength(template: string): void {
     if (
@@ -255,51 +294,103 @@ export class PromptTemplateService {
   }
 
   /**
-   * Ensures that every placeholder required by PromptBuilderService
-   * exists in the configurable template.
+   * Extracts all declared placeholder names from the template.
+   *
+   * @param template Prompt template.
    */
-  private validateRequiredPlaceholders(template: string): void {
-    const missingPlaceholders = REQUIRED_PROMPT_PLACEHOLDERS.filter(
-      (placeholder) => !template.includes(`{{${placeholder}}}`),
+  private extractTemplatePlaceholders(
+    template: string,
+  ): string[] {
+    return Array.from(
+      template.matchAll(PROMPT_PLACEHOLDER_PATTERN),
+      (match) => match[1],
     );
+  }
+
+  /**
+   * Ensures every placeholder required by PromptBuilderService
+   * exists in the configurable template.
+   *
+   * @param placeholders Extracted template placeholders.
+   */
+  private validateRequiredPlaceholders(
+    placeholders: readonly string[],
+  ): void {
+    const placeholderSet = new Set(placeholders);
+
+    const missingPlaceholders =
+      REQUIRED_PROMPT_PLACEHOLDERS.filter(
+        (placeholder) => !placeholderSet.has(placeholder),
+      );
 
     if (missingPlaceholders.length > 0) {
       throw new BadRequestException(
-        `Prompt template is missing required placeholders: ${missingPlaceholders.join(
-          ', ',
-        )}`,
+        `Prompt template is missing required placeholders: ${missingPlaceholders.join(', ')}`,
       );
     }
   }
 
   /**
-   * Ensures that every placeholder declared inside the template
-   * is supported by PromptBuilderService.
+   * Ensures every declared placeholder is supported by
+   * PromptBuilderService.
    *
    * Unsupported placeholders are rejected instead of being left
    * unresolved in the final AI prompt.
+   *
+   * @param placeholders Extracted template placeholders.
    */
-  private validateSupportedPlaceholders(template: string): void {
-    const placeholders = Array.from(
-      template.matchAll(PROMPT_PLACEHOLDER_PATTERN),
-      (match) => match[1],
+  private validateSupportedPlaceholders(
+    placeholders: readonly string[],
+  ): void {
+    const supportedPlaceholders = new Set<string>(
+      REQUIRED_PROMPT_PLACEHOLDERS,
     );
-
-    const supportedPlaceholders = new Set<string>(REQUIRED_PROMPT_PLACEHOLDERS);
 
     const unsupportedPlaceholders = [
       ...new Set(
         placeholders.filter(
-          (placeholder) => !supportedPlaceholders.has(placeholder),
+          (placeholder) =>
+            !supportedPlaceholders.has(placeholder),
         ),
       ),
     ];
 
     if (unsupportedPlaceholders.length > 0) {
       throw new BadRequestException(
-        `Prompt template contains unsupported placeholders: ${unsupportedPlaceholders.join(
-          ', ',
-        )}`,
+        `Prompt template contains unsupported placeholders: ${unsupportedPlaceholders.join(', ')}`,
+      );
+    }
+  }
+
+  /**
+   * Ensures each required placeholder appears exactly once.
+   *
+   * Repeated placeholders can accidentally duplicate large NLP or
+   * community datasets and significantly increase token usage.
+   *
+   * @param placeholders Extracted template placeholders.
+   */
+  private validateDuplicatePlaceholders(
+    placeholders: readonly string[],
+  ): void {
+    const counts = new Map<string, number>();
+
+    for (const placeholder of placeholders) {
+      counts.set(
+        placeholder,
+        (counts.get(placeholder) ?? 0) + 1,
+      );
+    }
+
+    const duplicatedPlaceholders = [
+      ...counts.entries(),
+    ]
+      .filter(([, count]) => count > 1)
+      .map(([placeholder]) => placeholder);
+
+    if (duplicatedPlaceholders.length > 0) {
+      throw new BadRequestException(
+        `Prompt template contains duplicated placeholders: ${duplicatedPlaceholders.join(', ')}`,
       );
     }
   }
@@ -307,10 +398,16 @@ export class PromptTemplateService {
   /**
    * Converts a JavaScript value into Prisma-compatible JSON.
    *
-   * The conversion removes unsupported values such as undefined
+   * JSON serialization removes unsupported values such as undefined
    * before the value is passed to AuditService.
+   *
+   * @param value Audit value.
    */
-  private toAuditJson(value: unknown): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  private toAuditJson(
+    value: unknown,
+  ): Prisma.InputJsonValue {
+    return JSON.parse(
+      JSON.stringify(value),
+    ) as Prisma.InputJsonValue;
   }
 }

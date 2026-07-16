@@ -1,21 +1,18 @@
+
 import { Prisma } from '@prisma/client';
 
 /**
  * Shared relation selection used by PromptHistoryService.
  *
- * Defining the include object once keeps:
- * - The Prisma query.
- * - The selected relations.
- * - The inferred TypeScript result type.
+ * The selected relations provide the administrator with enough
+ * context to inspect how and why a prompt was generated without
+ * exposing sensitive authentication data.
  *
- * synchronized with each other.
- *
- * Sensitive data such as:
+ * Sensitive values intentionally excluded:
  * - User password hashes.
  * - Guest session tokens.
- * - Authentication details.
- *
- * is intentionally excluded.
+ * - Guest fingerprints.
+ * - Authentication tokens.
  *
  * @author Malak
  */
@@ -23,7 +20,9 @@ export const PROMPT_HISTORY_INCLUDE = {
   /**
    * Authenticated user who requested the prompt.
    *
-   * Null for guest-generated prompts or internal system prompts.
+   * Null for:
+   * - Guest-generation prompts.
+   * - Internal system prompts.
    */
   user: {
     select: {
@@ -32,13 +31,15 @@ export const PROMPT_HISTORY_INCLUDE = {
       email: true,
       accountStatus: true,
       isActive: true,
+      deletedAt: true,
     },
   },
 
   /**
    * Guest session that requested the prompt.
    *
-   * The sensitive sessionToken field is intentionally excluded.
+   * The sensitive sessionToken and fingerprintHash fields
+   * are intentionally excluded.
    */
   guestSession: {
     select: {
@@ -54,7 +55,7 @@ export const PROMPT_HISTORY_INCLUDE = {
    *
    * Null when:
    * - AI generation has not completed.
-   * - The prompt represents an internal system operation.
+   * - The prompt represents an internal operation.
    */
   idea: {
     select: {
@@ -63,13 +64,13 @@ export const PROMPT_HISTORY_INCLUDE = {
       generationType: true,
       isUnlocked: true,
       unlockMethod: true,
+      deletedAt: true,
       createdAt: true,
     },
   },
 
   /**
-   * Collection job that supplied the persisted NLP analysis
-   * used to build the prompt.
+   * Collection job that supplied the persisted NLP analysis.
    */
   collectionJob: {
     select: {
@@ -78,7 +79,6 @@ export const PROMPT_HISTORY_INCLUDE = {
       city: true,
       region: true,
       language: true,
-      platforms: true,
       status: true,
       totalPosts: true,
       totalComments: true,
@@ -91,25 +91,52 @@ export const PROMPT_HISTORY_INCLUDE = {
           name: true,
         },
       },
+
+      /**
+       * Selected platforms are represented through
+       * CollectionJobSource and DataSource.
+       *
+       * CollectionJob does not contain a direct platforms field.
+       */
+      sources: {
+        orderBy: {
+          dataSource: {
+            displayName: Prisma.SortOrder.asc,
+          },
+        },
+        select: {
+          status: true,
+          totalPosts: true,
+          totalComments: true,
+          failureReason: true,
+
+          dataSource: {
+            select: {
+              id: true,
+              key: true,
+              displayName: true,
+              isActive: true,
+              isImplemented: true,
+            },
+          },
+        },
+      },
     },
   },
 } as const satisfies Prisma.PromptHistoryInclude;
 
 /**
- * Prompt-history record including the relations required
- * by the administrative history view.
+ * Prompt-history record including administrator-facing relations.
  *
- * The result type is inferred directly from
- * PROMPT_HISTORY_INCLUDE to prevent query/type mismatches.
- *
- * @author Malak
+ * The type is inferred directly from PROMPT_HISTORY_INCLUDE.
  */
-export type PromptHistoryWithRelations = Prisma.PromptHistoryGetPayload<{
-  include: typeof PROMPT_HISTORY_INCLUDE;
-}>;
+export type PromptHistoryWithRelations =
+  Prisma.PromptHistoryGetPayload<{
+    include: typeof PROMPT_HISTORY_INCLUDE;
+  }>;
 
 /**
- * Paginated prompt-history response returned to administrators.
+ * Paginated prompt-history response.
  *
  * @author Malak
  */
@@ -129,18 +156,19 @@ export type PaginatedPromptHistory = {
     readonly page: number;
 
     /**
-     * Maximum number of records per page.
+     * Maximum records returned per page.
      */
     readonly limit: number;
 
     /**
-     * Total number of matching records.
+     * Total matching records.
      */
     readonly total: number;
 
     /**
-     * Total number of available pages.
+     * Total available pages.
      */
     readonly totalPages: number;
   };
 };
+
