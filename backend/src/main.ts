@@ -20,7 +20,6 @@ import { AppModule } from './app.module';
  * - Global DTO validation.
  * - Application port.
  *
- * @author Eman
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {

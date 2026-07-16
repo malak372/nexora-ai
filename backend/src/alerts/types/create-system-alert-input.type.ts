@@ -1,34 +1,39 @@
 import { AlertType } from '@prisma/client';
 
 /**
- * Input required to create one internal in-app alert.
+ * Input required to create a single internal
+ * in-app alert.
  *
- * Used by business modules such as:
- * - Ideas.
+ * This contract is shared by internal application
+ * services such as:
+ * - Authentication.
  * - Payments.
  * - Credits.
- * - Authentication.
+ * - Ideas.
+ *
+ * The alert is persisted through
+ * SystemAlertsService.
  *
  * @author Malak
  */
-export type CreateSystemAlertInput = {
+export type CreateSystemAlertInput = Readonly<{
   /**
-   * User who receives the alert.
+   * Recipient user identifier.
    */
-  readonly userId: string;
+  userId: string;
 
   /**
-   * Alert title.
+   * Alert title displayed to the user.
    */
-  readonly title: string;
+  title: string;
 
   /**
-   * Alert message.
+   * Alert body displayed to the user.
    */
-  readonly message: string;
+  message: string;
 
   /**
    * Alert category.
    */
-  readonly type: AlertType;
-};
+  type: AlertType;
+}>;
