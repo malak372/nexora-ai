@@ -16,42 +16,36 @@ import {
   calculateTotalPages,
 } from '../../utilities/analytics/analytics.helper';
 
-import { TOP_RATED_IDEAS_LIMIT } from '../constants/feedback.constants';
+import { TOP_RATED_PUBLICATIONS_LIMIT } from '../constants/feedback.constants';
 
 import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
 
 /**
- * Handles administrator idea-feedback monitoring and analytics.
- *
- * Responsibilities:
- * - List idea feedback.
- * - Search, filter, sort, and paginate feedback.
- * - Generate summary statistics.
- * - Generate chart-ready analytics.
- * - Export filtered feedback as CSV.
+ * Handles administrator publication-feedback monitoring
+ * and analytics.
  *
  * @author Malak
  */
 @Injectable()
 export class AdminFeedbackService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Returns paginated feedback for administrator monitoring.
+   * Returns paginated textual publication feedback.
    */
-  async getFeedback(query: GetFeedbackQueryDto) {
+  async getFeedbackComments(query: GetFeedbackQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
 
-    const where = this.buildFeedbackWhere(query);
+    const where = this.buildCommentWhere(query);
 
     const orderBy = buildOrderBy(
       query,
-      ['rating', 'createdAt', 'updatedAt'] as const,
+      ['createdAt', 'updatedAt', 'status'] as const,
       'createdAt',
     );
 
     const [feedback, total] = await Promise.all([
-      this.prisma.ideaFeedback.findMany({
+      this.prisma.ideaPublicationFeedback.findMany({
         where,
         skip,
         take,
@@ -59,8 +53,8 @@ export class AdminFeedbackService {
 
         select: {
           id: true,
-          rating: true,
           comment: true,
+          status: true,
           createdAt: true,
           updatedAt: true,
 
@@ -72,18 +66,23 @@ export class AdminFeedbackService {
             },
           },
 
-          idea: {
+          publication: {
             select: {
               id: true,
-              title: true,
-              averageRating: true,
-              ratingsCount: true,
+              publicTitle: true,
+              feedbackCount: true,
+
+              idea: {
+                select: {
+                  id: true,
+                },
+              },
             },
           },
         },
       }),
 
-      this.prisma.ideaFeedback.count({
+      this.prisma.ideaPublicationFeedback.count({
         where,
       }),
     ]);
@@ -101,10 +100,80 @@ export class AdminFeedbackService {
   }
 
   /**
-   * Returns feedback summary statistics.
+   * Returns paginated publication ratings.
+   */
+  async getRatings(query: GetFeedbackQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
+
+    const where = this.buildRatingWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      ['value', 'createdAt', 'updatedAt'] as const,
+      'createdAt',
+    );
+
+    const [ratings, total] = await Promise.all([
+      this.prisma.ideaPublicationRating.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+
+        select: {
+          id: true,
+          value: true,
+          createdAt: true,
+          updatedAt: true,
+
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+
+          publication: {
+            select: {
+              id: true,
+              publicTitle: true,
+              averageRating: true,
+              ratingsCount: true,
+
+              idea: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      this.prisma.ideaPublicationRating.count({
+        where,
+      }),
+    ]);
+
+    return {
+      data: ratings,
+
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: calculateTotalPages(total, limit),
+      },
+    };
+  }
+
+  /**
+   * Returns combined rating and textual-feedback statistics.
    */
   async getFeedbackSummary(query: GetFeedbackQueryDto) {
-    const where = this.buildFeedbackWhere(query);
+    const commentWhere = this.buildCommentWhere(query);
+    const ratingWhere = this.buildRatingWhere(query);
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -113,191 +182,188 @@ export class AdminFeedbackService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
-
-    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
-
     const [
-      totalFeedback,
-      todayFeedback,
-      thisMonthFeedback,
+      totalComments,
+      totalRatings,
+      todayComments,
+      todayRatings,
+      monthComments,
+      monthRatings,
       averageResult,
-      feedbackByRating,
     ] = await Promise.all([
-      this.prisma.ideaFeedback.count({
-        where,
+      this.prisma.ideaPublicationFeedback.count({
+        where: commentWhere,
       }),
 
-      this.prisma.ideaFeedback.count({
-        where: todayWhere,
+      this.prisma.ideaPublicationRating.count({
+        where: ratingWhere,
       }),
 
-      this.prisma.ideaFeedback.count({
-        where: monthWhere,
+      this.prisma.ideaPublicationFeedback.count({
+        where: this.mergeCreatedAtGte(commentWhere, todayStart),
       }),
 
-      this.prisma.ideaFeedback.aggregate({
-        where,
+      this.prisma.ideaPublicationRating.count({
+        where: this.mergeCreatedAtGte(ratingWhere, todayStart),
+      }),
+
+      this.prisma.ideaPublicationFeedback.count({
+        where: this.mergeCreatedAtGte(commentWhere, monthStart),
+      }),
+
+      this.prisma.ideaPublicationRating.count({
+        where: this.mergeCreatedAtGte(ratingWhere, monthStart),
+      }),
+
+      this.prisma.ideaPublicationRating.aggregate({
+        where: ratingWhere,
 
         _avg: {
-          rating: true,
-        },
-      }),
-
-      this.prisma.ideaFeedback.groupBy({
-        by: ['rating'],
-        where,
-
-        _count: {
-          rating: true,
+          value: true,
         },
       }),
     ]);
 
-    const distribution = {
-      oneStar: 0,
-      twoStars: 0,
-      threeStars: 0,
-      fourStars: 0,
-      fiveStars: 0,
-    };
-
-    for (const item of feedbackByRating) {
-      switch (item.rating) {
-        case 1:
-          distribution.oneStar = item._count.rating;
-          break;
-
-        case 2:
-          distribution.twoStars = item._count.rating;
-          break;
-
-        case 3:
-          distribution.threeStars = item._count.rating;
-          break;
-
-        case 4:
-          distribution.fourStars = item._count.rating;
-          break;
-
-        case 5:
-          distribution.fiveStars = item._count.rating;
-          break;
-      }
-    }
-
     return {
-      totalFeedback,
-      todayFeedback,
-      thisMonthFeedback,
+      totalComments,
+      totalRatings,
 
-      averageRating: Number((averageResult._avg.rating ?? 0).toFixed(2)),
+      todayComments,
+      todayRatings,
 
-      ...distribution,
+      thisMonthComments: monthComments,
+      thisMonthRatings: monthRatings,
+
+      averageRating: Number(
+        (averageResult._avg.value ?? 0).toFixed(2),
+      ),
     };
   }
 
   /**
-   * Returns rating distribution and highest-rated ideas.
+   * Returns rating distribution and top-rated publications.
    */
   async getFeedbackCharts(query: GetFeedbackQueryDto) {
-    const where = this.buildFeedbackWhere(query);
+    const ratingWhere = this.buildRatingWhere(query);
 
-    const [ratingDistribution, topRatedIdeas] = await Promise.all([
-      this.prisma.ideaFeedback.groupBy({
-        by: ['rating'],
-        where,
+    const [ratingDistribution, topRatedPublications] =
+      await Promise.all([
+        this.prisma.ideaPublicationRating.groupBy({
+          by: ['value'],
+          where: ratingWhere,
 
-        _count: {
-          rating: true,
-        },
+          _count: {
+            value: true,
+          },
 
-        orderBy: {
-          rating: 'desc',
-        },
-      }),
+          orderBy: {
+            value: 'desc',
+          },
+        }),
 
-      this.findTopRatedIdeas(query),
-    ]);
+        this.findTopRatedPublications(query),
+      ]);
+
+    const distribution = Array.from(
+      {
+        length: 5,
+      },
+      (_, index) => {
+        const value = index + 1;
+
+        const item = ratingDistribution.find(
+          (rating) => rating.value === value,
+        );
+
+        return {
+          label: `${value} Star`,
+          rating: value,
+          count: item?._count.value ?? 0,
+        };
+      },
+    );
 
     return {
-      ratingDistribution: ratingDistribution.map((item) => ({
-        label: `${item.rating} Star`,
-        rating: item.rating,
-        count: item._count.rating,
-      })),
+      ratingDistribution: distribution,
 
-      topRatedIdeas: topRatedIdeas.map((idea) => ({
-        id: idea.id,
-        title: idea.title,
-        averageRating: Number(idea.averageRating),
-        ratingsCount: idea.ratingsCount,
-      })),
+      topRatedPublications: topRatedPublications.map(
+        (publication) => ({
+          id: publication.id,
+          title: publication.publicTitle,
+          averageRating: Number(publication.averageRating),
+          ratingsCount: publication.ratingsCount,
+          feedbackCount: publication.feedbackCount,
+        }),
+      ),
     };
   }
 
   /**
-   * Exports filtered feedback as CSV.
+   * Exports textual feedback as CSV.
    */
   async exportFeedbackCsv(query: GetFeedbackQueryDto) {
-    const where = this.buildFeedbackWhere(query);
+    const feedback =
+      await this.prisma.ideaPublicationFeedback.findMany({
+        where: this.buildCommentWhere(query),
 
-    const orderBy = buildOrderBy(
-      query,
-      ['rating', 'createdAt', 'updatedAt'] as const,
-      'createdAt',
-    );
-
-    const feedback = await this.prisma.ideaFeedback.findMany({
-      where,
-      orderBy,
-
-      select: {
-        id: true,
-        rating: true,
-        comment: true,
-        createdAt: true,
-        updatedAt: true,
-
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
+        orderBy: {
+          createdAt: 'desc',
         },
 
-        idea: {
-          select: {
-            id: true,
-            title: true,
+        select: {
+          id: true,
+          comment: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+
+          publication: {
+            select: {
+              id: true,
+              publicTitle: true,
+
+              idea: {
+                select: {
+                  id: true,
+                },
+              },
+            },
           },
         },
-      },
-    });
+      });
 
     const headers = [
       'Feedback ID',
-      'Rating',
       'Comment',
+      'Status',
       'User ID',
       'User Name',
       'User Email',
+      'Publication ID',
+      'Publication Title',
       'Idea ID',
-      'Idea Title',
       'Created At',
       'Updated At',
     ];
 
     const rows = feedback.map((item) => [
       item.id,
-      item.rating,
-      item.comment ?? '',
+      item.comment,
+      item.status,
       item.user.id,
       item.user.fullName,
       item.user.email,
-      item.idea.id,
-      item.idea.title,
+      item.publication.id,
+      item.publication.publicTitle,
+      item.publication.idea.id,
       item.createdAt.toISOString(),
       item.updatedAt.toISOString(),
     ]);
@@ -306,25 +372,121 @@ export class AdminFeedbackService {
   }
 
   /**
-   * Returns top-rated ideas while respecting relevant
-   * feedback query filters.
-   *
-   * userId, ideaId, rating, and date filters are applied
-   * through the related feedback records.
+   * Exports ratings as CSV.
    */
-  private findTopRatedIdeas(query: GetFeedbackQueryDto) {
-    const feedbackWhere = this.buildFeedbackWhere(query);
+  async exportRatingsCsv(query: GetFeedbackQueryDto) {
+    const ratings =
+      await this.prisma.ideaPublicationRating.findMany({
+        where: this.buildRatingWhere(query),
 
-    return this.prisma.idea.findMany({
-      where: {
-        ratingsCount: {
-          gt: 0,
+        orderBy: {
+          createdAt: 'desc',
         },
 
-        feedback: {
-          some: feedbackWhere,
+        select: {
+          id: true,
+          value: true,
+          createdAt: true,
+          updatedAt: true,
+
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+
+          publication: {
+            select: {
+              id: true,
+              publicTitle: true,
+
+              idea: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          },
         },
+      });
+
+    const headers = [
+      'Rating ID',
+      'Rating',
+      'User ID',
+      'User Name',
+      'User Email',
+      'Publication ID',
+      'Publication Title',
+      'Idea ID',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = ratings.map((item) => [
+      item.id,
+      item.value,
+      item.user.id,
+      item.user.fullName,
+      item.user.email,
+      item.publication.id,
+      item.publication.publicTitle,
+      item.publication.idea.id,
+      item.createdAt.toISOString(),
+      item.updatedAt.toISOString(),
+    ]);
+
+    return buildCsv(headers, rows);
+  }
+
+  /**
+   * Returns the highest-rated publications.
+   */
+  private findTopRatedPublications(query: GetFeedbackQueryDto) {
+    const publicationWhere: Prisma.IdeaPublicationWhereInput = {
+      ratingsCount: {
+        gt: 0,
       },
+
+      ...(query.publicationId
+        ? {
+          id: query.publicationId,
+        }
+        : {}),
+
+      ...(query.ideaId
+        ? {
+          ideaId: query.ideaId,
+        }
+        : {}),
+
+      ...(query.userId || query.rating
+        ? {
+          ratings: {
+            some: {
+              ...(query.userId
+                ? {
+                  userId: query.userId,
+                }
+                : {}),
+
+              ...(query.rating
+                ? {
+                  value: query.rating,
+                }
+                : {}),
+
+              ...(buildDateFilter(query) ?? {}),
+            },
+          },
+        }
+        : {}),
+    };
+
+    return this.prisma.ideaPublication.findMany({
+      where: publicationWhere,
 
       orderBy: [
         {
@@ -335,31 +497,45 @@ export class AdminFeedbackService {
         },
       ],
 
-      take: TOP_RATED_IDEAS_LIMIT,
+      take: TOP_RATED_PUBLICATIONS_LIMIT,
 
       select: {
         id: true,
-        title: true,
+        publicTitle: true,
         averageRating: true,
         ratingsCount: true,
+        feedbackCount: true,
       },
     });
   }
 
   /**
-   * Builds the shared administrator feedback filter.
+   * Builds textual-feedback filters.
    */
-  private buildFeedbackWhere(
+  private buildCommentWhere(
     query: GetFeedbackQueryDto,
-  ): Prisma.IdeaFeedbackWhereInput {
-    const where: Prisma.IdeaFeedbackWhereInput = {
+  ): Prisma.IdeaPublicationFeedbackWhereInput {
+    const where: Prisma.IdeaPublicationFeedbackWhereInput = {
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildExactFilter('rating', query.rating) ?? {}),
+      ...(buildExactFilter('status', query.status) ?? {}),
 
       ...(buildExactFilter('userId', query.userId) ?? {}),
 
-      ...(buildExactFilter('ideaId', query.ideaId) ?? {}),
+      ...(buildExactFilter(
+        'publicationId',
+        query.publicationId,
+      ) ?? {}),
+
+      ...(query.ideaId
+        ? {
+          publication: {
+            is: {
+              ideaId: query.ideaId,
+            },
+          },
+        }
+        : {}),
     };
 
     const search = query.search?.trim();
@@ -396,9 +572,9 @@ export class AdminFeedbackService {
         },
 
         {
-          idea: {
+          publication: {
             is: {
-              title: {
+              publicTitle: {
                 contains: search,
                 mode: 'insensitive',
               },
@@ -412,15 +588,88 @@ export class AdminFeedbackService {
   }
 
   /**
-   * Adds a minimum createdAt value while preserving
-   * an existing date filter.
+   * Builds publication-rating filters.
    */
-  private mergeCreatedAtGte(
-    where: Prisma.IdeaFeedbackWhereInput,
-    gte: Date,
-  ): Prisma.IdeaFeedbackWhereInput {
+  private buildRatingWhere(
+    query: GetFeedbackQueryDto,
+  ): Prisma.IdeaPublicationRatingWhereInput {
+    const where: Prisma.IdeaPublicationRatingWhereInput = {
+      ...(buildDateFilter(query) ?? {}),
+
+      ...(buildExactFilter('value', query.rating) ?? {}),
+
+      ...(buildExactFilter('userId', query.userId) ?? {}),
+
+      ...(buildExactFilter(
+        'publicationId',
+        query.publicationId,
+      ) ?? {}),
+
+      ...(query.ideaId
+        ? {
+          publication: {
+            is: {
+              ideaId: query.ideaId,
+            },
+          },
+        }
+        : {}),
+    };
+
+    const search = query.search?.trim();
+
+    if (search) {
+      where.OR = [
+        {
+          user: {
+            is: {
+              OR: [
+                {
+                  fullName: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+
+                {
+                  email: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            },
+          },
+        },
+
+        {
+          publication: {
+            is: {
+              publicTitle: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    return where;
+  }
+
+  /**
+   * Adds a lower createdAt bound while preserving
+   * existing date-filter values.
+   */
+  private mergeCreatedAtGte<
+    T extends {
+      createdAt?: unknown;
+    },
+  >(where: T, gte: Date): T {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' && where.createdAt !== null
+      typeof where.createdAt === 'object' &&
+        where.createdAt !== null
         ? where.createdAt
         : {};
 

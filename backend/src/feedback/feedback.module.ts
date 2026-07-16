@@ -9,24 +9,30 @@ import { AdminFeedbackService } from './services/admin-feedback.service';
 import { UserFeedbackService } from './services/user-feedback.service';
 
 /**
- * Shared idea-feedback domain module.
+ * Publication feedback and rating domain module.
  *
  * Provides:
- * - User idea-rating submission.
- * - User feedback updates.
- * - User feedback retrieval.
- * - Administrator feedback monitoring.
- * - Feedback summaries and analytics.
- * - CSV export.
- * - Idea rating aggregate maintenance.
+ * - Publication-rating creation and updates.
+ * - Publication-rating deletion.
+ * - Textual-feedback creation and updates.
+ * - Textual-feedback deletion.
+ * - Publication aggregate maintenance.
+ * - Administrator monitoring and analytics.
+ * - CSV exports.
  *
  * @author Malak
  */
 @Module({
   imports: [PrismaModule],
 
-  controllers: [UserFeedbackController, AdminFeedbackController],
+  controllers: [
+    UserFeedbackController,
+    AdminFeedbackController,
+  ],
 
-  providers: [UserFeedbackService, AdminFeedbackService],
+  providers: [
+    UserFeedbackService,
+    AdminFeedbackService,
+  ],
 })
-export class FeedbackModule {}
+export class FeedbackModule { }
