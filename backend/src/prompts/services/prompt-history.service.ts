@@ -4,11 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  Prisma,
-  PromptHistory,
-  PromptType,
-} from '@prisma/client';
+import { Prisma, PromptHistory, PromptType } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -127,9 +123,7 @@ export class PromptHistoryService {
    * @param params Prompt content, ownership, and trace metadata.
    * @returns Newly created PromptHistory record.
    */
-  async savePrompt(
-    params: SavePromptParams,
-  ): Promise<PromptHistory> {
+  async savePrompt(params: SavePromptParams): Promise<PromptHistory> {
     const normalizedParams = this.normalizeSaveParams(params);
 
     this.validatePromptPersistence(normalizedParams);
@@ -150,8 +144,7 @@ export class PromptHistoryService {
 
         templateHash: normalizedParams.templateHash,
 
-        estimatedInputTokens:
-          normalizedParams.estimatedInputTokens,
+        estimatedInputTokens: normalizedParams.estimatedInputTokens,
       },
     });
   }
@@ -192,10 +185,7 @@ export class PromptHistoryService {
       'Prompt history ID',
     );
 
-    const normalizedIdeaId = this.requireIdentifier(
-      ideaId,
-      'Idea ID',
-    );
+    const normalizedIdeaId = this.requireIdentifier(ideaId, 'Idea ID');
 
     const [promptHistory, idea] = await Promise.all([
       this.prisma.promptHistory.findUnique({
@@ -233,9 +223,7 @@ export class PromptHistoryService {
     ]);
 
     if (!promptHistory) {
-      throw new NotFoundException(
-        'Prompt history record not found.',
-      );
+      throw new NotFoundException('Prompt history record not found.');
     }
 
     if (!idea) {
@@ -246,10 +234,7 @@ export class PromptHistoryService {
      * The same prompt may be attached repeatedly to the same Idea,
      * but it must never be reassigned to another Idea.
      */
-    if (
-      promptHistory.ideaId !== null &&
-      promptHistory.ideaId !== idea.id
-    ) {
+    if (promptHistory.ideaId !== null && promptHistory.ideaId !== idea.id) {
       throw new BadRequestException(
         'Prompt history is already associated with another idea.',
       );
@@ -337,13 +322,10 @@ export class PromptHistoryService {
    *
    * @param params Normalized prompt persistence values.
    */
-  private validatePromptPersistence(
-    params: NormalizedSavePromptParams,
-  ): void {
+  private validatePromptPersistence(params: NormalizedSavePromptParams): void {
     const hasUser = params.userId !== undefined;
 
-    const hasGuestSession =
-      params.guestSessionId !== undefined;
+    const hasGuestSession = params.guestSessionId !== undefined;
 
     /*
      * A single prompt cannot belong to two requester types.
@@ -370,10 +352,7 @@ export class PromptHistoryService {
     /*
      * Direct unlock and AI chat cannot be requested by guests.
      */
-    if (
-      AUTHENTICATED_USER_PROMPT_TYPES.has(params.promptType) &&
-      !hasUser
-    ) {
+    if (AUTHENTICATED_USER_PROMPT_TYPES.has(params.promptType) && !hasUser) {
       throw new BadRequestException(
         `${params.promptType} prompt history must belong to an authenticated user.`,
       );
@@ -383,9 +362,7 @@ export class PromptHistoryService {
      * Generation and unlock depend on collection and NLP context.
      */
     if (
-      COLLECTION_JOB_REQUIRED_PROMPT_TYPES.has(
-        params.promptType,
-      ) &&
+      COLLECTION_JOB_REQUIRED_PROMPT_TYPES.has(params.promptType) &&
       params.collectionJobId === undefined
     ) {
       throw new BadRequestException(
@@ -394,9 +371,7 @@ export class PromptHistoryService {
     }
 
     if (!params.promptText) {
-      throw new BadRequestException(
-        'Prompt text cannot be empty.',
-      );
+      throw new BadRequestException('Prompt text cannot be empty.');
     }
 
     if (
@@ -447,10 +422,7 @@ export class PromptHistoryService {
       promptHistory.promptType,
     );
 
-    if (
-      requiresRequester &&
-      promptHistory.userId !== idea.userId
-    ) {
+    if (requiresRequester && promptHistory.userId !== idea.userId) {
       throw new BadRequestException(
         'Prompt history and idea belong to different users.',
       );
@@ -548,13 +520,9 @@ export class PromptHistoryService {
     return {
       userId: this.normalizeOptionalString(params.userId),
 
-      guestSessionId: this.normalizeOptionalString(
-        params.guestSessionId,
-      ),
+      guestSessionId: this.normalizeOptionalString(params.guestSessionId),
 
-      collectionJobId: this.normalizeOptionalString(
-        params.collectionJobId,
-      ),
+      collectionJobId: this.normalizeOptionalString(params.collectionJobId),
 
       ideaId: this.normalizeOptionalString(params.ideaId),
 
@@ -566,8 +534,7 @@ export class PromptHistoryService {
         params.templateHash,
       )?.toLowerCase(),
 
-      estimatedInputTokens:
-        params.estimatedInputTokens ?? undefined,
+      estimatedInputTokens: params.estimatedInputTokens ?? undefined,
     };
   }
 
@@ -596,10 +563,7 @@ export class PromptHistoryService {
    * @param value Identifier value.
    * @param fieldName Human-readable field name.
    */
-  private requireIdentifier(
-    value: string,
-    fieldName: string,
-  ): string {
+  private requireIdentifier(value: string, fieldName: string): string {
     const normalizedValue = value.trim();
 
     if (!normalizedValue) {

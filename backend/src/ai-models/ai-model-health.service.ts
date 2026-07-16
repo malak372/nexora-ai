@@ -1,48 +1,25 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import { AiModel, AiModelHealthStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-/**
- * Number of consecutive failures after which a model becomes
- * DEGRADED.
- */
-const DEGRADED_FAILURE_THRESHOLD = 2;
+import {
+  AI_MODEL_DEGRADED_FAILURE_THRESHOLD,
+  AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS,
+  AI_MODEL_UNAVAILABLE_FAILURE_THRESHOLD,
+} from './constants/ai-model-health.constants';
 
 /**
- * Number of consecutive failures after which a model becomes
- * UNAVAILABLE.
- */
-const UNAVAILABLE_FAILURE_THRESHOLD = 4;
-
-/**
- * Maximum number of attempts used for serializable transactions.
+ * Maintains operational model health.
  *
- * Serializable isolation may reject one concurrent transaction
- * to preserve data consistency.
- */
-const MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS = 3;
-
-/**
- * Service responsible for maintaining operational AI-model health.
- *
- * Provider adapters or the central AI execution service should call:
- * - recordSuccess() after a successful provider request.
- * - recordFailure() after a failed provider request.
- *
- * Health fields are internal operational state and must not be
- * modified through administrator DTOs.
- *
- * Health behavior:
- * - A successful request marks the model as HEALTHY.
- * - One isolated failure does not immediately degrade a HEALTHY model.
- * - Two consecutive failures mark the model as DEGRADED.
- * - Four consecutive failures mark the model as UNAVAILABLE.
- * - Any successful request resets the consecutive failure counter.
+ * The central execution service should call recordSuccess() or
+ * recordFailure() after one logical model execution.
  *
  * @author Malak
  */
@@ -51,26 +28,18 @@ export class AiModelHealthService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Marks a model as HEALTHY after a successful provider request.
-   *
-   * A successful request:
-   * - Sets healthStatus to HEALTHY.
-   * - Resets consecutiveFailures to zero.
-   * - Updates lastHealthCheckAt.
-   * - Preserves lastFailureAt for operational history.
+   * Marks a model as healthy and resets its failure counter.
    */
   async recordSuccess(modelId: string): Promise<AiModel> {
+    const id = this.requireIdentifier(modelId, 'AI model ID');
+
     try {
       return await this.prisma.aiModel.update({
-        where: {
-          id: modelId,
-        },
+        where: { id },
 
         data: {
           healthStatus: AiModelHealthStatus.HEALTHY,
-
           consecutiveFailures: 0,
-
           lastHealthCheckAt: new Date(),
         },
       });
@@ -80,24 +49,14 @@ export class AiModelHealthService {
   }
 
   /**
-   * Records one failed provider request and recalculates model health.
-   *
-   * Serializable isolation prevents concurrent failed requests from
-   * reading the same failure counter and overwriting each other.
-   *
-   * Example:
-   * - Request A reads failures = 1.
-   * - Request B reads failures = 1.
-   * - Without transaction protection, both may save failures = 2.
-   *
-   * Serializable isolation ensures that all failures are counted.
+   * Records one failed logical execution.
    */
   async recordFailure(modelId: string): Promise<AiModel> {
+    const id = this.requireIdentifier(modelId, 'AI model ID');
+
     return this.runSerializableTransaction(async (tx) => {
       const model = await tx.aiModel.findUnique({
-        where: {
-          id: modelId,
-        },
+        where: { id },
       });
 
       if (!model) {
@@ -109,9 +68,7 @@ export class AiModelHealthService {
       const now = new Date();
 
       return tx.aiModel.update({
-        where: {
-          id: modelId,
-        },
+        where: { id },
 
         data: {
           consecutiveFailures: failures,
@@ -119,7 +76,6 @@ export class AiModelHealthService {
           healthStatus: this.resolveFailureStatus(model.healthStatus, failures),
 
           lastHealthCheckAt: now,
-
           lastFailureAt: now,
         },
       });
@@ -127,33 +83,19 @@ export class AiModelHealthService {
   }
 
   /**
-   * Resets operational health statistics.
-   *
-   * This can be used after:
-   * - Administrator provider configuration changes.
-   * - Provider recovery.
-   * - Manual operational intervention.
-   * - A model-health maintenance operation.
-   *
-   * Resetting health does not:
-   * - Activate an inactive model.
-   * - Make the model default.
-   * - Perform a real provider health check.
+   * Resets health to UNKNOWN.
    */
   async reset(modelId: string): Promise<AiModel> {
+    const id = this.requireIdentifier(modelId, 'AI model ID');
+
     try {
       return await this.prisma.aiModel.update({
-        where: {
-          id: modelId,
-        },
+        where: { id },
 
         data: {
           healthStatus: AiModelHealthStatus.UNKNOWN,
-
           consecutiveFailures: 0,
-
           lastHealthCheckAt: null,
-
           lastFailureAt: null,
         },
       });
@@ -162,30 +104,15 @@ export class AiModelHealthService {
     }
   }
 
-  /**
-   * Determines model health from its current state and consecutive
-   * failure count.
-   *
-   * Rules:
-   * - Four or more failures: UNAVAILABLE.
-   * - Two or more failures: DEGRADED.
-   * - One failure:
-   *   - Preserve HEALTHY when the model was previously healthy.
-   *   - Preserve DEGRADED when it was already degraded.
-   *   - Preserve UNKNOWN when it has never been proven healthy.
-   *
-   * A single temporary provider failure is not sufficient evidence
-   * to immediately degrade a previously healthy model.
-   */
   private resolveFailureStatus(
     currentStatus: AiModelHealthStatus,
     failures: number,
   ): AiModelHealthStatus {
-    if (failures >= UNAVAILABLE_FAILURE_THRESHOLD) {
+    if (failures >= AI_MODEL_UNAVAILABLE_FAILURE_THRESHOLD) {
       return AiModelHealthStatus.UNAVAILABLE;
     }
 
-    if (failures >= DEGRADED_FAILURE_THRESHOLD) {
+    if (failures >= AI_MODEL_DEGRADED_FAILURE_THRESHOLD) {
       return AiModelHealthStatus.DEGRADED;
     }
 
@@ -197,12 +124,6 @@ export class AiModelHealthService {
         return AiModelHealthStatus.DEGRADED;
 
       case AiModelHealthStatus.UNAVAILABLE:
-        /*
-         * An UNAVAILABLE model normally should not receive new
-         * requests because routing excludes it.
-         *
-         * Preserve its status if recordFailure() is still called.
-         */
         return AiModelHealthStatus.UNAVAILABLE;
 
       case AiModelHealthStatus.UNKNOWN:
@@ -213,12 +134,6 @@ export class AiModelHealthService {
     }
   }
 
-  /**
-   * Executes a serializable transaction with retry support.
-   *
-   * Prisma error P2034 indicates a write conflict or transaction
-   * failure that may be safely retried.
-   */
   private async runSerializableTransaction<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
   ): Promise<T> {
@@ -226,7 +141,7 @@ export class AiModelHealthService {
 
     for (
       let attempt = 1;
-      attempt <= MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS;
+      attempt <= AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
       attempt += 1
     ) {
       try {
@@ -236,40 +151,36 @@ export class AiModelHealthService {
       } catch (error: unknown) {
         lastError = error;
 
-        const isRetryableConflict =
+        const retryable =
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2034';
 
         if (
-          !isRetryableConflict ||
-          attempt === MAX_SERIALIZABLE_TRANSACTION_ATTEMPTS
+          !retryable ||
+          attempt === AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS
         ) {
           this.handlePrismaError(error);
         }
       }
     }
 
-    /*
-     * This line is theoretically unreachable, but it satisfies
-     * strict TypeScript control-flow analysis.
-     */
     this.handlePrismaError(lastError);
   }
 
-  /**
-   * Ensures every AiModelHealthStatus enum value is handled
-   * explicitly.
-   *
-   * TypeScript will report an error here if a future enum value is
-   * added without updating resolveFailureStatus().
-   */
+  private requireIdentifier(value: string, fieldName: string): string {
+    const normalizedValue = value.trim();
+
+    if (!normalizedValue) {
+      throw new BadRequestException(`${fieldName} is required.`);
+    }
+
+    return normalizedValue;
+  }
+
   private assertNever(value: never): never {
     throw new Error(`Unsupported AI model health status: ${String(value)}`);
   }
 
-  /**
-   * Maps known Prisma errors into safe HTTP exceptions.
-   */
   private handlePrismaError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2025') {
@@ -278,7 +189,7 @@ export class AiModelHealthService {
 
       if (error.code === 'P2034') {
         throw new ConflictException(
-          'The AI model health was modified concurrently. Please retry.',
+          'AI model health was modified concurrently. Please retry.',
         );
       }
     }

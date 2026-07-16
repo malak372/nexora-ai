@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -25,26 +21,16 @@ import { DataSourcesService } from '../data-sources.service';
  * @author Malak
  */
 @Controller('data-sources')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
-@Roles(
-  UserRole.USER,
-  UserRole.ADMIN,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.USER, UserRole.ADMIN)
 export class DataSourcesController {
-  constructor(
-    private readonly dataSourcesService:
-      DataSourcesService,
-  ) {}
+  constructor(private readonly dataSourcesService: DataSourcesService) {}
 
   /**
    * Returns active, implemented, and operational data sources.
    */
   @Get('available')
   findAvailable() {
-    return this.dataSourcesService
-      .findAvailable();
+    return this.dataSourcesService.findAvailable();
   }
 }

@@ -6,10 +6,7 @@ import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorExternalCacheUtil } from '../base/collector-external-cache.util';
 import { SocialCollector } from '../base/collector.interface';
-import {
-  CollectorInput,
-  CollectorPost,
-} from '../base/collector.types';
+import { CollectorInput, CollectorPost } from '../base/collector.types';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
 /**
@@ -36,10 +33,7 @@ type RssItem = {
  * @author Malak
  */
 @Injectable()
-export class BlogCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class BlogCollector extends BaseCollector implements SocialCollector {
   /**
    * Must match DataSource.key.
    */
@@ -99,10 +93,7 @@ export class BlogCollector
 
       return rankedPosts;
     } catch (error: unknown) {
-      this.logger.warn(
-        'Blog collection failed',
-        this.getErrorMessage(error),
-      );
+      this.logger.warn('Blog collection failed', this.getErrorMessage(error));
 
       return [];
     }
@@ -138,11 +129,9 @@ export class BlogCollector
     input: CollectorInput,
   ): Promise<CollectorPost[]> {
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'rss-feed',
-        [feedUrl],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'rss-feed', [
+        feedUrl,
+      ]);
 
       const feed = await CollectorExternalCacheUtil.remember(
         cacheKey,
@@ -151,9 +140,7 @@ export class BlogCollector
       );
 
       return (feed.items ?? [])
-        .filter((item) =>
-          this.isValidRssArticle(item as RssItem),
-        )
+        .filter((item) => this.isValidRssArticle(item as RssItem))
         .slice(0, this.maxFetchedPosts)
         .map((item): CollectorPost => {
           const rssItem = item as RssItem;
@@ -161,10 +148,7 @@ export class BlogCollector
           const title = this.cleanPlainText(rssItem.title);
 
           return {
-            externalId:
-              rssItem.guid ??
-              rssItem.link ??
-              title,
+            externalId: rssItem.guid ?? rssItem.link ?? title,
 
             title,
 
@@ -176,9 +160,7 @@ export class BlogCollector
             ),
 
             author: this.cleanPlainText(
-              rssItem.creator ??
-                rssItem.author ??
-                feed.title,
+              rssItem.creator ?? rssItem.author ?? feed.title,
             ),
 
             url: rssItem.link,
@@ -187,25 +169,19 @@ export class BlogCollector
             city: input.city,
             region: input.region,
 
-            languageCode: this.resolveStoredLanguageCode(
-              input.language,
-            ),
+            languageCode: this.resolveStoredLanguageCode(input.language),
 
             likesCount: 0,
             repliesCount: 0,
 
-            publishedAt: this.parseDate(
-              rssItem.isoDate ?? rssItem.pubDate,
-            ),
+            publishedAt: this.parseDate(rssItem.isoDate ?? rssItem.pubDate),
 
             comments: [],
           };
         });
     } catch (error: unknown) {
       this.logger.warn(
-        `Blog feed skipped: ${feedUrl} - ${this.getErrorMessage(
-          error,
-        )}`,
+        `Blog feed skipped: ${feedUrl} - ${this.getErrorMessage(error)}`,
       );
 
       return [];
@@ -240,22 +216,16 @@ export class BlogCollector
     const title = this.cleanPlainText(item.title);
 
     const content = this.cleanPlainText(
-      item.contentSnippet ??
-        item.content ??
-        item.summary,
+      item.contentSnippet ?? item.content ?? item.summary,
     );
 
     if (!title || !item.link || content.length < 80) {
       return false;
     }
 
-    const normalizedContent = this.cleanNormalizedText(
-      `${title} ${content}`,
-    );
+    const normalizedContent = this.cleanNormalizedText(`${title} ${content}`);
 
-    const cleaned = normalizedContent
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
-      .trim();
+    const cleaned = normalizedContent.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -264,9 +234,7 @@ export class BlogCollector
     const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      normalizedContent.includes(
-        this.cleanNormalizedText(word),
-      ),
+      normalizedContent.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -381,8 +349,6 @@ export class BlogCollector
       return error.message;
     }
 
-    return typeof error === 'string'
-      ? error
-      : 'Unknown Blog collector error.';
+    return typeof error === 'string' ? error : 'Unknown Blog collector error.';
   }
 }

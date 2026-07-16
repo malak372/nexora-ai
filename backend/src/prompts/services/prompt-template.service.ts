@@ -5,11 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -111,9 +107,7 @@ export class PromptTemplateService {
     const normalizedAdminId = adminId.trim();
 
     if (!normalizedAdminId) {
-      throw new BadRequestException(
-        'Administrator ID is required.',
-      );
+      throw new BadRequestException('Administrator ID is required.');
     }
 
     this.validateTemplate(normalizedTemplate);
@@ -126,14 +120,11 @@ export class PromptTemplateService {
       });
 
       if (!settings) {
-        throw new NotFoundException(
-          'System settings were not initialized.',
-        );
+        throw new NotFoundException('System settings were not initialized.');
       }
 
       const previousTemplate = (
-        settings.ideaPromptTemplate ??
-        DEFAULT_IDEA_PROMPT_TEMPLATE
+        settings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE
       ).trim();
 
       /*
@@ -181,8 +172,7 @@ export class PromptTemplateService {
 
       return {
         ideaPromptTemplate:
-          updatedSettings.ideaPromptTemplate ??
-          DEFAULT_IDEA_PROMPT_TEMPLATE,
+          updatedSettings.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE,
       };
     });
   }
@@ -209,8 +199,7 @@ export class PromptTemplateService {
     });
 
     const template = (
-      settings?.ideaPromptTemplate ??
-      DEFAULT_IDEA_PROMPT_TEMPLATE
+      settings?.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE
     ).trim();
 
     this.validateTemplate(template);
@@ -229,10 +218,7 @@ export class PromptTemplateService {
    * @param template Valid prompt template.
    * @param values Values required to render all placeholders.
    */
-  renderTemplate(
-    template: string,
-    values: PromptTemplateValues,
-  ): string {
+  renderTemplate(template: string, values: PromptTemplateValues): string {
     const normalizedTemplate = template.trim();
 
     this.validateTemplate(normalizedTemplate);
@@ -264,8 +250,7 @@ export class PromptTemplateService {
   private validateTemplate(template: string): void {
     this.validateTemplateLength(template);
 
-    const placeholders =
-      this.extractTemplatePlaceholders(template);
+    const placeholders = this.extractTemplatePlaceholders(template);
 
     this.validateRequiredPlaceholders(placeholders);
 
@@ -298,9 +283,7 @@ export class PromptTemplateService {
    *
    * @param template Prompt template.
    */
-  private extractTemplatePlaceholders(
-    template: string,
-  ): string[] {
+  private extractTemplatePlaceholders(template: string): string[] {
     return Array.from(
       template.matchAll(PROMPT_PLACEHOLDER_PATTERN),
       (match) => match[1],
@@ -313,15 +296,12 @@ export class PromptTemplateService {
    *
    * @param placeholders Extracted template placeholders.
    */
-  private validateRequiredPlaceholders(
-    placeholders: readonly string[],
-  ): void {
+  private validateRequiredPlaceholders(placeholders: readonly string[]): void {
     const placeholderSet = new Set(placeholders);
 
-    const missingPlaceholders =
-      REQUIRED_PROMPT_PLACEHOLDERS.filter(
-        (placeholder) => !placeholderSet.has(placeholder),
-      );
+    const missingPlaceholders = REQUIRED_PROMPT_PLACEHOLDERS.filter(
+      (placeholder) => !placeholderSet.has(placeholder),
+    );
 
     if (missingPlaceholders.length > 0) {
       throw new BadRequestException(
@@ -339,18 +319,13 @@ export class PromptTemplateService {
    *
    * @param placeholders Extracted template placeholders.
    */
-  private validateSupportedPlaceholders(
-    placeholders: readonly string[],
-  ): void {
-    const supportedPlaceholders = new Set<string>(
-      REQUIRED_PROMPT_PLACEHOLDERS,
-    );
+  private validateSupportedPlaceholders(placeholders: readonly string[]): void {
+    const supportedPlaceholders = new Set<string>(REQUIRED_PROMPT_PLACEHOLDERS);
 
     const unsupportedPlaceholders = [
       ...new Set(
         placeholders.filter(
-          (placeholder) =>
-            !supportedPlaceholders.has(placeholder),
+          (placeholder) => !supportedPlaceholders.has(placeholder),
         ),
       ),
     ];
@@ -370,21 +345,14 @@ export class PromptTemplateService {
    *
    * @param placeholders Extracted template placeholders.
    */
-  private validateDuplicatePlaceholders(
-    placeholders: readonly string[],
-  ): void {
+  private validateDuplicatePlaceholders(placeholders: readonly string[]): void {
     const counts = new Map<string, number>();
 
     for (const placeholder of placeholders) {
-      counts.set(
-        placeholder,
-        (counts.get(placeholder) ?? 0) + 1,
-      );
+      counts.set(placeholder, (counts.get(placeholder) ?? 0) + 1);
     }
 
-    const duplicatedPlaceholders = [
-      ...counts.entries(),
-    ]
+    const duplicatedPlaceholders = [...counts.entries()]
       .filter(([, count]) => count > 1)
       .map(([placeholder]) => placeholder);
 
@@ -403,11 +371,7 @@ export class PromptTemplateService {
    *
    * @param value Audit value.
    */
-  private toAuditJson(
-    value: unknown,
-  ): Prisma.InputJsonValue {
-    return JSON.parse(
-      JSON.stringify(value),
-    ) as Prisma.InputJsonValue;
+  private toAuditJson(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

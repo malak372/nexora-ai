@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
 
@@ -52,35 +49,25 @@ type DevToComment = {
  * @author Malak
  */
 @Injectable()
-export class DevToCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class DevToCollector extends BaseCollector implements SocialCollector {
   /**
    * Must match DataSource.key.
    */
   readonly sourceKey = 'dev-to';
 
-  private readonly apiBaseUrl =
-    'https://dev.to/api';
+  private readonly apiBaseUrl = 'https://dev.to/api';
 
   constructor(configService: ConfigService) {
-    super(
-      configService,
-      DevToCollector.name,
-    );
+    super(configService, DevToCollector.name);
   }
 
   /**
    * Collects, deduplicates, ranks, and maps
    * DEV.to articles.
    */
-  async collect(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]> {
+  async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchQueries =
-        this.buildSearchQueries(input);
+      const searchQueries = this.buildSearchQueries(input);
 
       if (!searchQueries.length) {
         this.logger.warn(
@@ -90,77 +77,48 @@ export class DevToCollector
         return [];
       }
 
-      const collectedArticles:
-        DevToArticle[] = [];
+      const collectedArticles: DevToArticle[] = [];
 
       for (const query of searchQueries) {
-        if (
-          collectedArticles.length >=
-          this.maxFetchedPosts
-        ) {
+        if (collectedArticles.length >= this.maxFetchedPosts) {
           break;
         }
 
-        const articles =
-          await this.searchArticles(query);
+        const articles = await this.searchArticles(query);
 
-        collectedArticles.push(
-          ...articles,
-        );
+        collectedArticles.push(...articles);
       }
 
-      const seenArticleIds =
-        new Set<string>();
+      const seenArticleIds = new Set<string>();
 
-      const rankedArticles =
-        collectedArticles
-          .filter((article) =>
-            this.isValidArticle(article),
-          )
-          .filter((article) => {
-            const id =
-              article.id?.toString();
+      const rankedArticles = collectedArticles
+        .filter((article) => this.isValidArticle(article))
+        .filter((article) => {
+          const id = article.id?.toString();
 
-            if (
-              !id ||
-              seenArticleIds.has(id)
-            ) {
-              return false;
-            }
+          if (!id || seenArticleIds.has(id)) {
+            return false;
+          }
 
-            seenArticleIds.add(id);
+          seenArticleIds.add(id);
 
-            return true;
-          })
-          .map((article) => ({
-            article,
-            score:
-              this.calculateArticleRelevanceScore(
-                article,
-                input,
-              ),
-          }))
-          .filter(
-            (item) => item.score > 0,
-          )
-          .sort(
-            (first, second) =>
-              second.score - first.score,
-          )
-          .slice(0, this.maxSavedPosts);
+          return true;
+        })
+        .map((article) => ({
+          article,
+          score: this.calculateArticleRelevanceScore(article, input),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((first, second) => second.score - first.score)
+        .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
         rankedArticles.map((item) =>
-          this.mapArticleToCollectorPost(
-            item.article,
-            input,
-          ),
+          this.mapArticleToCollectorPost(item.article, input),
         ),
       );
 
-      this.logger.log(
-        `DEV.to collection completed. Posts: ${posts.length}`,
-      );
+      this.logger.log(`DEV.to collection completed. Posts: ${posts.length}`);
 
       return posts;
     } catch (error: unknown) {
@@ -178,125 +136,72 @@ export class DevToCollector
   /**
    * Searches DEV.to articles by tag.
    */
-  private async searchArticles(
-    query: string,
-  ): Promise<DevToArticle[]> {
-    const cacheKey =
-      CollectorCacheUtil.build(
-        this.sourceKey,
-        'articles',
-        [query],
-      );
+  private async searchArticles(query: string): Promise<DevToArticle[]> {
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'articles', [
+      query,
+    ]);
 
-    return CollectorHttpUtil
-      .getWithRetryAndCache<
-        DevToArticle[]
-      >(
-        `${this.apiBaseUrl}/articles`,
-        {
-          headers: this.buildHeaders(),
+    return CollectorHttpUtil.getWithRetryAndCache<DevToArticle[]>(
+      `${this.apiBaseUrl}/articles`,
+      {
+        headers: this.buildHeaders(),
 
-          params: {
-            tag: query
-              .replace(/\s+/g, '')
-              .toLowerCase(),
+        params: {
+          tag: query.replace(/\s+/g, '').toLowerCase(),
 
-            per_page: Math.min(
-              this.maxFetchedPosts,
-              100,
-            ),
+          per_page: Math.min(this.maxFetchedPosts, 100),
 
-            top: 7,
-          },
-
-          timeout: 10_000,
+          top: 7,
         },
-        {
-          cacheKey,
-          cacheTtlMs: this.cacheTtlMs,
-          retryAttempts:
-            this.retryAttempts,
-          retryDelayMs:
-            this.retryDelayMs,
-        },
-      );
+
+        timeout: 10_000,
+      },
+      {
+        cacheKey,
+        cacheTtlMs: this.cacheTtlMs,
+        retryAttempts: this.retryAttempts,
+        retryDelayMs: this.retryDelayMs,
+      },
+    );
   }
 
   /**
    * Builds search queries.
    */
-  private buildSearchQueries(
-    input: CollectorInput,
-  ): string[] {
-    const domainKeywords =
-      this.getDomainKeywords(input);
+  private buildSearchQueries(input: CollectorInput): string[] {
+    const domainKeywords = this.getDomainKeywords(input);
 
-    const fallbackDomain =
-      input.domainName
-        ? [
-            this.cleanNormalizedText(
-              input.domainName,
-            ),
-          ]
-        : [];
+    const fallbackDomain = input.domainName
+      ? [this.cleanNormalizedText(input.domainName)]
+      : [];
 
-    const userKeywords =
-      (input.keywords ?? [])
-        .map((keyword) =>
-          this.cleanNormalizedText(
-            keyword,
-          ),
-        )
-        .filter(Boolean);
+    const userKeywords = (input.keywords ?? [])
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
-      .filter(
-        (term) => term.length >= 3,
-      )
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
+      .filter((term) => term.length >= 3)
       .slice(0, 6);
   }
 
   /**
    * Validates an article.
    */
-  private isValidArticle(
-    article: DevToArticle,
-  ): boolean {
-    const title =
-      this.cleanPlainText(
-        article.title,
-      );
+  private isValidArticle(article: DevToArticle): boolean {
+    const title = this.cleanPlainText(article.title);
 
-    const description =
-      this.cleanPlainText(
-        article.description,
-      );
+    const description = this.cleanPlainText(article.description);
 
-    const content =
-      this.cleanNormalizedText(
-        `${title} ${description}`,
-      );
+    const content = this.cleanNormalizedText(`${title} ${description}`);
 
-    if (
-      !article.id ||
-      !title ||
-      !article.url ||
-      content.length < 40
-    ) {
+    if (!article.id || !title || !article.url || content.length < 40) {
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -308,33 +213,21 @@ export class DevToCollector
     input: CollectorInput,
   ): number {
     return RelevanceScoreUtil.scoreText({
-      title: this.cleanPlainText(
-        article.title,
-      ),
+      title: this.cleanPlainText(article.title),
 
-      body: this.cleanPlainText(
-        article.description,
-      ),
+      body: this.cleanPlainText(article.description),
 
-      domainTerms:
-        this.getDomainKeywords(input),
+      domainTerms: this.getDomainKeywords(input),
 
-      problemTerms:
-        this.getProblemWords(),
+      problemTerms: this.getProblemWords(),
 
-      likes:
-        article
-          .positive_reactions_count ?? 0,
+      likes: article.positive_reactions_count ?? 0,
 
-      replies:
-        article.comments_count ?? 0,
+      replies: article.comments_count ?? 0,
 
-      publishedAt:
-        article.published_at
-          ? new Date(
-              article.published_at,
-            )
-          : undefined,
+      publishedAt: article.published_at
+        ? new Date(article.published_at)
+        : undefined,
     });
   }
 
@@ -345,30 +238,18 @@ export class DevToCollector
     article: DevToArticle,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments =
-      await this.collectArticleComments(
-        article,
-      );
+    const comments = await this.collectArticleComments(article);
 
-    const title =
-      this.cleanPlainText(
-        article.title,
-      );
+    const title = this.cleanPlainText(article.title);
 
     return {
-      externalId:
-        article.id?.toString() ?? '',
+      externalId: article.id?.toString() ?? '',
 
       title,
 
-      content:
-        this.cleanPlainText(
-          article.description,
-        ) || title,
+      content: this.cleanPlainText(article.description) || title,
 
-      author:
-        article.user?.username ??
-        article.user?.name,
+      author: article.user?.username ?? article.user?.name,
 
       url: article.url,
 
@@ -376,25 +257,15 @@ export class DevToCollector
       city: input.city,
       region: input.region,
 
-      languageCode:
-        this.resolveStoredLanguageCode(
-          input.language,
-        ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
-      likesCount:
-        article
-          .positive_reactions_count ?? 0,
+      likesCount: article.positive_reactions_count ?? 0,
 
-      repliesCount:
-        article.comments_count ??
-        comments.length,
+      repliesCount: article.comments_count ?? comments.length,
 
-      publishedAt:
-        article.published_at
-          ? new Date(
-              article.published_at,
-            )
-          : undefined,
+      publishedAt: article.published_at
+        ? new Date(article.published_at)
+        : undefined,
 
       comments,
     };
@@ -406,83 +277,54 @@ export class DevToCollector
   private async collectArticleComments(
     article: DevToArticle,
   ): Promise<CollectorComment[]> {
-    if (
-      !article.id ||
-      !article.comments_count
-    ) {
+    if (!article.id || !article.comments_count) {
       return [];
     }
 
     try {
-      const cacheKey =
-        CollectorCacheUtil.build(
-          this.sourceKey,
-          'comments',
-          [article.id],
-        );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'comments', [
+        article.id,
+      ]);
 
-      const comments =
-        await CollectorHttpUtil
-          .getWithRetryAndCache<
-            DevToComment[]
-          >(
-            `${this.apiBaseUrl}/comments`,
-            {
-              headers:
-                this.buildHeaders(),
+      const comments = await CollectorHttpUtil.getWithRetryAndCache<
+        DevToComment[]
+      >(
+        `${this.apiBaseUrl}/comments`,
+        {
+          headers: this.buildHeaders(),
 
-              params: {
-                a_id: article.id,
-              },
+          params: {
+            a_id: article.id,
+          },
 
-              timeout: 10_000,
-            },
-            {
-              cacheKey,
-              cacheTtlMs:
-                this.cacheTtlMs,
-              retryAttempts:
-                this.retryAttempts,
-              retryDelayMs:
-                this.retryDelayMs,
-            },
-          );
+          timeout: 10_000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
       return (comments ?? [])
-        .filter((comment) =>
-          this.isUsefulComment(comment),
-        )
-        .slice(
-          0,
-          this.maxSavedComments,
-        )
+        .filter((comment) => this.isUsefulComment(comment))
+        .slice(0, this.maxSavedComments)
         .map(
-          (
-            comment,
-          ): CollectorComment => ({
-            externalId:
-              comment.id_code ??
-              comment.id?.toString() ??
-              '',
+          (comment): CollectorComment => ({
+            externalId: comment.id_code ?? comment.id?.toString() ?? '',
 
-            content:
-              this.cleanPlainText(
-                comment.body_html ??
-                  comment.body_markdown,
-              ),
+            content: this.cleanPlainText(
+              comment.body_html ?? comment.body_markdown,
+            ),
 
-            author:
-              comment.user?.username ??
-              comment.user?.name,
+            author: comment.user?.username ?? comment.user?.name,
 
             likesCount: 0,
 
-            publishedAt:
-              comment.created_at
-                ? new Date(
-                    comment.created_at,
-                  )
-                : undefined,
+            publishedAt: comment.created_at
+              ? new Date(comment.created_at)
+              : undefined,
           }),
         );
     } catch (error: unknown) {
@@ -498,30 +340,19 @@ export class DevToCollector
   /**
    * Filters low-value comments.
    */
-  private isUsefulComment(
-    comment: DevToComment,
-  ): boolean {
-    const content =
-      this.cleanNormalizedText(
-        comment.body_html ??
-          comment.body_markdown,
-      );
+  private isUsefulComment(comment: DevToComment): boolean {
+    const content = this.cleanNormalizedText(
+      comment.body_html ?? comment.body_markdown,
+    );
 
-    if (
-      (!comment.id_code &&
-        !comment.id) ||
-      content.length < 40
-    ) {
+    if ((!comment.id_code && !comment.id) || content.length < 40) {
       return false;
     }
 
-    const blockedWords =
-      this.getBlockedWords();
+    const blockedWords = this.getBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -529,29 +360,20 @@ export class DevToCollector
    * Reads DEV.to blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'DEV_TO_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('DEV_TO_BLOCKED_WORDS');
   }
 
   /**
    * Builds API headers.
    */
-  private buildHeaders(): Record<
-    string,
-    string
-  > {
+  private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
   }
 
   /**
    * Extracts a safe error message.
    */
-  private getErrorMessage(
-    error: unknown,
-  ): string {
-    return error instanceof Error
-      ? error.message
-      : String(error);
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }

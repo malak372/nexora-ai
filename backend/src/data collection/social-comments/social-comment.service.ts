@@ -1,9 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import {
-  Prisma,
-  UserRole,
-} from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -28,10 +25,7 @@ import { GetSocialCommentsQueryDto } from './dto/get-social-comments-query.dto';
  */
 @Injectable()
 export class SocialCommentService {
-  constructor(
-    private readonly prisma:
-      PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns paginated comments visible
@@ -41,69 +35,54 @@ export class SocialCommentService {
     query: GetSocialCommentsQueryDto,
     access: CollectionAccessContext,
   ) {
-    const {
-      skip,
-      take,
-      page,
-      limit,
-    } = buildPagination(query);
+    const { skip, take, page, limit } = buildPagination(query);
 
-    const where =
-      this.buildCommentsWhere(
-        query,
-        access,
-      );
+    const where = this.buildCommentsWhere(query, access);
 
-    const [data, total] =
-      await Promise.all([
-        this.prisma.socialComment
-          .findMany({
-            where,
-            skip,
-            take,
+    const [data, total] = await Promise.all([
+      this.prisma.socialComment.findMany({
+        where,
+        skip,
+        take,
 
-            orderBy: buildOrderBy(
-              query,
-              [
-                'createdAt',
-                'collectedAt',
-                'likesCount',
-              ] as const,
-              'createdAt',
-            ),
+        orderBy: buildOrderBy(
+          query,
+          ['createdAt', 'collectedAt', 'likesCount'] as const,
+          'createdAt',
+        ),
 
-            include: {
-              post: {
+        include: {
+          post: {
+            select: {
+              id: true,
+              title: true,
+              region: true,
+              collectionJobId: true,
+
+              dataSource: {
                 select: {
                   id: true,
-                  title: true,
-                  region: true,
-                  collectionJobId: true,
+                  key: true,
+                  displayName: true,
+                },
+              },
 
-                  dataSource: {
-                    select: {
-                      id: true,
-                      key: true,
-                      displayName: true,
-                    },
-                  },
-
-                  collectionJob: {
-                    select: {
-                      id: true,
-                      createdById: true,
-                      status: true,
-                    },
-                  },
+              collectionJob: {
+                select: {
+                  id: true,
+                  createdById: true,
+                  status: true,
                 },
               },
             },
-          }),
+          },
+        },
+      }),
 
-        this.prisma.socialComment.count({
-          where,
-        }),
-      ]);
+      this.prisma.socialComment.count({
+        where,
+      }),
+    ]);
 
     return {
       data,
@@ -113,11 +92,7 @@ export class SocialCommentService {
         limit,
         total,
 
-        totalPages:
-          calculateTotalPages(
-            total,
-            limit,
-          ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -136,49 +111,36 @@ export class SocialCommentService {
     query: GetSocialCommentsQueryDto,
     access: CollectionAccessContext,
   ): Prisma.SocialCommentWhereInput {
-    const dateFilter =
-      buildDateFilter(query);
+    const dateFilter = buildDateFilter(query);
 
-    const search =
-      query.search?.trim();
+    const search = query.search?.trim();
 
     return {
       ...(query.postId && {
-        postId:
-          query.postId,
+        postId: query.postId,
       }),
 
       /*
        * Build one nested post relation filter so that
        * collectionJobId and ownership can be combined safely.
        */
-      ...(
-        (
-          query.collectionJobId ||
-          access.role !==
-            UserRole.ADMIN
-        ) && {
-          post: {
-            ...(query.collectionJobId && {
-              collectionJobId:
-                query.collectionJobId,
-            }),
+      ...((query.collectionJobId || access.role !== UserRole.ADMIN) && {
+        post: {
+          ...(query.collectionJobId && {
+            collectionJobId: query.collectionJobId,
+          }),
 
-            ...(access.role !==
-              UserRole.ADMIN && {
-              collectionJob: {
-                createdById:
-                  access.userId,
-              },
-            }),
-          },
-        }
-      ),
+          ...(access.role !== UserRole.ADMIN && {
+            collectionJob: {
+              createdById: access.userId,
+            },
+          }),
+        },
+      }),
 
       ...(query.languageCode && {
         languageCode: {
-          equals:
-            query.languageCode.trim(),
+          equals: query.languageCode.trim(),
 
           mode: 'insensitive',
         },
@@ -186,8 +148,7 @@ export class SocialCommentService {
 
       ...(query.sentiment && {
         sentiment: {
-          equals:
-            query.sentiment.trim(),
+          equals: query.sentiment.trim(),
 
           mode: 'insensitive',
         },
@@ -195,8 +156,7 @@ export class SocialCommentService {
 
       ...(query.author && {
         author: {
-          contains:
-            query.author.trim(),
+          contains: query.author.trim(),
 
           mode: 'insensitive',
         },

@@ -71,9 +71,7 @@ export class PaymentProcessingService {
    * Logger used for post-commit notification failures that must not
    * change the result of an already committed payment operation.
    */
-  private readonly logger = new Logger(
-    PaymentProcessingService.name,
-  );
+  private readonly logger = new Logger(PaymentProcessingService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,7 +83,7 @@ export class PaymentProcessingService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly paymentNotificationService: PaymentNotificationService,
-  ) { }
+  ) {}
 
   /**
    * Processes one verified provider payment confirmation.
@@ -272,9 +270,7 @@ export class PaymentProcessingService {
           await this.paymentNotificationService.notifyPaymentFailed({
             ...notificationInput,
             failureReason:
-              payment.failureReason ??
-              result.failureReason ??
-              undefined,
+              payment.failureReason ?? result.failureReason ?? undefined,
           });
           return;
 
@@ -921,15 +917,15 @@ export class PaymentProcessingService {
 
       const target = Array.isArray(rawTarget)
         ? rawTarget
-          .filter((value): value is string => typeof value === 'string')
-          .join(',')
+            .filter((value): value is string => typeof value === 'string')
+            .join(',')
         : typeof rawTarget === 'string'
           ? rawTarget
           : '';
 
       const errorCode =
         target.includes('provider_session_id') ||
-          target.includes('providerSessionId')
+        target.includes('providerSessionId')
           ? PaymentErrorCode.DUPLICATE_PROVIDER_SESSION
           : PaymentErrorCode.DUPLICATE_PROVIDER_PAYMENT;
 

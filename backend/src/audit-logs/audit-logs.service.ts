@@ -1,9 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -109,10 +105,7 @@ export class AuditService {
    * @param tx Optional Prisma transaction client.
    * @returns The newly created audit-log record.
    */
-  async createLog(
-    input: CreateAuditLogInput,
-    tx?: Prisma.TransactionClient,
-  ) {
+  async createLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
 
     return client.auditLog.create({
@@ -195,36 +188,35 @@ export class AuditService {
   async getAuditLogsSummary(query: GetAuditLogsQueryDto) {
     const where = this.buildWhere(query);
 
-    const [totalLogs, logsWithActor, logsWithoutActor] =
-      await Promise.all([
-        this.prisma.auditLog.count({
-          where,
-        }),
+    const [totalLogs, logsWithActor, logsWithoutActor] = await Promise.all([
+      this.prisma.auditLog.count({
+        where,
+      }),
 
-        this.prisma.auditLog.count({
-          where: {
-            AND: [
-              where,
-              {
-                actorId: {
-                  not: null,
-                },
+      this.prisma.auditLog.count({
+        where: {
+          AND: [
+            where,
+            {
+              actorId: {
+                not: null,
               },
-            ],
-          },
-        }),
+            },
+          ],
+        },
+      }),
 
-        this.prisma.auditLog.count({
-          where: {
-            AND: [
-              where,
-              {
-                actorId: null,
-              },
-            ],
-          },
-        }),
-      ]);
+      this.prisma.auditLog.count({
+        where: {
+          AND: [
+            where,
+            {
+              actorId: null,
+            },
+          ],
+        },
+      }),
+    ]);
 
     return {
       totalLogs,
@@ -357,9 +349,7 @@ export class AuditService {
    *
    * @param query Audit-log query options.
    */
-  private buildWhere(
-    query: GetAuditLogsQueryDto,
-  ): Prisma.AuditLogWhereInput {
+  private buildWhere(query: GetAuditLogsQueryDto): Prisma.AuditLogWhereInput {
     const dateFilter = buildDateFilter(query);
     const search = query.search?.trim();
 
@@ -440,8 +430,6 @@ export class AuditService {
   private normalizeJsonValue(
     value?: Prisma.InputJsonValue | null,
   ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-    return value === undefined || value === null
-      ? Prisma.DbNull
-      : value;
+    return value === undefined || value === null ? Prisma.DbNull : value;
   }
 }

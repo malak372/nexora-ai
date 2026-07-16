@@ -1,22 +1,26 @@
 import { z } from 'zod';
 
 /**
- * Validates structured output returned for premium credit-based
- * idea generation.
+ * Validates structured output returned for premium credit-based idea
+ * generation.
  *
  * Trusted NLP values such as:
- * - recurring problems
- * - extracted keywords
- * - sample comments
- * - analyzed comment counts
- * - confidence values
+ * - Recurring problems.
+ * - Extracted keywords.
+ * - Sample comments.
+ * - Analyzed comment counts.
+ * - Confidence values.
  *
- * are intentionally excluded. They must be loaded directly from
- * NlpAnalysis and appended by the application.
+ * are intentionally excluded from this schema. They must be loaded
+ * directly from the persisted NlpAnalysis record and appended by the
+ * business service.
  *
  * This schema must remain synchronized with:
  * - PREMIUM_OUTPUT_SCHEMA
  * - PREMIUM_OUTPUT_FORMAT
+ * - The premium-generation prompt template
+ *
+ * Unknown properties are rejected.
  *
  * @author Malak
  */
@@ -78,7 +82,7 @@ export const PremiumIdeaSchema = z
     revenueModel: z.string().trim().min(20).max(2_000),
 
     /**
-     * Preliminary project budget range and assumptions.
+     * Preliminary budget range and relevant assumptions.
      */
     budgetEstimation: z.string().trim().min(20).max(2_000),
 
@@ -93,14 +97,14 @@ export const PremiumIdeaSchema = z
     feasibilityAssessment: z.string().trim().min(20).max(2_500),
 
     /**
-     * Preliminary assessment of the project's market opportunity.
+     * Preliminary assessment of market opportunity.
      */
     marketPotential: z.string().trim().min(20).max(2_500),
 
     /**
      * High-level local regulatory considerations.
      *
-     * This value must not be treated as verified legal advice.
+     * This value must not be presented as verified legal advice.
      */
     localRegulations: z.string().trim().min(20).max(2_000),
 

@@ -1,25 +1,15 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AiProviderType } from '@prisma/client';
 
-import { AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS } from '../constants';
+import {
+  AI_PROVIDER_KEYS,
+  type AiProviderKey,
+} from '../constants/ai-provider.constants';
 
 /**
- * Resolves AI-provider credentials from application configuration.
+ * Resolves AI-provider configuration from environment variables.
  *
- * Provider API keys are stored in environment variables instead of
- * AiModel database records to prevent secrets from being persisted or
- * exposed through administrative model-management operations.
- *
- * Responsibilities:
- * - Resolve the environment-variable name for a provider.
- * - Read and normalize the configured API key.
- * - Reject missing or blank credentials.
- *
- * This service does not:
- * - Validate credentials against the external provider.
- * - Create provider SDK clients.
- * - Store or log provider credentials.
+ * Secrets must never be stored in AiModel or returned through APIs.
  *
  * @author Malak
  */
@@ -28,31 +18,56 @@ export class AiProviderCredentialsService {
   constructor(private readonly configService: ConfigService) {}
 
   /**
-   * Returns the configured API key for one AI provider.
-   *
-   * The returned credential must never be written to:
-   * - Application logs.
-   * - ExternalApiLog.
-   * - API responses.
-   * - Database records.
-   *
-   * @param provider AI provider whose credential should be resolved.
-   * @returns Trimmed provider API key.
-   *
-   * @throws ServiceUnavailableException When the environment variable
-   * is missing, empty, or whitespace-only.
+   * Returns the required provider API key.
    */
-  getApiKey(provider: AiProviderType): string {
-    const environmentKey = AI_PROVIDER_API_KEY_ENVIRONMENT_KEYS[provider];
+  getApiKey(providerKey: AiProviderKey): string {
+    switch (providerKey) {
+      case AI_PROVIDER_KEYS.GOOGLE:
+        return this.requireValue('GOOGLE_AI_API_KEY');
 
-    const apiKey = this.configService.get<string>(environmentKey)?.trim();
+      case AI_PROVIDER_KEYS.OPENROUTER:
+        return this.requireValue('OPENROUTER_API_KEY');
 
-    if (!apiKey) {
+      default:
+        return this.assertNever(providerKey);
+    }
+  }
+
+  /**
+   * Optional OpenRouter site URL used in HTTP-Referer.
+   */
+  getOpenRouterSiteUrl(): string | undefined {
+    return this.getOptionalValue('OPENROUTER_SITE_URL');
+  }
+
+  /**
+   * Optional OpenRouter application name.
+   */
+  getOpenRouterAppName(): string | undefined {
+    return this.getOptionalValue('OPENROUTER_APP_NAME');
+  }
+
+  private requireValue(key: string): string {
+    const value = this.configService.get<string>(key)?.trim();
+
+    if (!value) {
       throw new ServiceUnavailableException(
-        `AI provider credentials are not configured for ${provider}.`,
+        `Required AI provider configuration is missing: ${key}`,
       );
     }
 
-    return apiKey;
+    return value;
+  }
+
+  private getOptionalValue(key: string): string | undefined {
+    const value = this.configService.get<string>(key)?.trim();
+
+    return value || undefined;
+  }
+
+  private assertNever(value: never): never {
+    throw new ServiceUnavailableException(
+      `Unsupported AI provider key: ${String(value)}`,
+    );
   }
 }

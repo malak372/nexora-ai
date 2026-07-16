@@ -51,9 +51,6 @@ import { DiscourseForumAdapter } from './forum/adapters/discourse-forum.adapter'
     CollectorQueueService,
   ],
 
-  exports: [
-    CollectorsFactory,
-    CollectorQueueService,
-  ],
+  exports: [CollectorsFactory, CollectorQueueService],
 })
 export class CollectorsModule {}

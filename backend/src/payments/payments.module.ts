@@ -52,12 +52,7 @@ import { UserPaymentsService } from './services/user-payments.service';
  * @author Eman
  */
 @Module({
-  imports: [
-    ConfigModule,
-    PrismaModule,
-    CreditsModule,
-    MailModule,
-  ],
+  imports: [ConfigModule, PrismaModule, CreditsModule, MailModule],
 
   controllers: [
     UserPaymentsController,
@@ -111,4 +106,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

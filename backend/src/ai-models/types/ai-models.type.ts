@@ -1,13 +1,14 @@
-import { AiModel } from '@prisma/client';
+import type { AiModel } from '@prisma/client';
 
 /**
- * Paginated AI-model response.
+ * Paginated result returned by the administrator AI-model listing
+ * endpoint.
  *
  * @author Malak
  */
 export type PaginatedAiModelsResult = {
   /**
-   * AI-model records returned for the current page.
+   * AI-model records included in the current page.
    */
   readonly data: AiModel[];
 
@@ -16,17 +17,17 @@ export type PaginatedAiModelsResult = {
    */
   readonly meta: {
     /**
-     * Current page number.
+     * Current one-based page number.
      */
     readonly page: number;
 
     /**
-     * Maximum records returned per page.
+     * Maximum number of records returned per page.
      */
     readonly limit: number;
 
     /**
-     * Total matching records.
+     * Total number of models matching the supplied filters.
      */
     readonly total: number;
 

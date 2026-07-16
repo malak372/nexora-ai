@@ -42,7 +42,7 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  */
 @Injectable()
 export class CreditBalanceService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Changes one user's credit balance.

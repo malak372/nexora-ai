@@ -1,9 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-} from 'class-validator';
+import { IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
@@ -12,9 +7,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  *
  * @author Malak
  */
-export class GetSocialPostsQueryDto
-  extends ListQueryDto
-{
+export class GetSocialPostsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsUUID('4')
   collectionJobId?: string;
@@ -28,9 +21,7 @@ export class GetSocialPostsQueryDto
    */
   @IsOptional()
   @IsString()
-  @Matches(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  )
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   dataSourceKey?: string;
 
   @IsOptional()

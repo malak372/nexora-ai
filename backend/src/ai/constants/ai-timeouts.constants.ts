@@ -1,43 +1,35 @@
 /**
- * Timeout-related constants for external AI requests.
+ * Timeout and health-related AI constants.
  *
  * @author Malak
  */
 
 /**
- * Default maximum duration of one AI provider request.
+ * Default maximum duration of one provider request.
  */
 export const DEFAULT_AI_REQUEST_TIMEOUT_MS = 60_000;
 
 /**
- * Minimum allowed timeout.
- *
- * Prevents configuration mistakes that would cancel requests almost
- * immediately.
+ * Minimum permitted provider timeout.
  */
 export const MIN_AI_REQUEST_TIMEOUT_MS = 1_000;
 
 /**
- * Maximum allowed timeout.
- *
- * Requests should not remain open indefinitely.
+ * Maximum permitted provider timeout.
  */
 export const MAX_AI_REQUEST_TIMEOUT_MS = 300_000;
 
 /**
- * Default cooldown applied before an unavailable model may be
- * considered for recovery.
+ * Cooldown before an unavailable model may be reconsidered.
  */
 export const DEFAULT_AI_HEALTH_COOLDOWN_MS = 300_000;
 
 /**
- * Number of consecutive failed model executions after which the
- * model becomes degraded.
+ * Consecutive failures required to mark a model as degraded.
  */
 export const DEFAULT_AI_DEGRADED_FAILURE_THRESHOLD = 2;
 
 /**
- * Number of consecutive failed model executions after which the
- * model becomes unavailable.
+ * Consecutive failures required to mark a model as unavailable.
  */
 export const DEFAULT_AI_UNAVAILABLE_FAILURE_THRESHOLD = 4;

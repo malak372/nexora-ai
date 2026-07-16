@@ -1,15 +1,6 @@
-import {
-  CollectionJobStatus,
-  LanguageCode,
-} from '@prisma/client';
+import { CollectionJobStatus, LanguageCode } from '@prisma/client';
 
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
@@ -18,9 +9,7 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  *
  * @author Malak
  */
-export class GetCollectionJobsQueryDto
-  extends ListQueryDto
-{
+export class GetCollectionJobsQueryDto extends ListQueryDto {
   @IsOptional()
   @IsUUID('4')
   domainId?: string;
@@ -50,8 +39,6 @@ export class GetCollectionJobsQueryDto
    */
   @IsOptional()
   @IsString()
-  @Matches(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  )
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   dataSourceKey?: string;
 }

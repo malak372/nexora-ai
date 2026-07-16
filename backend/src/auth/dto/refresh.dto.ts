@@ -1,9 +1,6 @@
 import { Transform } from 'class-transformer';
 
-import {
-  IsString,
-  IsNotEmpty,
-} from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 /**
  * DTO used to validate a refresh token
@@ -19,9 +16,7 @@ export class RefreshDto {
    * Refresh token issued during authentication.
    */
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+    typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty()

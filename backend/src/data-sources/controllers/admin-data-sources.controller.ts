@@ -52,16 +52,10 @@ type AuthenticatedAdmin = {
  * @author Malak
  */
 @Controller('admin/data-sources')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminDataSourcesController {
-  constructor(
-    private readonly dataSourcesService:
-      DataSourcesService,
-  ) {}
+  constructor(private readonly dataSourcesService: DataSourcesService) {}
 
   /**
    * Creates a data-source record.
@@ -74,10 +68,7 @@ export class AdminDataSourcesController {
     @CurrentUser()
     admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService.create(
-      dto,
-      admin.id,
-    );
+    return this.dataSourcesService.create(dto, admin.id);
   }
 
   /**
@@ -88,8 +79,7 @@ export class AdminDataSourcesController {
     @Query()
     query: GetDataSourcesQueryDto,
   ) {
-    return this.dataSourcesService
-      .findAllForAdmin(query);
+    return this.dataSourcesService.findAllForAdmin(query);
   }
 
   /**
@@ -101,8 +91,7 @@ export class AdminDataSourcesController {
    */
   @Post('synchronize')
   synchronize() {
-    return this.dataSourcesService
-      .synchronizeImplementationStates();
+    return this.dataSourcesService.synchronizeImplementationStates();
   }
 
   /**
@@ -110,14 +99,10 @@ export class AdminDataSourcesController {
    */
   @Get(':id')
   findOne(
-    @Param(
-      'id',
-      ParseUUIDPipe,
-    )
+    @Param('id', ParseUUIDPipe)
     id: string,
   ) {
-    return this.dataSourcesService
-      .findOneForAdmin(id);
+    return this.dataSourcesService.findOneForAdmin(id);
   }
 
   /**
@@ -125,10 +110,7 @@ export class AdminDataSourcesController {
    */
   @Patch(':id')
   update(
-    @Param(
-      'id',
-      ParseUUIDPipe,
-    )
+    @Param('id', ParseUUIDPipe)
     id: string,
 
     @Body()
@@ -137,11 +119,7 @@ export class AdminDataSourcesController {
     @CurrentUser()
     admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService.update(
-      id,
-      dto,
-      admin.id,
-    );
+    return this.dataSourcesService.update(id, dto, admin.id);
   }
 
   /**
@@ -149,10 +127,7 @@ export class AdminDataSourcesController {
    */
   @Patch(':id/status')
   updateStatus(
-    @Param(
-      'id',
-      ParseUUIDPipe,
-    )
+    @Param('id', ParseUUIDPipe)
     id: string,
 
     @Body()
@@ -161,11 +136,6 @@ export class AdminDataSourcesController {
     @CurrentUser()
     admin: AuthenticatedAdmin,
   ) {
-    return this.dataSourcesService
-      .updateStatus(
-        id,
-        dto,
-        admin.id,
-      );
+    return this.dataSourcesService.updateStatus(id, dto, admin.id);
   }
 }

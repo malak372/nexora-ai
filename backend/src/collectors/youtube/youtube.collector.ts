@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -86,17 +83,13 @@ type YouTubeCommentsResponse = {
  * @author Malak
  */
 @Injectable()
-export class YouTubeCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class YouTubeCollector extends BaseCollector implements SocialCollector {
   /**
    * Must match DataSource.key.
    */
   readonly sourceKey = 'youtube';
 
-  private readonly apiBaseUrl =
-    'https://www.googleapis.com/youtube/v3';
+  private readonly apiBaseUrl = 'https://www.googleapis.com/youtube/v3';
 
   private readonly maxSearchQueries: number;
 
@@ -115,8 +108,10 @@ export class YouTubeCollector
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     const apiKey = this.getApiKey();
 
-    const searchQueries = this.buildSearchQueries(input)
-      .slice(0, this.maxSearchQueries);
+    const searchQueries = this.buildSearchQueries(input).slice(
+      0,
+      this.maxSearchQueries,
+    );
 
     if (!searchQueries.length) {
       this.logger.warn(
@@ -131,37 +126,21 @@ export class YouTubeCollector
 
     try {
       for (const query of searchQueries) {
-        if (
-          collectedPosts.length >=
-          this.maxSavedPosts
-        ) {
+        if (collectedPosts.length >= this.maxSavedPosts) {
           break;
         }
 
-        const videos = await this.searchVideos(
-          input,
-          apiKey,
-          query,
-        );
+        const videos = await this.searchVideos(input, apiKey, query);
 
         const validVideos = videos
           .filter((video) => this.isValidVideo(video))
-          .filter((video) =>
-            this.matchesInputContext(video, input),
-          );
+          .filter((video) => this.matchesInputContext(video, input));
 
         const videoIds = validVideos
           .map((video) => video.id?.videoId)
-          .filter(
-            (videoId): videoId is string =>
-              Boolean(videoId),
-          );
+          .filter((videoId): videoId is string => Boolean(videoId));
 
-        const statisticsMap =
-          await this.fetchVideoStatistics(
-            videoIds,
-            apiKey,
-          );
+        const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
 
         const rankedVideos = validVideos
           .map((video) => {
@@ -173,33 +152,21 @@ export class YouTubeCollector
               score: this.calculateVideoRelevanceScore(
                 video,
                 input,
-                videoId
-                  ? statisticsMap.get(videoId)
-                  : undefined,
+                videoId ? statisticsMap.get(videoId) : undefined,
               ),
             };
           })
           .filter((item) => item.score > 5)
-          .sort(
-            (first, second) =>
-              second.score - first.score,
-          );
+          .sort((first, second) => second.score - first.score);
 
         for (const item of rankedVideos) {
-          if (
-            collectedPosts.length >=
-            this.maxSavedPosts
-          ) {
+          if (collectedPosts.length >= this.maxSavedPosts) {
             break;
           }
 
-          const videoId =
-            item.video.id?.videoId;
+          const videoId = item.video.id?.videoId;
 
-          if (
-            !videoId ||
-            seenVideoIds.has(videoId)
-          ) {
+          if (!videoId || seenVideoIds.has(videoId)) {
             continue;
           }
 
@@ -240,25 +207,17 @@ export class YouTubeCollector
     apiKey: string,
     query: string,
   ): Promise<YouTubeSearchVideo[]> {
-    const cacheKey = CollectorCacheUtil.build(
-      this.sourceKey,
-      'search',
-      [
-        query,
-        input.country,
-        input.language,
-      ],
-    );
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
+      query,
+      input.country,
+      input.language,
+    ]);
 
     const data =
       await CollectorHttpUtil.getWithRetryAndCache<YouTubeSearchResponse>(
         `${this.apiBaseUrl}/search`,
         {
-          params: this.buildSearchParams(
-            input,
-            apiKey,
-            query,
-          ),
+          params: this.buildSearchParams(input, apiKey, query),
           timeout: 10_000,
         },
         {
@@ -292,15 +251,11 @@ export class YouTubeCollector
       videoEmbeddable: 'true',
     };
 
-    const regionCode =
-      CollectorRegionUtil.resolveRegionCode(
-        input.country,
-      );
+    const regionCode = CollectorRegionUtil.resolveRegionCode(input.country);
 
-    const relevanceLanguage =
-      CollectorLanguageUtil.resolveLanguageCode(
-        input.language,
-      );
+    const relevanceLanguage = CollectorLanguageUtil.resolveLanguageCode(
+      input.language,
+    );
 
     if (regionCode) {
       params.regionCode = regionCode;
@@ -323,11 +278,10 @@ export class YouTubeCollector
       return [];
     }
 
-    const problemQueries =
-      CollectorQueryBuilderUtil.buildProblemQueries(
-        domainKeywords,
-        this.getProblemWords(),
-      );
+    const problemQueries = CollectorQueryBuilderUtil.buildProblemQueries(
+      domainKeywords,
+      this.getProblemWords(),
+    );
 
     const userQueries = (input.keywords ?? [])
       .map((keyword) => this.cleanNormalizedText(keyword))
@@ -346,17 +300,11 @@ export class YouTubeCollector
   private isValidVideo(video: YouTubeSearchVideo): boolean {
     const videoId = video.id?.videoId;
 
-    const title = this.cleanPlainText(
-      video.snippet?.title,
-    );
+    const title = this.cleanPlainText(video.snippet?.title);
 
-    const description = this.cleanPlainText(
-      video.snippet?.description,
-    );
+    const description = this.cleanPlainText(video.snippet?.description);
 
-    const channelTitle = this.cleanPlainText(
-      video.snippet?.channelTitle,
-    );
+    const channelTitle = this.cleanPlainText(video.snippet?.channelTitle);
 
     const content = this.cleanNormalizedText(
       `${title} ${description} ${channelTitle}`,
@@ -381,9 +329,7 @@ export class YouTubeCollector
     input: CollectorInput,
   ): boolean {
     const content = this.cleanPlainText(
-      `${video.snippet?.title ?? ''} ${
-        video.snippet?.description ?? ''
-      }`,
+      `${video.snippet?.title ?? ''} ${video.snippet?.description ?? ''}`,
     );
 
     return CollectorLanguageUtil.matchesRequestedLanguage(
@@ -403,9 +349,7 @@ export class YouTubeCollector
     return RelevanceScoreUtil.scoreText({
       title: this.cleanPlainText(video.snippet?.title),
 
-      body: this.cleanPlainText(
-        video.snippet?.description,
-      ),
+      body: this.cleanPlainText(video.snippet?.description),
 
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
@@ -413,9 +357,7 @@ export class YouTubeCollector
       likes: statistics?.likeCount ?? 0,
       replies: statistics?.commentCount ?? 0,
 
-      publishedAt: this.parseDate(
-        video.snippet?.publishedAt,
-      ),
+      publishedAt: this.parseDate(video.snippet?.publishedAt),
     });
   }
 
@@ -431,23 +373,16 @@ export class YouTubeCollector
     const snippet = video.snippet ?? {};
 
     const title = this.cleanPlainText(snippet.title);
-    const description = this.cleanPlainText(
-      snippet.description,
-    );
+    const description = this.cleanPlainText(snippet.description);
 
-    const comments = await this.collectVideoComments(
-      videoId,
-      input,
-    );
+    const comments = await this.collectVideoComments(videoId, input);
 
     return {
       externalId: videoId,
       title,
       content: description || title,
 
-      author: this.cleanPlainText(
-        snippet.channelTitle,
-      ),
+      author: this.cleanPlainText(snippet.channelTitle),
 
       url: `https://www.youtube.com/watch?v=${videoId}`,
 
@@ -455,19 +390,13 @@ export class YouTubeCollector
       city: input.city,
       region: input.region,
 
-      languageCode: this.resolveStoredLanguageCode(
-        input.language,
-      ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
       likesCount: statistics?.likeCount ?? 0,
 
-      repliesCount:
-        statistics?.commentCount ??
-        comments.length,
+      repliesCount: statistics?.commentCount ?? comments.length,
 
-      publishedAt: this.parseDate(
-        snippet.publishedAt,
-      ),
+      publishedAt: this.parseDate(snippet.publishedAt),
 
       comments,
     };
@@ -480,19 +409,16 @@ export class YouTubeCollector
     videoIds: string[],
     apiKey: string,
   ): Promise<Map<string, YouTubeVideoStatistics>> {
-    const statisticsMap =
-      new Map<string, YouTubeVideoStatistics>();
+    const statisticsMap = new Map<string, YouTubeVideoStatistics>();
 
     if (!videoIds.length) {
       return statisticsMap;
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'statistics',
-        [videoIds.join(',')],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'statistics', [
+        videoIds.join(','),
+      ]);
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<YouTubeStatisticsResponse>(
@@ -519,9 +445,7 @@ export class YouTubeCollector
         }
 
         statisticsMap.set(video.id, {
-          likeCount: this.toNonNegativeNumber(
-            video.statistics?.likeCount,
-          ),
+          likeCount: this.toNonNegativeNumber(video.statistics?.likeCount),
 
           commentCount: this.toNonNegativeNumber(
             video.statistics?.commentCount,
@@ -552,11 +476,9 @@ export class YouTubeCollector
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'comments',
-        [videoId],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'comments', [
+        videoId,
+      ]);
 
       const data =
         await CollectorHttpUtil.getWithRetryAndCache<YouTubeCommentsResponse>(
@@ -566,10 +488,7 @@ export class YouTubeCollector
               key: this.getApiKey(),
               part: 'snippet',
               videoId,
-              maxResults: Math.min(
-                this.maxFetchedComments,
-                100,
-              ),
+              maxResults: Math.min(this.maxFetchedComments, 100),
               order: 'relevance',
               textFormat: 'plainText',
             },
@@ -586,19 +505,11 @@ export class YouTubeCollector
       const seenCommentIds = new Set<string>();
 
       return (data.items ?? [])
-        .map(
-          (item) =>
-            item.snippet?.topLevelComment,
+        .map((item) => item.snippet?.topLevelComment)
+        .filter((comment): comment is YouTubeTopLevelComment =>
+          Boolean(comment),
         )
-        .filter(
-          (
-            comment,
-          ): comment is YouTubeTopLevelComment =>
-            Boolean(comment),
-        )
-        .filter((comment) =>
-          this.isUsefulComment(comment, input),
-        )
+        .filter((comment) => this.isUsefulComment(comment, input))
         .filter((comment) => {
           const id = comment.id;
 
@@ -612,32 +523,22 @@ export class YouTubeCollector
         })
         .sort(
           (first, second) =>
-            (second.snippet?.likeCount ?? 0) -
-            (first.snippet?.likeCount ?? 0),
+            (second.snippet?.likeCount ?? 0) - (first.snippet?.likeCount ?? 0),
         )
         .slice(0, this.maxSavedComments)
         .map(
           (comment): CollectorComment => ({
             externalId: comment.id ?? '',
 
-            content: this.cleanPlainText(
-              comment.snippet?.textDisplay,
-            ),
+            content: this.cleanPlainText(comment.snippet?.textDisplay),
 
-            author: this.cleanPlainText(
-              comment.snippet?.authorDisplayName,
-            ),
+            author: this.cleanPlainText(comment.snippet?.authorDisplayName),
 
-            languageCode: this.resolveStoredLanguageCode(
-              input.language,
-            ),
+            languageCode: this.resolveStoredLanguageCode(input.language),
 
-            likesCount:
-              comment.snippet?.likeCount ?? 0,
+            likesCount: comment.snippet?.likeCount ?? 0,
 
-            publishedAt: this.parseDate(
-              comment.snippet?.publishedAt,
-            ),
+            publishedAt: this.parseDate(comment.snippet?.publishedAt),
           }),
         );
     } catch (error: unknown) {
@@ -657,9 +558,7 @@ export class YouTubeCollector
     comment: YouTubeTopLevelComment,
     input: CollectorInput,
   ): boolean {
-    const rawContent = this.cleanPlainText(
-      comment.snippet?.textDisplay,
-    );
+    const rawContent = this.cleanPlainText(comment.snippet?.textDisplay);
 
     const content = this.cleanNormalizedText(rawContent);
 
@@ -667,9 +566,7 @@ export class YouTubeCollector
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -720,10 +617,7 @@ export class YouTubeCollector
    * Reads the YouTube API key.
    */
   private getApiKey(): string {
-    const apiKey =
-      this.configService.get<string>(
-        'YOUTUBE_API_KEY',
-      );
+    const apiKey = this.configService.get<string>('YOUTUBE_API_KEY');
 
     if (!apiKey) {
       throw new ServiceUnavailableException(
@@ -750,14 +644,10 @@ export class YouTubeCollector
   /**
    * Parses non-negative API counters.
    */
-  private toNonNegativeNumber(
-    value?: string,
-  ): number {
+  private toNonNegativeNumber(value?: string): number {
     const parsed = Number(value ?? 0);
 
-    return Number.isFinite(parsed) && parsed > 0
-      ? parsed
-      : 0;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
   /**

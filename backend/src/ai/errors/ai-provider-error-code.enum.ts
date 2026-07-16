@@ -25,17 +25,12 @@ export enum AiProviderErrorCode {
   /**
    * The provider temporarily rejected the request because of
    * rate limiting.
-   *
-   * This error may be retried using the same model.
    */
   RATE_LIMIT = 'RATE_LIMIT',
 
   /**
    * The provider account, organization, or project does not have
    * enough available quota or credit to execute the request.
-   *
-   * Retrying the same provider immediately is not useful, but
-   * execution may fall back to another configured provider.
    */
   INSUFFICIENT_QUOTA = 'INSUFFICIENT_QUOTA',
 

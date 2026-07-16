@@ -39,8 +39,7 @@ async function bootstrap(): Promise<void> {
    * explicit type instead of allowing getInstance() to
    * return an untyped value.
    */
-  const expressApplication =
-    app.getHttpAdapter().getInstance() as Express;
+  const expressApplication = app.getHttpAdapter().getInstance() as Express;
 
   /**
    * Trusts the first reverse proxy in front of the backend.
@@ -67,10 +66,7 @@ async function bootstrap(): Promise<void> {
    * authenticated requests and secure session cookies.
    */
   app.enableCors({
-    origin: configService.get<string>(
-      'FRONTEND_URL',
-      'http://localhost:3000',
-    ),
+    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3000'),
     credentials: true,
   });
 
@@ -110,4 +106,3 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
-

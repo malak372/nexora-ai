@@ -23,9 +23,7 @@ import type { CreateSystemAlertInput } from '../types/create-system-alert-input.
  */
 @Injectable()
 export class SystemAlertsService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Creates one in-app alert.
@@ -34,10 +32,7 @@ export class SystemAlertsService {
    * @param tx Optional Prisma transaction client.
    * @returns The created alert record.
    */
-  create(
-    input: CreateSystemAlertInput,
-    tx?: Prisma.TransactionClient,
-  ) {
+  create(input: CreateSystemAlertInput, tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
 
     return client.alert.create({

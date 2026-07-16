@@ -1,9 +1,6 @@
 import { Transform } from 'class-transformer';
 
-import {
-  IsEmail,
-  IsString,
-} from 'class-validator';
+import { IsEmail, IsString } from 'class-validator';
 
 /**
  * DTO used to request a new email-verification email.
@@ -18,9 +15,7 @@ export class ResendVerificationEmailDto {
    * User email address.
    */
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : value,
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
   @IsEmail()

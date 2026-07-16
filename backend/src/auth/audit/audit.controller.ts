@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -29,9 +25,7 @@ import { AuthAuditService } from './audit.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AuthAuditController {
-  constructor(
-    private readonly authAuditService: AuthAuditService,
-  ) { }
+  constructor(private readonly authAuditService: AuthAuditService) {}
 
   /**
    * Retrieves the latest authentication audit logs.

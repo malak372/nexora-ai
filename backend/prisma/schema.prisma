@@ -371,16 +371,16 @@ enum NlpLexiconType {
  */
 
 model User {
-  id                String        @id @default(uuid())
-  fullName          String        @map("full_name")
-  email             String        @unique
-  passwordHash      String        @map("password_hash")
-  role              UserRole      @default(USER)
-  emailVerifiedAt   DateTime?     @map("email_verified_at")
-  verificationEmailSentAt DateTime? @map("verification_email_sent_at")
-  lastLoginAt       DateTime?     @map("last_login_at")
-  passwordChangedAt DateTime?     @map("password_changed_at")
-  accountStatus     AccountStatus @default(NORMAL) @map("account_status")
+  id                      String        @id @default(uuid())
+  fullName                String        @map("full_name")
+  email                   String        @unique
+  passwordHash            String        @map("password_hash")
+  role                    UserRole      @default(USER)
+  emailVerifiedAt         DateTime?     @map("email_verified_at")
+  verificationEmailSentAt DateTime?     @map("verification_email_sent_at")
+  lastLoginAt             DateTime?     @map("last_login_at")
+  passwordChangedAt       DateTime?     @map("password_changed_at")
+  accountStatus           AccountStatus @default(NORMAL) @map("account_status")
 
   freeGenerationLimit Int @default(3) @map("free_generation_limit")
   freeGenerationsUsed Int @default(0) @map("free_generations_used")
@@ -600,8 +600,8 @@ model Idea {
   fullAbstract    String? @map("full_abstract")
 
   problemStatement String? @map("problem_statement")
-  objectives       String?
-  targetUsers      String? @map("target_users")
+  objectives       Json?
+  targetUsers      Json?   @map("target_users")
 
   generationType IdeaGenerationType @map("generation_type")
 

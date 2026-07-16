@@ -2,11 +2,7 @@ import { AlertType } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 

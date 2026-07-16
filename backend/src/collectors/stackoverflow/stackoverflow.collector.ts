@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -70,8 +67,7 @@ export class StackOverflowCollector
    */
   readonly sourceKey = 'stackoverflow';
 
-  private readonly apiBaseUrl =
-    'https://api.stackexchange.com/2.3';
+  private readonly apiBaseUrl = 'https://api.stackexchange.com/2.3';
 
   constructor(configService: ConfigService) {
     super(configService, StackOverflowCollector.name);
@@ -95,49 +91,41 @@ export class StackOverflowCollector
       const allQuestions: StackOverflowQuestion[] = [];
 
       for (const query of queries) {
-        const cacheKey = CollectorCacheUtil.build(
-          this.sourceKey,
-          'questions',
-          [
-            query.q,
-            query.title,
-            query.body,
-            query.tagged,
-            input.country,
-            input.language,
-          ],
+        const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'questions', [
+          query.q,
+          query.title,
+          query.body,
+          query.tagged,
+          input.country,
+          input.language,
+        ]);
+
+        const data = await CollectorHttpUtil.getWithRetryAndCache<
+          StackOverflowResponse<StackOverflowQuestion>
+        >(
+          `${this.apiBaseUrl}/search/advanced`,
+          {
+            headers: this.buildHeaders(),
+
+            params: {
+              site: this.getSite(),
+              sort: 'activity',
+              order: 'desc',
+              pagesize: Math.min(this.maxFetchedPosts, 100),
+              filter: 'withbody',
+              ...query,
+              ...this.buildApiKeyParam(),
+            },
+
+            timeout: 10_000,
+          },
+          {
+            cacheKey,
+            cacheTtlMs: this.cacheTtlMs,
+            retryAttempts: this.retryAttempts,
+            retryDelayMs: this.retryDelayMs,
+          },
         );
-
-        const data =
-          await CollectorHttpUtil.getWithRetryAndCache<
-            StackOverflowResponse<StackOverflowQuestion>
-          >(
-            `${this.apiBaseUrl}/search/advanced`,
-            {
-              headers: this.buildHeaders(),
-
-              params: {
-                site: this.getSite(),
-                sort: 'activity',
-                order: 'desc',
-                pagesize: Math.min(
-                  this.maxFetchedPosts,
-                  100,
-                ),
-                filter: 'withbody',
-                ...query,
-                ...this.buildApiKeyParam(),
-              },
-
-              timeout: 10_000,
-            },
-            {
-              cacheKey,
-              cacheTtlMs: this.cacheTtlMs,
-              retryAttempts: this.retryAttempts,
-              retryDelayMs: this.retryDelayMs,
-            },
-          );
 
         allQuestions.push(...(data.items ?? []));
       }
@@ -159,10 +147,7 @@ export class StackOverflowCollector
         })
         .map((question) => ({
           question,
-          score: this.calculateQuestionRelevanceScore(
-            question,
-            input,
-          ),
+          score: this.calculateQuestionRelevanceScore(question, input),
         }))
         .filter((item) => item.score > 0)
         .sort((first, second) => second.score - first.score)
@@ -170,10 +155,7 @@ export class StackOverflowCollector
 
       const posts = await Promise.all(
         rankedQuestions.map((item) =>
-          this.mapQuestionToCollectorPost(
-            item.question,
-            input,
-          ),
+          this.mapQuestionToCollectorPost(item.question, input),
         ),
       );
 
@@ -208,19 +190,15 @@ export class StackOverflowCollector
       ? userKeywords
       : this.getDomainKeywords(input);
 
-    return keywords
-      .slice(0, 5)
-      .map((keyword) => ({
-        q: keyword,
-      }));
+    return keywords.slice(0, 5).map((keyword) => ({
+      q: keyword,
+    }));
   }
 
   /**
    * Validates one question.
    */
-  private isValidQuestion(
-    question: StackOverflowQuestion,
-  ): boolean {
+  private isValidQuestion(question: StackOverflowQuestion): boolean {
     const title = this.cleanPlainText(question.title);
     const body = this.cleanPlainText(question.body);
     const content = this.cleanNormalizedText(`${title} ${body}`);
@@ -254,12 +232,8 @@ export class StackOverflowCollector
       domainTerms: this.getDomainKeywords(input),
       problemTerms: this.getProblemWords(),
       likes: question.score ?? 0,
-      replies:
-        (question.answer_count ?? 0) +
-        (question.comment_count ?? 0),
-      publishedAt: this.parseUnixDate(
-        question.creation_date,
-      ),
+      replies: (question.answer_count ?? 0) + (question.comment_count ?? 0),
+      publishedAt: this.parseUnixDate(question.creation_date),
     });
   }
 
@@ -270,22 +244,16 @@ export class StackOverflowCollector
     question: StackOverflowQuestion,
     input: CollectorInput,
   ): Promise<CollectorPost> {
-    const comments =
-      await this.collectQuestionComments(question);
+    const comments = await this.collectQuestionComments(question);
 
     return {
-      externalId:
-        question.question_id?.toString() ?? '',
+      externalId: question.question_id?.toString() ?? '',
 
       title: this.cleanPlainText(question.title),
 
-      content: this.cleanPlainText(
-        question.body ?? question.title,
-      ),
+      content: this.cleanPlainText(question.body ?? question.title),
 
-      author: this.cleanPlainText(
-        question.owner?.display_name,
-      ),
+      author: this.cleanPlainText(question.owner?.display_name),
 
       url: question.link,
 
@@ -293,9 +261,7 @@ export class StackOverflowCollector
       city: input.city,
       region: input.region,
 
-      languageCode: this.resolveStoredLanguageCode(
-        input.language,
-      ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
       likesCount: question.score ?? 0,
 
@@ -303,9 +269,7 @@ export class StackOverflowCollector
         (question.answer_count ?? 0) +
         (question.comment_count ?? comments.length),
 
-      publishedAt: this.parseUnixDate(
-        question.creation_date,
-      ),
+      publishedAt: this.parseUnixDate(question.creation_date),
 
       comments,
     };
@@ -322,41 +286,35 @@ export class StackOverflowCollector
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'comments',
-        [question.question_id],
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'comments', [
+        question.question_id,
+      ]);
+
+      const data = await CollectorHttpUtil.getWithRetryAndCache<
+        StackOverflowResponse<StackOverflowComment>
+      >(
+        `${this.apiBaseUrl}/questions/${question.question_id}/comments`,
+        {
+          headers: this.buildHeaders(),
+
+          params: {
+            site: this.getSite(),
+            sort: 'votes',
+            order: 'desc',
+            pagesize: Math.min(this.maxFetchedComments, 100),
+            filter: 'withbody',
+            ...this.buildApiKeyParam(),
+          },
+
+          timeout: 10_000,
+        },
+        {
+          cacheKey,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
       );
-
-      const data =
-        await CollectorHttpUtil.getWithRetryAndCache<
-          StackOverflowResponse<StackOverflowComment>
-        >(
-          `${this.apiBaseUrl}/questions/${question.question_id}/comments`,
-          {
-            headers: this.buildHeaders(),
-
-            params: {
-              site: this.getSite(),
-              sort: 'votes',
-              order: 'desc',
-              pagesize: Math.min(
-                this.maxFetchedComments,
-                100,
-              ),
-              filter: 'withbody',
-              ...this.buildApiKeyParam(),
-            },
-
-            timeout: 10_000,
-          },
-          {
-            cacheKey,
-            cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
-            retryDelayMs: this.retryDelayMs,
-          },
-        );
 
       const seenCommentIds = new Set<string>();
 
@@ -376,20 +334,15 @@ export class StackOverflowCollector
         .slice(0, this.maxSavedComments)
         .map(
           (comment): CollectorComment => ({
-            externalId:
-              comment.comment_id?.toString() ?? '',
+            externalId: comment.comment_id?.toString() ?? '',
 
             content: this.cleanPlainText(comment.body),
 
-            author: this.cleanPlainText(
-              comment.owner?.display_name,
-            ),
+            author: this.cleanPlainText(comment.owner?.display_name),
 
             likesCount: comment.score ?? 0,
 
-            publishedAt: this.parseUnixDate(
-              comment.creation_date,
-            ),
+            publishedAt: this.parseUnixDate(comment.creation_date),
           }),
         );
     } catch (error: unknown) {
@@ -405,18 +358,14 @@ export class StackOverflowCollector
   /**
    * Filters low-value comments.
    */
-  private isUsefulComment(
-    comment: StackOverflowComment,
-  ): boolean {
+  private isUsefulComment(comment: StackOverflowComment): boolean {
     const content = this.cleanNormalizedText(comment.body);
 
     if (!comment.comment_id || content.length < 30) {
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s+]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -451,9 +400,7 @@ export class StackOverflowCollector
    * Reads Stack Overflow-specific blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'STACKOVERFLOW_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('STACKOVERFLOW_BLOCKED_WORDS');
   }
 
   /**
@@ -461,8 +408,7 @@ export class StackOverflowCollector
    */
   private getSite(): string {
     return (
-      this.configService.get<string>('STACKOVERFLOW_SITE') ??
-      'stackoverflow'
+      this.configService.get<string>('STACKOVERFLOW_SITE') ?? 'stackoverflow'
     );
   }
 
@@ -470,10 +416,7 @@ export class StackOverflowCollector
    * Builds optional Stack Exchange API-key parameters.
    */
   private buildApiKeyParam(): Record<string, string> {
-    const key =
-      this.configService.get<string>(
-        'STACKOVERFLOW_API_KEY',
-      );
+    const key = this.configService.get<string>('STACKOVERFLOW_API_KEY');
 
     return key ? { key } : {};
   }
@@ -488,9 +431,7 @@ export class StackOverflowCollector
   /**
    * Parses a Unix timestamp safely.
    */
-  private parseUnixDate(
-    value?: number,
-  ): Date | undefined {
+  private parseUnixDate(value?: number): Date | undefined {
     if (!value) {
       return undefined;
     }

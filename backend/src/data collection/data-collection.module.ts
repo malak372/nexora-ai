@@ -23,15 +23,9 @@ import { SocialCommentService } from './social-comments/social-comment.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-    CollectorsModule,
-  ],
+  imports: [PrismaModule, AuditModule, CollectorsModule],
 
-  controllers: [
-    DataCollectionController,
-  ],
+  controllers: [DataCollectionController],
 
   providers: [
     DataCollectionService,
@@ -40,8 +34,6 @@ import { SocialCommentService } from './social-comments/social-comment.service';
     SocialCommentService,
   ],
 
-  exports: [
-    DataCollectionService,
-  ],
+  exports: [DataCollectionService],
 })
 export class DataCollectionModule {}

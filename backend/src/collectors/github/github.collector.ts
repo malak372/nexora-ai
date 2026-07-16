@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -85,10 +82,7 @@ type GitHubSearchResponse = {
  * @author Malak
  */
 @Injectable()
-export class GitHubCollector
-  extends BaseCollector
-  implements SocialCollector
-{
+export class GitHubCollector extends BaseCollector implements SocialCollector {
   /**
    * Stable data-source key.
    *
@@ -122,15 +116,11 @@ export class GitHubCollector
         return [];
       }
 
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'issues',
-        [
-          searchQuery,
-          input.country,
-          input.language,
-        ],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'issues', [
+        searchQuery,
+        input.country,
+        input.language,
+      ]);
 
       const response =
         await CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubSearchResponse>(
@@ -186,9 +176,7 @@ export class GitHubCollector
         ),
       );
 
-      this.logger.log(
-        `GitHub collection completed. Posts: ${posts.length}`,
-      );
+      this.logger.log(`GitHub collection completed. Posts: ${posts.length}`);
 
       return posts;
     } catch (error: unknown) {
@@ -219,11 +207,7 @@ export class GitHubCollector
 
     const domainName = this.cleanNormalizedText(input.domainName);
 
-    const terms = this.unique([
-      domainName,
-      ...domainKeywords,
-      ...userQueries,
-    ])
+    const terms = this.unique([domainName, ...domainKeywords, ...userQueries])
       .filter((term) => term.length >= 3)
       .slice(0, 5);
 
@@ -231,9 +215,7 @@ export class GitHubCollector
       return '';
     }
 
-    const searchTerms = terms
-      .map((term) => `"${term}"`)
-      .join(' OR ');
+    const searchTerms = terms.map((term) => `"${term}"`).join(' OR ');
 
     return [
       `(${searchTerms})`,
@@ -278,9 +260,7 @@ export class GitHubCollector
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s+]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -367,30 +347,29 @@ export class GitHubCollector
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'comments',
-        [issue.id],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'comments', [
+        issue.id,
+      ]);
 
-      const response =
-        await CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubComment[]>(
-          issue.comments_url,
-          {
-            headers: this.buildHeaders(),
-            params: {
-              per_page: Math.min(this.maxFetchedComments, 100),
-            },
-            timeout: 10_000,
+      const response = await CollectorHttpUtil.getWithRetryCacheAndHeaders<
+        GitHubComment[]
+      >(
+        issue.comments_url,
+        {
+          headers: this.buildHeaders(),
+          params: {
+            per_page: Math.min(this.maxFetchedComments, 100),
           },
-          {
-            cacheKey,
-            etagCacheKey: `${cacheKey}:etag`,
-            cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
-            retryDelayMs: this.retryDelayMs,
-          },
-        );
+          timeout: 10_000,
+        },
+        {
+          cacheKey,
+          etagCacheKey: `${cacheKey}:etag`,
+          cacheTtlMs: this.cacheTtlMs,
+          retryAttempts: this.retryAttempts,
+          retryDelayMs: this.retryDelayMs,
+        },
+      );
 
       this.monitorGitHubRateLimit(response.headers);
 
@@ -444,17 +423,11 @@ export class GitHubCollector
     const rawContent = this.cleanPlainText(comment.body);
     const content = this.cleanNormalizedText(rawContent);
 
-    if (
-      !comment.id ||
-      content.length < 50 ||
-      author.includes('[bot]')
-    ) {
+    if (!comment.id || content.length < 50 || author.includes('[bot]')) {
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s+]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s+]/gu, '').trim();
 
     if (!cleaned || this.isLowValueComment(rawContent)) {
       return false;
@@ -589,9 +562,7 @@ export class GitHubCollector
   /**
    * Logs GitHub rate-limit warnings.
    */
-  private monitorGitHubRateLimit(
-    headers: Record<string, unknown>,
-  ): void {
+  private monitorGitHubRateLimit(headers: Record<string, unknown>): void {
     const remaining = Number(headers['x-ratelimit-remaining']);
     const limit = Number(headers['x-ratelimit-limit']);
     const reset = Number(headers['x-ratelimit-reset']);
@@ -625,8 +596,7 @@ export class GitHubCollector
    * Builds GitHub API headers.
    */
   private buildHeaders(): Record<string, string> {
-    const token =
-      this.configService.get<string>('GITHUB_TOKEN');
+    const token = this.configService.get<string>('GITHUB_TOKEN');
 
     return CollectorHeaderUtil.github(token);
   }

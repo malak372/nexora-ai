@@ -68,20 +68,15 @@ type AppStoreReviewsOptions = {
  * Minimal typed contract required from app-store-scraper.
  */
 type AppStoreClient = {
-  search(
-    options: AppStoreSearchOptions,
-  ): Promise<AppStoreApp[]>;
+  search(options: AppStoreSearchOptions): Promise<AppStoreApp[]>;
 
-  reviews(
-    options: AppStoreReviewsOptions,
-  ): Promise<AppStoreReview[]>;
+  reviews(options: AppStoreReviewsOptions): Promise<AppStoreReview[]>;
 };
 
 /**
  * Strictly typed App Store scraper client.
  */
-const appStoreClient =
-  appStore as unknown as AppStoreClient;
+const appStoreClient = appStore as unknown as AppStoreClient;
 
 /**
  * Apple App Store collector.
@@ -107,21 +102,15 @@ export class AppStoreCollector
   readonly sourceKey = 'app-store';
 
   constructor(configService: ConfigService) {
-    super(
-      configService,
-      AppStoreCollector.name,
-    );
+    super(configService, AppStoreCollector.name);
   }
 
   /**
    * Collects relevant App Store applications and reviews.
    */
-  async collect(
-    input: CollectorInput,
-  ): Promise<CollectorPost[]> {
+  async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchQuery =
-        this.buildSearchQuery(input);
+      const searchQuery = this.buildSearchQuery(input);
 
       if (!searchQuery) {
         this.logger.warn(
@@ -131,39 +120,23 @@ export class AppStoreCollector
         return [];
       }
 
-      const apps = await this.searchApps(
-        searchQuery,
-        input,
-      );
+      const apps = await this.searchApps(searchQuery, input);
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
         .map((app) => ({
           app,
-          score: this.calculateAppRelevanceScore(
-            app,
-            input,
-          ),
+          score: this.calculateAppRelevanceScore(app, input),
         }))
         .filter((item) => item.score > 0)
-        .sort(
-          (first, second) =>
-            second.score - first.score,
-        )
+        .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item) =>
-          this.mapAppToCollectorPost(
-            item.app,
-            input,
-          ),
-        ),
+        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
       );
 
-      this.logger.log(
-        `App Store collection completed. Apps: ${posts.length}`,
-      );
+      this.logger.log(`App Store collection completed. Apps: ${posts.length}`);
 
       return posts;
     } catch (error: unknown) {
@@ -183,27 +156,19 @@ export class AppStoreCollector
     searchQuery: string,
     input: CollectorInput,
   ): Promise<AppStoreApp[]> {
-    const cacheKey = CollectorCacheUtil.build(
-      this.sourceKey,
-      'search',
-      [
-        searchQuery,
-        input.country,
-        input.language,
-      ],
-    );
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
+      searchQuery,
+      input.country,
+      input.language,
+    ]);
 
-    return CollectorExternalCacheUtil.remember<
-      AppStoreApp[]
-    >(
+    return CollectorExternalCacheUtil.remember<AppStoreApp[]>(
       cacheKey,
       this.cacheTtlMs,
       () =>
         appStoreClient.search({
           term: searchQuery,
-          country: this.resolveCountry(
-            input.country,
-          ),
+          country: this.resolveCountry(input.country),
           num: this.maxFetchedPosts,
         }),
     );
@@ -217,66 +182,44 @@ export class AppStoreCollector
    * 2. Domain name.
    * 3. First domain keyword.
    */
-  private buildSearchQuery(
-    input: CollectorInput,
-  ): string {
-    const userKeyword =
-      input.keywords?.[0]
-        ? this.cleanNormalizedText(
-            input.keywords[0],
-          )
-        : '';
+  private buildSearchQuery(input: CollectorInput): string {
+    const userKeyword = input.keywords?.[0]
+      ? this.cleanNormalizedText(input.keywords[0])
+      : '';
 
     if (userKeyword) {
       return userKeyword;
     }
 
-    const domainName =
-      this.cleanNormalizedText(
-        input.domainName,
-      );
+    const domainName = this.cleanNormalizedText(input.domainName);
 
     if (domainName) {
       return domainName;
     }
 
-    return (
-      this.getDomainKeywords(input)[0] ?? ''
-    );
+    return this.getDomainKeywords(input)[0] ?? '';
   }
 
   /**
    * Validates an application before ranking.
    */
-  private isValidApp(
-    app: AppStoreApp,
-  ): boolean {
+  private isValidApp(app: AppStoreApp): boolean {
     const appId = this.getAppId(app);
 
-    const title = this.cleanPlainText(
-      app.title,
-    );
+    const title = this.cleanPlainText(app.title);
 
-    const description = this.cleanPlainText(
-      app.description ?? app.summary,
-    );
+    const description = this.cleanPlainText(app.description ?? app.summary);
 
     if (!appId || !title) {
       return false;
     }
 
-    const content =
-      this.cleanNormalizedText(
-        `${title} ${description}`,
-      );
+    const content = this.cleanNormalizedText(`${title} ${description}`);
 
-    const blockedWords =
-      this.getAppStoreBlockedWords();
+    const blockedWords = this.getAppStoreBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
@@ -290,25 +233,17 @@ export class AppStoreCollector
     return RelevanceScoreUtil.scoreText({
       title: this.cleanPlainText(app.title),
 
-      body: this.cleanPlainText(
-        app.description ?? app.summary,
-      ),
+      body: this.cleanPlainText(app.description ?? app.summary),
 
-      domainTerms:
-        this.getDomainKeywords(input),
+      domainTerms: this.getDomainKeywords(input),
 
-      problemTerms:
-        this.getProblemWords(),
+      problemTerms: this.getProblemWords(),
 
-      likes:
-        app.reviews ?? app.ratings ?? 0,
+      likes: app.reviews ?? app.ratings ?? 0,
 
-      replies:
-        app.reviews ?? app.ratings ?? 0,
+      replies: app.reviews ?? app.ratings ?? 0,
 
-      publishedAt: this.parseDate(
-        app.released,
-      ),
+      publishedAt: this.parseDate(app.released),
     });
   }
 
@@ -321,20 +256,11 @@ export class AppStoreCollector
   ): Promise<CollectorPost> {
     const appId = this.getAppId(app);
 
-    const title = this.cleanPlainText(
-      app.title,
-    );
+    const title = this.cleanPlainText(app.title);
 
-    const description =
-      this.cleanPlainText(
-        app.description ?? app.summary,
-      );
+    const description = this.cleanPlainText(app.description ?? app.summary);
 
-    const comments =
-      await this.collectAppReviews(
-        appId,
-        input,
-      );
+    const comments = await this.collectAppReviews(appId, input);
 
     return {
       externalId: String(appId),
@@ -342,9 +268,7 @@ export class AppStoreCollector
       title,
       content: description || title,
 
-      author: this.cleanPlainText(
-        app.developer,
-      ),
+      author: this.cleanPlainText(app.developer),
 
       url: app.url,
 
@@ -352,19 +276,13 @@ export class AppStoreCollector
       city: input.city,
       region: input.region,
 
-      languageCode:
-        this.resolveStoredLanguageCode(
-          input.language,
-        ),
+      languageCode: this.resolveStoredLanguageCode(input.language),
 
-      likesCount:
-        app.reviews ?? app.ratings ?? 0,
+      likesCount: app.reviews ?? app.ratings ?? 0,
 
       repliesCount: comments.length,
 
-      publishedAt: this.parseDate(
-        app.released,
-      ),
+      publishedAt: this.parseDate(app.released),
 
       comments,
     };
@@ -382,77 +300,42 @@ export class AppStoreCollector
     }
 
     try {
-      const cacheKey =
-        CollectorCacheUtil.build(
-          this.sourceKey,
-          'reviews',
-          [
-            appId,
-            input.country,
-            input.language,
-          ],
-        );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'reviews', [
+        appId,
+        input.country,
+        input.language,
+      ]);
 
-      const reviews =
-        await CollectorExternalCacheUtil.remember<
-          AppStoreReview[]
-        >(
-          cacheKey,
-          this.cacheTtlMs,
-          () =>
-            appStoreClient.reviews({
-              id: appId,
-              country: this.resolveCountry(
-                input.country,
-              ),
-            }),
-        );
+      const reviews = await CollectorExternalCacheUtil.remember<
+        AppStoreReview[]
+      >(cacheKey, this.cacheTtlMs, () =>
+        appStoreClient.reviews({
+          id: appId,
+          country: this.resolveCountry(input.country),
+        }),
+      );
 
       return reviews
-        .filter((review) =>
-          this.isUsefulReview(
-            review,
-            input.language,
-          ),
-        )
+        .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
         .map(
-          (
-            review,
-          ): CollectorComment => ({
-            externalId:
-              this.buildReviewExternalId(
-                appId,
-                review,
-              ),
+          (review): CollectorComment => ({
+            externalId: this.buildReviewExternalId(appId, review),
 
-            content: this.cleanPlainText(
-              review.text,
-            ),
+            content: this.cleanPlainText(review.text),
 
-            author: this.cleanPlainText(
-              review.userName,
-            ),
+            author: this.cleanPlainText(review.userName),
 
-            languageCode:
-              this.resolveStoredLanguageCode(
-                input.language,
-              ),
+            languageCode: this.resolveStoredLanguageCode(input.language),
 
-            likesCount:
-              review.score ?? 0,
+            likesCount: review.score ?? 0,
 
-            publishedAt:
-              this.resolveReviewDate(
-                review,
-              ),
+            publishedAt: this.resolveReviewDate(review),
           }),
         );
     } catch (error: unknown) {
       this.logger.warn(
-        `Failed to collect reviews for app ${String(
-          appId,
-        )}`,
+        `Failed to collect reviews for app ${String(appId)}`,
         this.getErrorMessage(error),
       );
 
@@ -471,17 +354,11 @@ export class AppStoreCollector
       return String(review.id);
     }
 
-    const reviewDate =
-      this.resolveReviewDate(review);
+    const reviewDate = this.resolveReviewDate(review);
 
-    const datePart = reviewDate
-      ? reviewDate.toISOString()
-      : 'unknown-date';
+    const datePart = reviewDate ? reviewDate.toISOString() : 'unknown-date';
 
-    const contentPart =
-      this.cleanNormalizedText(
-        review.text,
-      ).slice(0, 50);
+    const contentPart = this.cleanNormalizedText(review.text).slice(0, 50);
 
     return `${String(appId)}-${datePart}-${contentPart}`;
   }
@@ -489,45 +366,28 @@ export class AppStoreCollector
   /**
    * Resolves the review publication date.
    */
-  private resolveReviewDate(
-    review: AppStoreReview,
-  ): Date | undefined {
-    return this.parseDate(
-      review.updated ?? review.date,
-    );
+  private resolveReviewDate(review: AppStoreReview): Date | undefined {
+    return this.parseDate(review.updated ?? review.date);
   }
 
   /**
    * Filters short, low-value, blocked, or
    * language-mismatched reviews.
    */
-  private isUsefulReview(
-    review: AppStoreReview,
-    language?: string,
-  ): boolean {
-    const rawContent =
-      this.cleanPlainText(review.text);
+  private isUsefulReview(review: AppStoreReview, language?: string): boolean {
+    const rawContent = this.cleanPlainText(review.text);
 
-    const content =
-      this.cleanNormalizedText(rawContent);
+    const content = this.cleanNormalizedText(rawContent);
 
     if (content.length < 40) {
       return false;
     }
 
-    if (
-      !CollectorLanguageUtil
-        .matchesRequestedLanguage(
-          rawContent,
-          language,
-        )
-    ) {
+    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -553,22 +413,17 @@ export class AppStoreCollector
       return false;
     }
 
-    const blockedWords =
-      this.getAppStoreBlockedWords();
+    const blockedWords = this.getAppStoreBlockedWords();
 
     return !blockedWords.some((word) =>
-      content.includes(
-        this.cleanNormalizedText(word),
-      ),
+      content.includes(this.cleanNormalizedText(word)),
     );
   }
 
   /**
    * Returns the best available application ID.
    */
-  private getAppId(
-    app: AppStoreApp,
-  ): string | number {
+  private getAppId(app: AppStoreApp): string | number {
     return app.id ?? app.appId ?? '';
   }
 
@@ -577,18 +432,10 @@ export class AppStoreCollector
    *
    * Palestine and unresolved values fall back to US.
    */
-  private resolveCountry(
-    country?: string,
-  ): string {
-    const regionCode =
-      CollectorRegionUtil.resolveRegionCode(
-        country,
-      );
+  private resolveCountry(country?: string): string {
+    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
 
-    if (
-      !regionCode ||
-      regionCode === 'PS'
-    ) {
+    if (!regionCode || regionCode === 'PS') {
       return 'us';
     }
 
@@ -598,40 +445,27 @@ export class AppStoreCollector
   /**
    * Parses an external date safely.
    */
-  private parseDate(
-    value?: string | Date,
-  ): Date | undefined {
+  private parseDate(value?: string | Date): Date | undefined {
     if (!value) {
       return undefined;
     }
 
-    const date =
-      value instanceof Date
-        ? value
-        : new Date(value);
+    const date = value instanceof Date ? value : new Date(value);
 
-    return Number.isNaN(date.getTime())
-      ? undefined
-      : date;
+    return Number.isNaN(date.getTime()) ? undefined : date;
   }
 
   /**
    * Reads App Store-specific blocked words.
    */
   private getAppStoreBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'APP_STORE_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
   }
 
   /**
    * Extracts a safe error message.
    */
-  private getErrorMessage(
-    error: unknown,
-  ): string {
-    return error instanceof Error
-      ? error.message
-      : String(error);
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }

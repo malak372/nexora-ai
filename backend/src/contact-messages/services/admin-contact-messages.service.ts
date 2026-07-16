@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   Injectable,
@@ -63,9 +62,7 @@ export class AdminContactMessagesService {
   /**
    * Records non-fatal email-delivery failures.
    */
-  private readonly logger = new Logger(
-    AdminContactMessagesService.name,
-  );
+  private readonly logger = new Logger(AdminContactMessagesService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -101,11 +98,8 @@ export class AdminContactMessagesService {
    *
    * @param query Filtering, sorting, and pagination options.
    */
-  async getContactMessages(
-    query: GetContactMessagesQueryDto,
-  ) {
-    const { page, limit, skip, take } =
-      buildPagination(query);
+  async getContactMessages(query: GetContactMessagesQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildContactMessagesWhere(query);
 
@@ -148,9 +142,7 @@ export class AdminContactMessagesService {
    *
    * @param query Contact-message filters.
    */
-  async getContactMessagesSummary(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async getContactMessagesSummary(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
     const todayStart = new Date();
@@ -230,24 +222,21 @@ export class AdminContactMessagesService {
    *
    * @param query Contact-message filters.
    */
-  async getContactMessagesCharts(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async getContactMessagesCharts(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
-    const messagesByStatus =
-      await this.prisma.contactMessage.groupBy({
-        by: ['status'],
-        where,
+    const messagesByStatus = await this.prisma.contactMessage.groupBy({
+      by: ['status'],
+      where,
+      _count: {
+        status: true,
+      },
+      orderBy: {
         _count: {
-          status: true,
+          status: 'desc',
         },
-        orderBy: {
-          _count: {
-            status: 'desc',
-          },
-        },
-      });
+      },
+    });
 
     return {
       messagesByStatus: messagesByStatus.map((item) => ({
@@ -263,9 +252,7 @@ export class AdminContactMessagesService {
    *
    * @param query Contact-message filters and sorting options.
    */
-  async exportContactMessagesCsv(
-    query: GetContactMessagesQueryDto,
-  ) {
+  async exportContactMessagesCsv(query: GetContactMessagesQueryDto) {
     const where = this.buildContactMessagesWhere(query);
 
     const orderBy = buildOrderBy(
@@ -274,13 +261,12 @@ export class AdminContactMessagesService {
       'createdAt',
     );
 
-    const messages =
-      await this.prisma.contactMessage.findMany({
-        where,
-        orderBy,
-        take: AdminContactMessagesService.MAX_CSV_EXPORT_ROWS,
-        select: this.contactMessageSelect,
-      });
+    const messages = await this.prisma.contactMessage.findMany({
+      where,
+      orderBy,
+      take: AdminContactMessagesService.MAX_CSV_EXPORT_ROWS,
+      select: this.contactMessageSelect,
+    });
 
     const headers = [
       'Contact Message ID',
@@ -337,117 +323,102 @@ export class AdminContactMessagesService {
     body: UpdateContactMessageDto,
     adminId: string,
   ) {
-    if (
-      body.status === undefined &&
-      body.adminReply === undefined
-    ) {
+    if (body.status === undefined && body.adminReply === undefined) {
       throw new BadRequestException(
         'At least one contact-message field must be provided',
       );
     }
 
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        const contactMessage =
-          await tx.contactMessage.findFirst({
-            where: {
-              id: contactMessageId,
-              deletedAt: null,
-            },
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              subject: true,
-              status: true,
-              adminReply: true,
-              updatedAt: true,
-            },
-          });
+    const result = await this.prisma.$transaction(async (tx) => {
+      const contactMessage = await tx.contactMessage.findFirst({
+        where: {
+          id: contactMessageId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          subject: true,
+          status: true,
+          adminReply: true,
+          updatedAt: true,
+        },
+      });
 
-        if (!contactMessage) {
-          throw new NotFoundException(
-            'Contact message not found',
-          );
-        }
+      if (!contactMessage) {
+        throw new NotFoundException('Contact message not found');
+      }
 
-        const normalizedAdminReply =
-          body.adminReply?.trim();
+      const normalizedAdminReply = body.adminReply?.trim();
 
-        const nextStatus = resolveContactMessageStatus(
-          contactMessage.status,
-          body.status,
-          normalizedAdminReply,
-        );
+      const nextStatus = resolveContactMessageStatus(
+        contactMessage.status,
+        body.status,
+        normalizedAdminReply,
+      );
 
-        const nextAdminReply =
-          body.adminReply !== undefined
-            ? normalizedAdminReply
-            : contactMessage.adminReply;
+      const nextAdminReply =
+        body.adminReply !== undefined
+          ? normalizedAdminReply
+          : contactMessage.adminReply;
 
-        const replyChanged =
-          body.adminReply !== undefined &&
-          nextAdminReply !== contactMessage.adminReply;
+      const replyChanged =
+        body.adminReply !== undefined &&
+        nextAdminReply !== contactMessage.adminReply;
 
-        const hasChanges =
-          nextStatus !== contactMessage.status ||
-          replyChanged;
+      const hasChanges = nextStatus !== contactMessage.status || replyChanged;
 
-        if (!hasChanges) {
-          return {
-            updated: false as const,
-            replyChanged: false,
-            message: 'No changes detected',
-            contactMessage: {
-              id: contactMessage.id,
-              status: contactMessage.status,
-              adminReply: contactMessage.adminReply,
-              updatedAt: contactMessage.updatedAt,
-            },
-          };
-        }
-
-        const updated =
-          await tx.contactMessage.update({
-            where: {
-              id: contactMessage.id,
-            },
-            data: {
-              status: nextStatus,
-              adminReply: nextAdminReply,
-            },
-            select: this.contactMessageSelect,
-          });
-
-        await this.auditService.createLog(
-          {
-            actorId: adminId,
-            action:
-              AuditAction.ADMIN_UPDATE_CONTACT_MESSAGE,
-            targetType:
-              AuditTargetType.CONTACT_MESSAGE,
-            targetId: contactMessage.id,
-            oldValue: {
-              status: contactMessage.status,
-              adminReply: contactMessage.adminReply,
-            },
-            newValue: {
-              status: updated.status,
-              adminReply: updated.adminReply,
-            },
-          },
-          tx,
-        );
-
+      if (!hasChanges) {
         return {
-          updated: true as const,
-          replyChanged,
-          message:
-            'Contact message updated successfully',
-          contactMessage: updated,
+          updated: false as const,
+          replyChanged: false,
+          message: 'No changes detected',
+          contactMessage: {
+            id: contactMessage.id,
+            status: contactMessage.status,
+            adminReply: contactMessage.adminReply,
+            updatedAt: contactMessage.updatedAt,
+          },
         };
-      },
-    );
+      }
+
+      const updated = await tx.contactMessage.update({
+        where: {
+          id: contactMessage.id,
+        },
+        data: {
+          status: nextStatus,
+          adminReply: nextAdminReply,
+        },
+        select: this.contactMessageSelect,
+      });
+
+      await this.auditService.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_UPDATE_CONTACT_MESSAGE,
+          targetType: AuditTargetType.CONTACT_MESSAGE,
+          targetId: contactMessage.id,
+          oldValue: {
+            status: contactMessage.status,
+            adminReply: contactMessage.adminReply,
+          },
+          newValue: {
+            status: updated.status,
+            adminReply: updated.adminReply,
+          },
+        },
+        tx,
+      );
+
+      return {
+        updated: true as const,
+        replyChanged,
+        message: 'Contact message updated successfully',
+        contactMessage: updated,
+      };
+    });
 
     if (!result.updated) {
       return {
@@ -458,10 +429,7 @@ export class AdminContactMessagesService {
 
     let emailSent = false;
 
-    if (
-      result.replyChanged &&
-      result.contactMessage.adminReply
-    ) {
+    if (result.replyChanged && result.contactMessage.adminReply) {
       try {
         await this.mailService.sendContactReplyEmail(
           result.contactMessage.email,
@@ -473,9 +441,7 @@ export class AdminContactMessagesService {
         emailSent = true;
       } catch (error: unknown) {
         const errorMessage =
-          error instanceof Error
-            ? error.message
-            : String(error);
+          error instanceof Error ? error.message : String(error);
 
         this.logger.error(
           `Contact reply email failed for message ${result.contactMessage.id}: ${errorMessage}`,
@@ -484,10 +450,7 @@ export class AdminContactMessagesService {
       }
     }
 
-    const {
-      replyChanged: _replyChanged,
-      ...response
-    } = result;
+    const { replyChanged: _replyChanged, ...response } = result;
 
     return {
       ...response,

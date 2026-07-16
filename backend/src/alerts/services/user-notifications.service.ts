@@ -1,18 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 import type { Cache } from 'cache-manager';
 
-import {
-  AuditAction,
-  AuditTargetType,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -69,16 +61,13 @@ export class UserNotificationsService {
 
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
-  ) { }
+  ) {}
 
   /**
    * Retrieves a paginated and filtered list of notifications
    * belonging to the authenticated user.
    */
-  async getNotifications(
-    userId: string,
-    query: GetUserNotificationsQueryDto,
-  ) {
+  async getNotifications(userId: string, query: GetUserNotificationsQueryDto) {
     await this.ensureActiveUserExists(userId);
 
     const { page, limit, skip, take } = buildPagination(query);
@@ -88,20 +77,11 @@ export class UserNotificationsService {
 
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildSearchFilter(
-        ['title', 'message'],
-        query.search,
-      ) ?? {}),
+      ...(buildSearchFilter(['title', 'message'], query.search) ?? {}),
 
-      ...(buildExactFilter(
-        'isRead',
-        query.isRead,
-      ) ?? {}),
+      ...(buildExactFilter('isRead', query.isRead) ?? {}),
 
-      ...(buildExactFilter(
-        'type',
-        query.type,
-      ) ?? {}),
+      ...(buildExactFilter('type', query.type) ?? {}),
     };
 
     const orderBy = buildOrderBy(
@@ -143,10 +123,7 @@ export class UserNotificationsService {
    * Returns the existing notification without writing to the
    * database when it has already been marked as read.
    */
-  async markNotificationAsRead(
-    userId: string,
-    notificationId: string,
-  ) {
+  async markNotificationAsRead(userId: string, notificationId: string) {
     await this.ensureActiveUserExists(userId);
 
     const notification = await this.prisma.alert.findFirst({
@@ -166,55 +143,32 @@ export class UserNotificationsService {
       return notification;
     }
 
-    const updatedNotification =
-      await this.prisma.$transaction(async (tx) => {
-        /**
-         * Scope the update by both notification ID and owner ID.
-         *
-         * updateMany is used because Prisma update() cannot use
-         * userId unless a matching compound unique constraint exists.
-         */
-        const updateResult = await tx.alert.updateMany({
-          where: {
-            id: notificationId,
-            userId,
-            isRead: false,
-          },
+    const updatedNotification = await this.prisma.$transaction(async (tx) => {
+      /**
+       * Scope the update by both notification ID and owner ID.
+       *
+       * updateMany is used because Prisma update() cannot use
+       * userId unless a matching compound unique constraint exists.
+       */
+      const updateResult = await tx.alert.updateMany({
+        where: {
+          id: notificationId,
+          userId,
+          isRead: false,
+        },
 
-          data: {
-            isRead: true,
-          },
-        });
+        data: {
+          isRead: true,
+        },
+      });
 
-        /**
-         * Another concurrent request may have already marked the
-         * notification as read. In that case, simply retrieve it
-         * without creating a duplicate audit entry.
-         */
-        if (updateResult.count === 0) {
-          const currentNotification =
-            await tx.alert.findFirst({
-              where: {
-                id: notificationId,
-                userId,
-              },
-
-              select: notificationSelect,
-            });
-
-          if (!currentNotification) {
-            throw new NotFoundException(
-              'Notification not found',
-            );
-          }
-
-          return {
-            notification: currentNotification,
-            wasUpdated: false,
-          };
-        }
-
-        const updated = await tx.alert.findFirst({
+      /**
+       * Another concurrent request may have already marked the
+       * notification as read. In that case, simply retrieve it
+       * without creating a duplicate audit entry.
+       */
+      if (updateResult.count === 0) {
+        const currentNotification = await tx.alert.findFirst({
           where: {
             id: notificationId,
             userId,
@@ -223,36 +177,52 @@ export class UserNotificationsService {
           select: notificationSelect,
         });
 
-        if (!updated) {
-          throw new NotFoundException(
-            'Notification not found',
-          );
+        if (!currentNotification) {
+          throw new NotFoundException('Notification not found');
         }
 
-        await this.auditService.createLog(
-          {
-            actorId: userId,
-            action:
-              AuditAction.USER_MARK_NOTIFICATION_READ,
-            targetType: AuditTargetType.ALERT,
-            targetId: notificationId,
-
-            oldValue: {
-              isRead: false,
-            },
-
-            newValue: {
-              isRead: true,
-            },
-          },
-          tx,
-        );
-
         return {
-          notification: updated,
-          wasUpdated: true,
+          notification: currentNotification,
+          wasUpdated: false,
         };
+      }
+
+      const updated = await tx.alert.findFirst({
+        where: {
+          id: notificationId,
+          userId,
+        },
+
+        select: notificationSelect,
       });
+
+      if (!updated) {
+        throw new NotFoundException('Notification not found');
+      }
+
+      await this.auditService.createLog(
+        {
+          actorId: userId,
+          action: AuditAction.USER_MARK_NOTIFICATION_READ,
+          targetType: AuditTargetType.ALERT,
+          targetId: notificationId,
+
+          oldValue: {
+            isRead: false,
+          },
+
+          newValue: {
+            isRead: true,
+          },
+        },
+        tx,
+      );
+
+      return {
+        notification: updated,
+        wasUpdated: true,
+      };
+    });
 
     if (updatedNotification.wasUpdated) {
       await this.invalidateNotificationCaches(userId);
@@ -268,48 +238,44 @@ export class UserNotificationsService {
   async markAllNotificationsAsRead(userId: string) {
     await this.ensureActiveUserExists(userId);
 
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        const updateResult = await tx.alert.updateMany({
-          where: {
-            userId,
-            isRead: false,
-          },
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.alert.updateMany({
+        where: {
+          userId,
+          isRead: false,
+        },
 
-          data: {
-            isRead: true,
-          },
-        });
+        data: {
+          isRead: true,
+        },
+      });
 
-        /**
-         * Avoid creating a meaningless audit record when the
-         * user has no unread notifications.
-         */
-        if (updateResult.count > 0) {
-          await this.auditService.createLog(
-            {
-              actorId: userId,
-              action:
-                AuditAction.USER_MARK_ALL_NOTIFICATIONS_READ,
-              targetType: AuditTargetType.ALERT,
-              targetId: userId,
+      /**
+       * Avoid creating a meaningless audit record when the
+       * user has no unread notifications.
+       */
+      if (updateResult.count > 0) {
+        await this.auditService.createLog(
+          {
+            actorId: userId,
+            action: AuditAction.USER_MARK_ALL_NOTIFICATIONS_READ,
+            targetType: AuditTargetType.ALERT,
+            targetId: userId,
 
-              oldValue: {
-                unreadNotificationsCount:
-                  updateResult.count,
-              },
-
-              newValue: {
-                updatedCount: updateResult.count,
-              },
+            oldValue: {
+              unreadNotificationsCount: updateResult.count,
             },
-            tx,
-          );
-        }
 
-        return updateResult;
-      },
-    );
+            newValue: {
+              updatedCount: updateResult.count,
+            },
+          },
+          tx,
+        );
+      }
+
+      return updateResult;
+    });
 
     if (result.count > 0) {
       await this.invalidateNotificationCaches(userId);
@@ -329,9 +295,7 @@ export class UserNotificationsService {
    * Ensures the authenticated user exists, is active,
    * and has not been soft-deleted.
    */
-  private async ensureActiveUserExists(
-    userId: string,
-  ): Promise<void> {
+  private async ensureActiveUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
@@ -345,9 +309,7 @@ export class UserNotificationsService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'Active user not found',
-      );
+      throw new NotFoundException('Active user not found');
     }
   }
 
@@ -355,17 +317,11 @@ export class UserNotificationsService {
    * Invalidates caches whose values depend on the
    * user's notification state.
    */
-  private async invalidateNotificationCaches(
-    userId: string,
-  ): Promise<void> {
+  private async invalidateNotificationCaches(userId: string): Promise<void> {
     await Promise.all([
-      this.cacheManager.del(
-        userCacheKeys.summary(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.summary(userId)),
 
-      this.cacheManager.del(
-        userCacheKeys.activity(userId),
-      ),
+      this.cacheManager.del(userCacheKeys.activity(userId)),
     ]);
   }
 }

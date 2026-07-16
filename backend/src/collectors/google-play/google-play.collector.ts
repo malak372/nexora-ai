@@ -54,9 +54,7 @@ type GooglePlayReviewsOptions = {
 };
 
 type GooglePlayClient = {
-  search(
-    options: GooglePlaySearchOptions,
-  ): Promise<GooglePlayApp[]>;
+  search(options: GooglePlaySearchOptions): Promise<GooglePlayApp[]>;
 
   reviews(
     options: GooglePlayReviewsOptions,
@@ -67,8 +65,7 @@ type GooglePlayClient = {
   };
 };
 
-const googlePlayClient =
-  gplay as unknown as GooglePlayClient;
+const googlePlayClient = gplay as unknown as GooglePlayClient;
 
 /**
  * Google Play collector.
@@ -119,9 +116,7 @@ export class GooglePlayCollector
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedApps.map((item) =>
-          this.mapAppToCollectorPost(item.app, input),
-        ),
+        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
       );
 
       this.logger.log(
@@ -146,15 +141,11 @@ export class GooglePlayCollector
     searchQuery: string,
     input: CollectorInput,
   ): Promise<GooglePlayApp[]> {
-    const cacheKey = CollectorCacheUtil.build(
-      this.sourceKey,
-      'search',
-      [
-        searchQuery,
-        input.country,
-        input.language,
-      ],
-    );
+    const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'search', [
+      searchQuery,
+      input.country,
+      input.language,
+    ]);
 
     return CollectorExternalCacheUtil.remember<GooglePlayApp[]>(
       cacheKey,
@@ -183,11 +174,7 @@ export class GooglePlayCollector
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
+    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
       .slice(0, 4)
       .join(' ');
   }
@@ -302,15 +289,11 @@ export class GooglePlayCollector
     }
 
     try {
-      const cacheKey = CollectorCacheUtil.build(
-        this.sourceKey,
-        'reviews',
-        [
-          appId,
-          input.country,
-          input.language,
-        ],
-      );
+      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'reviews', [
+        appId,
+        input.country,
+        input.language,
+      ]);
 
       const response =
         await CollectorExternalCacheUtil.remember<GooglePlayReviewsResponse>(
@@ -327,23 +310,16 @@ export class GooglePlayCollector
         );
 
       return (response.data ?? [])
-        .filter((review) =>
-          this.isUsefulReview(review, input.language),
-        )
+        .filter((review) => this.isUsefulReview(review, input.language))
         .slice(0, this.maxSavedComments)
         .map(
           (review): CollectorComment => ({
-            externalId: this.buildReviewExternalId(
-              appId,
-              review,
-            ),
+            externalId: this.buildReviewExternalId(appId, review),
 
             content: this.cleanPlainText(review.text),
             author: this.cleanPlainText(review.userName),
 
-            languageCode: this.resolveStoredLanguageCode(
-              input.language,
-            ),
+            languageCode: this.resolveStoredLanguageCode(input.language),
 
             likesCount: review.thumbsUp ?? 0,
             publishedAt: this.resolveReviewDate(review),
@@ -371,11 +347,9 @@ export class GooglePlayCollector
     }
 
     const datePart =
-      this.resolveReviewDate(review)?.toISOString() ??
-      'unknown-date';
+      this.resolveReviewDate(review)?.toISOString() ?? 'unknown-date';
 
-    const textPart = this.cleanNormalizedText(review.text)
-      .slice(0, 50);
+    const textPart = this.cleanNormalizedText(review.text).slice(0, 50);
 
     return `${appId}-${datePart}-${textPart}`;
   }
@@ -383,9 +357,7 @@ export class GooglePlayCollector
   /**
    * Resolves a review date safely.
    */
-  private resolveReviewDate(
-    review: GooglePlayReview,
-  ): Date | undefined {
+  private resolveReviewDate(review: GooglePlayReview): Date | undefined {
     if (!review.date) {
       return undefined;
     }
@@ -398,10 +370,7 @@ export class GooglePlayCollector
   /**
    * Filters low-value reviews.
    */
-  private isUsefulReview(
-    review: GooglePlayReview,
-    language?: string,
-  ): boolean {
+  private isUsefulReview(review: GooglePlayReview, language?: string): boolean {
     const rawContent = this.cleanPlainText(review.text);
     const content = this.cleanNormalizedText(rawContent);
 
@@ -409,18 +378,11 @@ export class GooglePlayCollector
       return false;
     }
 
-    if (
-      !CollectorLanguageUtil.matchesRequestedLanguage(
-        rawContent,
-        language,
-      )
-    ) {
+    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
       return false;
     }
 
-    const cleaned = content
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
-      .trim();
+    const cleaned = content.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
     if (!cleaned) {
       return false;
@@ -457,27 +419,21 @@ export class GooglePlayCollector
    * Reads Google Play blocked words.
    */
   protected getBlockedWords(): string[] {
-    return super.getBlockedWords(
-      'GOOGLE_PLAY_BLOCKED_WORDS',
-    );
+    return super.getBlockedWords('GOOGLE_PLAY_BLOCKED_WORDS');
   }
 
   /**
    * Resolves the Google Play language code.
    */
   private resolveLanguage(language?: string): string {
-    return (
-      CollectorLanguageUtil.resolveLanguageCode(language) ??
-      'en'
-    );
+    return CollectorLanguageUtil.resolveLanguageCode(language) ?? 'en';
   }
 
   /**
    * Resolves the Google Play country code.
    */
   private resolveCountry(country?: string): string {
-    const regionCode =
-      CollectorRegionUtil.resolveRegionCode(country);
+    const regionCode = CollectorRegionUtil.resolveRegionCode(country);
 
     return regionCode?.toLowerCase() ?? 'us';
   }

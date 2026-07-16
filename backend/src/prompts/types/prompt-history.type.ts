@@ -1,4 +1,3 @@
-
 import { Prisma } from '@prisma/client';
 
 /**
@@ -130,10 +129,9 @@ export const PROMPT_HISTORY_INCLUDE = {
  *
  * The type is inferred directly from PROMPT_HISTORY_INCLUDE.
  */
-export type PromptHistoryWithRelations =
-  Prisma.PromptHistoryGetPayload<{
-    include: typeof PROMPT_HISTORY_INCLUDE;
-  }>;
+export type PromptHistoryWithRelations = Prisma.PromptHistoryGetPayload<{
+  include: typeof PROMPT_HISTORY_INCLUDE;
+}>;
 
 /**
  * Paginated prompt-history response.
@@ -171,4 +169,3 @@ export type PaginatedPromptHistory = {
     readonly totalPages: number;
   };
 };
-

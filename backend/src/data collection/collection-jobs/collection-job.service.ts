@@ -90,8 +90,7 @@ export class CollectionJobService {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly collectorsFactory:
-      CollectorsFactory,
+    private readonly collectorsFactory: CollectorsFactory,
   ) {}
 
   /**
@@ -101,25 +100,20 @@ export class CollectionJobService {
    * @param domainId Selected domain identifier.
    * @returns The active domain and its keywords.
    */
-  async validateActiveDomain(
-    domainId: string,
-  ) {
-    const domain =
-      await this.prisma.domain.findFirst({
-        where: {
-          id: domainId,
-          isActive: true,
-        },
+  async validateActiveDomain(domainId: string) {
+    const domain = await this.prisma.domain.findFirst({
+      where: {
+        id: domainId,
+        isActive: true,
+      },
 
-        include: {
-          domainKeywords: true,
-        },
-      });
+      include: {
+        domainKeywords: true,
+      },
+    });
 
     if (!domain) {
-      throw new NotFoundException(
-        'Domain was not found or is inactive.',
-      );
+      throw new NotFoundException('Domain was not found or is inactive.');
     }
 
     return domain;
@@ -139,24 +133,15 @@ export class CollectionJobService {
    */
   async resolveActiveImplementedDataSources(
     requestedKeys?: string[],
-  ): Promise<
-    ResolvedCollectionDataSource[]
-  > {
+  ): Promise<ResolvedCollectionDataSource[]> {
     const runtimeKeys = new Set(
-      this.collectorsFactory
-        .getImplementedSourceKeys(),
+      this.collectorsFactory.getImplementedSourceKeys(),
     );
 
     const selectedKeys = [
       ...new Set(
-        (
-          requestedKeys?.length
-            ? requestedKeys
-            : [...runtimeKeys]
-        )
-          .map((key) =>
-            key.trim().toLowerCase(),
-          )
+        (requestedKeys?.length ? requestedKeys : [...runtimeKeys])
+          .map((key) => key.trim().toLowerCase())
           .filter(Boolean),
       ),
     ];
@@ -167,14 +152,11 @@ export class CollectionJobService {
       );
     }
 
-    const missingRuntimeImplementations =
-      selectedKeys.filter(
-        (key) => !runtimeKeys.has(key),
-      );
+    const missingRuntimeImplementations = selectedKeys.filter(
+      (key) => !runtimeKeys.has(key),
+    );
 
-    if (
-      missingRuntimeImplementations.length
-    ) {
+    if (missingRuntimeImplementations.length) {
       throw new BadRequestException(
         `Collector implementations not found: ${missingRuntimeImplementations.join(
           ', ',
@@ -182,35 +164,28 @@ export class CollectionJobService {
       );
     }
 
-    const dataSources =
-      await this.prisma.dataSource.findMany({
-        where: {
-          key: {
-            in: selectedKeys,
-          },
-
-          isActive: true,
-          isImplemented: true,
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: {
+        key: {
+          in: selectedKeys,
         },
 
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-        },
-      });
+        isActive: true,
+        isImplemented: true,
+      },
+
+      select: {
+        id: true,
+        key: true,
+        displayName: true,
+      },
+    });
 
     const sourceByKey = new Map(
-      dataSources.map((source) => [
-        source.key,
-        source,
-      ]),
+      dataSources.map((source) => [source.key, source]),
     );
 
-    const unavailableKeys =
-      selectedKeys.filter(
-        (key) => !sourceByKey.has(key),
-      );
+    const unavailableKeys = selectedKeys.filter((key) => !sourceByKey.has(key));
 
     if (unavailableKeys.length) {
       throw new BadRequestException(
@@ -223,9 +198,7 @@ export class CollectionJobService {
     /*
      * Reconstruct the array according to the requested order.
      */
-    return selectedKeys.map(
-      (key) => sourceByKey.get(key)!,
-    );
+    return selectedKeys.map((key) => sourceByKey.get(key)!);
   }
 
   /**
@@ -252,8 +225,7 @@ export class CollectionJobService {
           keywords?: string[];
         },
 
-    dataSources:
-      ResolvedCollectionDataSource[],
+    dataSources: ResolvedCollectionDataSource[],
 
     createdById?: string,
   ) {
@@ -264,42 +236,26 @@ export class CollectionJobService {
         domainId: dto.domainId,
         language: dto.language,
 
-        country:
-          this.normalizeOptionalText(
-            dto.country,
-          ),
+        country: this.normalizeOptionalText(dto.country),
 
-        city:
-          this.normalizeOptionalText(
-            dto.city,
-          ),
+        city: this.normalizeOptionalText(dto.city),
 
-        region:
-          this.normalizeOptionalText(
-            dto.region,
-          ),
+        region: this.normalizeOptionalText(dto.region),
 
         radiusKm: dto.radiusKm,
 
-        keywords:
-          this.normalizeStringArray(
-            dto.keywords,
-          ),
+        keywords: this.normalizeStringArray(dto.keywords),
 
-        status:
-          CollectionJobStatus.RUNNING,
+        status: CollectionJobStatus.RUNNING,
 
         startedAt: new Date(),
 
         sources: {
-          create: dataSources.map(
-            (source) => ({
-              dataSourceId: source.id,
+          create: dataSources.map((source) => ({
+            dataSourceId: source.id,
 
-              status:
-                CollectionJobStatus.PENDING,
-            }),
-          ),
+            status: CollectionJobStatus.PENDING,
+          })),
         },
       },
 
@@ -313,24 +269,17 @@ export class CollectionJobService {
    * This method intentionally does not enforce ownership because
    * it is used internally while executing and stopping jobs.
    */
-  async findJobOrThrow(
-    id: string,
-  ) {
-    const job =
-      await this.prisma.collectionJob
-        .findUnique({
-          where: {
-            id,
-          },
+  async findJobOrThrow(id: string) {
+    const job = await this.prisma.collectionJob.findUnique({
+      where: {
+        id,
+      },
 
-          include:
-            collectionJobInclude,
-        });
+      include: collectionJobInclude,
+    });
 
     if (!job) {
-      throw new NotFoundException(
-        'Collection job was not found.',
-      );
+      throw new NotFoundException('Collection job was not found.');
     }
 
     return job;
@@ -346,58 +295,48 @@ export class CollectionJobService {
    * User:
    * - May access only a job where createdById equals userId.
    */
-  async findJobDetails(
-    id: string,
-    access: CollectionAccessContext,
-  ) {
-    const job =
-      await this.prisma.collectionJob
-        .findFirst({
-          where: {
-            id,
+  async findJobDetails(id: string, access: CollectionAccessContext) {
+    const job = await this.prisma.collectionJob.findFirst({
+      where: {
+        id,
 
-            ...(access.role !==
-              UserRole.ADMIN && {
-              createdById:
-                access.userId,
-            }),
-          },
+        ...(access.role !== UserRole.ADMIN && {
+          createdById: access.userId,
+        }),
+      },
 
-          include: {
-            ...collectionJobInclude,
+      include: {
+        ...collectionJobInclude,
 
-            domain: {
+        domain: {
+          select: {
+            id: true,
+            name: true,
+
+            domainKeywords: {
               select: {
                 id: true,
-                name: true,
-
-                domainKeywords: {
-                  select: {
-                    id: true,
-                    keyword: true,
-                    language: true,
-                  },
-                },
+                keyword: true,
+                language: true,
               },
             },
           },
-        });
+        },
+      },
+    });
 
     if (!job) {
       /*
        * Return 404 instead of 403 to avoid revealing that
        * another user's job identifier exists.
        */
-      throw new NotFoundException(
-        'Collection job was not found.',
-      );
+      throw new NotFoundException('Collection job was not found.');
     }
 
-    const domainKeywords =
-      this.getDomainKeywordsByLanguage(
-        job.domain.domainKeywords,
-        job.language,
-      );
+    const domainKeywords = this.getDomainKeywordsByLanguage(
+      job.domain.domainKeywords,
+      job.language,
+    );
 
     return {
       ...job,
@@ -408,29 +347,23 @@ export class CollectionJobService {
   /**
    * Marks one source execution as running.
    */
-  markSourceRunning(
-    collectionJobId: string,
-    dataSourceId: string,
-  ) {
-    return this.prisma
-      .collectionJobSource.update({
-        where: {
-          collectionJobId_dataSourceId:
-            {
-              collectionJobId,
-              dataSourceId,
-            },
+  markSourceRunning(collectionJobId: string, dataSourceId: string) {
+    return this.prisma.collectionJobSource.update({
+      where: {
+        collectionJobId_dataSourceId: {
+          collectionJobId,
+          dataSourceId,
         },
+      },
 
-        data: {
-          status:
-            CollectionJobStatus.RUNNING,
+      data: {
+        status: CollectionJobStatus.RUNNING,
 
-          startedAt: new Date(),
-          completedAt: null,
-          failureReason: null,
-        },
-      });
+        startedAt: new Date(),
+        completedAt: null,
+        failureReason: null,
+      },
+    });
   }
 
   /**
@@ -445,34 +378,25 @@ export class CollectionJobService {
       totalComments: number;
     },
   ) {
-    return this.prisma
-      .collectionJobSource.update({
-        where: {
-          collectionJobId_dataSourceId:
-            {
-              collectionJobId,
-              dataSourceId,
-            },
+    return this.prisma.collectionJobSource.update({
+      where: {
+        collectionJobId_dataSourceId: {
+          collectionJobId,
+          dataSourceId,
         },
+      },
 
-        data: {
-          status:
-            CollectionJobStatus.COMPLETED,
+      data: {
+        status: CollectionJobStatus.COMPLETED,
 
-          totalPosts:
-            this.toNonNegativeInteger(
-              totals.totalPosts,
-            ),
+        totalPosts: this.toNonNegativeInteger(totals.totalPosts),
 
-          totalComments:
-            this.toNonNegativeInteger(
-              totals.totalComments,
-            ),
+        totalComments: this.toNonNegativeInteger(totals.totalComments),
 
-          completedAt: new Date(),
-          failureReason: null,
-        },
-      });
+        completedAt: new Date(),
+        failureReason: null,
+      },
+    });
   }
 
   /**
@@ -483,26 +407,22 @@ export class CollectionJobService {
     dataSourceId: string,
     error: unknown,
   ) {
-    return this.prisma
-      .collectionJobSource.update({
-        where: {
-          collectionJobId_dataSourceId:
-            {
-              collectionJobId,
-              dataSourceId,
-            },
+    return this.prisma.collectionJobSource.update({
+      where: {
+        collectionJobId_dataSourceId: {
+          collectionJobId,
+          dataSourceId,
         },
+      },
 
-        data: {
-          status:
-            CollectionJobStatus.FAILED,
+      data: {
+        status: CollectionJobStatus.FAILED,
 
-          completedAt: new Date(),
+        completedAt: new Date(),
 
-          failureReason:
-            this.getErrorMessage(error),
-        },
-      });
+        failureReason: this.getErrorMessage(error),
+      },
+    });
   }
 
   /**
@@ -511,29 +431,22 @@ export class CollectionJobService {
    * Used when an administrator stops the parent job while
    * the pipeline is processing source executions.
    */
-  markRemainingSourcesStopped(
-    collectionJobId: string,
-  ) {
-    return this.prisma
-      .collectionJobSource.updateMany({
-        where: {
-          collectionJobId,
+  markRemainingSourcesStopped(collectionJobId: string) {
+    return this.prisma.collectionJobSource.updateMany({
+      where: {
+        collectionJobId,
 
-          status: {
-            in: [
-              CollectionJobStatus.PENDING,
-              CollectionJobStatus.RUNNING,
-            ],
-          },
+        status: {
+          in: [CollectionJobStatus.PENDING, CollectionJobStatus.RUNNING],
         },
+      },
 
-        data: {
-          status:
-            CollectionJobStatus.STOPPED,
+      data: {
+        status: CollectionJobStatus.STOPPED,
 
-          completedAt: new Date(),
-        },
-      });
+        completedAt: new Date(),
+      },
+    });
   }
 
   /**
@@ -553,52 +466,38 @@ export class CollectionJobService {
       },
 
       data: {
-        status:
-          CollectionJobStatus.COMPLETED,
+        status: CollectionJobStatus.COMPLETED,
 
-        totalPosts:
-          this.toNonNegativeInteger(
-            totals.totalPosts,
-          ),
+        totalPosts: this.toNonNegativeInteger(totals.totalPosts),
 
-        totalComments:
-          this.toNonNegativeInteger(
-            totals.totalComments,
-          ),
+        totalComments: this.toNonNegativeInteger(totals.totalComments),
 
         completedAt: new Date(),
         failedReason: null,
       },
 
-      include:
-        collectionJobInclude,
+      include: collectionJobInclude,
     });
   }
 
   /**
    * Marks the parent collection job as failed.
    */
-  failJob(
-    id: string,
-    error: unknown,
-  ) {
+  failJob(id: string, error: unknown) {
     return this.prisma.collectionJob.update({
       where: {
         id,
       },
 
       data: {
-        status:
-          CollectionJobStatus.FAILED,
+        status: CollectionJobStatus.FAILED,
 
-        failedReason:
-          this.getErrorMessage(error),
+        failedReason: this.getErrorMessage(error),
 
         completedAt: new Date(),
       },
 
-      include:
-        collectionJobInclude,
+      include: collectionJobInclude,
     });
   }
 
@@ -606,16 +505,10 @@ export class CollectionJobService {
    * Stops a running collection job and every unfinished
    * source execution atomically.
    */
-  async stopJob(
-    id: string,
-  ) {
-    const job =
-      await this.findJobOrThrow(id);
+  async stopJob(id: string) {
+    const job = await this.findJobOrThrow(id);
 
-    if (
-      job.status !==
-      CollectionJobStatus.RUNNING
-    ) {
+    if (job.status !== CollectionJobStatus.RUNNING) {
       throw new BadRequestException(
         'Only running collection jobs can be stopped.',
       );
@@ -623,77 +516,57 @@ export class CollectionJobService {
 
     const completedAt = new Date();
 
-    return this.prisma.$transaction(
-      async (transaction) => {
-        await transaction
-          .collectionJobSource.updateMany({
-            where: {
-              collectionJobId: id,
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.collectionJobSource.updateMany({
+        where: {
+          collectionJobId: id,
 
-              status: {
-                in: [
-                  CollectionJobStatus.PENDING,
-                  CollectionJobStatus.RUNNING,
-                ],
-              },
-            },
+          status: {
+            in: [CollectionJobStatus.PENDING, CollectionJobStatus.RUNNING],
+          },
+        },
 
-            data: {
-              status:
-                CollectionJobStatus.STOPPED,
+        data: {
+          status: CollectionJobStatus.STOPPED,
 
-              completedAt,
-            },
-          });
+          completedAt,
+        },
+      });
 
-        return transaction
-          .collectionJob.update({
-            where: {
-              id,
-            },
+      return transaction.collectionJob.update({
+        where: {
+          id,
+        },
 
-            data: {
-              status:
-                CollectionJobStatus.STOPPED,
+        data: {
+          status: CollectionJobStatus.STOPPED,
 
-              completedAt,
-            },
+          completedAt,
+        },
 
-            include:
-              collectionJobInclude,
-          });
-      },
-    );
+        include: collectionJobInclude,
+      });
+    });
   }
 
   /**
    * Returns collection-job counters visible
    * to the current caller.
    */
-  async getStatus(
-    access: CollectionAccessContext,
-  ) {
-    const ownershipWhere:
-      Prisma.CollectionJobWhereInput =
-        access.role === UserRole.ADMIN
-          ? {}
-          : {
-              createdById:
-                access.userId,
-            };
+  async getStatus(access: CollectionAccessContext) {
+    const ownershipWhere: Prisma.CollectionJobWhereInput =
+      access.role === UserRole.ADMIN
+        ? {}
+        : {
+            createdById: access.userId,
+          };
 
-    const [
-      running,
-      completed,
-      failed,
-      stopped,
-    ] = await Promise.all([
+    const [running, completed, failed, stopped] = await Promise.all([
       this.prisma.collectionJob.count({
         where: {
           ...ownershipWhere,
 
-          status:
-            CollectionJobStatus.RUNNING,
+          status: CollectionJobStatus.RUNNING,
         },
       }),
 
@@ -701,8 +574,7 @@ export class CollectionJobService {
         where: {
           ...ownershipWhere,
 
-          status:
-            CollectionJobStatus.COMPLETED,
+          status: CollectionJobStatus.COMPLETED,
         },
       }),
 
@@ -710,8 +582,7 @@ export class CollectionJobService {
         where: {
           ...ownershipWhere,
 
-          status:
-            CollectionJobStatus.FAILED,
+          status: CollectionJobStatus.FAILED,
         },
       }),
 
@@ -719,8 +590,7 @@ export class CollectionJobService {
         where: {
           ...ownershipWhere,
 
-          status:
-            CollectionJobStatus.STOPPED,
+          status: CollectionJobStatus.STOPPED,
         },
       }),
     ]);
@@ -730,8 +600,7 @@ export class CollectionJobService {
       completed,
       failed,
       stopped,
-      hasRunningJobs:
-        running > 0,
+      hasRunningJobs: running > 0,
     };
   }
 
@@ -743,48 +612,36 @@ export class CollectionJobService {
     query: GetCollectionJobsQueryDto,
     access: CollectionAccessContext,
   ) {
-    const {
-      skip,
-      take,
-      page,
-      limit,
-    } = buildPagination(query);
+    const { skip, take, page, limit } = buildPagination(query);
 
-    const where =
-      this.buildJobsWhere(
-        query,
-        access,
-      );
+    const where = this.buildJobsWhere(query, access);
 
-    const [data, total] =
-      await Promise.all([
-        this.prisma.collectionJob
-          .findMany({
-            where,
-            skip,
-            take,
+    const [data, total] = await Promise.all([
+      this.prisma.collectionJob.findMany({
+        where,
+        skip,
+        take,
 
-            orderBy: buildOrderBy(
-              query,
-              [
-                'createdAt',
-                'updatedAt',
-                'startedAt',
-                'completedAt',
-                'totalPosts',
-                'totalComments',
-              ] as const,
-              'createdAt',
-            ),
+        orderBy: buildOrderBy(
+          query,
+          [
+            'createdAt',
+            'updatedAt',
+            'startedAt',
+            'completedAt',
+            'totalPosts',
+            'totalComments',
+          ] as const,
+          'createdAt',
+        ),
 
-            include:
-              collectionJobInclude,
-          }),
+        include: collectionJobInclude,
+      }),
 
-        this.prisma.collectionJob.count({
-          where,
-        }),
-      ]);
+      this.prisma.collectionJob.count({
+        where,
+      }),
+    ]);
 
     return {
       data,
@@ -794,11 +651,7 @@ export class CollectionJobService {
         limit,
         total,
 
-        totalPages:
-          calculateTotalPages(
-            total,
-            limit,
-          ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -807,41 +660,27 @@ export class CollectionJobService {
    * Returns all active-domain keywords compatible
    * with the requested language.
    */
-  async getAllActiveDomainKeywords(
-    language: LanguageCode,
-  ): Promise<string[]> {
-    const keywords =
-      await this.prisma.domainKeyword
-        .findMany({
-          where: {
-            domain: {
-              isActive: true,
-            },
+  async getAllActiveDomainKeywords(language: LanguageCode): Promise<string[]> {
+    const keywords = await this.prisma.domainKeyword.findMany({
+      where: {
+        domain: {
+          isActive: true,
+        },
 
-            ...(language !==
-              LanguageCode.ANY && {
-              language: {
-                in: [
-                  LanguageCode.ANY,
-                  language,
-                ],
-              },
-            }),
+        ...(language !== LanguageCode.ANY && {
+          language: {
+            in: [LanguageCode.ANY, language],
           },
+        }),
+      },
 
-          select: {
-            keyword: true,
-          },
-        });
+      select: {
+        keyword: true,
+      },
+    });
 
     return [
-      ...new Set(
-        keywords
-          .map((item) =>
-            item.keyword.trim(),
-          )
-          .filter(Boolean),
-      ),
+      ...new Set(keywords.map((item) => item.keyword.trim()).filter(Boolean)),
     ];
   }
 
@@ -849,24 +688,23 @@ export class CollectionJobService {
    * Returns current database data-source status.
    */
   getDataSourcesStatus() {
-    return this.prisma.dataSource
-      .findMany({
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-          isActive: true,
-          isImplemented: true,
-          supportsPosts: true,
-          supportsComments: true,
-          supportsRegion: true,
-          supportsLanguage: true,
-        },
+    return this.prisma.dataSource.findMany({
+      select: {
+        id: true,
+        key: true,
+        displayName: true,
+        isActive: true,
+        isImplemented: true,
+        supportsPosts: true,
+        supportsComments: true,
+        supportsRegion: true,
+        supportsLanguage: true,
+      },
 
-        orderBy: {
-          displayName: 'asc',
-        },
-      });
+      orderBy: {
+        displayName: 'asc',
+      },
+    });
   }
 
   /**
@@ -877,33 +715,26 @@ export class CollectionJobService {
     query: GetCollectionJobsQueryDto,
     access: CollectionAccessContext,
   ): Prisma.CollectionJobWhereInput {
-    const dateFilter =
-      buildDateFilter(query);
+    const dateFilter = buildDateFilter(query);
 
-    const search =
-      query.search?.trim();
+    const search = query.search?.trim();
 
     return {
-      ...(access.role !==
-        UserRole.ADMIN && {
-        createdById:
-          access.userId,
+      ...(access.role !== UserRole.ADMIN && {
+        createdById: access.userId,
       }),
 
       ...(query.domainId && {
-        domainId:
-          query.domainId,
+        domainId: query.domainId,
       }),
 
       ...(query.status && {
-        status:
-          query.status,
+        status: query.status,
       }),
 
       ...(query.country && {
         country: {
-          contains:
-            query.country.trim(),
+          contains: query.country.trim(),
 
           mode: 'insensitive',
         },
@@ -911,8 +742,7 @@ export class CollectionJobService {
 
       ...(query.city && {
         city: {
-          contains:
-            query.city.trim(),
+          contains: query.city.trim(),
 
           mode: 'insensitive',
         },
@@ -920,26 +750,21 @@ export class CollectionJobService {
 
       ...(query.region && {
         region: {
-          contains:
-            query.region.trim(),
+          contains: query.region.trim(),
 
           mode: 'insensitive',
         },
       }),
 
       ...(query.language && {
-        language:
-          query.language,
+        language: query.language,
       }),
 
       ...(query.dataSourceKey && {
         sources: {
           some: {
             dataSource: {
-              key:
-                query.dataSourceKey
-                  .trim()
-                  .toLowerCase(),
+              key: query.dataSourceKey.trim().toLowerCase(),
             },
           },
         },
@@ -1010,77 +835,51 @@ export class CollectionJobService {
     return keywords
       .filter(
         (item) =>
-          language ===
-            LanguageCode.ANY ||
-          item.language ===
-            LanguageCode.ANY ||
+          language === LanguageCode.ANY ||
+          item.language === LanguageCode.ANY ||
           item.language === language,
       )
-      .map((item) =>
-        item.keyword.trim(),
-      )
+      .map((item) => item.keyword.trim())
       .filter(Boolean);
   }
 
   /**
    * Normalizes optional strings for nullable fields.
    */
-  private normalizeOptionalText(
-    value?: string | null,
-  ): string | undefined {
-    const normalized =
-      value?.trim();
+  private normalizeOptionalText(value?: string | null): string | undefined {
+    const normalized = value?.trim();
 
-    return normalized
-      ? normalized
-      : undefined;
+    return normalized ? normalized : undefined;
   }
 
   /**
    * Normalizes an optional string array.
    */
-  private normalizeStringArray(
-    values?: string[],
-  ): string[] {
+  private normalizeStringArray(values?: string[]): string[] {
     return [
-      ...new Set(
-        (values ?? [])
-          .map((value) =>
-            value.trim(),
-          )
-          .filter(Boolean),
-      ),
+      ...new Set((values ?? []).map((value) => value.trim()).filter(Boolean)),
     ];
   }
 
   /**
    * Converts a value into a safe non-negative integer.
    */
-  private toNonNegativeInteger(
-    value: number,
-  ): number {
+  private toNonNegativeInteger(value: number): number {
     if (!Number.isFinite(value)) {
       return 0;
     }
 
-    return Math.max(
-      0,
-      Math.trunc(value),
-    );
+    return Math.max(0, Math.trunc(value));
   }
 
   /**
    * Extracts a safe error message.
    */
-  private getErrorMessage(
-    error: unknown,
-  ): string {
+  private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
     }
 
-    return typeof error === 'string'
-      ? error
-      : 'Unknown collection error.';
+    return typeof error === 'string' ? error : 'Unknown collection error.';
   }
 }

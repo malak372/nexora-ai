@@ -1,8 +1,8 @@
-import { AiProviderType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
+
 import {
   IsBoolean,
-  IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -13,36 +13,41 @@ import {
   Min,
 } from 'class-validator';
 
+import {
+  SUPPORTED_AI_PROVIDER_KEYS,
+  type AiProviderKey,
+} from '../../ai/constants/ai-provider.constants';
+
 /**
- * DTO used by administrators to create an AI model.
+ * DTO used by administrators to create an AI-model configuration.
  *
- * Models are always created as non-default.
- * Default selection is handled through a dedicated endpoint.
+ * Only providers that have registered backend adapters may be used.
  *
- * Operational health fields are intentionally not exposed because
- * they are managed internally by AiModelHealthService.
+ * Models are always created as non-default. Default-model selection
+ * is performed through a dedicated administrator endpoint.
  *
  * @author Malak
  */
 export class CreateAiModelDto {
   /**
-   * AI provider associated with the model.
+   * Stable backend provider-registry key.
    *
    * Supported values:
-   * - GOOGLE
-   * - GROQ
-   * - OPENROUTER
+   * - google
+   * - openrouter
    */
-  @IsEnum(AiProviderType)
-  provider!: AiProviderType;
+  @Transform(({ value }: { value: unknown }): unknown =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsString()
+  @IsIn(SUPPORTED_AI_PROVIDER_KEYS)
+  providerKey!: AiProviderKey;
 
   /**
    * Internal administrative model name.
    *
-   * This name is used inside the Nexora AI dashboard.
-   *
-   * Example:
-   * GPT Main Model
+   * This name is used by administrators and does not have to match
+   * the provider-side model identifier.
    */
   @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
@@ -53,26 +58,22 @@ export class CreateAiModelDto {
   modelName!: string;
 
   /**
-   * Exact model identifier sent to the provider API.
+   * Exact model identifier sent to the external provider.
    *
    * Examples:
    * - gemini-2.5-flash
-   * - llama-3.3-70b-versatile
-   * - openrouter/free
-   * - meta-llama/llama-3.3-70b-instruct:free
+   * - openai/gpt-4.1-mini
    */
   @Transform(({ value }: { value: unknown }): unknown =>
     typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty()
-  @MaxLength(150)
+  @MaxLength(200)
   apiModelId!: string;
 
   /**
-   * Optional human-readable dashboard name.
-   *
-   * Empty or whitespace-only values are stored as null.
+   * Optional administrator-facing display name.
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown =>
@@ -83,9 +84,7 @@ export class CreateAiModelDto {
   displayName?: string;
 
   /**
-   * Optional description of the model and its intended use.
-   *
-   * Empty or whitespace-only values are stored as null.
+   * Optional administrator-facing model description.
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown =>
@@ -98,10 +97,7 @@ export class CreateAiModelDto {
   /**
    * Fallback priority.
    *
-   * Higher values are preferred before lower values when
-   * the default routing strategy is used.
-   *
-   * Defaults to 0.
+   * Higher values are preferred before lower values.
    */
   @IsOptional()
   @Type(() => Number)
@@ -111,12 +107,10 @@ export class CreateAiModelDto {
   priority?: number;
 
   /**
-   * Relative routing weight.
+   * Weight used by BALANCED routing.
    *
-   * Used by the BALANCED routing strategy.
-   * Models with higher weights are more likely to be selected first.
-   *
-   * Defaults to 1.
+   * Higher values increase the probability that the model is chosen
+   * earlier in the weighted execution order.
    */
   @IsOptional()
   @Type(() => Number)
@@ -126,9 +120,8 @@ export class CreateAiModelDto {
   weight?: number;
 
   /**
-   * Maximum output tokens allowed for one provider request.
-   *
-   * Defaults to 2048.
+   * Maximum number of output tokens that may be requested from this
+   * model.
    */
   @IsOptional()
   @Type(() => Number)
@@ -138,11 +131,41 @@ export class CreateAiModelDto {
   maxOutputTokens?: number;
 
   /**
-   * Provider price per one million input tokens.
+   * Whether the model supports provider-native JSON generation.
    *
-   * The value supports up to six decimal places.
-   *
-   * Defaults to 0.
+   * Runtime schema validation remains required even when this value is
+   * true.
+   */
+  @IsOptional()
+  @IsBoolean()
+  supportsJsonOutput?: boolean;
+
+  /**
+   * Whether the model supports provider tool or function calls.
+   */
+  @IsOptional()
+  @IsBoolean()
+  supportsTools?: boolean;
+
+  /**
+   * Whether the model supports image or vision input.
+   */
+  @IsOptional()
+  @IsBoolean()
+  supportsVision?: boolean;
+
+  /**
+   * Optional total model context-window size.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10_000_000)
+  contextWindow?: number;
+
+  /**
+   * Cost per one million provider input tokens.
    */
   @IsOptional()
   @Type(() => Number)
@@ -155,11 +178,7 @@ export class CreateAiModelDto {
   inputCostPerMillion?: number;
 
   /**
-   * Provider price per one million output tokens.
-   *
-   * The value supports up to six decimal places.
-   *
-   * Defaults to 0.
+   * Cost per one million provider output tokens.
    */
   @IsOptional()
   @Type(() => Number)
@@ -174,10 +193,8 @@ export class CreateAiModelDto {
   /**
    * Initial active state.
    *
-   * This property is allowed only during model creation.
-   * Later activation and deactivation use dedicated endpoints.
-   *
-   * Defaults to true.
+   * Models are active by default, but they are never automatically
+   * created as the default model.
    */
   @IsOptional()
   @IsBoolean()

@@ -25,17 +25,8 @@ import { UserComplaintsService } from './services/user-complaints.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-  ],
-  controllers: [
-    UserComplaintsController,
-    AdminComplaintsController,
-  ],
-  providers: [
-    UserComplaintsService,
-    AdminComplaintsService,
-  ],
+  imports: [PrismaModule, AuditModule],
+  controllers: [UserComplaintsController, AdminComplaintsController],
+  providers: [UserComplaintsService, AdminComplaintsService],
 })
 export class ComplaintsModule {}

@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import {
   AuditAction,
@@ -68,55 +65,48 @@ export class ContactMessagesService {
    * @param dto Validated contact-message values.
    * @param userId Optional authenticated user identifier.
    */
-  async createContactMessage(
-    dto: CreateContactMessageDto,
-    userId?: string,
-  ) {
+  async createContactMessage(dto: CreateContactMessageDto, userId?: string) {
     const sender = await this.resolveSender(dto, userId);
 
-    const contactMessage = await this.prisma.$transaction(
-      async (tx) => {
-        const created = await tx.contactMessage.create({
-          data: {
-            fullName: sender.fullName,
-            email: sender.email,
-            subject: dto.subject,
-            message: dto.message,
-            userId: sender.userId,
-            status: ContactMessageStatus.NEW,
-          },
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            subject: true,
-            message: true,
-            status: true,
-            createdAt: true,
-          },
-        });
+    const contactMessage = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.contactMessage.create({
+        data: {
+          fullName: sender.fullName,
+          email: sender.email,
+          subject: dto.subject,
+          message: dto.message,
+          userId: sender.userId,
+          status: ContactMessageStatus.NEW,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          subject: true,
+          message: true,
+          status: true,
+          createdAt: true,
+        },
+      });
 
-        if (sender.userId) {
-          await this.auditService.createLog(
-            {
-              actorId: sender.userId,
-              action:
-                AuditAction.USER_CREATE_CONTACT_MESSAGE,
-              targetType:
-                AuditTargetType.CONTACT_MESSAGE,
-              targetId: created.id,
-              newValue: {
-                subject: created.subject,
-                status: created.status,
-              },
+      if (sender.userId) {
+        await this.auditService.createLog(
+          {
+            actorId: sender.userId,
+            action: AuditAction.USER_CREATE_CONTACT_MESSAGE,
+            targetType: AuditTargetType.CONTACT_MESSAGE,
+            targetId: created.id,
+            newValue: {
+              subject: created.subject,
+              status: created.status,
             },
-            tx,
-          );
-        }
+          },
+          tx,
+        );
+      }
 
-        return created;
-      },
-    );
+      return created;
+    });
 
     return {
       message: 'Contact message submitted successfully',
@@ -159,9 +149,7 @@ export class ContactMessagesService {
     });
 
     if (!user) {
-      throw new NotFoundException(
-        'Active user account not found',
-      );
+      throw new NotFoundException('Active user account not found');
     }
 
     return {
@@ -171,4 +159,3 @@ export class ContactMessagesService {
     };
   }
 }
-

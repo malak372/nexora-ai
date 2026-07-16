@@ -1,7 +1,4 @@
-import {
-  ComplaintPriority,
-  ComplaintStatus,
-} from '@prisma/client';
+import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
@@ -46,9 +43,7 @@ export class UpdateComplaintDto {
    * Leading and trailing whitespace is removed before validation.
    */
   @IsOptional()
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(5)
   @MaxLength(1_000)

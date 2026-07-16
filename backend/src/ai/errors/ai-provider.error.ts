@@ -24,8 +24,7 @@ export class AiProviderError extends Error {
    * @param retryable Whether the same model may be attempted again.
    * @param statusCode Optional HTTP status code returned by the provider.
    * @param requestId Optional provider request identifier.
-   * @param cause Original provider SDK error used only for internal
-   * logging and debugging.
+   * @param cause Original provider SDK error used only internally.
    */
   constructor(
     message: string,
@@ -36,11 +35,11 @@ export class AiProviderError extends Error {
     public readonly code: AiProviderErrorCode,
 
     /**
-     * Indicates whether another attempt may be performed using the same
-     * model.
+     * Indicates whether another attempt may be performed using the
+     * same model.
      *
-     * This property does not decide whether fallback is allowed.
-     * Fallback eligibility is handled separately by AiExecutionService.
+     * Fallback eligibility is decided separately by
+     * AiExecutionService.
      */
     public readonly retryable: boolean,
 
@@ -57,8 +56,8 @@ export class AiProviderError extends Error {
     /**
      * Original provider SDK error.
      *
-     * This value must only be used internally for logging and debugging.
-     * It must never be returned directly to API clients.
+     * This value is internal only and must never be returned directly
+     * to API clients.
      */
     public readonly cause?: unknown,
   ) {
@@ -67,8 +66,7 @@ export class AiProviderError extends Error {
     this.name = AiProviderError.name;
 
     /**
-     * Restores the prototype chain when extending the built-in Error
-     * class.
+     * Restores the prototype chain when extending Error.
      */
     Object.setPrototypeOf(this, new.target.prototype);
 

@@ -16,23 +16,12 @@ import { DataSourcesService } from './data-sources.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-    CollectorsModule,
-  ],
+  imports: [PrismaModule, AuditModule, CollectorsModule],
 
-  controllers: [
-    AdminDataSourcesController,
-    DataSourcesController,
-  ],
+  controllers: [AdminDataSourcesController, DataSourcesController],
 
-  providers: [
-    DataSourcesService,
-  ],
+  providers: [DataSourcesService],
 
-  exports: [
-    DataSourcesService,
-  ],
+  exports: [DataSourcesService],
 })
 export class DataSourcesModule {}
