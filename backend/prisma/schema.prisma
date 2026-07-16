@@ -1288,8 +1288,9 @@ model ContactMessage {
   subject  String
   message  String
 
-  userId    String?   @map("user_id")
-  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
   deletedAt DateTime? @map("deleted_at")
 
   status ContactMessageStatus @default(NEW)
@@ -1300,8 +1301,10 @@ model ContactMessage {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
+  @@index([userId, deletedAt, createdAt])
   @@index([email])
   @@index([status])
+  @@index([deletedAt, status, createdAt])
   @@index([createdAt])
   @@map("contact_messages")
 }

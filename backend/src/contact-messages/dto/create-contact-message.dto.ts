@@ -1,22 +1,35 @@
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsEmail,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /**
  * DTO used to submit a Contact Us message.
  *
- * The endpoint is publicly accessible and may be used by:
- * - Guest visitors.
- * - Authenticated users.
+ * The DTO may be used by:
+ * - Guest visitors through the public endpoint.
+ * - Authenticated users through the protected endpoint.
  *
- * User identity must never be accepted directly from the request body.
- * When authenticated-user linking is required, userId should be obtained
- * from the verified JWT request context.
+ * For authenticated submissions, the service ignores fullName
+ * and email from the request body and uses the verified user's
+ * persisted account information instead.
+ *
+ * All string inputs are normalized before validation.
  *
  * @author Malak
  */
 export class CreateContactMessageDto {
   /**
    * Sender full name.
+   *
+   * Used directly only for guest submissions.
    */
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(2)
   @MaxLength(100)
@@ -24,22 +37,36 @@ export class CreateContactMessageDto {
 
   /**
    * Sender email address.
+   *
+   * Used directly only for guest submissions.
+   * The value is trimmed and converted to lowercase.
    */
+  @Transform(({ value }) =>
+    typeof value === 'string'
+      ? value.trim().toLowerCase()
+      : value,
+  )
   @IsEmail()
   @MaxLength(150)
   email!: string;
 
   /**
-   * Message subject.
+   * Contact-message subject.
    */
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(3)
   @MaxLength(150)
   subject!: string;
 
   /**
-   * Detailed message body.
+   * Detailed contact-message body.
    */
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(10)
   @MaxLength(2_000)

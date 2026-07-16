@@ -1,19 +1,23 @@
 import { ContactMessageStatus } from '@prisma/client';
 
 /**
- * Determines whether a contact message is considered replied.
+ * Determines whether a Contact Us message is considered replied.
  *
  * A message is considered replied when:
- * - Its status is REPLIED.
- * - Or a non-empty administrator reply exists.
+ * - Its persisted status is REPLIED.
+ * - Or it contains a non-empty administrator reply.
  *
- * @author Malak
+ * @param status Current message status.
+ * @param adminReply Current administrator reply.
  */
 export function isContactMessageReplied(
   status: ContactMessageStatus,
   adminReply: string | null,
 ): boolean {
-  return status === ContactMessageStatus.REPLIED || Boolean(adminReply?.trim());
+  return (
+    status === ContactMessageStatus.REPLIED ||
+    Boolean(adminReply?.trim())
+  );
 }
 
 /**
@@ -21,9 +25,14 @@ export function isContactMessageReplied(
  *
  * Rules:
  * - An explicitly supplied status has the highest priority.
- * - Adding an administrator reply without a status changes
- *   the message status to REPLIED.
+ * - A new administrator reply without an explicit status changes
+ *   the status to REPLIED.
  * - Otherwise, the existing status remains unchanged.
+ *
+ * @param currentStatus Current persisted status.
+ * @param newStatus Optional explicitly requested status.
+ * @param adminReply Optional normalized administrator reply.
+ * @returns Status that should be persisted.
  *
  * @author Malak
  */
@@ -42,3 +51,4 @@ export function resolveContactMessageStatus(
 
   return currentStatus;
 }
+

@@ -26,14 +26,19 @@ import { ContactMessagesService } from './services/contact-messages.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuditModule, MailModule],
-
+  imports: [
+    PrismaModule,
+    AuditModule,
+    MailModule,
+  ],
   controllers: [
     ContactMessagesController,
     UserContactMessagesController,
     AdminContactMessagesController,
   ],
-
-  providers: [ContactMessagesService, AdminContactMessagesService],
+  providers: [
+    ContactMessagesService,
+    AdminContactMessagesService,
+  ],
 })
 export class ContactMessagesModule {}
