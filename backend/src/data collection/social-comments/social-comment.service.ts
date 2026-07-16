@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+
+import {
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { GetSocialCommentsQueryDto } from './dto/get-social-comments-query.dto';
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 import {
   buildDateFilter,
@@ -11,24 +15,31 @@ import {
   buildPagination,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import { CollectionAccessContext } from '../types/collection-access-context.type';
+
+import { GetSocialCommentsQueryDto } from './dto/get-social-comments-query.dto';
 
 /**
- * Service responsible for listing collected comments.
+ * Service responsible for listing collected comments
+ * while enforcing ownership through the parent post
+ * and collection job.
  *
  * @author Malak
  */
 @Injectable()
 export class SocialCommentService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma:
+      PrismaService,
   ) {}
 
   /**
-   * Returns paginated comments.
+   * Returns paginated comments visible
+   * to the current caller.
    */
   async findComments(
     query: GetSocialCommentsQueryDto,
+    access: CollectionAccessContext,
   ) {
     const {
       skip,
@@ -38,44 +49,56 @@ export class SocialCommentService {
     } = buildPagination(query);
 
     const where =
-      this.buildCommentsWhere(query);
+      this.buildCommentsWhere(
+        query,
+        access,
+      );
 
     const [data, total] =
       await Promise.all([
-        this.prisma.socialComment.findMany({
-          where,
-          skip,
-          take,
+        this.prisma.socialComment
+          .findMany({
+            where,
+            skip,
+            take,
 
-          orderBy: buildOrderBy(
-            query,
-            [
+            orderBy: buildOrderBy(
+              query,
+              [
+                'createdAt',
+                'collectedAt',
+                'likesCount',
+              ] as const,
               'createdAt',
-              'collectedAt',
-              'likesCount',
-            ] as const,
-            'createdAt',
-          ),
+            ),
 
-          include: {
-            post: {
-              select: {
-                id: true,
-                title: true,
-                region: true,
-                collectionJobId: true,
+            include: {
+              post: {
+                select: {
+                  id: true,
+                  title: true,
+                  region: true,
+                  collectionJobId: true,
 
-                dataSource: {
-                  select: {
-                    id: true,
-                    key: true,
-                    displayName: true,
+                  dataSource: {
+                    select: {
+                      id: true,
+                      key: true,
+                      displayName: true,
+                    },
+                  },
+
+                  collectionJob: {
+                    select: {
+                      id: true,
+                      createdById: true,
+                      status: true,
+                    },
                   },
                 },
               },
             },
-          },
-        }),
+          }),
 
         this.prisma.socialComment.count({
           where,
@@ -100,30 +123,63 @@ export class SocialCommentService {
   }
 
   /**
-   * Builds Prisma comment filters.
+   * Builds comment filters including caller ownership.
+   *
+   * Comment ownership is determined through:
+   *
+   * SocialComment
+   * -> SocialPost
+   * -> CollectionJob
+   * -> createdById
    */
   private buildCommentsWhere(
     query: GetSocialCommentsQueryDto,
+    access: CollectionAccessContext,
   ): Prisma.SocialCommentWhereInput {
     const dateFilter =
       buildDateFilter(query);
 
+    const search =
+      query.search?.trim();
+
     return {
       ...(query.postId && {
-        postId: query.postId,
+        postId:
+          query.postId,
       }),
 
-      ...(query.collectionJobId && {
-        post: {
-          collectionJobId:
-            query.collectionJobId,
-        },
-      }),
+      /*
+       * Build one nested post relation filter so that
+       * collectionJobId and ownership can be combined safely.
+       */
+      ...(
+        (
+          query.collectionJobId ||
+          access.role !==
+            UserRole.ADMIN
+        ) && {
+          post: {
+            ...(query.collectionJobId && {
+              collectionJobId:
+                query.collectionJobId,
+            }),
+
+            ...(access.role !==
+              UserRole.ADMIN && {
+              collectionJob: {
+                createdById:
+                  access.userId,
+              },
+            }),
+          },
+        }
+      ),
 
       ...(query.languageCode && {
         languageCode: {
           equals:
-            query.languageCode,
+            query.languageCode.trim(),
+
           mode: 'insensitive',
         },
       }),
@@ -131,7 +187,8 @@ export class SocialCommentService {
       ...(query.sentiment && {
         sentiment: {
           equals:
-            query.sentiment,
+            query.sentiment.trim(),
+
           mode: 'insensitive',
         },
       }),
@@ -139,27 +196,26 @@ export class SocialCommentService {
       ...(query.author && {
         author: {
           contains:
-            query.author,
+            query.author.trim(),
+
           mode: 'insensitive',
         },
       }),
 
       ...(dateFilter ?? {}),
 
-      ...(query.search?.trim() && {
+      ...(search && {
         OR: [
           {
             content: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
 
           {
             author: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
@@ -167,8 +223,7 @@ export class SocialCommentService {
           {
             post: {
               title: {
-                contains:
-                  query.search,
+                contains: search,
                 mode: 'insensitive',
               },
             },
@@ -178,8 +233,7 @@ export class SocialCommentService {
             post: {
               dataSource: {
                 displayName: {
-                  contains:
-                    query.search,
+                  contains: search,
                   mode: 'insensitive',
                 },
               },

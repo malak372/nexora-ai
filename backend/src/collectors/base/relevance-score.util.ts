@@ -1,86 +1,214 @@
 /**
- * Shared relevance scoring utility.
+ * Shared relevance-scoring utility used by collectors
+ * and the Data Collection orchestration layer.
  *
- * Used by collectors and the data collection pipeline
- * to rank and filter collected posts.
+ * Matching is Unicode-aware so Arabic and other
+ * non-Latin languages are handled correctly.
  *
  * @author Malak
  */
 export class RelevanceScoreUtil {
-  static scoreText(input: {
-    title?: string;
-    body?: string;
+  /**
+   * Calculates a relevance score for one text record.
+   */
+  static scoreText(
+    input: {
+      title?: string;
+      body?: string;
 
-    domainTerms: string[];
-    problemTerms: string[];
+      domainTerms: string[];
+      problemTerms: string[];
 
-    likes?: number;
-    replies?: number;
-    shares?: number;
+      likes?: number;
+      replies?: number;
+      shares?: number;
 
-    publishedAt?: Date;
-  }): number {
-    const title = this.normalize(input.title ?? '');
-    const body = this.normalize(input.body ?? '');
+      publishedAt?: Date;
+    },
+  ): number {
+    const title =
+      this.normalize(
+        input.title ?? '',
+      );
+
+    const body =
+      this.normalize(
+        input.body ?? '',
+      );
 
     let score = 0;
 
-    for (const term of input.domainTerms) {
-      const normalizedTerm = this.normalize(term);
+    /*
+     * Domain-term relevance.
+     */
+    for (
+      const term of input.domainTerms
+    ) {
+      const normalizedTerm =
+        this.normalize(term);
 
-      if (!normalizedTerm) continue;
+      if (!normalizedTerm) {
+        continue;
+      }
 
       score +=
-        Math.min(this.countTermOccurrences(title, normalizedTerm), 3) * 35;
+        Math.min(
+          this.countTermOccurrences(
+            title,
+            normalizedTerm,
+          ),
+          3,
+        ) * 35;
 
       score +=
-        Math.min(this.countTermOccurrences(body, normalizedTerm), 5) * 15;
+        Math.min(
+          this.countTermOccurrences(
+            body,
+            normalizedTerm,
+          ),
+          5,
+        ) * 15;
     }
 
-    for (const term of input.problemTerms) {
-      const normalizedTerm = this.normalize(term);
+    /*
+     * Problem and need relevance.
+     */
+    for (
+      const term of input.problemTerms
+    ) {
+      const normalizedTerm =
+        this.normalize(term);
 
-      if (!normalizedTerm) continue;
+      if (!normalizedTerm) {
+        continue;
+      }
 
       score +=
-        Math.min(this.countTermOccurrences(title, normalizedTerm), 3) * 25;
+        Math.min(
+          this.countTermOccurrences(
+            title,
+            normalizedTerm,
+          ),
+          3,
+        ) * 25;
 
       score +=
-        Math.min(this.countTermOccurrences(body, normalizedTerm), 5) * 10;
+        Math.min(
+          this.countTermOccurrences(
+            body,
+            normalizedTerm,
+          ),
+          5,
+        ) * 10;
     }
 
-    score += Math.min(input.likes ?? 0, 20);
-    score += Math.min(input.replies ?? 0, 20);
-    score += Math.min(input.shares ?? 0, 10);
+    /*
+     * Engagement values are capped so popular but irrelevant
+     * records do not dominate text relevance.
+     */
+    score += Math.min(
+      Math.max(
+        input.likes ?? 0,
+        0,
+      ),
+      20,
+    );
 
+    score += Math.min(
+      Math.max(
+        input.replies ?? 0,
+        0,
+      ),
+      20,
+    );
+
+    score += Math.min(
+      Math.max(
+        input.shares ?? 0,
+        0,
+      ),
+      10,
+    );
+
+    /*
+     * Give a small bonus to recent content.
+     */
     if (input.publishedAt) {
       const daysOld =
-        (Date.now() - input.publishedAt.getTime()) / (1000 * 60 * 60 * 24);
+        (
+          Date.now() -
+          input.publishedAt.getTime()
+        ) /
+        (
+          1000 *
+          60 *
+          60 *
+          24
+        );
 
-      if (daysOld <= 365) score += 10;
-      else if (daysOld <= 1000) score += 5;
+      /*
+       * A future invalid date should not receive
+       * a recency bonus.
+       */
+      if (
+        daysOld >= 0 &&
+        daysOld <= 365
+      ) {
+        score += 10;
+      } else if (
+        daysOld > 365 &&
+        daysOld <= 1000
+      ) {
+        score += 5;
+      }
     }
 
     return score;
   }
 
   /**
-   * Counts whole-word occurrences only.
+   * Counts whole Unicode term occurrences.
    *
-   * This prevents weak matches like:
-   * - "class" inside "classification"
-   * - "ai" inside unrelated words
+   * Unicode letter and number boundaries are used instead
+   * of JavaScript \b because \b is unreliable for Arabic
+   * and several other non-Latin scripts.
    */
-  private static countTermOccurrences(text: string, term: string): number {
-    if (!text || !term) return 0;
+  private static countTermOccurrences(
+    text: string,
+    term: string,
+  ): number {
+    if (!text || !term) {
+      return 0;
+    }
 
-    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\b${escapedTerm}\\b`, 'gi');
+    const escapedTerm =
+      term.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        '\\$&',
+      );
 
-    return text.match(regex)?.length ?? 0;
+    const expression =
+      new RegExp(
+        `(?<![\\p{L}\\p{N}])${escapedTerm}(?![\\p{L}\\p{N}])`,
+        'giu',
+      );
+
+    return (
+      text.match(expression)
+        ?.length ?? 0
+    );
   }
 
-  private static normalize(text: string): string {
-    return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  /**
+   * Normalizes text consistently before matching.
+   */
+  private static normalize(
+    text: string,
+  ): string {
+    return text
+      .normalize('NFKC')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
   }
 }
