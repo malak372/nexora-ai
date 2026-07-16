@@ -1,25 +1,56 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import {
+  createParamDecorator,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+
 import { AuthenticatedUser } from '../types/authenticated-user.type';
 
 /**
- * Custom parameter decorator that retrieves the authenticated user
- * from the current HTTP request.
+ * HTTP request containing a successfully authenticated user.
+ */
+type AuthenticatedRequest = {
+  user?: AuthenticatedUser;
+};
+
+/**
+ * Retrieves the currently authenticated user from the HTTP request.
  *
- * This decorator is used with JwtAuthGuard in protected routes
- * to access the authenticated user object attached to the request
- * after successful JWT authentication.
+ * The user is attached to the request by Passport after successful
+ * authentication through JwtAuthGuard and JwtStrategy.
  *
- * @param _data - Reserved parameter for future customization (unused).
- * @param ctx - The current execution context.
- * @returns The authenticated user object stored in the request.
+ * This decorator must only be used on routes protected by
+ * JwtAuthGuard.
+ *
+ * @example
+ *
+ * @Get('me')
+ * @UseGuards(JwtAuthGuard)
+ * getCurrentUser(
+ *   @CurrentUser() user: AuthenticatedUser,
+ * ) {
+ *   return user;
+ * }
+ *
+ * @throws UnauthorizedException When no authenticated user exists
+ * on the current request.
  *
  * @author Eman
  */
 export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest<{
-      user: AuthenticatedUser;
-    }>();
+  (
+    _data: unknown,
+    context: ExecutionContext,
+  ): AuthenticatedUser => {
+    const request =
+      context.switchToHttp().getRequest<AuthenticatedRequest>();
+
+    if (!request.user) {
+      throw new UnauthorizedException(
+        'Authenticated user was not found in the request.',
+      );
+    }
+
     return request.user;
   },
 );
