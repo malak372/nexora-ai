@@ -1,16 +1,32 @@
 import { IsBoolean } from 'class-validator';
 
 /**
- * DTO used to activate or deactivate a data source.
+ * DTO used by administrators to activate
+ * or deactivate a configured data source.
  *
- * A source cannot be activated unless an implemented
- * backend collector exists for its key.
+ * Activation is allowed only when an operational
+ * collector implementation exists in CollectorsFactory
+ * for the corresponding DataSource.key.
+ *
+ * Example request body:
+ *
+ * {
+ *   "isActive": true
+ * }
  *
  * @author Malak
  */
 export class UpdateDataSourceStatusDto {
   /**
-   * New activation state.
+   * New data-source activation state.
+   *
+   * true:
+   * - Requests activation.
+   * - Requires an implemented runtime collector.
+   *
+   * false:
+   * - Deactivates the source.
+   * - Prevents users from selecting it in new jobs.
    */
   @IsBoolean()
   isActive!: boolean;

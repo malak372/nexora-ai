@@ -1,6 +1,6 @@
 import {
-  BadRequestException,
   Injectable,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 
 import {
@@ -9,22 +9,6 @@ import {
   CollectionJobStatus,
   LanguageCode,
 } from '@prisma/client';
-
-import { RunCollectionDto } from './dto/run-collection.dto';
-
-import { GetCollectionJobsQueryDto } from './collection-jobs/dto/get-collection-jobs-query.dto';
-
-import { GetSocialPostsQueryDto } from './social-posts/dto/get-social-posts-query.dto';
-
-import { GetSocialCommentsQueryDto } from './social-comments/dto/get-social-comments-query.dto';
-
-import { CollectionJobService } from './collection-jobs/collection-job.service';
-
-import { SocialPostService } from './social-posts/social-post.service';
-
-import { SocialCommentService } from './social-comments/social-comment.service';
-
-import { CollectorsFactory } from '../collectors/collectors.factory';
 
 import { AuditService } from '../audit-logs/audit-logs.service';
 
@@ -37,45 +21,84 @@ import {
 
 import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 
+import { CollectorsFactory } from '../collectors/collectors.factory';
+
+import { CollectionJobService } from './collection-jobs/collection-job.service';
+
+import { GetCollectionJobsQueryDto } from './collection-jobs/dto/get-collection-jobs-query.dto';
+
+import { RunCollectionDto } from './dto/run-collection.dto';
+
+import { GetSocialCommentsQueryDto } from './social-comments/dto/get-social-comments-query.dto';
+
+import { SocialCommentService } from './social-comments/social-comment.service';
+
+import { GetSocialPostsQueryDto } from './social-posts/dto/get-social-posts-query.dto';
+
+import { SocialPostService } from './social-posts/social-post.service';
+
+import { CollectionAccessContext } from './types/collection-access-context.type';
+
 /**
- * Internal input used by the idea-generation workflow.
+ * Input used when the idea-generation pipeline
+ * starts Data Collection internally.
  */
 export type IdeaGenerationCollectionInput = {
-  domainId: string;
+  /**
+   * Authenticated user who owns the generated job.
+   *
+   * Undefined is allowed for guest or system jobs.
+   */
+  readonly userId?: string;
 
-  country?: string;
-  city?: string;
-  region?: string;
+  readonly domainId: string;
 
-  language: LanguageCode;
+  readonly country?: string;
+  readonly city?: string;
+  readonly region?: string;
 
-  radiusKm?: number;
+  readonly language: LanguageCode;
+
+  readonly radiusKm?: number;
 
   /**
-   * DataSource.key values.
+   * Selected DataSource.key values.
    */
-  dataSourceKeys?: string[];
+  readonly dataSourceKeys?: string[];
 
-  keywords?: string[];
+  readonly keywords?: string[];
 };
 
+/**
+ * Identifies how Data Collection was started.
+ */
 type CollectionTrigger =
   | 'USER_MANUAL'
   | 'SYSTEM_INTERNAL';
 
 /**
- * Main orchestration service for the Data Collection stage.
+ * Main orchestration service for the Data Collection pipeline.
  *
- * The user may start Data Collection manually. After completion,
- * the resulting CollectionJob can be supplied to the NLP stage.
+ * Important behavior:
+ * - Persists collection-job ownership directly.
+ * - Continues running after one source fails.
+ * - Fails the parent job only when every source fails.
+ * - Checks stop requests before and after external collection.
+ * - Enforces user ownership when reading data.
  *
  * @author Malak
  */
 @Injectable()
 export class DataCollectionService {
+  /**
+   * Minimum score required before a post is stored.
+   */
   private readonly MIN_RELEVANCE_SCORE =
     60;
 
+  /**
+   * Reserved domain name representing all domains.
+   */
   private readonly GENERAL_DOMAIN_NAME =
     'general';
 
@@ -100,40 +123,44 @@ export class DataCollectionService {
   ) {}
 
   /**
-   * Starts Data Collection manually.
-   *
-   * The caller can be a registered user or administrator.
+   * Starts Data Collection manually for
+   * an authenticated user or administrator.
    */
-  async run(
+  run(
     dto: RunCollectionDto,
-    actorId: string,
+    userId: string,
   ) {
     return this.runInternal(
       dto,
       'USER_MANUAL',
-      actorId,
+      userId,
     );
   }
 
   /**
-   * Starts Data Collection internally during
-   * idea generation.
+   * Starts Data Collection internally as part
+   * of the idea-generation workflow.
    */
-  async runForIdeaGeneration(
+  runForIdeaGeneration(
     dto: IdeaGenerationCollectionInput,
   ) {
     return this.runInternal(
       dto,
       'SYSTEM_INTERNAL',
+      dto.userId,
     );
   }
 
   /**
-   * Executes the shared collection workflow.
+   * Executes the shared Data Collection workflow.
    */
   private async runInternal(
-    dto: IdeaGenerationCollectionInput,
+    dto:
+      | RunCollectionDto
+      | IdeaGenerationCollectionInput,
+
     trigger: CollectionTrigger,
+
     actorId?: string,
   ) {
     const domain =
@@ -147,12 +174,6 @@ export class DataCollectionService {
         .resolveActiveImplementedDataSources(
           dto.dataSourceKeys,
         );
-
-    if (!dataSources.length) {
-      throw new BadRequestException(
-        'No active and implemented data sources are available.',
-      );
-    }
 
     const isGeneralDomain =
       this.isGeneralDomain(
@@ -171,7 +192,9 @@ export class DataCollectionService {
           );
 
     const userKeywords =
-      this.unique(dto.keywords ?? []);
+      this.unique(
+        dto.keywords ?? [],
+      );
 
     const relevanceTerms =
       this.unique([
@@ -188,64 +211,82 @@ export class DataCollectionService {
         .createRunningJob(
           dto,
           dataSources,
+          actorId,
         );
 
-    await this.createStartAuditLog({
+    await this.auditService.createLog({
       actorId,
-      trigger,
 
-      jobId: job.id,
+      action:
+        AuditAction.RUN_DATA_COLLECTION,
 
-      domainId: dto.domainId,
+      targetType:
+        AuditTargetType.DATA_COLLECTION,
 
-      domainName:
-        isGeneralDomain
-          ? 'General / All Domains'
-          : domain.name,
+      targetId:
+        job.id,
 
-      dataSourceKeys:
-        dataSources.map(
-          (source) => source.key,
-        ),
+      newValue: {
+        trigger,
 
-      country: dto.country,
-      city: dto.city,
-      region: dto.region,
+        domainId:
+          dto.domainId,
 
-      language: dto.language,
-      radiusKm: dto.radiusKm,
+        domainName:
+          isGeneralDomain
+            ? 'General / All Domains'
+            : domain.name,
 
-      domainKeywords,
-      userKeywords,
+        dataSourceKeys:
+          dataSources.map(
+            (source) => source.key,
+          ),
+
+        country:
+          dto.country,
+
+        city:
+          dto.city,
+
+        region:
+          dto.region,
+
+        language:
+          dto.language,
+
+        radiusKm:
+          dto.radiusKm,
+
+        domainKeywords,
+        userKeywords,
+      },
     });
 
-    try {
-      let totalPosts = 0;
-      let totalComments = 0;
+    let totalPosts = 0;
+    let totalComments = 0;
 
+    let completedSources = 0;
+    let failedSources = 0;
+
+    try {
       for (
         const dataSource of dataSources
       ) {
-        const currentJob =
-          await this.collectionJobService
-            .findJobOrThrow(job.id);
-
         /*
-         * Stop requests are checked between
-         * external collector executions.
+         * Check whether an administrator stopped the job
+         * before starting the next collector.
          */
         if (
-          currentJob.status ===
-          CollectionJobStatus.STOPPED
+          await this.isStopped(job.id)
         ) {
-          return currentJob;
-        }
-
-        const collector =
-          this.collectorsFactory
-            .getCollector(
-              dataSource.key,
+          await this.collectionJobService
+            .markRemainingSourcesStopped(
+              job.id,
             );
+
+          return this.collectionJobService
+            .findJobOrThrow(job.id);
+        }
 
         await this.collectionJobService
           .markSourceRunning(
@@ -254,6 +295,12 @@ export class DataCollectionService {
           );
 
         try {
+          const collector =
+            this.collectorsFactory
+              .getCollector(
+                dataSource.key,
+              );
+
           const collectorInput:
             CollectorInput = {
             domainName:
@@ -263,9 +310,14 @@ export class DataCollectionService {
 
             domainKeywords,
 
-            country: dto.country,
-            city: dto.city,
-            region: dto.region,
+            country:
+              dto.country,
+
+            city:
+              dto.city,
+
+            region:
+              dto.region,
 
             language:
               dto.language,
@@ -291,6 +343,24 @@ export class DataCollectionService {
                 },
               );
 
+          /*
+           * A collector may finish after the Admin has
+           * stopped the job.
+           *
+           * Check again before saving the returned data.
+           */
+          if (
+            await this.isStopped(job.id)
+          ) {
+            await this.collectionJobService
+              .markRemainingSourcesStopped(
+                job.id,
+              );
+
+            return this.collectionJobService
+              .findJobOrThrow(job.id);
+          }
+
           const relevantPosts =
             this.filterRelevantPosts(
               posts,
@@ -305,13 +375,13 @@ export class DataCollectionService {
 
                 {
                   country:
-                    job.country,
+                    dto.country,
 
                   city:
-                    job.city,
+                    dto.city,
 
                   region:
-                    job.region,
+                    dto.region,
                 },
 
                 relevantPosts,
@@ -329,24 +399,44 @@ export class DataCollectionService {
 
           totalComments +=
             totals.totalComments;
+
+          completedSources += 1;
         } catch (error: unknown) {
+          failedSources += 1;
+
+          /*
+           * One source failure should not stop all remaining
+           * source collectors.
+           */
           await this.collectionJobService
             .markSourceFailed(
               job.id,
               dataSource.id,
               error,
             );
-
-          throw error;
         }
+      }
+
+      /*
+       * The parent job fails only when every selected source
+       * failed. A successful source returning zero posts is
+       * still considered a successful source execution.
+       */
+      if (completedSources === 0) {
+        throw new ServiceUnavailableException(
+          'All selected data sources failed.',
+        );
       }
 
       const completedJob =
         await this.collectionJobService
-          .completeJob(job.id, {
-            totalPosts,
-            totalComments,
-          });
+          .completeJob(
+            job.id,
+            {
+              totalPosts,
+              totalComments,
+            },
+          );
 
       await this.auditService.createLog({
         actorId,
@@ -357,13 +447,17 @@ export class DataCollectionService {
         targetType:
           AuditTargetType.DATA_COLLECTION,
 
-        targetId: job.id,
+        targetId:
+          job.id,
 
         newValue: {
           trigger,
 
           status:
             CollectionJobStatus.COMPLETED,
+
+          completedSources,
+          failedSources,
 
           totalPosts,
           totalComments,
@@ -379,6 +473,9 @@ export class DataCollectionService {
         await this.collectionJobService
           .findJobOrThrow(job.id);
 
+      /*
+       * Do not overwrite a stopped job with FAILED.
+       */
       if (
         latestJob.status ===
         CollectionJobStatus.STOPPED
@@ -402,13 +499,17 @@ export class DataCollectionService {
         targetType:
           AuditTargetType.DATA_COLLECTION,
 
-        targetId: job.id,
+        targetId:
+          job.id,
 
         newValue: {
           trigger,
 
           status:
             CollectionJobStatus.FAILED,
+
+          completedSources,
+          failedSources,
 
           failedReason:
             this.getErrorMessage(error),
@@ -423,88 +524,16 @@ export class DataCollectionService {
   }
 
   /**
-   * Creates the start audit record.
+   * Returns caller-scoped collection-job status together
+   * with the shared queue and data-source state.
    */
-  private createStartAuditLog(
-    params: {
-      actorId?: string;
-      trigger: CollectionTrigger;
-
-      jobId: string;
-
-      domainId: string;
-      domainName: string;
-
-      dataSourceKeys: string[];
-
-      country?: string;
-      city?: string;
-      region?: string;
-
-      language: LanguageCode;
-      radiusKm?: number;
-
-      domainKeywords: string[];
-      userKeywords: string[];
-    },
+  async getStatus(
+    access: CollectionAccessContext,
   ) {
-    const action =
-      params.trigger ===
-      'USER_MANUAL'
-        ? AuditAction.RUN_DATA_COLLECTION
-        : AuditAction.RUN_DATA_COLLECTION;
-
-    return this.auditService.createLog({
-      actorId: params.actorId,
-      action,
-
-      targetType:
-        AuditTargetType.DATA_COLLECTION,
-
-      targetId: params.jobId,
-
-      newValue: {
-        trigger: params.trigger,
-
-        domainId:
-          params.domainId,
-
-        domainName:
-          params.domainName,
-
-        dataSourceKeys:
-          params.dataSourceKeys,
-
-        country:
-          params.country,
-
-        city:
-          params.city,
-
-        region:
-          params.region,
-
-        language:
-          params.language,
-
-        radiusKm:
-          params.radiusKm,
-
-        domainKeywords:
-          params.domainKeywords,
-
-        userKeywords:
-          params.userKeywords,
-      },
-    });
-  }
-
-  /**
-   * Returns Data Collection health and status.
-   */
-  async getStatus() {
     return {
-      service: 'Data Collection',
+      service:
+        'Data Collection',
+
       available: true,
 
       queue:
@@ -513,7 +542,7 @@ export class DataCollectionService {
 
       jobs:
         await this.collectionJobService
-          .getStatus(),
+          .getStatus(access),
 
       dataSources:
         await this.collectionJobService
@@ -521,34 +550,66 @@ export class DataCollectionService {
     };
   }
 
+  /**
+   * Returns collection jobs visible to the caller.
+   */
   getJobs(
     query: GetCollectionJobsQueryDto,
+    access: CollectionAccessContext,
   ) {
     return this.collectionJobService
-      .findJobs(query);
+      .findJobs(
+        query,
+        access,
+      );
   }
 
-  getJobDetails(id: string) {
+  /**
+   * Returns one collection job visible to the caller.
+   */
+  getJobDetails(
+    id: string,
+    access: CollectionAccessContext,
+  ) {
     return this.collectionJobService
-      .findJobDetails(id);
+      .findJobDetails(
+        id,
+        access,
+      );
   }
 
+  /**
+   * Returns collected posts visible to the caller.
+   */
   getPosts(
     query: GetSocialPostsQueryDto,
+    access: CollectionAccessContext,
   ) {
     return this.socialPostService
-      .findPosts(query);
+      .findPosts(
+        query,
+        access,
+      );
   }
 
+  /**
+   * Returns collected comments visible to the caller.
+   */
   getComments(
     query: GetSocialCommentsQueryDto,
+    access: CollectionAccessContext,
   ) {
     return this.socialCommentService
-      .findComments(query);
+      .findComments(
+        query,
+        access,
+      );
   }
 
   /**
    * Stops a running collection job.
+   *
+   * The controller restricts this operation to Admin.
    */
   async stop(
     id: string,
@@ -559,7 +620,8 @@ export class DataCollectionService {
         .stopJob(id);
 
     await this.auditService.createLog({
-      actorId: adminId,
+      actorId:
+        adminId,
 
       action:
         AuditAction.ADMIN_STOP_DATA_COLLECTION,
@@ -567,12 +629,10 @@ export class DataCollectionService {
       targetType:
         AuditTargetType.DATA_COLLECTION,
 
-      targetId: id,
+      targetId:
+        id,
 
       newValue: {
-        trigger:
-          'ADMIN_MANUAL_STOP',
-
         status:
           stoppedJob.status,
 
@@ -585,7 +645,23 @@ export class DataCollectionService {
   }
 
   /**
-   * Filters posts using the centralized relevance scorer.
+   * Checks whether a collection job was stopped.
+   */
+  private async isStopped(
+    jobId: string,
+  ): Promise<boolean> {
+    const job =
+      await this.collectionJobService
+        .findJobOrThrow(jobId);
+
+    return (
+      job.status ===
+      CollectionJobStatus.STOPPED
+    );
+  }
+
+  /**
+   * Filters collector results using shared relevance scoring.
    */
   private filterRelevantPosts(
     posts: CollectorPost[],
@@ -598,8 +674,11 @@ export class DataCollectionService {
     return posts.filter((post) => {
       const score =
         RelevanceScoreUtil.scoreText({
-          title: post.title,
-          body: post.content,
+          title:
+            post.title,
+
+          body:
+            post.content,
 
           domainTerms:
             relevanceTerms,
@@ -624,37 +703,34 @@ export class DataCollectionService {
   }
 
   /**
-   * Returns domain keywords applicable to the
-   * selected language.
+   * Returns domain keywords compatible with
+   * the requested language.
    */
   private getDomainKeywordsByLanguage(
-    domainKeywords: Array<{
+    keywords: Array<{
       keyword: string;
       language: LanguageCode;
     }>,
 
     language: LanguageCode,
   ): string[] {
-    return domainKeywords
-      .filter((item) => {
-        if (
+    return keywords
+      .filter(
+        (item) =>
           language ===
-          LanguageCode.ANY
-        ) {
-          return true;
-        }
-
-        return (
+            LanguageCode.ANY ||
           item.language ===
             LanguageCode.ANY ||
-          item.language === language
-        );
-      })
-      .map((item) => item.keyword);
+          item.language === language,
+      )
+      .map((item) =>
+        item.keyword.trim(),
+      )
+      .filter(Boolean);
   }
 
   /**
-   * Removes duplicate, blank, and untrimmed values.
+   * Trims, removes empty values, and deduplicates strings.
    */
   private unique(
     values: string[],
@@ -671,7 +747,7 @@ export class DataCollectionService {
   }
 
   /**
-   * Determines whether the selected domain is General.
+   * Identifies the reserved general domain.
    */
   private isGeneralDomain(
     domainName: string,
@@ -685,13 +761,17 @@ export class DataCollectionService {
   }
 
   /**
-   * Converts an unknown error to a safe message.
+   * Extracts a safe error message.
    */
   private getErrorMessage(
     error: unknown,
   ): string {
-    return error instanceof Error
-      ? error.message
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return typeof error === 'string'
+      ? error
       : 'Unknown collection error.';
   }
 }

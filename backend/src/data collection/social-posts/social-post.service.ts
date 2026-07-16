@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 
-import { PrismaService } from '../../prisma/prisma.service';
+import {
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 
 import { CollectorPost } from '../../collectors/base/collector.types';
 
-import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
 
 import {
   buildDateFilter,
@@ -13,29 +17,36 @@ import {
   buildPagination,
 } from '../../utilities/base-query/builder';
 
-import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+import { CollectionAccessContext } from '../types/collection-access-context.type';
+
+import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
 
 /**
- * Service responsible for storing and listing
- * collected social posts.
- *
- * Data-source identity is supplied explicitly using dataSourceId.
+ * Service responsible for:
+ * - Persisting collected posts.
+ * - Persisting collected comments.
+ * - Preventing duplicate records through upsert.
+ * - Listing posts with ownership enforcement.
  *
  * @author Malak
  */
 @Injectable()
 export class SocialPostService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma:
+      PrismaService,
   ) {}
 
   /**
-   * Saves posts and comments for one CollectionJobSource.
+   * Saves normalized posts and comments for one
+   * CollectionJobSource.
    *
-   * @param collectionJobId Parent collection job.
-   * @param dataSourceId Persistent DataSource identifier.
-   * @param location Collection request location.
-   * @param posts Normalized collector posts.
+   * The unique constraints:
+   * - collectionJobId + dataSourceId + externalId
+   * - postId + comment externalId
+   *
+   * make the persistence operation idempotent for
+   * repeated collector results.
    */
   async createManyWithComments(
     collectionJobId: string,
@@ -53,169 +64,262 @@ export class SocialPostService {
     let totalComments = 0;
 
     for (const post of posts) {
-      if (!post.externalId.trim()) {
+      const externalId =
+        post.externalId.trim();
+
+      const content =
+        post.content.trim();
+
+      /*
+       * Ignore malformed external records.
+       */
+      if (!externalId || !content) {
         continue;
       }
 
       const comments =
         post.comments ?? [];
 
-      await this.prisma.$transaction(
-        async (transaction) => {
-          const savedPost =
-            await transaction.socialPost.upsert({
-              where: {
-                collectionJobId_dataSourceId_externalId:
-                  {
+      const result =
+        await this.prisma.$transaction(
+          async (transaction) => {
+            const savedPost =
+              await transaction.socialPost
+                .upsert({
+                  where: {
+                    collectionJobId_dataSourceId_externalId:
+                      {
+                        collectionJobId,
+                        dataSourceId,
+                        externalId,
+                      },
+                  },
+
+                  update: {
+                    title:
+                      this.normalizeOptionalText(
+                        post.title,
+                      ),
+
+                    content,
+
+                    author:
+                      this.normalizeOptionalText(
+                        post.author,
+                      ),
+
+                    url:
+                      this.normalizeOptionalText(
+                        post.url,
+                      ),
+
+                    country:
+                      this.normalizeOptionalText(
+                        post.country ??
+                          location.country,
+                      ),
+
+                    city:
+                      this.normalizeOptionalText(
+                        post.city ??
+                          location.city,
+                      ),
+
+                    region:
+                      this.normalizeOptionalText(
+                        post.region ??
+                          location.region,
+                      ),
+
+                    languageCode:
+                      this.normalizeOptionalText(
+                        post.languageCode,
+                      ),
+
+                    likesCount:
+                      this.toNonNegativeInteger(
+                        post.likesCount,
+                      ),
+
+                    repliesCount:
+                      this.toNonNegativeInteger(
+                        post.repliesCount ??
+                          comments.length,
+                      ),
+
+                    publishedAt:
+                      post.publishedAt,
+
+                    collectedAt:
+                      new Date(),
+                  },
+
+                  create: {
                     collectionJobId,
                     dataSourceId,
-                    externalId:
-                      post.externalId,
+                    externalId,
+
+                    title:
+                      this.normalizeOptionalText(
+                        post.title,
+                      ),
+
+                    content,
+
+                    author:
+                      this.normalizeOptionalText(
+                        post.author,
+                      ),
+
+                    url:
+                      this.normalizeOptionalText(
+                        post.url,
+                      ),
+
+                    country:
+                      this.normalizeOptionalText(
+                        post.country ??
+                          location.country,
+                      ),
+
+                    city:
+                      this.normalizeOptionalText(
+                        post.city ??
+                          location.city,
+                      ),
+
+                    region:
+                      this.normalizeOptionalText(
+                        post.region ??
+                          location.region,
+                      ),
+
+                    languageCode:
+                      this.normalizeOptionalText(
+                        post.languageCode,
+                      ),
+
+                    likesCount:
+                      this.toNonNegativeInteger(
+                        post.likesCount,
+                      ),
+
+                    repliesCount:
+                      this.toNonNegativeInteger(
+                        post.repliesCount ??
+                          comments.length,
+                      ),
+
+                    publishedAt:
+                      post.publishedAt,
                   },
-              },
+                });
 
-              update: {
-                title: post.title,
-                content: post.content,
-                author: post.author,
-                url: post.url,
+            let persistedComments = 0;
 
-                country:
-                  post.country ??
-                  location.country,
-
-                city:
-                  post.city ??
-                  location.city,
-
-                region:
-                  post.region ??
-                  location.region,
-
-                languageCode:
-                  post.languageCode,
-
-                likesCount:
-                  post.likesCount ?? 0,
-
-                repliesCount:
-                  post.repliesCount ??
-                  comments.length,
-
-                publishedAt:
-                  post.publishedAt,
-
-                collectedAt:
-                  new Date(),
-              },
-
-              create: {
-                collectionJobId,
-                dataSourceId,
-
-                externalId:
-                  post.externalId,
-
-                title: post.title,
-                content: post.content,
-                author: post.author,
-                url: post.url,
-
-                country:
-                  post.country ??
-                  location.country,
-
-                city:
-                  post.city ??
-                  location.city,
-
-                region:
-                  post.region ??
-                  location.region,
-
-                languageCode:
-                  post.languageCode,
-
-                likesCount:
-                  post.likesCount ?? 0,
-
-                repliesCount:
-                  post.repliesCount ??
-                  comments.length,
-
-                publishedAt:
-                  post.publishedAt,
-              },
-            });
-
-          totalPosts += 1;
-
-          for (const comment of comments) {
-            if (
-              !comment.externalId.trim()
+            for (
+              const comment of comments
             ) {
-              continue;
+              const commentExternalId =
+                comment.externalId.trim();
+
+              const commentContent =
+                comment.content.trim();
+
+              /*
+               * Ignore malformed comments.
+               */
+              if (
+                !commentExternalId ||
+                !commentContent
+              ) {
+                continue;
+              }
+
+              await transaction.socialComment
+                .upsert({
+                  where: {
+                    postId_externalId: {
+                      postId:
+                        savedPost.id,
+
+                      externalId:
+                        commentExternalId,
+                    },
+                  },
+
+                  update: {
+                    content:
+                      commentContent,
+
+                    author:
+                      this.normalizeOptionalText(
+                        comment.author,
+                      ),
+
+                    languageCode:
+                      this.normalizeOptionalText(
+                        comment.languageCode,
+                      ),
+
+                    likesCount:
+                      this.toNonNegativeInteger(
+                        comment.likesCount,
+                      ),
+
+                    publishedAt:
+                      comment.publishedAt,
+
+                    collectedAt:
+                      new Date(),
+                  },
+
+                  create: {
+                    postId:
+                      savedPost.id,
+
+                    externalId:
+                      commentExternalId,
+
+                    content:
+                      commentContent,
+
+                    author:
+                      this.normalizeOptionalText(
+                        comment.author,
+                      ),
+
+                    languageCode:
+                      this.normalizeOptionalText(
+                        comment.languageCode,
+                      ),
+
+                    likesCount:
+                      this.toNonNegativeInteger(
+                        comment.likesCount,
+                      ),
+
+                    publishedAt:
+                      comment.publishedAt,
+                  },
+                });
+
+              persistedComments += 1;
             }
 
-            await transaction.socialComment.upsert({
-              where: {
-                postId_externalId: {
-                  postId: savedPost.id,
-                  externalId:
-                    comment.externalId,
-                },
-              },
+            return {
+              posts: 1,
+              comments:
+                persistedComments,
+            };
+          },
+        );
 
-              update: {
-                content:
-                  comment.content,
+      totalPosts +=
+        result.posts;
 
-                author:
-                  comment.author,
-
-                languageCode:
-                  comment.languageCode,
-
-                likesCount:
-                  comment.likesCount ??
-                  0,
-
-                publishedAt:
-                  comment.publishedAt,
-
-                collectedAt:
-                  new Date(),
-              },
-
-              create: {
-                postId:
-                  savedPost.id,
-
-                externalId:
-                  comment.externalId,
-
-                content:
-                  comment.content,
-
-                author:
-                  comment.author,
-
-                languageCode:
-                  comment.languageCode,
-
-                likesCount:
-                  comment.likesCount ??
-                  0,
-
-                publishedAt:
-                  comment.publishedAt,
-              },
-            });
-
-            totalComments += 1;
-          }
-        },
-      );
+      totalComments +=
+        result.comments;
     }
 
     return {
@@ -225,10 +329,12 @@ export class SocialPostService {
   }
 
   /**
-   * Returns paginated collected posts.
+   * Returns paginated posts visible
+   * to the current caller.
    */
   async findPosts(
     query: GetSocialPostsQueryDto,
+    access: CollectionAccessContext,
   ) {
     const {
       skip,
@@ -238,56 +344,61 @@ export class SocialPostService {
     } = buildPagination(query);
 
     const where =
-      this.buildPostsWhere(query);
+      this.buildPostsWhere(
+        query,
+        access,
+      );
 
     const [data, total] =
       await Promise.all([
-        this.prisma.socialPost.findMany({
-          where,
-          skip,
-          take,
+        this.prisma.socialPost
+          .findMany({
+            where,
+            skip,
+            take,
 
-          orderBy: buildOrderBy(
-            query,
-            [
+            orderBy: buildOrderBy(
+              query,
+              [
+                'createdAt',
+                'collectedAt',
+                'likesCount',
+                'repliesCount',
+              ] as const,
               'createdAt',
-              'collectedAt',
-              'likesCount',
-              'repliesCount',
-            ] as const,
-            'createdAt',
-          ),
+            ),
 
-          include: {
-            dataSource: {
-              select: {
-                id: true,
-                key: true,
-                displayName: true,
+            include: {
+              dataSource: {
+                select: {
+                  id: true,
+                  key: true,
+                  displayName: true,
+                },
               },
-            },
 
-            collectionJob: {
-              select: {
-                id: true,
-                status: true,
+              collectionJob: {
+                select: {
+                  id: true,
+                  createdById: true,
+                  status: true,
 
-                domain: {
-                  select: {
-                    id: true,
-                    name: true,
+                  domain: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
                   },
                 },
               },
-            },
 
-            _count: {
-              select: {
-                comments: true,
+              _count: {
+                select: {
+                  comments: true,
+                },
               },
             },
-          },
-        }),
+          }),
 
         this.prisma.socialPost.count({
           where,
@@ -312,13 +423,17 @@ export class SocialPostService {
   }
 
   /**
-   * Builds Prisma post filters.
+   * Builds post filters including caller ownership.
    */
   private buildPostsWhere(
     query: GetSocialPostsQueryDto,
+    access: CollectionAccessContext,
   ): Prisma.SocialPostWhereInput {
     const dateFilter =
       buildDateFilter(query);
+
+    const search =
+      query.search?.trim();
 
     return {
       ...(query.collectionJobId && {
@@ -333,16 +448,30 @@ export class SocialPostService {
 
       ...(query.dataSourceKey && {
         dataSource: {
-          key: query.dataSourceKey
-            .trim()
-            .toLowerCase(),
+          key:
+            query.dataSourceKey
+              .trim()
+              .toLowerCase(),
+        },
+      }),
+
+      /*
+       * Users can see only posts whose parent job
+       * belongs to them.
+       */
+      ...(access.role !==
+        UserRole.ADMIN && {
+        collectionJob: {
+          createdById:
+            access.userId,
         },
       }),
 
       ...(query.languageCode && {
         languageCode: {
           equals:
-            query.languageCode,
+            query.languageCode.trim(),
+
           mode: 'insensitive',
         },
       }),
@@ -350,14 +479,17 @@ export class SocialPostService {
       ...(query.country && {
         country: {
           contains:
-            query.country,
+            query.country.trim(),
+
           mode: 'insensitive',
         },
       }),
 
       ...(query.city && {
         city: {
-          contains: query.city,
+          contains:
+            query.city.trim(),
+
           mode: 'insensitive',
         },
       }),
@@ -365,7 +497,8 @@ export class SocialPostService {
       ...(query.region && {
         region: {
           contains:
-            query.region,
+            query.region.trim(),
+
           mode: 'insensitive',
         },
       }),
@@ -373,43 +506,40 @@ export class SocialPostService {
       ...(query.author && {
         author: {
           contains:
-            query.author,
+            query.author.trim(),
+
           mode: 'insensitive',
         },
       }),
 
       ...(dateFilter ?? {}),
 
-      ...(query.search?.trim() && {
+      ...(search && {
         OR: [
           {
             title: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
 
           {
             content: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
 
           {
             author: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
 
           {
             url: {
-              contains:
-                query.search,
+              contains: search,
               mode: 'insensitive',
             },
           },
@@ -417,8 +547,7 @@ export class SocialPostService {
           {
             dataSource: {
               displayName: {
-                contains:
-                  query.search,
+                contains: search,
                 mode: 'insensitive',
               },
             },
@@ -428,8 +557,7 @@ export class SocialPostService {
             collectionJob: {
               domain: {
                 name: {
-                  contains:
-                    query.search,
+                  contains: search,
                   mode: 'insensitive',
                 },
               },
@@ -438,5 +566,38 @@ export class SocialPostService {
         ],
       }),
     };
+  }
+
+  /**
+   * Normalizes optional external text.
+   *
+   * Empty strings become null.
+   */
+  private normalizeOptionalText(
+    value?: string | null,
+  ): string | null {
+    const normalized =
+      value?.trim();
+
+    return normalized
+      ? normalized
+      : null;
+  }
+
+  /**
+   * Converts an external numeric value into
+   * a safe non-negative integer.
+   */
+  private toNonNegativeInteger(
+    value?: number,
+  ): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      Math.trunc(value ?? 0),
+    );
   }
 }

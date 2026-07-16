@@ -1,20 +1,19 @@
 /**
- * Utility class responsible for language normalization
- * and lightweight language detection used by data collectors.
+ * Utility responsible for language normalization and
+ * lightweight script-based language validation.
  *
- * Features:
- * - Converts language names into ISO language codes.
- * - Supports all project languages.
- * - Provides NewsAPI language resolution.
- * - Performs lightweight language detection.
+ * This utility is used only by external collectors.
+ * Full language detection remains the responsibility
+ * of the NLP pipeline.
  *
  * @author Malak
  */
 export class CollectorLanguageUtil {
   /**
-   * Language aliases.
+   * Supported language aliases mapped to ISO 639-1 codes.
    */
-  private static readonly LANGUAGE_MAP: Record<string, string> = {
+  private static readonly LANGUAGE_MAP:
+    Readonly<Record<string, string>> = {
     en: 'en',
     eng: 'en',
     english: 'en',
@@ -75,103 +74,173 @@ export class CollectorLanguageUtil {
   };
 
   /**
-   * Languages officially supported by NewsAPI.
+   * Languages accepted by NewsAPI.
    */
-  private static readonly NEWS_API_LANGUAGES = new Set([
-    'ar',
-    'de',
-    'en',
-    'es',
-    'fr',
-    'he',
-    'it',
-    'nl',
-    'no',
-    'pt',
-    'ru',
-    'sv',
-    'zh',
-  ]);
+  private static readonly NEWS_API_LANGUAGES =
+    new Set([
+      'ar',
+      'de',
+      'en',
+      'es',
+      'fr',
+      'he',
+      'it',
+      'nl',
+      'no',
+      'pt',
+      'ru',
+      'sv',
+      'zh',
+    ]);
 
   /**
-   * Resolves a language name or code into an ISO language code.
+   * Resolves a supported language name or alias
+   * into an ISO 639-1 code.
    *
-   * Examples:
-   * English -> en
-   * Arabic -> ar
-   * German -> de
+   * `ANY` means that no language restriction is requested,
+   * therefore it resolves to undefined.
+   *
+   * Unknown strings are not silently truncated because
+   * doing so could turn "ANY" into an invalid "an" code.
    */
-  static resolveLanguageCode(language?: string): string | undefined {
-    if (!language) return undefined;
+  static resolveLanguageCode(
+    language?: string,
+  ): string | undefined {
+    if (!language) {
+      return undefined;
+    }
 
-    const value = language.trim().toLowerCase();
+    const value =
+      language
+        .trim()
+        .toLowerCase();
+
+    if (
+      !value ||
+      value === 'any'
+    ) {
+      return undefined;
+    }
+
+    const mapped =
+      this.LANGUAGE_MAP[value] ??
+      this.LANGUAGE_MAP[
+        value.slice(0, 3)
+      ];
+
+    if (mapped) {
+      return mapped;
+    }
+
+    /*
+     * Accept a valid two-letter ISO-like code,
+     * but reject arbitrary strings.
+     */
+    return /^[a-z]{2}$/i.test(value)
+      ? value
+      : undefined;
+  }
+
+  /**
+   * Resolves a language supported by NewsAPI.
+   */
+  static resolveNewsApiLanguage(
+    language?: string,
+  ): string | undefined {
+    const code =
+      this.resolveLanguageCode(
+        language,
+      );
 
     return (
-      this.LANGUAGE_MAP[value] ??
-      this.LANGUAGE_MAP[value.slice(0, 3)] ??
-      value.slice(0, 2)
+      code &&
+      this.NEWS_API_LANGUAGES.has(code)
+    )
+      ? code
+      : undefined;
+  }
+
+  /**
+   * Returns true when Arabic was explicitly requested.
+   */
+  static isArabic(
+    language?: string,
+  ): boolean {
+    return (
+      this.resolveLanguageCode(
+        language,
+      ) === 'ar'
     );
   }
 
   /**
-   * Resolves language code supported by NewsAPI.
+   * Performs lightweight script-based language validation.
    *
-   * Returns undefined if NewsAPI does not support it.
+   * This function is deliberately conservative and is not
+   * intended to replace the NLP language-detection service.
    */
-  static resolveNewsApiLanguage(language?: string): string | undefined {
-    const code = this.resolveLanguageCode(language);
+  static matchesRequestedLanguage(
+    content: string,
+    language?: string,
+  ): boolean {
+    const code =
+      this.resolveLanguageCode(
+        language,
+      );
 
+    /*
+     * ANY or unknown language means no collector-side filter.
+     */
     if (!code) {
-      return undefined;
-    }
-
-    return this.NEWS_API_LANGUAGES.has(code) ? code : undefined;
-  }
-
-  /**
-   * Returns true if the requested language is Arabic.
-   */
-  static isArabic(language?: string): boolean {
-    return this.resolveLanguageCode(language) === 'ar';
-  }
-
-  /**
-   * Performs lightweight language validation.
-   */
-  static matchesRequestedLanguage(content: string, language?: string): boolean {
-    const languageCode = this.resolveLanguageCode(language);
-
-    if (!languageCode) {
       return true;
     }
 
-    switch (languageCode) {
+    switch (code) {
       case 'ar':
-        return /[\u0600-\u06FF]/.test(content);
+        return /[\u0600-\u06FF]/u
+          .test(content);
 
       case 'en':
-        return /[a-z]/i.test(content);
+        return /[a-z]/iu
+          .test(content);
+
+      case 'ru':
+        return /[\u0400-\u04FF]/u
+          .test(content);
+
+      case 'he':
+        return /[\u0590-\u05FF]/u
+          .test(content);
+
+      case 'zh':
+        return /[\u3400-\u9FFF]/u
+          .test(content);
 
       case 'de':
-        return /[äöüß]/i.test(content) || /[a-z]/i.test(content);
+        return /[äöüßa-z]/iu
+          .test(content);
 
       case 'fr':
-        return /[àâçéèêëîïôûùüÿ]/i.test(content) || /[a-z]/i.test(content);
+        return /[àâçéèêëîïôûùüÿa-z]/iu
+          .test(content);
 
       case 'es':
-        return /[áéíóúñü]/i.test(content) || /[a-z]/i.test(content);
+        return /[áéíóúñüa-z]/iu
+          .test(content);
 
       case 'it':
-        return /[àèéìîòóù]/i.test(content) || /[a-z]/i.test(content);
+        return /[àèéìîòóùa-z]/iu
+          .test(content);
 
+      /*
+       * Lightweight script validation is not reliable
+       * enough for these Latin-script languages.
+       */
+      case 'tr':
       case 'nl':
       case 'pt':
       case 'sv':
       case 'no':
-      case 'tr':
-      case 'ru':
-      case 'he':
-      case 'zh':
       default:
         return true;
     }
