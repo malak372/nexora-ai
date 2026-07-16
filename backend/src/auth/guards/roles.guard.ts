@@ -40,7 +40,7 @@ type RequestWithUser = {
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) { }
 
   /**
    * Determines whether the current request is authorized
@@ -56,12 +56,11 @@ export class RolesGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredRoles || requiredRoles.length === 0) {
+    if (!requiredRoles?.length) {
       return true;
     }
 
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-
     const user = request.user;
 
     if (!user) {

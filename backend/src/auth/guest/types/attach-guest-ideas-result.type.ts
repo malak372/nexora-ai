@@ -12,5 +12,5 @@ export type AttachGuestIdeasResult = {
   /**
    * Identifiers of the transferred ideas.
    */
-  readonly ideaIds: string[];
+  readonly ideaIds: readonly string[];
 };

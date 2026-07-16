@@ -2,17 +2,25 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthAction } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+
+import { AuthAuditService } from '../audit/audit.service';
+import type { AuthRequestMeta } from '../audit/audit.service';
 import { RefreshDto } from '../dto/refresh.dto';
 import { AuthTokenService } from '../token/token.service';
-import { AuthAuditService, AuthRequestMeta } from '../audit/audit.service';
+
+const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
 
 /**
- * Service responsible for refresh token operations.
+ * Service responsible for refresh-token operations.
  *
- * Handles refresh token validation, revocation checks,
- * expiration checks, account activity checks, refresh token
- * rotation, access token generation, and authentication
- * audit logging.
+ * Handles:
+ * - Refresh-token validation.
+ * - Revocation and expiration checks.
+ * - Account availability checks.
+ * - One-time refresh-token consumption.
+ * - Refresh-token rotation.
+ * - Access-token generation.
+ * - Authentication audit logging.
  *
  * @author Eman
  */
@@ -22,98 +30,157 @@ export class AuthRefreshService {
     private readonly prisma: PrismaService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) {}
+  ) { }
 
   /**
-   * Refreshes authentication tokens using a valid refresh token.
+   * Rotates a valid refresh token and returns a new token pair.
    *
-   * Records successful refresh token rotations and failed refresh
-   * attempts in the authentication audit logs.
+   * The provided refresh token can be consumed only once.
+   * Reusing an expired, revoked, unknown, or concurrently consumed
+   * refresh token results in an unauthorized response.
    *
-   * @param dto Refresh token request data.
-   * @param meta Optional request metadata such as IP address and user agent.
-   * @returns Newly generated access token and refresh token.
+   * @param dto - Refresh-token request data.
+   * @param meta - Optional request metadata.
+   * @returns Newly generated access and refresh tokens.
    *
-   * @throws UnauthorizedException if the refresh token is invalid,
-   * revoked, expired, or the associated account is inactive or not verified.
+   * @throws UnauthorizedException when token rotation fails.
    */
   async refresh(dto: RefreshDto, meta?: AuthRequestMeta) {
-    const tokenHash = this.authTokenService.hashToken(dto.refreshToken);
+    const tokenHash =
+      this.authTokenService.hashToken(dto.refreshToken);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash },
-      include: { user: true },
-    });
+    const storedToken =
+      await this.prisma.refreshToken.findUnique({
+        where: {
+          tokenHash,
+        },
+        select: {
+          id: true,
+          userId: true,
+          expiresAt: true,
+          revokedAt: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+              accountStatus: true,
+              userType: true,
+              freeGenerationLimit: true,
+              freeGenerationsUsed: true,
+              creditBalance: true,
+              isActive: true,
+              isVerified: true,
+              deletedAt: true,
+            },
+          },
+        },
+      });
 
     if (!storedToken) {
-      await this.authAuditService.createLog({
-        action: AuthAction.REFRESH_TOKEN_FAILED,
-        isSuccess: false,
-        message: 'Invalid refresh token',
-        ...meta,
-      });
+      await this.logFailedRefresh(
+        'Refresh token was not found',
+        meta,
+      );
 
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(
+        INVALID_REFRESH_TOKEN_MESSAGE,
+      );
     }
+
+    const now = new Date();
 
     if (storedToken.revokedAt) {
-      await this.authAuditService.createLog({
-        userId: storedToken.user.id,
-        email: storedToken.user.email,
-        action: AuthAction.REFRESH_TOKEN_FAILED,
-        isSuccess: false,
-        message: 'Refresh token revoked',
-        ...meta,
-      });
+      await this.logFailedRefresh(
+        'Refresh token was already revoked',
+        meta,
+        storedToken.userId,
+        storedToken.user.email,
+      );
 
-      throw new UnauthorizedException('Refresh token revoked');
+      throw new UnauthorizedException(
+        INVALID_REFRESH_TOKEN_MESSAGE,
+      );
     }
 
-    if (storedToken.expiresAt < new Date()) {
-      await this.authAuditService.createLog({
-        userId: storedToken.user.id,
-        email: storedToken.user.email,
-        action: AuthAction.REFRESH_TOKEN_FAILED,
-        isSuccess: false,
-        message: 'Refresh token expired',
-        ...meta,
-      });
+    if (storedToken.expiresAt <= now) {
+      await this.logFailedRefresh(
+        'Refresh token has expired',
+        meta,
+        storedToken.userId,
+        storedToken.user.email,
+      );
 
-      throw new UnauthorizedException('Refresh token expired');
+      throw new UnauthorizedException(
+        INVALID_REFRESH_TOKEN_MESSAGE,
+      );
     }
 
-    if (!storedToken.user.isActive || !storedToken.user.isVerified) {
-      await this.authAuditService.createLog({
-        userId: storedToken.user.id,
-        email: storedToken.user.email,
-        action: AuthAction.REFRESH_TOKEN_FAILED,
-        isSuccess: false,
-        message: 'Account is inactive or not verified',
-        ...meta,
-      });
+    if (
+      !storedToken.user.isActive ||
+      !storedToken.user.isVerified ||
+      storedToken.user.deletedAt
+    ) {
+      await this.logFailedRefresh(
+        'Associated account is inactive, unverified, or deleted',
+        meta,
+        storedToken.userId,
+        storedToken.user.email,
+      );
 
-      throw new UnauthorizedException('Account is inactive or not verified');
+      throw new UnauthorizedException(
+        INVALID_REFRESH_TOKEN_MESSAGE,
+      );
     }
 
-    await this.prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: {
-        revokedAt: new Date(),
-        lastUsedAt: new Date(),
-      },
-    });
+    /**
+     * Atomically consumes the current refresh token.
+     *
+     * The revokedAt condition ensures that if concurrent requests
+     * attempt to use the same token, only one request succeeds.
+     */
+    const revocationResult =
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          id: storedToken.id,
+          revokedAt: null,
+          expiresAt: {
+            gt: now,
+          },
+        },
+        data: {
+          revokedAt: now,
+          lastUsedAt: now,
+        },
+      });
 
-    const accessToken = await this.authTokenService.generateAccessToken(
-      storedToken.user,
-    );
+    if (revocationResult.count !== 1) {
+      await this.logFailedRefresh(
+        'Refresh token was concurrently consumed or became invalid',
+        meta,
+        storedToken.userId,
+        storedToken.user.email,
+      );
 
-    const refreshToken = await this.authTokenService.generateRefreshToken(
-      storedToken.user.id,
-      meta,
-    );
+      throw new UnauthorizedException(
+        INVALID_REFRESH_TOKEN_MESSAGE,
+      );
+    }
+
+    const accessToken =
+      await this.authTokenService.generateAccessToken(
+        storedToken.user,
+      );
+
+    const refreshToken =
+      await this.authTokenService.generateRefreshToken(
+        storedToken.userId,
+        meta,
+      );
 
     await this.authAuditService.createLog({
-      userId: storedToken.user.id,
+      userId: storedToken.userId,
       email: storedToken.user.email,
       action: AuthAction.REFRESH_TOKEN,
       isSuccess: true,
@@ -125,5 +192,24 @@ export class AuthRefreshService {
       accessToken,
       refreshToken,
     };
+  }
+
+  /**
+   * Records a failed refresh-token operation.
+   */
+  private async logFailedRefresh(
+    message: string,
+    meta?: AuthRequestMeta,
+    userId?: string,
+    email?: string,
+  ): Promise<void> {
+    await this.authAuditService.createLog({
+      userId,
+      email,
+      action: AuthAction.REFRESH_TOKEN_FAILED,
+      isSuccess: false,
+      message,
+      ...meta,
+    });
   }
 }

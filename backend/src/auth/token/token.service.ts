@@ -1,18 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AccountStatus, UserRole } from '@prisma/client';
-import { randomBytes, createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
+import { createHash, randomBytes } from 'crypto';
 import type { StringValue } from 'ms';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
+const REFRESH_TOKEN_BYTES = 64;
+const REFRESH_TOKEN_EXPIRES_DAYS = 30;
+
+const DEFAULT_ACCESS_TOKEN_EXPIRES_IN: StringValue = '15m';
+
 /**
- * Service responsible for authentication token operations.
+ * Metadata stored with a refresh-token session.
+ */
+type RefreshTokenMeta = {
+  readonly ipAddress?: string;
+  readonly userAgent?: string;
+};
+
+/**
+ * Service responsible for authentication-token operations.
  *
  * Handles:
- * - Hashing refresh, password reset, and email verification tokens.
- * - Generating JWT access tokens.
- * - Generating and storing secure refresh tokens.
+ * - Hashing sensitive plain tokens.
+ * - Generating signed JWT access tokens.
+ * - Generating secure refresh tokens.
+ * - Persisting refresh-token session records.
  *
  * @author Eman
  */
@@ -21,49 +35,60 @@ export class AuthTokenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
   /**
    * Hashes a plain token using SHA-256.
    *
-   * Used before storing or comparing sensitive tokens
-   * such as refresh tokens, password reset tokens,
-   * and email verification tokens.
+   * Used before storing or comparing refresh tokens,
+   * password-reset tokens, and email-verification tokens.
    *
    * @param token - Plain token value.
-   * @returns Hashed token value.
+   * @returns SHA-256 hexadecimal token hash.
    */
-  hashToken(token: string) {
-    return createHash('sha256').update(token).digest('hex');
+  hashToken(token: string): string {
+    return createHash('sha256')
+      .update(token)
+      .digest('hex');
   }
 
   /**
    * Generates a signed JWT access token.
    *
-   * The token includes the user's ID, email, role,
-   * and account status. These claims support authentication
-   * and role-based authorization, while the latest user data
-   * is still reloaded from the database by JwtStrategy.
+   * Only the user identifier is stored in the custom payload.
+   * Current account and authorization data are loaded from the
+   * database by JwtStrategy for every protected request.
    *
-   * @param user User data required for JWT payload.
+   * The JWT library automatically adds claims such as:
+   * - iat: token issuance time.
+   * - exp: token expiration time.
+   *
+   * @param user - User identity required for the JWT payload.
    * @returns Signed JWT access token.
    */
   async generateAccessToken(user: {
-    id: string;
-    email: string;
-    role: UserRole;
-    accountStatus: AccountStatus;
-  }) {
+    readonly id: string;
+  }): Promise<string> {
+    const accessTokenSecret =
+      process.env.JWT_ACCESS_SECRET?.trim();
+
+    if (!accessTokenSecret) {
+      throw new Error(
+        'JWT_ACCESS_SECRET is not configured',
+      );
+    }
+
+    const expiresIn =
+      (process.env.JWT_ACCESS_EXPIRES_IN?.trim() ||
+        DEFAULT_ACCESS_TOKEN_EXPIRES_IN) as StringValue;
+
     return this.jwtService.signAsync(
       {
         sub: user.id,
-        email: user.email,
-        role: user.role,
-        accountStatus: user.accountStatus,
       },
       {
-        secret: process.env.JWT_ACCESS_SECRET,
-        expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '15m') as StringValue,
+        secret: accessTokenSecret,
+        expiresIn,
       },
     );
   }
@@ -71,41 +96,47 @@ export class AuthTokenService {
   /**
    * Generates and stores a secure refresh token.
    *
-   * A cryptographically secure refresh token is generated
-   * and returned to the client, while only its hashed value
-   * is stored in the database for security.
+   * The plain token is returned to the client, while only its
+   * SHA-256 hash is stored in the database.
    *
-   * The associated session metadata, including the client's
-   * IP address and user agent when available, is stored to
-   * support session management, device tracking, and future
-   * security analysis.
+   * An optional Prisma transaction client may be supplied so
+   * refresh-token rotation can revoke the old token and create
+   * the replacement token atomically.
    *
-   * @param userId ID of the user who owns the refresh token.
-   * @param meta Optional client session metadata such as IP address
-   * and user agent.
-   * @returns Plain refresh token.
+   * @param userId - User who owns the refresh-token session.
+   * @param meta - Optional client IP address and user agent.
+   * @param tx - Optional existing Prisma transaction client.
+   * @returns Plain refresh token sent to the client.
    */
   async generateRefreshToken(
     userId: string,
-    meta?: {
-      ipAddress?: string;
-      userAgent?: string;
-    },
-  ) {
-    const refreshToken = randomBytes(64).toString('hex');
+    meta?: RefreshTokenMeta,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const refreshToken = randomBytes(
+      REFRESH_TOKEN_BYTES,
+    ).toString('hex');
+
     const tokenHash = this.hashToken(refreshToken);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    const now = new Date();
 
-    await this.prisma.refreshToken.create({
+    const expiresAt = new Date(now);
+    expiresAt.setUTCDate(
+      expiresAt.getUTCDate() +
+      REFRESH_TOKEN_EXPIRES_DAYS,
+    );
+
+    const client = tx ?? this.prisma;
+
+    await client.refreshToken.create({
       data: {
         userId,
         tokenHash,
         expiresAt,
         ipAddress: meta?.ipAddress,
         userAgent: meta?.userAgent,
-        lastUsedAt: new Date(),
+        lastUsedAt: now,
       },
     });
 
