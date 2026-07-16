@@ -1,90 +1,139 @@
 import { Injectable } from '@nestjs/common';
-import { AuthAction } from '@prisma/client';
+
+import {
+  AuthenticationLog,
+  AuthAction,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
+ * Maximum number of authentication logs returned to the
+ * administrator when pagination is not supplied.
+ */
+const DEFAULT_AUTH_AUDIT_LOGS_LIMIT = 100;
+
+/**
  * Metadata extracted from an authentication request.
  *
- * This metadata provides additional context for authentication
- * audit logs, allowing authentication events to be traced back
- * to the originating client when available.
+ * Provides additional context for security monitoring
+ * and authentication-event traceability.
  */
 export type AuthRequestMeta = {
-  ipAddress?: string;
-  userAgent?: string;
+  /**
+   * Client IP address when available.
+   */
+  readonly ipAddress?: string;
+
+  /**
+   * Client user-agent header when available.
+   */
+  readonly userAgent?: string;
 };
 
 /**
- * Service responsible for recording authentication audit logs.
+ * Input required to create an authentication audit log.
+ */
+export type CreateAuthLogInput = AuthRequestMeta & {
+  /**
+   * Related authenticated user identifier.
+   *
+   * It may be absent for failed authentication attempts
+   * where the user could not be identified.
+   */
+  readonly userId?: string;
+
+  /**
+   * Email involved in the authentication event.
+   *
+   * It may be stored even when no user record was found,
+   * such as during a failed login attempt.
+   */
+  readonly email?: string;
+
+  /**
+   * Authentication action being recorded.
+   */
+  readonly action: AuthAction;
+
+  /**
+   * Indicates whether the authentication operation succeeded.
+   *
+   * Defaults to true when omitted.
+   */
+  readonly isSuccess?: boolean;
+
+  /**
+   * Optional safe description of the authentication event.
+   *
+   * Passwords, tokens, secrets, and other sensitive values
+   * must never be included.
+   */
+  readonly message?: string;
+};
+
+/**
+ * Service responsible for recording and retrieving
+ * authentication audit logs.
  *
- * This service centralizes authentication activity logging for
- * security monitoring and auditing purposes.
+ * This service centralizes authentication-event persistence
+ * for security monitoring and auditing purposes.
  *
- * Logged events include:
- * - User registration.
+ * Examples of recorded events:
+ * - Registration.
  * - Successful and failed login attempts.
- * - Account lock events.
- * - Logout operations.
- * - Refresh token usage.
- * - Password changes.
- * - Password reset requests and completions.
+ * - Account locking.
+ * - Logout.
+ * - Refresh-token usage.
+ * - Password changes and resets.
  * - Email verification.
- * - Verification email resend requests.
  * - Account deactivation.
- *
- * Each log entry may optionally include client metadata,
- * such as the IP address and user agent, to improve
- * traceability and support future security analysis.
  *
  * @author Eman
  */
 @Injectable()
 export class AuthAuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+  ) { }
 
   /**
-   * Creates a new authentication audit log entry.
+   * Creates an authentication audit-log entry.
    *
-   * @param data Authentication audit log information.
-   * @returns Created authentication log record.
+   * @param input Authentication event information.
+   * @returns The newly created authentication log.
    */
-  async createLog(data: {
-    userId?: string;
-    email?: string;
-    action: AuthAction;
-    isSuccess?: boolean;
-    message?: string;
-    ipAddress?: string;
-    userAgent?: string;
-  }) {
+  async createLog(
+    input: CreateAuthLogInput,
+  ): Promise<AuthenticationLog> {
     return this.prisma.authenticationLog.create({
       data: {
-        userId: data.userId,
-        email: data.email,
-        action: data.action,
-        isSuccess: data.isSuccess ?? true,
-        message: data.message,
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
+        userId: input.userId,
+        email: input.email,
+        action: input.action,
+        isSuccess: input.isSuccess ?? true,
+        message: input.message,
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
       },
     });
   }
+
   /**
-   * Retrieves authentication audit logs ordered from newest to oldest.
+   * Retrieves the latest authentication audit logs,
+   * ordered from newest to oldest.
    *
-   * This method is intended for admin monitoring screens to review
-   * authentication-related events such as login attempts, password
-   * changes, token refreshes, logouts, and email verification actions.
+   * This method is intended for administrator security
+   * monitoring. Access control is enforced by the controller.
    *
-   * @returns List of authentication audit logs.
+   * @returns The latest authentication audit-log records.
    */
-  async getLogs() {
+  async getLogs(): Promise<AuthenticationLog[]> {
     return this.prisma.authenticationLog.findMany({
       orderBy: {
         createdAt: 'desc',
       },
-      take: 100,
+      take: DEFAULT_AUTH_AUDIT_LOGS_LIMIT,
     });
   }
 }
