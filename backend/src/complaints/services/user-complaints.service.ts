@@ -1,10 +1,17 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
+import {
+  AuditAction,
+  AuditTargetType,
+  Prisma,
+} from '@prisma/client';
 
 import type { Cache } from 'cache-manager';
-
-import { AuditAction, AuditTargetType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -27,16 +34,19 @@ import { GetUserComplaintsQueryDto } from '../dto/get-user-complaints-query.dto'
  *
  * Responsibilities:
  * - Create complaints.
- * - Optionally link complaints to user-owned ideas.
- * - Retrieve the user's own complaints.
- * - Retrieve one user-owned complaint.
+ * - Optionally link complaints to active user-owned ideas.
+ * - Retrieve the authenticated user's active complaints.
+ * - Retrieve one active user-owned complaint.
  * - Create audit records.
  * - Invalidate complaint-dependent user caches.
  *
  * Security rules:
- * - Every query is scoped by userId.
+ * - Every complaint query is scoped by userId.
+ * - Soft-deleted complaints are excluded.
+ * - Soft-deleted or inactive users are rejected.
  * - Users cannot access complaints belonging to other users.
  * - Users cannot link complaints to ideas belonging to other users.
+ * - Soft-deleted ideas cannot be linked to new complaints.
  *
  * @author Eman
  */
@@ -51,8 +61,11 @@ export class UserComplaintsService {
   ) {}
 
   /**
-   * Shared complaint selection used by user list, detail,
+   * Shared complaint selection used by list, detail,
    * and creation responses.
+   *
+   * Sensitive or internal fields that are not required by
+   * the authenticated user are intentionally omitted.
    */
   private readonly complaintSelect = {
     id: true,
@@ -75,13 +88,22 @@ export class UserComplaintsService {
   } satisfies Prisma.ComplaintSelect;
 
   /**
-   * Creates a new complaint for one authenticated user.
+   * Creates a new complaint for an authenticated user.
+   *
+   * Complaint creation and audit-log creation are performed in
+   * one database transaction so they succeed or roll back together.
+   *
+   * @param userId Authenticated user identifier.
+   * @param dto Validated complaint input.
    */
-  async createComplaint(userId: string, dto: CreateUserComplaintDto) {
-    await this.ensureUserExists(userId);
+  async createComplaint(
+    userId: string,
+    dto: CreateUserComplaintDto,
+  ) {
+    await this.ensureActiveUserExists(userId);
 
     if (dto.ideaId) {
-      await this.ensureUserOwnsIdea(userId, dto.ideaId);
+      await this.ensureUserOwnsActiveIdea(userId, dto.ideaId);
     }
 
     const complaint = await this.prisma.$transaction(async (tx) => {
@@ -92,7 +114,6 @@ export class UserComplaintsService {
           subject: dto.subject,
           message: dto.message,
         },
-
         select: this.complaintSelect,
       });
 
@@ -102,11 +123,11 @@ export class UserComplaintsService {
           action: AuditAction.USER_CREATE_COMPLAINT,
           targetType: AuditTargetType.COMPLAINT,
           targetId: createdComplaint.id,
-
           newValue: {
             subject: createdComplaint.subject,
             ideaId: createdComplaint.ideaId,
             status: createdComplaint.status,
+            priority: createdComplaint.priority,
           },
         },
         tx,
@@ -121,15 +142,25 @@ export class UserComplaintsService {
   }
 
   /**
-   * Returns complaints belonging to the authenticated user.
+   * Returns active complaints belonging to the authenticated user.
+   *
+   * Soft-deleted complaints are excluded from both the returned
+   * records and pagination totals.
+   *
+   * @param userId Authenticated user identifier.
+   * @param query Filtering, sorting, and pagination options.
    */
-  async getComplaints(userId: string, query: GetUserComplaintsQueryDto) {
-    await this.ensureUserExists(userId);
+  async getComplaints(
+    userId: string,
+    query: GetUserComplaintsQueryDto,
+  ) {
+    await this.ensureActiveUserExists(userId);
 
     const { page, limit, skip, take } = buildPagination(query);
 
     const where: Prisma.ComplaintWhereInput = {
       userId,
+      deletedAt: null,
 
       ...(buildDateFilter(query) ?? {}),
 
@@ -165,7 +196,6 @@ export class UserComplaintsService {
 
     return {
       data: complaints,
-
       meta: {
         total,
         page,
@@ -176,17 +206,26 @@ export class UserComplaintsService {
   }
 
   /**
-   * Returns one complaint belonging to the authenticated user.
+   * Returns one active complaint owned by the authenticated user.
+   *
+   * A generic not-found response is used for both missing and
+   * unauthorized complaints to avoid leaking ownership information.
+   *
+   * @param userId Authenticated user identifier.
+   * @param complaintId Complaint identifier.
    */
-  async getComplaintById(userId: string, complaintId: string) {
-    await this.ensureUserExists(userId);
+  async getComplaintById(
+    userId: string,
+    complaintId: string,
+  ) {
+    await this.ensureActiveUserExists(userId);
 
     const complaint = await this.prisma.complaint.findFirst({
       where: {
         id: complaintId,
         userId,
+        deletedAt: null,
       },
-
       select: this.complaintSelect,
     });
 
@@ -198,14 +237,20 @@ export class UserComplaintsService {
   }
 
   /**
-   * Ensures that the authenticated user still exists.
+   * Ensures that the authenticated user exists, is active,
+   * and has not been soft-deleted.
+   *
+   * @param userId User identifier.
    */
-  private async ensureUserExists(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+  private async ensureActiveUserExists(
+    userId: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
+        isActive: true,
+        deletedAt: null,
       },
-
       select: {
         id: true,
       },
@@ -217,9 +262,15 @@ export class UserComplaintsService {
   }
 
   /**
-   * Ensures that an optionally related idea belongs to the user.
+   * Ensures that an optionally related idea:
+   * - Exists.
+   * - Belongs to the authenticated user.
+   * - Has not been soft-deleted.
+   *
+   * @param userId Authenticated user identifier.
+   * @param ideaId Related idea identifier.
    */
-  private async ensureUserOwnsIdea(
+  private async ensureUserOwnsActiveIdea(
     userId: string,
     ideaId: string,
   ): Promise<void> {
@@ -227,8 +278,8 @@ export class UserComplaintsService {
       where: {
         id: ideaId,
         userId,
+        deletedAt: null,
       },
-
       select: {
         id: true,
       },
@@ -240,12 +291,15 @@ export class UserComplaintsService {
   }
 
   /**
-   * Invalidates user caches affected by complaint creation.
+   * Invalidates user caches affected by complaint activity.
+   *
+   * @param userId User whose cached information changed.
    */
-  private async invalidateComplaintCaches(userId: string): Promise<void> {
+  private async invalidateComplaintCaches(
+    userId: string,
+  ): Promise<void> {
     await Promise.all([
       this.cacheManager.del(userCacheKeys.summary(userId)),
-
       this.cacheManager.del(userCacheKeys.activity(userId)),
     ]);
   }

@@ -1,13 +1,18 @@
 import { ComplaintStatus } from '@prisma/client';
 
 /**
- * Resolves the complaint resolvedAt value during an update.
+ * Resolves the complaint resolvedAt value during a status update.
  *
  * Rules:
- * - Sets the current date when a complaint changes to RESOLVED
- *   for the first time.
- * - Preserves the existing value when already resolved.
- * - Preserves the existing value for non-resolved status changes.
+ * - Preserves the current value when no new status is supplied.
+ * - Sets the current date when the complaint changes to RESOLVED.
+ * - Preserves the existing date when it remains RESOLVED.
+ * - Clears the date when a resolved complaint is reopened.
+ *
+ * @param newStatus Optional new complaint status.
+ * @param previousStatus Current persisted complaint status.
+ * @param currentResolvedAt Current resolution timestamp.
+ * @returns The resolution timestamp that should be persisted.
  *
  * @author Malak
  */
@@ -16,6 +21,10 @@ export function resolveComplaintResolvedAt(
   previousStatus: ComplaintStatus,
   currentResolvedAt: Date | null,
 ): Date | null {
+  if (newStatus === undefined) {
+    return currentResolvedAt;
+  }
+
   if (
     newStatus === ComplaintStatus.RESOLVED &&
     previousStatus !== ComplaintStatus.RESOLVED
@@ -23,5 +32,13 @@ export function resolveComplaintResolvedAt(
     return new Date();
   }
 
+  if (
+    previousStatus === ComplaintStatus.RESOLVED &&
+    newStatus !== ComplaintStatus.RESOLVED
+  ) {
+    return null;
+  }
+
   return currentResolvedAt;
 }
+

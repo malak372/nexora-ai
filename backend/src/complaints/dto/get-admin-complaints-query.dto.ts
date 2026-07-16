@@ -1,4 +1,7 @@
-import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
+import {
+  ComplaintPriority,
+  ComplaintStatus,
+} from '@prisma/client';
 
 import { IsEnum, IsOptional } from 'class-validator';
 
@@ -7,19 +10,21 @@ import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 /**
  * Query DTO used by administrators to retrieve and analyze complaints.
  *
- * Used by:
- * - Complaint list.
- * - Complaint summary.
- * - Complaint charts.
- * - CSV export.
- *
- * Supports:
+ * Inherits common query options from ListQueryDto:
  * - Pagination.
  * - Search.
- * - Date filtering.
+ * - Date-range filtering.
  * - Sorting.
- * - Status filtering.
- * - Priority filtering.
+ *
+ * Adds complaint-specific filters:
+ * - Complaint status.
+ * - Complaint priority.
+ *
+ * Used by:
+ * - GET /admin/complaints
+ * - GET /admin/complaints/summary
+ * - GET /admin/complaints/charts
+ * - GET /admin/complaints/export/csv
  *
  * @author Malak
  */

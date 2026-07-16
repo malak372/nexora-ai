@@ -393,9 +393,9 @@ model User {
   loginLockLevel             Int       @default(0) @map("login_lock_level")
   lockedUntil                DateTime? @map("locked_until")
 
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  userType  UserType?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  userType  UserType
 
   ideas                   Idea[]
   payments                Payment[]
@@ -811,6 +811,7 @@ model Complaint {
   resolvedAt DateTime? @map("resolved_at")
 
   @@index([userId])
+  @@index([userId, deletedAt, createdAt])
   @@index([ideaId])
   @@index([status])
   @@index([priority])
