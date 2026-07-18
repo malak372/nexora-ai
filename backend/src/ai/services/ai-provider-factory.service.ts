@@ -17,149 +17,253 @@ import { GoogleProvider } from '../providers/google.provider';
 import { OpenRouterProvider } from '../providers/openrouter.provider';
 
 /**
- * Resolves AI-provider adapters using AiModel.providerKey.
+ * Resolves registered AI-provider adapters using AiModel.providerKey.
  *
- * Provider keys are stored in the database as strings, while the
- * executable adapters remain registered inside the backend.
+ * Provider keys are stored in the database as ordinary strings, while
+ * executable provider adapters remain registered inside the backend.
+ *
+ * This design keeps the database independent from provider-specific
+ * implementation details and prevents credentials or SDK objects from
+ * being persisted.
  *
  * Responsibilities:
- * - Normalize database provider keys.
- * - Reject unsupported providers.
- * - Return the matching provider adapter.
- * - Validate that every advertised provider has an adapter.
+ * - Build the backend provider-adapter registry.
+ * - Normalize provider keys loaded from the database.
+ * - Reject unsupported provider keys.
+ * - Return the adapter matching a normalized provider key.
+ * - Protect against provider-registration mismatches.
+ * - Validate the complete provider registry during application startup.
+ *
+ * This service does not:
+ * - Read provider credentials.
+ * - Execute AI requests.
+ * - Select or rank AI models.
+ * - Store provider adapters in the database.
  *
  * @author Malak
  */
 @Injectable()
 export class AiProviderFactoryService {
   /**
-   * Registered provider adapters indexed by stable provider key.
+   * Registered AI-provider adapters indexed by their stable provider
+   * keys.
+   *
+   * The property is exposed as ReadonlyMap so the registry cannot be
+   * modified after service construction.
    */
-  private readonly providers:
-    ReadonlyMap<
-      AiProviderKey,
-      AiProvider
-    >;
+  private readonly providerRegistry: ReadonlyMap<
+    AiProviderKey,
+    AiProvider
+  >;
 
   constructor(
     googleProvider: GoogleProvider,
     openRouterProvider: OpenRouterProvider,
   ) {
-    this.providers =
-      new Map<
-        AiProviderKey,
-        AiProvider
-      >([
-        [
-          AI_PROVIDER_KEYS.GOOGLE,
-          googleProvider,
-        ],
+    this.providerRegistry = this.createProviderRegistry(
+      googleProvider,
+      openRouterProvider,
+    );
 
-        [
-          AI_PROVIDER_KEYS.OPENROUTER,
-          openRouterProvider,
-        ],
-      ]);
-
+    /**
+     * Fail fast during dependency-injection initialization when the
+     * advertised provider list and executable adapter registry are not
+     * synchronized.
+     */
     this.validateRegistry();
   }
 
   /**
-   * Returns the provider adapter matching a database provider key.
+   * Returns the registered provider adapter matching a raw provider key.
    *
-   * Database values are normalized before lookup so values such as:
+   * Database values are normalized before lookup. For example, all of
+   * the following values resolve to the same provider:
+   *
    * - "google"
+   * - "GOOGLE"
    * - " GOOGLE "
    *
-   * resolve to the same adapter.
-   *
-   * @param providerKey Raw provider key stored in AiModel.
+   * @param providerKey Raw provider key stored in AiModel.providerKey.
    * @returns Registered provider adapter.
+   * @throws BadRequestException when the provider key is unsupported.
+   * @throws InternalServerErrorException when the provider is supported
+   * but its adapter is missing or incorrectly registered.
    */
-  getProvider(
-    providerKey: string,
-  ): AiProvider {
+  getProvider(providerKey: string): AiProvider {
     const normalizedProviderKey =
-      normalizeAiProviderKey(
-        providerKey,
-      );
+      this.normalizeRequiredProviderKey(providerKey);
 
-    if (!normalizedProviderKey) {
-      throw new BadRequestException(
-        `Unsupported AI provider: ${providerKey}`,
-      );
-    }
-
-    const provider =
-      this.providers.get(
-        normalizedProviderKey,
-      );
+    const provider = this.providerRegistry.get(normalizedProviderKey);
 
     if (!provider) {
+      /**
+       * Reaching this branch means the provider is advertised by the
+       * backend constants but is missing from the executable registry.
+       *
+       * This is an application configuration error rather than an
+       * invalid caller request.
+       */
       throw new InternalServerErrorException(
         `AI provider adapter is not registered: ${normalizedProviderKey}`,
       );
     }
 
-    /**
-     * Protects the provider registry from accidental mismatches such
-     * as registering GoogleProvider under the OpenRouter key.
-     */
-    if (
-      provider.providerKey !==
-      normalizedProviderKey
-    ) {
-      throw new InternalServerErrorException(
-        `AI provider registry mismatch for: ${normalizedProviderKey}`,
-      );
-    }
+    this.validateProviderRegistration(
+      normalizedProviderKey,
+      provider,
+    );
 
     return provider;
   }
 
   /**
-   * Determines whether a raw provider key is supported.
+   * Determines whether a raw string represents one of the provider keys
+   * advertised by the backend.
+   *
+   * The return type is a TypeScript type predicate. After this method
+   * returns true, TypeScript narrows providerKey to AiProviderKey.
+   *
+   * Note that this method validates provider-key support only. It does
+   * not resolve or execute the corresponding adapter.
    *
    * @param providerKey Raw provider-key candidate.
+   * @returns True when the value can be normalized to AiProviderKey.
    */
   isSupportedProviderKey(
     providerKey: string,
   ): providerKey is AiProviderKey {
-    return (
-      normalizeAiProviderKey(
-        providerKey,
-      ) !== undefined
-    );
+    return normalizeAiProviderKey(providerKey) !== undefined;
   }
 
   /**
-   * Ensures every provider advertised by the backend constants has
-   * exactly one registered adapter.
+   * Builds the immutable provider registry used by the AI execution
+   * layer.
+   *
+   * Each supported provider should be registered exactly once under the
+   * same stable key exposed by its adapter.
+   *
+   * When a new provider is introduced, it should be:
+   * - Added to AI_PROVIDER_KEYS.
+   * - Added to SUPPORTED_AI_PROVIDER_KEYS.
+   * - Implemented as an AiProvider adapter.
+   * - Injected into this factory.
+   * - Registered in this map.
+   *
+   * @param googleProvider Google AI provider adapter.
+   * @param openRouterProvider OpenRouter provider adapter.
+   * @returns Read-only provider registry.
+   */
+  private createProviderRegistry(
+    googleProvider: GoogleProvider,
+    openRouterProvider: OpenRouterProvider,
+  ): ReadonlyMap<AiProviderKey, AiProvider> {
+    return new Map<AiProviderKey, AiProvider>([
+      [
+        AI_PROVIDER_KEYS.GOOGLE,
+        googleProvider,
+      ],
+      [
+        AI_PROVIDER_KEYS.OPENROUTER,
+        openRouterProvider,
+      ],
+    ]);
+  }
+
+  /**
+   * Normalizes and validates a provider key loaded from the database or
+   * supplied by another application service.
+   *
+   * @param providerKey Raw provider-key value.
+   * @returns Normalized supported provider key.
+   * @throws BadRequestException when the value is not supported.
+   */
+  private normalizeRequiredProviderKey(
+    providerKey: string,
+  ): AiProviderKey {
+    const normalizedProviderKey =
+      normalizeAiProviderKey(providerKey);
+
+    if (!normalizedProviderKey) {
+      throw new BadRequestException(
+        `Unsupported AI provider key: ${providerKey}`,
+      );
+    }
+
+    return normalizedProviderKey;
+  }
+
+  /**
+   * Verifies that one registry entry is internally consistent.
+   *
+   * This protects against accidental registration mistakes such as
+   * placing OpenRouterProvider under the Google registry key.
+   *
+   * @param registeredProviderKey Key used by the provider registry.
+   * @param provider Provider adapter stored under that key.
+   * @throws InternalServerErrorException when the adapter advertises a
+   * different provider key.
+   */
+  private validateProviderRegistration(
+    registeredProviderKey: AiProviderKey,
+    provider: AiProvider,
+  ): void {
+    if (provider.providerKey !== registeredProviderKey) {
+      throw new InternalServerErrorException(
+        `AI provider registry mismatch for: ${registeredProviderKey}`,
+      );
+    }
+  }
+
+  /**
+   * Validates the complete provider registry during application startup.
+   *
+   * The application fails fast when:
+   * - An advertised provider has no executable adapter.
+   * - The registry contains more or fewer entries than expected.
+   * - An adapter is registered under a key different from the key it
+   * advertises.
+   *
+   * Failing during startup is safer than allowing a production request
+   * to discover an incomplete or inconsistent provider registry.
    */
   private validateRegistry(): void {
-    const missingProviders =
-      SUPPORTED_AI_PROVIDER_KEYS.filter(
-        (providerKey) =>
-          !this.providers.has(
-            providerKey,
-          ),
-      );
+    const missingProviderKeys =
+      this.findMissingProviderKeys();
 
-    if (
-      missingProviders.length > 0
-    ) {
+    if (missingProviderKeys.length > 0) {
       throw new InternalServerErrorException(
-        `Missing AI provider adapters: ${missingProviders.join(', ')}`,
+        `Missing AI provider adapters: ${missingProviderKeys.join(', ')}`,
       );
     }
 
     if (
-      this.providers.size !==
+      this.providerRegistry.size !==
       SUPPORTED_AI_PROVIDER_KEYS.length
     ) {
       throw new InternalServerErrorException(
         'The AI provider registry contains unexpected adapters.',
       );
     }
+
+    for (const [
+      registeredProviderKey,
+      provider,
+    ] of this.providerRegistry.entries()) {
+      this.validateProviderRegistration(
+        registeredProviderKey,
+        provider,
+      );
+    }
+  }
+
+  /**
+   * Returns all provider keys advertised by the backend but missing from
+   * the executable adapter registry.
+   */
+  private findMissingProviderKeys(): AiProviderKey[] {
+    return SUPPORTED_AI_PROVIDER_KEYS.filter(
+      (providerKey) =>
+        !this.providerRegistry.has(providerKey),
+    );
   }
 }

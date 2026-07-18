@@ -4,46 +4,74 @@ import type { AiFinishReason } from './ai-provider.type';
 /**
  * Final successful result returned by AiExecutionService.
  *
- * This result represents the complete logical operation after:
+ * This contract represents the completed logical AI operation after the
+ * central runtime has finished:
  * - Model routing.
+ * - Provider selection.
  * - Provider execution.
  * - Temporary retries.
- * - Structured-output validation.
- * - Optional response repair.
+ * - Structured-output parsing and validation.
+ * - Optional structured-output repair.
  * - Model or provider fallback.
+ * - External API logging.
  *
- * Provider-specific SDK objects must never be returned through this
- * contract.
+ * Provider-specific SDK response objects must never be exposed through
+ * this result.
  *
  * @author Malak
  */
 export type AiExecutionResult = {
   /**
-   * Final generated response.
+   * Final generated response returned to the calling business module.
    *
-   * JSON operations return normalized validated JSON serialized as a
-   * string. Text operations return provider-generated text.
+   * For plain-text operations, this contains the normalized textual
+   * response returned by the successful provider.
+   *
+   * For structured JSON operations, this contains the parsed, validated,
+   * and normalized JSON value serialized as a string.
+   *
+   * The calling business module may parse this value into its expected
+   * domain-specific result type before persistence.
    */
   readonly text: string;
 
   /**
-   * Identifier shared by every external attempt belonging to the same
-   * logical AI operation.
+   * Stable identifier shared by every external request belonging to the
+   * same logical AI operation.
+   *
+   * The same operationId is used across:
+   * - Initial provider attempts.
+   * - Retries.
+   * - Structured-output repair requests.
+   * - Fallback-model attempts.
+   *
+   * This allows all related ExternalApiLog records to be grouped as one
+   * logical execution.
    */
   readonly operationId: string;
 
   /**
-   * Database identifier of the successful AI model.
+   * Database identifier of the AiModel record that produced the final
+   * successful response.
+   *
+   * This value refers to AiModel.id, not the external provider-side
+   * model identifier.
    */
   readonly aiModelId: string;
 
   /**
-   * Stable backend provider-registry key.
+   * Stable backend registry key identifying the provider that produced
+   * the successful response.
+   *
+   * Examples:
+   * - google
+   * - openrouter
    */
   readonly providerKey: AiProviderKey;
 
   /**
-   * Exact provider-side model identifier.
+   * Exact provider-side model identifier used for the successful
+   * request.
    *
    * Examples:
    * - gemini-2.5-flash
@@ -52,44 +80,96 @@ export type AiExecutionResult = {
   readonly apiModelId: string;
 
   /**
-   * Input-token count reported by the final successful provider call.
+   * Number of input tokens reported by the successful provider request.
+   *
+   * This value must be normalized to zero when the provider does not
+   * expose input-token usage metadata.
+   *
+   * A zero value therefore means that usage was unavailable and does not
+   * necessarily mean the request consumed no input tokens.
    */
   readonly inputTokens: number;
 
   /**
-   * Output-token count reported by the final successful provider call.
+   * Number of output tokens reported by the successful provider request.
+   *
+   * This value must be normalized to zero when the provider does not
+   * expose output-token usage metadata.
+   *
+   * A zero value therefore means that usage was unavailable and does not
+   * necessarily mean the response consumed no output tokens.
    */
   readonly outputTokens: number;
 
   /**
-   * Estimated cost of the final successful external request.
+   * Estimated monetary cost of the final successful external provider
+   * request.
    *
-   * The application should use one consistent currency, preferably USD.
+   * The estimate is calculated using:
+   * - The successful model's configured input cost.
+   * - The successful model's configured output cost.
+   * - The token usage reported by the provider.
+   *
+   * This value does not necessarily include the cost of failed retries,
+   * structured-output repair attempts, or previous fallback attempts.
+   *
+   * Nexora AI should use one consistent currency for all model pricing,
+   * preferably USD.
    */
   readonly costEstimate: number;
 
   /**
-   * Total logical-operation duration in milliseconds.
+   * Total duration of the complete logical AI operation in milliseconds.
    *
-   * This includes retries, repair requests, and fallback execution.
+   * This duration may include:
+   * - Model routing.
+   * - Provider requests.
+   * - Retry backoff delays.
+   * - Structured-output parsing and validation.
+   * - Structured-output repair requests.
+   * - Fallback-model execution.
+   *
+   * It is different from providerLatencyMs, which measures only one
+   * individual provider request.
    */
   readonly responseTimeMs: number;
 
   /**
-   * Normalized completion reason.
+   * Provider-neutral completion reason returned by the successful
+   * provider request.
+   *
+   * A successfully accepted response will normally use:
+   * - AiFinishReason.STOP
+   * - AiFinishReason.MAX_TOKENS, only when partial output is explicitly
+   *   accepted by the runtime
+   *
+   * Error, filtering, or unsupported tool-call completion reasons should
+   * normally be rejected before AiExecutionResult is returned.
    */
   readonly finishReason: AiFinishReason;
 
   /**
-   * Whether the successful response came from a fallback model.
+   * Indicates whether the final successful response was generated by a
+   * fallback model.
+   *
+   * This value is true when the model that produced the final response
+   * was not the first model selected for the logical operation.
+   *
+   * Retrying the same model does not by itself make this value true.
    */
   readonly fallbackUsed: boolean;
 
   /**
-   * Total number of external provider requests executed.
+   * Total number of external provider requests executed during the
+   * logical AI operation.
    *
-   * Initial attempts, retries, repair attempts, and fallback attempts
-   * are all included.
+   * This count includes:
+   * - Initial requests.
+   * - Retries.
+   * - Structured-output repair requests.
+   * - Fallback-model requests.
+   *
+   * The minimum value for a successful operation is one.
    */
   readonly attemptCount: number;
 };

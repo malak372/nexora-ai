@@ -1,183 +1,182 @@
 /**
- * General runtime constants used by the AI execution pipeline.
+ * General runtime constants used by the central AI execution pipeline.
  *
- * Environment variables may override operational defaults where
- * runtime configuration is supported.
+ * Environment variables may override operational defaults where the
+ * corresponding service supports runtime configuration.
  *
- * These values centralize shared limits and defaults to prevent
- * magic numbers from being repeated across AI services.
+ * Centralizing these values prevents repeated magic numbers and keeps:
+ * - Provider execution.
+ * - Retry behavior.
+ * - Structured-output repair.
+ * - Token estimation.
+ * - External API logging.
+ *
+ * consistent across the AI module.
+ *
+ * AI-model configuration constants such as:
+ * - Default model priority.
+ * - Default model weight.
+ * - Default model output-token limit.
+ *
+ * belong to the AI Models module and are intentionally excluded from
+ * this file.
  *
  * @author Malak
  */
 
 /**
- * Default maximum number of output tokens requested from an AI
- * provider when neither the request nor the selected model supplies
- * a more specific limit.
- */
-export const DEFAULT_AI_MAX_OUTPUT_TOKENS = 4_096;
-
-/**
- * Default estimated output-token count used only for model routing
- * and cost-aware selection before actual provider usage is available.
+ * Default estimated output-token count used before provider execution.
+ *
+ * This value is used only for:
+ * - Cost-aware model routing.
+ * - Preliminary provider-cost estimation.
+ *
+ * It does not limit the actual provider response. The final output-token
+ * limit is resolved from the selected AiModel configuration.
+ *
+ * Actual token usage must be read from provider usage metadata whenever
+ * it is available.
  */
 export const DEFAULT_AI_ESTIMATED_OUTPUT_TOKENS = 2_048;
 
 /**
- * Default generation temperature.
+ * Default model generation temperature.
  *
- * A relatively low temperature is appropriate because most Nexora AI
- * operations expect stable structured output rather than highly
- * variable creative prose.
+ * A relatively low value is appropriate because most Nexora AI
+ * operations expect stable and structured responses rather than highly
+ * variable creative output.
  *
- * This value should only be applied when the calling business flow
- * explicitly wants an application-level default.
+ * Business modules may provide a more specific temperature when their
+ * workflow requires different generation behavior.
  */
 export const DEFAULT_AI_TEMPERATURE = 0.3;
 
 /**
- * Maximum number of retries allowed after the initial request attempt
- * for the same AI model.
+ * Maximum number of retries permitted after the initial provider
+ * request for the same AI model.
  *
  * A value of one means:
- * - One initial request.
+ * - One initial provider request.
  * - One retry.
- * - Two total provider requests for the model.
+ * - Two total provider requests for the same model.
  *
- * After the retries are exhausted, AiExecutionService may continue
- * with the next fallback candidate.
+ * After retries are exhausted, AiExecutionService may continue with the
+ * next available fallback model.
  */
 export const DEFAULT_AI_MAX_RETRIES_PER_MODEL = 1;
 
 /**
- * Base delay in milliseconds used by exponential retry backoff.
+ * Base delay in milliseconds used for exponential retry backoff.
  *
  * Example:
- * - First retry: 500 ms.
- * - Second retry: 1,000 ms.
- * - Third retry: 2,000 ms.
+ * - First retry: 500 milliseconds.
+ * - Second retry: 1,000 milliseconds.
+ * - Third retry: 2,000 milliseconds.
  */
 export const DEFAULT_AI_RETRY_BASE_DELAY_MS = 500;
 
 /**
- * Internal endpoint label stored in ExternalApiLog for text-generation
- * operations.
+ * Internal operation label persisted in ExternalApiLog for AI
+ * text-generation requests.
  *
- * This is an internal operation label rather than a public HTTP route.
+ * This value identifies an internal external-provider operation and is
+ * not a public HTTP endpoint.
  */
 export const AI_TEXT_GENERATION_ENDPOINT = 'ai/text-generation';
 
 /**
- * Maximum error-message length persisted in ExternalApiLog.
+ * Maximum normalized AI error-message length stored in ExternalApiLog.
  *
- * This prevents unexpectedly large provider or SDK error messages
- * from consuming excessive database storage.
+ * This protects the database from unexpectedly large provider or SDK
+ * error messages.
  */
 export const MAX_AI_ERROR_MESSAGE_LENGTH = 2_000;
 
 /**
- * Maximum textual provider-response length accepted by the JSON
- * response parser.
+ * Maximum provider-response length accepted by the JSON response
+ * parser.
  *
- * This protects the application from unexpectedly large provider
- * responses and unnecessary JSON-parsing overhead.
+ * This limit protects the application from:
+ * - Unexpectedly large provider responses.
+ * - Excessive memory consumption.
+ * - Unnecessary JSON-parsing overhead.
  */
 export const MAX_AI_RESPONSE_LENGTH = 100_000;
 
 /**
- * Maximum number of structured-output repair requests allowed for
- * one invalid model response.
+ * Maximum number of structured-output repair requests allowed for one
+ * invalid provider response.
  *
- * Nexora AI performs one repair request before continuing with another
- * fallback model.
+ * A value of one means Nexora AI attempts one deterministic repair
+ * request before continuing with another fallback model.
  */
 export const MAX_AI_STRUCTURED_OUTPUT_REPAIRS = 1;
 
 /**
- * Maximum number of characters copied from an invalid provider
- * response into the structured-output repair prompt.
+ * Maximum number of characters copied from an invalid provider response
+ * into a structured-output repair prompt.
  *
- * Invalid provider output must never be resent without a size bound.
+ * Provider output is treated as untrusted input and must always be
+ * bounded before being included in another AI request.
  */
 export const MAX_AI_REPAIR_SOURCE_LENGTH = 12_000;
 
 /**
  * Maximum number of characters copied from the original generation
- * prompt into the structured-output repair prompt.
+ * prompt into a structured-output repair prompt.
  *
- * The repair operation receives enough original context to preserve
- * the requested idea while avoiding an unexpectedly large repeated
- * prompt.
+ * This provides enough task context for repair while preventing an
+ * unexpectedly large repeated prompt.
  */
 export const MAX_AI_REPAIR_CONTEXT_LENGTH = 24_000;
 
 /**
- * Maximum number of structured-output validation issues included in
- * one repair prompt.
+ * Maximum number of parsing or schema-validation issues included in one
+ * structured-output repair prompt.
  */
 export const MAX_AI_REPAIR_VALIDATION_ISSUES = 20;
 
 /**
  * Temperature used for structured-output repair requests.
  *
- * Repair is deterministic formatting and schema-correction work rather
- * than creative generation.
+ * Repair is deterministic JSON correction rather than creative content
+ * generation.
  */
 export const AI_STRUCTURED_OUTPUT_REPAIR_TEMPERATURE = 0;
 
 /**
- * Approximate number of characters per token.
+ * Approximate number of characters represented by one token.
  *
- * This approximation is used only for:
+ * This approximation is used only before provider execution for:
  * - Model routing.
- * - Pre-request token estimation.
+ * - Input-token estimation.
  * - Preliminary cost estimation.
  *
- * Actual token usage must be taken from the provider response whenever
- * it is available.
+ * Actual token counts must come from provider usage metadata whenever
+ * available.
  */
 export const APPROXIMATE_CHARACTERS_PER_TOKEN = 4;
 
 /**
- * Minimum valid model-routing weight.
- */
-export const MIN_AI_MODEL_WEIGHT = 1;
-
-/**
- * Default routing priority assigned to newly configured AI models.
- */
-export const DEFAULT_AI_MODEL_PRIORITY = 0;
-
-/**
- * Default routing weight assigned to newly configured AI models.
- */
-export const DEFAULT_AI_MODEL_WEIGHT = 1;
-
-/**
- * Determines whether an HTTP status represents a temporary external
- * provider failure that may reasonably succeed when retried.
+ * Determines whether an HTTP-like provider status represents a
+ * temporary failure that may reasonably succeed when retried.
  *
- * This helper is primarily used as a safe fallback when a provider
- * exception could not be mapped to a more specific error category.
- *
- * Retryable status codes:
+ * Retryable statuses:
  * - 408: Request timeout.
  * - 409: Temporary request conflict.
  * - 425: Provider is not ready to process the request.
- * - 429: Rate limit.
+ * - 429: Provider rate limit.
  * - 500–599: Provider or gateway failure.
  *
- * When no HTTP status is available, the failure may have originated
- * from a temporary network or transport problem. It is therefore
- * considered retryable by default.
+ * When no status code is available, the failure may have originated
+ * from a temporary network or transport problem and is therefore
+ * considered retryable.
  *
- * Authentication, permission, invalid-request, and model-not-found
- * statuses are intentionally not retryable.
+ * Authentication, permission, model-not-found, and invalid-request
+ * failures are intentionally not marked retryable here.
  *
  * @param statusCode Optional HTTP-like status returned by the provider.
- * @returns Whether retrying the same provider request may succeed.
- *
- * @author Malak
+ * @returns True when retrying the same provider request may succeed.
  */
 export function isRetryableAiProviderStatus(
   statusCode: number | undefined,
