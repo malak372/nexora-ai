@@ -6,7 +6,7 @@
  * human-readable messages.
  *
  * Error messages may change for localization or clarity, while these
- * codes should remain stable to preserve API and test compatibility.
+ * codes must remain stable to preserve API and test compatibility.
  *
  * @author Eman
  */
@@ -36,13 +36,13 @@ export enum PaymentErrorCode {
 
   /**
    * The amount confirmed by the payment provider does not match
-   * the amount stored for the internal payment.
+   * the amount stored on the internal payment record.
    */
   PAYMENT_AMOUNT_MISMATCH = 'PAYMENT_AMOUNT_MISMATCH',
 
   /**
    * The currency confirmed by the payment provider does not match
-   * the currency stored for the internal payment.
+   * the currency stored on the internal payment record.
    */
   PAYMENT_CURRENCY_MISMATCH = 'PAYMENT_CURRENCY_MISMATCH',
 
@@ -52,15 +52,37 @@ export enum PaymentErrorCode {
   INVALID_PAYMENT_PURPOSE = 'INVALID_PAYMENT_PURPOSE',
 
   /**
-   * The selected user-facing payment method is not supported.
+   * The provided payment-method key has an invalid format.
+   */
+  INVALID_PAYMENT_METHOD_KEY = 'INVALID_PAYMENT_METHOD_KEY',
+
+  /**
+   * The selected payment-method key is not registered or enabled.
    */
   UNSUPPORTED_PAYMENT_METHOD = 'UNSUPPORTED_PAYMENT_METHOD',
 
   /**
+   * The provided payment-provider key has an invalid format.
+   */
+  INVALID_PAYMENT_PROVIDER_KEY = 'INVALID_PAYMENT_PROVIDER_KEY',
+
+  /**
    * No payment gateway implementation is registered for the
-   * selected payment provider.
+   * selected payment-provider key.
    */
   UNSUPPORTED_PAYMENT_PROVIDER = 'UNSUPPORTED_PAYMENT_PROVIDER',
+
+  /**
+   * The selected payment method cannot be processed by the
+   * resolved payment provider.
+   */
+  PAYMENT_METHOD_PROVIDER_MISMATCH =
+  'PAYMENT_METHOD_PROVIDER_MISMATCH',
+
+  /**
+   * A provided checkout redirect URL is invalid or not allowed.
+   */
+  INVALID_PAYMENT_REDIRECT_URL = 'INVALID_PAYMENT_REDIRECT_URL',
 
   /**
    * The external payment provider could not create a checkout session.
@@ -74,9 +96,10 @@ export enum PaymentErrorCode {
   INVALID_PAYMENT_SESSION_RESPONSE = 'INVALID_PAYMENT_SESSION_RESPONSE',
 
   /**
-   * The payment provider webhook signature could not be verified.
+   * The payment-provider webhook signature could not be verified.
    */
-  PAYMENT_WEBHOOK_VERIFICATION_FAILED = 'PAYMENT_WEBHOOK_VERIFICATION_FAILED',
+  PAYMENT_WEBHOOK_VERIFICATION_FAILED =
+  'PAYMENT_WEBHOOK_VERIFICATION_FAILED',
 
   /**
    * The provider webhook payload could not be parsed or normalized.
@@ -85,13 +108,13 @@ export enum PaymentErrorCode {
 
   /**
    * The webhook payload does not contain the internal payment ID
-   * required to match it with a Nexora AI payment record.
+   * required to match it with an internal payment record.
    */
   PAYMENT_REFERENCE_MISSING = 'PAYMENT_REFERENCE_MISSING',
 
   /**
-   * The provider in the webhook event does not match the provider
-   * stored on the internal payment record.
+   * The provider key received in the webhook does not match the
+   * provider key stored on the internal payment record.
    */
   PAYMENT_PROVIDER_MISMATCH = 'PAYMENT_PROVIDER_MISMATCH',
 
@@ -108,7 +131,13 @@ export enum PaymentErrorCode {
   DUPLICATE_PROVIDER_SESSION = 'DUPLICATE_PROVIDER_SESSION',
 
   /**
-   * The global SystemSetting record could not be found.
+   * More than one gateway implementation was registered for
+   * the same payment-provider key.
+   */
+  DUPLICATE_PAYMENT_GATEWAY = 'DUPLICATE_PAYMENT_GATEWAY',
+
+  /**
+   * The global system-settings record could not be found.
    */
   SYSTEM_SETTINGS_NOT_FOUND = 'SYSTEM_SETTINGS_NOT_FOUND',
 
@@ -134,9 +163,10 @@ export enum PaymentErrorCode {
 
   /**
    * Purchased credits could not be applied consistently to the
-   * user's balance and credit transaction history.
+   * user's balance and credit-transaction history.
    */
-  CREDIT_PURCHASE_PROCESSING_FAILED = 'CREDIT_PURCHASE_PROCESSING_FAILED',
+  CREDIT_PURCHASE_PROCESSING_FAILED =
+  'CREDIT_PURCHASE_PROCESSING_FAILED',
 
   /**
    * The requested idea does not exist.
@@ -154,28 +184,21 @@ export enum PaymentErrorCode {
   IDEA_ALREADY_UNLOCKED = 'IDEA_ALREADY_UNLOCKED',
 
   /**
-   * The selected idea is not eligible for direct payment unlock.
-   *
-   * Only a registered user's NORMAL_FREE idea can be unlocked
-   * through direct payment.
+   * The selected idea is not eligible for direct-payment unlock.
    */
-  IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK = 'IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK',
+  IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK =
+  'IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK',
 
   /**
    * The selected idea could not be unlocked consistently after
    * successful payment confirmation.
    */
-  DIRECT_UNLOCK_PROCESSING_FAILED = 'DIRECT_UNLOCK_PROCESSING_FAILED',
+  DIRECT_UNLOCK_PROCESSING_FAILED =
+  'DIRECT_UNLOCK_PROCESSING_FAILED',
 
   /**
-   * The payment could not be processed due to an unexpected
+   * The payment could not be processed because of an unexpected
    * internal or external failure.
    */
   PAYMENT_PROCESSING_FAILED = 'PAYMENT_PROCESSING_FAILED',
-
-  /**
-   * More than one gateway implementation was registered
-   * for the same payment provider.
-   */
-  DUPLICATE_PAYMENT_GATEWAY = 'DUPLICATE_PAYMENT_GATEWAY',
 }

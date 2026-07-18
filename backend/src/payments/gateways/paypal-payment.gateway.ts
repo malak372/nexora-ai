@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { PaymentProvider, PaymentStatus } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
@@ -100,9 +100,8 @@ type PayPalWebhookVerificationResponse = {
  */
 @Injectable()
 export class PayPalPaymentGateway
-  implements PaymentGateway, PaymentCaptureGateway
-{
-  readonly provider = PaymentProvider.PAYPAL;
+  implements PaymentGateway, PaymentCaptureGateway {
+  readonly providerKey = 'paypal';
 
   private readonly clientId: string;
   private readonly clientSecret: string;
@@ -133,7 +132,7 @@ export class PayPalPaymentGateway
         'PAYPAL_ENVIRONMENT must be either sandbox or live.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -215,7 +214,7 @@ export class PayPalPaymentGateway
           details: {
             paymentId: input.paymentId,
 
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -224,7 +223,7 @@ export class PayPalPaymentGateway
     this.validateHttpUrl(approvalUrl, input.paymentId);
 
     return {
-      provider: PaymentProvider.PAYPAL,
+      providerKey: this.providerKey,
 
       providerSessionId: order.id,
 
@@ -379,7 +378,7 @@ export class PayPalPaymentGateway
         'PayPal rejected the webhook signature.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
 
             providerEventId: event.id,
           },
@@ -412,7 +411,7 @@ export class PayPalPaymentGateway
         'The PayPal webhook does not contain the related Order ID.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
 
             providerEventId: event.id,
           },
@@ -436,7 +435,7 @@ export class PayPalPaymentGateway
         'The PayPal webhook event type is not supported.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
 
             providerEventId: event.id,
 
@@ -448,11 +447,11 @@ export class PayPalPaymentGateway
 
     const status =
       event.event_type === 'PAYMENT.CAPTURE.COMPLETED'
-        ? PaymentStatus.SUCCESS
+        ? PaymentStatus.SUCCEEDED
         : PaymentStatus.FAILED;
 
     return {
-      provider: PaymentProvider.PAYPAL,
+      providerKey: this.providerKey,
 
       paymentId,
 
@@ -470,8 +469,8 @@ export class PayPalPaymentGateway
 
       ...(status === PaymentStatus.FAILED
         ? {
-            failureReason: 'PayPal reported that the payment capture failed.',
-          }
+          failureReason: 'PayPal reported that the payment capture failed.',
+        }
         : {}),
 
       occurredAt: this.parseDate(
@@ -498,7 +497,7 @@ export class PayPalPaymentGateway
     const status = this.mapCaptureStatus(input.capture.status);
 
     return {
-      provider: PaymentProvider.PAYPAL,
+      providerKey: this.providerKey,
 
       paymentId: input.paymentId,
 
@@ -514,14 +513,14 @@ export class PayPalPaymentGateway
 
       ...(input.providerEventId
         ? {
-            providerEventId: input.providerEventId,
-          }
+          providerEventId: input.providerEventId,
+        }
         : {}),
 
       ...(status === PaymentStatus.FAILED
         ? {
-            failureReason: 'PayPal payment capture failed.',
-          }
+          failureReason: 'PayPal payment capture failed.',
+        }
         : {}),
 
       occurredAt: input.occurredAt,
@@ -593,7 +592,7 @@ export class PayPalPaymentGateway
         cause: error,
 
         details: {
-          provider: PaymentProvider.PAYPAL,
+          providerKey: this.providerKey,
         },
       });
     }
@@ -603,7 +602,7 @@ export class PayPalPaymentGateway
     if (!response.ok) {
       throw new PaymentProcessingError(errorCode, message, {
         details: {
-          provider: PaymentProvider.PAYPAL,
+          providerKey: this.providerKey,
 
           statusCode: response.status,
 
@@ -621,7 +620,7 @@ export class PayPalPaymentGateway
   private mapCaptureStatus(status: string): PaymentStatus {
     switch (status.trim().toUpperCase()) {
       case 'COMPLETED':
-        return PaymentStatus.SUCCESS;
+        return PaymentStatus.SUCCEEDED;
 
       case 'DECLINED':
       case 'DENIED':
@@ -637,7 +636,7 @@ export class PayPalPaymentGateway
           'PayPal returned an unsupported capture status.',
           {
             details: {
-              provider: PaymentProvider.PAYPAL,
+              providerKey: this.providerKey,
 
               captureStatus: status,
             },
@@ -658,7 +657,7 @@ export class PayPalPaymentGateway
         'The PayPal capture response does not contain a capture.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
 
             providerSessionId: order.id,
           },
@@ -685,7 +684,7 @@ export class PayPalPaymentGateway
         'PayPal did not return the internal payment reference.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -715,7 +714,7 @@ export class PayPalPaymentGateway
         `The required PayPal webhook header ${name} is missing.`,
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -736,7 +735,7 @@ export class PayPalPaymentGateway
         `PayPal is not configured because ${name} is missing.`,
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -781,7 +780,7 @@ export class PayPalPaymentGateway
           details: {
             paymentId,
 
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -795,7 +794,7 @@ export class PayPalPaymentGateway
           details: {
             paymentId,
 
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -822,7 +821,7 @@ export class PayPalPaymentGateway
         'PayPal returned an invalid OAuth token response.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -848,7 +847,7 @@ export class PayPalPaymentGateway
         'PayPal returned an invalid order response.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -871,7 +870,7 @@ export class PayPalPaymentGateway
         'PayPal returned an invalid capture resource.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -892,7 +891,7 @@ export class PayPalPaymentGateway
         'The PayPal webhook payload is invalid.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -913,7 +912,7 @@ export class PayPalPaymentGateway
         'PayPal returned an invalid webhook-verification response.',
         {
           details: {
-            provider: PaymentProvider.PAYPAL,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -944,20 +943,20 @@ export class PayPalPaymentGateway
     return {
       ...(typeof value.name === 'string'
         ? {
-            name: value.name,
-          }
+          name: value.name,
+        }
         : {}),
 
       ...(typeof value.message === 'string'
         ? {
-            message: value.message,
-          }
+          message: value.message,
+        }
         : {}),
 
       ...(typeof value.debug_id === 'string'
         ? {
-            debugId: value.debug_id,
-          }
+          debugId: value.debug_id,
+        }
         : {}),
     };
   }

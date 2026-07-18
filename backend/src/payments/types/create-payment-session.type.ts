@@ -1,4 +1,4 @@
-import { PaymentMethod, PaymentPurpose } from '@prisma/client';
+import { PaymentPurpose } from '@prisma/client';
 
 /**
  * Represents the normalized input required to create an external
@@ -27,14 +27,16 @@ export type CreatePaymentSessionInput = {
   userId: string;
 
   /**
-   * User-facing payment method selected during checkout.
+   * User-facing payment method key selected during checkout.
    *
-   * The PaymentGatewayFactory resolves this method to the corresponding
-   * external provider:
-   * - CARD to Stripe.
-   * - PAYPAL to PayPal.
+   * The PaymentGatewayFactory resolves this key to the corresponding
+   * external payment provider.
+   *
+   * Examples:
+   * - card
+   * - paypal
    */
-  paymentMethod: PaymentMethod;
+  paymentMethodKey: string;
 
   /**
    * Business purpose of the payment.

@@ -1,5 +1,3 @@
-import { PaymentProvider } from '@prisma/client';
-
 /**
  * Represents the normalized result returned after an external payment
  * provider creates a checkout session.
@@ -11,9 +9,13 @@ import { PaymentProvider } from '@prisma/client';
  */
 export type PaymentSessionResult = {
   /**
-   * External payment provider that created the checkout session.
+   * External payment provider key that created the checkout session.
+   *
+   * Examples:
+   * - stripe
+   * - paypal
    */
-  provider: PaymentProvider;
+  providerKey: string;
 
   /**
    * External checkout-session identifier returned by the provider.

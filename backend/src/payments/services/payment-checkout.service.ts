@@ -2,8 +2,6 @@ import { Injectable } from '@nestjs/common';
 
 import {
   IdeaGenerationType,
-  PaymentMethod,
-  PaymentProvider,
   PaymentPurpose,
   PaymentStatus,
   Prisma,
@@ -30,6 +28,26 @@ import type { CreatePaymentSessionInput } from '../types/create-payment-session.
 import type { PaymentSessionResult } from '../types/payment-session-result.type';
 
 /**
+ * Supported user-facing payment-method keys.
+ *
+ * These values match the string keys persisted in Prisma.
+ */
+const PAYMENT_METHOD_KEY = {
+  CARD: 'card',
+  PAYPAL: 'paypal',
+} as const;
+
+/**
+ * Supported backend payment-gateway keys.
+ *
+ * These values must match each gateway's `providerKey`.
+ */
+const PAYMENT_PROVIDER_KEY = {
+  STRIPE: 'stripe',
+  PAYPAL: 'paypal',
+} as const;
+
+/**
  * Payment record required while creating an external checkout session.
  */
 type PendingPayment = {
@@ -38,8 +56,8 @@ type PendingPayment = {
   readonly ideaId: string | null;
   readonly amount: Prisma.Decimal;
   readonly currency: string;
-  readonly paymentMethod: PaymentMethod;
-  readonly provider: PaymentProvider;
+  readonly paymentMethodKey: string;
+  readonly providerKey: string;
   readonly paymentPurpose: PaymentPurpose;
   readonly creditsAmount: number;
   readonly bonusCreditsAmount: number;
@@ -55,8 +73,8 @@ type PendingPayment = {
 export type PaymentCheckoutResult = {
   readonly paymentId: string;
   readonly paymentPurpose: PaymentPurpose;
-  readonly paymentMethod: PaymentMethod;
-  readonly provider: PaymentProvider;
+  readonly paymentMethodKey: string;
+  readonly providerKey: string;
   readonly status: PaymentStatus;
   readonly amount: string;
   readonly currency: string;
@@ -73,7 +91,7 @@ export type PaymentCheckoutResult = {
  * - Load payment-related system settings.
  * - Calculate credit-purchase prices and bonus credits.
  * - Validate direct-unlock idea eligibility.
- * - Resolve the provider associated with a payment method.
+ * - Resolve the provider associated with a payment-method key.
  * - Create a PENDING internal payment before contacting the provider.
  * - Create an external checkout session.
  * - Store provider checkout identifiers.
@@ -94,9 +112,8 @@ export type PaymentCheckoutResult = {
 export class PaymentCheckoutService {
   constructor(
     private readonly prisma: PrismaService,
-
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
-  ) {}
+  ) { }
 
   /**
    * Creates a checkout session for purchasing generation credits.
@@ -110,16 +127,17 @@ export class PaymentCheckoutService {
     const settings = await this.getSystemSettings();
 
     this.validateCreditPrice(settings.creditPrice);
-
     this.validateBonusConfiguration(
       settings.bonusThreshold,
       settings.bonusCredits,
     );
 
-    const provider = this.resolveProvider(dto.paymentMethod);
+    const paymentMethodKey = this.normalizePaymentMethodKey(
+      dto.paymentMethodKey,
+    );
+    const providerKey = this.resolveProviderKey(paymentMethodKey);
 
     const purchasedCredits = dto.creditsQuantity;
-
     const bonusCredits = this.calculateBonusCredits(
       purchasedCredits,
       settings.bonusThreshold,
@@ -143,20 +161,13 @@ export class PaymentCheckoutService {
     const payment = await this.createPendingPayment({
       userId,
       ideaId: null,
-
       amount,
       currency: DEFAULT_PAYMENT_CURRENCY,
-
-      paymentMethod: dto.paymentMethod,
-
-      provider,
-
+      paymentMethodKey,
+      providerKey,
       paymentPurpose: PaymentPurpose.BUY_CREDITS,
-
       creditsAmount: purchasedCredits,
-
       bonusCreditsAmount: bonusCredits,
-
       creditPriceAtPurchase: settings.creditPrice,
     });
 
@@ -179,12 +190,8 @@ export class PaymentCheckoutService {
 
     const [settings, idea, existingPendingPayment] = await Promise.all([
       this.getSystemSettings(),
-
       this.prisma.idea.findUnique({
-        where: {
-          id: dto.ideaId,
-        },
-
+        where: { id: dto.ideaId },
         select: {
           id: true,
           userId: true,
@@ -192,20 +199,14 @@ export class PaymentCheckoutService {
           isUnlocked: true,
         },
       }),
-
       this.prisma.payment.findFirst({
         where: {
           userId,
           ideaId: dto.ideaId,
-
           paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
-
           status: PaymentStatus.PENDING,
         },
-
-        select: {
-          id: true,
-        },
+        select: { id: true },
       }),
     ]);
 
@@ -215,11 +216,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_NOT_FOUND,
         'The selected idea does not exist.',
-        {
-          details: {
-            ideaId: dto.ideaId,
-          },
-        },
+        { details: { ideaId: dto.ideaId } },
       );
     }
 
@@ -227,12 +224,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_ACCESS_DENIED,
         'The authenticated user does not own the selected idea.',
-        {
-          details: {
-            ideaId: idea.id,
-            userId,
-          },
-        },
+        { details: { ideaId: idea.id, userId } },
       );
     }
 
@@ -240,11 +232,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_ALREADY_UNLOCKED,
         'The selected idea has already been unlocked.',
-        {
-          details: {
-            ideaId: idea.id,
-          },
-        },
+        { details: { ideaId: idea.id } },
       );
     }
 
@@ -261,10 +249,6 @@ export class PaymentCheckoutService {
       );
     }
 
-    /*
-     * Prevent creating multiple active direct-unlock checkout
-     * sessions for the same user and idea.
-     */
     if (existingPendingPayment) {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_SESSION_CREATION_FAILED,
@@ -278,25 +262,21 @@ export class PaymentCheckoutService {
       );
     }
 
-    const provider = this.resolveProvider(dto.paymentMethod);
+    const paymentMethodKey = this.normalizePaymentMethodKey(
+      dto.paymentMethodKey,
+    );
+    const providerKey = this.resolveProviderKey(paymentMethodKey);
 
     const payment = await this.createPendingPayment({
       userId,
       ideaId: idea.id,
-
       amount: settings.directUnlockPrice,
-
       currency: DEFAULT_PAYMENT_CURRENCY,
-
-      paymentMethod: dto.paymentMethod,
-
-      provider,
-
+      paymentMethodKey,
+      providerKey,
       paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
-
       creditsAmount: 0,
       bonusCreditsAmount: 0,
-
       creditPriceAtPurchase: null,
     });
 
@@ -309,18 +289,14 @@ export class PaymentCheckoutService {
 
   /**
    * Creates the internal PENDING payment record.
-   *
-   * The internal payment must exist before communicating with
-   * the external provider so the payment ID can be included in
-   * provider metadata and later recovered from the webhook.
    */
   private createPendingPayment(input: {
     readonly userId: string;
     readonly ideaId: string | null;
     readonly amount: Prisma.Decimal;
     readonly currency: string;
-    readonly paymentMethod: PaymentMethod;
-    readonly provider: PaymentProvider;
+    readonly paymentMethodKey: string;
+    readonly providerKey: string;
     readonly paymentPurpose: PaymentPurpose;
     readonly creditsAmount: number;
     readonly bonusCreditsAmount: number;
@@ -330,33 +306,24 @@ export class PaymentCheckoutService {
       data: {
         userId: input.userId,
         ideaId: input.ideaId,
-
         amount: input.amount,
         currency: input.currency,
-
-        paymentMethod: input.paymentMethod,
-
-        provider: input.provider,
-
+        paymentMethodKey: input.paymentMethodKey,
+        providerKey: input.providerKey,
         paymentPurpose: input.paymentPurpose,
-
         status: PaymentStatus.PENDING,
-
         creditsAmount: input.creditsAmount,
-
         bonusCreditsAmount: input.bonusCreditsAmount,
-
         creditPriceAtPurchase: input.creditPriceAtPurchase,
       },
-
       select: {
         id: true,
         userId: true,
         ideaId: true,
         amount: true,
         currency: true,
-        paymentMethod: true,
-        provider: true,
+        paymentMethodKey: true,
+        providerKey: true,
         paymentPurpose: true,
         creditsAmount: true,
         bonusCreditsAmount: true,
@@ -376,41 +343,26 @@ export class PaymentCheckoutService {
       readonly creditsQuantity?: number;
     },
   ): Promise<PaymentCheckoutResult> {
-    const gateway = this.paymentGatewayFactory.getGateway(payment.provider);
-
+    const gateway = this.paymentGatewayFactory.getGateway(payment.providerKey);
     const sessionInput = this.buildPaymentSessionInput(payment, options);
 
     try {
       const session = await gateway.createPaymentSession(sessionInput);
 
       this.validateSessionResult(payment, session);
-
       await this.storeCheckoutSession(payment.id, session);
 
       return {
         paymentId: payment.id,
-
         paymentPurpose: payment.paymentPurpose,
-
-        paymentMethod: payment.paymentMethod,
-
-        provider: session.provider,
-
+        paymentMethodKey: payment.paymentMethodKey,
+        providerKey: session.providerKey,
         status: PaymentStatus.PENDING,
-
         amount: payment.amount.toFixed(2),
-
         currency: payment.currency,
-
         checkoutUrl: session.checkoutUrl,
-
         providerSessionId: session.providerSessionId,
-
-        ...(session.expiresAt
-          ? {
-              expiresAt: session.expiresAt,
-            }
-          : {}),
+        ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
       };
     } catch (error) {
       await this.markCheckoutCreationFailed(payment.id);
@@ -424,10 +376,9 @@ export class PaymentCheckoutService {
         'The external payment provider could not create a checkout session.',
         {
           cause: error,
-
           details: {
             paymentId: payment.id,
-            provider: payment.provider,
+            providerKey: payment.providerKey,
           },
         },
       );
@@ -448,9 +399,7 @@ export class PaymentCheckoutService {
   ): CreatePaymentSessionInput {
     const metadata: Record<string, string> = {
       [PAYMENT_METADATA_KEYS.PAYMENT_ID]: payment.id,
-
       [PAYMENT_METADATA_KEYS.USER_ID]: payment.userId,
-
       [PAYMENT_METADATA_KEYS.PAYMENT_PURPOSE]: payment.paymentPurpose,
     };
 
@@ -461,31 +410,16 @@ export class PaymentCheckoutService {
     return {
       paymentId: payment.id,
       userId: payment.userId,
-
-      paymentMethod: payment.paymentMethod,
-
+      paymentMethodKey: payment.paymentMethodKey,
       paymentPurpose: payment.paymentPurpose,
-
       amount: payment.amount.toFixed(2),
-
       currency: payment.currency,
-
       successUrl: options.successUrl,
-
       cancelUrl: options.cancelUrl,
-
-      ...(options.ideaId
-        ? {
-            ideaId: options.ideaId,
-          }
-        : {}),
-
+      ...(options.ideaId ? { ideaId: options.ideaId } : {}),
       ...(options.creditsQuantity !== undefined
-        ? {
-            creditsQuantity: options.creditsQuantity,
-          }
+        ? { creditsQuantity: options.creditsQuantity }
         : {}),
-
       metadata,
     };
   }
@@ -497,17 +431,15 @@ export class PaymentCheckoutService {
     payment: PendingPayment,
     session: PaymentSessionResult,
   ): void {
-    if (session.provider !== payment.provider) {
+    if (session.providerKey !== payment.providerKey) {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROVIDER_MISMATCH,
         'The checkout-session provider does not match the internal payment provider.',
         {
           details: {
             paymentId: payment.id,
-
-            expectedProvider: payment.provider,
-
-            returnedProvider: session.provider,
+            expectedProviderKey: payment.providerKey,
+            returnedProviderKey: session.providerKey,
           },
         },
       );
@@ -520,7 +452,7 @@ export class PaymentCheckoutService {
         {
           details: {
             paymentId: payment.id,
-            provider: payment.provider,
+            providerKey: payment.providerKey,
           },
         },
       );
@@ -536,10 +468,9 @@ export class PaymentCheckoutService {
         'The payment provider returned an invalid checkout URL.',
         {
           cause: error,
-
           details: {
             paymentId: payment.id,
-            provider: payment.provider,
+            providerKey: payment.providerKey,
           },
         },
       );
@@ -552,7 +483,7 @@ export class PaymentCheckoutService {
         {
           details: {
             paymentId: payment.id,
-            provider: payment.provider,
+            providerKey: payment.providerKey,
           },
         },
       );
@@ -565,7 +496,7 @@ export class PaymentCheckoutService {
         {
           details: {
             paymentId: payment.id,
-            provider: payment.provider,
+            providerKey: payment.providerKey,
           },
         },
       );
@@ -584,13 +515,10 @@ export class PaymentCheckoutService {
         where: {
           id: paymentId,
           status: PaymentStatus.PENDING,
-
           providerSessionId: null,
         },
-
         data: {
           providerSessionId: session.providerSessionId,
-
           providerPaymentId: session.providerPaymentId ?? undefined,
         },
       });
@@ -599,11 +527,7 @@ export class PaymentCheckoutService {
         throw new PaymentProcessingError(
           PaymentErrorCode.INVALID_PAYMENT_STATUS_TRANSITION,
           'The checkout session could not be attached to the pending payment.',
-          {
-            details: {
-              paymentId,
-            },
-          },
+          { details: { paymentId } },
         );
       }
     } catch (error) {
@@ -620,10 +544,7 @@ export class PaymentCheckoutService {
           'The external checkout-session identifier is already associated with another payment.',
           {
             cause: error,
-
-            details: {
-              paymentId,
-            },
+            details: { paymentId },
           },
         );
       }
@@ -635,10 +556,6 @@ export class PaymentCheckoutService {
   /**
    * Marks an internal payment as failed when external checkout
    * creation or persistence fails.
-   *
-   * This state does not indicate that the user attempted and failed
-   * provider authorization; it indicates that checkout initialization
-   * could not be completed.
    */
   private async markCheckoutCreationFailed(paymentId: string): Promise<void> {
     try {
@@ -647,22 +564,14 @@ export class PaymentCheckoutService {
           id: paymentId,
           status: PaymentStatus.PENDING,
         },
-
         data: {
           status: PaymentStatus.FAILED,
-
           failureReason: 'Payment checkout session creation failed.',
-
           failedAt: new Date(),
         },
       });
     } catch {
-      /*
-       * Preserve the original checkout error.
-       *
-       * Failure to update the diagnostic payment state must
-       * not hide the original provider or session error.
-       */
+      /* Preserve the original checkout error. */
     }
   }
 
@@ -671,10 +580,7 @@ export class PaymentCheckoutService {
    */
   private async ensureEligibleUser(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-
+      where: { id: userId },
       select: {
         id: true,
         role: true,
@@ -687,11 +593,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROCESSING_FAILED,
         'The authenticated user does not exist.',
-        {
-          details: {
-            userId,
-          },
-        },
+        { details: { userId } },
       );
     }
 
@@ -699,11 +601,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROCESSING_FAILED,
         'Only registered user accounts can initiate payments.',
-        {
-          details: {
-            userId,
-          },
-        },
+        { details: { userId } },
       );
     }
 
@@ -711,11 +609,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROCESSING_FAILED,
         'Inactive user accounts cannot initiate payments.',
-        {
-          details: {
-            userId,
-          },
-        },
+        { details: { userId } },
       );
     }
 
@@ -723,11 +617,7 @@ export class PaymentCheckoutService {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROCESSING_FAILED,
         'The user must verify the account before initiating payments.',
-        {
-          details: {
-            userId,
-          },
-        },
+        { details: { userId } },
       );
     }
   }
@@ -737,10 +627,7 @@ export class PaymentCheckoutService {
    */
   private async getSystemSettings() {
     const settings = await this.prisma.systemSetting.findUnique({
-      where: {
-        key: GLOBAL_SYSTEM_SETTINGS_KEY,
-      },
-
+      where: { key: GLOBAL_SYSTEM_SETTINGS_KEY },
       select: {
         creditPrice: true,
         directUnlockPrice: true,
@@ -760,25 +647,28 @@ export class PaymentCheckoutService {
   }
 
   /**
-   * Maps the user-facing payment method to its external provider.
+   * Normalizes a user-facing payment-method key.
    */
-  private resolveProvider(method: PaymentMethod): PaymentProvider {
-    switch (method) {
-      case PaymentMethod.CARD:
-        return PaymentProvider.STRIPE;
+  private normalizePaymentMethodKey(paymentMethodKey: string): string {
+    return paymentMethodKey.trim().toLowerCase();
+  }
 
-      case PaymentMethod.PAYPAL:
-        return PaymentProvider.PAYPAL;
+  /**
+   * Maps a user-facing payment-method key to a backend gateway key.
+   */
+  private resolveProviderKey(paymentMethodKey: string): string {
+    switch (paymentMethodKey) {
+      case PAYMENT_METHOD_KEY.CARD:
+        return PAYMENT_PROVIDER_KEY.STRIPE;
+
+      case PAYMENT_METHOD_KEY.PAYPAL:
+        return PAYMENT_PROVIDER_KEY.PAYPAL;
 
       default:
         throw new PaymentProcessingError(
           PaymentErrorCode.UNSUPPORTED_PAYMENT_METHOD,
           'The selected payment method is not supported.',
-          {
-            details: {
-              paymentMethod: method,
-            },
-          },
+          { details: { paymentMethodKey } },
         );
     }
   }
@@ -842,7 +732,6 @@ export class PaymentCheckoutService {
         {
           details: {
             bonusThreshold: threshold,
-
             bonusCredits,
           },
         },

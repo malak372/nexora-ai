@@ -1,6 +1,6 @@
-import { PaymentMethod, PaymentPurpose, PaymentStatus } from '@prisma/client';
+import { PaymentPurpose, PaymentStatus } from '@prisma/client';
 
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
 
@@ -28,11 +28,16 @@ export class GetUserPaymentsQueryDto extends ListQueryDto {
   status?: PaymentStatus;
 
   /**
-   * Optional payment-method filter.
+   * Optional user-facing payment-method key filter.
+   *
+   * Examples:
+   * - card
+   * - paypal
    */
   @IsOptional()
-  @IsEnum(PaymentMethod)
-  paymentMethod?: PaymentMethod;
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  paymentMethodKey?: string;
 
   /**
    * Optional payment-purpose filter.

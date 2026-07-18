@@ -1,7 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { PaymentProvider } from '@prisma/client';
-
 import { PAYMENT_GATEWAYS } from '../constants/payment-gateway.tokens';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
@@ -10,56 +8,53 @@ import { PaymentProcessingError } from '../errors/payment-processing.error';
 import type { PaymentGateway } from './payment-gateway.interface';
 
 /**
- * Resolves registered payment-gateway implementations
- * by external payment provider.
+ * Resolves registered payment gateways by provider key.
  *
  * Responsibilities:
  * - Receive all registered PaymentGateway implementations.
- * - Build an immutable provider-to-gateway lookup map.
+ * - Build a provider-key-to-gateway lookup map.
  * - Detect duplicate provider registrations during application startup.
- * - Resolve the correct gateway for a payment provider.
- * - Reject unsupported providers using stable payment-domain errors.
+ * - Resolve the correct gateway for a provider key.
+ * - Reject unsupported or invalid provider keys.
  *
  * Application services depend on this factory instead of depending
- * directly on Stripe, PayPal, or any future provider-specific
- * gateway implementation.
+ * directly on Stripe, PayPal, or any future provider implementation.
  *
  * @author Eman
  */
 @Injectable()
 export class PaymentGatewayFactory {
   /**
-   * Immutable lookup map used to resolve gateways in constant time.
+   * Lookup map used to resolve gateways by provider key.
    */
-  private readonly gatewaysByProvider: ReadonlyMap<
-    PaymentProvider,
-    PaymentGateway
-  >;
+  private readonly gatewaysByProviderKey: ReadonlyMap<string, PaymentGateway>;
 
   constructor(
     @Inject(PAYMENT_GATEWAYS)
     gateways: readonly PaymentGateway[],
   ) {
-    this.gatewaysByProvider = this.buildGatewayMap(gateways);
+    this.gatewaysByProviderKey = this.buildGatewayMap(gateways);
   }
 
   /**
-   * Resolves the gateway registered for one payment provider.
+   * Resolves the gateway registered for one provider key.
    *
-   * @param provider External payment provider.
+   * @param providerKey External payment-provider key.
    * @returns Matching payment gateway implementation.
    * @throws PaymentProcessingError when no gateway is registered.
    */
-  getGateway(provider: PaymentProvider): PaymentGateway {
-    const gateway = this.gatewaysByProvider.get(provider);
+  getGateway(providerKey: string): PaymentGateway {
+    const normalizedProviderKey = this.normalizeProviderKey(providerKey);
+
+    const gateway = this.gatewaysByProviderKey.get(normalizedProviderKey);
 
     if (!gateway) {
       throw new PaymentProcessingError(
         PaymentErrorCode.UNSUPPORTED_PAYMENT_PROVIDER,
-        'No payment gateway is registered for the selected provider.',
+        'No payment gateway is registered for the selected provider key.',
         {
           details: {
-            provider,
+            providerKey: normalizedProviderKey,
           },
         },
       );
@@ -70,74 +65,60 @@ export class PaymentGatewayFactory {
 
   /**
    * Determines whether a gateway is registered
-   * for the specified provider.
-   *
-   * @param provider External payment provider.
-   * @returns True when a matching gateway exists.
+   * for the specified provider key.
    */
-  supports(provider: PaymentProvider): boolean {
-    return this.gatewaysByProvider.has(provider);
+  supports(providerKey: string): boolean {
+    const normalizedProviderKey = this.normalizeProviderKey(providerKey);
+
+    return this.gatewaysByProviderKey.has(normalizedProviderKey);
   }
 
   /**
-   * Returns all currently registered payment providers.
-   *
-   * This can be used for diagnostics, health checks,
-   * or administrative provider-status endpoints.
+   * Returns all currently registered provider keys.
    */
-  getSupportedProviders(): readonly PaymentProvider[] {
-    return Array.from(this.gatewaysByProvider.keys());
+  getSupportedProviderKeys(): readonly string[] {
+    return Array.from(this.gatewaysByProviderKey.keys());
   }
 
   /**
-   * Builds the provider-to-gateway lookup map.
-   *
-   * Duplicate provider registrations are rejected during
-   * application initialization because resolving more than
-   * one gateway for the same provider would make payment
-   * behavior ambiguous and unsafe.
-   *
-   * @param gateways Registered gateway implementations.
-   * @returns Immutable provider-to-gateway map.
+   * Builds the provider-key-to-gateway lookup map.
    */
   private buildGatewayMap(
     gateways: readonly PaymentGateway[],
-  ): ReadonlyMap<PaymentProvider, PaymentGateway> {
-    const gatewayMap = new Map<PaymentProvider, PaymentGateway>();
+  ): ReadonlyMap<string, PaymentGateway> {
+    const gatewayMap = new Map<string, PaymentGateway>();
 
     for (const gateway of gateways) {
       this.validateGateway(gateway);
 
-      if (gatewayMap.has(gateway.provider)) {
+      const providerKey = this.normalizeProviderKey(gateway.providerKey);
+
+      if (gatewayMap.has(providerKey)) {
         throw new PaymentProcessingError(
           PaymentErrorCode.DUPLICATE_PAYMENT_GATEWAY,
-          'More than one payment gateway is registered for the same provider.',
+          'More than one payment gateway is registered for the same provider key.',
           {
             details: {
-              provider: gateway.provider,
+              providerKey,
             },
           },
         );
       }
 
-      gatewayMap.set(gateway.provider, gateway);
+      gatewayMap.set(providerKey, gateway);
     }
 
     return gatewayMap;
   }
 
   /**
-   * Validates the minimum runtime contract expected
-   * from a registered gateway implementation.
-   *
-   * TypeScript interfaces are erased at runtime, so this
-   * defensive validation protects against malformed custom
-   * providers or incorrect dependency-injection registration.
+   * Validates the minimum runtime gateway contract.
    */
   private validateGateway(gateway: PaymentGateway): void {
     if (
       !gateway ||
-      !gateway.provider ||
+      typeof gateway.providerKey !== 'string' ||
+      !gateway.providerKey.trim() ||
       typeof gateway.createPaymentSession !== 'function' ||
       typeof gateway.verifyWebhook !== 'function'
     ) {
@@ -146,10 +127,37 @@ export class PaymentGatewayFactory {
         'An invalid payment gateway implementation was registered.',
         {
           details: {
-            provider: gateway?.provider ?? null,
+            providerKey:
+              typeof gateway?.providerKey === 'string'
+                ? gateway.providerKey
+                : null,
           },
         },
       );
     }
+  }
+
+  /**
+   * Normalizes and validates one provider key.
+   */
+  private normalizeProviderKey(providerKey: string): string {
+    const normalizedProviderKey = providerKey?.trim().toLowerCase();
+
+    if (
+      !normalizedProviderKey ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedProviderKey)
+    ) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.UNSUPPORTED_PAYMENT_PROVIDER,
+        'The payment provider key is invalid.',
+        {
+          details: {
+            providerKey: providerKey ?? null,
+          },
+        },
+      );
+    }
+
+    return normalizedProviderKey;
   }
 }

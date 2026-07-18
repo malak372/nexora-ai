@@ -1,18 +1,41 @@
 import { PaymentErrorCode } from './payment-error-code.enum';
 
 /**
- * Represents a business error raised by the Payment module.
+ * Optional sanitized diagnostic context attached to a payment error.
+ *
+ * This object must never contain sensitive information such as:
+ * - Card data.
+ * - Provider credentials.
+ * - Access tokens.
+ * - Webhook secrets.
+ * - Raw authorization headers.
+ */
+export type PaymentErrorDetails = Readonly<Record<string, unknown>>;
+
+/**
+ * Options used when constructing a PaymentProcessingError.
+ */
+export interface PaymentProcessingErrorOptions {
+  /**
+   * Original error that caused the payment failure.
+   */
+  cause?: unknown;
+
+  /**
+   * Optional sanitized diagnostic context.
+   */
+  details?: PaymentErrorDetails;
+}
+
+/**
+ * Represents a business or application error raised by the Payment module.
  *
  * This error remains independent from HTTP concerns and can be thrown
- * from payment gateways, application services, and domain-level payment
- * operations. Controllers or a global exception filter are responsible
- * for translating it into an appropriate API response.
+ * from payment gateways, application services, and payment-processing
+ * workflows.
  *
- * The stable error code identifies the failure, while the message is
- * intended for diagnostics and logging.
- *
- * Optional contextual details must never contain sensitive information
- * such as card data, API credentials, access tokens, or webhook secrets.
+ * Controllers or a global exception filter are responsible for mapping
+ * this error to an appropriate HTTP response.
  *
  * @author Eman
  */
@@ -25,24 +48,32 @@ export class PaymentProcessingError extends Error {
   /**
    * Optional sanitized contextual data used for diagnostics.
    */
-  readonly details?: Readonly<Record<string, unknown>>;
+  readonly details?: PaymentErrorDetails;
 
   constructor(
     code: PaymentErrorCode,
     message: string,
-    options?: {
-      cause?: unknown;
-      details?: Readonly<Record<string, unknown>>;
-    },
+    options: PaymentProcessingErrorOptions = {},
   ) {
     super(message, {
-      cause: options?.cause,
+      cause: options.cause,
     });
 
     this.name = PaymentProcessingError.name;
     this.code = code;
-    this.details = options?.details;
+    this.details = options.details
+      ? Object.freeze({ ...options.details })
+      : undefined;
 
-    Object.setPrototypeOf(this, PaymentProcessingError.prototype);
+    Object.setPrototypeOf(this, new.target.prototype);
+
+    Error.captureStackTrace?.(this, PaymentProcessingError);
+  }
+
+  /**
+   * Checks whether an unknown value is a PaymentProcessingError.
+   */
+  static is(error: unknown): error is PaymentProcessingError {
+    return error instanceof PaymentProcessingError;
   }
 }

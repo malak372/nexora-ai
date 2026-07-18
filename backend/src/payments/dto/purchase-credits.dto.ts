@@ -1,8 +1,13 @@
 import { Type } from 'class-transformer';
 
-import { IsEnum, IsInt, IsString, IsUrl, Max, Min } from 'class-validator';
-
-import { PaymentMethod } from '@prisma/client';
+import {
+  IsInt,
+  IsString,
+  IsUrl,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 import {
   MAX_CREDITS_PER_PURCHASE,
@@ -28,10 +33,15 @@ export class PurchaseCreditsDto {
   creditsQuantity!: number;
 
   /**
-   * User-facing payment method selected for checkout.
+   * User-facing payment-method registry key.
+   *
+   * Examples:
+   * - card
+   * - paypal
    */
-  @IsEnum(PaymentMethod)
-  paymentMethod!: PaymentMethod;
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  paymentMethodKey!: string;
 
   /**
    * Frontend URL used after successful checkout.
@@ -40,7 +50,6 @@ export class PurchaseCreditsDto {
    * Final payment confirmation occurs only through
    * a verified provider webhook.
    */
-  @IsString()
   @IsUrl({
     require_protocol: true,
   })
@@ -49,7 +58,6 @@ export class PurchaseCreditsDto {
   /**
    * Frontend URL used when checkout is cancelled.
    */
-  @IsString()
   @IsUrl({
     require_protocol: true,
   })

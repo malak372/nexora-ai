@@ -1,4 +1,4 @@
-import { PaymentProvider, PaymentStatus } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 
 /**
  * Represents a verified and normalized payment event received from an
@@ -23,9 +23,13 @@ import { PaymentProvider, PaymentStatus } from '@prisma/client';
  */
 export type PaymentConfirmation = {
   /**
-   * External payment provider that issued the payment event.
+   * External payment provider key that issued the payment event.
+   *
+   * Examples:
+   * - stripe
+   * - paypal
    */
-  provider: PaymentProvider;
+  providerKey: string;
 
   /**
    * Internal Nexora AI payment identifier.

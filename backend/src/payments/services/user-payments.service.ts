@@ -39,12 +39,15 @@ import { GetUserPaymentsQueryDto } from '../dto/get-user-payments-query.dto';
  */
 @Injectable()
 export class UserPaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Retrieves the authenticated user's payment history.
    */
-  async getPaymentHistory(userId: string, query: GetUserPaymentsQueryDto) {
+  async getPaymentHistory(
+    userId: string,
+    query: GetUserPaymentsQueryDto,
+  ) {
     await this.ensureUserExists(userId);
 
     const { page, limit, skip, take } = buildPagination(query);
@@ -53,7 +56,7 @@ export class UserPaymentsService {
 
     const orderBy = buildOrderBy(
       query,
-      ['createdAt', 'amount', 'status', 'paymentMethod'] as const,
+      ['createdAt', 'amount', 'status', 'paymentMethodKey'] as const,
       'createdAt',
     );
 
@@ -68,7 +71,8 @@ export class UserPaymentsService {
           id: true,
           amount: true,
           currency: true,
-          paymentMethod: true,
+          providerKey: true,
+          paymentMethodKey: true,
           status: true,
           paymentPurpose: true,
           creditsAmount: true,
@@ -98,43 +102,50 @@ export class UserPaymentsService {
   /**
    * Returns payment summary metrics for one authenticated user.
    */
-  async getPaymentSummary(userId: string, query: GetUserPaymentsQueryDto) {
+  async getPaymentSummary(
+    userId: string,
+    query: GetUserPaymentsQueryDto,
+  ) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
 
-    const [totalPayments, successfulPayments, failedPayments, totalSpent] =
-      await Promise.all([
-        this.prisma.payment.count({
-          where,
-        }),
+    const [
+      totalPayments,
+      successfulPayments,
+      failedPayments,
+      totalSpent,
+    ] = await Promise.all([
+      this.prisma.payment.count({
+        where,
+      }),
 
-        this.prisma.payment.count({
-          where: {
-            ...where,
-            status: PaymentStatus.SUCCESS,
-          },
-        }),
+      this.prisma.payment.count({
+        where: {
+          ...where,
+          status: PaymentStatus.SUCCEEDED,
+        },
+      }),
 
-        this.prisma.payment.count({
-          where: {
-            ...where,
-            status: PaymentStatus.FAILED,
-          },
-        }),
+      this.prisma.payment.count({
+        where: {
+          ...where,
+          status: PaymentStatus.FAILED,
+        },
+      }),
 
-        this.prisma.payment.aggregate({
-          where: {
-            ...where,
-            status: PaymentStatus.SUCCESS,
-          },
+      this.prisma.payment.aggregate({
+        where: {
+          ...where,
+          status: PaymentStatus.SUCCEEDED,
+        },
 
-          _sum: {
-            amount: true,
-            creditsAmount: true,
-          },
-        }),
-      ]);
+        _sum: {
+          amount: true,
+          creditsAmount: true,
+        },
+      }),
+    ]);
 
     return {
       totalPayments,
@@ -148,39 +159,43 @@ export class UserPaymentsService {
   /**
    * Returns chart-ready payment analytics for one user.
    */
-  async getPaymentCharts(userId: string, query: GetUserPaymentsQueryDto) {
+  async getPaymentCharts(
+    userId: string,
+    query: GetUserPaymentsQueryDto,
+  ) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
 
-    const [byStatus, byPaymentMethod, byPaymentPurpose] = await Promise.all([
-      this.prisma.payment.groupBy({
-        by: ['status'],
-        where,
+    const [byStatus, byPaymentMethod, byPaymentPurpose] =
+      await Promise.all([
+        this.prisma.payment.groupBy({
+          by: ['status'],
+          where,
 
-        _count: {
-          status: true,
-        },
-      }),
+          _count: {
+            status: true,
+          },
+        }),
 
-      this.prisma.payment.groupBy({
-        by: ['paymentMethod'],
-        where,
+        this.prisma.payment.groupBy({
+          by: ['paymentMethodKey'],
+          where,
 
-        _count: {
-          paymentMethod: true,
-        },
-      }),
+          _count: {
+            paymentMethodKey: true,
+          },
+        }),
 
-      this.prisma.payment.groupBy({
-        by: ['paymentPurpose'],
-        where,
+        this.prisma.payment.groupBy({
+          by: ['paymentPurpose'],
+          where,
 
-        _count: {
-          paymentPurpose: true,
-        },
-      }),
-    ]);
+          _count: {
+            paymentPurpose: true,
+          },
+        }),
+      ]);
 
     return {
       byStatus: byStatus.map((item) => ({
@@ -189,8 +204,8 @@ export class UserPaymentsService {
       })),
 
       byPaymentMethod: byPaymentMethod.map((item) => ({
-        paymentMethod: item.paymentMethod,
-        count: item._count.paymentMethod,
+        paymentMethodKey: item.paymentMethodKey,
+        count: item._count.paymentMethodKey,
       })),
 
       byPaymentPurpose: byPaymentPurpose.map((item) => ({
@@ -203,14 +218,17 @@ export class UserPaymentsService {
   /**
    * Exports the authenticated user's payment history as CSV.
    */
-  async exportPaymentsCsv(userId: string, query: GetUserPaymentsQueryDto) {
+  async exportPaymentsCsv(
+    userId: string,
+    query: GetUserPaymentsQueryDto,
+  ) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
 
     const orderBy = buildOrderBy(
       query,
-      ['createdAt', 'amount', 'status', 'paymentMethod'] as const,
+      ['createdAt', 'amount', 'status', 'paymentMethodKey'] as const,
       'createdAt',
     );
 
@@ -222,7 +240,8 @@ export class UserPaymentsService {
         id: true,
         amount: true,
         currency: true,
-        paymentMethod: true,
+        providerKey: true,
+        paymentMethodKey: true,
         status: true,
         paymentPurpose: true,
         creditsAmount: true,
@@ -237,6 +256,7 @@ export class UserPaymentsService {
         'ID',
         'Amount',
         'Currency',
+        'Provider',
         'Method',
         'Status',
         'Purpose',
@@ -250,7 +270,8 @@ export class UserPaymentsService {
         payment.id,
         payment.amount.toString(),
         payment.currency,
-        payment.paymentMethod,
+        payment.providerKey,
+        payment.paymentMethodKey,
         payment.status,
         payment.paymentPurpose,
         payment.creditsAmount,
@@ -274,15 +295,26 @@ export class UserPaymentsService {
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildSearchFilter(
-        ['currency', 'transactionReference'],
+        [
+          'currency',
+          'providerKey',
+          'paymentMethodKey',
+          'transactionReference',
+        ],
         query.search,
       ) ?? {}),
 
       ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter('paymentMethod', query.paymentMethod) ?? {}),
+      ...(buildExactFilter(
+        'paymentMethodKey',
+        query.paymentMethodKey,
+      ) ?? {}),
 
-      ...(buildExactFilter('paymentPurpose', query.paymentPurpose) ?? {}),
+      ...(buildExactFilter(
+        'paymentPurpose',
+        query.paymentPurpose,
+      ) ?? {}),
     };
   }
 

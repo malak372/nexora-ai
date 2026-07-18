@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import {
-  PaymentProvider,
   PaymentPurpose,
   PaymentStatus,
   Prisma,
@@ -35,7 +34,7 @@ type ProcessablePayment = {
   readonly amount: Prisma.Decimal;
   readonly currency: string;
 
-  readonly provider: PaymentProvider;
+  readonly providerKey: string;
   readonly paymentPurpose: PaymentPurpose;
   readonly status: PaymentStatus;
 
@@ -83,7 +82,7 @@ export class PaymentProcessingService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly paymentNotificationService: PaymentNotificationService,
-  ) {}
+  ) { }
 
   /**
    * Processes one verified provider payment confirmation.
@@ -105,7 +104,10 @@ export class PaymentProcessingService {
         async (tx): Promise<PaymentProcessingResult> => {
           const payment = await this.findPayment(tx, confirmation.paymentId);
 
-          this.validateProvider(payment.provider, confirmation.provider);
+          this.validateProviderKey(
+            payment.providerKey,
+            confirmation.providerKey,
+          );
 
           this.validateAmount(payment.amount, confirmation.amount);
 
@@ -124,8 +126,8 @@ export class PaymentProcessingService {
            * the payment again.
            */
           if (
-            payment.status === PaymentStatus.SUCCESS &&
-            confirmation.status === PaymentStatus.SUCCESS
+            payment.status === PaymentStatus.SUCCEEDED &&
+            confirmation.status === PaymentStatus.SUCCEEDED
           ) {
             return this.buildAlreadyProcessedSuccessResult(
               payment,
@@ -136,7 +138,7 @@ export class PaymentProcessingService {
           this.validateStatusTransition(payment.status, confirmation.status);
 
           switch (confirmation.status) {
-            case PaymentStatus.SUCCESS:
+            case PaymentStatus.SUCCEEDED:
               return this.processSuccessfulPayment(tx, payment, confirmation);
 
             case PaymentStatus.FAILED:
@@ -228,7 +230,7 @@ export class PaymentProcessingService {
           id: true,
           amount: true,
           currency: true,
-          paymentMethod: true,
+          paymentMethodKey: true,
           paymentPurpose: true,
           transactionReference: true,
           failureReason: true,
@@ -254,13 +256,13 @@ export class PaymentProcessingService {
         recipientEmail: payment.user.email,
         amount: payment.amount.toNumber(),
         currency: payment.currency,
-        paymentMethod: payment.paymentMethod,
+        paymentMethodKey: payment.paymentMethodKey,
         paymentPurpose: payment.paymentPurpose,
         transactionReference: payment.transactionReference ?? undefined,
       };
 
       switch (result.status) {
-        case PaymentStatus.SUCCESS:
+        case PaymentStatus.SUCCEEDED:
           await this.paymentNotificationService.notifyPaymentSucceeded(
             notificationInput,
           );
@@ -306,7 +308,7 @@ export class PaymentProcessingService {
         amount: true,
         currency: true,
 
-        provider: true,
+        providerKey: true,
         paymentPurpose: true,
         status: true,
 
@@ -337,7 +339,7 @@ export class PaymentProcessingService {
    * Atomically claims and fulfills one successful payment.
    *
    * The conditional update ensures that only one concurrent
-   * webhook can transition the payment to SUCCESS and execute
+   * webhook can transition the payment to SUCCEEDED and execute
    * its business fulfillment.
    */
   private async processSuccessfulPayment(
@@ -355,7 +357,7 @@ export class PaymentProcessingService {
       },
 
       data: {
-        status: PaymentStatus.SUCCESS,
+        status: PaymentStatus.SUCCEEDED,
 
         providerPaymentId: confirmation.providerPaymentId,
 
@@ -401,7 +403,7 @@ export class PaymentProcessingService {
 
           paymentPurpose: PaymentPurpose.BUY_CREDITS,
 
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
 
           alreadyProcessed: false,
           creditBalanceChanged: true,
@@ -432,7 +434,7 @@ export class PaymentProcessingService {
 
           paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
 
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
 
           alreadyProcessed: false,
           creditBalanceChanged: false,
@@ -485,7 +487,7 @@ export class PaymentProcessingService {
       },
     });
 
-    if (currentPayment?.status === PaymentStatus.SUCCESS) {
+    if (currentPayment?.status === PaymentStatus.SUCCEEDED) {
       this.validateCompletedPaymentIdentifiers(
         currentPayment.providerPaymentId,
         currentPayment.providerSessionId,
@@ -500,7 +502,7 @@ export class PaymentProcessingService {
 
         paymentPurpose: currentPayment.paymentPurpose,
 
-        status: PaymentStatus.SUCCESS,
+        status: PaymentStatus.SUCCEEDED,
 
         alreadyProcessed: true,
         creditBalanceChanged: false,
@@ -637,7 +639,7 @@ export class PaymentProcessingService {
 
       paymentPurpose: payment.paymentPurpose,
 
-      status: PaymentStatus.SUCCESS,
+      status: PaymentStatus.SUCCEEDED,
 
       alreadyProcessed: true,
       creditBalanceChanged: false,
@@ -648,18 +650,23 @@ export class PaymentProcessingService {
    * Validates that the provider confirmation belongs
    * to the same provider stored on the payment.
    */
-  private validateProvider(
-    storedProvider: PaymentProvider,
-    confirmedProvider: PaymentProvider,
+  private validateProviderKey(
+    storedProviderKey: string,
+    confirmedProviderKey: string,
   ): void {
-    if (storedProvider !== confirmedProvider) {
+    const normalizedStoredProviderKey = storedProviderKey.trim().toLowerCase();
+    const normalizedConfirmedProviderKey = confirmedProviderKey
+      .trim()
+      .toLowerCase();
+
+    if (normalizedStoredProviderKey !== normalizedConfirmedProviderKey) {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROVIDER_MISMATCH,
         'The payment provider does not match the internal payment record.',
         {
           details: {
-            storedProvider,
-            confirmedProvider,
+            storedProviderKey: normalizedStoredProviderKey,
+            confirmedProviderKey: normalizedConfirmedProviderKey,
           },
         },
       );
@@ -868,8 +875,8 @@ export class PaymentProcessingService {
     }
 
     if (
-      currentStatus === PaymentStatus.SUCCESS &&
-      requestedStatus !== PaymentStatus.SUCCESS
+      currentStatus === PaymentStatus.SUCCEEDED &&
+      requestedStatus !== PaymentStatus.SUCCEEDED
     ) {
       throw new PaymentProcessingError(
         PaymentErrorCode.INVALID_PAYMENT_STATUS_TRANSITION,
@@ -917,15 +924,15 @@ export class PaymentProcessingService {
 
       const target = Array.isArray(rawTarget)
         ? rawTarget
-            .filter((value): value is string => typeof value === 'string')
-            .join(',')
+          .filter((value): value is string => typeof value === 'string')
+          .join(',')
         : typeof rawTarget === 'string'
           ? rawTarget
           : '';
 
       const errorCode =
         target.includes('provider_session_id') ||
-        target.includes('providerSessionId')
+          target.includes('providerSessionId')
           ? PaymentErrorCode.DUPLICATE_PROVIDER_SESSION
           : PaymentErrorCode.DUPLICATE_PROVIDER_PAYMENT;
 
