@@ -40,9 +40,11 @@ import { AiExecutionInput } from '../types/ai-execution-input.type';
 import { AiExecutionResult } from '../types/ai-execution-result.type';
 
 import {
-  AiProviderGenerateResult,
+  AiFinishReason,
   AiResponseFormat,
 } from '../types/ai-provider.type';
+
+import type { AiProviderGenerateResult } from '../types/ai-provider.type';
 
 import { AiProviderFactoryService } from './ai-provider-factory.service';
 import { AiResponseRepairService } from './ai-response-repair.service';
@@ -357,13 +359,25 @@ export class AiExecutionService {
       },
     );
 
-    if (models.length === 0) {
+    /*
+     * Structured operations must only use models explicitly configured
+     * to support JSON output. Filtering after routing preserves the
+     * selected strategy's relative order among eligible models.
+     */
+    const eligibleModels =
+      input.responseFormat === AiResponseFormat.JSON
+        ? models.filter((model) => model.supportsJsonOutput)
+        : models;
+
+    if (eligibleModels.length === 0) {
       throw new ServiceUnavailableException(
-        'No available AI models were found for this request.',
+        input.responseFormat === AiResponseFormat.JSON
+          ? 'No routable AI model supporting structured JSON output is currently available.'
+          : 'No available AI models were found for this request.',
       );
     }
 
-    return models;
+    return eligibleModels;
   }
 
   /**
@@ -476,6 +490,7 @@ export class AiExecutionService {
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
+      this.validateFinishReason(providerResult);
 
       const validation = this.validateProviderResult(providerResult, input);
 
@@ -679,6 +694,92 @@ export class AiExecutionService {
   }
 
   /**
+   * Ensures that one provider request completed with an acceptable
+   * provider-neutral finish reason before its response is accepted.
+   *
+   * STOP is the only finish reason accepted as a complete response.
+   * Truncated output, safety filtering, tool calls, explicit errors, and
+   * unknown termination reasons are converted into normalized provider
+   * errors so retry and fallback policies remain centralized.
+   *
+   * @param result Normalized provider result.
+   * @throws AiProviderError When generation did not complete normally.
+   */
+  private validateFinishReason(
+    result: AiProviderGenerateResult,
+  ): void {
+    switch (result.finishReason) {
+      case AiFinishReason.STOP:
+        return;
+
+      case AiFinishReason.MAX_TOKENS:
+        throw new AiProviderError(
+          'The AI response was truncated after reaching the configured output-token limit.',
+          AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT,
+          false,
+          undefined,
+          result.requestId,
+        );
+
+      case AiFinishReason.CONTENT_FILTER:
+        throw new AiProviderError(
+          'The AI provider blocked the generated response because of content-safety policies.',
+          AiProviderErrorCode.CONTENT_FILTERED,
+          false,
+          403,
+          result.requestId,
+        );
+
+      case AiFinishReason.TOOL_CALL:
+        throw new AiProviderError(
+          'The AI provider returned an unsupported tool or function call.',
+          AiProviderErrorCode.INVALID_MODEL_CONFIGURATION,
+          false,
+          undefined,
+          result.requestId,
+        );
+
+      case AiFinishReason.ERROR:
+        throw new AiProviderError(
+          'The AI provider ended generation because of a provider-side error.',
+          AiProviderErrorCode.UNKNOWN,
+          true,
+          undefined,
+          result.requestId,
+        );
+
+      case AiFinishReason.UNKNOWN:
+        throw new AiProviderError(
+          'The AI provider returned an unknown completion reason.',
+          AiProviderErrorCode.UNKNOWN,
+          true,
+          undefined,
+          result.requestId,
+        );
+
+      default:
+        return this.assertNeverFinishReason(result.finishReason);
+    }
+  }
+
+  /**
+   * Exhaustive guard for provider-neutral finish reasons.
+   *
+   * Adding a new AiFinishReason requires this service to define whether
+   * that reason is accepted, retried, or allowed to fall back.
+   *
+   * @param value Unhandled finish reason.
+   * @throws AiProviderError Always.
+   */
+  private assertNeverFinishReason(value: never): never {
+    throw new AiProviderError(
+      `Unsupported AI finish reason: ${String(value)}`,
+      AiProviderErrorCode.UNKNOWN,
+      false,
+    );
+  }
+
+  /**
    * Validates one provider response according to the requested response
    * format.
    *
@@ -822,6 +923,7 @@ export class AiExecutionService {
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
+      this.validateFinishReason(providerResult);
 
       const validation = this.validateProviderResult(providerResult, input);
 
