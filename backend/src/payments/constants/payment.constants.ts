@@ -1,5 +1,5 @@
 /**
- * Shared constants used throughout the Payment module.
+ * Shared constants used throughout the payments module.
  *
  * These constants centralize payment-related configuration such as:
  * - Credit purchase limits.

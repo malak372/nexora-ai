@@ -17,13 +17,19 @@ import { AdminPaymentsService } from '../services/admin-payments.service';
  * Base route:
  * /admin/payments
  *
+ * Responsibilities:
+ * - Retrieve paginated payment records.
+ * - Retrieve payment summary statistics.
+ * - Retrieve chart-ready payment analytics.
+ * - Export filtered payment records as CSV.
+ *
  * @author Malak
  */
 @Controller('admin/payments')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminPaymentsController {
-  constructor(private readonly adminPaymentsService: AdminPaymentsService) {}
+  constructor(private readonly adminPaymentsService: AdminPaymentsService) { }
 
   /**
    * Retrieves paginated payment records.
@@ -65,13 +71,16 @@ export class AdminPaymentsController {
   }
 
   /**
-   * Exports filtered payments as CSV.
+   * Exports filtered payment records as CSV.
    *
    * GET /admin/payments/export/csv
    */
   @Get('export/csv')
-  @Header('Content-Type', 'text/csv')
-  @Header('Content-Disposition', 'attachment; filename="payments-report.csv"')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="payments-report.csv"',
+  )
   exportPaymentsCsv(
     @Query()
     query: GetAdminPaymentsQueryDto,

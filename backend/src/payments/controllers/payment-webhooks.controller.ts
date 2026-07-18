@@ -3,14 +3,11 @@ import {
   Controller,
   Headers,
   Param,
-  ParseEnumPipe,
   Post,
   Req,
 } from '@nestjs/common';
 
 import type { RawBodyRequest } from '@nestjs/common';
-
-import { PaymentProvider } from '@prisma/client';
 
 import type { Request } from 'express';
 
@@ -25,25 +22,31 @@ import type { PaymentWebhookInput } from '../types/payment-webhook-input.type';
  * Base route:
  * /payments/webhooks
  *
- * Webhook endpoints remain public because payment providers
- * cannot authenticate using the application's JWT.
+ * Webhook endpoints remain public because external payment
+ * providers cannot authenticate using the application's JWT.
  *
- * Provider-specific signature verification remains owned by
- * the corresponding PaymentGateway implementation.
+ * Provider resolution and webhook-signature verification remain
+ * the responsibility of the payment webhook workflow and the
+ * corresponding PaymentGateway implementation.
  *
  * @author Eman
  */
 @Controller('payments/webhooks')
 export class PaymentWebhooksController {
-  constructor(private readonly paymentWebhookService: PaymentWebhookService) {}
+  constructor(private readonly paymentWebhookService: PaymentWebhookService) { }
 
   /**
-   * Receives one payment-provider webhook.
+   * Receives and processes one payment-provider webhook.
+   *
+   * The provider key is matched dynamically against the
+   * registered payment-gateway implementations.
+   *
+   * POST /payments/webhooks/:providerKey
    */
-  @Post(':provider')
+  @Post(':providerKey')
   handleWebhook(
-    @Param('provider', new ParseEnumPipe(PaymentProvider))
-    provider: PaymentProvider,
+    @Param('providerKey')
+    providerKey: string,
 
     @Req()
     request: RawBodyRequest<Request>,
@@ -60,6 +63,6 @@ export class PaymentWebhooksController {
       headers,
     };
 
-    return this.paymentWebhookService.handleWebhook(provider, input);
+    return this.paymentWebhookService.handleWebhook(providerKey, input);
   }
 }
