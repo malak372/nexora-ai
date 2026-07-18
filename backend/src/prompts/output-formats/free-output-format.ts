@@ -1,75 +1,60 @@
+import {
+  BASE_IDEA_OUTPUT_FORMAT,
+  FREE_PROBLEM_STATEMENT_OUTPUT_PROPERTY,
+  IDEA_OBJECTIVES_OUTPUT_PROPERTY,
+  IDEA_TARGET_USERS_OUTPUT_PROPERTY,
+  IDEA_TITLE_OUTPUT_PROPERTY,
+  PARTIAL_ABSTRACT_OUTPUT_PROPERTY,
+} from './idea-shared-output-fields';
+
 /**
- * Provider-neutral JSON schema describing the expected
- * response for registered free idea generation.
+ * Provider-neutral JSON Schema describing the expected response for
+ * registered free idea generation.
  *
  * This schema must remain synchronized with:
  * - FREE_OUTPUT_FORMAT
  * - FreeIdeaSchema
+ * - The registered free-generation prompt template
  *
- * AI provider adapters may transform this schema into
- * their provider-specific structured-output representation.
+ * AI-provider adapters may translate this schema into their native
+ * structured-output representation.
+ *
+ * Central runtime validation remains mandatory after receiving the
+ * provider response.
  *
  * @author Malak
  */
 export const FREE_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
+
   properties: {
     /**
      * Generated software-project title.
      */
-    title: {
-      type: 'string',
-      minLength: 3,
-      maxLength: 200,
-    },
+    title: IDEA_TITLE_OUTPUT_PROPERTY,
 
     /**
      * Description of the problem addressed by the project.
      */
-    problemStatement: {
-      type: 'string',
-      minLength: 20,
-      maxLength: 1_200,
-    },
+    problemStatement: FREE_PROBLEM_STATEMENT_OUTPUT_PROPERTY,
 
     /**
      * Main project objectives.
      */
-    objectives: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 10,
-      items: {
-        type: 'string',
-        minLength: 3,
-        maxLength: 300,
-      },
-    },
+    objectives: IDEA_OBJECTIVES_OUTPUT_PROPERTY,
 
     /**
      * Primary users or organizations targeted by the project.
      */
-    targetUsers: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 10,
-      items: {
-        type: 'string',
-        minLength: 2,
-        maxLength: 200,
-      },
-    },
+    targetUsers: IDEA_TARGET_USERS_OUTPUT_PROPERTY,
 
     /**
      * Partial project abstract available to registered free users.
      */
-    partialAbstract: {
-      type: 'string',
-      minLength: 30,
-      maxLength: 2_500,
-    },
+    partialAbstract: PARTIAL_ABSTRACT_OUTPUT_PROPERTY,
   },
+
   required: [
     'title',
     'problemStatement',
@@ -80,17 +65,15 @@ export const FREE_OUTPUT_SCHEMA = {
 } as const;
 
 /**
- * Human-readable JSON example inserted into the prompt.
+ * Human-readable JSON example inserted into the registered free idea
+ * prompt.
  *
- * The AI must return the exact field names and value types
- * demonstrated by this example.
+ * The AI must return the exact field names and value types demonstrated
+ * by this example.
  */
 export const FREE_OUTPUT_FORMAT = JSON.stringify(
   {
-    title: 'string',
-    problemStatement: 'string',
-    objectives: ['string'],
-    targetUsers: ['string'],
+    ...BASE_IDEA_OUTPUT_FORMAT,
     partialAbstract: 'string',
   },
   null,

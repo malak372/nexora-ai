@@ -3,7 +3,7 @@ import { AiModelHealthStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
 
 import {
-  IsBooleanString,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsOptional,
@@ -16,6 +16,27 @@ import {
 } from '../../ai/constants/ai-provider.constants';
 
 import { ListQueryDto } from '../../utilities/dto/list-query.dto';
+
+/**
+ * Converts a boolean query-string value into a real boolean.
+ *
+ * Unknown values remain unchanged so class-validator can reject them.
+ */
+const transformBooleanQuery = ({
+  value,
+}: {
+  value: unknown;
+}): unknown => {
+  if (value === 'true' || value === true) {
+    return true;
+  }
+
+  if (value === 'false' || value === false) {
+    return false;
+  }
+
+  return value;
+};
 
 /**
  * Query DTO used for administrator AI-model listing and filtering.
@@ -33,7 +54,9 @@ export class GetAiModelsQueryDto extends ListQueryDto {
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string'
+      ? value.trim().toLowerCase()
+      : value,
   )
   @IsString()
   @IsIn(SUPPORTED_AI_PROVIDER_KEYS)
@@ -54,8 +77,9 @@ export class GetAiModelsQueryDto extends ListQueryDto {
    * - isActive=false
    */
   @IsOptional()
-  @IsBooleanString()
-  isActive?: string;
+  @Transform(transformBooleanQuery)
+  @IsBoolean()
+  isActive?: boolean;
 
   /**
    * Filters models by default-model state.
@@ -65,6 +89,7 @@ export class GetAiModelsQueryDto extends ListQueryDto {
    * - isDefault=false
    */
   @IsOptional()
-  @IsBooleanString()
-  isDefault?: string;
+  @Transform(transformBooleanQuery)
+  @IsBoolean()
+  isDefault?: boolean;
 }

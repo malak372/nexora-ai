@@ -1,20 +1,31 @@
+import {
+  BASE_IDEA_OUTPUT_FORMAT,
+  FREE_PROBLEM_STATEMENT_OUTPUT_PROPERTY,
+  IDEA_OBJECTIVES_OUTPUT_PROPERTY,
+  IDEA_TARGET_USERS_OUTPUT_PROPERTY,
+  IDEA_TITLE_OUTPUT_PROPERTY,
+  LIMITED_ABSTRACT_OUTPUT_PROPERTY,
+  PARTIAL_ABSTRACT_OUTPUT_PROPERTY,
+} from './idea-shared-output-fields';
+
 /**
- * Provider-neutral JSON schema for guest idea generation.
+ * Provider-neutral JSON Schema describing the expected response for
+ * guest idea generation.
  *
- * The AI generates the complete registered-free idea foundation
- * in one request, but the guest-facing response exposes only:
+ * The AI generates the complete registered-free idea foundation in one
+ * request, while the guest-facing response exposes only:
  * - title
  * - limitedAbstract
  *
- * The remaining fields are persisted internally and become
- * available after the guest registers and the idea ownership
- * is transferred.
+ * The remaining fields are persisted internally and may become
+ * available after registration and successful ownership transfer.
  *
- * This avoids making a second AI request during registration.
+ * This avoids executing a second AI request during registration.
  *
  * This schema must remain synchronized with:
  * - GUEST_OUTPUT_FORMAT
  * - GuestIdeaSchema
+ * - The guest-generation prompt template
  * - The idea persistence mapper
  *
  * @author Malak
@@ -27,70 +38,35 @@ export const GUEST_OUTPUT_SCHEMA = {
     /**
      * Generated software-project title.
      */
-    title: {
-      type: 'string',
-      minLength: 3,
-      maxLength: 200,
-    },
+    title: IDEA_TITLE_OUTPUT_PROPERTY,
 
     /**
      * Short abstract exposed to the guest.
      */
-    limitedAbstract: {
-      type: 'string',
-      minLength: 20,
-      maxLength: 1_200,
-    },
+    limitedAbstract: LIMITED_ABSTRACT_OUTPUT_PROPERTY,
 
     /**
      * Problem statement persisted internally.
      */
-    problemStatement: {
-      type: 'string',
-      minLength: 20,
-      maxLength: 1_200,
-    },
+    problemStatement: FREE_PROBLEM_STATEMENT_OUTPUT_PROPERTY,
 
     /**
      * Main project objectives persisted internally.
-     *
-     * The array type is consistent with free and premium outputs.
      */
-    objectives: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 10,
-      items: {
-        type: 'string',
-        minLength: 3,
-        maxLength: 300,
-      },
-    },
+    objectives: IDEA_OBJECTIVES_OUTPUT_PROPERTY,
 
     /**
      * Intended project users persisted internally.
-     *
-     * The array type is consistent with free and premium outputs.
      */
-    targetUsers: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 10,
-      items: {
-        type: 'string',
-        minLength: 2,
-        maxLength: 200,
-      },
-    },
+    targetUsers: IDEA_TARGET_USERS_OUTPUT_PROPERTY,
 
     /**
      * Partial abstract persisted internally.
+     *
+     * This value may become available after registration and successful
+     * ownership transfer.
      */
-    partialAbstract: {
-      type: 'string',
-      minLength: 30,
-      maxLength: 2_500,
-    },
+    partialAbstract: PARTIAL_ABSTRACT_OUTPUT_PROPERTY,
   },
 
   required: [
@@ -104,18 +80,19 @@ export const GUEST_OUTPUT_SCHEMA = {
 } as const;
 
 /**
- * Human-readable JSON example inserted into the guest prompt.
+ * Human-readable JSON example inserted into the guest-generation
+ * prompt.
  *
- * Although only title and limitedAbstract are returned to the
- * guest-facing client, every field must be generated.
+ * Although the guest-facing API exposes only title and limitedAbstract,
+ * the AI must generate every field included in this example.
  */
 export const GUEST_OUTPUT_FORMAT = JSON.stringify(
   {
-    title: 'string',
+    title: BASE_IDEA_OUTPUT_FORMAT.title,
     limitedAbstract: 'string',
-    problemStatement: 'string',
-    objectives: ['string'],
-    targetUsers: ['string'],
+    problemStatement: BASE_IDEA_OUTPUT_FORMAT.problemStatement,
+    objectives: BASE_IDEA_OUTPUT_FORMAT.objectives,
+    targetUsers: BASE_IDEA_OUTPUT_FORMAT.targetUsers,
     partialAbstract: 'string',
   },
   null,

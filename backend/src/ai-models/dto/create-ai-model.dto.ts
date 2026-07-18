@@ -19,6 +19,26 @@ import {
 } from '../../ai/constants/ai-provider.constants';
 
 /**
+ * Trims an optional string and converts blank values to undefined.
+ *
+ * This prevents optional textual database fields from being persisted
+ * as empty strings.
+ */
+const normalizeOptionalString = ({
+  value,
+}: {
+  value: unknown;
+}): unknown => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const normalizedValue = value.trim();
+
+  return normalizedValue || undefined;
+};
+
+/**
  * DTO used by administrators to create an AI-model configuration.
  *
  * Only providers that have registered backend adapters may be used.
@@ -37,7 +57,9 @@ export class CreateAiModelDto {
    * - openrouter
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
+    typeof value === 'string'
+      ? value.trim().toLowerCase()
+      : value,
   )
   @IsString()
   @IsIn(SUPPORTED_AI_PROVIDER_KEYS)
@@ -50,7 +72,9 @@ export class CreateAiModelDto {
    * the provider-side model identifier.
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim() : value,
+    typeof value === 'string'
+      ? value.trim()
+      : value,
   )
   @IsString()
   @IsNotEmpty()
@@ -62,10 +86,12 @@ export class CreateAiModelDto {
    *
    * Examples:
    * - gemini-2.5-flash
-   * - openai/gpt-4.1-mini
+   * - google/gemini-2.0-flash-exp:free
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim() : value,
+    typeof value === 'string'
+      ? value.trim()
+      : value,
   )
   @IsString()
   @IsNotEmpty()
@@ -74,22 +100,22 @@ export class CreateAiModelDto {
 
   /**
    * Optional administrator-facing display name.
+   *
+   * Blank values are normalized to undefined.
    */
   @IsOptional()
-  @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(normalizeOptionalString)
   @IsString()
   @MaxLength(100)
   displayName?: string;
 
   /**
    * Optional administrator-facing model description.
+   *
+   * Blank values are normalized to undefined.
    */
   @IsOptional()
-  @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(normalizeOptionalString)
   @IsString()
   @MaxLength(500)
   description?: string;

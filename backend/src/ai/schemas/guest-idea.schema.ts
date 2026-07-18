@@ -1,24 +1,27 @@
 import { z } from 'zod';
 
+import { IdeaSharedFields } from './idea-shared-fields.schema';
+
 /**
  * Validates structured output returned for guest idea generation.
  *
  * The provider generates the complete free-tier foundation in one
- * request.
+ * request so the idea can later be transferred to a registered user.
  *
- * The public guest response may expose only:
+ * The public guest response must expose only:
  * - title
  * - limitedAbstract
  *
- * The remaining generated values may be persisted internally so the
- * idea can be transferred to the user after account registration.
+ * The remaining fields are persisted internally and must not be exposed
+ * to the guest before registration or ownership transfer.
  *
  * This schema must remain synchronized with:
  * - GUEST_OUTPUT_SCHEMA
  * - GUEST_OUTPUT_FORMAT
  * - The guest-generation prompt template
  *
- * Unknown properties are rejected.
+ * Unknown properties are rejected to prevent unsupported fields from
+ * entering the application.
  *
  * @author Malak
  */
@@ -27,37 +30,39 @@ export const GuestIdeaSchema = z
     /**
      * Generated software-project title.
      */
-    title: z.string().trim().min(3).max(200),
+    title: IdeaSharedFields.title,
 
     /**
-     * Limited abstract exposed to the guest.
+     * Limited abstract exposed to the unauthenticated guest.
      */
-    limitedAbstract: z.string().trim().min(20).max(1_200),
+    limitedAbstract: IdeaSharedFields.limitedAbstract,
 
     /**
      * Internally persisted problem statement.
      */
-    problemStatement: z.string().trim().min(20).max(1_200),
+    problemStatement: IdeaSharedFields.problemStatement,
 
     /**
      * Internally persisted project objectives.
      */
-    objectives: z.array(z.string().trim().min(3).max(300)).min(1).max(10),
+    objectives: IdeaSharedFields.objectives,
 
     /**
      * Internally persisted target users.
      */
-    targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
+    targetUsers: IdeaSharedFields.targetUsers,
 
     /**
-     * Internally persisted partial abstract that becomes available
-     * after registration or ownership transfer.
+     * Internally persisted partial abstract.
+     *
+     * This value may become available after registration and successful
+     * ownership transfer.
      */
-    partialAbstract: z.string().trim().min(30).max(2_500),
+    partialAbstract: IdeaSharedFields.partialAbstract,
   })
   .strict();
 
 /**
- * Validated guest idea output.
+ * Validated structured output produced by guest idea generation.
  */
 export type GuestIdeaOutput = z.infer<typeof GuestIdeaSchema>;

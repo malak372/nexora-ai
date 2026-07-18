@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { IdeaSharedFields } from './idea-shared-fields.schema';
+
 /**
  * Validates structured output returned for authenticated free idea
  * generation.
@@ -7,7 +9,7 @@ import { z } from 'zod';
  * This schema must remain synchronized with:
  * - FREE_OUTPUT_SCHEMA
  * - FREE_OUTPUT_FORMAT
- * - The free-generation prompt template
+ * - The authenticated free-generation prompt template
  *
  * Unknown properties are rejected to prevent AI providers from
  * returning unexpected or unsupported fields.
@@ -19,31 +21,32 @@ export const FreeIdeaSchema = z
     /**
      * Generated software-project title.
      */
-    title: z.string().trim().min(3).max(200),
+    title: IdeaSharedFields.title,
 
     /**
      * Description of the problem addressed by the project.
      */
-    problemStatement: z.string().trim().min(20).max(1_200),
+    problemStatement: IdeaSharedFields.problemStatement,
 
     /**
      * Main project objectives.
      */
-    objectives: z.array(z.string().trim().min(3).max(300)).min(1).max(10),
+    objectives: IdeaSharedFields.objectives,
 
     /**
      * Primary users or organizations targeted by the project.
      */
-    targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
+    targetUsers: IdeaSharedFields.targetUsers,
 
     /**
      * Partial project abstract available to authenticated free users.
      */
-    partialAbstract: z.string().trim().min(30).max(2_500),
+    partialAbstract: IdeaSharedFields.partialAbstract,
   })
   .strict();
 
 /**
- * Validated authenticated free idea output.
+ * Validated structured output produced by authenticated free idea
+ * generation.
  */
 export type FreeIdeaOutput = z.infer<typeof FreeIdeaSchema>;

@@ -1,8 +1,14 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
 import { Roles } from '../../auth/decorators/roles.decorator';
+
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 
@@ -16,32 +22,67 @@ import type { AiUsageAnalyticsSummary } from './types/ai-usage-analytics.type';
  * Administrator-only AI usage analytics controller.
  *
  * Base route:
- * /ai/analytics
+ * /admin/ai/analytics
  *
- * All routes require:
- * - A valid authenticated user.
- * - The ADMIN role.
+ * Security:
+ * - Requires a valid JWT access token.
+ * - Requires the authenticated user to have the ADMIN role.
+ *
+ * Responsibilities:
+ * - Receive administrator AI-analytics filters.
+ * - Delegate analytics aggregation to AiUsageAnalyticsService.
+ * - Return normalized AI request, token, cost, latency, fallback,
+ *   success, failure, and model-usage statistics.
+ *
+ * This controller does not:
+ * - Query Prisma directly.
+ * - Execute AI providers.
+ * - Calculate analytics.
+ * - Modify AI model configuration.
  *
  * @author Malak
  */
-@Controller('ai/analytics')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('admin/ai/analytics')
+@UseGuards(
+  JwtAuthGuard,
+  RolesGuard,
+)
 @Roles(UserRole.ADMIN)
 export class AiUsageAnalyticsController {
-  constructor(private readonly analyticsService: AiUsageAnalyticsService) {}
+  constructor(
+    private readonly analyticsService:
+      AiUsageAnalyticsService,
+  ) {}
 
   /**
-   * Returns aggregated AI request, token, latency, fallback, and cost
-   * analytics.
+   * Returns aggregated AI usage analytics.
+   *
+   * Supported optional filters:
+   * - fromDate
+   * - toDate
+   * - providerKey
+   * - requestType
+   * - aiModelId
    *
    * Route:
-   * GET /ai/analytics/summary
+   * GET /admin/ai/analytics/summary
+   *
+   * Example:
+   * GET /admin/ai/analytics/summary
+   *   ?providerKey=google
+   *   &fromDate=2026-07-01
+   *   &toDate=2026-07-31
+   *
+   * @param query Validated analytics filters.
+   * @returns Aggregated administrator-facing AI usage analytics.
    */
   @Get('summary')
   getSummary(
     @Query()
     query: GetAiAnalyticsQueryDto,
   ): Promise<AiUsageAnalyticsSummary> {
-    return this.analyticsService.getSummary(query);
+    return this.analyticsService.getSummary(
+      query,
+    );
   }
 }

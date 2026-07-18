@@ -1,14 +1,20 @@
 import { z } from 'zod';
 
+import {
+  AdvancedIdeaFields,
+  IdeaSharedFields,
+} from './idea-shared-fields.schema';
+
 /**
  * Validates structured output returned for premium credit-based idea
  * generation.
  *
  * Trusted NLP values such as:
  * - Recurring problems.
+ * - Extracted needs.
  * - Extracted keywords.
  * - Sample comments.
- * - Analyzed comment counts.
+ * - Analyzed-comment counts.
  * - Confidence values.
  *
  * are intentionally excluded from this schema. They must be loaded
@@ -20,7 +26,8 @@ import { z } from 'zod';
  * - PREMIUM_OUTPUT_FORMAT
  * - The premium-generation prompt template
  *
- * Unknown properties are rejected.
+ * Unknown properties are rejected to prevent unsupported or fabricated
+ * fields from entering the application.
  *
  * @author Malak
  */
@@ -29,105 +36,34 @@ export const PremiumIdeaSchema = z
     /**
      * Generated software-project title.
      */
-    title: z.string().trim().min(3).max(200),
+    title: IdeaSharedFields.title,
 
     /**
      * Description of the real problem addressed by the project.
      */
-    problemStatement: z.string().trim().min(20).max(1_500),
+    problemStatement: IdeaSharedFields.problemStatement,
 
     /**
      * Main project goals and expected outcomes.
      */
-    objectives: z.array(z.string().trim().min(3).max(300)).min(1).max(10),
+    objectives: IdeaSharedFields.objectives,
 
     /**
      * Primary users or organizations expected to use the project.
      */
-    targetUsers: z.array(z.string().trim().min(2).max(200)).min(1).max(10),
+    targetUsers: IdeaSharedFields.targetUsers,
 
     /**
      * Complete project abstract.
      */
-    fullAbstract: z.string().trim().min(50).max(5_000),
+    fullAbstract: IdeaSharedFields.fullAbstract,
 
-    /**
-     * Recommended implementation technologies.
-     */
-    technologyStack: z.array(z.string().trim().min(1).max(100)).min(1).max(12),
-
-    /**
-     * High-level system architecture recommendation.
-     */
-    systemArchitecture: z.string().trim().min(20).max(4_000),
-
-    /**
-     * Preliminary database-design recommendation.
-     */
-    databaseDesign: z.string().trim().min(20).max(4_000),
-
-    /**
-     * Minimum viable product features.
-     */
-    mvpFeatures: z.array(z.string().trim().min(3).max(300)).min(3).max(15),
-
-    /**
-     * Preliminary business-model recommendation.
-     */
-    businessModel: z.string().trim().min(20).max(2_500),
-
-    /**
-     * Suggested revenue streams and monetization strategy.
-     */
-    revenueModel: z.string().trim().min(20).max(2_000),
-
-    /**
-     * Preliminary budget range and relevant assumptions.
-     */
-    budgetEstimation: z.string().trim().min(20).max(2_000),
-
-    /**
-     * Suggested project implementation timeline.
-     */
-    implementationTimeline: z.string().trim().min(20).max(2_000),
-
-    /**
-     * Technical and operational feasibility assessment.
-     */
-    feasibilityAssessment: z.string().trim().min(20).max(2_500),
-
-    /**
-     * Preliminary assessment of market opportunity.
-     */
-    marketPotential: z.string().trim().min(20).max(2_500),
-
-    /**
-     * High-level local regulatory considerations.
-     *
-     * This value must not be presented as verified legal advice.
-     */
-    localRegulations: z.string().trim().min(20).max(2_000),
-
-    /**
-     * Explanation of the unique value offered to target users.
-     */
-    valueProposition: z.string().trim().min(20).max(1_800),
-
-    /**
-     * AI-generated readable interpretation of trusted NLP data.
-     *
-     * This is not the raw persisted NlpAnalysis record.
-     */
-    nlpExecutiveSummary: z.string().trim().min(20).max(2_500),
-
-    /**
-     * AI-generated readable summary of supplied community feedback.
-     */
-    communityFeedbackSummary: z.string().trim().min(20).max(1_500),
+    ...AdvancedIdeaFields,
   })
   .strict();
 
 /**
- * Validated premium idea output.
+ * Validated structured output produced by premium credit-based idea
+ * generation.
  */
 export type PremiumIdeaOutput = z.infer<typeof PremiumIdeaSchema>;

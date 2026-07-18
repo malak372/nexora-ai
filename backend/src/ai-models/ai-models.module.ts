@@ -9,38 +9,68 @@ import { AiModelsController } from './ai-models.controller';
 import { AiModelsService } from './ai-models.service';
 
 /**
- * AI Models module.
+ * Module responsible for AI-model configuration, routing, and health
+ * management.
  *
- * Responsibilities are separated between:
+ * Responsibilities are separated across the following services:
  *
  * AiModelsService:
- * - Administrative model configuration.
- * - Activation and deactivation.
- * - Default-model management.
- * - Model lookup.
+ * - Creates and updates AI-model configurations.
+ * - Activates and deactivates models.
+ * - Selects and manages the default model.
+ * - Retrieves configured, routable, and fallback models.
+ * - Persists administrative audit records.
  *
  * AiModelHealthService:
- * - Runtime success tracking.
- * - Runtime failure tracking.
- * - Health-state calculation.
+ * - Records successful model executions.
+ * - Records failed model executions.
+ * - Updates consecutive-failure counters.
+ * - Transitions model health between UNKNOWN, HEALTHY, DEGRADED,
+ *   and UNAVAILABLE.
+ * - Resets operational health when required.
  *
  * AiModelRoutingService:
- * - Default routing.
- * - Lowest-cost routing.
- * - Balanced weighted routing.
+ * - Resolves the model execution order.
+ * - Supports default-first routing.
+ * - Supports lowest-estimated-cost routing.
+ * - Supports balanced weighted routing.
  *
- * These services are exported so the central AiModule can resolve
- * models and update operational health.
+ * Imported modules:
+ *
+ * PrismaModule:
+ * - Provides PrismaService for AI-model persistence and transactions.
+ *
+ * AuditModule:
+ * - Provides AuditService for administrative model-change logging.
+ *
+ * Exported services are available to other modules, especially the
+ * central AiModule, so runtime AI execution can:
+ * - Resolve eligible models.
+ * - Apply routing strategies.
+ * - Record execution success or failure.
  *
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [
+    PrismaModule,
+    AuditModule,
+  ],
 
-  controllers: [AiModelsController],
+  controllers: [
+    AiModelsController,
+  ],
 
-  providers: [AiModelsService, AiModelHealthService, AiModelRoutingService],
+  providers: [
+    AiModelsService,
+    AiModelHealthService,
+    AiModelRoutingService,
+  ],
 
-  exports: [AiModelsService, AiModelHealthService, AiModelRoutingService],
+  exports: [
+    AiModelsService,
+    AiModelHealthService,
+    AiModelRoutingService,
+  ],
 })
 export class AiModelsModule {}

@@ -7,6 +7,8 @@
  * @author Malak
  */
 
+export * from './idea-shared-fields.schema';
+
 export { FreeIdeaSchema, type FreeIdeaOutput } from './free-idea.schema';
 
 export { GuestIdeaSchema, type GuestIdeaOutput } from './guest-idea.schema';
@@ -16,4 +18,7 @@ export {
   type PremiumIdeaOutput,
 } from './premium-idea.schema';
 
-export { UnlockIdeaSchema, type UnlockIdeaOutput } from './unlock-idea.schema';
+export {
+  UnlockIdeaSchema,
+  type UnlockIdeaOutput,
+} from './unlock-idea.schema';
