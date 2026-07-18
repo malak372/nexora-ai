@@ -1,4 +1,4 @@
-import {
+import type {
   NlpAiClientRequest,
   NlpAiClientResponse,
 } from '../types/nlp-ai-client.type';

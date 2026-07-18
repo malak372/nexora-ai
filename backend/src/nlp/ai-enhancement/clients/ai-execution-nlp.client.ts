@@ -10,12 +10,10 @@ import {
   AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
 } from '../schemas/ai-enhancement-output.schema';
 
-import type { NlpAiClient } from './nlp-ai-client.interface';
+import type { NlpAiClientRequest } from '../types/nlp-ai-client.type';
+import type { NlpAiClientResponse } from '../types/nlp-ai-client.type';
 
-import type {
-  NlpAiClientRequest,
-  NlpAiClientResponse,
-} from '../types/nlp-ai-client.type';
+import type { NlpAiClient } from './nlp-ai-client.interface';
 
 /**
  * Deterministic temperature used for analytical NLP enhancement.
@@ -64,20 +62,20 @@ export class AiExecutionNlpClient implements NlpAiClient {
   constructor(
     private readonly aiExecutionService: AiExecutionService,
     private readonly aiResponseParserService: AiResponseParserService,
-  ) {}
+  ) { }
 
   /**
    * Executes one structured NLP AI-enhancement operation.
    *
    * AiExecutionService validates the provider response against
    * AI_ENHANCEMENT_OUTPUT_SCHEMA before returning successful text.
-   * The parsed value is still returned as unknown so the NLP-specific
-   * validator can enforce evidence and business rules.
    *
-   * The optional request operationId is not forwarded because the
-   * central AI runtime owns operation-ID generation across retries and
-   * fallback attempts. The authoritative operation identifier is
-   * returned by AiExecutionService and stored in central AI logs.
+   * The parsed value remains unknown so the NLP-specific validator
+   * can enforce evidence references and domain business rules.
+   *
+   * The central AI runtime owns operation-ID generation across retry
+   * and fallback attempts. The authoritative operation identifier is
+   * persisted through the central ExternalApiLog workflow.
    *
    * @param request Fully rendered NLP AI-enhancement request.
    * @returns Normalized parsed response and execution metadata.
@@ -85,21 +83,15 @@ export class AiExecutionNlpClient implements NlpAiClient {
   async enhance(request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
     const result = await this.aiExecutionService.execute({
       userPrompt: request.prompt,
-
       requestType: ApiRequestType.NLP_ENHANCEMENT,
-
       promptType: PromptType.NLP_ANALYSIS,
-
       responseFormat: AiResponseFormat.JSON,
-
       responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
-
       responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
-
       temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
     });
 
-    const data = this.aiResponseParserService.parseJson(result.text);
+    const data: unknown = this.aiResponseParserService.parseJson(result.text);
 
     return {
       data,
