@@ -20,25 +20,25 @@ import type { PaymentCheckoutResult } from '../services/payment-checkout.service
  *
  * Responsibilities:
  * - Create checkout sessions for purchasing credits.
- * - Create checkout sessions for directly unlocking free ideas.
+ * - Create checkout sessions for directly unlocking one idea.
  *
  * This controller does not:
  * - Confirm successful payments.
- * - Add credits.
+ * - Add credits to user accounts.
  * - Unlock ideas directly.
- * - Trust frontend redirect URLs as payment confirmation.
+ * - Trust frontend redirects as payment confirmation.
  *
- * Payment completion and fulfillment occur only after verified
- * provider events are processed by the payment webhook workflow.
+ * Payment completion and fulfillment occur only after a verified
+ * payment-provider webhook has been processed successfully.
  *
  * @author Eman
  */
 @Controller('users/payments')
 @UseGuards(JwtAuthGuard)
-export class PaymentsController {
+export class PaymentCheckoutController {
   constructor(
     private readonly paymentCheckoutService: PaymentCheckoutService,
-  ) {}
+  ) { }
 
   /**
    * Creates a checkout session for purchasing
@@ -62,7 +62,7 @@ export class PaymentsController {
 
   /**
    * Creates a checkout session for directly unlocking
-   * advanced features of one NORMAL_FREE idea.
+   * the advanced features of one eligible idea.
    *
    * POST /users/payments/direct-unlock/checkout
    */

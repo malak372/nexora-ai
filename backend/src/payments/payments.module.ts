@@ -8,7 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { PAYMENT_GATEWAYS } from './constants/payment-gateway.tokens';
 
 import { AdminPaymentsController } from './controllers/admin-payments.controller';
-import { PaymentsController } from './controllers/payments.controller';
+import { PaymentsController } from './controllers/payment-checkout.controller';
 import { PaymentWebhooksController } from './controllers/payment-webhooks.controller';
 import { UserPaymentsController } from './controllers/user-payments.controller';
 
