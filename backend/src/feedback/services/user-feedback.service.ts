@@ -1,121 +1,133 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
-import { Prisma } from '@prisma/client';
+import {
+  IdeaPublicationStatus,
+  Prisma,
+  PublicationFeedbackStatus,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { UpsertIdeaFeedbackDto } from '../dto/upsert-idea-feedback.dto';
+import { UpsertPublicationFeedbackDto } from '../dto/upsert-publication-feedback.dto';
+import { UpsertPublicationRatingDto } from '../dto/upsert-publication-rating.dto';
 
 /**
- * Handles authenticated-user idea-feedback operations.
+ * Handles authenticated-user publication feedback
+ * and rating operations.
  *
  * Responsibilities:
- * - Create feedback for one owned idea.
- * - Update previously submitted feedback.
- * - Retrieve feedback for one owned idea.
- * - Retrieve all feedback submitted by one user.
- * - Recalculate the idea's average rating and rating count.
- *
- * Security rules:
- * - Users can only rate ideas they own.
- * - Users can only retrieve feedback associated with their account.
- * - Each user can have only one feedback record per idea.
+ * - Create and update publication ratings.
+ * - Delete publication ratings.
+ * - Create and update textual publication feedback.
+ * - Delete textual publication feedback.
+ * - Maintain publication aggregate fields.
  *
  * Consistency:
- * - Feedback upsert and idea rating aggregation occur in the
- *   same Prisma transaction.
+ * - Rating mutations and rating aggregate updates run
+ *   inside the same database transaction.
+ * - Feedback mutations and feedback-count updates run
+ *   inside the same database transaction.
  *
  * @author Eman
  */
 @Injectable()
 export class UserFeedbackService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Shared feedback response selection.
+   * Shared publication-rating response selection.
    */
-  private readonly feedbackSelect = {
+  private readonly ratingSelect = {
     id: true,
-    rating: true,
-    comment: true,
+    value: true,
     createdAt: true,
     updatedAt: true,
 
-    idea: {
+    publication: {
       select: {
         id: true,
-        title: true,
+        publicTitle: true,
+        averageRating: true,
+        ratingsCount: true,
       },
     },
-  } satisfies Prisma.IdeaFeedbackSelect;
+  } satisfies Prisma.IdeaPublicationRatingSelect;
 
   /**
-   * Creates or updates feedback for one user-owned idea.
-   *
-   * After the upsert, the idea's aggregate rating fields are
-   * recalculated from persisted feedback records.
+   * Shared publication-feedback response selection.
    */
-  async upsertFeedback(
-    userId: string,
-    ideaId: string,
-    dto: UpsertIdeaFeedbackDto,
-  ) {
-    await this.ensureUserExists(userId);
-    await this.ensureUserOwnsIdea(userId, ideaId);
+  private readonly feedbackSelect = {
+    id: true,
+    comment: true,
+    status: true,
+    createdAt: true,
+    updatedAt: true,
 
-    const normalizedComment =
-      dto.comment !== undefined ? dto.comment.trim() || null : undefined;
+    publication: {
+      select: {
+        id: true,
+        publicTitle: true,
+        feedbackCount: true,
+      },
+    },
+  } satisfies Prisma.IdeaPublicationFeedbackSelect;
+
+  /**
+   * Creates or updates the authenticated user's rating.
+   */
+  async upsertRating(
+    userId: string,
+    publicationId: string,
+    dto: UpsertPublicationRatingDto,
+  ) {
+    await this.ensurePublicationAllowsRatings(publicationId);
 
     return this.prisma.$transaction(async (tx) => {
-      const feedback = await tx.ideaFeedback.upsert({
+      const rating = await tx.ideaPublicationRating.upsert({
         where: {
-          userId_ideaId: {
+          publicationId_userId: {
+            publicationId,
             userId,
-            ideaId,
           },
         },
 
         update: {
-          rating: dto.rating,
-
-          ...(normalizedComment !== undefined
-            ? {
-                comment: normalizedComment,
-              }
-            : {}),
+          value: dto.value,
         },
 
         create: {
+          publicationId,
           userId,
-          ideaId,
-          rating: dto.rating,
-          comment: normalizedComment ?? null,
+          value: dto.value,
         },
 
-        select: this.feedbackSelect,
+        select: this.ratingSelect,
       });
 
-      const aggregation = await tx.ideaFeedback.aggregate({
+      const aggregate = await tx.ideaPublicationRating.aggregate({
         where: {
-          ideaId,
+          publicationId,
         },
 
         _avg: {
-          rating: true,
+          value: true,
         },
 
         _count: {
-          rating: true,
+          value: true,
         },
       });
 
-      const averageRating = aggregation._avg.rating ?? 0;
+      const averageRating = aggregate._avg.value ?? 0;
+      const ratingsCount = aggregate._count.value;
 
-      const ratingsCount = aggregation._count.rating;
-
-      await tx.idea.update({
+      await tx.ideaPublication.update({
         where: {
-          id: ideaId,
+          id: publicationId,
         },
 
         data: {
@@ -125,9 +137,11 @@ export class UserFeedbackService {
       });
 
       return {
-        message: 'Feedback saved successfully',
-        feedback,
-        ideaRating: {
+        message: 'Publication rating saved successfully',
+
+        rating,
+
+        publicationRating: {
           averageRating: Number(averageRating.toFixed(2)),
           ratingsCount,
         },
@@ -136,20 +150,168 @@ export class UserFeedbackService {
   }
 
   /**
-   * Retrieves the authenticated user's feedback for one
-   * specific owned idea.
-   *
-   * Returns null when the user has not submitted feedback yet.
+   * Returns the authenticated user's rating
+   * for one publication.
    */
-  async getFeedbackByIdea(userId: string, ideaId: string) {
-    await this.ensureUserExists(userId);
-    await this.ensureUserOwnsIdea(userId, ideaId);
+  async getMyRating(userId: string, publicationId: string) {
+    await this.ensurePublishedPublicationExists(publicationId);
 
-    return this.prisma.ideaFeedback.findUnique({
+    return this.prisma.ideaPublicationRating.findUnique({
       where: {
-        userId_ideaId: {
+        publicationId_userId: {
+          publicationId,
           userId,
-          ideaId,
+        },
+      },
+
+      select: this.ratingSelect,
+    });
+  }
+
+  /**
+   * Deletes the authenticated user's rating and recalculates
+   * publication rating aggregates.
+   */
+  async deleteRating(userId: string, publicationId: string) {
+    await this.ensurePublishedPublicationExists(publicationId);
+
+    const existingRating =
+      await this.prisma.ideaPublicationRating.findUnique({
+        where: {
+          publicationId_userId: {
+            publicationId,
+            userId,
+          },
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+    if (!existingRating) {
+      throw new NotFoundException('Publication rating not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.ideaPublicationRating.delete({
+        where: {
+          id: existingRating.id,
+        },
+      });
+
+      const aggregate = await tx.ideaPublicationRating.aggregate({
+        where: {
+          publicationId,
+        },
+
+        _avg: {
+          value: true,
+        },
+
+        _count: {
+          value: true,
+        },
+      });
+
+      const averageRating = aggregate._avg.value ?? 0;
+      const ratingsCount = aggregate._count.value;
+
+      await tx.ideaPublication.update({
+        where: {
+          id: publicationId,
+        },
+
+        data: {
+          averageRating,
+          ratingsCount,
+        },
+      });
+
+      return {
+        message: 'Publication rating deleted successfully',
+
+        publicationRating: {
+          averageRating: Number(averageRating.toFixed(2)),
+          ratingsCount,
+        },
+      };
+    });
+  }
+
+  /**
+   * Creates or updates textual feedback for one publication.
+   *
+   * Updating feedback resets its moderation status to VISIBLE.
+   */
+  async upsertFeedback(
+    userId: string,
+    publicationId: string,
+    dto: UpsertPublicationFeedbackDto,
+  ) {
+    await this.ensurePublicationAllowsFeedback(publicationId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const feedback = await tx.ideaPublicationFeedback.upsert({
+        where: {
+          publicationId_userId: {
+            publicationId,
+            userId,
+          },
+        },
+
+        update: {
+          comment: dto.comment,
+          status: PublicationFeedbackStatus.VISIBLE,
+        },
+
+        create: {
+          publicationId,
+          userId,
+          comment: dto.comment,
+        },
+
+        select: this.feedbackSelect,
+      });
+
+      const feedbackCount =
+        await tx.ideaPublicationFeedback.count({
+          where: {
+            publicationId,
+            status: PublicationFeedbackStatus.VISIBLE,
+          },
+        });
+
+      await tx.ideaPublication.update({
+        where: {
+          id: publicationId,
+        },
+
+        data: {
+          feedbackCount,
+        },
+      });
+
+      return {
+        message: 'Publication feedback saved successfully',
+        feedback,
+        feedbackCount,
+      };
+    });
+  }
+
+  /**
+   * Returns the authenticated user's textual feedback
+   * for one publication.
+   */
+  async getMyFeedback(userId: string, publicationId: string) {
+    await this.ensurePublishedPublicationExists(publicationId);
+
+    return this.prisma.ideaPublicationFeedback.findUnique({
+      where: {
+        publicationId_userId: {
+          publicationId,
+          userId,
         },
       },
 
@@ -158,49 +320,71 @@ export class UserFeedbackService {
   }
 
   /**
-   * Retrieves all feedback submitted by one authenticated user.
+   * Deletes the authenticated user's textual feedback.
    */
-  async getMyFeedback(userId: string) {
-    await this.ensureUserExists(userId);
+  async deleteFeedback(userId: string, publicationId: string) {
+    await this.ensurePublishedPublicationExists(publicationId);
 
-    return this.prisma.ideaFeedback.findMany({
-      where: {
-        userId,
-      },
-
-      orderBy: {
-        updatedAt: 'desc',
-      },
-
-      select: {
-        id: true,
-        rating: true,
-        comment: true,
-        createdAt: true,
-        updatedAt: true,
-
-        idea: {
-          select: {
-            id: true,
-            title: true,
-            generationType: true,
-            isUnlocked: true,
-            averageRating: true,
-            ratingsCount: true,
-            createdAt: true,
+    const existingFeedback =
+      await this.prisma.ideaPublicationFeedback.findUnique({
+        where: {
+          publicationId_userId: {
+            publicationId,
+            userId,
           },
         },
-      },
+
+        select: {
+          id: true,
+        },
+      });
+
+    if (!existingFeedback) {
+      throw new NotFoundException('Publication feedback not found');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.ideaPublicationFeedback.delete({
+        where: {
+          id: existingFeedback.id,
+        },
+      });
+
+      const feedbackCount =
+        await tx.ideaPublicationFeedback.count({
+          where: {
+            publicationId,
+            status: PublicationFeedbackStatus.VISIBLE,
+          },
+        });
+
+      await tx.ideaPublication.update({
+        where: {
+          id: publicationId,
+        },
+
+        data: {
+          feedbackCount,
+        },
+      });
+
+      return {
+        message: 'Publication feedback deleted successfully',
+        feedbackCount,
+      };
     });
   }
 
   /**
-   * Ensures that the authenticated user exists.
+   * Ensures that a published publication exists.
    */
-  private async ensureUserExists(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
+  private async ensurePublishedPublicationExists(
+    publicationId: string,
+  ): Promise<void> {
+    const publication = await this.prisma.ideaPublication.findFirst({
       where: {
-        id: userId,
+        id: publicationId,
+        status: IdeaPublicationStatus.PUBLISHED,
       },
 
       select: {
@@ -208,31 +392,64 @@ export class UserFeedbackService {
       },
     });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
+    if (!publication) {
+      throw new NotFoundException('Published idea not found');
     }
   }
 
   /**
-   * Ensures that the requested idea belongs to the user.
+   * Ensures that the publication accepts ratings.
    */
-  private async ensureUserOwnsIdea(
-    userId: string,
-    ideaId: string,
+  private async ensurePublicationAllowsRatings(
+    publicationId: string,
   ): Promise<void> {
-    const idea = await this.prisma.idea.findFirst({
+    const publication = await this.prisma.ideaPublication.findFirst({
       where: {
-        id: ideaId,
-        userId,
+        id: publicationId,
+        status: IdeaPublicationStatus.PUBLISHED,
       },
 
       select: {
-        id: true,
+        allowRatings: true,
       },
     });
 
-    if (!idea) {
-      throw new NotFoundException('Idea not found');
+    if (!publication) {
+      throw new NotFoundException('Published idea not found');
+    }
+
+    if (!publication.allowRatings) {
+      throw new BadRequestException(
+        'Ratings are disabled for this publication',
+      );
+    }
+  }
+
+  /**
+   * Ensures that the publication accepts textual feedback.
+   */
+  private async ensurePublicationAllowsFeedback(
+    publicationId: string,
+  ): Promise<void> {
+    const publication = await this.prisma.ideaPublication.findFirst({
+      where: {
+        id: publicationId,
+        status: IdeaPublicationStatus.PUBLISHED,
+      },
+
+      select: {
+        allowFeedback: true,
+      },
+    });
+
+    if (!publication) {
+      throw new NotFoundException('Published idea not found');
+    }
+
+    if (!publication.allowFeedback) {
+      throw new BadRequestException(
+        'Feedback is disabled for this publication',
+      );
     }
   }
 }

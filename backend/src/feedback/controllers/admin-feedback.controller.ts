@@ -1,9 +1,14 @@
-import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
 import { Roles } from '../../auth/decorators/roles.decorator';
-
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 
@@ -12,7 +17,7 @@ import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
 import { AdminFeedbackService } from '../services/admin-feedback.service';
 
 /**
- * Handles administrator feedback analytics and monitoring.
+ * Handles administrator publication-feedback analytics.
  *
  * Base route:
  * /admin/feedback
@@ -23,20 +28,32 @@ import { AdminFeedbackService } from '../services/admin-feedback.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminFeedbackController {
-  constructor(private readonly adminFeedbackService: AdminFeedbackService) {}
+  constructor(
+    private readonly adminFeedbackService: AdminFeedbackService,
+  ) { }
 
   /**
-   * Returns paginated idea feedback.
+   * Returns paginated textual feedback.
    *
-   * GET /admin/feedback
+   * GET /admin/feedback/comments
    */
-  @Get()
-  getFeedback(@Query() query: GetFeedbackQueryDto) {
-    return this.adminFeedbackService.getFeedback(query);
+  @Get('comments')
+  getFeedbackComments(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.getFeedbackComments(query);
   }
 
   /**
-   * Returns feedback summary statistics.
+   * Returns paginated publication ratings.
+   *
+   * GET /admin/feedback/ratings
+   */
+  @Get('ratings')
+  getRatings(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.getRatings(query);
+  }
+
+  /**
+   * Returns combined feedback and rating statistics.
    *
    * GET /admin/feedback/summary
    */
@@ -56,14 +73,32 @@ export class AdminFeedbackController {
   }
 
   /**
-   * Exports filtered feedback as CSV.
+   * Exports textual publication feedback as CSV.
    *
-   * GET /admin/feedback/export/csv
+   * GET /admin/feedback/comments/export/csv
    */
-  @Get('export/csv')
-  @Header('Content-Type', 'text/csv')
-  @Header('Content-Disposition', 'attachment; filename="feedback.csv"')
+  @Get('comments/export/csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="publication-feedback.csv"',
+  )
   exportFeedbackCsv(@Query() query: GetFeedbackQueryDto) {
     return this.adminFeedbackService.exportFeedbackCsv(query);
+  }
+
+  /**
+   * Exports publication ratings as CSV.
+   *
+   * GET /admin/feedback/ratings/export/csv
+   */
+  @Get('ratings/export/csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="publication-ratings.csv"',
+  )
+  exportRatingsCsv(@Query() query: GetFeedbackQueryDto) {
+    return this.adminFeedbackService.exportRatingsCsv(query);
   }
 }

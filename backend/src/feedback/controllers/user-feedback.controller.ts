@@ -1,10 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
-  Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 
@@ -13,72 +14,167 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 
-import { UpsertIdeaFeedbackDto } from '../dto/upsert-idea-feedback.dto';
+import { UpsertPublicationFeedbackDto } from '../dto/upsert-publication-feedback.dto';
+import { UpsertPublicationRatingDto } from '../dto/upsert-publication-rating.dto';
 
 import { UserFeedbackService } from '../services/user-feedback.service';
 
 /**
- * Handles authenticated-user idea-feedback endpoints.
+ * Handles authenticated-user publication feedback
+ * and rating endpoints.
  *
  * Base route:
- * /users
+ * /users/publications
  *
  * @author Eman
  */
-@Controller('users')
+@Controller('users/publications')
 @UseGuards(JwtAuthGuard)
 export class UserFeedbackController {
-  constructor(private readonly userFeedbackService: UserFeedbackService) {}
+  constructor(private readonly userFeedbackService: UserFeedbackService) { }
 
   /**
-   * Creates or updates feedback for one owned idea.
+   * Creates or updates the authenticated user's rating.
    *
-   * POST /users/ideas/:id/feedback
+   * PUT /users/publications/:publicationId/rating
    */
-  @Post('ideas/:id/feedback')
+  @Put(':publicationId/rating')
+  upsertRating(
+    @CurrentUser() user: AuthenticatedUser,
+
+    @Param(
+      'publicationId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    publicationId: string,
+
+    @Body() dto: UpsertPublicationRatingDto,
+  ) {
+    return this.userFeedbackService.upsertRating(
+      user.id,
+      publicationId,
+      dto,
+    );
+  }
+
+  /**
+   * Returns the authenticated user's rating
+   * for one publication.
+   *
+   * GET /users/publications/:publicationId/rating
+   */
+  @Get(':publicationId/rating')
+  getMyRating(
+    @CurrentUser() user: AuthenticatedUser,
+
+    @Param(
+      'publicationId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    publicationId: string,
+  ) {
+    return this.userFeedbackService.getMyRating(
+      user.id,
+      publicationId,
+    );
+  }
+
+  /**
+   * Removes the authenticated user's rating.
+   *
+   * DELETE /users/publications/:publicationId/rating
+   */
+  @Delete(':publicationId/rating')
+  deleteRating(
+    @CurrentUser() user: AuthenticatedUser,
+
+    @Param(
+      'publicationId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    publicationId: string,
+  ) {
+    return this.userFeedbackService.deleteRating(
+      user.id,
+      publicationId,
+    );
+  }
+
+  /**
+   * Creates or updates textual publication feedback.
+   *
+   * PUT /users/publications/:publicationId/feedback
+   */
+  @Put(':publicationId/feedback')
   upsertFeedback(
     @CurrentUser() user: AuthenticatedUser,
 
     @Param(
-      'id',
+      'publicationId',
       new ParseUUIDPipe({
         version: '4',
       }),
     )
-    ideaId: string,
+    publicationId: string,
 
-    @Body() dto: UpsertIdeaFeedbackDto,
+    @Body() dto: UpsertPublicationFeedbackDto,
   ) {
-    return this.userFeedbackService.upsertFeedback(user.id, ideaId, dto);
+    return this.userFeedbackService.upsertFeedback(
+      user.id,
+      publicationId,
+      dto,
+    );
   }
 
   /**
-   * Retrieves the user's feedback for one owned idea.
+   * Returns the authenticated user's textual feedback.
    *
-   * GET /users/ideas/:id/feedback
+   * GET /users/publications/:publicationId/feedback
    */
-  @Get('ideas/:id/feedback')
-  getFeedbackByIdea(
+  @Get(':publicationId/feedback')
+  getMyFeedback(
     @CurrentUser() user: AuthenticatedUser,
 
     @Param(
-      'id',
+      'publicationId',
       new ParseUUIDPipe({
         version: '4',
       }),
     )
-    ideaId: string,
+    publicationId: string,
   ) {
-    return this.userFeedbackService.getFeedbackByIdea(user.id, ideaId);
+    return this.userFeedbackService.getMyFeedback(
+      user.id,
+      publicationId,
+    );
   }
 
   /**
-   * Retrieves all feedback submitted by the authenticated user.
+   * Removes the authenticated user's textual feedback.
    *
-   * GET /users/feedback
+   * DELETE /users/publications/:publicationId/feedback
    */
-  @Get('feedback')
-  getMyFeedback(@CurrentUser() user: AuthenticatedUser) {
-    return this.userFeedbackService.getMyFeedback(user.id);
+  @Delete(':publicationId/feedback')
+  deleteFeedback(
+    @CurrentUser() user: AuthenticatedUser,
+
+    @Param(
+      'publicationId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    publicationId: string,
+  ) {
+    return this.userFeedbackService.deleteFeedback(
+      user.id,
+      publicationId,
+    );
   }
 }
