@@ -8,7 +8,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { PAYMENT_GATEWAYS } from './constants/payment-gateway.tokens';
 
 import { AdminPaymentsController } from './controllers/admin-payments.controller';
-import { PaymentsController } from './controllers/payment-checkout.controller';
+import { PaymentCheckoutController } from './controllers/payment-checkout.controller';
 import { PaymentWebhooksController } from './controllers/payment-webhooks.controller';
 import { UserPaymentsController } from './controllers/user-payments.controller';
 
@@ -56,7 +56,7 @@ import { UserPaymentsService } from './services/user-payments.service';
 
   controllers: [
     UserPaymentsController,
-    PaymentsController,
+    PaymentCheckoutController,
     AdminPaymentsController,
     PaymentWebhooksController,
   ],
@@ -91,9 +91,9 @@ import { UserPaymentsService } from './services/user-payments.service';
         stripePaymentGateway: StripePaymentGateway,
         payPalPaymentGateway: PayPalPaymentGateway,
       ): readonly PaymentGateway[] => [
-        stripePaymentGateway,
-        payPalPaymentGateway,
-      ],
+          stripePaymentGateway,
+          payPalPaymentGateway,
+        ],
     },
 
     PaymentGatewayFactory,
@@ -106,4 +106,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule {}
+export class PaymentsModule { }

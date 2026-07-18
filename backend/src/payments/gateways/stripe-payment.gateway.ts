@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { PaymentProvider, PaymentPurpose, PaymentStatus } from '@prisma/client';
+import { PaymentPurpose, PaymentStatus } from '@prisma/client';
 
 import Stripe from 'stripe';
 
@@ -37,7 +37,7 @@ import type { PaymentGateway } from './payment-gateway.interface';
  */
 @Injectable()
 export class StripePaymentGateway implements PaymentGateway {
-  readonly provider = PaymentProvider.STRIPE;
+  readonly providerKey = 'stripe';
 
   private readonly stripe: Stripe;
   private readonly webhookSecret: string;
@@ -55,7 +55,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'Stripe is not configured because STRIPE_SECRET_KEY is missing.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -67,7 +67,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'Stripe is not configured because STRIPE_WEBHOOK_SECRET is missing.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -136,14 +136,14 @@ export class StripePaymentGateway implements PaymentGateway {
             details: {
               paymentId: input.paymentId,
 
-              provider: PaymentProvider.STRIPE,
+              providerKey: this.providerKey,
             },
           },
         );
       }
 
       return {
-        provider: PaymentProvider.STRIPE,
+        providerKey: this.providerKey,
 
         providerSessionId: session.id,
 
@@ -167,7 +167,7 @@ export class StripePaymentGateway implements PaymentGateway {
           details: {
             paymentId: input.paymentId,
 
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -191,7 +191,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The raw Stripe webhook body is missing.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -205,7 +205,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The Stripe webhook signature is missing.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -226,7 +226,7 @@ export class StripePaymentGateway implements PaymentGateway {
         {
           cause: error,
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
           },
         },
       );
@@ -255,7 +255,7 @@ export class StripePaymentGateway implements PaymentGateway {
           'The Stripe webhook event type is not supported by this payment workflow.',
           {
             details: {
-              provider: PaymentProvider.STRIPE,
+              providerKey: this.providerKey,
 
               eventType: event.type,
 
@@ -284,7 +284,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The completed Stripe checkout session is not marked as paid.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
 
             providerEventId: event.id,
 
@@ -297,7 +297,7 @@ export class StripePaymentGateway implements PaymentGateway {
     }
 
     return {
-      provider: PaymentProvider.STRIPE,
+      providerKey: this.providerKey,
 
       paymentId,
 
@@ -305,7 +305,7 @@ export class StripePaymentGateway implements PaymentGateway {
 
       providerSessionId: session.id,
 
-      status: PaymentStatus.SUCCESS,
+      status: PaymentStatus.SUCCEEDED,
 
       amount: this.getSessionAmount(session),
 
@@ -326,7 +326,7 @@ export class StripePaymentGateway implements PaymentGateway {
     const session = event.data.object as Stripe.Checkout.Session;
 
     return {
-      provider: PaymentProvider.STRIPE,
+      providerKey: this.providerKey,
 
       paymentId: this.getInternalPaymentId(session),
 
@@ -366,7 +366,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The Stripe session does not contain the internal payment reference.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
 
             providerSessionId: session.id,
           },
@@ -406,7 +406,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The Stripe checkout session does not contain a valid amount.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
 
             providerSessionId: session.id,
           },
@@ -427,7 +427,7 @@ export class StripePaymentGateway implements PaymentGateway {
         'The Stripe checkout session does not contain a currency.',
         {
           details: {
-            provider: PaymentProvider.STRIPE,
+            providerKey: this.providerKey,
 
             providerSessionId: session.id,
           },

@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 
-import { PaymentProvider } from '@prisma/client';
-
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
 
@@ -16,7 +14,7 @@ import { PaymentProcessingService } from './payment-processing.service';
  * Handles incoming payment-provider webhooks.
  *
  * Responsibilities:
- * - Resolve the gateway associated with the requested provider.
+ * - Resolve the gateway associated with the requested provider key.
  * - Delegate provider-specific signature verification.
  * - Delegate provider-specific payload validation and normalization.
  * - Ensure the normalized confirmation belongs to the requested provider.
@@ -41,35 +39,42 @@ export class PaymentWebhookService {
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
 
     private readonly paymentProcessingService: PaymentProcessingService,
-  ) {}
+  ) { }
 
   /**
    * Verifies, normalizes, and processes one provider webhook.
    *
-   * The provider is resolved from the trusted webhook route,
+   * The provider key is resolved from the trusted webhook route,
    * while the payload, headers, and raw body remain untrusted
    * until the selected gateway verifies them.
    *
-   * @param provider Provider identified by the webhook endpoint.
+   * @param providerKey Provider key identified by the webhook endpoint.
    * @param input Raw incoming webhook request data.
    * @returns Final payment-processing result.
    */
   async handleWebhook(
-    provider: PaymentProvider,
+    providerKey: string,
     input: PaymentWebhookInput,
   ): Promise<PaymentProcessingResult> {
+    const normalizedProviderKey = this.normalizeProviderKey(providerKey);
+
     try {
-      const gateway = this.paymentGatewayFactory.getGateway(provider);
+      const gateway = this.paymentGatewayFactory.getGateway(
+        normalizedProviderKey,
+      );
 
       const confirmation = await gateway.verifyWebhook(input);
 
-      this.validateNormalizedProvider(provider, confirmation.provider);
+      this.validateNormalizedProvider(
+        normalizedProviderKey,
+        confirmation.providerKey,
+      );
 
       return await this.paymentProcessingService.processConfirmation(
         confirmation,
       );
     } catch (error) {
-      this.rethrowWebhookError(error, provider);
+      this.rethrowWebhookError(error, normalizedProviderKey);
     }
   }
 
@@ -79,23 +84,49 @@ export class PaymentWebhookService {
    *
    * This protects the system from malformed gateway output
    * or incorrectly routed webhook requests.
+   *
+   * @param requestedProviderKey Provider key selected by the route.
+   * @param confirmedProviderKey Provider key returned by the gateway.
    */
   private validateNormalizedProvider(
-    requestedProvider: PaymentProvider,
-    confirmedProvider: PaymentProvider,
+    requestedProviderKey: string,
+    confirmedProviderKey: string,
   ): void {
-    if (requestedProvider !== confirmedProvider) {
+    const normalizedConfirmedProviderKey =
+      this.normalizeProviderKey(confirmedProviderKey);
+
+    if (requestedProviderKey !== normalizedConfirmedProviderKey) {
       throw new PaymentProcessingError(
         PaymentErrorCode.PAYMENT_PROVIDER_MISMATCH,
         'The normalized webhook provider does not match the requested provider.',
         {
           details: {
-            requestedProvider,
-            confirmedProvider,
+            requestedProviderKey,
+            confirmedProviderKey: normalizedConfirmedProviderKey,
           },
         },
       );
     }
+  }
+
+  /**
+   * Normalizes a provider key before using it for gateway resolution
+   * or provider comparison.
+   *
+   * @param providerKey Raw provider key.
+   * @returns Normalized lowercase provider key.
+   */
+  private normalizeProviderKey(providerKey: string): string {
+    const normalizedProviderKey = providerKey.trim().toLowerCase();
+
+    if (!normalizedProviderKey) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_WEBHOOK_PAYLOAD,
+        'A payment provider key is required.',
+      );
+    }
+
+    return normalizedProviderKey;
   }
 
   /**
@@ -105,10 +136,13 @@ export class PaymentWebhookService {
    * Sensitive provider payloads, credentials, signatures,
    * tokens, or raw request bodies must not be exposed through
    * error details.
+   *
+   * @param error Caught webhook-processing error.
+   * @param providerKey Provider key associated with the webhook route.
    */
   private rethrowWebhookError(
     error: unknown,
-    provider: PaymentProvider,
+    providerKey: string,
   ): never {
     if (error instanceof PaymentProcessingError) {
       throw error;
@@ -121,7 +155,7 @@ export class PaymentWebhookService {
         cause: error,
 
         details: {
-          provider,
+          providerKey,
         },
       },
     );

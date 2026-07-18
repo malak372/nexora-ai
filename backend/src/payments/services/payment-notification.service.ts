@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { PaymentMethod, PaymentPurpose } from '@prisma/client';
+import { PaymentPurpose } from '@prisma/client';
 
 import { MailService } from '../../mail/mail.service';
 
@@ -30,9 +30,13 @@ type BasePaymentNotificationInput = {
   readonly currency: string;
 
   /**
-   * Payment method used by the customer.
+   * String key of the payment method used by the customer.
+   *
+   * Examples:
+   * - card
+   * - paypal
    */
-  readonly paymentMethod: PaymentMethod;
+  readonly paymentMethodKey: string;
 
   /**
    * Business purpose associated with the payment.
@@ -75,8 +79,8 @@ export type NotifyPaymentFailedInput = BasePaymentNotificationInput & {
  * - Handle notification-delivery failures without affecting
  *   completed payment operations.
  *
- * Business services remain responsible for deciding
- * when a notification should be triggered.
+ * Business services remain responsible for deciding when a
+ * notification should be triggered.
  *
  * This service is responsible only for notification delivery.
  *
@@ -90,7 +94,7 @@ export class PaymentNotificationService {
    */
   private readonly logger = new Logger(PaymentNotificationService.name);
 
-  constructor(private readonly mailService: MailService) {}
+  constructor(private readonly mailService: MailService) { }
 
   /**
    * Sends a payment-success email notification.
@@ -109,7 +113,7 @@ export class PaymentNotificationService {
         input.recipientEmail,
         input.amount,
         input.currency,
-        input.paymentMethod,
+        input.paymentMethodKey,
         input.paymentPurpose,
         input.transactionReference,
       );
@@ -133,7 +137,7 @@ export class PaymentNotificationService {
         input.recipientEmail,
         input.amount,
         input.currency,
-        input.paymentMethod,
+        input.paymentMethodKey,
         input.paymentPurpose,
         input.failureReason,
         input.transactionReference,
@@ -156,9 +160,11 @@ export class PaymentNotificationService {
     paymentId: string,
     error: unknown,
   ): void {
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
     this.logger.error(
       `Failed to deliver ${notificationType} notification for payment ${paymentId}.`,
-      error instanceof Error ? error.stack : undefined,
+      errorStack,
     );
   }
 }

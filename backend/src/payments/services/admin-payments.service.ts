@@ -38,7 +38,7 @@ import { GetAdminPaymentsQueryDto } from '../dto/get-admin-payments-query.dto';
  */
 @Injectable()
 export class AdminPaymentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Shared selection used by payment list operations.
@@ -47,7 +47,8 @@ export class AdminPaymentsService {
     id: true,
     amount: true,
     currency: true,
-    paymentMethod: true,
+    paymentMethodKey: true,
+    providerKey: true,
     paymentPurpose: true,
     status: true,
     creditsAmount: true,
@@ -85,7 +86,8 @@ export class AdminPaymentsService {
       [
         'amount',
         'status',
-        'paymentMethod',
+        'paymentMethodKey',
+        'providerKey',
         'paymentPurpose',
         'creditsAmount',
         'createdAt',
@@ -150,7 +152,7 @@ export class AdminPaymentsService {
       this.prisma.payment.count({
         where: {
           ...where,
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
         },
       }),
 
@@ -178,7 +180,7 @@ export class AdminPaymentsService {
       this.prisma.payment.aggregate({
         where: {
           ...where,
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
         },
 
         _sum: {
@@ -200,7 +202,7 @@ export class AdminPaymentsService {
       this.prisma.payment.aggregate({
         where: {
           ...where,
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
           paymentPurpose: PaymentPurpose.BUY_CREDITS,
         },
 
@@ -250,7 +252,8 @@ export class AdminPaymentsService {
 
     const [
       paymentsByStatus,
-      paymentsByMethod,
+      paymentsByPaymentMethod,
+      paymentsByProvider,
       paymentsByPurpose,
       topPayingUsers,
     ] = await Promise.all([
@@ -274,11 +277,11 @@ export class AdminPaymentsService {
       }),
 
       this.prisma.payment.groupBy({
-        by: ['paymentMethod'],
+        by: ['paymentMethodKey'],
         where,
 
         _count: {
-          paymentMethod: true,
+          paymentMethodKey: true,
         },
 
         _sum: {
@@ -287,7 +290,26 @@ export class AdminPaymentsService {
 
         orderBy: {
           _count: {
-            paymentMethod: 'desc',
+            paymentMethodKey: 'desc',
+          },
+        },
+      }),
+
+      this.prisma.payment.groupBy({
+        by: ['providerKey'],
+        where,
+
+        _count: {
+          providerKey: true,
+        },
+
+        _sum: {
+          amount: true,
+        },
+
+        orderBy: {
+          _count: {
+            providerKey: 'desc',
           },
         },
       }),
@@ -316,7 +338,7 @@ export class AdminPaymentsService {
 
         where: {
           ...where,
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
         },
 
         _count: {
@@ -364,10 +386,18 @@ export class AdminPaymentsService {
         totalAmount: toNumber(item._sum.amount),
       })),
 
-      paymentsByMethod: paymentsByMethod.map((item) => ({
-        label: item.paymentMethod,
-        paymentMethod: item.paymentMethod,
-        count: item._count.paymentMethod,
+      paymentsByPaymentMethod: paymentsByPaymentMethod.map((item) => ({
+        label: item.paymentMethodKey,
+        paymentMethodKey: item.paymentMethodKey,
+        count: item._count.paymentMethodKey,
+
+        totalAmount: toNumber(item._sum.amount),
+      })),
+
+      paymentsByProvider: paymentsByProvider.map((item) => ({
+        label: item.providerKey,
+        providerKey: item.providerKey,
+        count: item._count.providerKey,
 
         totalAmount: toNumber(item._sum.amount),
       })),
@@ -408,7 +438,8 @@ export class AdminPaymentsService {
       [
         'amount',
         'status',
-        'paymentMethod',
+        'paymentMethodKey',
+        'providerKey',
         'paymentPurpose',
         'creditsAmount',
         'createdAt',
@@ -429,7 +460,8 @@ export class AdminPaymentsService {
       'User Email',
       'Amount',
       'Currency',
-      'Payment Method',
+      'Payment Method Key',
+      'Provider Key',
       'Payment Purpose',
       'Status',
       'Credits Amount',
@@ -447,7 +479,8 @@ export class AdminPaymentsService {
       payment.user.email,
       toNumber(payment.amount),
       payment.currency,
-      payment.paymentMethod,
+      payment.paymentMethodKey,
+      payment.providerKey,
       payment.paymentPurpose,
       payment.status,
       payment.creditsAmount,
@@ -472,9 +505,17 @@ export class AdminPaymentsService {
 
       ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter('paymentPurpose', query.purpose) ?? {}),
+      ...(buildExactFilter(
+        'paymentPurpose',
+        query.paymentPurpose,
+      ) ?? {}),
 
-      ...(buildExactFilter('paymentMethod', query.method) ?? {}),
+      ...(buildExactFilter(
+        'paymentMethodKey',
+        query.paymentMethodKey,
+      ) ?? {}),
+
+      ...(buildExactFilter('providerKey', query.providerKey) ?? {}),
 
       ...(buildRelationSearchFilter(
         'user',

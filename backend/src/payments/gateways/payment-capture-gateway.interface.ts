@@ -3,18 +3,20 @@ import type { PaymentConfirmation } from '../types/payment-confirmation.type';
 
 /**
  * Contract implemented by payment gateways that require
- * an explicit server-side capture operation.
+ * an explicit server-side payment capture step.
  *
- * This interface remains separate from PaymentGateway because:
- * - Stripe Checkout does not require a separate capture request
- *   in the standard checkout flow.
+ * This contract remains separate from PaymentGateway because
+ * not every payment provider requires capture.
+ *
+ * For example:
+ * - Stripe Checkout normally completes payment through webhooks.
  * - PayPal requires an approved order to be captured.
- * - Future providers may use different completion workflows.
  *
  * Implementations must:
  * - Validate the external order or session identifier.
  * - Capture the approved payment through the provider API.
  * - Normalize the provider response.
+ * - Never update payment records directly.
  * - Never grant credits or unlock ideas directly.
  *
  * Payment fulfillment remains owned by PaymentProcessingService.
