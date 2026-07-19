@@ -2,87 +2,198 @@ import { Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
 import { toTitleCase } from '../common/utils/text-formatting.util';
-import { TextAnalysisResult } from '../pipeline/types/intelligent-analysis.types';
-import { FeatureRequest } from './types/feature-request.type';
+
+import type { TextAnalysisResult } from '../pipeline/types/intelligent-analysis.types';
+import type { FeatureRequest } from './types/feature-request.type';
 
 /**
- * Extracts feature requests from analyzed community texts.
+ * Maximum number of representative evidence samples retained
+ * for each extracted feature request.
  *
- * This service detects repeated feature-request signals from posts and comments
- * and converts them into structured feature requests that can support premium
- * outputs, opportunity analysis, and AI prompt generation.
+ * Limiting evidence samples keeps the analysis output concise while
+ * preserving enough community context for downstream consumers.
+ *
+ * @author Eman
+ */
+const MAX_FEATURE_REQUEST_EVIDENCE_SAMPLES = 3;
+
+/**
+ * Internal aggregation state used while grouping feature requests.
+ *
+ * @author Eman
+ */
+type FeatureRequestAggregation = {
+  /**
+   * Human-readable feature-request title.
+   */
+  readonly feature: string;
+
+  /**
+   * Number of distinct analyzed texts supporting the request.
+   */
+  frequency: number;
+
+  /**
+   * Representative community evidence supporting the request.
+   */
+  readonly evidenceSamples: string[];
+};
+
+/**
+ * Extracts recurring feature requests from analyzed community texts.
+ *
+ * This service detects feature-request lexicon matches from posts and
+ * comments and converts them into structured aggregated results that can
+ * support:
+ * - Premium idea outputs.
+ * - Opportunity analysis.
+ * - AI prompt generation.
  *
  * Responsibilities:
  * - Detect feature-request lexicon matches.
+ * - Normalize semantically equivalent request labels.
  * - Group repeated feature requests.
- * - Count supporting texts.
+ * - Count distinct supporting texts.
  * - Attach representative evidence samples.
  *
- * This service does not persist results and does not call external AI services.
+ * This service does not:
+ * - Persist extracted results.
+ * - Call external AI providers.
+ * - Modify the supplied analysis records.
  *
  * @author Eman
  */
 @Injectable()
 export class FeatureRequestExtractionService {
-  private readonly maxEvidenceSamples = 3;
-
   /**
-   * Extracts feature requests from analyzed texts.
+   * Extracts and aggregates recurring feature requests from analyzed texts.
+   *
+   * A feature request is counted at most once per analyzed text, even when
+   * the same lexicon term appears multiple times in that text.
    *
    * @param analyzedTexts Final analyzed text records.
-   * @returns Feature requests sorted by frequency.
+   * @returns Feature requests sorted by descending frequency and then title.
    */
-  extract(analyzedTexts: TextAnalysisResult[]): FeatureRequest[] {
-    const requestMap = new Map<
-      string,
-      { frequency: number; evidenceSamples: string[] }
-    >();
+  extract(
+    analyzedTexts: readonly TextAnalysisResult[],
+  ): FeatureRequest[] {
+    const requestMap = new Map<string, FeatureRequestAggregation>();
 
     for (const text of analyzedTexts) {
-      const requests =
+      const matchedRequests =
         text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
 
-      for (const request of new Set(requests)) {
-        const feature = toTitleCase(request);
-        const current = requestMap.get(feature) ?? {
-          frequency: 0,
+      const uniqueRequestsForText =
+        this.normalizeUniqueRequests(matchedRequests);
+
+      for (const normalizedRequest of uniqueRequestsForText) {
+        const aggregationKey = normalizedRequest.toLocaleLowerCase();
+
+        const current = requestMap.get(aggregationKey);
+
+        if (current) {
+          current.frequency += 1;
+
+          this.addEvidenceSample(
+            current.evidenceSamples,
+            text.originalText,
+          );
+
+          continue;
+        }
+
+        const aggregation: FeatureRequestAggregation = {
+          feature: toTitleCase(normalizedRequest),
+          frequency: 1,
           evidenceSamples: [],
         };
 
-        current.frequency += 1;
-        this.addEvidenceSample(current.evidenceSamples, text.originalText);
+        this.addEvidenceSample(
+          aggregation.evidenceSamples,
+          text.originalText,
+        );
 
-        requestMap.set(feature, current);
+        requestMap.set(aggregationKey, aggregation);
       }
     }
 
-    return [...requestMap.entries()]
-      .map(([feature, value]) => ({
+    return [...requestMap.values()]
+      .map(({ feature, frequency, evidenceSamples }) => ({
         feature,
-        frequency: value.frequency,
-        evidenceSamples: value.evidenceSamples,
+        frequency,
+        evidenceSamples: [...evidenceSamples],
       }))
-      .sort((first, second) => second.frequency - first.frequency);
+      .sort(
+        (first, second) =>
+          second.frequency - first.frequency ||
+          first.feature.localeCompare(second.feature),
+      );
   }
 
   /**
-   * Adds a representative evidence sample without duplicates.
+   * Normalizes feature-request labels and removes duplicates found
+   * within the same analyzed text.
+   *
+   * Normalization prevents values such as:
+   * - "dark mode"
+   * - " Dark Mode "
+   * - "DARK MODE"
+   *
+   * from being counted as different feature requests.
+   *
+   * @param requests Raw matched feature-request lexicon values.
+   * @returns Unique normalized request labels.
+   */
+  private normalizeUniqueRequests(
+    requests: readonly string[],
+  ): string[] {
+    const uniqueRequests = new Map<string, string>();
+
+    for (const request of requests) {
+      const normalizedRequest = request.trim();
+
+      if (!normalizedRequest) {
+        continue;
+      }
+
+      const aggregationKey = normalizedRequest.toLocaleLowerCase();
+
+      if (!uniqueRequests.has(aggregationKey)) {
+        uniqueRequests.set(aggregationKey, normalizedRequest);
+      }
+    }
+
+    return [...uniqueRequests.values()];
+  }
+
+  /**
+   * Adds a representative evidence sample when it is meaningful,
+   * unique, and the configured evidence limit has not been reached.
    *
    * @param samples Existing evidence samples.
-   * @param sample New sample candidate.
+   * @param sample New evidence candidate.
    */
-  private addEvidenceSample(samples: string[], sample: string): void {
+  private addEvidenceSample(
+    samples: string[],
+    sample: string,
+  ): void {
     const normalizedSample = sample.trim();
 
     if (!normalizedSample) {
       return;
     }
 
-    if (samples.length >= this.maxEvidenceSamples) {
+    if (samples.length >= MAX_FEATURE_REQUEST_EVIDENCE_SAMPLES) {
       return;
     }
 
-    if (samples.includes(normalizedSample)) {
+    const sampleAlreadyExists = samples.some(
+      (existingSample) =>
+        existingSample.toLocaleLowerCase() ===
+        normalizedSample.toLocaleLowerCase(),
+    );
+
+    if (sampleAlreadyExists) {
       return;
     }
 

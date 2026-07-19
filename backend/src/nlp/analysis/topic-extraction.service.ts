@@ -5,7 +5,15 @@ import {
   WeightedKeyword,
   WeightedTopic,
 } from '../pipeline/types/intelligent-analysis.types';
-import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
+import {
+  TopicRule,
+  TopicRuleService,
+} from '../topic-rules/topic-rule.service';
+
+/**
+ * Maximum number of extracted topics returned by the service.
+ */
+const MAX_EXTRACTED_TOPICS = 15;
 
 /**
  * Extracts high-level discussion topics from weighted keywords.
@@ -30,9 +38,7 @@ import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
  */
 @Injectable()
 export class TopicExtractionService {
-  private readonly maxTopics = 15;
-
-  constructor(private readonly topicRuleService: TopicRuleService) {}
+  constructor(private readonly topicRuleService: TopicRuleService) { }
 
   /**
    * Extracts the most relevant discussion topics from weighted keywords.
@@ -42,37 +48,46 @@ export class TopicExtractionService {
    * @returns Weighted topics sorted by frequency.
    */
   async extract(
-    keywords: WeightedKeyword[],
+    keywords: readonly WeightedKeyword[],
     language: LanguageCode,
   ): Promise<WeightedTopic[]> {
+    if (keywords.length === 0) {
+      return [];
+    }
+
     const topicRules = await this.topicRuleService.getRules(language);
-    const topicMap = new Map<string, number>();
+    const topicFrequencyMap = new Map<string, number>();
 
     for (const keyword of keywords) {
       const normalizedKeyword = this.normalizeTerm(keyword.keyword);
 
-      if (!normalizedKeyword) {
+      if (!normalizedKeyword || keyword.frequency <= 0) {
         continue;
       }
 
       const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
+      const currentFrequency = topicFrequencyMap.get(topic) ?? 0;
 
-      topicMap.set(topic, (topicMap.get(topic) ?? 0) + keyword.frequency);
+      topicFrequencyMap.set(
+        topic,
+        currentFrequency + keyword.frequency,
+      );
     }
 
-    return [...topicMap.entries()]
-      .map(([topic, frequency]) => ({
-        topic,
-        frequency,
-      }))
+    return Array.from(topicFrequencyMap, ([topic, frequency]) => ({
+      topic,
+      frequency,
+    }))
       .sort((first, second) => {
-        if (second.frequency !== first.frequency) {
-          return second.frequency - first.frequency;
+        const frequencyDifference = second.frequency - first.frequency;
+
+        if (frequencyDifference !== 0) {
+          return frequencyDifference;
         }
 
         return first.topic.localeCompare(second.topic);
       })
-      .slice(0, this.maxTopics);
+      .slice(0, MAX_EXTRACTED_TOPICS);
   }
 
   /**
@@ -86,49 +101,109 @@ export class TopicExtractionService {
    * @param topicRules Configurable topic rules loaded from the database.
    * @returns Topic label.
    */
-  private findMatchingTopic(keyword: string, topicRules: TopicRule[]): string {
+  private findMatchingTopic(
+    keyword: string,
+    topicRules: readonly TopicRule[],
+  ): string {
     const matchedRule = topicRules.find((rule) =>
-      rule.terms.some((term) => this.isRelatedTerm(keyword, term)),
+      rule.terms.some((term) =>
+        this.isRelatedTerm(keyword, this.normalizeTerm(term)),
+      ),
     );
 
-    return matchedRule?.topic ?? this.toTitleCase(keyword);
+    return matchedRule?.topic.trim() || this.toTitleCase(keyword);
   }
 
   /**
    * Checks whether a keyword is related to a configured topic term.
    *
-   * This supports exact matches and phrase matches, which allows keywords such
-   * as "waiting time" or "online appointment" to match broader topic groups.
+   * Supports:
+   * - Exact matches.
+   * - A keyword containing a complete configured phrase.
+   * - A configured phrase containing the complete keyword.
+   *
+   * Word boundaries are respected to avoid partial matches such as
+   * "car" incorrectly matching "scarcity".
    *
    * @param keyword Normalized keyword.
-   * @param term Topic rule term.
+   * @param term Normalized topic-rule term.
    * @returns True when the keyword is related to the topic term.
    */
   private isRelatedTerm(keyword: string, term: string): boolean {
-    return keyword === term || keyword.includes(term) || term.includes(keyword);
+    if (!keyword || !term) {
+      return false;
+    }
+
+    if (keyword === term) {
+      return true;
+    }
+
+    const keywordWords = keyword.split(' ');
+    const termWords = term.split(' ');
+
+    return (
+      this.containsConsecutiveWords(keywordWords, termWords) ||
+      this.containsConsecutiveWords(termWords, keywordWords)
+    );
   }
 
   /**
-   * Normalizes a keyword before topic matching.
+   * Checks whether one word sequence contains another consecutive sequence.
    *
-   * @param value Keyword value.
-   * @returns Normalized keyword.
+   * @param sourceWords Words being searched.
+   * @param candidateWords Consecutive words to locate.
+   * @returns True when the candidate sequence exists in the source sequence.
+   */
+  private containsConsecutiveWords(
+    sourceWords: readonly string[],
+    candidateWords: readonly string[],
+  ): boolean {
+    if (
+      candidateWords.length === 0 ||
+      candidateWords.length > sourceWords.length
+    ) {
+      return false;
+    }
+
+    const finalStartIndex = sourceWords.length - candidateWords.length;
+
+    for (let startIndex = 0; startIndex <= finalStartIndex; startIndex += 1) {
+      const matches = candidateWords.every(
+        (candidateWord, offset) =>
+          sourceWords[startIndex + offset] === candidateWord,
+      );
+
+      if (matches) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Normalizes a keyword or topic-rule term before matching.
+   *
+   * @param value Value to normalize.
+   * @returns Lowercase value with normalized whitespace.
    */
   private normalizeTerm(value: string): string {
-    return value.toLowerCase().trim().replace(/\s+/g, ' ');
+    return value.toLocaleLowerCase().trim().replace(/\s+/g, ' ');
   }
 
   /**
    * Converts unmatched keyword candidates into readable topic labels.
    *
+   * Languages without letter casing, such as Arabic, remain unchanged.
+   *
    * @param value Normalized keyword.
-   * @returns Title-cased topic label.
+   * @returns Readable topic label.
    */
   private toTitleCase(value: string): string {
     return value
       .split(' ')
       .filter(Boolean)
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
       .join(' ');
   }
 }
