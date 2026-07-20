@@ -1,4 +1,6 @@
-import {
+import type { LanguageCode } from '@prisma/client';
+
+import type {
   IntelligentAnalysisOutput,
   TextAnalysisResult,
 } from '../../pipeline/types/intelligent-analysis.types';
@@ -8,6 +10,9 @@ import {
  *
  * The input reuses the existing rule-based NLP contracts instead of
  * duplicating analysis structures.
+ *
+ * The language is included so that language-specific linguistic
+ * signals can be selected during complexity analysis.
  *
  * @author Eman
  */
@@ -21,4 +26,13 @@ export type TextComplexityAnalysisInput = {
    * Topics extracted from the analyzed dataset.
    */
   readonly topics: IntelligentAnalysisOutput['topics'];
+
+  /**
+   * Language used to select the appropriate negation,
+   * contrast, and other linguistic complexity signals.
+   *
+   * When the value is LanguageCode.ANY, the complexity
+   * analyzer may use signals from all supported languages.
+   */
+  readonly language: LanguageCode;
 };

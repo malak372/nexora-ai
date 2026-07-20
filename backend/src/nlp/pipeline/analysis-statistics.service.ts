@@ -2,14 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
-import { TextAnalysisResult } from './types/intelligent-analysis.types';
+
+import type {
+  TextAnalysisResult,
+} from './types/intelligent-analysis.types';
 
 /**
  * Builds statistical summaries for intelligent NLP analysis results.
- *
- * This service centralizes aggregate calculations such as sentiment
- * distribution, dominant language, and overall confidence so the main
- * IntelligentAnalysisService remains a clean pipeline orchestrator.
  *
  * Responsibilities:
  * - Count analyzed posts and comments.
@@ -18,7 +17,7 @@ import { TextAnalysisResult } from './types/intelligent-analysis.types';
  * - Detect dominant language.
  * - Calculate overall confidence.
  *
- * This service does not persist results and does not call external AI services.
+ * This service does not persist results or call external AI services.
  *
  * @author Eman
  */
@@ -30,23 +29,33 @@ export class AnalysisStatisticsService {
    * @param analyzedTexts Final analyzed text records.
    * @returns Sentiment distribution and dominant sentiment.
    */
-  buildSentimentStats(analyzedTexts: TextAnalysisResult[]): {
+  buildSentimentStats(
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
+  ): {
     positive: number;
     negative: number;
     neutral: number;
     dominantSentiment: Sentiment;
   } {
-    const positive = analyzedTexts.filter(
-      (text) => text.sentiment === Sentiment.POSITIVE,
-    ).length;
+    let positive = 0;
+    let negative = 0;
+    let neutral = 0;
 
-    const negative = analyzedTexts.filter(
-      (text) => text.sentiment === Sentiment.NEGATIVE,
-    ).length;
+    for (const text of analyzedTexts) {
+      switch (text.sentiment) {
+        case Sentiment.POSITIVE:
+          positive += 1;
+          break;
 
-    const neutral = analyzedTexts.filter(
-      (text) => text.sentiment === Sentiment.NEUTRAL,
-    ).length;
+        case Sentiment.NEGATIVE:
+          negative += 1;
+          break;
+
+        case Sentiment.NEUTRAL:
+          neutral += 1;
+          break;
+      }
+    }
 
     return {
       positive,
@@ -66,7 +75,7 @@ export class AnalysisStatisticsService {
    * @param analyzedTexts Final analyzed text records.
    * @returns Number of analyzed posts.
    */
-  countPosts(analyzedTexts: TextAnalysisResult[]): number {
+  countPosts(analyzedTexts: ReadonlyArray<TextAnalysisResult>): number {
     return analyzedTexts.filter((text) => text.sourceType === 'POST').length;
   }
 
@@ -76,17 +85,23 @@ export class AnalysisStatisticsService {
    * @param analyzedTexts Final analyzed text records.
    * @returns Number of analyzed comments.
    */
-  countComments(analyzedTexts: TextAnalysisResult[]): number {
-    return analyzedTexts.filter((text) => text.sourceType === 'COMMENT').length;
+  countComments(analyzedTexts: ReadonlyArray<TextAnalysisResult>): number {
+    return analyzedTexts.filter(
+      (text) => text.sourceType === 'COMMENT',
+    ).length;
   }
 
   /**
    * Detects the dominant language in analyzed texts.
    *
+   * ANY is returned only when no analyzed text exists.
+   *
    * @param analyzedTexts Final analyzed text records.
-   * @returns Dominant language code.
+   * @returns Dominant language or ANY for an empty collection.
    */
-  detectDominantLanguage(analyzedTexts: TextAnalysisResult[]): LanguageCode {
+  detectDominantLanguage(
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
+  ): LanguageCode {
     const languageCounts = new Map<LanguageCode, number>();
 
     for (const text of analyzedTexts) {
@@ -98,24 +113,31 @@ export class AnalysisStatisticsService {
 
     return (
       [...languageCounts.entries()].sort(
-        (first, second) => second[1] - first[1],
+        ([firstLanguage, firstCount], [secondLanguage, secondCount]) =>
+          secondCount - firstCount ||
+          firstLanguage.localeCompare(secondLanguage),
       )[0]?.[0] ?? LanguageCode.ANY
     );
   }
 
   /**
-   * Calculates the average confidence across all analyzed texts.
+   * Calculates average confidence across all analyzed texts.
+   *
+   * Invalid values are bounded to the valid range from 0 to 1.
    *
    * @param analyzedTexts Final analyzed text records.
    * @returns Overall confidence score between 0 and 1.
    */
-  calculateOverallConfidence(analyzedTexts: TextAnalysisResult[]): number {
+  calculateOverallConfidence(
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
+  ): number {
     if (analyzedTexts.length === 0) {
       return 0;
     }
 
     const totalConfidence = analyzedTexts.reduce(
-      (total, text) => total + text.confidence,
+      (total, text) =>
+        total + Math.min(1, Math.max(0, text.confidence)),
       0,
     );
 
@@ -124,6 +146,9 @@ export class AnalysisStatisticsService {
 
   /**
    * Detects the dominant sentiment from sentiment counters.
+   *
+   * Negative is intentionally prioritized during ties so repeated pain
+   * signals are not hidden by an equal number of neutral or positive texts.
    *
    * @param stats Sentiment counters.
    * @returns Dominant sentiment classification.

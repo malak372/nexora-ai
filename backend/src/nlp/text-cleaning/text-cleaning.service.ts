@@ -30,7 +30,7 @@ export type CleanTextResult = {
  * - Remove user mentions.
  * - Preserve hashtag words without the '#' symbol.
  * - Remove unsupported characters.
- * - Remove extra whitespace.
+ * - Collapse repeated whitespace.
  * - Filter duplicate and empty texts.
  *
  * This service only performs text preprocessing and does not interact
@@ -50,13 +50,13 @@ export class TextCleaningService {
     const originalText = text ?? '';
 
     const cleanedText = originalText
-      .toLowerCase()
-      .replace(/https?:\/\/\S+/g, ' ')
-      .replace(/www\.\S+/g, ' ')
-      .replace(/@\w+/g, ' ')
-      .replace(/#(\w+)/g, '$1')
+      .toLocaleLowerCase()
+      .replace(/https?:\/\/\S+/gu, ' ')
+      .replace(/www\.\S+/gu, ' ')
+      .replace(/@\w+/gu, ' ')
+      .replace(/#([\p{L}\p{N}_]+)/gu, '$1')
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/\s+/gu, ' ')
       .trim();
 
     return {
@@ -72,7 +72,9 @@ export class TextCleaningService {
    * @param texts Collection of raw texts.
    * @returns Cleaned text results.
    */
-  cleanMany(texts: string[]): CleanTextResult[] {
+  cleanMany(
+    texts: readonly string[],
+  ): CleanTextResult[] {
     return texts.map((text) => this.clean(text));
   }
 
@@ -82,19 +84,21 @@ export class TextCleaningService {
    * @param texts Cleaned text results.
    * @returns Unique cleaned texts.
    */
-  removeDuplicates(texts: CleanTextResult[]): CleanTextResult[] {
+  removeDuplicates(
+    texts: readonly CleanTextResult[],
+  ): CleanTextResult[] {
     const seen = new Set<string>();
 
-    return texts.filter((item) => {
-      if (item.isEmpty) {
+    return texts.filter((text) => {
+      if (text.isEmpty) {
         return false;
       }
 
-      if (seen.has(item.cleanedText)) {
+      if (seen.has(text.cleanedText)) {
         return false;
       }
 
-      seen.add(item.cleanedText);
+      seen.add(text.cleanedText);
       return true;
     });
   }

@@ -6,7 +6,12 @@
  */
 
 /**
- * Represents complexity indicators calculated from analyzed texts.
+ * Represents the aggregated complexity indicators calculated
+ * from the analyzed texts.
+ *
+ * These metrics estimate how difficult the dataset is for the
+ * rule-based NLP engine and help determine whether AI
+ * enhancement is likely to improve the final analysis.
  */
 export type TextComplexityMetrics = {
   /**

@@ -1,7 +1,6 @@
 /**
  * Defines the final decision contract used by the NLP decision engine.
  *
- * @author Eman
  */
 
 import type { AnalysisDecisionReason } from './analysis-decision-reason.type';
@@ -10,6 +9,12 @@ import type { TextComplexityMetrics } from './text-complexity-metrics.type';
 
 /**
  * Represents the final action selected by the NLP decision engine.
+ *
+ * These actions determine whether the rule-based NLP result
+ * can be used directly, should be enhanced by AI, or whether
+ * the available dataset is insufficient for reliable analysis.
+ *
+ * @author Eman
  */
 export enum AnalysisDecisionAction {
   /**
@@ -31,7 +36,12 @@ export enum AnalysisDecisionAction {
 }
 
 /**
- * Represents the final result returned by the NLP decision engine.
+ * Represents the complete decision produced by the NLP decision engine.
+ *
+ * This result combines the selected action, calculated suitability score,
+ * aggregated quality and complexity metrics, and the detailed reasons that
+ * explain how the decision was reached.
+ *
  */
 export type AnalysisDecisionResult = {
   /**
@@ -40,10 +50,11 @@ export type AnalysisDecisionResult = {
   readonly action: AnalysisDecisionAction;
 
   /**
-   * Overall rule-based suitability score from 0 to 1.
+   * Overall rule-based suitability score.
    *
-   * A higher value indicates that the rule-based analysis is more reliable
-   * and less likely to require AI enhancement.
+   * Values are normalized between 0 and 1, where higher values indicate
+   * that the rule-based analysis is more reliable and less likely to
+   * require AI enhancement.
    */
   readonly ruleBasedSuitabilityScore: number;
 
@@ -59,6 +70,9 @@ export type AnalysisDecisionResult = {
 
   /**
    * Detailed reasons explaining the final decision.
+   *
+   * Reasons are ordered by their relative importance to improve
+   * transparency, debugging, logging, and future administrative reporting.
    */
   readonly reasons: readonly AnalysisDecisionReason[];
 };

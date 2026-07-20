@@ -9,7 +9,11 @@
  */
 
 /**
- * Represents the quality indicators produced by the rule-based NLP pipeline.
+ * Represents the aggregated quality indicators produced by the
+ * rule-based NLP pipeline.
+ *
+ * All metric values are normalized between 0 and 1, where
+ * higher values indicate better analysis quality.
  */
 export type AnalysisQualityMetrics = {
   /**

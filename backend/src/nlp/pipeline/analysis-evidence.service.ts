@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
+import type { AiEnhancementEvidence } from '../ai-enhancement/types/ai-enhancement-input.type';
 import { Sentiment } from '../common/enums/sentiment.enum';
 
-import type { AiEnhancementEvidence } from '../ai-enhancement/types/ai-enhancement-input.type';
 import type { TextAnalysisResult } from './types/intelligent-analysis.types';
 
 const MAX_OUTPUT_POST_SAMPLES = 5;
@@ -30,10 +30,6 @@ const MAX_AI_ENHANCEMENT_EVIDENCE = 40;
  * - Persist evidence.
  * - Validate AI-generated evidence references.
  *
- * AI-generated references are validated later by
- * AiAnalysisOutputValidatorService against the identifiers returned
- * by buildAiEnhancementEvidence().
- *
  * @author Eman
  */
 @Injectable()
@@ -44,27 +40,28 @@ export class AnalysisEvidenceService {
    * @param analyzedTexts Final analyzed text records.
    * @returns High-confidence post samples.
    */
-  extractSamplePosts(analyzedTexts: ReadonlyArray<TextAnalysisResult>): Array<{
+  extractSamplePosts(
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
+  ): Array<{
     id: string;
     text: string;
     sentiment: Sentiment;
   }> {
-    return this.rankEvidence(analyzedTexts)
+    return this.selectUniqueEvidence(analyzedTexts)
       .filter((text) => text.sourceType === 'POST')
       .slice(0, MAX_OUTPUT_POST_SAMPLES)
       .map((text) => ({
-        id: text.id,
-        text: text.originalText,
+        id: text.id.trim(),
+        text: text.originalText.trim(),
         sentiment: text.sentiment,
       }));
   }
 
   /**
-   * Extracts representative analyzed comments for the final NLP
-   * output.
+   * Extracts representative analyzed comments for the final NLP output.
    *
-   * Comments without a parent post identifier are excluded because
-   * they cannot be traced back to their discussion context.
+   * Comments without a parent post identifier are excluded because they
+   * cannot be traced back to their discussion context.
    *
    * @param analyzedTexts Final analyzed text records.
    * @returns High-confidence comment samples.
@@ -77,7 +74,7 @@ export class AnalysisEvidenceService {
     text: string;
     sentiment: Sentiment;
   }> {
-    return this.rankEvidence(analyzedTexts)
+    return this.selectUniqueEvidence(analyzedTexts)
       .filter(
         (
           text,
@@ -91,9 +88,9 @@ export class AnalysisEvidenceService {
       )
       .slice(0, MAX_OUTPUT_COMMENT_SAMPLES)
       .map((text) => ({
-        id: text.id,
-        postId: text.postId,
-        text: text.originalText,
+        id: text.id.trim(),
+        postId: text.postId.trim(),
+        text: text.originalText.trim(),
         sentiment: text.sentiment,
       }));
   }
@@ -102,8 +99,8 @@ export class AnalysisEvidenceService {
    * Builds the bounded evidence collection supplied to optional AI
    * enhancement.
    *
-   * Empty text, empty identifiers, and duplicate identifiers are
-   * excluded. The highest-confidence occurrence is preserved.
+   * Empty text, empty identifiers, and duplicate identifiers are excluded.
+   * The highest-confidence occurrence is preserved.
    *
    * @param analyzedTexts Final analyzed text records.
    * @returns Traceable evidence suitable for AiEnhancementInput.
@@ -111,7 +108,29 @@ export class AnalysisEvidenceService {
   buildAiEnhancementEvidence(
     analyzedTexts: ReadonlyArray<TextAnalysisResult>,
   ): ReadonlyArray<AiEnhancementEvidence> {
-    const evidence: AiEnhancementEvidence[] = [];
+    return this.selectUniqueEvidence(analyzedTexts)
+      .slice(0, MAX_AI_ENHANCEMENT_EVIDENCE)
+      .map((text) => ({
+        id: text.id.trim(),
+        sourceType: text.sourceType,
+        text: text.originalText.trim(),
+        language: text.language,
+      }));
+  }
+
+  /**
+   * Selects non-empty, unique, deterministically ranked evidence.
+   *
+   * Duplicate identifiers are resolved by preserving the highest-confidence
+   * occurrence.
+   *
+   * @param analyzedTexts Final analyzed text records.
+   * @returns Ranked and unique evidence records.
+   */
+  private selectUniqueEvidence(
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
+  ): TextAnalysisResult[] {
+    const selectedEvidence: TextAnalysisResult[] = [];
     const seenIds = new Set<string>();
 
     for (const text of this.rankEvidence(analyzedTexts)) {
@@ -123,20 +142,10 @@ export class AnalysisEvidenceService {
       }
 
       seenIds.add(id);
-
-      evidence.push({
-        id,
-        sourceType: text.sourceType,
-        text: originalText,
-        language: text.language,
-      });
-
-      if (evidence.length >= MAX_AI_ENHANCEMENT_EVIDENCE) {
-        break;
-      }
+      selectedEvidence.push(text);
     }
 
-    return evidence;
+    return selectedEvidence;
   }
 
   /**
