@@ -1,4 +1,10 @@
-import { DEFAULT_STAGE_MAX_ATTEMPTS } from './idea-generation.constants';
+/**
+ * @author Malak
+ */
+
+import {
+  DEFAULT_STAGE_MAX_ATTEMPTS,
+} from './idea-generation.constants';
 
 /**
  * Stable keys used by the idea-generation pipeline.
@@ -7,364 +13,886 @@ import { DEFAULT_STAGE_MAX_ATTEMPTS } from './idea-generation.constants';
  * - IdeaGenerationRun.currentStageKey
  * - IdeaGenerationStage.stageKey
  *
- * Existing keys should not be renamed after production data
- * has been created.
- *
- * @author malak
+ * Existing keys must not be renamed after production records
+ * have been created.
  */
 export const IDEA_GENERATION_STAGE_KEYS = {
-  REQUEST_VALIDATION: 'request-validation',
-  ENTITLEMENT_CHECK: 'entitlement-check',
-  DATA_SOURCE_SELECTION: 'data-source-selection',
+  REQUEST_VALIDATION:
+    'request-validation',
+
+  ENTITLEMENT_CHECK:
+    'entitlement-check',
+
+  DATA_SOURCE_SELECTION:
+    'data-source-selection',
+
   COLLECTION_JOB_RESOLUTION:
     'collection-job-resolution',
-  DATA_COLLECTION: 'data-collection',
-  NLP_ANALYSIS: 'nlp-analysis',
-  PROMPT_BUILDING: 'prompt-building',
-  CORE_IDEA_GENERATION: 'core-idea-generation',
-  AI_OUTPUT_VALIDATION: 'ai-output-validation',
-  DUPLICATE_CHECK: 'duplicate-check',
-  IDEA_PERSISTENCE: 'idea-persistence',
+
+  DATA_COLLECTION:
+    'data-collection',
+
+  NLP_ANALYSIS:
+    'nlp-analysis',
+
+  PROMPT_BUILDING:
+    'prompt-building',
+
+  CORE_IDEA_GENERATION:
+    'core-idea-generation',
+
+  AI_OUTPUT_VALIDATION:
+    'ai-output-validation',
+
+  DUPLICATE_CHECK:
+    'duplicate-check',
+
+  IDEA_PERSISTENCE:
+    'idea-persistence',
 
   FULL_ABSTRACT_GENERATION:
     'full-abstract-generation',
+
   TECHNOLOGY_STACK_GENERATION:
     'technology-stack-generation',
+
   SYSTEM_ARCHITECTURE_GENERATION:
     'system-architecture-generation',
+
   DATABASE_DESIGN_GENERATION:
     'database-design-generation',
+
+  MVP_FEATURES_GENERATION:
+    'mvp-features-generation',
+
   BUSINESS_MODEL_GENERATION:
     'business-model-generation',
-  BUDGET_GENERATION: 'budget-generation',
-  TIMELINE_GENERATION: 'timeline-generation',
-  FEASIBILITY_GENERATION:
-    'feasibility-generation',
-  MARKET_POTENTIAL_GENERATION:
-    'market-potential-generation',
+
+  VALUE_PROPOSITION_GENERATION:
+    'value-proposition-generation',
+
   REVENUE_MODEL_GENERATION:
     'revenue-model-generation',
+
   LOCAL_REGULATIONS_GENERATION:
     'local-regulations-generation',
 
-  FINALIZATION: 'finalization',
+  BUDGET_ESTIMATION_GENERATION:
+    'budget-estimation-generation',
+
+  FEASIBILITY_ASSESSMENT_GENERATION:
+    'feasibility-assessment-generation',
+
+  IMPLEMENTATION_TIMELINE_GENERATION:
+    'implementation-timeline-generation',
+
+  MARKET_POTENTIAL_GENERATION:
+    'market-potential-generation',
+
+  NLP_EXECUTIVE_SUMMARY_GENERATION:
+    'nlp-executive-summary-generation',
+
+  COMMUNITY_FEEDBACK_SUMMARY_GENERATION:
+    'community-feedback-summary-generation',
+
+  FINALIZATION:
+    'finalization',
 } as const;
 
 /**
- * Union of all supported generation-stage keys.
+ * Union of all supported idea-generation pipeline-stage keys.
  */
 export type IdeaGenerationStageKey =
   (typeof IDEA_GENERATION_STAGE_KEYS)[keyof typeof IDEA_GENERATION_STAGE_KEYS];
 
 /**
- * Stage configuration used when initializing a generation run.
+ * Static configuration used when initializing one generation
+ * stage.
  */
 export type IdeaGenerationStageDefinition = {
-  key: IdeaGenerationStageKey;
-  displayName: string;
-  sequence: number;
-  progressStart: number;
-  progressEnd: number;
-  maxAttempts: number;
-  requiredForPremium: boolean;
+  /**
+   * Stable stage identifier persisted in the database.
+   */
+  readonly key:
+    IdeaGenerationStageKey;
+
+  /**
+   * Human-readable stage title displayed to the user.
+   */
+  readonly displayName:
+    string;
+
+  /**
+   * One-based order of the stage inside the pipeline.
+   */
+  readonly sequence:
+    number;
+
+  /**
+   * Progress percentage visible when the stage begins.
+   */
+  readonly progressStart:
+    number;
+
+  /**
+   * Progress percentage visible when the stage completes.
+   */
+  readonly progressEnd:
+    number;
+
+  /**
+   * Maximum number of execution attempts.
+   */
+  readonly maxAttempts:
+    number;
+
+  /**
+   * Indicates whether the stage belongs only to premium
+   * generation.
+   */
+  readonly requiredForPremium:
+    boolean;
 };
 
 /**
- * Core stages executed for all generation types.
+ * Core stages executed for every generation type.
  *
- * Guest and registered free generations stop after the core
- * idea is persisted and finalized.
+ * Supported generation types:
+ * - Guest free generation.
+ * - Registered-user free generation.
+ * - Premium-credit generation.
  */
-export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
+export const CORE_IDEA_GENERATION_STAGES:
+  readonly IdeaGenerationStageDefinition[] =
   [
     {
-      key: IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION,
-      displayName: 'Request validation',
-      sequence: 1,
-      progressStart: 0,
-      progressEnd: 5,
-      maxAttempts: 1,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .REQUEST_VALIDATION,
+
+      displayName:
+        'Request validation',
+
+      sequence:
+        1,
+
+      progressStart:
+        0,
+
+      progressEnd:
+        5,
+
+      maxAttempts:
+        1,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.ENTITLEMENT_CHECK,
-      displayName: 'Entitlement check',
-      sequence: 2,
-      progressStart: 5,
-      progressEnd: 10,
-      maxAttempts: 1,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .ENTITLEMENT_CHECK,
+
+      displayName:
+        'Entitlement check',
+
+      sequence:
+        2,
+
+      progressStart:
+        5,
+
+      progressEnd:
+        10,
+
+      maxAttempts:
+        1,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.DATA_SOURCE_SELECTION,
-      displayName: 'Data-source selection',
-      sequence: 3,
-      progressStart: 10,
-      progressEnd: 15,
-      maxAttempts: 1,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .DATA_SOURCE_SELECTION,
+
+      displayName:
+        'Data-source selection',
+
+      sequence:
+        3,
+
+      progressStart:
+        10,
+
+      progressEnd:
+        15,
+
+      maxAttempts:
+        1,
+
+      requiredForPremium:
+        false,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .COLLECTION_JOB_RESOLUTION,
-      displayName: 'Collection-job resolution',
-      sequence: 4,
-      progressStart: 15,
-      progressEnd: 20,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+
+      displayName:
+        'Collection-job resolution',
+
+      sequence:
+        4,
+
+      progressStart:
+        15,
+
+      progressEnd:
+        20,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
-      displayName: 'Data collection',
-      sequence: 5,
-      progressStart: 20,
-      progressEnd: 35,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .DATA_COLLECTION,
+
+      displayName:
+        'Data collection',
+
+      sequence:
+        5,
+
+      progressStart:
+        20,
+
+      progressEnd:
+        35,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS,
-      displayName: 'NLP analysis',
-      sequence: 6,
-      progressStart: 35,
-      progressEnd: 48,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .NLP_ANALYSIS,
+
+      displayName:
+        'NLP analysis',
+
+      sequence:
+        6,
+
+      progressStart:
+        35,
+
+      progressEnd:
+        48,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.PROMPT_BUILDING,
-      displayName: 'Prompt building',
-      sequence: 7,
-      progressStart: 48,
-      progressEnd: 53,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .PROMPT_BUILDING,
+
+      displayName:
+        'Prompt building',
+
+      sequence:
+        7,
+
+      progressStart:
+        48,
+
+      progressEnd:
+        53,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .CORE_IDEA_GENERATION,
-      displayName: 'Core idea generation',
-      sequence: 8,
-      progressStart: 53,
-      progressEnd: 65,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+
+      displayName:
+        'Core idea generation',
+
+      sequence:
+        8,
+
+      progressStart:
+        53,
+
+      progressEnd:
+        65,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .AI_OUTPUT_VALIDATION,
-      displayName: 'AI output validation',
-      sequence: 9,
-      progressStart: 65,
-      progressEnd: 70,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+
+      displayName:
+        'AI output validation',
+
+      sequence:
+        9,
+
+      progressStart:
+        65,
+
+      progressEnd:
+        70,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.DUPLICATE_CHECK,
-      displayName: 'Duplicate detection',
-      sequence: 10,
-      progressStart: 70,
-      progressEnd: 75,
-      maxAttempts: 1,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .DUPLICATE_CHECK,
+
+      displayName:
+        'Duplicate detection',
+
+      sequence:
+        10,
+
+      progressStart:
+        70,
+
+      progressEnd:
+        75,
+
+      maxAttempts:
+        1,
+
+      requiredForPremium:
+        false,
     },
+
     {
-      key: IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE,
-      displayName: 'Idea persistence',
-      sequence: 11,
-      progressStart: 75,
-      progressEnd: 80,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: false,
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .IDEA_PERSISTENCE,
+
+      displayName:
+        'Idea persistence',
+
+      sequence:
+        27,
+
+      progressStart:
+        98,
+
+      progressEnd:
+        99,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        false,
     },
   ] as const;
 
 /**
- * Advanced stages executed only for premium-credit generation.
+ * Premium-output pipeline stages.
  *
- * Each output is generated separately to support:
- * - Progressive frontend rendering.
- * - Isolated retries.
- * - Partial failure recovery.
- * - Output-specific persistence.
+ * The AI provider currently returns all premium outputs in one
+ * structured response. These stages therefore act as progressive
+ * validation checkpoints before entitlement consumption and persistence.
+ *
+ * The stage list must stay aligned with:
+ * - IDEA_ADVANCED_OUTPUT_DEFINITIONS.
+ * - REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS.
+ * - PremiumOutputGenerationStage registrations in IdeasModule.
  */
-export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
+export const PREMIUM_IDEA_GENERATION_STAGES:
+  readonly IdeaGenerationStageDefinition[] =
   [
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .FULL_ABSTRACT_GENERATION,
-      displayName: 'Full abstract generation',
-      sequence: 12,
-      progressStart: 80,
-      progressEnd: 82,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Full abstract',
+
+      sequence:
+        11,
+
+      progressStart:
+        75,
+
+      progressEnd:
+        77,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .TECHNOLOGY_STACK_GENERATION,
-      displayName: 'Technology stack generation',
-      sequence: 13,
-      progressStart: 82,
-      progressEnd: 84,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Technology stack',
+
+      sequence:
+        12,
+
+      progressStart:
+        77,
+
+      progressEnd:
+        79,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .SYSTEM_ARCHITECTURE_GENERATION,
-      displayName: 'System architecture generation',
-      sequence: 14,
-      progressStart: 84,
-      progressEnd: 86,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'System architecture',
+
+      sequence:
+        13,
+
+      progressStart:
+        79,
+
+      progressEnd:
+        81,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .DATABASE_DESIGN_GENERATION,
-      displayName: 'Database design generation',
-      sequence: 15,
-      progressStart: 86,
-      progressEnd: 88,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Database design',
+
+      sequence:
+        14,
+
+      progressStart:
+        81,
+
+      progressEnd:
+        83,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .MVP_FEATURES_GENERATION,
+
+      displayName:
+        'MVP features',
+
+      sequence:
+        15,
+
+      progressStart:
+        83,
+
+      progressEnd:
+        85,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .BUSINESS_MODEL_GENERATION,
-      displayName: 'Business model generation',
-      sequence: 16,
-      progressStart: 88,
-      progressEnd: 90,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Business model',
+
+      sequence:
+        16,
+
+      progressStart:
+        85,
+
+      progressEnd:
+        87,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
-    {
-      key: IDEA_GENERATION_STAGE_KEYS.BUDGET_GENERATION,
-      displayName: 'Budget generation',
-      sequence: 17,
-      progressStart: 90,
-      progressEnd: 92,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
-    },
-    {
-      key:
-        IDEA_GENERATION_STAGE_KEYS
-          .TIMELINE_GENERATION,
-      displayName: 'Timeline generation',
-      sequence: 18,
-      progressStart: 92,
-      progressEnd: 94,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
-    },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
-          .FEASIBILITY_GENERATION,
-      displayName: 'Feasibility generation',
-      sequence: 19,
-      progressStart: 94,
-      progressEnd: 95,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+          .VALUE_PROPOSITION_GENERATION,
+
+      displayName:
+        'Value proposition',
+
+      sequence:
+        17,
+
+      progressStart:
+        87,
+
+      progressEnd:
+        89,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
-    {
-      key:
-        IDEA_GENERATION_STAGE_KEYS
-          .MARKET_POTENTIAL_GENERATION,
-      displayName: 'Market potential generation',
-      sequence: 20,
-      progressStart: 95,
-      progressEnd: 96,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
-    },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .REVENUE_MODEL_GENERATION,
-      displayName: 'Revenue model generation',
-      sequence: 21,
-      progressStart: 96,
-      progressEnd: 97,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Revenue model',
+
+      sequence:
+        18,
+
+      progressStart:
+        89,
+
+      progressEnd:
+        90,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
+
     {
       key:
         IDEA_GENERATION_STAGE_KEYS
           .LOCAL_REGULATIONS_GENERATION,
-      displayName: 'Local regulations generation',
-      sequence: 22,
-      progressStart: 97,
-      progressEnd: 99,
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-      requiredForPremium: true,
+
+      displayName:
+        'Local regulations',
+
+      sequence:
+        19,
+
+      progressStart:
+        90,
+
+      progressEnd:
+        91,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .BUDGET_ESTIMATION_GENERATION,
+
+      displayName:
+        'Budget estimation',
+
+      sequence:
+        20,
+
+      progressStart:
+        91,
+
+      progressEnd:
+        92,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .FEASIBILITY_ASSESSMENT_GENERATION,
+
+      displayName:
+        'Feasibility assessment',
+
+      sequence:
+        21,
+
+      progressStart:
+        92,
+
+      progressEnd:
+        93,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .IMPLEMENTATION_TIMELINE_GENERATION,
+
+      displayName:
+        'Implementation timeline',
+
+      sequence:
+        22,
+
+      progressStart:
+        93,
+
+      progressEnd:
+        94,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .MARKET_POTENTIAL_GENERATION,
+
+      displayName:
+        'Market potential',
+
+      sequence:
+        23,
+
+      progressStart:
+        94,
+
+      progressEnd:
+        95,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .NLP_EXECUTIVE_SUMMARY_GENERATION,
+
+      displayName:
+        'NLP executive summary',
+
+      sequence:
+        24,
+
+      progressStart:
+        95,
+
+      progressEnd:
+        97,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
+    },
+
+    {
+      key:
+        IDEA_GENERATION_STAGE_KEYS
+          .COMMUNITY_FEEDBACK_SUMMARY_GENERATION,
+
+      displayName:
+        'Community feedback summary',
+
+      sequence:
+        25,
+
+      progressStart:
+        97,
+
+      progressEnd:
+        98,
+
+      maxAttempts:
+        DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium:
+        true,
     },
   ] as const;
 
 /**
- * Final stage executed for every generation run.
+ * Final stage executed after all required stages have completed.
  */
-export const IDEA_GENERATION_FINALIZATION_STAGE: IdeaGenerationStageDefinition =
+export const IDEA_GENERATION_FINALIZATION_STAGE:
+  IdeaGenerationStageDefinition =
   {
-    key: IDEA_GENERATION_STAGE_KEYS.FINALIZATION,
-    displayName: 'Generation finalization',
-    sequence: 23,
-    progressStart: 99,
-    progressEnd: 100,
-    maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-    requiredForPremium: false,
+    key:
+      IDEA_GENERATION_STAGE_KEYS
+        .FINALIZATION,
+
+    displayName:
+      'Generation finalization',
+
+    sequence:
+      28,
+
+    progressStart:
+      99,
+
+    progressEnd:
+      100,
+
+    maxAttempts:
+      DEFAULT_STAGE_MAX_ATTEMPTS,
+
+    requiredForPremium:
+      false,
   };
 
 /**
- * Complete stage list used for premium generation.
+ * Complete stage list used by premium-credit generation.
  */
-export const ALL_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
+export const ALL_IDEA_GENERATION_STAGES:
+  readonly IdeaGenerationStageDefinition[] =
   [
     ...CORE_IDEA_GENERATION_STAGES,
+
     ...PREMIUM_IDEA_GENERATION_STAGES,
+
     IDEA_GENERATION_FINALIZATION_STAGE,
-  ];
+  ] as const;
 
 /**
- * Complete stage list used for guest and normal-free generation.
+ * Complete stage list used by guest and registered-user free
+ * generation.
  *
- * The finalization sequence is recalculated so the stored stage
- * ordering remains continuous for non-premium runs.
+ * Premium stages are excluded and finalization receives the next
+ * continuous sequence number.
  */
-export const FREE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
+export const FREE_IDEA_GENERATION_STAGES:
+  readonly IdeaGenerationStageDefinition[] =
   [
-    ...CORE_IDEA_GENERATION_STAGES,
+    ...CORE_IDEA_GENERATION_STAGES.map(
+      (stage) =>
+        stage.key ===
+        IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+          ? {
+              ...stage,
+              sequence: 11,
+              progressStart: 75,
+              progressEnd: 80,
+            }
+          : stage,
+    ),
 
     {
       ...IDEA_GENERATION_FINALIZATION_STAGE,
-      sequence:
-        CORE_IDEA_GENERATION_STAGES.length + 1,
+
+      sequence: 12,
+
       progressStart: 80,
+
       progressEnd: 100,
     },
-  ];
+  ] as const;
 
 /**
- * Returns the correct pipeline-stage definitions according to
- * whether premium outputs are required.
+ * Returns the correct pipeline-stage definitions for the
+ * resolved generation policy.
+ *
+ * @param includePremiumStages Whether premium checkpoints are
+ * required.
+ * @returns Ordered stage definitions.
  */
 export function getIdeaGenerationStageDefinitions(
-  includePremiumStages: boolean,
+  includePremiumStages:
+    boolean,
 ): readonly IdeaGenerationStageDefinition[] {
   return includePremiumStages
     ? ALL_IDEA_GENERATION_STAGES
@@ -372,25 +900,53 @@ export function getIdeaGenerationStageDefinitions(
 }
 
 /**
- * Finds one stage definition by its stable key.
+ * Finds one registered stage definition by its stable key.
+ *
+ * @param stageKey Stable pipeline-stage key.
+ * @returns Matching definition or undefined.
  */
 export function findIdeaGenerationStageDefinition(
-  stageKey: IdeaGenerationStageKey,
+  stageKey:
+    IdeaGenerationStageKey,
 ): IdeaGenerationStageDefinition | undefined {
   return ALL_IDEA_GENERATION_STAGES.find(
-    (stage) => stage.key === stageKey,
+    (stage) =>
+      stage.key === stageKey,
   );
 }
 
 /**
- * Returns the ending progress percentage associated with
- * one generation stage.
+ * Returns the ending progress percentage associated with one
+ * generation stage.
+ *
+ * @param stageKey Stable pipeline-stage key.
+ * @returns Stage completion percentage or zero when missing.
  */
 export function getStageCompletionProgress(
-  stageKey: IdeaGenerationStageKey,
+  stageKey:
+    IdeaGenerationStageKey,
 ): number {
   return (
-    findIdeaGenerationStageDefinition(stageKey)
-      ?.progressEnd ?? 0
+    findIdeaGenerationStageDefinition(
+      stageKey,
+    )?.progressEnd ??
+    0
+  );
+}
+
+/**
+ * Determines whether a stage belongs exclusively to premium
+ * generation.
+ *
+ * @param stageKey Stable pipeline-stage key.
+ * @returns Whether the stage is premium-only.
+ */
+export function isPremiumIdeaGenerationStage(
+  stageKey:
+    IdeaGenerationStageKey,
+): boolean {
+  return PREMIUM_IDEA_GENERATION_STAGES.some(
+    (stage) =>
+      stage.key === stageKey,
   );
 }

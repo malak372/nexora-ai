@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  HttpCode,
+  HttpStatus,
   Post,
   Req,
   UnauthorizedException,
@@ -74,6 +76,7 @@ export class GuestIdeaGenerationController {
    * @returns Completed idea-generation pipeline result.
    */
   @Post()
+  @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({
     default: {
       limit:
@@ -103,7 +106,7 @@ export class GuestIdeaGenerationController {
       });
     }
 
-    return this.orchestrator.generateForGuest({
+    return this.orchestrator.queueForGuest({
       guestSessionToken,
       dto,
     });

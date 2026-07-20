@@ -5,19 +5,12 @@ import {
 
 import {
   ApiRequestType,
+  PromptType,
 } from '@prisma/client';
 
-import {
-  AiExecutionService,
-} from '../../../../ai/services/ai-execution.service';
+import { AiExecutionService } from '../../../../ai/services/ai-execution.service';
 
-import {
-  AiResponseFormat,
-} from '../../../../ai/types/ai-provider.type';
-
-import {
-  PromptBuilderService,
-} from '../../../../prompts/services/prompt-builder.service';
+import { AiResponseFormat } from '../../../../ai/types/ai-provider.type';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -35,24 +28,18 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  IdeaAiOutputParserService,
-} from '../../services/idea-ai-output-parser.service';
+import { IdeaAiOutputParserService } from '../../services/idea-ai-output-parser.service';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Executes the core structured idea-generation request.
  *
  * Responsibilities:
- * - Rebuild the provider-neutral response schema associated with
- *   the persisted prompt.
+ * - Reuse the exact provider-neutral response schema stored in
+ *   the pipeline context during prompt building.
  * - Execute the central AI runtime.
  * - Request structured JSON output.
  * - Parse the centrally validated response into business-level
@@ -75,6 +62,7 @@ import {
  * validation boundary before persistence.
  *
  * This stage does not:
+ * - Rebuild the prompt.
  * - Persist the Idea record.
  * - Consume free generations or credits.
  * - Perform duplicate detection.
@@ -103,9 +91,6 @@ export class CoreIdeaGenerationStage
     private readonly aiExecutionService:
       AiExecutionService,
 
-    private readonly promptBuilderService:
-      PromptBuilderService,
-
     private readonly outputParserService:
       IdeaAiOutputParserService,
   ) {}
@@ -121,33 +106,7 @@ export class CoreIdeaGenerationStage
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const collection =
-      context.collection!;
-
-    const persistedPrompt =
-      context.prompt!;
-
-    /*
-     * PromptHistory stores the rendered prompt and trace metadata,
-     * but it does not currently persist the response schema.
-     *
-     * Rebuilding through PromptBuilderService is deterministic for
-     * the same collection job, generation type, and active template.
-     *
-     * A future PromptHistory schema may persist responseSchemaName
-     * and responseSchema directly to avoid rebuilding here.
-     */
-    const promptContract =
-      await this.promptBuilderService
-        .buildIdeaPrompt({
-          purpose: 'IDEA_GENERATION',
-
-          collectionJobId:
-            collection.collectionJobId,
-
-          generationType:
-            context.generationType,
-        });
+    const persistedPrompt = context.prompt!;
 
     const aiResult =
       await this.aiExecutionService.execute({
@@ -158,7 +117,7 @@ export class CoreIdeaGenerationStage
           ApiRequestType.IDEA_GENERATION,
 
         promptType:
-          promptContract.promptType,
+          PromptType.IDEA_GENERATION,
 
         generationType:
           context.generationType,
@@ -172,18 +131,17 @@ export class CoreIdeaGenerationStage
         guestSessionId:
           context.owner.type ===
           IDEA_OWNER_TYPES.GUEST
-            ? context.owner
-                .guestSessionId
+            ? context.owner.guestSessionId
             : undefined,
 
         responseFormat:
           AiResponseFormat.JSON,
 
         responseSchema:
-          promptContract.responseSchema,
+          persistedPrompt.responseSchema,
 
         responseSchemaName:
-          promptContract.responseSchemaName,
+          persistedPrompt.responseSchemaName,
 
         estimatedOutputTokens:
           this.resolveEstimatedOutputTokens(
@@ -192,8 +150,9 @@ export class CoreIdeaGenerationStage
       });
 
     const parsedOutput =
-      this.outputParserService
-        .parseOrThrow(aiResult.text);
+      this.outputParserService.parseOrThrow(
+        aiResult.text,
+      );
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -251,8 +210,7 @@ export class CoreIdeaGenerationStage
           aiResult.attemptCount,
 
         advancedOutputsReturned:
-          parsedOutput
-            .advancedOutputs.length,
+          parsedOutput.advancedOutputs.length,
       },
     };
   }
@@ -320,6 +278,19 @@ export class CoreIdeaGenerationStage
           'The rendered AI prompt cannot be empty.',
       });
     }
+
+    if (
+      !context.prompt.responseSchemaName.trim()
+    ) {
+      throw new BadRequestException({
+        code:
+          IDEA_GENERATION_ERROR_CODES
+            .AI_GENERATION_FAILED,
+
+        message:
+          'The structured AI response-schema name is required.',
+      });
+    }
   }
 
   /**
@@ -355,6 +326,7 @@ export class CoreIdeaGenerationStage
   private mergeAdvancedOutputs(
     existing:
       IdeaGenerationContext['advancedOutputs'],
+
     incoming:
       IdeaGenerationContext['advancedOutputs'],
   ): IdeaGenerationContext['advancedOutputs'] {

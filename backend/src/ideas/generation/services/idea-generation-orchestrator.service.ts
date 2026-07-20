@@ -88,6 +88,13 @@ export type GenerateGuestIdeaInput = {
   dto: GenerateGuestIdeaDto;
 };
 
+/** Result returned immediately after a generation job is accepted. */
+export type QueuedIdeaGenerationResult = {
+  readonly runId: string;
+  readonly status: IdeaGenerationRunStatus;
+  readonly progressPercent: number;
+};
+
 /**
  * Common input used internally after resolving the generation
  * owner.
@@ -330,6 +337,97 @@ export class IdeaGenerationOrchestratorService {
   }
 
   /**
+   * Accepts an authenticated generation request and returns its run ID
+   * immediately. The pipeline continues asynchronously and exposes progress
+   * through IdeaGenerationRunsController.
+   */
+  async queueForUser(
+    input: GenerateRegisteredIdeaInput,
+  ): Promise<QueuedIdeaGenerationResult> {
+    const userId = this.normalizeRequiredValue(input.userId, 'User ID');
+
+    return this.queueOwnedGeneration({
+      owner: { type: IDEA_OWNER_TYPES.USER, userId },
+      generationType: input.dto.generationType,
+      domainId: input.dto.domainId,
+      keywords: this.normalizeStringArray(input.dto.keywords),
+      requestedDataSourceKeys: this.normalizeSourceKeys(
+        input.dto.dataSourceKeys,
+      ),
+      location: {
+        country: this.normalizeRequiredValue(input.dto.country, 'Country'),
+        city: this.normalizeOptionalValue(input.dto.city),
+        region: this.normalizeOptionalValue(input.dto.region),
+        radiusKm: input.dto.radiusKm ?? null,
+        language: input.dto.language,
+      },
+    });
+  }
+
+  /** Accepts a guest generation request and returns its run ID immediately. */
+  async queueForGuest(
+    input: GenerateGuestIdeaInput,
+  ): Promise<QueuedIdeaGenerationResult> {
+    const guestSession = await this.guestSessionService.resolveAvailableSession(
+      input.guestSessionToken,
+    );
+
+    return this.queueOwnedGeneration({
+      owner: {
+        type: IDEA_OWNER_TYPES.GUEST,
+        guestSessionId: guestSession.id,
+      },
+      generationType: IdeaGenerationType.GUEST_FREE,
+      domainId: input.dto.domainId,
+      keywords: this.normalizeStringArray(input.dto.keywords),
+      requestedDataSourceKeys: this.normalizeSourceKeys(
+        input.dto.dataSourceKeys,
+      ),
+      location: {
+        country: this.normalizeRequiredValue(input.dto.country, 'Country'),
+        city: this.normalizeOptionalValue(input.dto.city),
+        region: this.normalizeOptionalValue(input.dto.region),
+        radiusKm: input.dto.radiusKm ?? null,
+        language: input.dto.language,
+      },
+    });
+  }
+
+  /**
+   * Creates a queued run and schedules execution outside the HTTP request.
+   *
+   * The PostgreSQL owner lock still protects multi-instance deployments.
+   * For very large deployments this dispatcher can later be replaced by
+   * BullMQ without changing controllers or pipeline stages.
+   */
+  private async queueOwnedGeneration(
+    input: ExecuteOwnedIdeaGenerationInput,
+  ): Promise<QueuedIdeaGenerationResult> {
+    const run = await this.runService.createRun({
+      ...(input.owner.type === IDEA_OWNER_TYPES.USER
+        ? { userId: input.owner.userId }
+        : { guestSessionId: input.owner.guestSessionId }),
+      generationType: input.generationType,
+    });
+
+    setImmediate(() => {
+      void this.executePreparedRun(run.id, input).catch((error: unknown) => {
+        const normalized = this.normalizeError(error);
+        this.logger.error(
+          `Queued idea-generation run "${run.id}" failed: ${normalized.message}`,
+          normalized.stack,
+        );
+      });
+    });
+
+    return {
+      runId: run.id,
+      status: run.status,
+      progressPercent: run.progressPercent,
+    };
+  }
+
+  /**
    * Creates and executes an owner-specific generation workflow.
    *
    * The run is created before the lock is acquired because the
@@ -347,75 +445,53 @@ export class IdeaGenerationOrchestratorService {
   private async executeOwnedGeneration(
     input: ExecuteOwnedIdeaGenerationInput,
   ): Promise<IdeaGenerationPipelineResult> {
-    const run =
-      await this.runService.createRun({
-        ...(input.owner.type ===
-        IDEA_OWNER_TYPES.USER
-          ? {
-              userId: input.owner.userId,
-            }
-          : {
-              guestSessionId:
-                input.owner.guestSessionId,
-            }),
+    const run = await this.runService.createRun({
+      ...(input.owner.type === IDEA_OWNER_TYPES.USER
+        ? { userId: input.owner.userId }
+        : { guestSessionId: input.owner.guestSessionId }),
+      generationType: input.generationType,
+    });
 
-        generationType:
-          input.generationType,
-      });
+    return this.executePreparedRun(run.id, input);
+  }
 
+  /** Executes a previously created queued run. */
+  private async executePreparedRun(
+    runId: string,
+    input: ExecuteOwnedIdeaGenerationInput,
+  ): Promise<IdeaGenerationPipelineResult> {
     let lockAcquired = false;
 
     try {
-      await this.lockService.acquire({
-        owner: input.owner,
-        runId: run.id,
-      });
-
+      await this.lockService.acquire({ owner: input.owner, runId });
       lockAcquired = true;
 
-      const context =
-        this.buildInitialContext(
-          run.id,
-          input,
-        );
+      const context = this.buildInitialContext(runId, input);
+      this.logger.log(`Starting idea-generation pipeline for run "${runId}".`);
+
+      const result = await this.pipelineService.executePipeline({
+        context,
+        stages: this.stages,
+      });
 
       this.logger.log(
-        `Starting idea-generation pipeline for run "${run.id}".`,
-      );
-
-      const result =
-        await this.pipelineService
-          .executePipeline({
-            context,
-            stages: this.stages,
-          });
-
-      this.logger.log(
-        `Idea-generation orchestration completed for run "${run.id}".`,
+        `Idea-generation orchestration completed for run "${runId}".`,
       );
 
       return result;
     } catch (error: unknown) {
-      const normalizedError =
-        this.normalizeError(error);
-
-      await this.persistUnfinishedRunFailure(
-        run.id,
-        normalizedError,
-      );
+      const normalizedError = this.normalizeError(error);
+      await this.persistUnfinishedRunFailure(runId, normalizedError);
 
       this.logger.error(
-        `Idea-generation orchestration failed for run "${run.id}": ${normalizedError.message}`,
+        `Idea-generation orchestration failed for run "${runId}": ${normalizedError.message}`,
         normalizedError.stack,
       );
 
       throw error;
     } finally {
       if (lockAcquired) {
-        await this.releaseLockSafely(
-          input.owner,
-          run.id,
-        );
+        await this.releaseLockSafely(input.owner, runId);
       }
     }
   }

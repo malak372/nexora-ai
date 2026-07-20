@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
-import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
+import { IdeaGenerationType, Prisma } from '@prisma/client';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
 
 /**
- * Payment data required to fulfill a direct idea unlock.
+ * Payment data required to validate a direct idea unlock.
  */
 type DirectUnlockPayment = {
   readonly id: string;
@@ -15,44 +15,35 @@ type DirectUnlockPayment = {
 };
 
 /**
- * Result returned after unlocking an idea.
+ * Result returned after validating a direct-unlock payment.
+ *
+ * This service intentionally does not mark the idea as unlocked. Advanced
+ * outputs must be generated and persisted first by IdeaUnlockService.
  */
-export type DirectUnlockFulfillmentResult = {
+export type DirectUnlockValidationResult = {
   readonly ideaId: string;
-  readonly isUnlocked: true;
-  readonly unlockMethod: UnlockMethod;
-  readonly unlockedAt: Date;
 };
 
 /**
- * Fulfills successful direct-unlock payments.
+ * Validates successful direct-unlock payments inside the payment transaction.
  *
  * Responsibilities:
- * - Validate that the payment references an idea.
- * - Validate idea existence and ownership.
+ * - Ensure the payment references an idea.
+ * - Ensure the idea exists and belongs to the payment owner.
  * - Allow direct payment only for NORMAL_FREE ideas.
- * - Prevent unlocking an already unlocked idea.
- * - Mark the idea as unlocked atomically.
+ * - Reject ideas that were already unlocked before checkout fulfillment.
  *
- * Direct-unlock payments:
- * - Do not add credits.
- * - Do not deduct credits.
- * - Do not create a new idea.
- *
- * Advanced-output generation remains owned by the
- * idea-generation or advanced-output workflow.
+ * AI execution is deliberately excluded from this service because external
+ * API calls must not run inside a database transaction.
  *
  * @author Eman
  */
 @Injectable()
 export class DirectUnlockPaymentService {
-  /**
-   * Unlocks one eligible free idea.
-   */
-  async fulfill(
+  async validateForFulfillment(
     payment: DirectUnlockPayment,
     tx: Prisma.TransactionClient,
-  ): Promise<DirectUnlockFulfillmentResult> {
+  ): Promise<DirectUnlockValidationResult> {
     if (!payment.ideaId) {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_NOT_FOUND,
@@ -69,17 +60,18 @@ export class DirectUnlockPaymentService {
       where: {
         id: payment.ideaId,
       },
-
       select: {
         id: true,
         userId: true,
+        deletedAt: true,
         generationType: true,
         isUnlocked: true,
         unlockMethod: true,
+        collectionJobId: true,
       },
     });
 
-    if (!idea) {
+    if (!idea || idea.deletedAt) {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_NOT_FOUND,
         'The idea associated with the direct-unlock payment does not exist.',
@@ -109,12 +101,25 @@ export class DirectUnlockPaymentService {
     if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
       throw new PaymentProcessingError(
         PaymentErrorCode.IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK,
-        'Only a registered user free idea can be unlocked through direct payment.',
+        'Only a registered-user free idea can be unlocked through direct payment.',
         {
           details: {
             paymentId: payment.id,
             ideaId: idea.id,
             generationType: idea.generationType,
+          },
+        },
+      );
+    }
+
+    if (!idea.collectionJobId) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.DIRECT_UNLOCK_PROCESSING_FAILED,
+        'The selected idea does not contain the collection context required for advanced-output generation.',
+        {
+          details: {
+            paymentId: payment.id,
+            ideaId: idea.id,
           },
         },
       );
@@ -134,45 +139,8 @@ export class DirectUnlockPaymentService {
       );
     }
 
-    const unlockedAt = new Date();
-
-    const updateResult = await tx.idea.updateMany({
-      where: {
-        id: idea.id,
-        userId: payment.userId,
-
-        generationType: IdeaGenerationType.NORMAL_FREE,
-
-        isUnlocked: false,
-      },
-
-      data: {
-        isUnlocked: true,
-
-        unlockMethod: UnlockMethod.DIRECT_PAYMENT,
-
-        unlockedAt,
-      },
-    });
-
-    if (updateResult.count !== 1) {
-      throw new PaymentProcessingError(
-        PaymentErrorCode.DIRECT_UNLOCK_PROCESSING_FAILED,
-        'The selected idea could not be unlocked consistently.',
-        {
-          details: {
-            paymentId: payment.id,
-            ideaId: idea.id,
-          },
-        },
-      );
-    }
-
     return {
       ideaId: idea.id,
-      isUnlocked: true,
-      unlockMethod: UnlockMethod.DIRECT_PAYMENT,
-      unlockedAt,
     };
   }
 }

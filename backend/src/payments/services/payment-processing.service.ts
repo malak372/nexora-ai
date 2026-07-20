@@ -4,9 +4,11 @@ import {
   PaymentPurpose,
   PaymentStatus,
   Prisma,
+  UnlockMethod,
 } from '@prisma/client';
 
 import { CreditCacheService } from '../../credits/services/credit-cache.service';
+import { IdeaUnlockService } from '../../ideas/outputs/services/idea-unlock.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
@@ -78,6 +80,8 @@ export class PaymentProcessingService {
     private readonly creditPurchaseService: CreditPurchaseService,
 
     private readonly directUnlockPaymentService: DirectUnlockPaymentService,
+
+    private readonly ideaUnlockService: IdeaUnlockService,
 
     private readonly creditCacheService: CreditCacheService,
 
@@ -185,26 +189,117 @@ export class PaymentProcessingService {
         },
       );
 
+      const completedResult = await this.completeDirectUnlockAfterCommit(result);
+
       /*
        * Cache invalidation occurs only after the database
        * transaction commits successfully.
        */
-      if (result.creditBalanceChanged) {
-        await this.creditCacheService.invalidateUserCreditCaches(result.userId);
+      if (completedResult.creditBalanceChanged) {
+        await this.creditCacheService.invalidateUserCreditCaches(completedResult.userId);
       }
 
       /*
        * Notification delivery occurs only after the payment transaction
        * commits. Repeated webhook events do not resend notifications.
        */
-      if (!result.alreadyProcessed) {
-        await this.notifyPaymentResultSafely(result);
+      if (
+        !completedResult.alreadyProcessed ||
+        completedResult.unlockCompletedNow === true
+      ) {
+        await this.notifyPaymentResultSafely(completedResult);
       }
 
-      return result;
+      return completedResult;
     } catch (error) {
       this.rethrowKnownPaymentError(error);
     }
+  }
+
+  /**
+   * Completes advanced-output generation after the payment transaction commits.
+   *
+   * A repeated successful webhook also enters this method. This intentionally
+   * allows a previously paid unlock whose AI generation failed to be retried
+   * without charging the user again.
+   */
+  private async completeDirectUnlockAfterCommit(
+    result: PaymentProcessingResult,
+  ): Promise<PaymentProcessingResult> {
+    if (
+      result.status !== PaymentStatus.SUCCEEDED ||
+      result.paymentPurpose !== PaymentPurpose.DIRECT_UNLOCK
+    ) {
+      return result;
+    }
+
+    const ideaId = result.ideaId ?? await this.findDirectUnlockIdeaId(
+      result.paymentId,
+      result.userId,
+    );
+
+    try {
+      const unlockResult = await this.ideaUnlockService.unlockPaidIdea({
+        paymentId: result.paymentId,
+        userId: result.userId,
+        ideaId,
+      });
+
+      return {
+        ...result,
+        ideaId: unlockResult.ideaId,
+        ideaUnlocked: true,
+        unlockCompletedNow: unlockResult.completedNow,
+        unlockMethod: UnlockMethod.DIRECT_PAYMENT,
+        unlockedAt: unlockResult.unlockedAt,
+      };
+    } catch (error) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.DIRECT_UNLOCK_PROCESSING_FAILED,
+        'The payment succeeded, but advanced idea outputs could not be generated. The unlock can be retried safely.',
+        {
+          cause: error,
+          details: {
+            paymentId: result.paymentId,
+            ideaId,
+            userId: result.userId,
+          },
+        },
+      );
+    }
+  }
+
+  /** Resolves the idea attached to a successfully paid direct unlock. */
+  private async findDirectUnlockIdeaId(
+    paymentId: string,
+    userId: string,
+  ): Promise<string> {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        id: paymentId,
+        userId,
+        paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
+        status: PaymentStatus.SUCCEEDED,
+      },
+      select: {
+        ideaId: true,
+      },
+    });
+
+    if (!payment?.ideaId) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_NOT_FOUND,
+        'The successful direct-unlock payment does not reference an idea.',
+        {
+          details: {
+            paymentId,
+            userId,
+          },
+        },
+      );
+    }
+
+    return payment.ideaId;
   }
 
   /**
@@ -419,7 +514,7 @@ export class PaymentProcessingService {
       }
 
       case PaymentPurpose.DIRECT_UNLOCK: {
-        const fulfillment = await this.directUnlockPaymentService.fulfill(
+        const fulfillment = await this.directUnlockPaymentService.validateForFulfillment(
           {
             id: payment.id,
             userId: payment.userId,
@@ -441,11 +536,8 @@ export class PaymentProcessingService {
 
           ideaId: fulfillment.ideaId,
 
-          ideaUnlocked: true,
-
-          unlockMethod: fulfillment.unlockMethod,
-
-          unlockedAt: fulfillment.unlockedAt,
+          ideaUnlocked: false,
+          unlockCompletedNow: false,
         };
       }
 

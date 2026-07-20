@@ -1,7 +1,22 @@
+/**
+ * Parses and normalizes structured AI responses returned during
+ * new-idea generation.
+ *
+ * @author Malak
+ */
+
 import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common';
+
+import {
+  IDEA_GENERATION_ERROR_CODES,
+} from '../constants/idea-generation.constants';
+
+import {
+  IDEA_ADVANCED_OUTPUT_DEFINITIONS,
+} from '../constants/idea-output.constants';
 
 import type {
   AdvancedIdeaAiOutput,
@@ -12,61 +27,62 @@ import type {
 } from '../types/idea-ai-output.type';
 
 /**
- * Parses and normalizes structured AI idea output before
- * persistence.
+ * Parses and normalizes structured AI output returned while
+ * generating a new idea.
  *
  * The central AI runtime remains responsible for:
- * - Executing the selected AI provider.
- * - Enforcing the requested JSON response format.
- * - Validating the provider response against the configured schema.
- * - Attempting bounded structured-output repair when required.
+ * - Executing the selected AI provider and model.
+ * - Applying the selected response JSON schema.
+ * - Parsing provider-level structured output.
+ * - Performing schema validation.
+ * - Attempting bounded response repair.
  *
- * This service provides an additional business-level validation
- * boundary before generated data enters idea persistence.
+ * This service introduces an additional business-level validation
+ * boundary before generated data enters the idea-generation
+ * pipeline or persistence layer.
  *
  * Responsibilities:
- * - Accept raw JSON text or an already parsed object.
- * - Ensure the AI output is a valid JSON object.
+ * - Accept raw JSON text or an already parsed JSON value.
+ * - Reject null, arrays, and primitive root payloads.
  * - Parse required core idea fields.
- * - Normalize objectives and target users as string arrays.
- * - Parse optional premium output fields.
- * - Convert premium fields into stable generated-output records.
- * - Return safe validation errors through a non-throwing API.
- * - Provide a throwing API for pipeline stages that require valid
- *   output.
+ * - Parse tier-specific abstract fields when provided.
+ * - Normalize required string arrays.
+ * - Remove blank and duplicate array values.
+ * - Convert supported premium fields into
+ *   GeneratedOutput-compatible records.
+ * - Preserve centralized advanced-output ordering.
+ * - Return safe parser errors without exposing internal details.
  *
- * This service does not:
- * - Execute AI providers.
- * - Repair invalid provider output.
- * - Select generation entitlement.
- * - Persist Idea records.
- * - Persist generated-output records.
- * - Deduct credits.
+ * Abstract requiredness is intentionally not enforced by this
+ * parser because it depends on the resolved IdeaGenerationType:
+ * - GUEST_FREE
+ * - NORMAL_FREE
+ * - PREMIUM_CREDIT
  *
- * @author Malak
+ * AiOutputValidationStage is responsible for enforcing the
+ * appropriate tier-specific abstract contract.
+ *
+ * Direct-unlock responses must be parsed by
+ * IdeaUnlockOutputParserService because unlock responses
+ * intentionally exclude existing core idea fields.
  */
 @Injectable()
 export class IdeaAiOutputParserService {
   /**
-   * Parses one raw AI response without throwing validation
-   * exceptions to the caller.
+   * Parses a raw new-idea AI response without throwing.
    *
-   * This method is useful when the pipeline needs to inspect
-   * validation errors or pass them to a repair stage.
+   * Any parsing or business-level validation failure is returned
+   * as a discriminated failure result.
    *
-   * @param raw Raw AI response as JSON text or an object.
-   * @returns Successful parsed output or normalized validation
-   * errors.
+   * @param raw Raw or already parsed AI response.
+   * @returns Successful or failed parsing result.
    */
   parse(
     raw: RawIdeaAiOutput,
   ): IdeaAiOutputParseResult {
     try {
-      const record =
-        this.toRecord(raw);
-
-      const output =
-        this.parseRecord(record);
+      const record = this.toRecord(raw);
+      const output = this.parseRecord(record);
 
       return {
         success: true,
@@ -79,38 +95,36 @@ export class IdeaAiOutputParserService {
         success: false,
         output: null,
         repaired: false,
-
         errors: [
-          error instanceof Error
-            ? error.message
-            : 'Unknown AI-output validation error.',
+          this.getSafeErrorMessage(error),
         ],
       };
     }
   }
 
   /**
-   * Parses one raw AI response and throws a safe HTTP exception
-   * when the payload is invalid.
+   * Parses a raw new-idea response and throws a safe HTTP
+   * exception when parsing or business-level validation fails.
    *
-   * This is the preferred method for pipeline stages that cannot
-   * continue without a valid structured idea.
+   * This method is suitable for request-facing services that need
+   * to stop execution immediately after receiving malformed AI
+   * output.
    *
-   * @param raw Raw AI response as JSON text or an object.
+   * @param raw Raw or already parsed AI response.
    * @returns Parsed and normalized idea output.
    *
-   * @throws BadRequestException When the AI output is malformed or
-   * missing required fields.
+   * @throws BadRequestException When the AI output is malformed.
    */
   parseOrThrow(
     raw: RawIdeaAiOutput,
   ): ParsedIdeaAiOutput {
-    const result =
-      this.parse(raw);
+    const result = this.parse(raw);
 
     if (!result.success) {
       throw new BadRequestException({
-        code: 'INVALID_IDEA_AI_OUTPUT',
+        code:
+          IDEA_GENERATION_ERROR_CODES
+            .INVALID_AI_OUTPUT,
 
         message:
           'The AI returned an invalid idea payload.',
@@ -124,29 +138,20 @@ export class IdeaAiOutputParserService {
   }
 
   /**
-   * Parses the complete idea output from a validated object.
+   * Parses one validated root object into normalized new-idea
+   * output.
    *
-   * Core fields are always required because every generation tier
-   * must produce a stable base idea record.
+   * Core fields are required for every newly generated idea.
+   * Abstract fields remain optional at this layer because their
+   * requiredness differs between guest, normal-free, and premium
+   * generation.
    *
-   * Advanced fields are optional because:
-   * - Guest and normal-free generations may omit them.
-   * - Premium outputs may be generated progressively in separate
-   *   stages.
-   * - Older prompt versions may not include every advanced field.
-   *
-   * @param value Parsed AI response object.
-   * @returns Normalized core idea and advanced output records.
+   * @param value Parsed AI-response object.
+   * @returns Normalized core idea and advanced outputs.
    */
   private parseRecord(
     value: Record<string, unknown>,
   ): ParsedIdeaAiOutput {
-    const fullAbstract =
-      this.optionalString(
-        value,
-        'fullAbstract',
-      );
-
     const coreIdea: CoreIdeaAiOutput = {
       title:
         this.requireString(
@@ -171,212 +176,136 @@ export class IdeaAiOutputParserService {
           value,
           'targetUsers',
         ),
-
-      limitedAbstract:
-        this.requireString(
-          value,
-          'limitedAbstract',
-        ),
-
-      partialAbstract:
-        this.requireString(
-          value,
-          'partialAbstract',
-        ),
-
-      ...(fullAbstract
-        ? {
-            fullAbstract,
-          }
-        : {}),
     };
 
-    const advancedOutputs =
-      this.parseAdvancedOutputs(
+    const limitedAbstract =
+      this.optionalString(
         value,
+        'limitedAbstract',
       );
+
+    const partialAbstract =
+      this.optionalString(
+        value,
+        'partialAbstract',
+      );
+
+    const fullAbstract =
+      this.optionalString(
+        value,
+        'fullAbstract',
+      );
+
+    if (limitedAbstract !== undefined) {
+      coreIdea.limitedAbstract =
+        limitedAbstract;
+    }
+
+    if (partialAbstract !== undefined) {
+      coreIdea.partialAbstract =
+        partialAbstract;
+    }
+
+    if (fullAbstract !== undefined) {
+      coreIdea.fullAbstract =
+        fullAbstract;
+    }
 
     return {
       coreIdea,
-      advancedOutputs,
+
+      advancedOutputs:
+        this.parseAdvancedOutputs(
+          value,
+        ),
     };
   }
 
   /**
-   * Converts optional advanced AI fields into stable generated
-   * output records.
+   * Converts supported advanced AI fields into normalized
+   * GeneratedOutput-compatible records.
    *
-   * Each definition contains:
-   * - Original field name returned by the AI.
-   * - Stable output key used by application persistence.
-   * - Human-readable title shown by the frontend.
+   * Missing fields are ignored at this parser layer because guest
+   * and normal-free generation schemas do not include advanced
+   * outputs.
    *
-   * String fields are stored as plain content.
+   * Provided fields are validated strictly:
+   * - Collection fields must contain string arrays.
+   * - Scalar fields must contain non-empty strings.
+   * - Blank collection entries are removed.
+   * - Duplicate collection entries are removed
+   *   case-insensitively.
    *
-   * String-array fields are:
-   * - Normalized.
-   * - Stored as structured content.
-   * - Also converted into readable Markdown bullet content.
+   * Collection outputs are represented as:
+   * - Human-readable Markdown content.
+   * - JSON-compatible structuredContent.
    *
-   * Unsupported or empty advanced fields are ignored rather than
-   * causing the complete idea generation to fail.
+   * Premium-output completeness is validated later by
+   * AiOutputValidationStage after generation entitlement has been
+   * resolved.
    *
-   * @param value Parsed AI response object.
-   * @returns Normalized advanced output records.
+   * @param value Parsed AI-response object.
+   * @returns Ordered normalized advanced outputs.
    */
   private parseAdvancedOutputs(
     value: Record<string, unknown>,
   ): AdvancedIdeaAiOutput[] {
-    const definitions = [
-      [
-        'fullAbstract',
-        'full-abstract',
-        'Full Abstract',
-      ],
-
-      [
-        'technologyStack',
-        'technology-stack',
-        'Technology Stack',
-      ],
-
-      [
-        'systemArchitecture',
-        'system-architecture',
-        'System Architecture',
-      ],
-
-      [
-        'databaseDesign',
-        'database-design',
-        'Database Design',
-      ],
-
-      [
-        'businessModel',
-        'business-model',
-        'Business Model',
-      ],
-
-      [
-        'valueProposition',
-        'value-proposition',
-        'Value Proposition',
-      ],
-
-      [
-        'revenueModel',
-        'revenue-model',
-        'Revenue Model',
-      ],
-
-      [
-        'localRegulations',
-        'local-regulations',
-        'Local Regulations',
-      ],
-
-      [
-        'budgetEstimation',
-        'budget-estimation',
-        'Budget Estimation',
-      ],
-
-      [
-        'feasibilityAssessment',
-        'feasibility-assessment',
-        'Feasibility Assessment',
-      ],
-
-      [
-        'implementationTimeline',
-        'implementation-timeline',
-        'Implementation Timeline',
-      ],
-
-      [
-        'marketPotential',
-        'market-potential',
-        'Market Potential',
-      ],
-
-      [
-        'nlpExecutiveSummary',
-        'nlp-executive-summary',
-        'NLP Executive Summary',
-      ],
-
-      [
-        'communityFeedbackSummary',
-        'community-feedback-summary',
-        'Community Feedback Summary',
-      ],
-    ] as const;
-
     const outputs:
       AdvancedIdeaAiOutput[] = [];
 
     for (
-      const [
-        field,
-        outputKey,
-        title,
-      ] of definitions
+      const definition of
+      IDEA_ADVANCED_OUTPUT_DEFINITIONS
     ) {
-      const fieldValue =
-        value[field];
-
       if (
-        typeof fieldValue === 'string'
+        !this.hasOwnProperty(
+          value,
+          definition.field,
+        )
       ) {
-        const normalizedContent =
-          fieldValue.trim();
+        continue;
+      }
 
-        if (!normalizedContent) {
-          continue;
-        }
+      if (definition.collection) {
+        const items =
+          this.requireAdvancedStringArray(
+            value[definition.field],
+            definition.field,
+          );
 
         outputs.push({
-          outputKey,
-          title,
+          outputKey:
+            definition.outputKey,
+
+          title:
+            definition.title,
+
           content:
-            normalizedContent,
+            this.toMarkdownList(
+              items,
+            ),
+
+          structuredContent:
+            items,
         });
 
         continue;
       }
 
-      if (
-        !Array.isArray(fieldValue)
-      ) {
-        continue;
-      }
-
-      const items =
-        this.normalizeOptionalStringArray(
-          fieldValue,
+      const content =
+        this.requireAdvancedString(
+          value[definition.field],
+          definition.field,
         );
 
-      if (
-        items.length === 0
-      ) {
-        continue;
-      }
-
       outputs.push({
-        outputKey,
-        title,
+        outputKey:
+          definition.outputKey,
 
-        content:
-          items
-            .map(
-              (item) =>
-                `- ${item}`,
-            )
-            .join('\n'),
+        title:
+          definition.title,
 
-        structuredContent:
-          items,
+        content,
       });
     }
 
@@ -386,36 +315,38 @@ export class IdeaAiOutputParserService {
   /**
    * Converts raw input into a non-null JSON object.
    *
-   * Raw input may already be parsed by the AI runtime or may still
-   * be serialized JSON text.
+   * Arrays and primitive root values are rejected because a
+   * generated idea must be represented by one JSON object.
    *
-   * Arrays, null, primitive values, and malformed JSON are rejected.
-   *
-   * @param raw Raw AI response.
-   * @returns Parsed object record.
+   * @param raw Raw or already parsed AI response.
+   * @returns Parsed root object.
    */
   private toRecord(
     raw: RawIdeaAiOutput,
   ): Record<string, unknown> {
-    const value =
+    const parsedValue =
       typeof raw === 'string'
         ? this.parseJson(raw)
         : raw;
 
-    if (!this.isRecord(value)) {
+    if (!this.isRecord(parsedValue)) {
       throw new Error(
         'AI idea output must be a JSON object.',
       );
     }
 
-    return value;
+    return parsedValue;
   }
 
   /**
-   * Parses one JSON string.
+   * Parses one non-empty JSON response string.
    *
-   * @param text Raw JSON response text.
-   * @returns Parsed unknown JSON value.
+   * Markdown fences or other provider-specific wrappers are not
+   * removed here because bounded repair belongs to the central AI
+   * runtime.
+   *
+   * @param text Raw AI response text.
+   * @returns Parsed JSON value.
    */
   private parseJson(
     text: string,
@@ -443,68 +374,98 @@ export class IdeaAiOutputParserService {
   /**
    * Reads and normalizes one required non-empty string field.
    *
-   * @param value AI output object.
+   * @param value AI-output object.
    * @param key Required field name.
-   * @returns Trimmed string value.
+   * @returns Normalized string value.
    */
   private requireString(
     value: Record<string, unknown>,
     key: string,
   ): string {
-    const result =
+    const fieldValue =
       value[key];
 
     if (
-      typeof result !== 'string' ||
-      !result.trim()
+      typeof fieldValue !==
+      'string'
     ) {
       throw new Error(
-        `AI output field "${key}" must be a non-empty string.`,
+        `AI output field "${key}" must be a string.`,
       );
     }
 
-    return result.trim();
+    const normalizedValue =
+      fieldValue.trim();
+
+    if (!normalizedValue) {
+      throw new Error(
+        `AI output field "${key}" must not be empty.`,
+      );
+    }
+
+    return normalizedValue;
   }
 
   /**
    * Reads and normalizes one optional string field.
    *
-   * Missing, non-string, or blank values resolve to null.
+   * A missing field resolves to undefined.
    *
-   * @param value AI output object.
+   * A field that is present but contains a non-string or blank
+   * value is rejected because it indicates malformed provider
+   * output rather than an omitted optional field.
+   *
+   * @param value AI-output object.
    * @param key Optional field name.
-   * @returns Trimmed string or null.
+   * @returns Normalized string or undefined.
    */
   private optionalString(
     value: Record<string, unknown>,
     key: string,
-  ): string | null {
-    const result =
+  ): string | undefined {
+    if (
+      !this.hasOwnProperty(
+        value,
+        key,
+      )
+    ) {
+      return undefined;
+    }
+
+    const fieldValue =
       value[key];
 
     if (
-      typeof result !== 'string'
+      typeof fieldValue !==
+      'string'
     ) {
-      return null;
+      throw new Error(
+        `AI output field "${key}" must be a string when provided.`,
+      );
     }
 
-    const normalized =
-      result.trim();
+    const normalizedValue =
+      fieldValue.trim();
 
-    return normalized || null;
+    if (!normalizedValue) {
+      throw new Error(
+        `AI output field "${key}" must not be blank when provided.`,
+      );
+    }
+
+    return normalizedValue;
   }
 
   /**
-   * Reads one required array containing non-empty strings.
+   * Reads and normalizes one required string-array field.
    *
-   * Invalid non-string items are rejected rather than silently
-   * discarded because required core fields must match the output
-   * contract exactly.
+   * Duplicate values are removed case-insensitively while
+   * preserving the original casing of the first occurrence.
    *
-   * Duplicate values are removed case-insensitively while the
-   * original casing of the first occurrence is preserved.
+   * Blank values are ignored, but the final normalized array must
+   * contain at least one valid item.
    *
-   * @param value AI output object.
+   * @param value AI-output object.
    * @param key Required array field name.
    * @returns Normalized non-empty string array.
    */
@@ -512,19 +473,20 @@ export class IdeaAiOutputParserService {
     value: Record<string, unknown>,
     key: string,
   ): string[] {
-    const result =
+    const fieldValue =
       value[key];
 
-    if (!Array.isArray(result)) {
+    if (!Array.isArray(fieldValue)) {
       throw new Error(
         `AI output field "${key}" must be a string array.`,
       );
     }
 
     if (
-      result.some(
+      fieldValue.some(
         (item) =>
-          typeof item !== 'string',
+          typeof item !==
+          'string',
       )
     ) {
       throw new Error(
@@ -532,49 +494,109 @@ export class IdeaAiOutputParserService {
       );
     }
 
-    const items =
+    const normalizedItems =
       this.normalizeStringArray(
-        result,
+        fieldValue,
       );
 
     if (
-      items.length === 0
+      normalizedItems.length === 0
     ) {
       throw new Error(
-        `AI output field "${key}" must not be empty.`,
+        `AI output field "${key}" must contain at least one non-empty value.`,
       );
     }
 
-    return items;
+    return normalizedItems;
   }
 
   /**
-   * Normalizes an optional unknown array into a clean string array.
+   * Reads and normalizes one collection-valued advanced output.
    *
-   * Non-string and blank values are ignored because advanced
-   * outputs are optional and should not invalidate the core idea.
+   * This method is called only when the field is present.
+   * Therefore, invalid or empty collections are treated as
+   * malformed provider output instead of silently ignored.
    *
-   * @param values Raw array value.
-   * @returns Unique normalized strings.
+   * @param value Advanced-output field value.
+   * @param field Field name used in validation messages.
+   * @returns Normalized non-empty string array.
    */
-  private normalizeOptionalStringArray(
-    values: readonly unknown[],
+  private requireAdvancedStringArray(
+    value: unknown,
+    field: string,
   ): string[] {
-    return this.normalizeStringArray(
-      values.filter(
-        (
-          item,
-        ): item is string =>
-          typeof item === 'string',
-      ),
-    );
+    if (!Array.isArray(value)) {
+      throw new Error(
+        `Advanced AI output field "${field}" must be a string array.`,
+      );
+    }
+
+    if (
+      value.some(
+        (item) =>
+          typeof item !==
+          'string',
+      )
+    ) {
+      throw new Error(
+        `Advanced AI output field "${field}" must contain only strings.`,
+      );
+    }
+
+    const normalizedItems =
+      this.normalizeStringArray(
+        value,
+      );
+
+    if (
+      normalizedItems.length === 0
+    ) {
+      throw new Error(
+        `Advanced AI output field "${field}" must contain at least one non-empty value.`,
+      );
+    }
+
+    return normalizedItems;
+  }
+
+  /**
+   * Reads and normalizes one scalar advanced-output field.
+   *
+   * This method is called only when the field exists in the
+   * response. Therefore, non-string and blank values are rejected.
+   *
+   * @param value Advanced-output field value.
+   * @param field Field name used in validation messages.
+   * @returns Normalized non-empty string.
+   */
+  private requireAdvancedString(
+    value: unknown,
+    field: string,
+  ): string {
+    if (typeof value !== 'string') {
+      throw new Error(
+        `Advanced AI output field "${field}" must be a string.`,
+      );
+    }
+
+    const normalizedValue =
+      value.trim();
+
+    if (!normalizedValue) {
+      throw new Error(
+        `Advanced AI output field "${field}" must not be empty.`,
+      );
+    }
+
+    return normalizedValue;
   }
 
   /**
    * Trims string-array values and removes blank or duplicate
    * entries.
    *
-   * Duplicate comparison is case-insensitive.
+   * Duplicate comparison is case-insensitive while the casing of
+   * the first occurrence is preserved.
    *
    * @param values Raw string values.
    * @returns Unique normalized string values.
@@ -585,27 +607,31 @@ export class IdeaAiOutputParserService {
     const uniqueValues =
       new Map<string, string>();
 
-    for (const value of values) {
-      const normalized =
-        value.trim();
+    for (const rawValue of values) {
+      const normalizedValue =
+        rawValue.trim();
 
-      if (!normalized) {
+      if (!normalizedValue) {
         continue;
       }
 
       const comparisonKey =
-        normalized.toLowerCase();
+        normalizedValue.toLocaleLowerCase(
+          'en-US',
+        );
 
       if (
-        !uniqueValues.has(
+        uniqueValues.has(
           comparisonKey,
         )
       ) {
-        uniqueValues.set(
-          comparisonKey,
-          normalized,
-        );
+        continue;
       }
+
+      uniqueValues.set(
+        comparisonKey,
+        normalizedValue,
+      );
     }
 
     return [
@@ -614,13 +640,29 @@ export class IdeaAiOutputParserService {
   }
 
   /**
-   * Checks whether a value is a non-null object record.
+   * Converts normalized collection values into a Markdown bullet
+   * list suitable for GeneratedOutput.content.
    *
-   * Arrays are rejected because an AI idea response must have
-   * named fields.
+   * @param values Normalized collection values.
+   * @returns Markdown bullet-list content.
+   */
+  private toMarkdownList(
+    values: readonly string[],
+  ): string {
+    return values
+      .map(
+        (value) =>
+          `- ${value}`,
+      )
+      .join('\n');
+  }
+
+  /**
+   * Determines whether an unknown value is a non-null object and
+   * not an array.
    *
-   * @param value Unknown input value.
-   * @returns Whether the value is a valid record.
+   * @param value Unknown parsed value.
+   * @returns Whether the value can be treated as a JSON object.
    */
   private isRecord(
     value: unknown,
@@ -630,5 +672,41 @@ export class IdeaAiOutputParserService {
       value !== null &&
       !Array.isArray(value)
     );
+  }
+
+  /**
+   * Determines whether an object owns a specific property.
+   *
+   * Using Object.prototype prevents collisions with properties
+   * inherited from an unusual object prototype.
+   *
+   * @param value Object to inspect.
+   * @param key Property name.
+   * @returns Whether the object directly owns the property.
+   */
+  private hasOwnProperty(
+    value: Record<string, unknown>,
+    key: string,
+  ): boolean {
+    return Object.prototype.hasOwnProperty.call(
+      value,
+      key,
+    );
+  }
+
+  /**
+   * Extracts a safe parser-error message.
+   *
+   * Unknown thrown values are replaced with a generic message.
+   *
+   * @param error Unknown caught error.
+   * @returns Safe parser error message.
+   */
+  private getSafeErrorMessage(
+    error: unknown,
+  ): string {
+    return error instanceof Error
+      ? error.message
+      : 'Unknown AI-output validation error.';
   }
 }

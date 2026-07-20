@@ -14,9 +14,8 @@ import { AuthModule } from './auth/auth.module';
 import { CollectorsModule } from './collectors/collectors.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
-import { DataCollectionModule } from './data collection/data-collection.module';
+import { DataCollectionModule } from './data-collection/data-collection.module';
 import { DataSourcesModule } from './data-sources/data-sources.module';
-import { FeedbackModule } from './feedback/feedback.module';
 import { IdeasModule } from './ideas/ideas.module';
 import { MailModule } from './mail/mail.module';
 import { NlpModule } from './nlp/nlp.module';
@@ -87,7 +86,6 @@ import { UsersModule } from './users/users.module';
     AlertsModule,
     ComplaintsModule,
     ContactMessagesModule,
-    FeedbackModule,
     PaymentsModule,
     IdeasModule,
   ],
