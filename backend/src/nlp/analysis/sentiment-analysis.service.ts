@@ -1,11 +1,36 @@
 import { Injectable } from '@nestjs/common';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
-import { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
-import {
-  SentimentScore,
-  SentimentScoringPolicyService,
-} from './sentiment-scoring-policy.service';
+
+import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
+import type { SentimentScore } from './sentiment-scoring-policy.service';
+
+import { SentimentScoringPolicyService } from './sentiment-scoring-policy.service';
+
+/**
+ * Weight assigned to the confidence produced by lexicon analysis.
+ */
+const BASE_CONFIDENCE_WEIGHT = 0.6;
+
+/**
+ * Weight assigned to the strength of the sentiment result.
+ */
+const SENTIMENT_STRENGTH_WEIGHT = 0.4;
+
+/**
+ * Minimum permitted confidence value.
+ */
+const MINIMUM_CONFIDENCE = 0;
+
+/**
+ * Maximum permitted confidence value.
+ */
+const MAXIMUM_CONFIDENCE = 1;
+
+/**
+ * Number of decimal places retained in confidence values.
+ */
+const CONFIDENCE_DECIMAL_PLACES = 3;
 
 /**
  * Refines sentiment labels for lexicon-analyzed community texts.
@@ -19,9 +44,12 @@ import {
  * - Apply rule-based sentiment scoring to analyzed texts.
  * - Resolve final sentiment labels from positive and negative scores.
  * - Update confidence using sentiment strength.
- * - Return enriched text analysis records for downstream NLP stages.
+ * - Return enriched text-analysis records for downstream NLP stages.
  *
- * This service does not persist results and does not call external AI services.
+ * This service does not:
+ * - Persist analysis results.
+ * - Call external AI providers.
+ * - Modify the supplied analysis records.
  *
  * @author Eman
  */
@@ -29,16 +57,16 @@ import {
 export class SentimentAnalysisService {
   constructor(
     private readonly sentimentScoringPolicyService: SentimentScoringPolicyService,
-  ) {}
+  ) { }
 
   /**
    * Refines sentiment for all lexicon-analyzed texts.
    *
-   * @param analyzedTexts Lexicon-enriched text analysis records.
-   * @returns Text analysis records with refined sentiment labels.
+   * @param analyzedTexts Lexicon-enriched text-analysis records.
+   * @returns New text-analysis records with refined sentiment and confidence.
    */
   analyze(
-    analyzedTexts: LexiconTextAnalysisResult[],
+    analyzedTexts: readonly LexiconTextAnalysisResult[],
   ): LexiconTextAnalysisResult[] {
     return analyzedTexts.map((text) => this.analyzeText(text));
   }
@@ -46,25 +74,26 @@ export class SentimentAnalysisService {
   /**
    * Refines sentiment for one analyzed text.
    *
-   * @param text Lexicon-enriched text analysis record.
-   * @returns Text analysis record with refined sentiment and confidence.
+   * @param text Lexicon-enriched text-analysis record.
+   * @returns New text-analysis record with refined sentiment and confidence.
    */
   private analyzeText(
     text: LexiconTextAnalysisResult,
   ): LexiconTextAnalysisResult {
     const score = this.sentimentScoringPolicyService.score(text);
-    const sentiment = this.resolveSentiment(score);
-    const confidence = this.calculateConfidence(text.confidence, score);
 
     return {
       ...text,
-      sentiment,
-      confidence,
+      sentiment: this.resolveSentiment(score),
+      confidence: this.calculateConfidence(
+        text.confidence,
+        score,
+      ),
     };
   }
 
   /**
-   * Resolves a final sentiment label from a sentiment score.
+   * Resolves a final sentiment label from the calculated sentiment score.
    *
    * @param score Sentiment score summary.
    * @returns Final sentiment label.
@@ -85,27 +114,69 @@ export class SentimentAnalysisService {
   }
 
   /**
-   * Calculates updated confidence after sentiment refinement.
+   * Calculates confidence after sentiment refinement.
    *
-   * @param baseConfidence Confidence calculated by lexicon analysis.
+   * Confidence combines:
+   * - The confidence produced by lexicon analysis.
+   * - The strength of the calculated sentiment signal.
+   *
+   * @param baseConfidence Confidence produced by lexicon analysis.
    * @param score Sentiment score summary.
-   * @returns Updated confidence score between 0 and 1.
+   * @returns Normalized confidence between zero and one.
    */
   private calculateConfidence(
     baseConfidence: number,
     score: SentimentScore,
   ): number {
-    if (score.totalScore === 0) {
-      return Number(baseConfidence.toFixed(3));
+    const normalizedBaseConfidence =
+      this.normalizeConfidence(baseConfidence);
+
+    if (
+      !Number.isFinite(score.totalScore) ||
+      score.totalScore <= 0
+    ) {
+      return this.roundConfidence(normalizedBaseConfidence);
     }
 
-    const sentimentStrength = Math.min(
+    const sentimentStrength = this.normalizeConfidence(
       Math.abs(score.difference) / score.totalScore,
-      1,
     );
 
-    const confidence = baseConfidence * 0.6 + sentimentStrength * 0.4;
+    const confidence =
+      normalizedBaseConfidence * BASE_CONFIDENCE_WEIGHT +
+      sentimentStrength * SENTIMENT_STRENGTH_WEIGHT;
 
-    return Number(Math.min(confidence, 1).toFixed(3));
+    return this.roundConfidence(
+      this.normalizeConfidence(confidence),
+    );
+  }
+
+  /**
+   * Restricts a confidence value to the supported range.
+   *
+   * @param confidence Raw confidence value.
+   * @returns Confidence between zero and one.
+   */
+  private normalizeConfidence(confidence: number): number {
+    if (!Number.isFinite(confidence)) {
+      return MINIMUM_CONFIDENCE;
+    }
+
+    return Math.min(
+      Math.max(confidence, MINIMUM_CONFIDENCE),
+      MAXIMUM_CONFIDENCE,
+    );
+  }
+
+  /**
+   * Rounds confidence to the configured number of decimal places.
+   *
+   * @param confidence Normalized confidence value.
+   * @returns Rounded confidence.
+   */
+  private roundConfidence(confidence: number): number {
+    return Number(
+      confidence.toFixed(CONFIDENCE_DECIMAL_PLACES),
+    );
   }
 }
