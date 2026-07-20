@@ -3,17 +3,11 @@ import {
   Injectable,
 } from '@nestjs/common';
 
-import {
-  PromptBuilderService,
-} from '../../../../prompts/services/prompt-builder.service';
+import { PromptBuilderService } from '../../../../prompts/services/prompt-builder.service';
 
-import {
-  PromptHistoryService,
-} from '../../../../prompts/services/prompt-history.service';
+import { PromptHistoryService } from '../../../../prompts/services/prompt-history.service';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -26,13 +20,9 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Builds and persists the rendered prompt used for core idea
@@ -46,12 +36,18 @@ import {
  * - Persist PromptHistory before calling the AI runtime.
  * - Store prompt traceability information in the generation
  *   context.
+ * - Preserve the exact response schema that belongs to the
+ *   rendered prompt.
  *
  * Persisting PromptHistory before provider execution preserves:
  * - Requester ownership.
  * - Collection-job traceability.
  * - Prompt-template version.
  * - The exact rendered prompt sent to the provider.
+ *
+ * Keeping the response schema in the context guarantees that the
+ * AI execution stage uses the same contract selected during this
+ * prompt-building operation.
  *
  * This stage does not:
  * - Execute the AI provider.
@@ -99,54 +95,50 @@ export class PromptBuildingStage
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const collection =
-      context.collection!;
+    const collection = context.collection!;
 
     const prompt =
-      await this.promptBuilderService
-        .buildIdeaPrompt({
-          purpose: 'IDEA_GENERATION',
+      await this.promptBuilderService.buildIdeaPrompt({
+        purpose: 'IDEA_GENERATION',
 
-          collectionJobId:
-            collection.collectionJobId,
+        collectionJobId:
+          collection.collectionJobId,
 
-          generationType:
-            context.generationType,
-        });
+        generationType:
+          context.generationType,
+      });
 
     const promptHistory =
-      await this.promptHistoryService
-        .savePrompt({
-          userId:
-            context.owner.type ===
-            IDEA_OWNER_TYPES.USER
-              ? context.owner.userId
-              : null,
+      await this.promptHistoryService.savePrompt({
+        userId:
+          context.owner.type ===
+          IDEA_OWNER_TYPES.USER
+            ? context.owner.userId
+            : null,
 
-          guestSessionId:
-            context.owner.type ===
-            IDEA_OWNER_TYPES.GUEST
-              ? context.owner
-                  .guestSessionId
-              : null,
+        guestSessionId:
+          context.owner.type ===
+          IDEA_OWNER_TYPES.GUEST
+            ? context.owner.guestSessionId
+            : null,
 
-          collectionJobId:
-            collection.collectionJobId,
+        collectionJobId:
+          collection.collectionJobId,
 
-          ideaId: null,
+        ideaId: null,
 
-          promptType:
-            prompt.promptType,
+        promptType:
+          prompt.promptType,
 
-          promptText:
-            prompt.promptText,
+        promptText:
+          prompt.promptText,
 
-          templateHash:
-            prompt.templateHash,
+        templateHash:
+          prompt.templateHash,
 
-          estimatedInputTokens:
-            prompt.estimatedInputTokens,
-        });
+        estimatedInputTokens:
+          prompt.estimatedInputTokens,
+      });
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -163,6 +155,12 @@ export class PromptBuildingStage
 
         estimatedInputTokens:
           prompt.estimatedInputTokens,
+
+        responseSchemaName:
+          prompt.responseSchemaName,
+
+        responseSchema:
+          prompt.responseSchema,
       },
     };
 

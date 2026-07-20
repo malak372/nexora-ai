@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { CreditsModule } from '../credits/credits.module';
+import { IdeaOutputsModule } from '../ideas/outputs/idea-outputs.module';
 import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -52,7 +53,13 @@ import { UserPaymentsService } from './services/user-payments.service';
  * @author Eman
  */
 @Module({
-  imports: [ConfigModule, PrismaModule, CreditsModule, MailModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    CreditsModule,
+    MailModule,
+    IdeaOutputsModule,
+  ],
 
   controllers: [
     UserPaymentsController,

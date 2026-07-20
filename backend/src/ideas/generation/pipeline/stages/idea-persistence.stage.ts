@@ -1,7 +1,18 @@
+/**
+ * Persists validated generated ideas through the transactional
+ * idea-persistence service.
+ *
+ * @author Malak
+ */
+
 import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common';
+
+import {
+  IdeaGenerationType,
+} from '@prisma/client';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -23,27 +34,30 @@ import {
 } from '../../services/idea-persistence.service';
 
 import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
-
-import type {
+  IdeaAdvancedOutputKey,
   ParsedIdeaAiOutput,
 } from '../../types/idea-ai-output.type';
+
+import type {
+  IdeaGenerationContext,
+} from '../../types/idea-generation-context.type';
 
 import {
   IDEA_OWNER_TYPES,
 } from '../../../shared/constants/ideas.constants';
 
 /**
- * Persists the validated generated idea and consumes its
- * generation entitlement atomically.
+ * Persists a validated generated idea and consumes its generation
+ * entitlement atomically.
  *
  * Responsibilities:
  * - Verify all persistence prerequisites.
- * - Build the normalized parsed AI output.
+ * - Verify generation-policy consistency.
+ * - Verify owner and generation-type consistency.
+ * - Build the normalized parsed AI-output object.
  * - Delegate transactional persistence to IdeaPersistenceService.
  * - Consume guest, free-user, or premium-credit entitlement.
- * - Store advanced GeneratedOutput records.
+ * - Persist advanced GeneratedOutput records.
  * - Attach the created idea and collection job to the generation
  *   run.
  * - Store persisted identifiers in the pipeline context.
@@ -54,15 +68,14 @@ import {
  *
  * This stage does not:
  * - Mark the generation run as completed.
- * - Set run progress to 100.
+ * - Set generation progress to 100 percent.
  * - Publish the generated idea.
  * - Generate additional AI content.
+ * - Directly execute Prisma persistence operations.
  *
- * Run completion remains the responsibility of
+ * Generation-run completion remains the responsibility of
  * IdeaGenerationPipelineService after every required stage
  * succeeds.
- *
- * @author Malak
  */
 @Injectable()
 export class IdeaPersistenceStage
@@ -72,12 +85,14 @@ export class IdeaPersistenceStage
    * Stable pipeline-stage key.
    */
   readonly key =
-    IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
+    IDEA_GENERATION_STAGE_KEYS
+      .IDEA_PERSISTENCE;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
+  readonly definition:
+    IdeaGenerationStageDefinition =
     this.resolveDefinition();
 
   constructor(
@@ -90,17 +105,39 @@ export class IdeaPersistenceStage
    * persisted identifiers.
    *
    * @param context Current generation context.
-   * @returns Context containing the persisted idea identifier.
+   * @returns Updated context containing persisted identifiers.
    */
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
+    const policy =
+      context.policy;
+
+    const prompt =
+      context.prompt;
+
+    const collection =
+      context.collection;
+
+    const coreIdea =
+      context.coreIdea;
+
+    if (
+      !policy ||
+      !prompt ||
+      !collection ||
+      !coreIdea
+    ) {
+      this.throwPersistenceError(
+        'Idea persistence prerequisites became unavailable after validation.',
+      );
+    }
+
     const parsedOutput:
       ParsedIdeaAiOutput = {
-        coreIdea:
-          context.coreIdea!,
+        coreIdea,
 
         advancedOutputs:
           context.advancedOutputs,
@@ -110,6 +147,9 @@ export class IdeaPersistenceStage
       await this.persistenceService.persistIdea({
         runId:
           context.runId,
+
+        promptHistoryId:
+          prompt.promptHistoryId,
 
         userId:
           context.owner.type ===
@@ -133,8 +173,7 @@ export class IdeaPersistenceStage
           ),
 
         collectionJobId:
-          context.collection
-            ?.collectionJobId,
+          collection.collectionJobId,
 
         generationType:
           context.generationType,
@@ -142,25 +181,44 @@ export class IdeaPersistenceStage
         parsedOutput,
       });
 
-    const generatedOutputIds =
-      persistedIdea.generatedOutputs.map(
-        (output) => output.id,
+    if (
+      !Array.isArray(
+        persistedIdea.generatedOutputs,
+      )
+    ) {
+      this.throwPersistenceError(
+        'Persisted generated outputs were not returned by the persistence service.',
       );
+    }
 
-    const updatedContext: IdeaGenerationContext = {
-      ...context,
+    const generatedOutputIdsByKey =
+      persistedIdea.generatedOutputs.reduce<
+        Partial<Record<IdeaAdvancedOutputKey, string>>
+      >((result, output) => {
+        result[output.outputKey as IdeaAdvancedOutputKey] = output.id;
+        return result;
+      }, {});
 
-      ideaId:
-        persistedIdea.id,
+    const updatedContext:
+      IdeaGenerationContext = {
+        ...context,
 
-      generatedOutputIds,
-    };
+        ideaId:
+          persistedIdea.id,
+
+        generatedOutputIdsByKey,
+      };
 
     return {
-      context: updatedContext,
+      context:
+        updatedContext,
 
       resultPreview:
-        `Generated idea "${persistedIdea.id}" persisted successfully.`,
+        this.buildResultPreview(
+          persistedIdea.id,
+          persistedIdea.title,
+          Object.keys(generatedOutputIdsByKey).length,
+        ),
 
       metadata: {
         ideaId:
@@ -176,15 +234,13 @@ export class IdeaPersistenceStage
           persistedIdea.domain.name,
 
         collectionJobId:
-          context.collection
-            ?.collectionJobId ??
-          null,
+          collection.collectionJobId,
 
         generatedOutputsCount:
           persistedIdea
             .generatedOutputs.length,
 
-        generatedOutputIds,
+        generatedOutputIdsByKey,
 
         generationRunId:
           persistedIdea
@@ -198,6 +254,15 @@ export class IdeaPersistenceStage
 
         generationType:
           context.generationType,
+
+        ownerType:
+          context.owner.type,
+
+        entitlementConsumed:
+          true,
+
+        ideaPersisted:
+          true,
       },
     };
   }
@@ -207,52 +272,190 @@ export class IdeaPersistenceStage
    * transaction.
    *
    * @param context Current generation context.
+   *
+   * @throws BadRequestException When persistence prerequisites are
+   * missing or inconsistent.
    */
   private validateContext(
     context: IdeaGenerationContext,
   ): void {
     if (!context.policy) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
+      this.throwPersistenceError(
+        'Generation entitlement must be resolved before idea persistence.',
+      );
+    }
 
-        message:
-          'Generation entitlement must be resolved before idea persistence.',
-      });
+    if (
+      context.policy.generationType !==
+      context.generationType
+    ) {
+      this.throwPersistenceError(
+        'Resolved generation policy does not match the pipeline generation type.',
+      );
+    }
+
+    if (!context.prompt) {
+      this.throwPersistenceError(
+        'Persisted prompt information is required before idea persistence.',
+      );
+    }
+
+    if (
+      typeof context.prompt
+        .promptHistoryId !==
+        'string' ||
+      context.prompt
+        .promptHistoryId
+        .trim().length === 0
+    ) {
+      this.throwPersistenceError(
+        'A valid prompt-history identifier is required before idea persistence.',
+      );
     }
 
     if (!context.coreIdea) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
+      this.throwPersistenceError(
+        'Validated core idea output is required before idea persistence.',
+      );
+    }
 
-        message:
-          'Validated core idea output is required before idea persistence.',
-      });
+    if (
+      !Array.isArray(
+        context.advancedOutputs,
+      )
+    ) {
+      this.throwPersistenceError(
+        'Validated advanced outputs must be represented as an array.',
+      );
     }
 
     if (!context.collection) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
+      this.throwPersistenceError(
+        'A resolved collection job is required before idea persistence.',
+      );
+    }
 
-        message:
-          'A resolved collection job is required before idea persistence.',
-      });
+    if (
+      typeof context.collection
+        .collectionJobId !==
+        'string' ||
+      context.collection
+        .collectionJobId
+        .trim().length === 0
+    ) {
+      this.throwPersistenceError(
+        'A valid collection-job identifier is required before idea persistence.',
+      );
+    }
+
+    if (
+      typeof context.runId !==
+        'string' ||
+      context.runId.trim().length ===
+        0
+    ) {
+      this.throwPersistenceError(
+        'A valid generation-run identifier is required before idea persistence.',
+      );
+    }
+
+    if (
+      typeof context.domainId !==
+        'string' ||
+      context.domainId.trim().length ===
+        0
+    ) {
+      this.throwPersistenceError(
+        'A valid domain identifier is required before idea persistence.',
+      );
     }
 
     if (context.ideaId) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
+      this.throwPersistenceError(
+        'The generation context is already linked to a persisted idea.',
+      );
+    }
 
-        message:
-          'The generation context is already linked to a persisted idea.',
-      });
+    if (
+      Object.keys(context.generatedOutputIdsByKey).length > 0
+    ) {
+      this.throwPersistenceError(
+        'The generation context is already linked to persisted generated outputs.',
+      );
+    }
+
+    this.validateOwner(
+      context,
+    );
+  }
+
+  /**
+   * Validates that the resolved owner is compatible with the
+   * authorized generation type.
+   *
+   * Guest generation must belong to a guest session.
+   * Authenticated free and premium generation must belong to a
+   * registered user.
+   *
+   * @param context Current generation context.
+   */
+  private validateOwner(
+    context: IdeaGenerationContext,
+  ): void {
+    switch (context.generationType) {
+      case IdeaGenerationType.GUEST_FREE:
+        if (
+          context.owner.type !==
+          IDEA_OWNER_TYPES.GUEST
+        ) {
+          this.throwPersistenceError(
+            'Guest-free generation must be associated with a guest session.',
+          );
+        }
+
+        if (
+          typeof context.owner
+            .guestSessionId !==
+            'string' ||
+          context.owner
+            .guestSessionId
+            .trim().length === 0
+        ) {
+          this.throwPersistenceError(
+            'A valid guest-session identifier is required for guest generation.',
+          );
+        }
+
+        return;
+
+      case IdeaGenerationType.NORMAL_FREE:
+      case IdeaGenerationType.PREMIUM_CREDIT:
+        if (
+          context.owner.type !==
+          IDEA_OWNER_TYPES.USER
+        ) {
+          this.throwPersistenceError(
+            `${context.generationType} generation must be associated with an authenticated user.`,
+          );
+        }
+
+        if (
+          typeof context.owner.userId !==
+            'string' ||
+          context.owner.userId
+            .trim().length === 0
+        ) {
+          this.throwPersistenceError(
+            'A valid user identifier is required for authenticated idea generation.',
+          );
+        }
+
+        return;
+
+      default:
+        this.assertNeverGenerationType(
+          context.generationType,
+        );
     }
   }
 
@@ -265,25 +468,110 @@ export class IdeaPersistenceStage
    * - City.
    * - Country.
    *
+   * Blank location values are ignored.
+   *
    * @param context Current generation context.
-   * @returns Selected region value.
+   * @returns Most specific selected location value.
    */
   private resolveSelectedRegion(
     context: IdeaGenerationContext,
   ): string {
+    const candidates = [
+      context.location.region,
+      context.location.city,
+      context.location.country,
+    ];
+
+    const selectedRegion =
+      candidates.find(
+        (value) =>
+          typeof value ===
+            'string' &&
+          value.trim().length > 0,
+      );
+
+    if (!selectedRegion) {
+      this.throwPersistenceError(
+        'A valid geographic location is required before idea persistence.',
+      );
+    }
+
+    return selectedRegion.trim();
+  }
+
+  /**
+   * Builds a safe stage-result preview.
+   *
+   * @param ideaId Persisted idea identifier.
+   * @param title Persisted idea title.
+   * @param generatedOutputsCount Number of persisted outputs.
+   * @returns Human-readable persistence result preview.
+   */
+  private buildResultPreview(
+    ideaId: string,
+    title: string,
+    generatedOutputsCount: number,
+  ): string {
+    const outputDescription =
+      generatedOutputsCount > 0
+        ? ` with ${generatedOutputsCount} generated outputs`
+        : '';
+
     return (
-      context.location.region ??
-      context.location.city ??
-      context.location.country
+      `Generated idea "${title}" ` +
+      `(${ideaId}) was persisted successfully` +
+      `${outputDescription}.`
     );
   }
 
   /**
-   * Resolves the static stage definition.
+   * Throws a consistent persistence-stage exception.
+   *
+   * @param message Safe human-readable error message.
+   * @param details Optional safe error details.
+   *
+   * @throws BadRequestException Always.
+   */
+  private throwPersistenceError(
+    message: string,
+    details?: Record<
+      string,
+      unknown
+    >,
+  ): never {
+    throw new BadRequestException({
+      code:
+        IDEA_GENERATION_ERROR_CODES
+          .PERSISTENCE_FAILED,
+
+      message,
+
+      ...(details ?? {}),
+    });
+  }
+
+  /**
+   * Provides exhaustive handling if a new generation type is
+   * introduced.
+   *
+   * @param generationType Unexpected generation type.
+   */
+  private assertNeverGenerationType(
+    generationType: never,
+  ): never {
+    return this.throwPersistenceError(
+      `Unsupported idea generation type "${String(generationType)}".`,
+    );
+  }
+
+  /**
+   * Resolves the static stage definition from the centralized
+   * stage registry.
    *
    * @returns Idea-persistence stage definition.
    */
-  private resolveDefinition(): IdeaGenerationStageDefinition {
+  private resolveDefinition():
+    IdeaGenerationStageDefinition {
     const definition =
       findIdeaGenerationStageDefinition(
         this.key,

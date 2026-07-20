@@ -4,11 +4,14 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import type { JsonSchema } from '../../../prompts/types/json-schema.type';
+
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 
 import type {
   AdvancedIdeaAiOutput,
   CoreIdeaAiOutput,
+  IdeaAdvancedOutputKey,
 } from './idea-ai-output.type';
 
 import type { IdeaGenerationPolicy } from './idea-generation-policy.type';
@@ -243,6 +246,22 @@ export type IdeaGenerationPromptContext = {
    * Estimated prompt input-token count.
    */
   estimatedInputTokens: number | null;
+
+  /**
+   * Stable name of the structured response schema used by the AI
+   * runtime.
+   */
+  responseSchemaName: string;
+
+  /**
+   * Exact provider-neutral JSON schema resolved while building
+   * the prompt.
+   *
+   * Keeping the schema in the generation context prevents the AI
+   * execution stage from rebuilding the prompt and potentially
+   * observing a newer active template or response contract.
+   */
+  responseSchema: JsonSchema;
 };
 
 /**
@@ -352,9 +371,15 @@ export type IdeaGenerationContext = {
   advancedOutputs: AdvancedIdeaAiOutput[];
 
   /**
-   * Identifiers of generated-output records already persisted.
+   * Persisted GeneratedOutput identifiers indexed by output key.
+   *
+   * A key-based map prevents premium checkpoints from depending on
+   * array order and lets each stage verify the exact database record
+   * created for its configured output.
    */
-  generatedOutputIds: string[];
+  generatedOutputIdsByKey: Partial<
+    Record<IdeaAdvancedOutputKey, string>
+  >;
 
   /**
    * Indicates whether the pipeline should stop at its next safe
@@ -451,7 +476,7 @@ export function createIdeaGenerationContext(
     ideaId: null,
 
     advancedOutputs: [],
-    generatedOutputIds: [],
+    generatedOutputIdsByKey: {},
 
     cancellationRequested: false,
     createdAt: new Date(),

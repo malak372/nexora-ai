@@ -12,7 +12,7 @@ import {
 import {
   DataCollectionService,
   type IdeaGenerationCollectionInput,
-} from '../../../data collection/data-collection.service';
+} from '../../../data-collection/data-collection.service';
 
 import { IntelligentAnalysisService } from '../../../nlp/pipeline/intelligent-analysis.service';
 

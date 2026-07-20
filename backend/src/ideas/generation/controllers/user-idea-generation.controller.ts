@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  HttpCode,
+  HttpStatus,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -75,6 +77,7 @@ export class UserIdeaGenerationController {
    * @returns Completed generation-pipeline result.
    */
   @Post()
+  @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({
     default: {
       limit:
@@ -91,7 +94,7 @@ export class UserIdeaGenerationController {
     @Body()
     dto: GenerateIdeaDto,
   ) {
-    return this.orchestrator.generateForUser({
+    return this.orchestrator.queueForUser({
       userId: currentUser.id,
       dto,
     });

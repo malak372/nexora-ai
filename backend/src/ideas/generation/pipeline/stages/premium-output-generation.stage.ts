@@ -1,341 +1,276 @@
-import {
-  BadRequestException,
-} from '@nestjs/common';
+/**
+ * @author Malak
+ */
 
-import type {
-  IdeaGenerationStage,
-  IdeaGenerationStageExecutionResult,
-} from '../../interfaces/idea-generation-stage.interface';
+import { BadRequestException } from '@nestjs/common';
 
 import type {
   IdeaGenerationStageDefinition,
   IdeaGenerationStageKey,
 } from '../../constants/idea-generation-stages.constants';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
+
+import { findIdeaAdvancedOutputDefinitionByKey } from '../../constants/idea-output.constants';
 
 import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+  IdeaGenerationStage,
+  IdeaGenerationStageExecutionResult,
+} from '../../interfaces/idea-generation-stage.interface';
+
+import type { IdeaAdvancedOutputKey } from '../../types/idea-ai-output.type';
+
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
 /**
- * Configuration used to create one premium-output pipeline stage.
+ * Configuration used to create one premium-output validation stage.
  *
- * One instance is registered for each premium stage definition
- * inside IdeasModule.
+ * One configured instance is registered for every premium output
+ * exposed by the idea-generation pipeline.
  *
  * @author Malak
  */
 export type PremiumOutputGenerationStageOptions = {
   /**
-   * Complete pipeline definition associated with this stage.
+   * Pipeline definition associated with this output.
    */
-  readonly definition:
-    IdeaGenerationStageDefinition;
+  readonly definition: IdeaGenerationStageDefinition;
 
   /**
-   * Stable GeneratedOutput.outputKey expected from the premium AI
-   * response.
+   * Stable advanced-output key expected in the parsed AI result.
    */
-  readonly outputKey: string;
+  readonly outputKey: IdeaAdvancedOutputKey;
 
   /**
-   * Human-readable output title used in validation messages.
-   */
-  readonly outputTitle: string;
-
-  /**
-   * Whether the configured output must exist.
-   *
-   * This should normally remain true for required premium stages.
+   * Whether the output is mandatory for premium generation.
    */
   readonly required?: boolean;
 };
 
 /**
- * Generic pipeline stage used to validate one premium generated
- * output.
+ * Pre-persistence validation checkpoint for one premium output.
  *
- * The current premium prompt returns core idea data and advanced
- * output fields in one structured AI response. Those fields are
- * parsed during core generation and persisted atomically with the
- * Idea record.
+ * Premium generation uses one structured AI request that returns
+ * the core idea and all advanced outputs. The parser normalizes
+ * those outputs into context.advancedOutputs.
  *
- * Consequently, this stage currently acts as an isolated premium
- * checkpoint that:
- * - Runs only when premium outputs are authorized.
- * - Locates the output associated with its configured key.
- * - Verifies required output content exists.
- * - Confirms the output was persisted with the idea.
- * - Exposes output-specific stage progress and monitoring data.
+ * This stage intentionally runs before IdeaPersistenceStage. It:
+ * - Does not call the AI provider.
+ * - Does not require context.ideaId.
+ * - Does not require persisted GeneratedOutput identifiers.
+ * - Validates one normalized output independently.
  *
- * This generic implementation avoids ten nearly identical stage
- * classes while preserving ten independent persisted stage keys.
+ * After all premium-output stages succeed, IdeaPersistenceService
+ * performs a final registry-wide validation, saves the idea and all
+ * generated outputs, and deducts the premium credit atomically.
  *
- * A future implementation may replace the validation body with a
- * dedicated AI request for each output without changing the stage
- * registration contract.
- *
- * This class intentionally does not use @Injectable because each
- * instance requires different runtime configuration. Instances
- * are created through provider factories in IdeasModule.
+ * This class is created through provider factories because every
+ * registered instance has a different stage definition and output
+ * key.
  *
  * @author Malak
  */
-export class PremiumOutputGenerationStage
-  implements IdeaGenerationStage
-{
-  /**
-   * Stable stage key derived from the configured definition.
-   */
+export class PremiumOutputGenerationStage implements IdeaGenerationStage {
+  /** Stable pipeline-stage key. */
   readonly key: IdeaGenerationStageKey;
 
-  /**
-   * Static pipeline-stage definition.
-   */
-  readonly definition:
-    IdeaGenerationStageDefinition;
+  /** Static pipeline-stage definition. */
+  readonly definition: IdeaGenerationStageDefinition;
 
-  /**
-   * Stable generated-output key expected from the context.
-   */
-  private readonly outputKey: string;
+  /** Stable output key validated by this stage. */
+  private readonly outputKey: IdeaAdvancedOutputKey;
 
-  /**
-   * Human-readable generated-output title.
-   */
+  /** Human-readable title resolved from the centralized registry. */
   private readonly outputTitle: string;
 
-  /**
-   * Indicates whether the output is required.
-   */
+  /** Indicates whether the output is mandatory. */
   private readonly required: boolean;
 
-  constructor(
-    options:
-      PremiumOutputGenerationStageOptions,
-  ) {
-    this.validateOptions(options);
+  constructor(options: PremiumOutputGenerationStageOptions) {
+    const outputDefinition = this.validateAndResolveOptions(options);
 
-    this.definition =
-      options.definition;
-
-    this.key =
-      options.definition.key;
-
-    this.outputKey =
-      options.outputKey.trim();
-
-    this.outputTitle =
-      options.outputTitle.trim();
-
-    this.required =
-      options.required ?? true;
+    this.definition = options.definition;
+    this.key = options.definition.key;
+    this.outputKey = outputDefinition.outputKey;
+    this.outputTitle = outputDefinition.title;
+    this.required = options.required ?? outputDefinition.requiredForPremium;
   }
 
   /**
-   * Runs the stage only for generation policies that authorize
+   * Runs only when the resolved entitlement policy authorizes
    * premium outputs.
-   *
-   * @param context Current generation context.
-   * @returns Whether the premium checkpoint should execute.
    */
-  shouldExecute(
-    context: IdeaGenerationContext,
-  ): boolean {
-    return Boolean(
-      context.policy
-        ?.includePremiumOutputs,
-    );
+  shouldExecute(context: IdeaGenerationContext): boolean {
+    return context.policy?.includePremiumOutputs === true;
   }
 
   /**
-   * Verifies that the configured premium output was generated and
-   * persisted.
-   *
-   * @param context Current generation context.
-   * @returns Unchanged validated generation context.
+   * Validates one parsed premium output before persistence and
+   * credit deduction.
    */
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const output =
-      context.advancedOutputs.find(
-        (candidate) =>
-          candidate.outputKey ===
-          this.outputKey,
-      );
+    const matchingOutputs = context.advancedOutputs.filter(
+      (candidate) => candidate.outputKey === this.outputKey,
+    );
 
-    if (!output) {
+    if (matchingOutputs.length === 0) {
       if (!this.required) {
         return {
           context,
-
           resultPreview:
             `Optional premium output "${this.outputTitle}" was not returned.`,
-
           metadata: {
-            outputKey:
-              this.outputKey,
-
-            outputTitle:
-              this.outputTitle,
-
+            outputKey: this.outputKey,
+            outputTitle: this.outputTitle,
             generated: false,
-
             required: false,
+            premiumOutputValidated: true,
           },
         };
       }
 
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_AI_OUTPUT,
-
-        message:
-          `Required premium output "${this.outputTitle}" was not generated.`,
-      });
+      this.throwInvalidOutput(
+        `Required premium output "${this.outputTitle}" was not generated.`,
+      );
     }
 
-    if (
-      !output.content?.trim() &&
-      output.structuredContent ===
-        undefined
-    ) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_AI_OUTPUT,
-
-        message:
-          `Premium output "${this.outputTitle}" does not contain usable content.`,
-      });
+    if (matchingOutputs.length > 1) {
+      this.throwInvalidOutput(
+        `Premium output "${this.outputTitle}" was returned more than once.`,
+      );
     }
+
+    const output = matchingOutputs[0];
+
+    this.validateOutputContent(
+      output.content,
+      output.structuredContent,
+    );
 
     return {
       context,
-
       resultPreview:
-        `Premium output "${this.outputTitle}" verified successfully.`,
-
+        `Premium output "${this.outputTitle}" validated successfully.`,
       metadata: {
-        ideaId:
-          context.ideaId,
-
-        outputKey:
-          output.outputKey,
-
-        outputTitle:
-          output.title,
-
+        outputKey: output.outputKey,
+        outputTitle: output.title,
         generated: true,
-
-        required:
-          this.required,
-
-        persisted:
-          context.generatedOutputIds
-            .length > 0,
-
-        contentLength:
-          output.content.length,
-
-        hasStructuredContent:
-          output.structuredContent !==
-          undefined,
+        required: this.required,
+        contentLength: output.content.trim().length,
+        hasStructuredContent: output.structuredContent !== undefined,
+        structuredItemCount: Array.isArray(output.structuredContent)
+          ? output.structuredContent.length
+          : null,
+        premiumOutputValidated: true,
       },
     };
   }
 
   /**
-   * Validates pipeline state before premium output verification.
-   *
-   * @param context Current generation context.
+   * Validates the pre-persistence pipeline context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
-    if (
-      !context.policy
-        ?.includePremiumOutputs
-    ) {
+  private validateContext(context: IdeaGenerationContext): void {
+    if (!context.policy) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
+        message:
+          'The generation policy must be resolved before premium-output validation.',
+      });
+    }
 
+    if (!context.policy.includePremiumOutputs) {
+      throw new BadRequestException({
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
         message:
           'Premium-output stages cannot execute for a non-premium generation policy.',
       });
     }
 
-    if (!context.ideaId) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
-
-        message:
-          'The generated idea must be persisted before premium-output verification.',
-      });
-    }
-
-    if (
-      context.generatedOutputIds
-        .length === 0
-    ) {
-      throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PERSISTENCE_FAILED,
-
-        message:
-          'No persisted generated-output records were found for the premium idea.',
-      });
+    if (!Array.isArray(context.advancedOutputs)) {
+      this.throwInvalidOutput(
+        'The parsed premium-output collection is invalid.',
+      );
     }
   }
 
   /**
-   * Validates constructor configuration.
-   *
-   * @param options Premium stage options.
+   * Validates normalized premium-output content.
    */
-  private validateOptions(
-    options:
-      PremiumOutputGenerationStageOptions,
+  private validateOutputContent(
+    content: string,
+    structuredContent: Record<string, unknown> | unknown[] | undefined,
   ): void {
-    if (!options?.definition) {
-      throw new Error(
-        'Premium-output stage definition is required.',
+    if (typeof content !== 'string' || !content.trim()) {
+      this.throwInvalidOutput(
+        `Premium output "${this.outputTitle}" does not contain usable content.`,
       );
     }
 
+    if (structuredContent === undefined) {
+      return;
+    }
+
     if (
-      !options.definition
-        .requiredForPremium
+      structuredContent === null ||
+      typeof structuredContent !== 'object'
     ) {
+      this.throwInvalidOutput(
+        `Premium output "${this.outputTitle}" contains invalid structured content.`,
+      );
+    }
+
+    if (Array.isArray(structuredContent) && structuredContent.length === 0) {
+      this.throwInvalidOutput(
+        `Premium output "${this.outputTitle}" contains an empty structured collection.`,
+      );
+    }
+  }
+
+  /**
+   * Validates constructor options and resolves the centralized
+   * advanced-output definition.
+   */
+  private validateAndResolveOptions(
+    options: PremiumOutputGenerationStageOptions,
+  ) {
+    if (!options?.definition) {
+      throw new Error('Premium-output stage definition is required.');
+    }
+
+    if (!options.definition.requiredForPremium) {
       throw new Error(
         `Stage "${options.definition.key}" is not configured as a premium stage.`,
       );
     }
 
-    if (!options.outputKey?.trim()) {
+    if (!options.outputKey) {
+      throw new Error('Premium generated-output key is required.');
+    }
+
+    const outputDefinition = findIdeaAdvancedOutputDefinitionByKey(
+      options.outputKey,
+    );
+
+    if (!outputDefinition) {
       throw new Error(
-        'Premium generated-output key is required.',
+        `Unsupported premium generated-output key "${options.outputKey}".`,
       );
     }
 
-    if (
-      !options.outputTitle?.trim()
-    ) {
-      throw new Error(
-        'Premium generated-output title is required.',
-      );
-    }
+    return outputDefinition;
+  }
+
+  /**
+   * Throws a standardized invalid-AI-output exception.
+   */
+  private throwInvalidOutput(message: string): never {
+    throw new BadRequestException({
+      code: IDEA_GENERATION_ERROR_CODES.INVALID_AI_OUTPUT,
+      message,
+    });
   }
 }

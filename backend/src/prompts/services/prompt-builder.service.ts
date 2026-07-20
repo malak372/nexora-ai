@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -52,6 +51,7 @@ import {
 import {
   PromptTemplateService,
 } from './prompt-template.service';
+import { BadRequestException } from '@nestjs/common';
 
 /**
  * Detects Arabic Unicode characters in rendered prompt content.
