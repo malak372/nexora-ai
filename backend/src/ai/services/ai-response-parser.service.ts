@@ -142,9 +142,7 @@ export class AiResponseParserService {
    * @returns A discriminated result containing either the parsed value
    * or a failure marker.
    */
-  private tryParseJson(
-    value: string,
-  ):
+  private tryParseJson(value: string):
     | {
         readonly success: true;
         readonly value: unknown;
@@ -258,9 +256,7 @@ export class AiResponseParserService {
           startIndex = index;
         }
 
-        containerStack.push(
-          this.createJsonContainer(character),
-        );
+        containerStack.push(this.createJsonContainer(character));
 
         continue;
       }
@@ -273,8 +269,7 @@ export class AiResponseParserService {
         continue;
       }
 
-      const activeContainer =
-        containerStack[containerStack.length - 1];
+      const activeContainer = containerStack[containerStack.length - 1];
 
       if (character !== activeContainer.closingCharacter) {
         /**
@@ -294,10 +289,7 @@ export class AiResponseParserService {
 
       containerStack.pop();
 
-      if (
-        containerStack.length === 0 &&
-        startIndex !== -1
-      ) {
+      if (containerStack.length === 0 && startIndex !== -1) {
         return value.slice(startIndex, index + 1);
       }
     }
@@ -317,10 +309,7 @@ export class AiResponseParserService {
     return {
       openingCharacter,
 
-      closingCharacter:
-        openingCharacter === '{'
-          ? '}'
-          : ']',
+      closingCharacter: openingCharacter === '{' ? '}' : ']',
     };
   }
 }

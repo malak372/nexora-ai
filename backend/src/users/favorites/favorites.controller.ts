@@ -8,51 +8,44 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { UserFavoritesService } from './favorites.service';
 
 /**
- * Controller responsible for authenticated user favorite ideas.
+ * Authenticated endpoints for private generated-idea favorites.
  *
- * Base routes:
- * - /users/ideas/:id/favorite
- * - /users/favorites
+ * Favorites belong exclusively to the authenticated user and do not depend on
+ * idea publication status.
  *
  * @author Eman
  */
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UserFavoritesController {
-  constructor(private readonly userFavoritesService: UserFavoritesService) {}
+  constructor(private readonly favoritesService: UserFavoritesService) {}
 
-  /**
-   * Adds one of the authenticated user's ideas to favorites.
-   */
-  @Post('ideas/:id/favorite')
+  /** Adds a user-owned idea to private favorites. */
+  @Post('ideas/:ideaId/favorite')
   addFavorite(
     @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) ideaId: string,
+    @Param('ideaId', ParseUUIDPipe) ideaId: string,
   ) {
-    return this.userFavoritesService.addFavorite(user.id, ideaId);
+    return this.favoritesService.addFavorite(user.id, ideaId);
   }
 
-  /**
-   * Removes one of the authenticated user's ideas from favorites.
-   */
-  @Delete('ideas/:id/favorite')
+  /** Removes a user-owned idea from private favorites. */
+  @Delete('ideas/:ideaId/favorite')
   removeFavorite(
     @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) ideaId: string,
+    @Param('ideaId', ParseUUIDPipe) ideaId: string,
   ) {
-    return this.userFavoritesService.removeFavorite(user.id, ideaId);
+    return this.favoritesService.removeFavorite(user.id, ideaId);
   }
 
-  /**
-   * Retrieves the authenticated user's favorite ideas.
-   */
+  /** Returns all private favorite ideas for the authenticated user. */
   @Get('favorites')
   getFavorites(@CurrentUser() user: { id: string }) {
-    return this.userFavoritesService.getFavorites(user.id);
+    return this.favoritesService.getFavorites(user.id);
   }
 }

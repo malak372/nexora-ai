@@ -5,18 +5,11 @@
  * @author Malak
  */
 
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-} from '@prisma/client';
+import { IdeaGenerationType } from '@prisma/client';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -29,22 +22,16 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  IdeaPersistenceService,
-} from '../../services/idea-persistence.service';
+import { IdeaPersistenceService } from '../../services/idea-persistence.service';
 
 import type {
   IdeaAdvancedOutputKey,
   ParsedIdeaAiOutput,
 } from '../../types/idea-ai-output.type';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Persists a validated generated idea and consumes its generation
@@ -78,27 +65,18 @@ import {
  * succeeds.
  */
 @Injectable()
-export class IdeaPersistenceStage
-  implements IdeaGenerationStage
-{
+export class IdeaPersistenceStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS
-      .IDEA_PERSISTENCE;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition:
-    IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
-  constructor(
-    private readonly persistenceService:
-      IdeaPersistenceService,
-  ) {}
+  constructor(private readonly persistenceService: IdeaPersistenceService) {}
 
   /**
    * Persists the generated idea and enriches the context with
@@ -112,157 +90,108 @@ export class IdeaPersistenceStage
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const policy =
-      context.policy;
+    const policy = context.policy;
 
-    const prompt =
-      context.prompt;
+    const prompt = context.prompt;
 
-    const collection =
-      context.collection;
+    const collection = context.collection;
 
-    const coreIdea =
-      context.coreIdea;
+    const coreIdea = context.coreIdea;
 
-    if (
-      !policy ||
-      !prompt ||
-      !collection ||
-      !coreIdea
-    ) {
+    if (!policy || !prompt || !collection || !coreIdea) {
       this.throwPersistenceError(
         'Idea persistence prerequisites became unavailable after validation.',
       );
     }
 
-    const parsedOutput:
-      ParsedIdeaAiOutput = {
-        coreIdea,
+    const parsedOutput: ParsedIdeaAiOutput = {
+      coreIdea,
 
-        advancedOutputs:
-          context.advancedOutputs,
-      };
+      advancedOutputs: context.advancedOutputs,
+    };
 
-    const persistedIdea =
-      await this.persistenceService.persistIdea({
-        runId:
-          context.runId,
+    const persistedIdea = await this.persistenceService.persistIdea({
+      runId: context.runId,
 
-        promptHistoryId:
-          prompt.promptHistoryId,
+      promptHistoryId: prompt.promptHistoryId,
 
-        userId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
 
-        guestSessionId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.GUEST
-            ? context.owner
-                .guestSessionId
-            : undefined,
+      guestSessionId:
+        context.owner.type === IDEA_OWNER_TYPES.GUEST
+          ? context.owner.guestSessionId
+          : undefined,
 
-        domainId:
-          context.domainId,
+      domainId: context.domainId,
 
-        selectedRegion:
-          this.resolveSelectedRegion(
-            context,
-          ),
+      selectedRegion: this.resolveSelectedRegion(context),
 
-        collectionJobId:
-          collection.collectionJobId,
+      collectionJobId: collection.collectionJobId,
 
-        generationType:
-          context.generationType,
+      generationType: context.generationType,
 
-        parsedOutput,
-      });
+      parsedOutput,
+    });
 
-    if (
-      !Array.isArray(
-        persistedIdea.generatedOutputs,
-      )
-    ) {
+    if (!Array.isArray(persistedIdea.generatedOutputs)) {
       this.throwPersistenceError(
         'Persisted generated outputs were not returned by the persistence service.',
       );
     }
 
-    const generatedOutputIdsByKey =
-      persistedIdea.generatedOutputs.reduce<
-        Partial<Record<IdeaAdvancedOutputKey, string>>
-      >((result, output) => {
-        result[output.outputKey as IdeaAdvancedOutputKey] = output.id;
-        return result;
-      }, {});
+    const generatedOutputIdsByKey = persistedIdea.generatedOutputs.reduce<
+      Partial<Record<IdeaAdvancedOutputKey, string>>
+    >((result, output) => {
+      result[output.outputKey as IdeaAdvancedOutputKey] = output.id;
+      return result;
+    }, {});
 
-    const updatedContext:
-      IdeaGenerationContext = {
-        ...context,
+    const updatedContext: IdeaGenerationContext = {
+      ...context,
 
-        ideaId:
-          persistedIdea.id,
+      ideaId: persistedIdea.id,
 
-        generatedOutputIdsByKey,
-      };
+      generatedOutputIdsByKey,
+    };
 
     return {
-      context:
-        updatedContext,
+      context: updatedContext,
 
-      resultPreview:
-        this.buildResultPreview(
-          persistedIdea.id,
-          persistedIdea.title,
-          Object.keys(generatedOutputIdsByKey).length,
-        ),
+      resultPreview: this.buildResultPreview(
+        persistedIdea.id,
+        persistedIdea.title,
+        Object.keys(generatedOutputIdsByKey).length,
+      ),
 
       metadata: {
-        ideaId:
-          persistedIdea.id,
+        ideaId: persistedIdea.id,
 
-        title:
-          persistedIdea.title,
+        title: persistedIdea.title,
 
-        domainId:
-          persistedIdea.domain.id,
+        domainId: persistedIdea.domain.id,
 
-        domainName:
-          persistedIdea.domain.name,
+        domainName: persistedIdea.domain.name,
 
-        collectionJobId:
-          collection.collectionJobId,
+        collectionJobId: collection.collectionJobId,
 
-        generatedOutputsCount:
-          persistedIdea
-            .generatedOutputs.length,
+        generatedOutputsCount: persistedIdea.generatedOutputs.length,
 
         generatedOutputIdsByKey,
 
-        generationRunId:
-          persistedIdea
-            .generationRun?.id ??
-          context.runId,
+        generationRunId: persistedIdea.generationRun?.id ?? context.runId,
 
-        generationRunStatus:
-          persistedIdea
-            .generationRun?.status ??
-          null,
+        generationRunStatus: persistedIdea.generationRun?.status ?? null,
 
-        generationType:
-          context.generationType,
+        generationType: context.generationType,
 
-        ownerType:
-          context.owner.type,
+        ownerType: context.owner.type,
 
-        entitlementConsumed:
-          true,
+        entitlementConsumed: true,
 
-        ideaPersisted:
-          true,
+        ideaPersisted: true,
       },
     };
   }
@@ -276,19 +205,14 @@ export class IdeaPersistenceStage
    * @throws BadRequestException When persistence prerequisites are
    * missing or inconsistent.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       this.throwPersistenceError(
         'Generation entitlement must be resolved before idea persistence.',
       );
     }
 
-    if (
-      context.policy.generationType !==
-      context.generationType
-    ) {
+    if (context.policy.generationType !== context.generationType) {
       this.throwPersistenceError(
         'Resolved generation policy does not match the pipeline generation type.',
       );
@@ -301,12 +225,8 @@ export class IdeaPersistenceStage
     }
 
     if (
-      typeof context.prompt
-        .promptHistoryId !==
-        'string' ||
-      context.prompt
-        .promptHistoryId
-        .trim().length === 0
+      typeof context.prompt.promptHistoryId !== 'string' ||
+      context.prompt.promptHistoryId.trim().length === 0
     ) {
       this.throwPersistenceError(
         'A valid prompt-history identifier is required before idea persistence.',
@@ -319,11 +239,7 @@ export class IdeaPersistenceStage
       );
     }
 
-    if (
-      !Array.isArray(
-        context.advancedOutputs,
-      )
-    ) {
+    if (!Array.isArray(context.advancedOutputs)) {
       this.throwPersistenceError(
         'Validated advanced outputs must be represented as an array.',
       );
@@ -336,12 +252,8 @@ export class IdeaPersistenceStage
     }
 
     if (
-      typeof context.collection
-        .collectionJobId !==
-        'string' ||
-      context.collection
-        .collectionJobId
-        .trim().length === 0
+      typeof context.collection.collectionJobId !== 'string' ||
+      context.collection.collectionJobId.trim().length === 0
     ) {
       this.throwPersistenceError(
         'A valid collection-job identifier is required before idea persistence.',
@@ -349,10 +261,8 @@ export class IdeaPersistenceStage
     }
 
     if (
-      typeof context.runId !==
-        'string' ||
-      context.runId.trim().length ===
-        0
+      typeof context.runId !== 'string' ||
+      context.runId.trim().length === 0
     ) {
       this.throwPersistenceError(
         'A valid generation-run identifier is required before idea persistence.',
@@ -360,10 +270,8 @@ export class IdeaPersistenceStage
     }
 
     if (
-      typeof context.domainId !==
-        'string' ||
-      context.domainId.trim().length ===
-        0
+      typeof context.domainId !== 'string' ||
+      context.domainId.trim().length === 0
     ) {
       this.throwPersistenceError(
         'A valid domain identifier is required before idea persistence.',
@@ -376,17 +284,13 @@ export class IdeaPersistenceStage
       );
     }
 
-    if (
-      Object.keys(context.generatedOutputIdsByKey).length > 0
-    ) {
+    if (Object.keys(context.generatedOutputIdsByKey).length > 0) {
       this.throwPersistenceError(
         'The generation context is already linked to persisted generated outputs.',
       );
     }
 
-    this.validateOwner(
-      context,
-    );
+    this.validateOwner(context);
   }
 
   /**
@@ -399,27 +303,18 @@ export class IdeaPersistenceStage
    *
    * @param context Current generation context.
    */
-  private validateOwner(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateOwner(context: IdeaGenerationContext): void {
     switch (context.generationType) {
       case IdeaGenerationType.GUEST_FREE:
-        if (
-          context.owner.type !==
-          IDEA_OWNER_TYPES.GUEST
-        ) {
+        if (context.owner.type !== IDEA_OWNER_TYPES.GUEST) {
           this.throwPersistenceError(
             'Guest-free generation must be associated with a guest session.',
           );
         }
 
         if (
-          typeof context.owner
-            .guestSessionId !==
-            'string' ||
-          context.owner
-            .guestSessionId
-            .trim().length === 0
+          typeof context.owner.guestSessionId !== 'string' ||
+          context.owner.guestSessionId.trim().length === 0
         ) {
           this.throwPersistenceError(
             'A valid guest-session identifier is required for guest generation.',
@@ -430,20 +325,15 @@ export class IdeaPersistenceStage
 
       case IdeaGenerationType.NORMAL_FREE:
       case IdeaGenerationType.PREMIUM_CREDIT:
-        if (
-          context.owner.type !==
-          IDEA_OWNER_TYPES.USER
-        ) {
+        if (context.owner.type !== IDEA_OWNER_TYPES.USER) {
           this.throwPersistenceError(
             `${context.generationType} generation must be associated with an authenticated user.`,
           );
         }
 
         if (
-          typeof context.owner.userId !==
-            'string' ||
-          context.owner.userId
-            .trim().length === 0
+          typeof context.owner.userId !== 'string' ||
+          context.owner.userId.trim().length === 0
         ) {
           this.throwPersistenceError(
             'A valid user identifier is required for authenticated idea generation.',
@@ -453,9 +343,7 @@ export class IdeaPersistenceStage
         return;
 
       default:
-        this.assertNeverGenerationType(
-          context.generationType,
-        );
+        this.assertNeverGenerationType(context.generationType);
     }
   }
 
@@ -473,22 +361,16 @@ export class IdeaPersistenceStage
    * @param context Current generation context.
    * @returns Most specific selected location value.
    */
-  private resolveSelectedRegion(
-    context: IdeaGenerationContext,
-  ): string {
+  private resolveSelectedRegion(context: IdeaGenerationContext): string {
     const candidates = [
       context.location.region,
       context.location.city,
       context.location.country,
     ];
 
-    const selectedRegion =
-      candidates.find(
-        (value) =>
-          typeof value ===
-            'string' &&
-          value.trim().length > 0,
-      );
+    const selectedRegion = candidates.find(
+      (value) => typeof value === 'string' && value.trim().length > 0,
+    );
 
     if (!selectedRegion) {
       this.throwPersistenceError(
@@ -534,15 +416,10 @@ export class IdeaPersistenceStage
    */
   private throwPersistenceError(
     message: string,
-    details?: Record<
-      string,
-      unknown
-    >,
+    details?: Record<string, unknown>,
   ): never {
     throw new BadRequestException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .PERSISTENCE_FAILED,
+      code: IDEA_GENERATION_ERROR_CODES.PERSISTENCE_FAILED,
 
       message,
 
@@ -556,9 +433,7 @@ export class IdeaPersistenceStage
    *
    * @param generationType Unexpected generation type.
    */
-  private assertNeverGenerationType(
-    generationType: never,
-  ): never {
+  private assertNeverGenerationType(generationType: never): never {
     return this.throwPersistenceError(
       `Unsupported idea generation type "${String(generationType)}".`,
     );
@@ -570,12 +445,8 @@ export class IdeaPersistenceStage
    *
    * @returns Idea-persistence stage definition.
    */
-  private resolveDefinition():
-    IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+  private resolveDefinition(): IdeaGenerationStageDefinition {
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

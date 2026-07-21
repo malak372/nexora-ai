@@ -60,8 +60,7 @@ export const MAX_ACTIVE_GENERATION_RUNS_PER_OWNER = 1;
  *
  * Current value: five minutes.
  */
-export const IDEA_GENERATION_LOCK_TTL_MS =
-    5 * 60 * 1000;
+export const IDEA_GENERATION_LOCK_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Interval used to update the heartbeat of a running
@@ -69,8 +68,7 @@ export const IDEA_GENERATION_LOCK_TTL_MS =
  *
  * Current value: fifteen seconds.
  */
-export const GENERATION_HEARTBEAT_INTERVAL_MS =
-    15 * 1000;
+export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
 
 /**
  * Maximum duration a running generation may remain without
@@ -78,8 +76,7 @@ export const GENERATION_HEARTBEAT_INTERVAL_MS =
  *
  * Current value: two minutes.
  */
-export const GENERATION_STALE_AFTER_MS =
-    2 * 60 * 1000;
+export const GENERATION_STALE_AFTER_MS = 2 * 60 * 1000;
 
 /**
  * Default maximum number of execution attempts for one
@@ -145,8 +142,7 @@ export const MAX_GENERATION_RUNS_LIMIT = 100;
  *
  * Current value: seven days.
  */
-export const COLLECTION_JOB_REUSE_MAX_AGE_MS =
-    7 * 24 * 60 * 60 * 1000;
+export const COLLECTION_JOB_REUSE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Backward-compatible day representation of the canonical
@@ -159,8 +155,7 @@ export const COLLECTION_JOB_REUSE_MAX_AGE_MS =
  * both reuse-duration values from becoming inconsistent.
  */
 export const REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS =
-    COLLECTION_JOB_REUSE_MAX_AGE_MS /
-    (24 * 60 * 60 * 1000);
+  COLLECTION_JOB_REUSE_MAX_AGE_MS / (24 * 60 * 60 * 1000);
 
 /**
  * Minimum number of collected posts required for a completed
@@ -239,8 +234,7 @@ export const UNSPECIFIED_REGION_KEY = 'unspecified';
  * Example:
  * idea-generation:user:<userId>
  */
-export const IDEA_GENERATION_LOCK_PREFIX =
-    'idea-generation';
+export const IDEA_GENERATION_LOCK_PREFIX = 'idea-generation';
 
 /**
  * Prefix used to build generation-owner identifiers.
@@ -248,8 +242,7 @@ export const IDEA_GENERATION_LOCK_PREFIX =
  * Example:
  * idea-owner:user:<userId>
  */
-export const IDEA_GENERATION_OWNER_KEY_PREFIX =
-    'idea-owner';
+export const IDEA_GENERATION_OWNER_KEY_PREFIX = 'idea-owner';
 
 /**
  * Stable machine-readable error codes exposed by the
@@ -265,140 +258,135 @@ export const IDEA_GENERATION_OWNER_KEY_PREFIX =
  * their exact values.
  */
 export const IDEA_GENERATION_ERROR_CODES = {
-    /**
-     * The generation request is missing required data or
-     * contains unsupported values.
-     */
-    INVALID_REQUEST: 'INVALID_REQUEST',
+  /**
+   * The generation request is missing required data or
+   * contains unsupported values.
+   */
+  INVALID_REQUEST: 'INVALID_REQUEST',
 
-    /**
-     * The authenticated user or guest session could not
-     * be resolved.
-     */
-    OWNER_NOT_FOUND: 'OWNER_NOT_FOUND',
+  /**
+   * The authenticated user or guest session could not
+   * be resolved.
+   */
+  OWNER_NOT_FOUND: 'OWNER_NOT_FOUND',
 
-    /**
-     * The authenticated account is inactive or soft deleted.
-     */
-    ACCOUNT_INACTIVE: 'ACCOUNT_INACTIVE',
+  /**
+   * The authenticated account is inactive or soft deleted.
+   */
+  ACCOUNT_INACTIVE: 'ACCOUNT_INACTIVE',
 
-    /**
-     * The authenticated account has not completed email
-     * verification.
-     */
-    ACCOUNT_NOT_VERIFIED: 'ACCOUNT_NOT_VERIFIED',
+  /**
+   * The authenticated account has not completed email
+   * verification.
+   */
+  ACCOUNT_NOT_VERIFIED: 'ACCOUNT_NOT_VERIFIED',
 
-    /**
-     * The guest session has already consumed its generation.
-     */
-    GUEST_LIMIT_REACHED: 'GUEST_LIMIT_REACHED',
+  /**
+   * The guest session has already consumed its generation.
+   */
+  GUEST_LIMIT_REACHED: 'GUEST_LIMIT_REACHED',
 
-    /**
-     * The registered user has consumed all free generations.
-     */
-    FREE_LIMIT_REACHED: 'FREE_LIMIT_REACHED',
+  /**
+   * The registered user has consumed all free generations.
+   */
+  FREE_LIMIT_REACHED: 'FREE_LIMIT_REACHED',
 
-    /**
-     * The user does not have enough credits for a premium
-     * generation.
-     */
-    INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
+  /**
+   * The user does not have enough credits for a premium
+   * generation.
+   */
+  INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
 
-    /**
-     * Another generation is already running for the same
-     * owner.
-     */
-    GENERATION_ALREADY_RUNNING:
-        'GENERATION_ALREADY_RUNNING',
+  /**
+   * Another generation is already running for the same
+   * owner.
+   */
+  GENERATION_ALREADY_RUNNING: 'GENERATION_ALREADY_RUNNING',
 
-    /**
-     * The requested generation-run record does not exist.
-     */
-    GENERATION_RUN_NOT_FOUND:
-        'GENERATION_RUN_NOT_FOUND',
+  /**
+   * The requested generation-run record does not exist.
+   */
+  GENERATION_RUN_NOT_FOUND: 'GENERATION_RUN_NOT_FOUND',
 
-    /**
-     * The generation run was cancelled by the user or system.
-     */
-    GENERATION_CANCELLED: 'GENERATION_CANCELLED',
+  /**
+   * The generation run was cancelled by the user or system.
+   */
+  GENERATION_CANCELLED: 'GENERATION_CANCELLED',
 
-    /**
-     * The requested software domain does not exist.
-     */
-    DOMAIN_NOT_FOUND: 'DOMAIN_NOT_FOUND',
+  /**
+   * The requested software domain does not exist.
+   */
+  DOMAIN_NOT_FOUND: 'DOMAIN_NOT_FOUND',
 
-    /**
-     * The requested software domain is inactive.
-     */
-    DOMAIN_INACTIVE: 'DOMAIN_INACTIVE',
+  /**
+   * The requested software domain is inactive.
+   */
+  DOMAIN_INACTIVE: 'DOMAIN_INACTIVE',
 
-    /**
-     * No active and implemented data-source collectors are
-     * available for the request.
-     */
-    NO_DATA_SOURCES_AVAILABLE:
-        'NO_DATA_SOURCES_AVAILABLE',
+  /**
+   * No active and implemented data-source collectors are
+   * available for the request.
+   */
+  NO_DATA_SOURCES_AVAILABLE: 'NO_DATA_SOURCES_AVAILABLE',
 
-    /**
-     * Community-data collection failed.
-     */
-    COLLECTION_FAILED: 'COLLECTION_FAILED',
+  /**
+   * Community-data collection failed.
+   */
+  COLLECTION_FAILED: 'COLLECTION_FAILED',
 
-    /**
-     * The collection job did not provide enough usable text.
-     */
-    INSUFFICIENT_COLLECTED_DATA:
-        'INSUFFICIENT_COLLECTED_DATA',
+  /**
+   * The collection job did not provide enough usable text.
+   */
+  INSUFFICIENT_COLLECTED_DATA: 'INSUFFICIENT_COLLECTED_DATA',
 
-    /**
-     * NLP analysis failed or did not produce valid output.
-     */
-    NLP_ANALYSIS_FAILED: 'NLP_ANALYSIS_FAILED',
+  /**
+   * NLP analysis failed or did not produce valid output.
+   */
+  NLP_ANALYSIS_FAILED: 'NLP_ANALYSIS_FAILED',
 
-    /**
-     * The idea-generation prompt could not be constructed.
-     */
-    PROMPT_BUILD_FAILED: 'PROMPT_BUILD_FAILED',
+  /**
+   * The idea-generation prompt could not be constructed.
+   */
+  PROMPT_BUILD_FAILED: 'PROMPT_BUILD_FAILED',
 
-    /**
-     * The AI provider failed to generate a response.
-     */
-    AI_GENERATION_FAILED: 'AI_GENERATION_FAILED',
+  /**
+   * The AI provider failed to generate a response.
+   */
+  AI_GENERATION_FAILED: 'AI_GENERATION_FAILED',
 
-    /**
-     * The AI response could not be parsed or did not satisfy
-     * the expected generation contract.
-     */
-    INVALID_AI_OUTPUT: 'INVALID_AI_OUTPUT',
+  /**
+   * The AI response could not be parsed or did not satisfy
+   * the expected generation contract.
+   */
+  INVALID_AI_OUTPUT: 'INVALID_AI_OUTPUT',
 
-    /**
-     * The generated idea is too similar to another idea owned
-     * by the same user.
-     */
-    DUPLICATE_IDEA: 'DUPLICATE_IDEA',
+  /**
+   * The generated idea is too similar to another idea owned
+   * by the same user.
+   */
+  DUPLICATE_IDEA: 'DUPLICATE_IDEA',
 
-    /**
-     * The base idea or generation entitlement could not be
-     * persisted atomically.
-     */
-    PERSISTENCE_FAILED: 'PERSISTENCE_FAILED',
+  /**
+   * The base idea or generation entitlement could not be
+   * persisted atomically.
+   */
+  PERSISTENCE_FAILED: 'PERSISTENCE_FAILED',
 
-    /**
-     * One or more premium GeneratedOutput records could not
-     * be generated or persisted.
-     */
-    OUTPUT_GENERATION_FAILED:
-        'OUTPUT_GENERATION_FAILED',
+  /**
+   * One or more premium GeneratedOutput records could not
+   * be generated or persisted.
+   */
+  OUTPUT_GENERATION_FAILED: 'OUTPUT_GENERATION_FAILED',
 
-    /**
-     * The final generation-run completion process failed.
-     */
-    FINALIZATION_FAILED: 'FINALIZATION_FAILED',
+  /**
+   * The final generation-run completion process failed.
+   */
+  FINALIZATION_FAILED: 'FINALIZATION_FAILED',
 
-    /**
-     * An unclassified pipeline-level failure occurred.
-     */
-    PIPELINE_FAILED: 'PIPELINE_FAILED',
+  /**
+   * An unclassified pipeline-level failure occurred.
+   */
+  PIPELINE_FAILED: 'PIPELINE_FAILED',
 } as const;
 
 /**
@@ -406,7 +394,7 @@ export const IDEA_GENERATION_ERROR_CODES = {
  * error-code values.
  */
 export type IdeaGenerationErrorCode =
-    (typeof IDEA_GENERATION_ERROR_CODES)[keyof typeof IDEA_GENERATION_ERROR_CODES];
+  (typeof IDEA_GENERATION_ERROR_CODES)[keyof typeof IDEA_GENERATION_ERROR_CODES];
 
 /**
  * Supported generation-owner categories.
@@ -416,8 +404,8 @@ export type IdeaGenerationErrorCode =
  * database enum.
  */
 export const GENERATION_OWNER_TYPES = {
-    USER: 'USER',
-    GUEST: 'GUEST',
+  USER: 'USER',
+  GUEST: 'GUEST',
 } as const;
 
 /**
@@ -425,26 +413,26 @@ export const GENERATION_OWNER_TYPES = {
  * categories.
  */
 export type GenerationOwnerType =
-    (typeof GENERATION_OWNER_TYPES)[keyof typeof GENERATION_OWNER_TYPES];
+  (typeof GENERATION_OWNER_TYPES)[keyof typeof GENERATION_OWNER_TYPES];
 
 /**
  * Internal result values returned when resolving a suitable
  * CollectionJob.
  */
 export const COLLECTION_JOB_RESOLUTION_TYPES = {
-    /**
-     * An existing recent completed collection job was reused.
-     */
-    REUSED: 'REUSED',
+  /**
+   * An existing recent completed collection job was reused.
+   */
+  REUSED: 'REUSED',
 
-    /**
-     * A new collection job was created for the request.
-     */
-    CREATED: 'CREATED',
+  /**
+   * A new collection job was created for the request.
+   */
+  CREATED: 'CREATED',
 } as const;
 
 /**
  * Union type containing all CollectionJob resolution values.
  */
 export type CollectionJobResolutionType =
-    (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
+  (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];

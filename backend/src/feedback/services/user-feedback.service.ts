@@ -36,7 +36,7 @@ import { UpsertPublicationRatingDto } from '../dto/upsert-publication-rating.dto
  */
 @Injectable()
 export class UserFeedbackService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Shared publication-rating response selection.
@@ -175,19 +175,18 @@ export class UserFeedbackService {
   async deleteRating(userId: string, publicationId: string) {
     await this.ensurePublishedPublicationExists(publicationId);
 
-    const existingRating =
-      await this.prisma.ideaPublicationRating.findUnique({
-        where: {
-          publicationId_userId: {
-            publicationId,
-            userId,
-          },
+    const existingRating = await this.prisma.ideaPublicationRating.findUnique({
+      where: {
+        publicationId_userId: {
+          publicationId,
+          userId,
         },
+      },
 
-        select: {
-          id: true,
-        },
-      });
+      select: {
+        id: true,
+      },
+    });
 
     if (!existingRating) {
       throw new NotFoundException('Publication rating not found');
@@ -274,13 +273,12 @@ export class UserFeedbackService {
         select: this.feedbackSelect,
       });
 
-      const feedbackCount =
-        await tx.ideaPublicationFeedback.count({
-          where: {
-            publicationId,
-            status: PublicationFeedbackStatus.VISIBLE,
-          },
-        });
+      const feedbackCount = await tx.ideaPublicationFeedback.count({
+        where: {
+          publicationId,
+          status: PublicationFeedbackStatus.VISIBLE,
+        },
+      });
 
       await tx.ideaPublication.update({
         where: {
@@ -350,13 +348,12 @@ export class UserFeedbackService {
         },
       });
 
-      const feedbackCount =
-        await tx.ideaPublicationFeedback.count({
-          where: {
-            publicationId,
-            status: PublicationFeedbackStatus.VISIBLE,
-          },
-        });
+      const feedbackCount = await tx.ideaPublicationFeedback.count({
+        where: {
+          publicationId,
+          status: PublicationFeedbackStatus.VISIBLE,
+        },
+      });
 
       await tx.ideaPublication.update({
         where: {
@@ -411,11 +408,16 @@ export class UserFeedbackService {
 
       select: {
         allowRatings: true,
+        isHidden: true,
       },
     });
 
     if (!publication) {
       throw new NotFoundException('Published idea not found');
+    }
+
+    if (publication.isHidden) {
+      throw new NotFoundException('Published publication not found');
     }
 
     if (!publication.allowRatings) {
@@ -439,11 +441,16 @@ export class UserFeedbackService {
 
       select: {
         allowFeedback: true,
+        isHidden: true,
       },
     });
 
     if (!publication) {
       throw new NotFoundException('Published idea not found');
+    }
+
+    if (publication.isHidden) {
+      throw new NotFoundException('Published publication not found');
     }
 
     if (!publication.allowFeedback) {

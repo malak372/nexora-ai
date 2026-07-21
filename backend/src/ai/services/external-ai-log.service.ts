@@ -27,10 +27,7 @@ import {
  * precision loss when callers already calculate costs using decimal
  * arithmetic.
  */
-export type ExternalAiLogCost =
-  | number
-  | string
-  | Prisma.Decimal;
+export type ExternalAiLogCost = number | string | Prisma.Decimal;
 
 /**
  * Input required to persist one external AI-provider request attempt.
@@ -188,9 +185,7 @@ export type CreateExternalAiLogInput = {
  */
 @Injectable()
 export class ExternalAiLogService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Persists one normalized external AI-provider request attempt.
@@ -200,9 +195,7 @@ export class ExternalAiLogService {
    *
    * @throws BadRequestException when supplied log metadata is invalid.
    */
-  async create(
-    input: CreateExternalAiLogInput,
-  ): Promise<ExternalApiLog> {
+  async create(input: CreateExternalAiLogInput): Promise<ExternalApiLog> {
     this.validateInput(input);
 
     const operationId = this.normalizeRequiredString(
@@ -223,15 +216,11 @@ export class ExternalAiLogService {
     const endpoint =
       input.endpoint === undefined
         ? AI_TEXT_GENERATION_ENDPOINT
-        : this.normalizeRequiredString(
-            input.endpoint,
-            'endpoint',
-          );
+        : this.normalizeRequiredString(input.endpoint, 'endpoint');
 
     return this.prisma.externalApiLog.create({
       data: {
-        serviceCategory:
-          ExternalServiceCategory.AI,
+        serviceCategory: ExternalServiceCategory.AI,
 
         operationId,
 
@@ -239,13 +228,9 @@ export class ExternalAiLogService {
 
         fallbackUsed: input.fallbackUsed,
 
-        userId: this.normalizeOptionalString(
-          input.userId,
-        ),
+        userId: this.normalizeOptionalString(input.userId),
 
-        ideaId: this.normalizeOptionalString(
-          input.ideaId,
-        ),
+        ideaId: this.normalizeOptionalString(input.ideaId),
 
         aiModelId,
 
@@ -255,32 +240,23 @@ export class ExternalAiLogService {
 
         endpoint,
 
-        requestId: this.normalizeOptionalString(
-          input.requestId,
-        ),
+        requestId: this.normalizeOptionalString(input.requestId),
 
         requestType: input.requestType,
 
-        statusCode:
-          input.statusCode ?? null,
+        statusCode: input.statusCode ?? null,
 
         isSuccess: input.isSuccess,
 
         responseTimeMs: input.responseTimeMs,
 
-        inputTokens:
-          input.inputTokens ?? null,
+        inputTokens: input.inputTokens ?? null,
 
-        outputTokens:
-          input.outputTokens ?? null,
+        outputTokens: input.outputTokens ?? null,
 
-        costEstimate: this.normalizeCostEstimate(
-          input.costEstimate,
-        ),
+        costEstimate: this.normalizeCostEstimate(input.costEstimate),
 
-        errorMessage: this.normalizeErrorMessage(
-          input.errorMessage,
-        ),
+        errorMessage: this.normalizeErrorMessage(input.errorMessage),
       },
     });
   }
@@ -298,99 +274,46 @@ export class ExternalAiLogService {
    * @param input Candidate external AI log input.
    * @throws BadRequestException when any supplied value is invalid.
    */
-  private validateInput(
-    input: CreateExternalAiLogInput,
-  ): void {
-    if (
-      typeof input !== 'object' ||
-      input === null
-    ) {
-      throw new BadRequestException(
-        'External AI log input is required.',
-      );
+  private validateInput(input: CreateExternalAiLogInput): void {
+    if (typeof input !== 'object' || input === null) {
+      throw new BadRequestException('External AI log input is required.');
     }
 
-    this.validateRequiredString(
-      input.operationId,
-      'operationId',
-    );
+    this.validateRequiredString(input.operationId, 'operationId');
 
-    this.validateRequiredString(
-      input.aiModelId,
-      'aiModelId',
-    );
+    this.validateRequiredString(input.aiModelId, 'aiModelId');
 
-    this.validateRequiredString(
-      input.apiModelId,
-      'apiModelId',
-    );
+    this.validateRequiredString(input.apiModelId, 'apiModelId');
 
-    this.validatePositiveSafeInteger(
-      input.attemptNumber,
-      'attemptNumber',
-    );
+    this.validatePositiveSafeInteger(input.attemptNumber, 'attemptNumber');
 
-    this.validateNonNegativeSafeInteger(
-      input.responseTimeMs,
-      'responseTimeMs',
-    );
+    this.validateNonNegativeSafeInteger(input.responseTimeMs, 'responseTimeMs');
 
-    this.validateBoolean(
-      input.fallbackUsed,
-      'fallbackUsed',
-    );
+    this.validateBoolean(input.fallbackUsed, 'fallbackUsed');
 
-    this.validateBoolean(
-      input.isSuccess,
-      'isSuccess',
-    );
+    this.validateBoolean(input.isSuccess, 'isSuccess');
 
     if (!isAiProviderKey(input.providerKey)) {
       throw new BadRequestException(
-        `Unsupported AI provider key: ${String(
-          input.providerKey,
-        )}.`,
+        `Unsupported AI provider key: ${String(input.providerKey)}.`,
       );
     }
 
-    if (
-      !Object.values(ApiRequestType).includes(
-        input.requestType,
-      )
-    ) {
+    if (!Object.values(ApiRequestType).includes(input.requestType)) {
       throw new BadRequestException(
-        `Unsupported AI request type: ${String(
-          input.requestType,
-        )}.`,
+        `Unsupported AI request type: ${String(input.requestType)}.`,
       );
     }
 
-    this.validateOptionalString(
-      input.userId,
-      'userId',
-    );
+    this.validateOptionalString(input.userId, 'userId');
 
-    this.validateOptionalString(
-      input.ideaId,
-      'ideaId',
-    );
+    this.validateOptionalString(input.ideaId, 'ideaId');
 
-    this.validateOptionalString(
-      input.requestId,
-      'requestId',
-    );
+    this.validateOptionalString(input.requestId, 'requestId');
 
-    this.validateOptionalString(
-      input.endpoint,
-      'endpoint',
-      false,
-    );
+    this.validateOptionalString(input.endpoint, 'endpoint', false);
 
-    this.validateOptionalString(
-      input.errorMessage,
-      'errorMessage',
-      true,
-    );
+    this.validateOptionalString(input.errorMessage, 'errorMessage', true);
 
     this.validateOptionalNonNegativeSafeInteger(
       input.inputTokens,
@@ -402,18 +325,11 @@ export class ExternalAiLogService {
       'outputTokens',
     );
 
-    this.validateOptionalHttpStatusCode(
-      input.statusCode,
-    );
+    this.validateOptionalHttpStatusCode(input.statusCode);
 
-    this.validateOptionalCostEstimate(
-      input.costEstimate,
-    );
+    this.validateOptionalCostEstimate(input.costEstimate);
 
-    if (
-      input.isSuccess &&
-      input.errorMessage?.trim()
-    ) {
+    if (input.isSuccess && input.errorMessage?.trim()) {
       throw new BadRequestException(
         'AI log errorMessage must not be provided for a successful request.',
       );
@@ -426,17 +342,9 @@ export class ExternalAiLogService {
    * @param value Candidate value.
    * @param fieldName Field name used in validation messages.
    */
-  private validateRequiredString(
-    value: unknown,
-    fieldName: string,
-  ): void {
-    if (
-      typeof value !== 'string' ||
-      !value.trim()
-    ) {
-      throw new BadRequestException(
-        `AI log ${fieldName} is required.`,
-      );
+  private validateRequiredString(value: unknown, fieldName: string): void {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new BadRequestException(`AI log ${fieldName} is required.`);
     }
   }
 
@@ -476,14 +384,9 @@ export class ExternalAiLogService {
    * @param value Candidate value.
    * @param fieldName Field name used in validation messages.
    */
-  private validateBoolean(
-    value: unknown,
-    fieldName: string,
-  ): void {
+  private validateBoolean(value: unknown, fieldName: string): void {
     if (typeof value !== 'boolean') {
-      throw new BadRequestException(
-        `AI log ${fieldName} must be a boolean.`,
-      );
+      throw new BadRequestException(`AI log ${fieldName} must be a boolean.`);
     }
   }
 
@@ -493,10 +396,7 @@ export class ExternalAiLogService {
    * @param value Candidate numeric value.
    * @param fieldName Field name used in validation messages.
    */
-  private validatePositiveSafeInteger(
-    value: unknown,
-    fieldName: string,
-  ): void {
+  private validatePositiveSafeInteger(value: unknown, fieldName: string): void {
     if (
       typeof value !== 'number' ||
       !Number.isSafeInteger(value) ||
@@ -543,10 +443,7 @@ export class ExternalAiLogService {
       return;
     }
 
-    this.validateNonNegativeSafeInteger(
-      value,
-      fieldName,
-    );
+    this.validateNonNegativeSafeInteger(value, fieldName);
   }
 
   /**
@@ -556,18 +453,12 @@ export class ExternalAiLogService {
    *
    * @param statusCode Candidate HTTP status code.
    */
-  private validateOptionalHttpStatusCode(
-    statusCode: number | undefined,
-  ): void {
+  private validateOptionalHttpStatusCode(statusCode: number | undefined): void {
     if (statusCode === undefined) {
       return;
     }
 
-    if (
-      !Number.isInteger(statusCode) ||
-      statusCode < 100 ||
-      statusCode > 599
-    ) {
+    if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
       throw new BadRequestException(
         'AI log statusCode must be a valid HTTP status code.',
       );
@@ -593,17 +484,10 @@ export class ExternalAiLogService {
 
     try {
       const decimalValue =
-        value instanceof Prisma.Decimal
-          ? value
-          : new Prisma.Decimal(value);
+        value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
 
-      if (
-        !decimalValue.isFinite() ||
-        decimalValue.isNegative()
-      ) {
-        throw new Error(
-          'Cost must be finite and non-negative.',
-        );
+      if (!decimalValue.isFinite() || decimalValue.isNegative()) {
+        throw new Error('Cost must be finite and non-negative.');
       }
     } catch {
       throw new BadRequestException(
@@ -619,14 +503,8 @@ export class ExternalAiLogService {
    * @param fieldName Field name used if runtime validation fails.
    * @returns Trimmed non-empty value.
    */
-  private normalizeRequiredString(
-    value: string,
-    fieldName: string,
-  ): string {
-    this.validateRequiredString(
-      value,
-      fieldName,
-    );
+  private normalizeRequiredString(value: string, fieldName: string): string {
+    this.validateRequiredString(value, fieldName);
 
     return value.trim();
   }
@@ -639,9 +517,7 @@ export class ExternalAiLogService {
    * @param value Optional string.
    * @returns Trimmed string or null.
    */
-  private normalizeOptionalString(
-    value: string | undefined,
-  ): string | null {
+  private normalizeOptionalString(value: string | undefined): string | null {
     if (value === undefined) {
       return null;
     }
@@ -664,9 +540,7 @@ export class ExternalAiLogService {
       return null;
     }
 
-    return value instanceof Prisma.Decimal
-      ? value
-      : new Prisma.Decimal(value);
+    return value instanceof Prisma.Decimal ? value : new Prisma.Decimal(value);
   }
 
   /**
@@ -684,21 +558,13 @@ export class ExternalAiLogService {
    * @param errorMessage Optional safe error message.
    * @returns Normalized bounded message or null.
    */
-  private normalizeErrorMessage(
-    errorMessage?: string,
-  ): string | null {
-    const normalizedMessage =
-      errorMessage
-        ?.replace(/\s+/g, ' ')
-        .trim();
+  private normalizeErrorMessage(errorMessage?: string): string | null {
+    const normalizedMessage = errorMessage?.replace(/\s+/g, ' ').trim();
 
     if (!normalizedMessage) {
       return null;
     }
 
-    return normalizedMessage.slice(
-      0,
-      MAX_AI_ERROR_MESSAGE_LENGTH,
-    );
+    return normalizedMessage.slice(0, MAX_AI_ERROR_MESSAGE_LENGTH);
   }
 }

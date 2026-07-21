@@ -188,10 +188,7 @@ export class SentimentScoringPolicyService {
       }
 
       for (const occurrenceCount of occurrenceCountByMatch.values()) {
-        totalScore += this.calculateMatchScore(
-          occurrenceCount,
-          weight,
-        );
+        totalScore += this.calculateMatchScore(occurrenceCount, weight);
       }
     }
 
@@ -208,10 +205,7 @@ export class SentimentScoringPolicyService {
    * @param weight Configured base lexicon weight.
    * @returns Weighted score for the normalized match.
    */
-  private calculateMatchScore(
-    occurrenceCount: number,
-    weight: number,
-  ): number {
+  private calculateMatchScore(occurrenceCount: number, weight: number): number {
     const repeatedOccurrences = Math.max(occurrenceCount - 1, 0);
 
     const repetitionBonus = Math.min(
@@ -234,9 +228,6 @@ export class SentimentScoringPolicyService {
    * @returns Normalized match.
    */
   private normalizeMatch(match: string): string {
-    return match
-      .toLocaleLowerCase()
-      .replace(/\s+/gu, ' ')
-      .trim();
+    return match.toLocaleLowerCase().replace(/\s+/gu, ' ').trim();
   }
 }

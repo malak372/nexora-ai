@@ -32,8 +32,7 @@ const USER_GENERATION_RATE_LIMIT = 5;
  *
  * @author Malak
  */
-const USER_GENERATION_RATE_LIMIT_TTL_MS =
-  60_000;
+const USER_GENERATION_RATE_LIMIT_TTL_MS = 60_000;
 
 /**
  * Controller responsible for starting authenticated-user idea
@@ -61,8 +60,7 @@ const USER_GENERATION_RATE_LIMIT_TTL_MS =
 @UseGuards(JwtAuthGuard)
 export class UserIdeaGenerationController {
   constructor(
-    private readonly orchestrator:
-      IdeaGenerationOrchestratorService,
+    private readonly orchestrator: IdeaGenerationOrchestratorService,
   ) {}
 
   /**
@@ -80,11 +78,9 @@ export class UserIdeaGenerationController {
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({
     default: {
-      limit:
-        USER_GENERATION_RATE_LIMIT,
+      limit: USER_GENERATION_RATE_LIMIT,
 
-      ttl:
-        USER_GENERATION_RATE_LIMIT_TTL_MS,
+      ttl: USER_GENERATION_RATE_LIMIT_TTL_MS,
     },
   })
   generateIdea(

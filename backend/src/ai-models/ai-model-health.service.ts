@@ -5,10 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  AiModelHealthStatus,
-  Prisma,
-} from '@prisma/client';
+import { AiModelHealthStatus, Prisma } from '@prisma/client';
 
 import type { AiModel } from '@prisma/client';
 
@@ -46,9 +43,7 @@ import {
  */
 @Injectable()
 export class AiModelHealthService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Records one successful logical model execution.
@@ -67,10 +62,7 @@ export class AiModelHealthService {
    * @throws NotFoundException When the model does not exist.
    */
   async recordSuccess(modelId: string): Promise<AiModel> {
-    const id = this.requireIdentifier(
-      modelId,
-      'AI model ID',
-    );
+    const id = this.requireIdentifier(modelId, 'AI model ID');
 
     try {
       return await this.prisma.aiModel.update({
@@ -115,10 +107,7 @@ export class AiModelHealthService {
    * prevent the health update from completing.
    */
   async recordFailure(modelId: string): Promise<AiModel> {
-    const id = this.requireIdentifier(
-      modelId,
-      'AI model ID',
-    );
+    const id = this.requireIdentifier(modelId, 'AI model ID');
 
     return this.runSerializableTransaction(async (tx) => {
       const model = await tx.aiModel.findUnique({
@@ -128,13 +117,10 @@ export class AiModelHealthService {
       });
 
       if (!model) {
-        throw new NotFoundException(
-          'AI model not found.',
-        );
+        throw new NotFoundException('AI model not found.');
       }
 
-      const consecutiveFailures =
-        model.consecutiveFailures + 1;
+      const consecutiveFailures = model.consecutiveFailures + 1;
 
       const now = new Date();
 
@@ -177,10 +163,7 @@ export class AiModelHealthService {
    * @throws NotFoundException When the model does not exist.
    */
   async reset(modelId: string): Promise<AiModel> {
-    const id = this.requireIdentifier(
-      modelId,
-      'AI model ID',
-    );
+    const id = this.requireIdentifier(modelId, 'AI model ID');
 
     try {
       return await this.prisma.aiModel.update({
@@ -227,17 +210,11 @@ export class AiModelHealthService {
     currentStatus: AiModelHealthStatus,
     consecutiveFailures: number,
   ): AiModelHealthStatus {
-    if (
-      consecutiveFailures >=
-      AI_MODEL_UNAVAILABLE_FAILURE_THRESHOLD
-    ) {
+    if (consecutiveFailures >= AI_MODEL_UNAVAILABLE_FAILURE_THRESHOLD) {
       return AiModelHealthStatus.UNAVAILABLE;
     }
 
-    if (
-      consecutiveFailures >=
-      AI_MODEL_DEGRADED_FAILURE_THRESHOLD
-    ) {
+    if (consecutiveFailures >= AI_MODEL_DEGRADED_FAILURE_THRESHOLD) {
       return AiModelHealthStatus.DEGRADED;
     }
 
@@ -277,38 +254,28 @@ export class AiModelHealthService {
    * concurrent database modifications.
    */
   private async runSerializableTransaction<T>(
-    operation: (
-      tx: Prisma.TransactionClient,
-    ) => Promise<T>,
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
   ): Promise<T> {
     let lastError: unknown;
 
     for (
       let attempt = 1;
-      attempt <=
-      AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
+      attempt <= AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
       attempt += 1
     ) {
       try {
-        return await this.prisma.$transaction(
-          operation,
-          {
-            isolationLevel:
-              Prisma.TransactionIsolationLevel
-                .Serializable,
-          },
-        );
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
       } catch (error: unknown) {
         lastError = error;
 
         const retryable =
-          error instanceof
-            Prisma.PrismaClientKnownRequestError &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2034';
 
         const finalAttempt =
-          attempt ===
-          AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
+          attempt === AI_MODEL_SERIALIZABLE_TRANSACTION_ATTEMPTS;
 
         if (!retryable || finalAttempt) {
           this.handlePrismaError(error);
@@ -334,16 +301,11 @@ export class AiModelHealthService {
    *
    * @throws BadRequestException When the supplied identifier is blank.
    */
-  private requireIdentifier(
-    value: string,
-    fieldName: string,
-  ): string {
+  private requireIdentifier(value: string, fieldName: string): string {
     const normalizedValue = value.trim();
 
     if (!normalizedValue) {
-      throw new BadRequestException(
-        `${fieldName} is required.`,
-      );
+      throw new BadRequestException(`${fieldName} is required.`);
     }
 
     return normalizedValue;
@@ -359,9 +321,7 @@ export class AiModelHealthService {
    * @throws Error Always.
    */
   private assertNever(value: never): never {
-    throw new Error(
-      `Unsupported AI model health status: ${String(value)}`,
-    );
+    throw new Error(`Unsupported AI model health status: ${String(value)}`);
   }
 
   /**
@@ -380,14 +340,9 @@ export class AiModelHealthService {
    * @throws ConflictException For Prisma P2034.
    */
   private handlePrismaError(error: unknown): never {
-    if (
-      error instanceof
-      Prisma.PrismaClientKnownRequestError
-    ) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2025') {
-        throw new NotFoundException(
-          'AI model not found.',
-        );
+        throw new NotFoundException('AI model not found.');
       }
 
       if (error.code === 'P2034') {

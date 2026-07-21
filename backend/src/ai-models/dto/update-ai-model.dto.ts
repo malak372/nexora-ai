@@ -1,7 +1,4 @@
-import {
-  OmitType,
-  PartialType,
-} from '@nestjs/mapped-types';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
 
 import { CreateAiModelDto } from './create-ai-model.dto';
 
@@ -14,8 +11,5 @@ import { CreateAiModelDto } from './create-ai-model.dto';
  * @author Malak
  */
 export class UpdateAiModelDto extends PartialType(
-  OmitType(
-    CreateAiModelDto,
-    ['isActive'] as const,
-  ),
+  OmitType(CreateAiModelDto, ['isActive'] as const),
 ) {}

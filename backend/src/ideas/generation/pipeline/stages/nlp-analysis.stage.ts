@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -47,20 +44,16 @@ import type {
  * @author Malak
  */
 @Injectable()
-export class NlpAnalysisStage
-  implements IdeaGenerationStage
-{
+export class NlpAnalysisStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   /**
    * Determines whether the NLP validation checkpoint should run.
@@ -80,44 +73,30 @@ export class NlpAnalysisStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     if (!context.collection) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          'Collection data must be resolved before NLP validation.',
+        message: 'Collection data must be resolved before NLP validation.',
       });
     }
 
     if (!context.nlp) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          'Collection-job resolution did not provide NLP analysis.',
+        message: 'Collection-job resolution did not provide NLP analysis.',
       });
     }
 
-    const normalizedNlp =
-      this.normalizeNlpContext(
-        context.nlp,
-      );
+    const normalizedNlp = this.normalizeNlpContext(context.nlp);
 
-    if (
-      normalizedNlp.totalTextsAnalyzed <
-      MIN_COLLECTED_TEXTS_FOR_GENERATION
-    ) {
+    if (normalizedNlp.totalTextsAnalyzed < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INSUFFICIENT_COLLECTED_DATA,
+        code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_COLLECTED_DATA,
 
-        message:
-          `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record is required before prompt building.`,
+        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record is required before prompt building.`,
       });
     }
 
@@ -129,27 +108,20 @@ export class NlpAnalysisStage
     return {
       context: updatedContext,
 
-      resultPreview:
-        `NLP analysis verified successfully for ${normalizedNlp.totalTextsAnalyzed} text record(s).`,
+      resultPreview: `NLP analysis verified successfully for ${normalizedNlp.totalTextsAnalyzed} text record(s).`,
 
       metadata: {
-        nlpAnalysisId:
-          normalizedNlp.nlpAnalysisId,
+        nlpAnalysisId: normalizedNlp.nlpAnalysisId,
 
-        totalTextsAnalyzed:
-          normalizedNlp.totalTextsAnalyzed,
+        totalTextsAnalyzed: normalizedNlp.totalTextsAnalyzed,
 
-        totalPostsAnalyzed:
-          normalizedNlp.totalPostsAnalyzed,
+        totalPostsAnalyzed: normalizedNlp.totalPostsAnalyzed,
 
-        totalCommentsAnalyzed:
-          normalizedNlp.totalCommentsAnalyzed,
+        totalCommentsAnalyzed: normalizedNlp.totalCommentsAnalyzed,
 
-        aiUsed:
-          normalizedNlp.aiUsed,
+        aiUsed: normalizedNlp.aiUsed,
 
-        confidence:
-          normalizedNlp.confidence,
+        confidence: normalizedNlp.confidence,
       },
     };
   }
@@ -164,42 +136,31 @@ export class NlpAnalysisStage
   private normalizeNlpContext(
     nlp: IdeaGenerationNlpContext,
   ): IdeaGenerationNlpContext {
-    const nlpAnalysisId =
-      this.requireIdentifier(
-        nlp.nlpAnalysisId,
-        'NLP-analysis ID',
-      );
+    const nlpAnalysisId = this.requireIdentifier(
+      nlp.nlpAnalysisId,
+      'NLP-analysis ID',
+    );
 
-    const totalPostsAnalyzed =
-      this.normalizeCount(
-        nlp.totalPostsAnalyzed,
-        'Analyzed posts count',
-      );
+    const totalPostsAnalyzed = this.normalizeCount(
+      nlp.totalPostsAnalyzed,
+      'Analyzed posts count',
+    );
 
-    const totalCommentsAnalyzed =
-      this.normalizeCount(
-        nlp.totalCommentsAnalyzed,
-        'Analyzed comments count',
-      );
+    const totalCommentsAnalyzed = this.normalizeCount(
+      nlp.totalCommentsAnalyzed,
+      'Analyzed comments count',
+    );
 
-    const totalTextsAnalyzed =
-      this.normalizeCount(
-        nlp.totalTextsAnalyzed,
-        'Analyzed texts count',
-      );
+    const totalTextsAnalyzed = this.normalizeCount(
+      nlp.totalTextsAnalyzed,
+      'Analyzed texts count',
+    );
 
-    const calculatedTotal =
-      totalPostsAnalyzed +
-      totalCommentsAnalyzed;
+    const calculatedTotal = totalPostsAnalyzed + totalCommentsAnalyzed;
 
-    if (
-      totalTextsAnalyzed <
-      calculatedTotal
-    ) {
+    if (totalTextsAnalyzed < calculatedTotal) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
         message:
           'The total analyzed-text count cannot be lower than the combined post and comment counts.',
@@ -217,13 +178,9 @@ export class NlpAnalysisStage
 
       totalCommentsAnalyzed,
 
-      aiUsed:
-        Boolean(nlp.aiUsed),
+      aiUsed: Boolean(nlp.aiUsed),
 
-      confidence:
-        this.normalizeConfidence(
-          nlp.confidence,
-        ),
+      confidence: this.normalizeConfidence(nlp.confidence),
     };
   }
 
@@ -236,28 +193,16 @@ export class NlpAnalysisStage
    * @param confidence Raw confidence value.
    * @returns Valid confidence or null.
    */
-  private normalizeConfidence(
-    confidence: number | null,
-  ): number | null {
-    if (
-      confidence === null ||
-      confidence === undefined
-    ) {
+  private normalizeConfidence(confidence: number | null): number | null {
+    if (confidence === null || confidence === undefined) {
       return null;
     }
 
-    if (
-      !Number.isFinite(confidence) ||
-      confidence < 0 ||
-      confidence > 1
-    ) {
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          'NLP confidence must be a finite value between 0 and 1.',
+        message: 'NLP confidence must be a finite value between 0 and 1.',
       });
     }
 
@@ -271,21 +216,12 @@ export class NlpAnalysisStage
    * @param fieldName Field name used in validation errors.
    * @returns Valid count.
    */
-  private normalizeCount(
-    value: number,
-    fieldName: string,
-  ): number {
-    if (
-      !Number.isInteger(value) ||
-      value < 0
-    ) {
+  private normalizeCount(value: number, fieldName: string): number {
+    if (!Number.isInteger(value) || value < 0) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          `${fieldName} must be a non-negative integer.`,
+        message: `${fieldName} must be a non-negative integer.`,
       });
     }
 
@@ -299,18 +235,12 @@ export class NlpAnalysisStage
    * @param fieldName Field name used in validation errors.
    * @returns Normalized identifier.
    */
-  private requireIdentifier(
-    value: string,
-    fieldName: string,
-  ): string {
+  private requireIdentifier(value: string, fieldName: string): string {
     if (typeof value !== 'string') {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          `${fieldName} is required.`,
+        message: `${fieldName} is required.`,
       });
     }
 
@@ -318,12 +248,9 @@ export class NlpAnalysisStage
 
     if (!normalizedValue) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NLP_ANALYSIS_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
 
-        message:
-          `${fieldName} is required.`,
+        message: `${fieldName} is required.`,
       });
     }
 
@@ -336,10 +263,7 @@ export class NlpAnalysisStage
    * @returns NLP-analysis stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

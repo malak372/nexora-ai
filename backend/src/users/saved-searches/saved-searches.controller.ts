@@ -11,21 +11,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
 import { GetSavedSearchesQueryDto } from './dto/get-saved-searches-query.dto';
+import { UpdateSavedSearchDto } from './dto/update-saved-search.dto';
 import { UserSavedSearchesService } from './saved-searches.service';
 
 /**
- * Controller responsible for authenticated user saved generation searches.
+ * Authenticated endpoints for reusable idea-generation searches.
  *
- * Base route:
- * /users/saved-searches
- *
- * Saved searches allow users to store and reuse idea generation criteria
- * such as domain, geographical context, language, selected platforms,
- * and keywords.
+ * Each operation is scoped to the current user inside the service.
  *
  * @author Eman
  */
@@ -33,75 +29,62 @@ import { UserSavedSearchesService } from './saved-searches.service';
 @UseGuards(JwtAuthGuard)
 export class UserSavedSearchesController {
   constructor(
-    private readonly userSavedSearchesService: UserSavedSearchesService,
+    private readonly savedSearchesService: UserSavedSearchesService,
   ) {}
 
-  /**
-   * Creates a reusable saved generation search for the authenticated user.
-   */
   @Post()
-  createSavedSearch(
+  create(
     @CurrentUser() user: { id: string },
     @Body() dto: CreateSavedSearchDto,
   ) {
-    return this.userSavedSearchesService.createSavedSearch(user.id, dto);
+    return this.savedSearchesService.createSavedSearch(user.id, dto);
   }
 
-  /**
-   * Retrieves the authenticated user's saved generation searches.
-   *
-   * Supports filtering, searching, sorting, date filtering, and pagination.
-   */
   @Get()
-  getSavedSearches(
+  findAll(
     @CurrentUser() user: { id: string },
     @Query() query: GetSavedSearchesQueryDto,
   ) {
-    return this.userSavedSearchesService.getSavedSearches(user.id, query);
+    return this.savedSearchesService.getSavedSearches(user.id, query);
   }
 
-  /**
-   * Retrieves a single saved generation search owned by the authenticated user.
-   */
-  @Get(':id')
-  getSavedSearchById(
+  @Get(':savedSearchId')
+  findOne(
     @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) savedSearchId: string,
+    @Param('savedSearchId', ParseUUIDPipe) savedSearchId: string,
   ) {
-    return this.userSavedSearchesService.getSavedSearchById(
+    return this.savedSearchesService.getSavedSearchById(user.id, savedSearchId);
+  }
+
+  @Patch(':savedSearchId')
+  update(
+    @CurrentUser() user: { id: string },
+    @Param('savedSearchId', ParseUUIDPipe) savedSearchId: string,
+    @Body() dto: UpdateSavedSearchDto,
+  ) {
+    return this.savedSearchesService.updateSavedSearch(
+      user.id,
+      savedSearchId,
+      dto,
+    );
+  }
+
+  @Post(':savedSearchId/use')
+  markAsUsed(
+    @CurrentUser() user: { id: string },
+    @Param('savedSearchId', ParseUUIDPipe) savedSearchId: string,
+  ) {
+    return this.savedSearchesService.markSavedSearchAsUsed(
       user.id,
       savedSearchId,
     );
   }
 
-  /**
-   * Marks a saved generation search as used.
-   *
-   * Used by the frontend when the user reuses a saved search
-   * through a "Generate Again" action.
-   */
-  @Patch(':id/use')
-  markSavedSearchAsUsed(
+  @Delete(':savedSearchId')
+  remove(
     @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) savedSearchId: string,
+    @Param('savedSearchId', ParseUUIDPipe) savedSearchId: string,
   ) {
-    return this.userSavedSearchesService.markSavedSearchAsUsed(
-      user.id,
-      savedSearchId,
-    );
-  }
-
-  /**
-   * Deletes a saved generation search owned by the authenticated user.
-   */
-  @Delete(':id')
-  deleteSavedSearch(
-    @CurrentUser() user: { id: string },
-    @Param('id', ParseUUIDPipe) savedSearchId: string,
-  ) {
-    return this.userSavedSearchesService.deleteSavedSearch(
-      user.id,
-      savedSearchId,
-    );
+    return this.savedSearchesService.deleteSavedSearch(user.id, savedSearchId);
   }
 }

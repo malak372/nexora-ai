@@ -52,25 +52,12 @@ import { AiModelsService } from './ai-models.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-  ],
+  imports: [PrismaModule, AuditModule],
 
-  controllers: [
-    AiModelsController,
-  ],
+  controllers: [AiModelsController],
 
-  providers: [
-    AiModelsService,
-    AiModelHealthService,
-    AiModelRoutingService,
-  ],
+  providers: [AiModelsService, AiModelHealthService, AiModelRoutingService],
 
-  exports: [
-    AiModelsService,
-    AiModelHealthService,
-    AiModelRoutingService,
-  ],
+  exports: [AiModelsService, AiModelHealthService, AiModelRoutingService],
 })
 export class AiModelsModule {}

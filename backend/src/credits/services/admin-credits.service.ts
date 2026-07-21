@@ -81,7 +81,7 @@ export class AdminCreditsService {
       select: {
         id: true,
         amount: true,
-        paymentMethod: true,
+        paymentMethodKey: true,
         status: true,
       },
     },
@@ -256,7 +256,7 @@ export class AdminCreditsService {
       transaction.description ?? '',
       transaction.payment?.id ?? '',
       transaction.payment?.amount ?? '',
-      transaction.payment?.paymentMethod ?? '',
+      transaction.payment?.paymentMethodKey ?? '',
       transaction.payment?.status ?? '',
       transaction.idea?.id ?? '',
       transaction.idea?.title ?? '',

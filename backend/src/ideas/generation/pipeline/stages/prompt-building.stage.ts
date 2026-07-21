@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { PromptBuilderService } from '../../../../prompts/services/prompt-builder.service';
 
@@ -61,27 +58,21 @@ import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
  * @author Malak
  */
 @Injectable()
-export class PromptBuildingStage
-  implements IdeaGenerationStage
-{
+export class PromptBuildingStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.PROMPT_BUILDING;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.PROMPT_BUILDING;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly promptBuilderService:
-      PromptBuilderService,
+    private readonly promptBuilderService: PromptBuilderService,
 
-    private readonly promptHistoryService:
-      PromptHistoryService,
+    private readonly promptHistoryService: PromptHistoryService,
   ) {}
 
   /**
@@ -97,97 +88,73 @@ export class PromptBuildingStage
 
     const collection = context.collection!;
 
-    const prompt =
-      await this.promptBuilderService.buildIdeaPrompt({
-        purpose: 'IDEA_GENERATION',
+    const prompt = await this.promptBuilderService.buildIdeaPrompt({
+      purpose: 'IDEA_GENERATION',
 
-        collectionJobId:
-          collection.collectionJobId,
+      collectionJobId: collection.collectionJobId,
 
-        generationType:
-          context.generationType,
-      });
+      generationType: context.generationType,
+    });
 
-    const promptHistory =
-      await this.promptHistoryService.savePrompt({
-        userId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : null,
+    const promptHistory = await this.promptHistoryService.savePrompt({
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : null,
 
-        guestSessionId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.GUEST
-            ? context.owner.guestSessionId
-            : null,
+      guestSessionId:
+        context.owner.type === IDEA_OWNER_TYPES.GUEST
+          ? context.owner.guestSessionId
+          : null,
 
-        collectionJobId:
-          collection.collectionJobId,
+      collectionJobId: collection.collectionJobId,
 
-        ideaId: null,
+      ideaId: null,
 
-        promptType:
-          prompt.promptType,
+      promptType: prompt.promptType,
 
-        promptText:
-          prompt.promptText,
+      promptText: prompt.promptText,
 
-        templateHash:
-          prompt.templateHash,
+      templateHash: prompt.templateHash,
 
-        estimatedInputTokens:
-          prompt.estimatedInputTokens,
-      });
+      estimatedInputTokens: prompt.estimatedInputTokens,
+    });
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
       prompt: {
-        promptHistoryId:
-          promptHistory.id,
+        promptHistoryId: promptHistory.id,
 
-        promptText:
-          prompt.promptText,
+        promptText: prompt.promptText,
 
-        templateHash:
-          prompt.templateHash,
+        templateHash: prompt.templateHash,
 
-        estimatedInputTokens:
-          prompt.estimatedInputTokens,
+        estimatedInputTokens: prompt.estimatedInputTokens,
 
-        responseSchemaName:
-          prompt.responseSchemaName,
+        responseSchemaName: prompt.responseSchemaName,
 
-        responseSchema:
-          prompt.responseSchema,
+        responseSchema: prompt.responseSchema,
       },
     };
 
     return {
       context: updatedContext,
 
-      resultPreview:
-        `Idea-generation prompt built and saved as "${promptHistory.id}".`,
+      resultPreview: `Idea-generation prompt built and saved as "${promptHistory.id}".`,
 
       metadata: {
-        promptHistoryId:
-          promptHistory.id,
+        promptHistoryId: promptHistory.id,
 
-        promptType:
-          prompt.promptType,
+        promptType: prompt.promptType,
 
-        templateHash:
-          prompt.templateHash,
+        templateHash: prompt.templateHash,
 
-        estimatedInputTokens:
-          prompt.estimatedInputTokens,
+        estimatedInputTokens: prompt.estimatedInputTokens,
 
-        responseSchemaName:
-          prompt.responseSchemaName,
+        responseSchemaName: prompt.responseSchemaName,
 
-        promptLength:
-          prompt.promptText.length,
+        promptLength: prompt.promptText.length,
       },
     };
   }
@@ -197,14 +164,10 @@ export class PromptBuildingStage
    *
    * @param context Current generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PROMPT_BUILD_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
         message:
           'Generation entitlement must be resolved before prompt building.',
@@ -213,9 +176,7 @@ export class PromptBuildingStage
 
     if (!context.collection) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PROMPT_BUILD_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
         message:
           'Collection-job information is required before prompt building.',
@@ -224,20 +185,15 @@ export class PromptBuildingStage
 
     if (!context.nlp) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PROMPT_BUILD_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
-        message:
-          'NLP analysis is required before prompt building.',
+        message: 'NLP analysis is required before prompt building.',
       });
     }
 
     if (!context.domainName) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .PROMPT_BUILD_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
         message:
           'A resolved generation domain is required before prompt building.',
@@ -251,10 +207,7 @@ export class PromptBuildingStage
    * @returns Prompt-building stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

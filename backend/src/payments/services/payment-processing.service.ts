@@ -86,7 +86,7 @@ export class PaymentProcessingService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly paymentNotificationService: PaymentNotificationService,
-  ) { }
+  ) {}
 
   /**
    * Processes one verified provider payment confirmation.
@@ -189,14 +189,17 @@ export class PaymentProcessingService {
         },
       );
 
-      const completedResult = await this.completeDirectUnlockAfterCommit(result);
+      const completedResult =
+        await this.completeDirectUnlockAfterCommit(result);
 
       /*
        * Cache invalidation occurs only after the database
        * transaction commits successfully.
        */
       if (completedResult.creditBalanceChanged) {
-        await this.creditCacheService.invalidateUserCreditCaches(completedResult.userId);
+        await this.creditCacheService.invalidateUserCreditCaches(
+          completedResult.userId,
+        );
       }
 
       /*
@@ -233,10 +236,9 @@ export class PaymentProcessingService {
       return result;
     }
 
-    const ideaId = result.ideaId ?? await this.findDirectUnlockIdeaId(
-      result.paymentId,
-      result.userId,
-    );
+    const ideaId =
+      result.ideaId ??
+      (await this.findDirectUnlockIdeaId(result.paymentId, result.userId));
 
     try {
       const unlockResult = await this.ideaUnlockService.unlockPaidIdea({
@@ -514,14 +516,15 @@ export class PaymentProcessingService {
       }
 
       case PaymentPurpose.DIRECT_UNLOCK: {
-        const fulfillment = await this.directUnlockPaymentService.validateForFulfillment(
-          {
-            id: payment.id,
-            userId: payment.userId,
-            ideaId: payment.ideaId,
-          },
-          tx,
-        );
+        const fulfillment =
+          await this.directUnlockPaymentService.validateForFulfillment(
+            {
+              id: payment.id,
+              userId: payment.userId,
+              ideaId: payment.ideaId,
+            },
+            tx,
+          );
 
         return {
           paymentId: payment.id,
@@ -1016,15 +1019,15 @@ export class PaymentProcessingService {
 
       const target = Array.isArray(rawTarget)
         ? rawTarget
-          .filter((value): value is string => typeof value === 'string')
-          .join(',')
+            .filter((value): value is string => typeof value === 'string')
+            .join(',')
         : typeof rawTarget === 'string'
           ? rawTarget
           : '';
 
       const errorCode =
         target.includes('provider_session_id') ||
-          target.includes('providerSessionId')
+        target.includes('providerSessionId')
           ? PaymentErrorCode.DUPLICATE_PROVIDER_SESSION
           : PaymentErrorCode.DUPLICATE_PROVIDER_PAYMENT;
 

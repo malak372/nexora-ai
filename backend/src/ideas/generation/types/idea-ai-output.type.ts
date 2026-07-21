@@ -12,11 +12,7 @@
 /**
  * Primitive values supported by JSON.
  */
-export type JsonPrimitive =
-  | string
-  | number
-  | boolean
-  | null;
+export type JsonPrimitive = string | number | boolean | null;
 
 /**
  * JSON-compatible object representation.
@@ -33,10 +29,7 @@ export type JsonArray = JsonValue[];
 /**
  * Any value that can be represented safely as JSON.
  */
-export type JsonValue =
-  | JsonPrimitive
-  | JsonObject
-  | JsonArray;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
 
 /**
  * Stable persistence keys supported by advanced generated-idea
@@ -258,10 +251,7 @@ export type ParsedIdeaUnlockAiOutput = {
  *
  * The parser must validate the root structure before using it.
  */
-export type RawIdeaAiOutput =
-  | string
-  | JsonObject
-  | JsonArray;
+export type RawIdeaAiOutput = string | JsonObject | JsonArray;
 
 /**
  * Successful result returned by the non-throwing new-idea parser.
@@ -407,4 +397,3 @@ export type FailedIdeaUnlockOutputParseResult = {
 export type IdeaUnlockOutputParseResult =
   | SuccessfulIdeaUnlockOutputParseResult
   | FailedIdeaUnlockOutputParseResult;
-

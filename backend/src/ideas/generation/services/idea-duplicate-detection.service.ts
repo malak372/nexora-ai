@@ -1,11 +1,6 @@
-import {
-  ConflictException,
-  Injectable,
-} from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 
-import type {
-  Prisma,
-} from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -28,8 +23,7 @@ import {
  *
  * @author Malak
  */
-export type IdeaDuplicateDetectionDatabaseClient =
-  Prisma.TransactionClient;
+export type IdeaDuplicateDetectionDatabaseClient = Prisma.TransactionClient;
 
 /**
  * Lightweight idea record loaded for duplicate comparison.
@@ -121,9 +115,7 @@ export type IdeaDuplicateCheckResult = {
  */
 @Injectable()
 export class IdeaDuplicateDetectionService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Checks whether a title is a duplicate without throwing.
@@ -145,60 +137,48 @@ export class IdeaDuplicateDetectionService {
     title: string,
     database?: IdeaDuplicateDetectionDatabaseClient,
   ): Promise<IdeaDuplicateCheckResult> {
-    const normalizedDomainId =
-      domainId.trim();
+    const normalizedDomainId = domainId.trim();
 
-    const normalizedTitle =
-      this.normalizeTitle(title);
+    const normalizedTitle = this.normalizeTitle(title);
 
     if (!normalizedDomainId) {
       throw new ConflictException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
-        message:
-          'A domain is required to perform duplicate detection.',
+        message: 'A domain is required to perform duplicate detection.',
       });
     }
 
     if (!normalizedTitle) {
       throw new ConflictException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
         message:
           'A valid idea title is required to perform duplicate detection.',
       });
     }
 
-    const client =
-      database ?? this.prisma;
+    const client = database ?? this.prisma;
 
-    const candidates =
-      await client.idea.findMany({
-        where: {
-          domainId:
-            normalizedDomainId,
+    const candidates = await client.idea.findMany({
+      where: {
+        domainId: normalizedDomainId,
 
-          userId:
-            userId ?? null,
-        },
+        userId: userId ?? null,
+      },
 
-        select: {
-          id: true,
-          title: true,
-          createdAt: true,
-        },
+      select: {
+        id: true,
+        title: true,
+        createdAt: true,
+      },
 
-        orderBy: {
-          createdAt: 'desc',
-        },
+      orderBy: {
+        createdAt: 'desc',
+      },
 
-        take:
-          DUPLICATE_DETECTION_CANDIDATE_LIMIT,
-      });
+      take: DUPLICATE_DETECTION_CANDIDATE_LIMIT,
+    });
 
     if (candidates.length === 0) {
       return {
@@ -208,36 +188,26 @@ export class IdeaDuplicateDetectionService {
       };
     }
 
-    let matchedIdea:
-      DuplicateIdeaCandidate | null = null;
+    let matchedIdea: DuplicateIdeaCandidate | null = null;
 
     let highestSimilarity = 0;
 
     for (const candidate of candidates) {
-      const normalizedCandidateTitle =
-        this.normalizeTitle(
-          candidate.title,
-        );
+      const normalizedCandidateTitle = this.normalizeTitle(candidate.title);
 
       if (!normalizedCandidateTitle) {
         continue;
       }
 
-      const similarity =
-        this.calculateTitleSimilarity(
-          normalizedTitle,
-          normalizedCandidateTitle,
-        );
+      const similarity = this.calculateTitleSimilarity(
+        normalizedTitle,
+        normalizedCandidateTitle,
+      );
 
-      if (
-        similarity >
-        highestSimilarity
-      ) {
-        highestSimilarity =
-          similarity;
+      if (similarity > highestSimilarity) {
+        highestSimilarity = similarity;
 
-        matchedIdea =
-          candidate;
+        matchedIdea = candidate;
       }
 
       /*
@@ -251,14 +221,9 @@ export class IdeaDuplicateDetectionService {
     }
 
     return {
-      isDuplicate:
-        highestSimilarity >=
-        IDEA_TITLE_SIMILARITY_THRESHOLD,
+      isDuplicate: highestSimilarity >= IDEA_TITLE_SIMILARITY_THRESHOLD,
 
-      highestSimilarity:
-        this.roundSimilarity(
-          highestSimilarity,
-        ),
+      highestSimilarity: this.roundSimilarity(highestSimilarity),
 
       matchedIdea,
     };
@@ -289,38 +254,25 @@ export class IdeaDuplicateDetectionService {
     title: string,
     database?: IdeaDuplicateDetectionDatabaseClient,
   ): Promise<void> {
-    const result =
-      await this.check(
-        userId,
-        domainId,
-        title,
-        database,
-      );
+    const result = await this.check(userId, domainId, title, database);
 
     if (!result.isDuplicate) {
       return;
     }
 
     throw new ConflictException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .DUPLICATE_IDEA,
+      code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
-      message:
-        'A highly similar idea already exists for this domain.',
+      message: 'A highly similar idea already exists for this domain.',
 
       details: {
-        matchedIdeaId:
-          result.matchedIdea?.id ?? null,
+        matchedIdeaId: result.matchedIdea?.id ?? null,
 
-        matchedTitle:
-          result.matchedIdea?.title ?? null,
+        matchedTitle: result.matchedIdea?.title ?? null,
 
-        similarity:
-          result.highestSimilarity,
+        similarity: result.highestSimilarity,
 
-        threshold:
-          IDEA_TITLE_SIMILARITY_THRESHOLD,
+        threshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
       },
     });
   }
@@ -349,47 +301,27 @@ export class IdeaDuplicateDetectionService {
     firstNormalizedTitle: string,
     secondNormalizedTitle: string,
   ): number {
-    if (
-      firstNormalizedTitle ===
-      secondNormalizedTitle
-    ) {
+    if (firstNormalizedTitle === secondNormalizedTitle) {
       return 1;
     }
 
-    const firstTokens =
-      this.toTokenSet(
-        firstNormalizedTitle,
-      );
+    const firstTokens = this.toTokenSet(firstNormalizedTitle);
 
-    const secondTokens =
-      this.toTokenSet(
-        secondNormalizedTitle,
-      );
+    const secondTokens = this.toTokenSet(secondNormalizedTitle);
 
-    if (
-      firstTokens.size === 0 ||
-      secondTokens.size === 0
-    ) {
+    if (firstTokens.size === 0 || secondTokens.size === 0) {
       return 0;
     }
 
     let sharedTokenCount = 0;
 
     for (const token of firstTokens) {
-      if (
-        secondTokens.has(token)
-      ) {
+      if (secondTokens.has(token)) {
         sharedTokenCount += 1;
       }
     }
 
-    return (
-      (2 * sharedTokenCount) /
-      (
-        firstTokens.size +
-        secondTokens.size
-      )
-    );
+    return (2 * sharedTokenCount) / (firstTokens.size + secondTokens.size);
   }
 
   /**
@@ -408,32 +340,19 @@ export class IdeaDuplicateDetectionService {
    * @param title Raw generated title.
    * @returns Stable normalized title.
    */
-  private normalizeTitle(
-    title: string,
-  ): string {
-    if (
-      typeof title !== 'string'
-    ) {
+  private normalizeTitle(title: string): string {
+    if (typeof title !== 'string') {
       return '';
     }
 
     return title
       .normalize('NFKC')
       .toLowerCase()
-      .replace(
-        /[\u064B-\u065F\u0670\u06D6-\u06ED]/gu,
-        '',
-      )
-      .replace(
-        /[^\p{L}\p{N}\s]/gu,
-        ' ',
-      )
+      .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/gu, '')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim()
-      .slice(
-        0,
-        MAX_DUPLICATE_TITLE_LENGTH,
-      );
+      .slice(0, MAX_DUPLICATE_TITLE_LENGTH);
   }
 
   /**
@@ -445,16 +364,11 @@ export class IdeaDuplicateDetectionService {
    * @param normalizedTitle Normalized title.
    * @returns Unique title words.
    */
-  private toTokenSet(
-    normalizedTitle: string,
-  ): Set<string> {
+  private toTokenSet(normalizedTitle: string): Set<string> {
     return new Set(
       normalizedTitle
         .split(' ')
-        .map(
-          (token) =>
-            token.trim(),
-        )
+        .map((token) => token.trim())
         .filter(Boolean),
     );
   }
@@ -468,11 +382,7 @@ export class IdeaDuplicateDetectionService {
    * @param value Raw similarity value.
    * @returns Similarity rounded to four decimal places.
    */
-  private roundSimilarity(
-    value: number,
-  ): number {
-    return Math.round(
-      value * 10_000,
-    ) / 10_000;
+  private roundSimilarity(value: number): number {
+    return Math.round(value * 10_000) / 10_000;
   }
 }

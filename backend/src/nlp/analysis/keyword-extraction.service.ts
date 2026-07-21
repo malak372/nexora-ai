@@ -97,20 +97,11 @@ export class KeywordExtractionService {
 
       const tokens = this.extractTokens(text.cleanedText, stopWords);
       const phrases = this.extractPhrases(tokens);
-      const priorityLexiconTerms =
-        this.extractPriorityLexiconTerms(text);
+      const priorityLexiconTerms = this.extractPriorityLexiconTerms(text);
 
-      this.addUniqueTerms(
-        weightedFrequencyMap,
-        tokens,
-        SINGLE_TOKEN_WEIGHT,
-      );
+      this.addUniqueTerms(weightedFrequencyMap, tokens, SINGLE_TOKEN_WEIGHT);
 
-      this.addUniqueTerms(
-        weightedFrequencyMap,
-        phrases,
-        PHRASE_WEIGHT,
-      );
+      this.addUniqueTerms(weightedFrequencyMap, phrases, PHRASE_WEIGHT);
 
       this.addUniqueTerms(
         weightedFrequencyMap,
@@ -144,9 +135,7 @@ export class KeywordExtractionService {
     stopWords: readonly string[],
   ): string[] {
     const normalizedStopWords = new Set(
-      stopWords
-        .map((word) => this.normalizeTerm(word))
-        .filter(Boolean),
+      stopWords.map((word) => this.normalizeTerm(word)).filter(Boolean),
     );
 
     return cleanedText
@@ -195,8 +184,9 @@ export class KeywordExtractionService {
   private extractPriorityLexiconTerms(
     text: LexiconTextAnalysisResult,
   ): string[] {
-    return PRIORITY_LEXICON_TYPES
-      .flatMap((type) => text.matchedLexicons[type] ?? [])
+    return PRIORITY_LEXICON_TYPES.flatMap(
+      (type) => text.matchedLexicons[type] ?? [],
+    )
       .map((term) => this.normalizeTerm(term))
       .filter(Boolean);
   }
@@ -222,16 +212,11 @@ export class KeywordExtractionService {
     }
 
     const uniqueTerms = new Set(
-      terms
-        .map((term) => this.normalizeTerm(term))
-        .filter(Boolean),
+      terms.map((term) => this.normalizeTerm(term)).filter(Boolean),
     );
 
     for (const term of uniqueTerms) {
-      frequencyMap.set(
-        term,
-        (frequencyMap.get(term) ?? 0) + weight,
-      );
+      frequencyMap.set(term, (frequencyMap.get(term) ?? 0) + weight);
     }
   }
 
@@ -242,10 +227,7 @@ export class KeywordExtractionService {
    * @param stopWords Normalized language-specific stop words.
    * @returns True when the token is meaningful.
    */
-  private isValidToken(
-    token: string,
-    stopWords: ReadonlySet<string>,
-  ): boolean {
+  private isValidToken(token: string, stopWords: ReadonlySet<string>): boolean {
     if (!token) {
       return false;
     }

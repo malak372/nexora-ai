@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
 
@@ -60,14 +57,10 @@ export class AiProviderCredentialsService {
   getApiKey(providerKey: AiProviderKey): string {
     switch (providerKey) {
       case AI_PROVIDER_KEYS.GOOGLE:
-        return this.requireValue(
-          AI_PROVIDER_ENV_KEYS.GOOGLE_API_KEY,
-        );
+        return this.requireValue(AI_PROVIDER_ENV_KEYS.GOOGLE_API_KEY);
 
       case AI_PROVIDER_KEYS.OPENROUTER:
-        return this.requireValue(
-          AI_PROVIDER_ENV_KEYS.OPENROUTER_API_KEY,
-        );
+        return this.requireValue(AI_PROVIDER_ENV_KEYS.OPENROUTER_API_KEY);
 
       default:
         return this.assertNever(providerKey);
@@ -82,9 +75,7 @@ export class AiProviderCredentialsService {
    * empty, or contains only whitespace.
    */
   getOpenRouterSiteUrl(): string | undefined {
-    return this.getOptionalValue(
-      AI_PROVIDER_ENV_KEYS.OPENROUTER_SITE_URL,
-    );
+    return this.getOptionalValue(AI_PROVIDER_ENV_KEYS.OPENROUTER_SITE_URL);
   }
 
   /**
@@ -95,9 +86,7 @@ export class AiProviderCredentialsService {
    * empty, or contains only whitespace.
    */
   getOpenRouterAppName(): string | undefined {
-    return this.getOptionalValue(
-      AI_PROVIDER_ENV_KEYS.OPENROUTER_APP_NAME,
-    );
+    return this.getOptionalValue(AI_PROVIDER_ENV_KEYS.OPENROUTER_APP_NAME);
   }
 
   /**
@@ -132,9 +121,7 @@ export class AiProviderCredentialsService {
    * @param key Environment-variable key.
    * @returns Trimmed value when configured; otherwise undefined.
    */
-  private getOptionalValue(
-    key: AiProviderEnvironmentKey,
-  ): string | undefined {
+  private getOptionalValue(key: AiProviderEnvironmentKey): string | undefined {
     return this.readTrimmedValue(key);
   }
 
@@ -144,9 +131,7 @@ export class AiProviderCredentialsService {
    * @param key Environment-variable key.
    * @returns Trimmed value or undefined when no usable value exists.
    */
-  private readTrimmedValue(
-    key: AiProviderEnvironmentKey,
-  ): string | undefined {
+  private readTrimmedValue(key: AiProviderEnvironmentKey): string | undefined {
     const value = this.configService.get<string>(key)?.trim();
 
     return value || undefined;

@@ -67,11 +67,7 @@ export class IdeaPublicationService {
    * @throws BadRequestException When the publication is archived or its
    * selected-audience configuration is invalid.
    */
-  async upsert(
-    userId: string,
-    ideaId: string,
-    dto: UpsertIdeaPublicationDto,
-  ) {
+  async upsert(userId: string, ideaId: string, dto: UpsertIdeaPublicationDto) {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: ideaId,
@@ -123,16 +119,13 @@ export class IdeaPublicationService {
         idea.partialAbstract ||
         idea.limitedAbstract,
 
-      publicProblem:
-        dto.publicProblem?.trim() || idea.problemStatement,
+      publicProblem: dto.publicProblem?.trim() || idea.problemStatement,
 
       publicObjectives:
-        dto.publicObjectives?.trim() ||
-        this.stringifyJson(idea.objectives),
+        dto.publicObjectives?.trim() || this.stringifyJson(idea.objectives),
 
       publicTargetUsers:
-        dto.publicTargetUsers?.trim() ||
-        this.stringifyJson(idea.targetUsers),
+        dto.publicTargetUsers?.trim() || this.stringifyJson(idea.targetUsers),
     };
 
     return this.prisma.$transaction(async (tx) => {
@@ -185,16 +178,11 @@ export class IdeaPublicationService {
         },
       });
 
-      if (
-        dto.visibility ===
-        IdeaPublicationVisibility.SELECTED_AUDIENCE
-      ) {
+      if (dto.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE) {
         await tx.ideaPublicationAudience.createMany({
           data: (dto.audiences ?? []).map((audience) => ({
             publicationId: publication.id,
-            audienceType: audience.audienceType
-              .trim()
-              .toLowerCase(),
+            audienceType: audience.audienceType.trim().toLowerCase(),
             audienceValue: audience.audienceValue.trim(),
           })),
           skipDuplicates: true,
@@ -205,15 +193,14 @@ export class IdeaPublicationService {
        * Stores an immutable revision whenever a published snapshot changes.
        */
       if (publication.status === IdeaPublicationStatus.PUBLISHED) {
-        const latest =
-          await tx.ideaPublicationRevision.aggregate({
-            where: {
-              publicationId: publication.id,
-            },
-            _max: {
-              version: true,
-            },
-          });
+        const latest = await tx.ideaPublicationRevision.aggregate({
+          where: {
+            publicationId: publication.id,
+          },
+          _max: {
+            version: true,
+          },
+        });
 
         await tx.ideaPublicationRevision.create({
           data: {
@@ -262,10 +249,7 @@ export class IdeaPublicationService {
    * or when the publication is archived.
    */
   async publish(userId: string, ideaId: string) {
-    const publication = await this.findOwnedByIdea(
-      userId,
-      ideaId,
-    );
+    const publication = await this.findOwnedByIdea(userId, ideaId);
 
     if (!publication.publicAbstract?.trim()) {
       throw new BadRequestException(
@@ -274,8 +258,7 @@ export class IdeaPublicationService {
     }
 
     if (
-      publication.visibility ===
-        IdeaPublicationVisibility.SELECTED_AUDIENCE &&
+      publication.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE &&
       publication.audiences.length === 0
     ) {
       throw new BadRequestException(
@@ -283,17 +266,11 @@ export class IdeaPublicationService {
       );
     }
 
-    if (
-      publication.status ===
-      IdeaPublicationStatus.PUBLISHED
-    ) {
+    if (publication.status === IdeaPublicationStatus.PUBLISHED) {
       return publication;
     }
 
-    if (
-      publication.status ===
-      IdeaPublicationStatus.ARCHIVED
-    ) {
+    if (publication.status === IdeaPublicationStatus.ARCHIVED) {
       throw new BadRequestException(
         'Archived publications cannot be published.',
       );
@@ -347,15 +324,9 @@ export class IdeaPublicationService {
    * @throws NotFoundException When no owned publication exists.
    */
   async archive(userId: string, ideaId: string) {
-    const publication = await this.findOwnedByIdea(
-      userId,
-      ideaId,
-    );
+    const publication = await this.findOwnedByIdea(userId, ideaId);
 
-    if (
-      publication.status ===
-      IdeaPublicationStatus.ARCHIVED
-    ) {
+    if (publication.status === IdeaPublicationStatus.ARCHIVED) {
       return publication;
     }
 
@@ -384,17 +355,10 @@ export class IdeaPublicationService {
    * @throws ForbiddenException When the publication is not a draft.
    */
   async deleteDraft(userId: string, ideaId: string) {
-    const publication = await this.findOwnedByIdea(
-      userId,
-      ideaId,
-    );
+    const publication = await this.findOwnedByIdea(userId, ideaId);
 
-    if (
-      publication.status !== IdeaPublicationStatus.DRAFT
-    ) {
-      throw new ForbiddenException(
-        'Only draft publications can be deleted.',
-      );
+    if (publication.status !== IdeaPublicationStatus.DRAFT) {
+      throw new ForbiddenException('Only draft publications can be deleted.');
     }
 
     await this.prisma.ideaPublication.delete({
@@ -423,28 +387,22 @@ export class IdeaPublicationService {
    * @throws NotFoundException When the publication does not exist,
    * belongs to another user, or its idea has been deleted.
    */
-  private async findOwnedByIdea(
-    userId: string,
-    ideaId: string,
-  ) {
-    const publication =
-      await this.prisma.ideaPublication.findFirst({
-        where: {
-          ideaId,
-          publisherId: userId,
-          idea: {
-            deletedAt: null,
-          },
+  private async findOwnedByIdea(userId: string, ideaId: string) {
+    const publication = await this.prisma.ideaPublication.findFirst({
+      where: {
+        ideaId,
+        publisherId: userId,
+        idea: {
+          deletedAt: null,
         },
-        include: {
-          audiences: true,
-        },
-      });
+      },
+      include: {
+        audiences: true,
+      },
+    });
 
     if (!publication) {
-      throw new NotFoundException(
-        'Idea publication not found',
-      );
+      throw new NotFoundException('Idea publication not found');
     }
 
     return publication;
@@ -461,12 +419,9 @@ export class IdeaPublicationService {
    * @throws BadRequestException When selected-audience visibility is used
    * without audience entries.
    */
-  private validateAudience(
-    dto: UpsertIdeaPublicationDto,
-  ): void {
+  private validateAudience(dto: UpsertIdeaPublicationDto): void {
     if (
-      dto.visibility ===
-        IdeaPublicationVisibility.SELECTED_AUDIENCE &&
+      dto.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE &&
       (!dto.audiences || dto.audiences.length === 0)
     ) {
       throw new BadRequestException(
@@ -485,9 +440,7 @@ export class IdeaPublicationService {
    * @param value Prisma JSON value.
    * @returns String representation or null when no value exists.
    */
-  private stringifyJson(
-    value: Prisma.JsonValue | null,
-  ): string | null {
+  private stringifyJson(value: Prisma.JsonValue | null): string | null {
     if (value === null || value === undefined) {
       return null;
     }
@@ -499,4 +452,3 @@ export class IdeaPublicationService {
     return JSON.stringify(value);
   }
 }
-

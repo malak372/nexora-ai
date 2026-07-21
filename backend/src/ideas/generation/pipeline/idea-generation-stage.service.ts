@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import type {
   IdeaGenerationStage,
@@ -114,10 +111,7 @@ export class IdeaGenerationCancelledError extends Error {
    */
   readonly stageKey: IdeaGenerationStageKey;
 
-  constructor(
-    runId: string,
-    stageKey: IdeaGenerationStageKey,
-  ) {
+  constructor(runId: string, stageKey: IdeaGenerationStageKey) {
     super(
       `Idea-generation run "${runId}" was cancelled while processing stage "${stageKey}".`,
     );
@@ -162,13 +156,10 @@ export class IdeaGenerationCancelledError extends Error {
  */
 @Injectable()
 export class IdeaGenerationStageService {
-  private readonly logger = new Logger(
-    IdeaGenerationStageService.name,
-  );
+  private readonly logger = new Logger(IdeaGenerationStageService.name);
 
   constructor(
-    private readonly generationRunService:
-      IdeaGenerationRunService,
+    private readonly generationRunService: IdeaGenerationRunService,
   ) {}
 
   /**
@@ -195,42 +186,25 @@ export class IdeaGenerationStageService {
   async executeStage(
     input: ExecuteIdeaGenerationStageInput,
   ): Promise<ExecuteIdeaGenerationStageResult> {
-    const {
-      stage,
-      context,
-      startProgressPercent,
-      completedProgressPercent,
-    } = input;
+    const { stage, context, startProgressPercent, completedProgressPercent } =
+      input;
 
     this.validateStage(stage);
     this.validateContext(context);
 
-    this.validateProgressRange(
-      startProgressPercent,
-      'Stage start progress',
-    );
+    this.validateProgressRange(startProgressPercent, 'Stage start progress');
 
     this.validateProgressRange(
       completedProgressPercent,
       'Stage completed progress',
     );
 
-    this.validateProgressOrder(
-      startProgressPercent,
-      completedProgressPercent,
-    );
+    this.validateProgressOrder(startProgressPercent, completedProgressPercent);
 
-    await this.throwIfCancellationRequested(
-      context,
-      stage,
-    );
+    await this.throwIfCancellationRequested(context, stage);
 
     try {
-      const shouldExecute =
-        await this.shouldExecuteStage(
-          stage,
-          context,
-        );
+      const shouldExecute = await this.shouldExecuteStage(stage, context);
 
       if (!shouldExecute) {
         this.logger.debug(
@@ -254,25 +228,16 @@ export class IdeaGenerationStageService {
         `Started idea-generation stage "${stage.key}" for run "${context.runId}".`,
       );
 
-      const executionResult =
-        await stage.execute(context);
+      const executionResult = await stage.execute(context);
 
-      this.validateExecutionResult(
-        executionResult,
-        stage.key,
-        context.runId,
-      );
+      this.validateExecutionResult(executionResult, stage.key, context.runId);
 
-      await this.throwIfCancellationRequested(
-        executionResult.context,
-        stage,
-      );
+      await this.throwIfCancellationRequested(executionResult.context, stage);
 
       await this.generationRunService.updateProgress({
         runId: executionResult.context.runId,
         currentStageKey: stage.key,
-        progressPercent:
-          completedProgressPercent,
+        progressPercent: completedProgressPercent,
       });
 
       this.logger.debug(
@@ -284,11 +249,9 @@ export class IdeaGenerationStageService {
         stageKey: stage.key,
         executed: true,
 
-        ...(executionResult.resultPreview !==
-        undefined
+        ...(executionResult.resultPreview !== undefined
           ? {
-              resultPreview:
-                executionResult.resultPreview,
+              resultPreview: executionResult.resultPreview,
             }
           : {}),
 
@@ -299,21 +262,13 @@ export class IdeaGenerationStageService {
           : {}),
       };
     } catch (error: unknown) {
-      if (
-        error instanceof
-        IdeaGenerationCancelledError
-      ) {
+      if (error instanceof IdeaGenerationCancelledError) {
         throw error;
       }
 
-      const normalizedError =
-        this.normalizeError(error);
+      const normalizedError = this.normalizeError(error);
 
-      await this.handleStageFailure(
-        stage,
-        context,
-        normalizedError,
-      );
+      await this.handleStageFailure(stage, context, normalizedError);
 
       throw normalizedError;
     }
@@ -358,22 +313,15 @@ export class IdeaGenerationStageService {
     stage: IdeaGenerationStage,
   ): Promise<void> {
     const cancellationRequested =
-      await this.generationRunService
-        .isCancellationRequested(context.runId);
+      await this.generationRunService.isCancellationRequested(context.runId);
 
     if (!cancellationRequested) {
       return;
     }
 
-    await this.handleStageCancellation(
-      stage,
-      context,
-    );
+    await this.handleStageCancellation(stage, context);
 
-    throw new IdeaGenerationCancelledError(
-      context.runId,
-      stage.key,
-    );
+    throw new IdeaGenerationCancelledError(context.runId, stage.key);
   }
 
   /**
@@ -400,8 +348,7 @@ export class IdeaGenerationStageService {
         `Executed cancellation cleanup for stage "${stage.key}" and run "${context.runId}".`,
       );
     } catch (error: unknown) {
-      const cleanupError =
-        this.normalizeError(error);
+      const cleanupError = this.normalizeError(error);
 
       this.logger.error(
         `Cancellation cleanup failed for stage "${stage.key}" and run "${context.runId}": ${cleanupError.message}`,
@@ -435,15 +382,9 @@ export class IdeaGenerationStageService {
     }
 
     try {
-      await stage.onFailure(
-        context,
-        error,
-      );
+      await stage.onFailure(context, error);
     } catch (failureCleanupError: unknown) {
-      const normalizedCleanupError =
-        this.normalizeError(
-          failureCleanupError,
-        );
+      const normalizedCleanupError = this.normalizeError(failureCleanupError);
 
       this.logger.error(
         `Failure cleanup also failed for stage "${stage.key}" and run "${context.runId}": ${normalizedCleanupError.message}`,
@@ -457,22 +398,13 @@ export class IdeaGenerationStageService {
    *
    * @param stage Stage implementation to validate.
    */
-  private validateStage(
-    stage: IdeaGenerationStage,
-  ): void {
+  private validateStage(stage: IdeaGenerationStage): void {
     if (!stage) {
-      throw new Error(
-        'Idea-generation stage is required.',
-      );
+      throw new Error('Idea-generation stage is required.');
     }
 
-    if (
-      typeof stage.key !== 'string' ||
-      !stage.key.trim()
-    ) {
-      throw new Error(
-        'Idea-generation stage must contain a valid key.',
-      );
+    if (typeof stage.key !== 'string' || !stage.key.trim()) {
+      throw new Error('Idea-generation stage must contain a valid key.');
     }
 
     if (typeof stage.execute !== 'function') {
@@ -491,22 +423,13 @@ export class IdeaGenerationStageService {
    *
    * @param context Generation context to validate.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context) {
-      throw new Error(
-        'Idea-generation context is required.',
-      );
+      throw new Error('Idea-generation context is required.');
     }
 
-    if (
-      typeof context.runId !== 'string' ||
-      !context.runId.trim()
-    ) {
-      throw new Error(
-        'Idea-generation context must contain a valid run ID.',
-      );
+    if (typeof context.runId !== 'string' || !context.runId.trim()) {
+      throw new Error('Idea-generation context must contain a valid run ID.');
     }
   }
 
@@ -536,10 +459,7 @@ export class IdeaGenerationStageService {
 
     this.validateContext(result.context);
 
-    if (
-      result.context.runId.trim() !==
-      expectedRunId.trim()
-    ) {
+    if (result.context.runId.trim() !== expectedRunId.trim()) {
       throw new Error(
         `Idea-generation stage "${stageKey}" returned a context for another generation run.`,
       );
@@ -547,11 +467,9 @@ export class IdeaGenerationStageService {
 
     if (
       result.metadata !== undefined &&
-      (
-        typeof result.metadata !== 'object' ||
+      (typeof result.metadata !== 'object' ||
         result.metadata === null ||
-        Array.isArray(result.metadata)
-      )
+        Array.isArray(result.metadata))
     ) {
       throw new Error(
         `Idea-generation stage "${stageKey}" returned invalid metadata.`,
@@ -578,9 +496,7 @@ export class IdeaGenerationStageService {
       progressPercent < 0 ||
       progressPercent > 99
     ) {
-      throw new Error(
-        `${fieldName} must be an integer between 0 and 99.`,
-      );
+      throw new Error(`${fieldName} must be an integer between 0 and 99.`);
     }
   }
 
@@ -598,10 +514,7 @@ export class IdeaGenerationStageService {
     startProgressPercent: number,
     completedProgressPercent: number,
   ): void {
-    if (
-      completedProgressPercent <
-      startProgressPercent
-    ) {
+    if (completedProgressPercent < startProgressPercent) {
       throw new Error(
         'Stage completed progress cannot be lower than stage start progress.',
       );
@@ -614,9 +527,7 @@ export class IdeaGenerationStageService {
    * @param error Unknown thrown value.
    * @returns Standard Error instance.
    */
-  private normalizeError(
-    error: unknown,
-  ): Error {
+  private normalizeError(error: unknown): Error {
     if (error instanceof Error) {
       return error;
     }
@@ -625,8 +536,6 @@ export class IdeaGenerationStageService {
       return new Error(error);
     }
 
-    return new Error(
-      'Unknown idea-generation stage execution error.',
-    );
+    return new Error('Unknown idea-generation stage execution error.');
   }
 }

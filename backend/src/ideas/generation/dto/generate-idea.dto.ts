@@ -1,9 +1,6 @@
-import {
-  IdeaGenerationType,
-  LanguageCode,
-} from '@prisma/client';
+import { IdeaGenerationType, LanguageCode } from '@prisma/client';
 
-import { Transform, Type } from 'class-transformer';
+import { Transform, type TransformFnParams, Type } from 'class-transformer';
 
 import {
   ArrayMaxSize,
@@ -79,10 +76,8 @@ export class GenerateIdeaDto {
    */
   @IsString()
   @MaxLength(100)
-  @Transform(({ value }) =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
   )
   country!: string;
 
@@ -92,10 +87,8 @@ export class GenerateIdeaDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  @Transform(({ value }) =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
   )
   city?: string;
 
@@ -105,10 +98,8 @@ export class GenerateIdeaDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  @Transform(({ value }) =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
   )
   region?: string;
 
@@ -149,10 +140,9 @@ export class GenerateIdeaDto {
   @MaxLength(50, { each: true })
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     each: true,
-    message:
-      'Each data source key must use lowercase kebab-case characters.',
+    message: 'Each data source key must use lowercase kebab-case characters.',
   })
-  @Transform(({ value }) => {
+  @Transform(({ value }: TransformFnParams): unknown => {
     if (!Array.isArray(value)) {
       return value;
     }
@@ -160,13 +150,8 @@ export class GenerateIdeaDto {
     return [
       ...new Set(
         value
-          .filter(
-            (item): item is string =>
-              typeof item === 'string',
-          )
-          .map((item) =>
-            item.trim().toLowerCase(),
-          )
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim().toLowerCase())
           .filter(Boolean),
       ),
     ];
@@ -182,7 +167,7 @@ export class GenerateIdeaDto {
   @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(100, { each: true })
-  @Transform(({ value }) => {
+  @Transform(({ value }: TransformFnParams): unknown => {
     if (!Array.isArray(value)) {
       return value;
     }
@@ -190,10 +175,7 @@ export class GenerateIdeaDto {
     return [
       ...new Set(
         value
-          .filter(
-            (item): item is string =>
-              typeof item === 'string',
-          )
+          .filter((item): item is string => typeof item === 'string')
           .map((item) => item.trim())
           .filter(Boolean),
       ),

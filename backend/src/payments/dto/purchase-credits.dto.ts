@@ -1,13 +1,6 @@
 import { Type } from 'class-transformer';
 
-import {
-  IsInt,
-  IsString,
-  IsUrl,
-  Matches,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsInt, IsString, IsUrl, Matches, Max, Min } from 'class-validator';
 
 import {
   MAX_CREDITS_PER_PURCHASE,

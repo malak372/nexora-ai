@@ -97,9 +97,7 @@ export type IdeaGenerationSelectionResult = {
  */
 @Injectable()
 export class IdeaGenerationSelectionService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Resolves both the selected domain and the applicable data
@@ -116,9 +114,7 @@ export class IdeaGenerationSelectionService {
   ): Promise<IdeaGenerationSelectionResult> {
     const [domain, dataSources] = await Promise.all([
       this.resolveDomain(input.domainId),
-      this.resolveDataSources(
-        input.requestedDataSourceKeys,
-      ),
+      this.resolveDataSources(input.requestedDataSourceKeys),
     ]);
 
     return {
@@ -141,47 +137,38 @@ export class IdeaGenerationSelectionService {
    * @param domainId Domain identifier.
    * @returns Validated domain information.
    */
-  async resolveDomain(
-    domainId: string,
-  ): Promise<ResolvedIdeaGenerationDomain> {
-    const domain =
-      await this.prisma.domain.findUnique({
-        where: {
-          id: domainId,
-        },
-        select: {
-          id: true,
-          name: true,
-          isActive: true,
+  async resolveDomain(domainId: string): Promise<ResolvedIdeaGenerationDomain> {
+    const domain = await this.prisma.domain.findUnique({
+      where: {
+        id: domainId,
+      },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
 
-          domainKeywords: {
-            select: {
-              keyword: true,
-            },
-            orderBy: {
-              keyword: 'asc',
-            },
+        domainKeywords: {
+          select: {
+            keyword: true,
+          },
+          orderBy: {
+            keyword: 'asc',
           },
         },
-      });
+      },
+    });
 
     if (!domain) {
       throw new NotFoundException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DOMAIN_NOT_FOUND,
-        message:
-          'The selected domain was not found.',
+        code: IDEA_GENERATION_ERROR_CODES.DOMAIN_NOT_FOUND,
+        message: 'The selected domain was not found.',
       });
     }
 
     if (!domain.isActive) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DOMAIN_INACTIVE,
-        message:
-          'The selected domain is currently inactive.',
+        code: IDEA_GENERATION_ERROR_CODES.DOMAIN_INACTIVE,
+        message: 'The selected domain is currently inactive.',
       });
     }
 
@@ -189,9 +176,7 @@ export class IdeaGenerationSelectionService {
       id: domain.id,
       name: domain.name,
       keywords: this.normalizeValues(
-        domain.domainKeywords.map(
-          (item) => item.keyword,
-        ),
+        domain.domainKeywords.map((item) => item.keyword),
       ),
     };
   }
@@ -218,44 +203,40 @@ export class IdeaGenerationSelectionService {
   async resolveDataSources(
     requestedDataSourceKeys?: string[],
   ): Promise<SelectedIdeaDataSource[]> {
-    const normalizedRequestedKeys =
-      this.normalizeValues(
-        requestedDataSourceKeys ?? [],
-      );
+    const normalizedRequestedKeys = this.normalizeValues(
+      requestedDataSourceKeys ?? [],
+    );
 
-    const dataSources =
-      await this.prisma.dataSource.findMany({
-        where: {
-          isActive: true,
-          isImplemented: true,
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: {
+        isActive: true,
+        isImplemented: true,
 
-          ...(normalizedRequestedKeys.length > 0
-            ? {
-                key: {
-                  in: normalizedRequestedKeys,
-                },
-              }
-            : {}),
-        },
-        select: {
-          id: true,
-          key: true,
-          displayName: true,
-          supportsPosts: true,
-          supportsComments: true,
-          supportsRegion: true,
-          supportsLanguage: true,
-        },
-        orderBy: {
-          displayName: 'asc',
-        },
-      });
+        ...(normalizedRequestedKeys.length > 0
+          ? {
+              key: {
+                in: normalizedRequestedKeys,
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        key: true,
+        displayName: true,
+        supportsPosts: true,
+        supportsComments: true,
+        supportsRegion: true,
+        supportsLanguage: true,
+      },
+      orderBy: {
+        displayName: 'asc',
+      },
+    });
 
     if (dataSources.length === 0) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NO_DATA_SOURCES_AVAILABLE,
+        code: IDEA_GENERATION_ERROR_CODES.NO_DATA_SOURCES_AVAILABLE,
         message:
           normalizedRequestedKeys.length > 0
             ? 'None of the selected data sources are currently available.'
@@ -266,9 +247,7 @@ export class IdeaGenerationSelectionService {
     if (normalizedRequestedKeys.length > 0) {
       this.validateRequestedDataSources(
         normalizedRequestedKeys,
-        dataSources.map(
-          (dataSource) => dataSource.key,
-        ),
+        dataSources.map((dataSource) => dataSource.key),
       );
     }
 
@@ -277,12 +256,9 @@ export class IdeaGenerationSelectionService {
       key: dataSource.key,
       displayName: dataSource.displayName,
       supportsPosts: dataSource.supportsPosts,
-      supportsComments:
-        dataSource.supportsComments,
-      supportsRegion:
-        dataSource.supportsRegion,
-      supportsLanguage:
-        dataSource.supportsLanguage,
+      supportsComments: dataSource.supportsComments,
+      supportsRegion: dataSource.supportsRegion,
+      supportsLanguage: dataSource.supportsLanguage,
     }));
   }
 
@@ -299,23 +275,20 @@ export class IdeaGenerationSelectionService {
    * @returns Stable available data-source keys.
    */
   async getAvailableDataSourceKeys(): Promise<string[]> {
-    const dataSources =
-      await this.prisma.dataSource.findMany({
-        where: {
-          isActive: true,
-          isImplemented: true,
-        },
-        select: {
-          key: true,
-        },
-        orderBy: {
-          key: 'asc',
-        },
-      });
+    const dataSources = await this.prisma.dataSource.findMany({
+      where: {
+        isActive: true,
+        isImplemented: true,
+      },
+      select: {
+        key: true,
+      },
+      orderBy: {
+        key: 'asc',
+      },
+    });
 
-    return dataSources.map(
-      (dataSource) => dataSource.key,
-    );
+    return dataSources.map((dataSource) => dataSource.key);
   }
 
   /**
@@ -335,9 +308,7 @@ export class IdeaGenerationSelectionService {
     resolvedKeys: string[],
   ): void {
     const resolvedKeySet = new Set(
-      resolvedKeys.map((key) =>
-        key.trim().toLowerCase(),
-      ),
+      resolvedKeys.map((key) => key.trim().toLowerCase()),
     );
 
     const unavailableKeys = requestedKeys.filter(
@@ -349,11 +320,8 @@ export class IdeaGenerationSelectionService {
     }
 
     throw new BadRequestException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .NO_DATA_SOURCES_AVAILABLE,
-      message:
-        'One or more selected data sources are unavailable.',
+      code: IDEA_GENERATION_ERROR_CODES.NO_DATA_SOURCES_AVAILABLE,
+      message: 'One or more selected data sources are unavailable.',
       unavailableDataSourceKeys: unavailableKeys,
     });
   }
@@ -374,17 +342,10 @@ export class IdeaGenerationSelectionService {
    * @param values Values to normalize.
    * @returns Normalized unique values.
    */
-  private normalizeValues(
-    values: string[],
-  ): string[] {
+  private normalizeValues(values: string[]): string[] {
     const normalizedValues = values
-      .filter(
-        (value): value is string =>
-          typeof value === 'string',
-      )
-      .map((value) =>
-        value.trim().toLowerCase(),
-      )
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim().toLowerCase())
       .filter(Boolean);
 
     return [...new Set(normalizedValues)];

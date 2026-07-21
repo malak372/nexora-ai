@@ -74,9 +74,7 @@ export class FeatureRequestExtractionService {
    * @param analyzedTexts Final analyzed text records.
    * @returns Feature requests sorted by descending frequency and then title.
    */
-  extract(
-    analyzedTexts: readonly TextAnalysisResult[],
-  ): FeatureRequest[] {
+  extract(analyzedTexts: readonly TextAnalysisResult[]): FeatureRequest[] {
     const requestMap = new Map<string, FeatureRequestAggregation>();
 
     for (const text of analyzedTexts) {
@@ -94,10 +92,7 @@ export class FeatureRequestExtractionService {
         if (current) {
           current.frequency += 1;
 
-          this.addEvidenceSample(
-            current.evidenceSamples,
-            text.originalText,
-          );
+          this.addEvidenceSample(current.evidenceSamples, text.originalText);
 
           continue;
         }
@@ -108,10 +103,7 @@ export class FeatureRequestExtractionService {
           evidenceSamples: [],
         };
 
-        this.addEvidenceSample(
-          aggregation.evidenceSamples,
-          text.originalText,
-        );
+        this.addEvidenceSample(aggregation.evidenceSamples, text.originalText);
 
         requestMap.set(aggregationKey, aggregation);
       }
@@ -144,9 +136,7 @@ export class FeatureRequestExtractionService {
    * @param requests Raw matched feature-request lexicon values.
    * @returns Unique normalized request labels.
    */
-  private normalizeUniqueRequests(
-    requests: readonly string[],
-  ): string[] {
+  private normalizeUniqueRequests(requests: readonly string[]): string[] {
     const uniqueRequests = new Map<string, string>();
 
     for (const request of requests) {
@@ -173,10 +163,7 @@ export class FeatureRequestExtractionService {
    * @param samples Existing evidence samples.
    * @param sample New evidence candidate.
    */
-  private addEvidenceSample(
-    samples: string[],
-    sample: string,
-  ): void {
+  private addEvidenceSample(samples: string[], sample: string): void {
     const normalizedSample = sample.trim();
 
     if (!normalizedSample) {

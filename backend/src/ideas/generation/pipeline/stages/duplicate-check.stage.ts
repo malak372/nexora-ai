@@ -20,17 +20,11 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  IdeaDuplicateDetectionService,
-} from '../../services/idea-duplicate-detection.service';
+import { IdeaDuplicateDetectionService } from '../../services/idea-duplicate-detection.service';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Checks whether the generated idea title is highly similar to an
@@ -60,24 +54,19 @@ import {
  * @author Malak
  */
 @Injectable()
-export class DuplicateCheckStage
-  implements IdeaGenerationStage
-{
+export class DuplicateCheckStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.DUPLICATE_CHECK;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.DUPLICATE_CHECK;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly duplicateDetectionService:
-      IdeaDuplicateDetectionService,
+    private readonly duplicateDetectionService: IdeaDuplicateDetectionService,
   ) {}
 
   /**
@@ -92,41 +81,31 @@ export class DuplicateCheckStage
     this.validateContext(context);
 
     const userId =
-      context.owner.type ===
-      IDEA_OWNER_TYPES.USER
+      context.owner.type === IDEA_OWNER_TYPES.USER
         ? context.owner.userId
         : undefined;
 
-    const result =
-      await this.duplicateDetectionService.check(
-        userId,
-        context.domainId,
-        context.coreIdea!.title,
-      );
+    const result = await this.duplicateDetectionService.check(
+      userId,
+      context.domainId,
+      context.coreIdea!.title,
+    );
 
     if (result.isDuplicate) {
       throw new ConflictException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
         message:
           'A highly similar generated idea already exists for this domain.',
 
         details: {
-          matchedIdeaId:
-            result.matchedIdea?.id ??
-            null,
+          matchedIdeaId: result.matchedIdea?.id ?? null,
 
-          matchedTitle:
-            result.matchedIdea?.title ??
-            null,
+          matchedTitle: result.matchedIdea?.title ?? null,
 
-          similarity:
-            result.highestSimilarity,
+          similarity: result.highestSimilarity,
 
-          threshold:
-            IDEA_TITLE_SIMILARITY_THRESHOLD,
+          threshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
         },
       });
     }
@@ -134,21 +113,16 @@ export class DuplicateCheckStage
     return {
       context,
 
-      resultPreview:
-        'No duplicate generated idea was detected.',
+      resultPreview: 'No duplicate generated idea was detected.',
 
       metadata: {
         isDuplicate: false,
 
-        highestSimilarity:
-          result.highestSimilarity,
+        highestSimilarity: result.highestSimilarity,
 
-        matchedIdeaId:
-          result.matchedIdea?.id ??
-          null,
+        matchedIdeaId: result.matchedIdea?.id ?? null,
 
-        threshold:
-          IDEA_TITLE_SIMILARITY_THRESHOLD,
+        threshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
       },
     };
   }
@@ -159,14 +133,10 @@ export class DuplicateCheckStage
    *
    * @param context Current generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.coreIdea) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
         message:
           'Validated core idea output is required before duplicate detection.',
@@ -175,22 +145,15 @@ export class DuplicateCheckStage
 
     if (!context.domainId?.trim()) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
-        message:
-          'A valid domain ID is required before duplicate detection.',
+        message: 'A valid domain ID is required before duplicate detection.',
       });
     }
 
-    if (
-      !context.coreIdea.title?.trim()
-    ) {
+    if (!context.coreIdea.title?.trim()) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DUPLICATE_IDEA,
+        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
         message:
           'A valid generated idea title is required before duplicate detection.',
@@ -204,10 +167,7 @@ export class DuplicateCheckStage
    * @returns Duplicate-check stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

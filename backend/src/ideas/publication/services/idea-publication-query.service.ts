@@ -43,6 +43,7 @@ export class IdeaPublicationQueryService {
     return this.findMany(
       {
         status: IdeaPublicationStatus.PUBLISHED,
+        isHidden: false,
         visibility: IdeaPublicationVisibility.PUBLIC,
       },
       query,
@@ -73,6 +74,7 @@ export class IdeaPublicationQueryService {
     return this.findMany(
       {
         status: IdeaPublicationStatus.PUBLISHED,
+        isHidden: false,
         OR: [
           {
             visibility: IdeaPublicationVisibility.PUBLIC,
@@ -143,6 +145,7 @@ export class IdeaPublicationQueryService {
     return this.findOneOrThrow({
       id: publicationId,
       status: IdeaPublicationStatus.PUBLISHED,
+      isHidden: false,
       visibility: IdeaPublicationVisibility.PUBLIC,
     });
   }
@@ -178,6 +181,7 @@ export class IdeaPublicationQueryService {
         },
         {
           status: IdeaPublicationStatus.PUBLISHED,
+          isHidden: false,
           visibility: {
             in: [
               IdeaPublicationVisibility.PUBLIC,
@@ -187,6 +191,7 @@ export class IdeaPublicationQueryService {
         },
         {
           status: IdeaPublicationStatus.PUBLISHED,
+          isHidden: false,
           visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
           audiences: {
             some: {
@@ -266,12 +271,8 @@ export class IdeaPublicationQueryService {
         query.fromDate || query.toDate
           ? {
               createdAt: {
-                ...(query.fromDate
-                  ? { gte: new Date(query.fromDate) }
-                  : {}),
-                ...(query.toDate
-                  ? { lte: new Date(query.toDate) }
-                  : {}),
+                ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+                ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
               },
             }
           : {},
@@ -329,9 +330,7 @@ export class IdeaPublicationQueryService {
    * @returns Publication details.
    * @throws NotFoundException When no matching publication is found.
    */
-  private async findOneOrThrow(
-    where: Prisma.IdeaPublicationWhereInput,
-  ) {
+  private async findOneOrThrow(where: Prisma.IdeaPublicationWhereInput) {
     const publication = await this.prisma.ideaPublication.findFirst({
       where,
       select: this.publicationSelect,
@@ -389,4 +388,3 @@ export class IdeaPublicationQueryService {
     },
   } satisfies Prisma.IdeaPublicationSelect;
 }
-

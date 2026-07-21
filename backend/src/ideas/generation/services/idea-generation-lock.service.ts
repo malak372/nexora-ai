@@ -1,9 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
@@ -98,9 +93,7 @@ export type ReleaseIdeaGenerationLockInput = {
  */
 @Injectable()
 export class IdeaGenerationLockService {
-  private readonly logger = new Logger(
-    IdeaGenerationLockService.name,
-  );
+  private readonly logger = new Logger(IdeaGenerationLockService.name);
 
   /**
    * Tracks lock keys currently being acquired in this Node.js
@@ -125,9 +118,7 @@ export class IdeaGenerationLockService {
    *
    * @param input Owner and generation-run information.
    */
-  async acquire(
-    input: AcquireIdeaGenerationLockInput,
-  ): Promise<void> {
+  async acquire(input: AcquireIdeaGenerationLockInput): Promise<void> {
     const lockKey = this.buildLockKey(input.owner);
 
     if (this.localAcquisitionGuards.has(lockKey)) {
@@ -137,13 +128,10 @@ export class IdeaGenerationLockService {
     this.localAcquisitionGuards.add(lockKey);
 
     try {
-      const existingLock =
-        await this.getLockByKey(lockKey);
+      const existingLock = await this.getLockByKey(lockKey);
 
       if (existingLock) {
-        this.throwGenerationAlreadyRunning(
-          existingLock.runId,
-        );
+        this.throwGenerationAlreadyRunning(existingLock.runId);
       }
 
       const lockValue: IdeaGenerationLockValue = {
@@ -176,13 +164,10 @@ export class IdeaGenerationLockService {
    *
    * @param input Owner and expected lock-owning run.
    */
-  async release(
-    input: ReleaseIdeaGenerationLockInput,
-  ): Promise<void> {
+  async release(input: ReleaseIdeaGenerationLockInput): Promise<void> {
     const lockKey = this.buildLockKey(input.owner);
 
-    const existingLock =
-      await this.getLockByKey(lockKey);
+    const existingLock = await this.getLockByKey(lockKey);
 
     if (!existingLock) {
       return;
@@ -222,9 +207,7 @@ export class IdeaGenerationLockService {
    *
    * @param owner Registered user or guest-session owner.
    */
-  async getActiveRunId(
-    owner: IdeaOwner,
-  ): Promise<string | null> {
+  async getActiveRunId(owner: IdeaOwner): Promise<string | null> {
     const lock = await this.getLock(owner);
 
     return lock?.runId ?? null;
@@ -244,19 +227,12 @@ export class IdeaGenerationLockService {
    * @param runId Expected lock-owning generation run.
    * @returns True when the lock was refreshed.
    */
-  async refresh(
-    owner: IdeaOwner,
-    runId: string,
-  ): Promise<boolean> {
+  async refresh(owner: IdeaOwner, runId: string): Promise<boolean> {
     const lockKey = this.buildLockKey(owner);
 
-    const existingLock =
-      await this.getLockByKey(lockKey);
+    const existingLock = await this.getLockByKey(lockKey);
 
-    if (
-      !existingLock ||
-      existingLock.runId !== runId
-    ) {
+    if (!existingLock || existingLock.runId !== runId) {
       return false;
     }
 
@@ -289,9 +265,7 @@ export class IdeaGenerationLockService {
 
     await this.cacheManager.del(lockKey);
 
-    this.logger.warn(
-      `Force-released idea-generation lock "${lockKey}".`,
-    );
+    this.logger.warn(`Force-released idea-generation lock "${lockKey}".`);
   }
 
   /**
@@ -314,8 +288,7 @@ export class IdeaGenerationLockService {
   private async getLockByKey(
     lockKey: string,
   ): Promise<IdeaGenerationLockValue | null> {
-    const value =
-      await this.cacheManager.get<unknown>(lockKey);
+    const value = await this.cacheManager.get<unknown>(lockKey);
 
     if (value === undefined || value === null) {
       return null;
@@ -340,44 +313,29 @@ export class IdeaGenerationLockService {
    */
   private buildLockKey(owner: IdeaOwner): string {
     if (owner.type === 'USER') {
-      return [
-        IDEA_GENERATION_LOCK_PREFIX,
-        'user',
-        owner.userId,
-      ].join(':');
+      return [IDEA_GENERATION_LOCK_PREFIX, 'user', owner.userId].join(':');
     }
 
-    return [
-      IDEA_GENERATION_LOCK_PREFIX,
-      'guest',
-      owner.guestSessionId,
-    ].join(':');
+    return [IDEA_GENERATION_LOCK_PREFIX, 'guest', owner.guestSessionId].join(
+      ':',
+    );
   }
 
   /**
    * Validates an unknown cached lock value.
    */
-  private isValidLockValue(
-    value: unknown,
-  ): value is IdeaGenerationLockValue {
-    if (
-      typeof value !== 'object' ||
-      value === null ||
-      Array.isArray(value)
-    ) {
+  private isValidLockValue(value: unknown): value is IdeaGenerationLockValue {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       return false;
     }
 
-    const candidate =
-      value as Partial<IdeaGenerationLockValue>;
+    const candidate = value as Partial<IdeaGenerationLockValue>;
 
     return (
       typeof candidate.runId === 'string' &&
       candidate.runId.length > 0 &&
       typeof candidate.acquiredAt === 'string' &&
-      !Number.isNaN(
-        Date.parse(candidate.acquiredAt),
-      )
+      !Number.isNaN(Date.parse(candidate.acquiredAt))
     );
   }
 
@@ -385,15 +343,10 @@ export class IdeaGenerationLockService {
    * Throws the standard conflict response used when an owner
    * already has an active idea-generation run.
    */
-  private throwGenerationAlreadyRunning(
-    activeRunId?: string,
-  ): never {
+  private throwGenerationAlreadyRunning(activeRunId?: string): never {
     throw new ConflictException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .GENERATION_ALREADY_RUNNING,
-      message:
-        'An idea-generation run is already active for this owner.',
+      code: IDEA_GENERATION_ERROR_CODES.GENERATION_ALREADY_RUNNING,
+      message: 'An idea-generation run is already active for this owner.',
       activeRunId: activeRunId ?? null,
     });
   }

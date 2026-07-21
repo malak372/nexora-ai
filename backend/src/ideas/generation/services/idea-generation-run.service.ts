@@ -24,9 +24,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
  *
  * @author Malak
  */
-type IdeaGenerationRunDatabaseClient =
-  | PrismaService
-  | Prisma.TransactionClient;
+type IdeaGenerationRunDatabaseClient = PrismaService | Prisma.TransactionClient;
 
 /**
  * Owner information associated with a generation run.
@@ -66,18 +64,17 @@ export type IdeaGenerationRunOwner =
  *
  * @author Malak
  */
-export type CreateIdeaGenerationRunInput =
-  IdeaGenerationRunOwner & {
-    /**
-     * Authorized generation type selected by the policy layer.
-     */
-    generationType: IdeaGenerationType;
+export type CreateIdeaGenerationRunInput = IdeaGenerationRunOwner & {
+  /**
+   * Authorized generation type selected by the policy layer.
+   */
+  generationType: IdeaGenerationType;
 
-    /**
-     * Optional collection job already associated with the run.
-     */
-    collectionJobId?: string | null;
-  };
+  /**
+   * Optional collection job already associated with the run.
+   */
+  collectionJobId?: string | null;
+};
 
 /**
  * Input used to update the current pipeline stage and overall
@@ -206,16 +203,13 @@ export class IdeaGenerationRunService {
    * Statuses after which a generation run must no longer be
    * modified through normal lifecycle methods.
    */
-  private readonly terminalStatuses =
-    new Set<IdeaGenerationRunStatus>([
-      IdeaGenerationRunStatus.COMPLETED,
-      IdeaGenerationRunStatus.FAILED,
-      IdeaGenerationRunStatus.CANCELLED,
-    ]);
+  private readonly terminalStatuses = new Set<IdeaGenerationRunStatus>([
+    IdeaGenerationRunStatus.COMPLETED,
+    IdeaGenerationRunStatus.FAILED,
+    IdeaGenerationRunStatus.CANCELLED,
+  ]);
 
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Creates a queued generation run.
@@ -241,11 +235,9 @@ export class IdeaGenerationRunService {
     return db.ideaGenerationRun.create({
       data: {
         userId: input.userId ?? null,
-        guestSessionId:
-          input.guestSessionId ?? null,
+        guestSessionId: input.guestSessionId ?? null,
         generationType: input.generationType,
-        collectionJobId:
-          input.collectionJobId ?? null,
+        collectionJobId: input.collectionJobId ?? null,
         status: IdeaGenerationRunStatus.QUEUED,
         progressPercent: 0,
         currentStageKey: null,
@@ -271,24 +263,21 @@ export class IdeaGenerationRunService {
     runId: string,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
   ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
-    const run =
-      await db.ideaGenerationRun.findUnique({
-        where: {
-          id: normalizedRunId,
-        },
-      });
+    const run = await db.ideaGenerationRun.findUnique({
+      where: {
+        id: normalizedRunId,
+      },
+    });
 
     if (!run) {
       throw new NotFoundException({
         code: 'IDEA_GENERATION_RUN_NOT_FOUND',
-        message:
-          'The requested idea-generation run was not found.',
+        message: 'The requested idea-generation run was not found.',
       });
     }
 
@@ -306,33 +295,29 @@ export class IdeaGenerationRunService {
    * @param runId Generation-run identifier.
    * @returns Updated running generation run.
    */
-  async startRun(
-    runId: string,
-  ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+  async startRun(runId: string): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
     const now = new Date();
 
-    const result =
-      await this.prisma.ideaGenerationRun.updateMany({
-        where: {
-          id: normalizedRunId,
-          status: IdeaGenerationRunStatus.QUEUED,
-          cancelRequestedAt: null,
-        },
-        data: {
-          status: IdeaGenerationRunStatus.RUNNING,
-          startedAt: now,
-          lastHeartbeatAt: now,
-          progressPercent: 0,
-          errorCode: null,
-          errorMessage: null,
-        },
-      });
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: IdeaGenerationRunStatus.QUEUED,
+        cancelRequestedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.RUNNING,
+        startedAt: now,
+        lastHeartbeatAt: now,
+        progressPercent: 0,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
 
     if (result.count !== 1) {
       await this.throwStartFailure(normalizedRunId);
@@ -355,34 +340,27 @@ export class IdeaGenerationRunService {
   async updateProgress(
     input: UpdateIdeaGenerationRunProgressInput,
   ): Promise<IdeaGenerationRun> {
-    const runId = this.normalizeRequiredValue(
-      input.runId,
-      'Generation-run ID',
+    const runId = this.normalizeRequiredValue(input.runId, 'Generation-run ID');
+
+    const currentStageKey = this.normalizeRequiredValue(
+      input.currentStageKey,
+      'Current stage key',
     );
 
-    const currentStageKey =
-      this.normalizeRequiredValue(
-        input.currentStageKey,
-        'Current stage key',
-      );
+    this.validateRunningProgress(input.progressPercent);
 
-    this.validateRunningProgress(
-      input.progressPercent,
-    );
-
-    const result =
-      await this.prisma.ideaGenerationRun.updateMany({
-        where: {
-          id: runId,
-          status: IdeaGenerationRunStatus.RUNNING,
-          cancelRequestedAt: null,
-        },
-        data: {
-          currentStageKey,
-          progressPercent: input.progressPercent,
-          lastHeartbeatAt: new Date(),
-        },
-      });
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: runId,
+        status: IdeaGenerationRunStatus.RUNNING,
+        cancelRequestedAt: null,
+      },
+      data: {
+        currentStageKey,
+        progressPercent: input.progressPercent,
+        lastHeartbeatAt: new Date(),
+      },
+    });
 
     if (result.count !== 1) {
       await this.throwRunningUpdateFailure(runId);
@@ -401,23 +379,21 @@ export class IdeaGenerationRunService {
    * @returns True when the heartbeat was updated.
    */
   async heartbeat(runId: string): Promise<boolean> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
-    const result =
-      await this.prisma.ideaGenerationRun.updateMany({
-        where: {
-          id: normalizedRunId,
-          status: IdeaGenerationRunStatus.RUNNING,
-          cancelRequestedAt: null,
-        },
-        data: {
-          lastHeartbeatAt: new Date(),
-        },
-      });
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: IdeaGenerationRunStatus.RUNNING,
+        cancelRequestedAt: null,
+      },
+      data: {
+        lastHeartbeatAt: new Date(),
+      },
+    });
 
     return result.count === 1;
   }
@@ -436,27 +412,16 @@ export class IdeaGenerationRunService {
     input: AttachIdeaGenerationRunResourcesInput,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
   ): Promise<IdeaGenerationRun> {
-    const runId = this.normalizeRequiredValue(
-      input.runId,
-      'Generation-run ID',
-    );
+    const runId = this.normalizeRequiredValue(input.runId, 'Generation-run ID');
 
-    if (
-      input.ideaId === undefined &&
-      input.collectionJobId === undefined
-    ) {
+    if (input.ideaId === undefined && input.collectionJobId === undefined) {
       throw new BadRequestException({
-        code:
-          'IDEA_GENERATION_RESOURCES_REQUIRED',
-        message:
-          'At least one generation resource must be provided.',
+        code: 'IDEA_GENERATION_RESOURCES_REQUIRED',
+        message: 'At least one generation resource must be provided.',
       });
     }
 
-    const run = await this.findRunOrThrow(
-      runId,
-      db,
-    );
+    const run = await this.findRunOrThrow(runId, db);
 
     this.assertNotTerminal(run);
 
@@ -467,20 +432,16 @@ export class IdeaGenerationRunService {
       data: {
         ...(input.ideaId !== undefined
           ? {
-              ideaId: this.normalizeRequiredValue(
-                input.ideaId,
-                'Idea ID',
-              ),
+              ideaId: this.normalizeRequiredValue(input.ideaId, 'Idea ID'),
             }
           : {}),
 
         ...(input.collectionJobId !== undefined
           ? {
-              collectionJobId:
-                this.normalizeRequiredValue(
-                  input.collectionJobId,
-                  'Collection-job ID',
-                ),
+              collectionJobId: this.normalizeRequiredValue(
+                input.collectionJobId,
+                'Collection-job ID',
+              ),
             }
           : {}),
       },
@@ -499,18 +460,13 @@ export class IdeaGenerationRunService {
    * @param runId Generation-run identifier.
    * @returns Current generation run.
    */
-  async requestCancellation(
-    runId: string,
-  ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
-
-    const run = await this.findRunOrThrow(
-      normalizedRunId,
+  async requestCancellation(runId: string): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
     );
+
+    const run = await this.findRunOrThrow(normalizedRunId);
 
     if (this.terminalStatuses.has(run.status)) {
       return run;
@@ -524,10 +480,7 @@ export class IdeaGenerationRunService {
       where: {
         id: normalizedRunId,
         status: {
-          in: [
-            IdeaGenerationRunStatus.QUEUED,
-            IdeaGenerationRunStatus.RUNNING,
-          ],
+          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
         },
         cancelRequestedAt: null,
       },
@@ -552,36 +505,32 @@ export class IdeaGenerationRunService {
   async getCancellationState(
     runId: string,
   ): Promise<IdeaGenerationCancellationState> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
-    const run =
-      await this.prisma.ideaGenerationRun.findUnique({
-        where: {
-          id: normalizedRunId,
-        },
-        select: {
-          status: true,
-          cancelRequestedAt: true,
-        },
-      });
+    const run = await this.prisma.ideaGenerationRun.findUnique({
+      where: {
+        id: normalizedRunId,
+      },
+      select: {
+        status: true,
+        cancelRequestedAt: true,
+      },
+    });
 
     if (!run) {
       throw new NotFoundException({
         code: 'IDEA_GENERATION_RUN_NOT_FOUND',
-        message:
-          'The requested idea-generation run was not found.',
+        message: 'The requested idea-generation run was not found.',
       });
     }
 
     return {
       isCancellationRequested:
         run.cancelRequestedAt !== null ||
-        run.status ===
-          IdeaGenerationRunStatus.CANCELLED,
+        run.status === IdeaGenerationRunStatus.CANCELLED,
       cancelRequestedAt: run.cancelRequestedAt,
       status: run.status,
     };
@@ -592,11 +541,8 @@ export class IdeaGenerationRunService {
    *
    * @param runId Generation-run identifier.
    */
-  async isCancellationRequested(
-    runId: string,
-  ): Promise<boolean> {
-    const state =
-      await this.getCancellationState(runId);
+  async isCancellationRequested(runId: string): Promise<boolean> {
+    const state = await this.getCancellationState(runId);
 
     return state.isCancellationRequested;
   }
@@ -619,44 +565,35 @@ export class IdeaGenerationRunService {
     runId: string,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
   ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
     const now = new Date();
 
-    const result =
-      await db.ideaGenerationRun.updateMany({
-        where: {
-          id: normalizedRunId,
-          status: IdeaGenerationRunStatus.RUNNING,
-          cancelRequestedAt: null,
-        },
-        data: {
-          status:
-            IdeaGenerationRunStatus.COMPLETED,
-          progressPercent: 100,
-          currentStageKey: null,
-          completedAt: now,
-          lastHeartbeatAt: now,
-          errorCode: null,
-          errorMessage: null,
-        },
-      });
+    const result = await db.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: IdeaGenerationRunStatus.RUNNING,
+        cancelRequestedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.COMPLETED,
+        progressPercent: 100,
+        currentStageKey: null,
+        completedAt: now,
+        lastHeartbeatAt: now,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
 
     if (result.count !== 1) {
-      await this.throwCompletionFailure(
-        normalizedRunId,
-        db,
-      );
+      await this.throwCompletionFailure(normalizedRunId, db);
     }
 
-    return this.findRunOrThrow(
-      normalizedRunId,
-      db,
-    );
+    return this.findRunOrThrow(normalizedRunId, db);
   }
 
   /**
@@ -674,64 +611,47 @@ export class IdeaGenerationRunService {
     input: FailIdeaGenerationRunInput,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
   ): Promise<IdeaGenerationRun> {
-    const runId = this.normalizeRequiredValue(
-      input.runId,
-      'Generation-run ID',
+    const runId = this.normalizeRequiredValue(input.runId, 'Generation-run ID');
+
+    const errorCode = this.normalizeRequiredValue(
+      input.errorCode,
+      'Generation error code',
     );
 
-    const errorCode =
-      this.normalizeRequiredValue(
-        input.errorCode,
-        'Generation error code',
-      );
-
-    const errorMessage =
-      this.normalizeRequiredValue(
-        input.errorMessage,
-        'Generation error message',
-      );
+    const errorMessage = this.normalizeRequiredValue(
+      input.errorMessage,
+      'Generation error message',
+    );
 
     const now = new Date();
 
-    const result =
-      await db.ideaGenerationRun.updateMany({
-        where: {
-          id: runId,
-          status: {
-            in: [
-              IdeaGenerationRunStatus.QUEUED,
-              IdeaGenerationRunStatus.RUNNING,
-            ],
-          },
+    const result = await db.ideaGenerationRun.updateMany({
+      where: {
+        id: runId,
+        status: {
+          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
         },
-        data: {
-          status: IdeaGenerationRunStatus.FAILED,
-          currentStageKey: null,
-          errorCode,
-          errorMessage,
-          completedAt: now,
-          lastHeartbeatAt: now,
-        },
-      });
+      },
+      data: {
+        status: IdeaGenerationRunStatus.FAILED,
+        currentStageKey: null,
+        errorCode,
+        errorMessage,
+        completedAt: now,
+        lastHeartbeatAt: now,
+      },
+    });
 
     if (result.count !== 1) {
-      const run = await this.findRunOrThrow(
-        runId,
-        db,
-      );
+      const run = await this.findRunOrThrow(runId, db);
 
-      if (
-        run.status ===
-        IdeaGenerationRunStatus.FAILED
-      ) {
+      if (run.status === IdeaGenerationRunStatus.FAILED) {
         return run;
       }
 
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_RUN_CANNOT_FAIL',
-        message:
-          `The generation run cannot be marked as failed from status ${run.status}.`,
+        code: 'IDEA_GENERATION_RUN_CANNOT_FAIL',
+        message: `The generation run cannot be marked as failed from status ${run.status}.`,
       });
     }
 
@@ -752,73 +672,53 @@ export class IdeaGenerationRunService {
     runId: string,
     db: IdeaGenerationRunDatabaseClient = this.prisma,
   ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
     const now = new Date();
 
-    const result =
-      await db.ideaGenerationRun.updateMany({
-        where: {
-          id: normalizedRunId,
-          status: {
-            in: [
-              IdeaGenerationRunStatus.QUEUED,
-              IdeaGenerationRunStatus.RUNNING,
-            ],
-          },
+    const result = await db.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
         },
-        data: {
-          status:
-            IdeaGenerationRunStatus.CANCELLED,
-          currentStageKey: null,
-          cancelRequestedAt: now,
-          completedAt: now,
-          lastHeartbeatAt: now,
-          errorCode: null,
-          errorMessage: null,
-        },
-      });
+      },
+      data: {
+        status: IdeaGenerationRunStatus.CANCELLED,
+        currentStageKey: null,
+        cancelRequestedAt: now,
+        completedAt: now,
+        lastHeartbeatAt: now,
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
 
     if (result.count !== 1) {
-      const run = await this.findRunOrThrow(
-        normalizedRunId,
-        db,
-      );
+      const run = await this.findRunOrThrow(normalizedRunId, db);
 
-      if (
-        run.status ===
-        IdeaGenerationRunStatus.CANCELLED
-      ) {
+      if (run.status === IdeaGenerationRunStatus.CANCELLED) {
         return run;
       }
 
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_RUN_CANNOT_CANCEL',
-        message:
-          `The generation run cannot be cancelled from status ${run.status}.`,
+        code: 'IDEA_GENERATION_RUN_CANNOT_CANCEL',
+        message: `The generation run cannot be cancelled from status ${run.status}.`,
       });
     }
 
-    return this.findRunOrThrow(
-      normalizedRunId,
-      db,
-    );
+    return this.findRunOrThrow(normalizedRunId, db);
   }
 
   /**
    * Validates that exactly one generation-run owner exists.
    */
-  private validateOwner(
-    input: CreateIdeaGenerationRunInput,
-  ): void {
+  private validateOwner(input: CreateIdeaGenerationRunInput): void {
     const hasUserId =
-      typeof input.userId === 'string' &&
-      input.userId.trim().length > 0;
+      typeof input.userId === 'string' && input.userId.trim().length > 0;
 
     const hasGuestSessionId =
       typeof input.guestSessionId === 'string' &&
@@ -826,10 +726,8 @@ export class IdeaGenerationRunService {
 
     if (hasUserId === hasGuestSessionId) {
       throw new BadRequestException({
-        code:
-          'INVALID_IDEA_GENERATION_RUN_OWNER',
-        message:
-          'Exactly one generation-run owner must be provided.',
+        code: 'INVALID_IDEA_GENERATION_RUN_OWNER',
+        message: 'Exactly one generation-run owner must be provided.',
       });
     }
   }
@@ -840,32 +738,19 @@ export class IdeaGenerationRunService {
   private validateGenerationTypeForOwner(
     input: CreateIdeaGenerationRunInput,
   ): void {
-    const isGuestRun =
-      input.guestSessionId !== undefined;
+    const isGuestRun = input.guestSessionId !== undefined;
 
-    if (
-      isGuestRun &&
-      input.generationType !==
-        IdeaGenerationType.GUEST_FREE
-    ) {
+    if (isGuestRun && input.generationType !== IdeaGenerationType.GUEST_FREE) {
       throw new BadRequestException({
-        code:
-          'INVALID_GUEST_GENERATION_TYPE',
-        message:
-          'Guest sessions may only use GUEST_FREE generation.',
+        code: 'INVALID_GUEST_GENERATION_TYPE',
+        message: 'Guest sessions may only use GUEST_FREE generation.',
       });
     }
 
-    if (
-      !isGuestRun &&
-      input.generationType ===
-        IdeaGenerationType.GUEST_FREE
-    ) {
+    if (!isGuestRun && input.generationType === IdeaGenerationType.GUEST_FREE) {
       throw new BadRequestException({
-        code:
-          'INVALID_USER_GENERATION_TYPE',
-        message:
-          'Registered users cannot use GUEST_FREE generation.',
+        code: 'INVALID_USER_GENERATION_TYPE',
+        message: 'Registered users cannot use GUEST_FREE generation.',
       });
     }
   }
@@ -873,35 +758,28 @@ export class IdeaGenerationRunService {
   /**
    * Prevents modification of terminal generation runs.
    */
-  private assertNotTerminal(
-    run: IdeaGenerationRun,
-  ): void {
+  private assertNotTerminal(run: IdeaGenerationRun): void {
     if (!this.terminalStatuses.has(run.status)) {
       return;
     }
 
     throw new ConflictException({
-      code:
-        'IDEA_GENERATION_RUN_ALREADY_TERMINAL',
-      message:
-        `The generation run is already in terminal status ${run.status}.`,
+      code: 'IDEA_GENERATION_RUN_ALREADY_TERMINAL',
+      message: `The generation run is already in terminal status ${run.status}.`,
     });
   }
 
   /**
    * Validates a progress value used while a run is active.
    */
-  private validateRunningProgress(
-    progressPercent: number,
-  ): void {
+  private validateRunningProgress(progressPercent: number): void {
     if (
       !Number.isInteger(progressPercent) ||
       progressPercent < 0 ||
       progressPercent > 99
     ) {
       throw new BadRequestException({
-        code:
-          'INVALID_IDEA_GENERATION_PROGRESS',
+        code: 'INVALID_IDEA_GENERATION_PROGRESS',
         message:
           'Running generation progress must be an integer between 0 and 99.',
       });
@@ -911,15 +789,12 @@ export class IdeaGenerationRunService {
   /**
    * Determines why a queued run could not start.
    */
-  private async throwStartFailure(
-    runId: string,
-  ): Promise<never> {
+  private async throwStartFailure(runId: string): Promise<never> {
     const run = await this.findRunOrThrow(runId);
 
     if (run.cancelRequestedAt) {
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_CANCELLATION_REQUESTED',
+        code: 'IDEA_GENERATION_CANCELLATION_REQUESTED',
         message:
           'The generation run cannot start because cancellation was requested.',
       });
@@ -927,33 +802,26 @@ export class IdeaGenerationRunService {
 
     throw new ConflictException({
       code: 'IDEA_GENERATION_RUN_CANNOT_START',
-      message:
-        `The generation run cannot start from status ${run.status}.`,
+      message: `The generation run cannot start from status ${run.status}.`,
     });
   }
 
   /**
    * Determines why a running-run update could not be applied.
    */
-  private async throwRunningUpdateFailure(
-    runId: string,
-  ): Promise<never> {
+  private async throwRunningUpdateFailure(runId: string): Promise<never> {
     const run = await this.findRunOrThrow(runId);
 
     if (run.cancelRequestedAt) {
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_CANCELLATION_REQUESTED',
-        message:
-          'The generation run has a pending cancellation request.',
+        code: 'IDEA_GENERATION_CANCELLATION_REQUESTED',
+        message: 'The generation run has a pending cancellation request.',
       });
     }
 
     throw new ConflictException({
-      code:
-        'IDEA_GENERATION_RUN_NOT_RUNNING',
-      message:
-        `The generation run is not active. Current status: ${run.status}.`,
+      code: 'IDEA_GENERATION_RUN_NOT_RUNNING',
+      message: `The generation run is not active. Current status: ${run.status}.`,
     });
   }
 
@@ -964,41 +832,31 @@ export class IdeaGenerationRunService {
     runId: string,
     db: IdeaGenerationRunDatabaseClient,
   ): Promise<never> {
-    const run = await this.findRunOrThrow(
-      runId,
-      db,
-    );
+    const run = await this.findRunOrThrow(runId, db);
 
     if (run.cancelRequestedAt) {
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_CANCELLATION_REQUESTED',
+        code: 'IDEA_GENERATION_CANCELLATION_REQUESTED',
         message:
           'The generation run cannot complete because cancellation was requested.',
       });
     }
 
     throw new ConflictException({
-      code:
-        'IDEA_GENERATION_RUN_CANNOT_COMPLETE',
-      message:
-        `The generation run cannot complete from status ${run.status}.`,
+      code: 'IDEA_GENERATION_RUN_CANNOT_COMPLETE',
+      message: `The generation run cannot complete from status ${run.status}.`,
     });
   }
 
   /**
    * Trims and validates required string values.
    */
-  private normalizeRequiredValue(
-    value: string,
-    fieldName: string,
-  ): string {
+  private normalizeRequiredValue(value: string, fieldName: string): string {
     const normalizedValue = value?.trim();
 
     if (!normalizedValue) {
       throw new BadRequestException({
-        code:
-          'INVALID_IDEA_GENERATION_VALUE',
+        code: 'INVALID_IDEA_GENERATION_VALUE',
         message: `${fieldName} is required.`,
       });
     }

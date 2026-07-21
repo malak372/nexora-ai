@@ -12,9 +12,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
-import {
-  IDEA_ADVANCED_OUTPUT_DEFINITIONS,
-} from '../../generation/constants/idea-output.constants';
+import { IDEA_ADVANCED_OUTPUT_DEFINITIONS } from '../../generation/constants/idea-output.constants';
 import {
   DIRECT_UNLOCK_CLAIM_OUTPUT_KEY,
   DIRECT_UNLOCK_CLAIM_TTL_MS,
@@ -256,7 +254,10 @@ export class IdeaOutputPersistenceService {
       input.output.advancedOutputs.map((output) => [output.outputKey, output]),
     );
 
-    for (const [index, definition] of IDEA_ADVANCED_OUTPUT_DEFINITIONS.entries()) {
+    for (const [
+      index,
+      definition,
+    ] of IDEA_ADVANCED_OUTPUT_DEFINITIONS.entries()) {
       const output = outputByKey.get(definition.outputKey);
 
       if (!output && definition.requiredForPremium) {

@@ -22,12 +22,7 @@ import { IdeaUnlockService } from './services/idea-unlock.service';
  * @author Malak
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AiModule,
-    PromptsModule,
-    IdeaGenerationModule,
-  ],
+  imports: [PrismaModule, AiModule, PromptsModule, IdeaGenerationModule],
   controllers: [IdeaOutputsController],
   providers: [
     IdeaOutputsService,

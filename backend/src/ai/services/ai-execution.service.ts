@@ -39,10 +39,7 @@ import { AiProvider } from '../providers/ai-provider.interface';
 import { AiExecutionInput } from '../types/ai-execution-input.type';
 import { AiExecutionResult } from '../types/ai-execution-result.type';
 
-import {
-  AiFinishReason,
-  AiResponseFormat,
-} from '../types/ai-provider.type';
+import { AiFinishReason, AiResponseFormat } from '../types/ai-provider.type';
 
 import type { AiProviderGenerateResult } from '../types/ai-provider.type';
 
@@ -583,8 +580,7 @@ export class AiExecutionService {
         Date.now() - attemptStartedAt,
       );
 
-      const hasAnotherAttempt =
-        modelAttemptNumber < totalAttemptsForModel;
+      const hasAnotherAttempt = modelAttemptNumber < totalAttemptsForModel;
 
       return {
         success: false,
@@ -705,9 +701,7 @@ export class AiExecutionService {
    * @param result Normalized provider result.
    * @throws AiProviderError When generation did not complete normally.
    */
-  private validateFinishReason(
-    result: AiProviderGenerateResult,
-  ): void {
+  private validateFinishReason(result: AiProviderGenerateResult): void {
     switch (result.finishReason) {
       case AiFinishReason.STOP:
         return;

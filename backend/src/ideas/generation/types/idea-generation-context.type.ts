@@ -1,8 +1,4 @@
-import {
-  IdeaGenerationType,
-  LanguageCode,
-  Prisma,
-} from '@prisma/client';
+import { IdeaGenerationType, LanguageCode, Prisma } from '@prisma/client';
 
 import type { JsonSchema } from '../../../prompts/types/json-schema.type';
 
@@ -377,9 +373,7 @@ export type IdeaGenerationContext = {
    * array order and lets each stage verify the exact database record
    * created for its configured output.
    */
-  generatedOutputIdsByKey: Partial<
-    Record<IdeaAdvancedOutputKey, string>
-  >;
+  generatedOutputIdsByKey: Partial<Record<IdeaAdvancedOutputKey, string>>;
 
   /**
    * Indicates whether the pipeline should stop at its next safe
@@ -460,8 +454,7 @@ export function createIdeaGenerationContext(
 
     keywords: input.keywords ?? [],
 
-    requestedDataSourceKeys:
-      input.requestedDataSourceKeys ?? [],
+    requestedDataSourceKeys: input.requestedDataSourceKeys ?? [],
 
     location: input.location,
 

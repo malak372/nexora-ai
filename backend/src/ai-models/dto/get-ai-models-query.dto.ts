@@ -2,13 +2,7 @@ import { AiModelHealthStatus } from '@prisma/client';
 
 import { Transform } from 'class-transformer';
 
-import {
-  IsBoolean,
-  IsEnum,
-  IsIn,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 
 import {
   SUPPORTED_AI_PROVIDER_KEYS,
@@ -22,11 +16,7 @@ import { ListQueryDto } from '../../utilities/dto/list-query.dto';
  *
  * Unknown values remain unchanged so class-validator can reject them.
  */
-const transformBooleanQuery = ({
-  value,
-}: {
-  value: unknown;
-}): unknown => {
+const transformBooleanQuery = ({ value }: { value: unknown }): unknown => {
   if (value === 'true' || value === true) {
     return true;
   }
@@ -54,9 +44,7 @@ export class GetAiModelsQueryDto extends ListQueryDto {
    */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : value,
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
   @IsIn(SUPPORTED_AI_PROVIDER_KEYS)

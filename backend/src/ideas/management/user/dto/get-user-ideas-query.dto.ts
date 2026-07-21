@@ -1,16 +1,8 @@
-import {
-  IdeaGenerationType,
-  UnlockMethod,
-} from '@prisma/client';
+import { IdeaGenerationType, UnlockMethod } from '@prisma/client';
 
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 
-import {
-  IsBoolean,
-  IsEnum,
-  IsOptional,
-  IsUUID,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
 
 import { ListQueryDto } from '../../../../utilities/dto/list-query.dto';
 
@@ -50,7 +42,7 @@ export class GetUserIdeasQueryDto extends ListQueryDto {
    * project features are unlocked.
    */
   @IsOptional()
-  @Transform(({ value }) => {
+  @Transform(({ value }: TransformFnParams): unknown => {
     if (value === true || value === 'true') {
       return true;
     }

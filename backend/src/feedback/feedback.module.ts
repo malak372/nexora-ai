@@ -1,38 +1,25 @@
 import { Module } from '@nestjs/common';
-
 import { PrismaModule } from '../prisma/prisma.module';
-
 import { AdminFeedbackController } from './controllers/admin-feedback.controller';
+import { ReceivedFeedbackController } from './controllers/received-feedback.controller';
 import { UserFeedbackController } from './controllers/user-feedback.controller';
-
 import { AdminFeedbackService } from './services/admin-feedback.service';
+import { ReceivedFeedbackService } from './services/received-feedback.service';
 import { UserFeedbackService } from './services/user-feedback.service';
 
-/**
- * Publication feedback and rating domain module.
- *
- * Provides:
- * - Publication-rating creation and updates.
- * - Publication-rating deletion.
- * - Textual-feedback creation and updates.
- * - Textual-feedback deletion.
- * - Publication aggregate maintenance.
- * - Administrator monitoring and analytics.
- * - CSV exports.
- *
- * @author Malak
- */
+/** Publication ratings and private feedback module. @author Eman */
 @Module({
   imports: [PrismaModule],
-
   controllers: [
-    UserFeedbackController,
     AdminFeedbackController,
+    UserFeedbackController,
+    ReceivedFeedbackController,
   ],
-
   providers: [
-    UserFeedbackService,
     AdminFeedbackService,
+    UserFeedbackService,
+    ReceivedFeedbackService,
   ],
+  exports: [UserFeedbackService, ReceivedFeedbackService],
 })
-export class FeedbackModule { }
+export class FeedbackModule {}

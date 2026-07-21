@@ -146,9 +146,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         if (
           premiumStages.length !== PREMIUM_OUTPUT_STAGE_REGISTRATIONS.length
         ) {
-          throw new Error(
-            'Premium-output stage registry is incomplete.',
-          );
+          throw new Error('Premium-output stage registry is incomplete.');
         }
 
         return [

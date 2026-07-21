@@ -28,6 +28,7 @@ import { IdeaVotingModule } from './voting/idea-voting.module';
     IdeaOutputsModule,
     IdeaPublicationModule,
     IdeaVotingModule,
+    FeedbackModule,
   ],
 })
 export class IdeasModule {}

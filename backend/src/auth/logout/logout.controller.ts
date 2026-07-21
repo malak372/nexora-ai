@@ -24,7 +24,7 @@ import { AuthLogoutService } from './logout.service';
  */
 @Controller('auth/logout')
 export class LogoutController {
-  constructor(private readonly authLogoutService: AuthLogoutService) { }
+  constructor(private readonly authLogoutService: AuthLogoutService) {}
 
   /**
    * Revokes the provided refresh token.

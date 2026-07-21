@@ -1,30 +1,23 @@
-import { Inject, Injectable } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import type { Cache } from 'cache-manager';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   AccountStatus,
   ComplaintStatus,
+  CreditTransactionType,
   IdeaGenerationType,
   PaymentStatus,
 } from '@prisma/client';
+import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserValidationService } from '../validation/validation.service';
 import { userCacheKeys } from '../cache/user-cache.keys';
+import { UserValidationService } from '../validation/validation.service';
 
 /**
- * Service responsible for authenticated user dashboard operations.
+ * Builds the authenticated-user dashboard summary.
  *
- * Provides a cached account-level overview for the authenticated user.
- *
- * Frequently requested dashboard data is cached to reduce
- * repeated database queries and improve response time,
- * including profile information, credit status, free generation usage,
- * idea statistics, favorite ideas, complaint counters,
- * notifications, payment statistics, and recent account activity.
- *
- * Advanced paid idea features such as comment analysis, architecture,
- * database design, and feasibility reports are intentionally not exposed here.
+ * The service only exposes account-level summaries. Paid idea outputs are
+ * intentionally retrieved through the dedicated ideas and outputs modules.
  *
  * @author Eman
  */
@@ -32,30 +25,21 @@ import { userCacheKeys } from '../cache/user-cache.keys';
 export class UserDashboardService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly userCommonService: UserValidationService,
-
+    private readonly userValidationService: UserValidationService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
 
-  /**
-   * Retrieves the authenticated user's dashboard summary.
-   *
-   * Uses cache to reduce repeated database reads for frequently
-   * requested dashboard data.
-   *
-   * @param userId - Authenticated user ID.
-   * @returns Account-level dashboard summary.
-   */
+  /** Returns a cached dashboard summary for one authenticated user. */
   async getSummary(userId: string) {
     const cacheKey = userCacheKeys.summary(userId);
-    const cachedSummary = await this.cacheManager.get(cacheKey);
+    const cached = await this.cacheManager.get(cacheKey);
 
-    if (cachedSummary) {
-      return cachedSummary;
+    if (cached) {
+      return cached;
     }
 
-    const user = await this.userCommonService.findUserOrThrow(userId);
+    const user = await this.userValidationService.findUserOrThrow(userId);
 
     const [
       ideasCount,
@@ -67,72 +51,48 @@ export class UserDashboardService {
       resolvedComplaintsCount,
       totalPayments,
       successfulPayments,
-      totalCreditsPurchased,
+      purchasedCredits,
       latestIdea,
       latestPayment,
     ] = await Promise.all([
-      this.prisma.idea.count({ where: { userId } }),
-
+      this.prisma.idea.count({ where: { userId, deletedAt: null } }),
       this.prisma.idea.count({
         where: {
           userId,
+          deletedAt: null,
           generationType: IdeaGenerationType.NORMAL_FREE,
         },
       }),
-
       this.prisma.idea.count({
         where: {
           userId,
+          deletedAt: null,
           generationType: IdeaGenerationType.PREMIUM_CREDIT,
         },
       }),
-
-      this.prisma.favoriteIdea.count({
-        where: { userId },
-      }),
-
-      this.prisma.alert.count({
-        where: {
-          userId,
-          isRead: false,
-        },
-      }),
-
+      this.prisma.favoriteIdea.count({ where: { userId } }),
+      this.prisma.alert.count({ where: { userId, isRead: false } }),
       this.prisma.complaint.count({
-        where: {
-          userId,
-          status: ComplaintStatus.OPEN,
-        },
+        where: { userId, deletedAt: null, status: ComplaintStatus.OPEN },
       }),
-
       this.prisma.complaint.count({
-        where: {
-          userId,
-          status: ComplaintStatus.RESOLVED,
-        },
+        where: { userId, deletedAt: null, status: ComplaintStatus.RESOLVED },
       }),
-
       this.prisma.payment.count({ where: { userId } }),
-
       this.prisma.payment.count({
+        where: { userId, status: PaymentStatus.SUCCEEDED },
+      }),
+      this.prisma.creditTransaction.aggregate({
         where: {
           userId,
-          status: PaymentStatus.SUCCESS,
+          type: {
+            in: [CreditTransactionType.PURCHASE, CreditTransactionType.BONUS],
+          },
         },
+        _sum: { amount: true },
       }),
-
-      this.prisma.payment.aggregate({
-        where: {
-          userId,
-          status: PaymentStatus.SUCCESS,
-        },
-        _sum: {
-          creditsAmount: true,
-        },
-      }),
-
       this.prisma.idea.findFirst({
-        where: { userId },
+        where: { userId, deletedAt: null },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -142,7 +102,6 @@ export class UserDashboardService {
           createdAt: true,
         },
       }),
-
       this.prisma.payment.findFirst({
         where: { userId },
         orderBy: { createdAt: 'desc' },
@@ -150,7 +109,8 @@ export class UserDashboardService {
           id: true,
           amount: true,
           currency: true,
-          paymentMethod: true,
+          paymentMethodKey: true,
+          providerKey: true,
           status: true,
           paymentPurpose: true,
           createdAt: true,
@@ -163,38 +123,30 @@ export class UserDashboardService {
       fullName: user.fullName,
       email: user.email,
       userType: user.userType,
-
       accountStatus: user.accountStatus,
       creditBalance: user.creditBalance,
       isPremium: user.accountStatus === AccountStatus.PREMIUM,
-
       freeGenerationLimit: user.freeGenerationLimit,
       freeGenerationsUsed: user.freeGenerationsUsed,
       remainingFreeGenerations: Math.max(
         0,
         user.freeGenerationLimit - user.freeGenerationsUsed,
       ),
-
       ideasCount,
       freeIdeasCount,
       premiumIdeasCount,
       favoriteIdeasCount,
-
       unreadNotificationsCount,
-
       openComplaintsCount,
       resolvedComplaintsCount,
-
       totalPayments,
       successfulPayments,
-      totalCreditsPurchased: totalCreditsPurchased._sum.creditsAmount ?? 0,
-
+      totalCreditsPurchased: purchasedCredits._sum.amount ?? 0,
       latestIdea,
       latestPayment,
     };
 
     await this.cacheManager.set(cacheKey, summary);
-
     return summary;
   }
 }

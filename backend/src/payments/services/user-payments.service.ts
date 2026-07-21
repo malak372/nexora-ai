@@ -39,15 +39,12 @@ import { GetUserPaymentsQueryDto } from '../dto/get-user-payments-query.dto';
  */
 @Injectable()
 export class UserPaymentsService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Retrieves the authenticated user's payment history.
    */
-  async getPaymentHistory(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentHistory(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
     const { page, limit, skip, take } = buildPagination(query);
@@ -102,50 +99,43 @@ export class UserPaymentsService {
   /**
    * Returns payment summary metrics for one authenticated user.
    */
-  async getPaymentSummary(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentSummary(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
 
-    const [
-      totalPayments,
-      successfulPayments,
-      failedPayments,
-      totalSpent,
-    ] = await Promise.all([
-      this.prisma.payment.count({
-        where,
-      }),
+    const [totalPayments, successfulPayments, failedPayments, totalSpent] =
+      await Promise.all([
+        this.prisma.payment.count({
+          where,
+        }),
 
-      this.prisma.payment.count({
-        where: {
-          ...where,
-          status: PaymentStatus.SUCCEEDED,
-        },
-      }),
+        this.prisma.payment.count({
+          where: {
+            ...where,
+            status: PaymentStatus.SUCCEEDED,
+          },
+        }),
 
-      this.prisma.payment.count({
-        where: {
-          ...where,
-          status: PaymentStatus.FAILED,
-        },
-      }),
+        this.prisma.payment.count({
+          where: {
+            ...where,
+            status: PaymentStatus.FAILED,
+          },
+        }),
 
-      this.prisma.payment.aggregate({
-        where: {
-          ...where,
-          status: PaymentStatus.SUCCEEDED,
-        },
+        this.prisma.payment.aggregate({
+          where: {
+            ...where,
+            status: PaymentStatus.SUCCEEDED,
+          },
 
-        _sum: {
-          amount: true,
-          creditsAmount: true,
-        },
-      }),
-    ]);
+          _sum: {
+            amount: true,
+            creditsAmount: true,
+          },
+        }),
+      ]);
 
     return {
       totalPayments,
@@ -159,43 +149,39 @@ export class UserPaymentsService {
   /**
    * Returns chart-ready payment analytics for one user.
    */
-  async getPaymentCharts(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async getPaymentCharts(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
 
-    const [byStatus, byPaymentMethod, byPaymentPurpose] =
-      await Promise.all([
-        this.prisma.payment.groupBy({
-          by: ['status'],
-          where,
+    const [byStatus, byPaymentMethod, byPaymentPurpose] = await Promise.all([
+      this.prisma.payment.groupBy({
+        by: ['status'],
+        where,
 
-          _count: {
-            status: true,
-          },
-        }),
+        _count: {
+          status: true,
+        },
+      }),
 
-        this.prisma.payment.groupBy({
-          by: ['paymentMethodKey'],
-          where,
+      this.prisma.payment.groupBy({
+        by: ['paymentMethodKey'],
+        where,
 
-          _count: {
-            paymentMethodKey: true,
-          },
-        }),
+        _count: {
+          paymentMethodKey: true,
+        },
+      }),
 
-        this.prisma.payment.groupBy({
-          by: ['paymentPurpose'],
-          where,
+      this.prisma.payment.groupBy({
+        by: ['paymentPurpose'],
+        where,
 
-          _count: {
-            paymentPurpose: true,
-          },
-        }),
-      ]);
+        _count: {
+          paymentPurpose: true,
+        },
+      }),
+    ]);
 
     return {
       byStatus: byStatus.map((item) => ({
@@ -218,10 +204,7 @@ export class UserPaymentsService {
   /**
    * Exports the authenticated user's payment history as CSV.
    */
-  async exportPaymentsCsv(
-    userId: string,
-    query: GetUserPaymentsQueryDto,
-  ) {
+  async exportPaymentsCsv(userId: string, query: GetUserPaymentsQueryDto) {
     await this.ensureUserExists(userId);
 
     const where = this.buildWhere(userId, query);
@@ -295,26 +278,15 @@ export class UserPaymentsService {
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildSearchFilter(
-        [
-          'currency',
-          'providerKey',
-          'paymentMethodKey',
-          'transactionReference',
-        ],
+        ['currency', 'providerKey', 'paymentMethodKey', 'transactionReference'],
         query.search,
       ) ?? {}),
 
       ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentMethodKey',
-        query.paymentMethodKey,
-      ) ?? {}),
+      ...(buildExactFilter('paymentMethodKey', query.paymentMethodKey) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentPurpose',
-        query.paymentPurpose,
-      ) ?? {}),
+      ...(buildExactFilter('paymentPurpose', query.paymentPurpose) ?? {}),
     };
   }
 

@@ -65,48 +65,38 @@ type StructuredHttpExceptionResponse = {
  */
 export function normalizeIdeaGenerationError(
   error: unknown,
-  fallbackCode: string =
-    IDEA_GENERATION_ERROR_CODES.PIPELINE_FAILED,
+  fallbackCode: string = IDEA_GENERATION_ERROR_CODES.PIPELINE_FAILED,
 ): NormalizedIdeaGenerationError {
-  const normalizedFallbackCode =
-    normalizeGenerationErrorCode(
-      fallbackCode,
-      IDEA_GENERATION_ERROR_CODES.PIPELINE_FAILED,
-    );
+  const normalizedFallbackCode = normalizeGenerationErrorCode(
+    fallbackCode,
+    IDEA_GENERATION_ERROR_CODES.PIPELINE_FAILED,
+  );
 
   if (error instanceof HttpException) {
-    return normalizeHttpException(
-      error,
-      normalizedFallbackCode,
-    );
+    return normalizeHttpException(error, normalizedFallbackCode);
   }
 
   if (error instanceof Error) {
     return {
       errorCode: normalizedFallbackCode,
-      errorMessage:
-        truncateGenerationErrorMessage(
-          error.message ||
-            'Idea-generation operation failed.',
-        ),
+      errorMessage: truncateGenerationErrorMessage(
+        error.message || 'Idea-generation operation failed.',
+      ),
     };
   }
 
   if (typeof error === 'string') {
     return {
       errorCode: normalizedFallbackCode,
-      errorMessage:
-        truncateGenerationErrorMessage(
-          error ||
-            'Idea-generation operation failed.',
-        ),
+      errorMessage: truncateGenerationErrorMessage(
+        error || 'Idea-generation operation failed.',
+      ),
     };
   }
 
   return {
     errorCode: normalizedFallbackCode,
-    errorMessage:
-      'Unknown idea-generation failure.',
+    errorMessage: 'Unknown idea-generation failure.',
   };
 }
 
@@ -124,8 +114,7 @@ export function normalizeIdeaGenerationError(
  */
 export function toIdeaGenerationError(
   error: unknown,
-  fallbackMessage =
-    'Unknown idea-generation failure.',
+  fallbackMessage = 'Unknown idea-generation failure.',
 ): Error {
   if (error instanceof Error) {
     return error;
@@ -134,9 +123,7 @@ export function toIdeaGenerationError(
   if (typeof error === 'string') {
     const normalizedMessage = error.trim();
 
-    return new Error(
-      normalizedMessage || fallbackMessage,
-    );
+    return new Error(normalizedMessage || fallbackMessage);
   }
 
   return new Error(fallbackMessage);
@@ -151,29 +138,16 @@ export function toIdeaGenerationError(
  *
  * @author Malak
  */
-export function truncateGenerationErrorMessage(
-  message: string,
-): string {
-  const normalizedMessage =
-    typeof message === 'string'
-      ? message.trim()
-      : '';
+export function truncateGenerationErrorMessage(message: string): string {
+  const normalizedMessage = typeof message === 'string' ? message.trim() : '';
 
-  const safeMessage =
-    normalizedMessage ||
-    'Idea-generation operation failed.';
+  const safeMessage = normalizedMessage || 'Idea-generation operation failed.';
 
-  if (
-    safeMessage.length <=
-    MAX_GENERATION_ERROR_MESSAGE_LENGTH
-  ) {
+  if (safeMessage.length <= MAX_GENERATION_ERROR_MESSAGE_LENGTH) {
     return safeMessage;
   }
 
-  return safeMessage.slice(
-    0,
-    MAX_GENERATION_ERROR_MESSAGE_LENGTH,
-  );
+  return safeMessage.slice(0, MAX_GENERATION_ERROR_MESSAGE_LENGTH);
 }
 
 /**
@@ -193,45 +167,27 @@ function normalizeHttpException(
   if (typeof response === 'string') {
     return {
       errorCode: fallbackCode,
-      errorMessage:
-        truncateGenerationErrorMessage(
-          response,
-        ),
+      errorMessage: truncateGenerationErrorMessage(response),
     };
   }
 
-  if (
-    !isStructuredHttpExceptionResponse(
-      response,
-    )
-  ) {
+  if (!isStructuredHttpExceptionResponse(response)) {
     return {
       errorCode: fallbackCode,
-      errorMessage:
-        truncateGenerationErrorMessage(
-          exception.message,
-        ),
+      errorMessage: truncateGenerationErrorMessage(exception.message),
     };
   }
 
-  const errorCode =
-    normalizeGenerationErrorCode(
-      response.code,
-      fallbackCode,
-    );
+  const errorCode = normalizeGenerationErrorCode(response.code, fallbackCode);
 
-  const errorMessage =
-    normalizeExceptionMessage(
-      response.message,
-      exception.message,
-    );
+  const errorMessage = normalizeExceptionMessage(
+    response.message,
+    exception.message,
+  );
 
   return {
     errorCode,
-    errorMessage:
-      truncateGenerationErrorMessage(
-        errorMessage,
-      ),
+    errorMessage: truncateGenerationErrorMessage(errorMessage),
   };
 }
 
@@ -253,10 +209,7 @@ function normalizeExceptionMessage(
 
   if (Array.isArray(value)) {
     const messages = value
-      .filter(
-        (message): message is string =>
-          typeof message === 'string',
-      )
+      .filter((message): message is string => typeof message === 'string')
       .map((message) => message.trim())
       .filter(Boolean);
 
@@ -298,9 +251,5 @@ function normalizeGenerationErrorCode(
 function isStructuredHttpExceptionResponse(
   value: unknown,
 ): value is StructuredHttpExceptionResponse {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  );
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

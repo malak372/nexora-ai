@@ -40,7 +40,7 @@ type RequestWithUser = {
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) { }
+  constructor(private readonly reflector: Reflector) {}
 
   /**
    * Determines whether the current request is authorized

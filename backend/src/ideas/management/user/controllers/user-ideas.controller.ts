@@ -37,9 +37,7 @@ import { UserIdeasService } from '../services/user-ideas.service';
 @Controller('users/ideas')
 @UseGuards(JwtAuthGuard)
 export class UserIdeasController {
-  constructor(
-    private readonly userIdeasService: UserIdeasService,
-  ) {}
+  constructor(private readonly userIdeasService: UserIdeasService) {}
 
   /**
    * Retrieves ideas belonging to the authenticated user.
@@ -51,10 +49,7 @@ export class UserIdeasController {
     @CurrentUser('id') userId: string,
     @Query() query: GetUserIdeasQueryDto,
   ) {
-    return this.userIdeasService.getMyIdeas(
-      userId,
-      query,
-    );
+    return this.userIdeasService.getMyIdeas(userId, query);
   }
 
   /**
@@ -74,10 +69,7 @@ export class UserIdeasController {
     )
     ideaId: string,
   ) {
-    return this.userIdeasService.getMyIdeaById(
-      userId,
-      ideaId,
-    );
+    return this.userIdeasService.getMyIdeaById(userId, ideaId);
   }
 
   /**
@@ -100,11 +92,7 @@ export class UserIdeasController {
 
     @Query() query: GetIdeaCommentsQueryDto,
   ) {
-    return this.userIdeasService.getMyIdeaComments(
-      userId,
-      ideaId,
-      query,
-    );
+    return this.userIdeasService.getMyIdeaComments(userId, ideaId, query);
   }
 
   /**
@@ -127,9 +115,6 @@ export class UserIdeasController {
     )
     ideaId: string,
   ) {
-    return this.userIdeasService.deleteMyIdea(
-      userId,
-      ideaId,
-    );
+    return this.userIdeasService.deleteMyIdea(userId, ideaId);
   }
 }

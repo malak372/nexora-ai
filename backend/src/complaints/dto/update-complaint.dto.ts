@@ -1,6 +1,6 @@
 import { ComplaintPriority, ComplaintStatus } from '@prisma/client';
 
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 
 import {
   IsEnum,
@@ -43,7 +43,9 @@ export class UpdateComplaintDto {
    * Leading and trailing whitespace is removed before validation.
    */
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(5)
   @MaxLength(1_000)

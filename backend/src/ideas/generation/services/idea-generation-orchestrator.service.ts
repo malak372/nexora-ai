@@ -1,13 +1,6 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import {
-  IdeaGenerationRunStatus,
-  IdeaGenerationType,
-} from '@prisma/client';
+import { IdeaGenerationRunStatus, IdeaGenerationType } from '@prisma/client';
 
 import type { GenerateGuestIdeaDto } from '../dto/generate-guest-idea.dto';
 import type { GenerateIdeaDto } from '../dto/generate-idea.dto';
@@ -29,9 +22,7 @@ import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../constants/idea-generation.constants';
 
 import { GuestIdeaSessionService } from './guest-idea-session.service';
 
@@ -48,8 +39,7 @@ import { IdeaGenerationRunService } from './idea-generation-run.service';
  *
  * @author Malak
  */
-export const IDEA_GENERATION_STAGES =
-  Symbol('IDEA_GENERATION_STAGES');
+export const IDEA_GENERATION_STAGES = Symbol('IDEA_GENERATION_STAGES');
 
 /**
  * Input used to generate an idea for an authenticated user.
@@ -170,26 +160,19 @@ type ExecuteOwnedIdeaGenerationInput = {
  */
 @Injectable()
 export class IdeaGenerationOrchestratorService {
-  private readonly logger = new Logger(
-    IdeaGenerationOrchestratorService.name,
-  );
+  private readonly logger = new Logger(IdeaGenerationOrchestratorService.name);
 
   constructor(
-    private readonly guestSessionService:
-      GuestIdeaSessionService,
+    private readonly guestSessionService: GuestIdeaSessionService,
 
-    private readonly lockService:
-      IdeaGenerationLockService,
+    private readonly lockService: IdeaGenerationLockService,
 
-    private readonly runService:
-      IdeaGenerationRunService,
+    private readonly runService: IdeaGenerationRunService,
 
-    private readonly pipelineService:
-      IdeaGenerationPipelineService,
+    private readonly pipelineService: IdeaGenerationPipelineService,
 
     @Inject(IDEA_GENERATION_STAGES)
-    private readonly stages:
-      readonly IdeaGenerationStage[],
+    private readonly stages: readonly IdeaGenerationStage[],
   ) {}
 
   /**
@@ -206,10 +189,7 @@ export class IdeaGenerationOrchestratorService {
   async generateForUser(
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
-    const userId = this.normalizeRequiredValue(
-      input.userId,
-      'User ID',
-    );
+    const userId = this.normalizeRequiredValue(input.userId, 'User ID');
 
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.USER,
@@ -219,40 +199,24 @@ export class IdeaGenerationOrchestratorService {
     return this.executeOwnedGeneration({
       owner,
 
-      generationType:
-        input.dto.generationType,
+      generationType: input.dto.generationType,
 
       domainId: input.dto.domainId,
 
-      keywords:
-        this.normalizeStringArray(
-          input.dto.keywords,
-        ),
+      keywords: this.normalizeStringArray(input.dto.keywords),
 
-      requestedDataSourceKeys:
-        this.normalizeSourceKeys(
-          input.dto.dataSourceKeys,
-        ),
+      requestedDataSourceKeys: this.normalizeSourceKeys(
+        input.dto.dataSourceKeys,
+      ),
 
       location: {
-        country:
-          this.normalizeRequiredValue(
-            input.dto.country,
-            'Country',
-          ),
+        country: this.normalizeRequiredValue(input.dto.country, 'Country'),
 
-        city:
-          this.normalizeOptionalValue(
-            input.dto.city,
-          ),
+        city: this.normalizeOptionalValue(input.dto.city),
 
-        region:
-          this.normalizeOptionalValue(
-            input.dto.region,
-          ),
+        region: this.normalizeOptionalValue(input.dto.region),
 
-        radiusKm:
-          input.dto.radiusKm ?? null,
+        radiusKm: input.dto.radiusKm ?? null,
 
         language: input.dto.language,
       },
@@ -282,11 +246,9 @@ export class IdeaGenerationOrchestratorService {
   async generateForGuest(
     input: GenerateGuestIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
-    const guestSession =
-      await this.guestSessionService
-        .resolveAvailableSession(
-          input.guestSessionToken,
-        );
+    const guestSession = await this.guestSessionService.resolveAvailableSession(
+      input.guestSessionToken,
+    );
 
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.GUEST,
@@ -296,40 +258,24 @@ export class IdeaGenerationOrchestratorService {
     return this.executeOwnedGeneration({
       owner,
 
-      generationType:
-        IdeaGenerationType.GUEST_FREE,
+      generationType: IdeaGenerationType.GUEST_FREE,
 
       domainId: input.dto.domainId,
 
-      keywords:
-        this.normalizeStringArray(
-          input.dto.keywords,
-        ),
+      keywords: this.normalizeStringArray(input.dto.keywords),
 
-      requestedDataSourceKeys:
-        this.normalizeSourceKeys(
-          input.dto.dataSourceKeys,
-        ),
+      requestedDataSourceKeys: this.normalizeSourceKeys(
+        input.dto.dataSourceKeys,
+      ),
 
       location: {
-        country:
-          this.normalizeRequiredValue(
-            input.dto.country,
-            'Country',
-          ),
+        country: this.normalizeRequiredValue(input.dto.country, 'Country'),
 
-        city:
-          this.normalizeOptionalValue(
-            input.dto.city,
-          ),
+        city: this.normalizeOptionalValue(input.dto.city),
 
-        region:
-          this.normalizeOptionalValue(
-            input.dto.region,
-          ),
+        region: this.normalizeOptionalValue(input.dto.region),
 
-        radiusKm:
-          input.dto.radiusKm ?? null,
+        radiusKm: input.dto.radiusKm ?? null,
 
         language: input.dto.language,
       },
@@ -516,15 +462,13 @@ export class IdeaGenerationOrchestratorService {
       runId,
       owner: input.owner,
 
-      generationType:
-        input.generationType,
+      generationType: input.generationType,
 
       domainId: input.domainId,
 
       keywords: input.keywords,
 
-      requestedDataSourceKeys:
-        input.requestedDataSourceKeys,
+      requestedDataSourceKeys: input.requestedDataSourceKeys,
 
       location: input.location,
     });
@@ -557,16 +501,11 @@ export class IdeaGenerationOrchestratorService {
     error: Error,
   ): Promise<void> {
     try {
-      const run =
-        await this.runService.findRunOrThrow(
-          runId,
-        );
+      const run = await this.runService.findRunOrThrow(runId);
 
       if (
-        run.status !==
-          IdeaGenerationRunStatus.QUEUED &&
-        run.status !==
-          IdeaGenerationRunStatus.RUNNING
+        run.status !== IdeaGenerationRunStatus.QUEUED &&
+        run.status !== IdeaGenerationRunStatus.RUNNING
       ) {
         return;
       }
@@ -574,18 +513,12 @@ export class IdeaGenerationOrchestratorService {
       await this.runService.failRun({
         runId,
 
-        errorCode:
-          IDEA_GENERATION_ERROR_CODES
-            .PIPELINE_FAILED,
+        errorCode: IDEA_GENERATION_ERROR_CODES.PIPELINE_FAILED,
 
-        errorMessage:
-          this.toSafeErrorMessage(error),
+        errorMessage: this.toSafeErrorMessage(error),
       });
     } catch (persistenceError: unknown) {
-      const normalizedPersistenceError =
-        this.normalizeError(
-          persistenceError,
-        );
+      const normalizedPersistenceError = this.normalizeError(persistenceError);
 
       this.logger.error(
         `Failed to persist orchestration failure for generation run "${runId}": ${normalizedPersistenceError.message}`,
@@ -611,8 +544,7 @@ export class IdeaGenerationOrchestratorService {
         runId,
       });
     } catch (error: unknown) {
-      const normalizedError =
-        this.normalizeError(error);
+      const normalizedError = this.normalizeError(error);
 
       this.logger.error(
         `Failed to release idea-generation lock for run "${runId}": ${normalizedError.message}`,
@@ -628,16 +560,11 @@ export class IdeaGenerationOrchestratorService {
    * @param fieldName Human-readable field name.
    * @returns Trimmed non-empty string.
    */
-  private normalizeRequiredValue(
-    value: string,
-    fieldName: string,
-  ): string {
+  private normalizeRequiredValue(value: string, fieldName: string): string {
     const normalizedValue = value.trim();
 
     if (!normalizedValue) {
-      throw new Error(
-        `${fieldName} is required.`,
-      );
+      throw new Error(`${fieldName} is required.`);
     }
 
     return normalizedValue;
@@ -650,9 +577,7 @@ export class IdeaGenerationOrchestratorService {
    * @param value Optional raw string.
    * @returns Trimmed string or null.
    */
-  private normalizeOptionalValue(
-    value?: string,
-  ): string | null {
+  private normalizeOptionalValue(value?: string): string | null {
     if (typeof value !== 'string') {
       return null;
     }
@@ -671,20 +596,12 @@ export class IdeaGenerationOrchestratorService {
    * @param values Optional values.
    * @returns Normalized unique values.
    */
-  private normalizeStringArray(
-    values?: readonly string[],
-  ): string[] {
+  private normalizeStringArray(values?: readonly string[]): string[] {
     if (!values) {
       return [];
     }
 
-    return [
-      ...new Set(
-        values
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    ];
+    return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 
   /**
@@ -695,20 +612,14 @@ export class IdeaGenerationOrchestratorService {
    * @param values Optional source keys.
    * @returns Normalized unique source keys.
    */
-  private normalizeSourceKeys(
-    values?: readonly string[],
-  ): string[] {
+  private normalizeSourceKeys(values?: readonly string[]): string[] {
     if (!values) {
       return [];
     }
 
     return [
       ...new Set(
-        values
-          .map((value) =>
-            value.trim().toLowerCase(),
-          )
-          .filter(Boolean),
+        values.map((value) => value.trim().toLowerCase()).filter(Boolean),
       ),
     ];
   }
@@ -719,9 +630,7 @@ export class IdeaGenerationOrchestratorService {
    * @param error Unknown thrown value.
    * @returns Normalized Error.
    */
-  private normalizeError(
-    error: unknown,
-  ): Error {
+  private normalizeError(error: unknown): Error {
     if (error instanceof Error) {
       return error;
     }
@@ -730,9 +639,7 @@ export class IdeaGenerationOrchestratorService {
       return new Error(error);
     }
 
-    return new Error(
-      'Unknown idea-generation orchestration error.',
-    );
+    return new Error('Unknown idea-generation orchestration error.');
   }
 
   /**
@@ -744,12 +651,9 @@ export class IdeaGenerationOrchestratorService {
    * @param error Error whose message should be persisted.
    * @returns Safe bounded error message.
    */
-  private toSafeErrorMessage(
-    error: Error,
-  ): string {
+  private toSafeErrorMessage(error: Error): string {
     const message =
-      error.message.trim() ||
-      'Idea-generation orchestration failed.';
+      error.message.trim() || 'Idea-generation orchestration failed.';
 
     return message.slice(0, 2_000);
   }

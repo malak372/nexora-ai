@@ -5,11 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  IdeaPublicationStatus,
-  IdeaVoteValue,
-  Prisma,
-} from '@prisma/client';
+import { IdeaPublicationStatus, IdeaVoteValue, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -67,8 +63,7 @@ export class IdeaVotingService {
     publicationId: string,
     dto: VotePublicationDto,
   ) {
-    const publication =
-      await this.ensureVotingAllowed(publicationId);
+    const publication = await this.ensureVotingAllowed(publicationId);
 
     if (publication.publisherId === userId) {
       throw new ForbiddenException(
@@ -100,10 +95,7 @@ export class IdeaVotingService {
         },
       });
 
-      const counts = await this.recalculate(
-        tx,
-        publicationId,
-      );
+      const counts = await this.recalculate(tx, publicationId);
 
       return {
         vote,
@@ -128,10 +120,7 @@ export class IdeaVotingService {
    * @throws NotFoundException When the publication does not exist or is not
    * published.
    */
-  async getMyVote(
-    userId: string,
-    publicationId: string,
-  ) {
+  async getMyVote(userId: string, publicationId: string) {
     await this.ensurePublished(publicationId);
 
     return this.prisma.ideaPublicationVote.findUnique({
@@ -167,29 +156,23 @@ export class IdeaVotingService {
    * @throws NotFoundException When the publication is unavailable or when
    * the user has no vote on it.
    */
-  async deleteVote(
-    userId: string,
-    publicationId: string,
-  ) {
+  async deleteVote(userId: string, publicationId: string) {
     await this.ensurePublished(publicationId);
 
-    const existing =
-      await this.prisma.ideaPublicationVote.findUnique({
-        where: {
-          publicationId_userId: {
-            publicationId,
-            userId,
-          },
+    const existing = await this.prisma.ideaPublicationVote.findUnique({
+      where: {
+        publicationId_userId: {
+          publicationId,
+          userId,
         },
-        select: {
-          id: true,
-        },
-      });
+      },
+      select: {
+        id: true,
+      },
+    });
 
     if (!existing) {
-      throw new NotFoundException(
-        'Publication vote not found',
-      );
+      throw new NotFoundException('Publication vote not found');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -199,14 +182,10 @@ export class IdeaVotingService {
         },
       });
 
-      const counts = await this.recalculate(
-        tx,
-        publicationId,
-      );
+      const counts = await this.recalculate(tx, publicationId);
 
       return {
-        message:
-          'Publication vote deleted successfully',
+        message: 'Publication vote deleted successfully',
         publicationVotes: counts,
       };
     });
@@ -222,36 +201,36 @@ export class IdeaVotingService {
    * published.
    * @throws BadRequestException When voting is disabled.
    */
-  private async ensureVotingAllowed(
-    publicationId: string,
-  ) {
-    const publication =
-      await this.prisma.ideaPublication.findUnique({
-        where: {
-          id: publicationId,
-        },
-        select: {
-          id: true,
-          status: true,
-          allowVoting: true,
-          publisherId: true,
-        },
-      });
+  private async ensureVotingAllowed(publicationId: string) {
+    const publication = await this.prisma.ideaPublication.findUnique({
+      where: {
+        id: publicationId,
+      },
+      select: {
+        id: true,
+        status: true,
+        allowVoting: true,
+        isHidden: true,
+        publisherId: true,
+      },
+    });
 
     if (
       !publication ||
-      publication.status !==
-        IdeaPublicationStatus.PUBLISHED
+      publication.status !== IdeaPublicationStatus.PUBLISHED ||
+      publication.isHidden
     ) {
-      throw new NotFoundException(
-        'Published publication not found',
+      throw new NotFoundException('Published publication not found');
+    }
+
+    if (publication.isHidden) {
+      throw new ForbiddenException(
+        'Voting is not allowed on a hidden publication.',
       );
     }
 
     if (!publication.allowVoting) {
-      throw new BadRequestException(
-        'Voting is disabled for this publication.',
-      );
+      throw new BadRequestException('Voting is disabled for this publication.');
     }
 
     return publication;
@@ -268,27 +247,22 @@ export class IdeaVotingService {
    * @throws NotFoundException When the publication does not exist or is not
    * published.
    */
-  private async ensurePublished(
-    publicationId: string,
-  ) {
-    const publication =
-      await this.prisma.ideaPublication.findUnique({
-        where: {
-          id: publicationId,
-        },
-        select: {
-          status: true,
-        },
-      });
+  private async ensurePublished(publicationId: string) {
+    const publication = await this.prisma.ideaPublication.findUnique({
+      where: {
+        id: publicationId,
+      },
+      select: {
+        status: true,
+        isHidden: true,
+      },
+    });
 
     if (
       !publication ||
-      publication.status !==
-        IdeaPublicationStatus.PUBLISHED
+      publication.status !== IdeaPublicationStatus.PUBLISHED
     ) {
-      throw new NotFoundException(
-        'Published publication not found',
-      );
+      throw new NotFoundException('Published publication not found');
     }
   }
 
@@ -309,26 +283,21 @@ export class IdeaVotingService {
     tx: Prisma.TransactionClient,
     publicationId: string,
   ) {
-    const grouped =
-      await tx.ideaPublicationVote.groupBy({
-        by: ['value'],
-        where: {
-          publicationId,
-        },
-        _count: {
-          _all: true,
-        },
-      });
+    const grouped = await tx.ideaPublicationVote.groupBy({
+      by: ['value'],
+      where: {
+        publicationId,
+      },
+      _count: {
+        _all: true,
+      },
+    });
 
     const upvotesCount =
-      grouped.find(
-        (row) => row.value === IdeaVoteValue.UP,
-      )?._count._all ?? 0;
+      grouped.find((row) => row.value === IdeaVoteValue.UP)?._count._all ?? 0;
 
     const downvotesCount =
-      grouped.find(
-        (row) => row.value === IdeaVoteValue.DOWN,
-      )?._count._all ?? 0;
+      grouped.find((row) => row.value === IdeaVoteValue.DOWN)?._count._all ?? 0;
 
     await tx.ideaPublication.update({
       where: {

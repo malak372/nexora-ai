@@ -5,18 +5,11 @@
  * @author Malak
  */
 
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-} from '@prisma/client';
+import { IdeaGenerationType } from '@prisma/client';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -34,9 +27,7 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  IdeaAiOutputParserService,
-} from '../../services/idea-ai-output-parser.service';
+import { IdeaAiOutputParserService } from '../../services/idea-ai-output-parser.service';
 
 import type {
   AdvancedIdeaAiOutput,
@@ -45,9 +36,7 @@ import type {
   ParsedIdeaAiOutput,
 } from '../../types/idea-ai-output.type';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
 /**
  * Performs final business-level validation and normalization of
@@ -117,26 +106,19 @@ import type {
  * - Mark guest generation as consumed.
  */
 @Injectable()
-export class AiOutputValidationStage
-  implements IdeaGenerationStage
-{
+export class AiOutputValidationStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS
-      .AI_OUTPUT_VALIDATION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.AI_OUTPUT_VALIDATION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition:
-    IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly outputParserService:
-      IdeaAiOutputParserService,
+    private readonly outputParserService: IdeaAiOutputParserService,
   ) {}
 
   /**
@@ -148,93 +130,52 @@ export class AiOutputValidationStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     this.validateContext(context);
 
-    const rawOutput =
-      this.buildRawOutput(context);
+    const rawOutput = this.buildRawOutput(context);
 
-    const parsedOutput =
-      this.outputParserService.parseOrThrow(
-        rawOutput,
-      );
+    const parsedOutput = this.outputParserService.parseOrThrow(rawOutput);
 
-    this.validateOutputForGenerationType(
-      context,
-      parsedOutput,
-    );
+    this.validateOutputForGenerationType(context, parsedOutput);
 
-    const updatedContext:
-      IdeaGenerationContext = {
-        ...context,
+    const updatedContext: IdeaGenerationContext = {
+      ...context,
 
-        coreIdea:
-          parsedOutput.coreIdea,
+      coreIdea: parsedOutput.coreIdea,
 
-        advancedOutputs:
-          parsedOutput.advancedOutputs,
-      };
+      advancedOutputs: parsedOutput.advancedOutputs,
+    };
 
     return {
-      context:
-        updatedContext,
+      context: updatedContext,
 
-      resultPreview:
-        this.buildResultPreview(
-          context,
-          parsedOutput,
-        ),
+      resultPreview: this.buildResultPreview(context, parsedOutput),
 
       metadata: {
-        generationType:
-          context.generationType,
+        generationType: context.generationType,
 
-        title:
-          parsedOutput.coreIdea.title,
+        title: parsedOutput.coreIdea.title,
 
-        objectivesCount:
-          parsedOutput.coreIdea
-            .objectives.length,
+        objectivesCount: parsedOutput.coreIdea.objectives.length,
 
-        targetUsersCount:
-          parsedOutput.coreIdea
-            .targetUsers.length,
+        targetUsersCount: parsedOutput.coreIdea.targetUsers.length,
 
-        hasLimitedAbstract:
-          Boolean(
-            parsedOutput.coreIdea
-              .limitedAbstract,
-          ),
+        hasLimitedAbstract: Boolean(parsedOutput.coreIdea.limitedAbstract),
 
-        hasPartialAbstract:
-          Boolean(
-            parsedOutput.coreIdea
-              .partialAbstract,
-          ),
+        hasPartialAbstract: Boolean(parsedOutput.coreIdea.partialAbstract),
 
-        hasFullAbstract:
-          Boolean(
-            parsedOutput.coreIdea
-              .fullAbstract,
-          ),
+        hasFullAbstract: Boolean(parsedOutput.coreIdea.fullAbstract),
 
-        advancedOutputsCount:
-          parsedOutput
-            .advancedOutputs.length,
+        advancedOutputsCount: parsedOutput.advancedOutputs.length,
 
-        requiredPremiumOutputsCount:
-          context.policy
-            ?.includePremiumOutputs
-            ? REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS
-                .length
-            : 0,
+        requiredPremiumOutputsCount: context.policy?.includePremiumOutputs
+          ? REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS.length
+          : 0,
 
-        includePremiumOutputs:
-          context.policy
-            ?.includePremiumOutputs ??
-          false,
+        includePremiumOutputs: context.policy?.includePremiumOutputs ?? false,
 
-        outputValidated:
-          true,
+        outputValidated: true,
       },
     };
   }
@@ -248,19 +189,14 @@ export class AiOutputValidationStage
    * @throws BadRequestException When required context is missing
    * or inconsistent.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       this.throwInvalidOutput(
         'Generation entitlement must be resolved before AI-output validation.',
       );
     }
 
-    if (
-      context.policy.generationType !==
-      context.generationType
-    ) {
+    if (context.policy.generationType !== context.generationType) {
       this.throwInvalidOutput(
         'Resolved generation policy does not match the pipeline generation type.',
       );
@@ -272,19 +208,13 @@ export class AiOutputValidationStage
       );
     }
 
-    if (
-      !Array.isArray(
-        context.advancedOutputs,
-      )
-    ) {
+    if (!Array.isArray(context.advancedOutputs)) {
       this.throwInvalidOutput(
         'Advanced AI outputs must be represented as an array.',
       );
     }
 
-    this.validateContextOutputKeys(
-      context.advancedOutputs,
-    );
+    this.validateContextOutputKeys(context.advancedOutputs);
   }
 
   /**
@@ -300,28 +230,19 @@ export class AiOutputValidationStage
   ): void {
     switch (context.generationType) {
       case IdeaGenerationType.GUEST_FREE:
-        this.validateGuestOutput(
-          parsedOutput,
-        );
+        this.validateGuestOutput(parsedOutput);
         return;
 
       case IdeaGenerationType.NORMAL_FREE:
-        this.validateNormalFreeOutput(
-          parsedOutput,
-        );
+        this.validateNormalFreeOutput(parsedOutput);
         return;
 
       case IdeaGenerationType.PREMIUM_CREDIT:
-        this.validatePremiumOutput(
-          context,
-          parsedOutput,
-        );
+        this.validatePremiumOutput(context, parsedOutput);
         return;
 
       default:
-        this.assertNeverGenerationType(
-          context.generationType,
-        );
+        this.assertNeverGenerationType(context.generationType);
     }
   }
 
@@ -338,26 +259,21 @@ export class AiOutputValidationStage
    *
    * @param parsedOutput Parsed guest-generation output.
    */
-  private validateGuestOutput(
-    parsedOutput: ParsedIdeaAiOutput,
-  ): void {
+  private validateGuestOutput(parsedOutput: ParsedIdeaAiOutput): void {
     this.requireCoreString(
-      parsedOutput.coreIdea
-        .limitedAbstract,
+      parsedOutput.coreIdea.limitedAbstract,
       'limitedAbstract',
       IdeaGenerationType.GUEST_FREE,
     );
 
     this.requireCoreString(
-      parsedOutput.coreIdea
-        .partialAbstract,
+      parsedOutput.coreIdea.partialAbstract,
       'partialAbstract',
       IdeaGenerationType.GUEST_FREE,
     );
 
     this.rejectCoreStringWhenPresent(
-      parsedOutput.coreIdea
-        .fullAbstract,
+      parsedOutput.coreIdea.fullAbstract,
       'fullAbstract',
       IdeaGenerationType.GUEST_FREE,
     );
@@ -379,19 +295,15 @@ export class AiOutputValidationStage
    *
    * @param parsedOutput Parsed normal-free output.
    */
-  private validateNormalFreeOutput(
-    parsedOutput: ParsedIdeaAiOutput,
-  ): void {
+  private validateNormalFreeOutput(parsedOutput: ParsedIdeaAiOutput): void {
     this.requireCoreString(
-      parsedOutput.coreIdea
-        .partialAbstract,
+      parsedOutput.coreIdea.partialAbstract,
       'partialAbstract',
       IdeaGenerationType.NORMAL_FREE,
     );
 
     this.rejectCoreStringWhenPresent(
-      parsedOutput.coreIdea
-        .fullAbstract,
+      parsedOutput.coreIdea.fullAbstract,
       'fullAbstract',
       IdeaGenerationType.NORMAL_FREE,
     );
@@ -419,8 +331,7 @@ export class AiOutputValidationStage
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): void {
-    const policy =
-      context.policy;
+    const policy = context.policy;
 
     if (!policy) {
       this.throwInvalidOutput(
@@ -428,32 +339,25 @@ export class AiOutputValidationStage
       );
     }
 
-    if (
-      !policy.includePremiumOutputs
-    ) {
+    if (!policy.includePremiumOutputs) {
       this.throwInvalidOutput(
         'Premium generation policy must enable advanced outputs.',
       );
     }
 
-    if (
-      !policy.unlockOnGeneration
-    ) {
+    if (!policy.unlockOnGeneration) {
       this.throwInvalidOutput(
         'Premium-generated ideas must be unlocked on successful generation.',
       );
     }
 
     this.requireCoreString(
-      parsedOutput.coreIdea
-        .fullAbstract,
+      parsedOutput.coreIdea.fullAbstract,
       'fullAbstract',
       IdeaGenerationType.PREMIUM_CREDIT,
     );
 
-    this.validateRequiredPremiumOutputs(
-      parsedOutput.advancedOutputs,
-    );
+    this.validateRequiredPremiumOutputs(parsedOutput.advancedOutputs);
   }
 
   /**
@@ -467,10 +371,8 @@ export class AiOutputValidationStage
    * @param generationType Current free generation type.
    */
   private validateNoAdvancedOutputs(
-    outputs:
-      readonly AdvancedIdeaAiOutput[],
-    generationType:
-      IdeaGenerationType,
+    outputs: readonly AdvancedIdeaAiOutput[],
+    generationType: IdeaGenerationType,
   ): void {
     if (outputs.length === 0) {
       return;
@@ -479,11 +381,7 @@ export class AiOutputValidationStage
     this.throwInvalidOutput(
       `${generationType} generation must not include advanced premium outputs.`,
       {
-        unexpectedOutputKeys:
-          outputs.map(
-            (output) =>
-              output.outputKey,
-          ),
+        unexpectedOutputKeys: outputs.map((output) => output.outputKey),
       },
     );
   }
@@ -498,49 +396,27 @@ export class AiOutputValidationStage
    * @param outputs Parsed advanced outputs.
    */
   private validateRequiredPremiumOutputs(
-    outputs:
-      readonly AdvancedIdeaAiOutput[],
+    outputs: readonly AdvancedIdeaAiOutput[],
   ): void {
-    const outputByKey =
-      new Map<
-        IdeaAdvancedOutputKey,
-        AdvancedIdeaAiOutput
-      >();
+    const outputByKey = new Map<IdeaAdvancedOutputKey, AdvancedIdeaAiOutput>();
 
     for (const output of outputs) {
-      if (
-        outputByKey.has(
-          output.outputKey,
-        )
-      ) {
+      if (outputByKey.has(output.outputKey)) {
         this.throwInvalidOutput(
           `Premium AI output contains the duplicated output key "${output.outputKey}".`,
         );
       }
 
-      this.validateAdvancedOutputContent(
-        output,
-      );
+      this.validateAdvancedOutputContent(output);
 
-      outputByKey.set(
-        output.outputKey,
-        output,
-      );
+      outputByKey.set(output.outputKey, output);
     }
 
-    const missingOutputKeys =
-      REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS
-        .filter(
-          (outputKey) =>
-            !outputByKey.has(
-              outputKey,
-            ),
-        );
+    const missingOutputKeys = REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS.filter(
+      (outputKey) => !outputByKey.has(outputKey),
+    );
 
-    if (
-      missingOutputKeys.length >
-      0
-    ) {
+    if (missingOutputKeys.length > 0) {
       this.throwInvalidOutput(
         `Premium generation is missing required outputs: ${missingOutputKeys.join(', ')}.`,
         {
@@ -556,13 +432,8 @@ export class AiOutputValidationStage
    *
    * @param output Advanced output to validate.
    */
-  private validateAdvancedOutputContent(
-    output: AdvancedIdeaAiOutput,
-  ): void {
-    const definition =
-      findIdeaAdvancedOutputDefinitionByKey(
-        output.outputKey,
-      );
+  private validateAdvancedOutputContent(output: AdvancedIdeaAiOutput): void {
+    const definition = findIdeaAdvancedOutputDefinitionByKey(output.outputKey);
 
     if (!definition) {
       this.throwInvalidOutput(
@@ -570,32 +441,23 @@ export class AiOutputValidationStage
       );
     }
 
-    if (
-      typeof output.title !==
-      'string'
-    ) {
+    if (typeof output.title !== 'string') {
       this.throwInvalidOutput(
         `Advanced output "${output.outputKey}" must contain a string title.`,
       );
     }
 
-    const normalizedTitle =
-      output.title.trim();
+    const normalizedTitle = output.title.trim();
 
-    if (
-      normalizedTitle !==
-      definition.title
-    ) {
+    if (normalizedTitle !== definition.title) {
       this.throwInvalidOutput(
         `Advanced output "${output.outputKey}" has an invalid title.`,
       );
     }
 
     if (
-      typeof output.content !==
-      'string' ||
-      output.content.trim().length ===
-        0
+      typeof output.content !== 'string' ||
+      output.content.trim().length === 0
     ) {
       this.throwInvalidOutput(
         `Advanced output "${output.outputKey}" must contain non-empty string content.`,
@@ -603,16 +465,11 @@ export class AiOutputValidationStage
     }
 
     if (definition.collection) {
-      this.validateCollectionStructuredContent(
-        output,
-      );
+      this.validateCollectionStructuredContent(output);
       return;
     }
 
-    if (
-      output.structuredContent !==
-      undefined
-    ) {
+    if (output.structuredContent !== undefined) {
       this.throwInvalidOutput(
         `Scalar advanced output "${output.outputKey}" must not contain structured collection content.`,
       );
@@ -627,22 +484,15 @@ export class AiOutputValidationStage
   private validateCollectionStructuredContent(
     output: AdvancedIdeaAiOutput,
   ): void {
-    const structuredContent =
-      output.structuredContent;
+    const structuredContent = output.structuredContent;
 
-    if (
-      !Array.isArray(
-        structuredContent,
-      )
-    ) {
+    if (!Array.isArray(structuredContent)) {
       this.throwInvalidOutput(
         `Advanced output "${output.outputKey}" must contain structured array content.`,
       );
     }
 
-    if (
-      structuredContent.length === 0
-    ) {
+    if (structuredContent.length === 0) {
       this.throwInvalidOutput(
         `Advanced output "${output.outputKey}" must contain at least one structured value.`,
       );
@@ -650,10 +500,7 @@ export class AiOutputValidationStage
 
     if (
       structuredContent.some(
-        (item) =>
-          typeof item !==
-            'string' ||
-          item.trim().length === 0,
+        (item) => typeof item !== 'string' || item.trim().length === 0,
       )
     ) {
       this.throwInvalidOutput(
@@ -673,26 +520,20 @@ export class AiOutputValidationStage
    * @param outputs Context advanced outputs.
    */
   private validateContextOutputKeys(
-    outputs:
-      readonly AdvancedIdeaAiOutput[],
+    outputs: readonly AdvancedIdeaAiOutput[],
   ): void {
-    const seenOutputKeys =
-      new Set<IdeaAdvancedOutputKey>();
+    const seenOutputKeys = new Set<IdeaAdvancedOutputKey>();
 
     for (const output of outputs) {
-      if (
-        !output ||
-        typeof output !== 'object'
-      ) {
+      if (!output || typeof output !== 'object') {
         this.throwInvalidOutput(
           'Every advanced output in the generation context must be an object.',
         );
       }
 
-      const definition =
-        findIdeaAdvancedOutputDefinitionByKey(
-          output.outputKey,
-        );
+      const definition = findIdeaAdvancedOutputDefinitionByKey(
+        output.outputKey,
+      );
 
       if (!definition) {
         this.throwInvalidOutput(
@@ -700,19 +541,13 @@ export class AiOutputValidationStage
         );
       }
 
-      if (
-        seenOutputKeys.has(
-          output.outputKey,
-        )
-      ) {
+      if (seenOutputKeys.has(output.outputKey)) {
         this.throwInvalidOutput(
           `Duplicated advanced output key "${output.outputKey}" was found in the generation context.`,
         );
       }
 
-      seenOutputKeys.add(
-        output.outputKey,
-      );
+      seenOutputKeys.add(output.outputKey);
     }
   }
 
@@ -732,11 +567,8 @@ export class AiOutputValidationStage
    * @param context Current generation context.
    * @returns Parser-compatible AI-output object.
    */
-  private buildRawOutput(
-    context: IdeaGenerationContext,
-  ): JsonObject {
-    const coreIdea =
-      context.coreIdea;
+  private buildRawOutput(context: IdeaGenerationContext): JsonObject {
+    const coreIdea = context.coreIdea;
 
     if (!coreIdea) {
       this.throwInvalidOutput(
@@ -745,18 +577,14 @@ export class AiOutputValidationStage
     }
 
     const rawOutput: JsonObject = {
-        title:
-          coreIdea.title,
+      title: coreIdea.title,
 
-        problemStatement:
-          coreIdea.problemStatement,
+      problemStatement: coreIdea.problemStatement,
 
-        objectives:
-          coreIdea.objectives,
+      objectives: coreIdea.objectives,
 
-        targetUsers:
-          coreIdea.targetUsers,
-      };
+      targetUsers: coreIdea.targetUsers,
+    };
 
     this.assignOptionalString(
       rawOutput,
@@ -770,20 +598,12 @@ export class AiOutputValidationStage
       coreIdea.partialAbstract,
     );
 
-    this.assignOptionalString(
-      rawOutput,
-      'fullAbstract',
-      coreIdea.fullAbstract,
-    );
+    this.assignOptionalString(rawOutput, 'fullAbstract', coreIdea.fullAbstract);
 
-    for (
-      const output of
-      context.advancedOutputs
-    ) {
-      const definition =
-        findIdeaAdvancedOutputDefinitionByKey(
-          output.outputKey,
-        );
+    for (const output of context.advancedOutputs) {
+      const definition = findIdeaAdvancedOutputDefinitionByKey(
+        output.outputKey,
+      );
 
       if (!definition) {
         this.throwInvalidOutput(
@@ -792,28 +612,18 @@ export class AiOutputValidationStage
       }
 
       if (definition.collection) {
-        if (
-          !Array.isArray(
-            output.structuredContent,
-          )
-        ) {
+        if (!Array.isArray(output.structuredContent)) {
           this.throwInvalidOutput(
             `Advanced output "${output.outputKey}" must contain structured array content.`,
           );
         }
 
-        rawOutput[
-          definition.field
-        ] =
-          output.structuredContent;
+        rawOutput[definition.field] = output.structuredContent;
 
         continue;
       }
 
-      rawOutput[
-        definition.field
-      ] =
-        output.content;
+      rawOutput[definition.field] = output.content;
     }
 
     return rawOutput;
@@ -836,9 +646,7 @@ export class AiOutputValidationStage
     key: string,
     value: string | undefined,
   ): void {
-    if (
-      value === undefined
-    ) {
+    if (value === undefined) {
       return;
     }
 
@@ -855,13 +663,9 @@ export class AiOutputValidationStage
   private requireCoreString(
     value: string | undefined,
     fieldName: string,
-    generationType:
-      IdeaGenerationType,
+    generationType: IdeaGenerationType,
   ): asserts value is string {
-    if (
-      typeof value !== 'string' ||
-      value.trim().length === 0
-    ) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
       this.throwInvalidOutput(
         `${generationType} generation requires a non-empty "${fieldName}" field.`,
       );
@@ -879,8 +683,7 @@ export class AiOutputValidationStage
   private rejectCoreStringWhenPresent(
     value: string | undefined,
     fieldName: string,
-    generationType:
-      IdeaGenerationType,
+    generationType: IdeaGenerationType,
   ): void {
     if (value === undefined) {
       return;
@@ -903,9 +706,7 @@ export class AiOutputValidationStage
     parsedOutput: ParsedIdeaAiOutput,
   ): string {
     const outputDescription =
-      context.generationType ===
-      IdeaGenerationType
-        .PREMIUM_CREDIT
+      context.generationType === IdeaGenerationType.PREMIUM_CREDIT
         ? ` with ${parsedOutput.advancedOutputs.length} advanced outputs`
         : '';
 
@@ -927,15 +728,10 @@ export class AiOutputValidationStage
    */
   private throwInvalidOutput(
     message: string,
-    details?: Record<
-      string,
-      unknown
-    >,
+    details?: Record<string, unknown>,
   ): never {
     throw new BadRequestException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .INVALID_AI_OUTPUT,
+      code: IDEA_GENERATION_ERROR_CODES.INVALID_AI_OUTPUT,
 
       message,
 
@@ -949,9 +745,7 @@ export class AiOutputValidationStage
    *
    * @param generationType Unexpected generation type.
    */
-  private assertNeverGenerationType(
-    generationType: never,
-  ): never {
+  private assertNeverGenerationType(generationType: never): never {
     return this.throwInvalidOutput(
       `Unsupported idea generation type "${String(generationType)}".`,
     );
@@ -963,12 +757,8 @@ export class AiOutputValidationStage
    *
    * @returns AI-output-validation stage definition.
    */
-  private resolveDefinition():
-    IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+  private resolveDefinition(): IdeaGenerationStageDefinition {
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

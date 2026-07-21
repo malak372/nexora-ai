@@ -1,19 +1,20 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { UserValidationService } from '../validation/validation.service';
 import { userCacheKeys } from '../cache/user-cache.keys';
+import { UserValidationService } from '../validation/validation.service';
 
 /**
- * Service responsible for authenticated user favorite ideas.
+ * Manages private favorites for authenticated users' generated ideas.
  *
- * Users can only favorite, remove, and view ideas that belong to them.
- *
- * Cache behavior:
- * - Adding or removing a favorite idea invalidates the cached dashboard
- *   summary because favoriteIdeasCount is displayed there.
+ * Business rules:
+ * - A user can favorite only an idea owned by the same user.
+ * - The idea does not need to be published.
+ * - Guest ideas cannot be favorited until they are transferred to a user.
+ * - Favorites are private and are never exposed through public publications.
+ * - Repeated add operations are idempotent.
  *
  * @author Eman
  */
@@ -21,29 +22,14 @@ import { userCacheKeys } from '../cache/user-cache.keys';
 export class UserFavoritesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly userCommonService: UserValidationService,
-
-    @Inject(CACHE_MANAGER)
-    private readonly cacheManager: Cache,
+    private readonly userValidationService: UserValidationService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  /**
-   * Adds an owned idea to the authenticated user's favorites.
-   */
+  /** Adds one user-owned generated idea to private favorites. */
   async addFavorite(userId: string, ideaId: string) {
-    await this.userCommonService.findUserOrThrow(userId);
-
-    const idea = await this.prisma.idea.findFirst({
-      where: {
-        id: ideaId,
-        userId,
-      },
-      select: { id: true },
-    });
-
-    if (!idea) {
-      throw new NotFoundException('Idea not found');
-    }
+    await this.userValidationService.findUserOrThrow(userId);
+    await this.findOwnedIdeaOrThrow(userId, ideaId);
 
     const favorite = await this.prisma.favoriteIdea.upsert({
       where: {
@@ -65,55 +51,51 @@ export class UserFavoritesService {
       },
     });
 
-    await this.cacheManager.del(userCacheKeys.summary(userId));
-
-    return favorite;
-  }
-
-  /**
-   * Removes an owned idea from the authenticated user's favorites.
-   */
-  async removeFavorite(userId: string, ideaId: string) {
-    await this.userCommonService.findUserOrThrow(userId);
-
-    const favorite = await this.prisma.favoriteIdea.findUnique({
-      where: {
-        userId_ideaId: {
-          userId,
-          ideaId,
-        },
-      },
-    });
-
-    if (!favorite) {
-      throw new NotFoundException('Favorite idea not found');
-    }
-
-    await this.prisma.favoriteIdea.delete({
-      where: {
-        userId_ideaId: {
-          userId,
-          ideaId,
-        },
-      },
-    });
-
-    await this.cacheManager.del(userCacheKeys.summary(userId));
+    await this.invalidateUserCaches(userId);
 
     return {
-      message: 'Idea removed from favorites',
+      message: 'Idea added to favorites.',
+      favorite,
     };
   }
 
-  /**
-   * Retrieves all favorite ideas for the authenticated user.
-   */
-  async getFavorites(userId: string) {
-    await this.userCommonService.findUserOrThrow(userId);
+  /** Removes one user-owned generated idea from private favorites. */
+  async removeFavorite(userId: string, ideaId: string) {
+    await this.userValidationService.findUserOrThrow(userId);
 
-    return this.prisma.favoriteIdea.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
+    const result = await this.prisma.favoriteIdea.deleteMany({
+      where: {
+        userId,
+        ideaId,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Favorite idea not found.');
+    }
+
+    await this.invalidateUserCaches(userId);
+
+    return {
+      message: 'Idea removed from favorites.',
+    };
+  }
+
+  /** Returns all non-deleted favorite ideas owned by the current user. */
+  async getFavorites(userId: string) {
+    await this.userValidationService.findUserOrThrow(userId);
+
+    const favorites = await this.prisma.favoriteIdea.findMany({
+      where: {
+        userId,
+        idea: {
+          userId,
+          deletedAt: null,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
       select: {
         id: true,
         createdAt: true,
@@ -121,21 +103,99 @@ export class UserFavoritesService {
           select: {
             id: true,
             title: true,
+            generationType: true,
+            selectedRegion: true,
+            limitedAbstract: true,
+            partialAbstract: true,
+            fullAbstract: true,
             problemStatement: true,
             objectives: true,
             targetUsers: true,
-            partialAbstract: true,
-            generationType: true,
             isUnlocked: true,
             unlockMethod: true,
+            unlockedAt: true,
             commentsCount: true,
-            selectedRegion: true,
             createdAt: true,
-            domain: true,
-            selectedPlatform: true,
+            updatedAt: true,
+            domain: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            publication: {
+              select: {
+                id: true,
+                status: true,
+                visibility: true,
+                publishedAt: true,
+              },
+            },
+            generationRun: {
+              select: {
+                id: true,
+                status: true,
+                currentStageKey: true,
+                progressPercent: true,
+              },
+            },
+            _count: {
+              select: {
+                generatedOutputs: true,
+                chatSessions: true,
+              },
+            },
           },
         },
       },
     });
+
+    return favorites.map((favorite) => ({
+      id: favorite.id,
+      favoritedAt: favorite.createdAt,
+      idea: {
+        ...favorite.idea,
+        fullAbstract: favorite.idea.isUnlocked
+          ? favorite.idea.fullAbstract
+          : null,
+        commentsCount: favorite.idea.isUnlocked
+          ? favorite.idea.commentsCount
+          : undefined,
+        isFavorite: true,
+        access: {
+          canViewAdvancedOutputs: favorite.idea.isUnlocked,
+          canViewFullAbstract: favorite.idea.isUnlocked,
+          canViewCommunityData: favorite.idea.isUnlocked,
+          canUseAiChat: favorite.idea.isUnlocked,
+          requiresDirectUnlock: !favorite.idea.isUnlocked,
+        },
+      },
+    }));
+  }
+
+  /** Ensures that the requested idea exists and belongs to the current user. */
+  private async findOwnedIdeaOrThrow(
+    userId: string,
+    ideaId: string,
+  ): Promise<void> {
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+        userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException('User-owned idea not found.');
+    }
+  }
+
+  /** Invalidates user summaries affected by favorite changes. */
+  private async invalidateUserCaches(userId: string): Promise<void> {
+    await this.cacheManager.del(userCacheKeys.summary(userId));
   }
 }

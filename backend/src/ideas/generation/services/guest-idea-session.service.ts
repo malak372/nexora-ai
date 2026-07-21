@@ -4,10 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 
-import {
-  GuestSession,
-  Prisma,
-} from '@prisma/client';
+import { GuestSession, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -56,9 +53,7 @@ export type ResolvedGuestIdeaSession = {
  *
  * @author Malak
  */
-type GuestSessionDatabaseClient =
-  | PrismaService
-  | Prisma.TransactionClient;
+type GuestSessionDatabaseClient = PrismaService | Prisma.TransactionClient;
 
 /**
  * Service responsible for resolving and consuming guest idea
@@ -86,9 +81,7 @@ type GuestSessionDatabaseClient =
  */
 @Injectable()
 export class GuestIdeaSessionService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Resolves a valid guest session by its public token.
@@ -106,21 +99,19 @@ export class GuestIdeaSessionService {
   async resolveAvailableSession(
     sessionToken: string,
   ): Promise<ResolvedGuestIdeaSession> {
-    const normalizedToken =
-      this.normalizeSessionToken(sessionToken);
+    const normalizedToken = this.normalizeSessionToken(sessionToken);
 
-    const guestSession =
-      await this.prisma.guestSession.findUnique({
-        where: {
-          sessionToken: normalizedToken,
-        },
-        select: {
-          id: true,
-          hasGenerated: true,
-          createdAt: true,
-          expiresAt: true,
-        },
-      });
+    const guestSession = await this.prisma.guestSession.findUnique({
+      where: {
+        sessionToken: normalizedToken,
+      },
+      select: {
+        id: true,
+        hasGenerated: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
 
     if (!guestSession) {
       this.throwInvalidSession();
@@ -147,21 +138,19 @@ export class GuestIdeaSessionService {
     guestSessionId: string,
     db: GuestSessionDatabaseClient = this.prisma,
   ): Promise<ResolvedGuestIdeaSession> {
-    const normalizedId =
-      this.normalizeGuestSessionId(guestSessionId);
+    const normalizedId = this.normalizeGuestSessionId(guestSessionId);
 
-    const guestSession =
-      await db.guestSession.findUnique({
-        where: {
-          id: normalizedId,
-        },
-        select: {
-          id: true,
-          hasGenerated: true,
-          createdAt: true,
-          expiresAt: true,
-        },
-      });
+    const guestSession = await db.guestSession.findUnique({
+      where: {
+        id: normalizedId,
+      },
+      select: {
+        id: true,
+        hasGenerated: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
 
     if (!guestSession) {
       this.throwInvalidSession();
@@ -186,25 +175,22 @@ export class GuestIdeaSessionService {
    *
    * @param guestSessionId Internal guest-session identifier.
    */
-  async canGenerate(
-    guestSessionId: string,
-  ): Promise<boolean> {
+  async canGenerate(guestSessionId: string): Promise<boolean> {
     const normalizedId = guestSessionId?.trim();
 
     if (!normalizedId) {
       return false;
     }
 
-    const guestSession =
-      await this.prisma.guestSession.findUnique({
-        where: {
-          id: normalizedId,
-        },
-        select: {
-          hasGenerated: true,
-          expiresAt: true,
-        },
-      });
+    const guestSession = await this.prisma.guestSession.findUnique({
+      where: {
+        id: normalizedId,
+      },
+      select: {
+        hasGenerated: true,
+        expiresAt: true,
+      },
+    });
 
     if (!guestSession) {
       return false;
@@ -240,41 +226,36 @@ export class GuestIdeaSessionService {
     guestSessionId: string,
     tx: Prisma.TransactionClient,
   ): Promise<void> {
-    const normalizedId =
-      this.normalizeGuestSessionId(guestSessionId);
+    const normalizedId = this.normalizeGuestSessionId(guestSessionId);
 
     const now = new Date();
 
-    const result =
-      await tx.guestSession.updateMany({
-        where: {
-          id: normalizedId,
-          hasGenerated: false,
+    const result = await tx.guestSession.updateMany({
+      where: {
+        id: normalizedId,
+        hasGenerated: false,
 
-          OR: [
-            {
-              expiresAt: null,
+        OR: [
+          {
+            expiresAt: null,
+          },
+          {
+            expiresAt: {
+              gt: now,
             },
-            {
-              expiresAt: {
-                gt: now,
-              },
-            },
-          ],
-        },
-        data: {
-          hasGenerated: true,
-        },
-      });
+          },
+        ],
+      },
+      data: {
+        hasGenerated: true,
+      },
+    });
 
     if (result.count === 1) {
       return;
     }
 
-    await this.throwConsumeFailure(
-      normalizedId,
-      tx,
-    );
+    await this.throwConsumeFailure(normalizedId, tx);
   }
 
   /**
@@ -328,16 +309,15 @@ export class GuestIdeaSessionService {
     guestSessionId: string,
     tx: Prisma.TransactionClient,
   ): Promise<never> {
-    const guestSession =
-      await tx.guestSession.findUnique({
-        where: {
-          id: guestSessionId,
-        },
-        select: {
-          hasGenerated: true,
-          expiresAt: true,
-        },
-      });
+    const guestSession = await tx.guestSession.findUnique({
+      where: {
+        id: guestSessionId,
+      },
+      select: {
+        hasGenerated: true,
+        expiresAt: true,
+      },
+    });
 
     if (!guestSession) {
       return this.throwInvalidSession();
@@ -353,8 +333,7 @@ export class GuestIdeaSessionService {
 
     throw new ConflictException({
       code: 'GUEST_GENERATION_CONSUME_FAILED',
-      message:
-        'The guest generation entitlement could not be consumed.',
+      message: 'The guest generation entitlement could not be consumed.',
     });
   }
 
@@ -362,10 +341,7 @@ export class GuestIdeaSessionService {
    * Ensures that a guest session has not expired.
    */
   private assertNotExpired(
-    guestSession: Pick<
-      GuestSession,
-      'expiresAt'
-    >,
+    guestSession: Pick<GuestSession, 'expiresAt'>,
   ): void {
     if (this.isExpired(guestSession.expiresAt)) {
       this.throwExpiredSession();
@@ -377,10 +353,7 @@ export class GuestIdeaSessionService {
    * permitted generation.
    */
   private assertNotConsumed(
-    guestSession: Pick<
-      GuestSession,
-      'hasGenerated'
-    >,
+    guestSession: Pick<GuestSession, 'hasGenerated'>,
   ): void {
     if (guestSession.hasGenerated) {
       this.throwGenerationAlreadyUsed();
@@ -394,21 +367,14 @@ export class GuestIdeaSessionService {
    * A null expiration date is treated as non-expired because the
    * current Prisma schema allows expiresAt to be nullable.
    */
-  private isExpired(
-    expiresAt: Date | null,
-  ): boolean {
-    return (
-      expiresAt !== null &&
-      expiresAt.getTime() <= Date.now()
-    );
+  private isExpired(expiresAt: Date | null): boolean {
+    return expiresAt !== null && expiresAt.getTime() <= Date.now();
   }
 
   /**
    * Normalizes and validates a public guest-session token.
    */
-  private normalizeSessionToken(
-    sessionToken: string,
-  ): string {
+  private normalizeSessionToken(sessionToken: string): string {
     const normalizedToken = sessionToken?.trim();
 
     if (!normalizedToken) {
@@ -421,9 +387,7 @@ export class GuestIdeaSessionService {
   /**
    * Normalizes and validates an internal guest-session ID.
    */
-  private normalizeGuestSessionId(
-    guestSessionId: string,
-  ): string {
+  private normalizeGuestSessionId(guestSessionId: string): string {
     const normalizedId = guestSessionId?.trim();
 
     if (!normalizedId) {
@@ -440,8 +404,7 @@ export class GuestIdeaSessionService {
   private throwInvalidSession(): never {
     throw new UnauthorizedException({
       code: 'INVALID_GUEST_SESSION',
-      message:
-        'A valid guest session is required to generate an idea.',
+      message: 'A valid guest session is required to generate an idea.',
     });
   }
 
@@ -463,8 +426,7 @@ export class GuestIdeaSessionService {
   private throwGenerationAlreadyUsed(): never {
     throw new ConflictException({
       code: 'GUEST_GENERATION_ALREADY_USED',
-      message:
-        'This guest session has already used its free idea generation.',
+      message: 'This guest session has already used its free idea generation.',
     });
   }
 }

@@ -39,7 +39,7 @@ export class PaymentWebhookService {
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
 
     private readonly paymentProcessingService: PaymentProcessingService,
-  ) { }
+  ) {}
 
   /**
    * Verifies, normalizes, and processes one provider webhook.
@@ -140,10 +140,7 @@ export class PaymentWebhookService {
    * @param error Caught webhook-processing error.
    * @param providerKey Provider key associated with the webhook route.
    */
-  private rethrowWebhookError(
-    error: unknown,
-    providerKey: string,
-  ): never {
+  private rethrowWebhookError(error: unknown, providerKey: string): never {
     if (error instanceof PaymentProcessingError) {
       throw error;
     }

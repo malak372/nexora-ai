@@ -37,9 +37,7 @@ const PASSWORD_ACTION_TTL_MS = 60_000;
  */
 @Controller('auth/password')
 export class PasswordController {
-  constructor(
-    private readonly authPasswordService: AuthPasswordService,
-  ) { }
+  constructor(private readonly authPasswordService: AuthPasswordService) {}
 
   /**
    * Changes the authenticated user's password.
@@ -101,10 +99,7 @@ export class PasswordController {
       ttl: PASSWORD_ACTION_TTL_MS,
     },
   })
-  forgotPassword(
-    @Body() dto: ForgotPasswordDto,
-    @Req() request: Request,
-  ) {
+  forgotPassword(@Body() dto: ForgotPasswordDto, @Req() request: Request) {
     return this.authPasswordService.forgotPassword(dto, {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],
@@ -132,10 +127,7 @@ export class PasswordController {
       ttl: PASSWORD_ACTION_TTL_MS,
     },
   })
-  resetPassword(
-    @Body() dto: ResetPasswordDto,
-    @Req() request: Request,
-  ) {
+  resetPassword(@Body() dto: ResetPasswordDto, @Req() request: Request) {
     return this.authPasswordService.resetPassword(dto, {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],

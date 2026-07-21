@@ -4,15 +4,9 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-  PromptType,
-} from '@prisma/client';
+import { IdeaGenerationType, PromptType } from '@prisma/client';
 
-import Ajv, {
-  type ErrorObject,
-  type ValidateFunction,
-} from 'ajv';
+import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 
 import {
   FreeIdeaSchema,
@@ -261,14 +255,9 @@ export class AiStructuredOutputService {
    *
    * Validators are compiled once and reused across provider requests.
    */
-  private readonly validatorCache = new Map<
-    string,
-    CachedSchemaValidator
-  >();
+  private readonly validatorCache = new Map<string, CachedSchemaValidator>();
 
-  constructor(
-    private readonly parser: AiResponseParserService,
-  ) {}
+  constructor(private readonly parser: AiResponseParserService) {}
 
   /**
    * Parses and validates provider output using a supplied JSON Schema
@@ -302,20 +291,15 @@ export class AiStructuredOutputService {
     schema: AiJsonSchema,
     schemaName: string,
   ): StructuredOutputValidationResult<T> {
-    const normalizedSchemaName =
-      this.normalizeRequiredSchemaName(schemaName);
+    const normalizedSchemaName = this.normalizeRequiredSchemaName(schemaName);
 
-    const parsedResult =
-      this.safeParseJson(rawText);
+    const parsedResult = this.safeParseJson(rawText);
 
     if (!parsedResult.success) {
       return parsedResult;
     }
 
-    const { validator } = this.resolveValidator(
-      schema,
-      normalizedSchemaName,
-    );
+    const { validator } = this.resolveValidator(schema, normalizedSchemaName);
 
     const isValid = validator(parsedResult.data);
 
@@ -323,10 +307,7 @@ export class AiStructuredOutputService {
       return {
         success: false,
 
-        issues: this.mapAjvErrors(
-          validator.errors,
-          normalizedSchemaName,
-        ),
+        issues: this.mapAjvErrors(validator.errors, normalizedSchemaName),
       };
     }
 
@@ -366,11 +347,7 @@ export class AiStructuredOutputService {
     schema: AiJsonSchema,
     schemaName: string,
   ): T {
-    const validation = this.safeValidateSchema<T>(
-      rawText,
-      schema,
-      schemaName,
-    );
+    const validation = this.safeValidateSchema<T>(rawText, schema, schemaName);
 
     if (!validation.success) {
       throw new BadGatewayException({
@@ -445,25 +422,19 @@ export class AiStructuredOutputService {
     generationType: IdeaGenerationType | undefined,
     promptType: PromptType,
   ): StructuredOutputValidationResult<StructuredIdeaOutput> {
-    const parsedResult =
-      this.safeParseJson(rawText);
+    const parsedResult = this.safeParseJson(rawText);
 
     if (!parsedResult.success) {
       return parsedResult;
     }
 
-    const schemaResolution = this.resolveIdeaSchema(
-      generationType,
-      promptType,
-    );
+    const schemaResolution = this.resolveIdeaSchema(generationType, promptType);
 
     if (!schemaResolution.success) {
       return schemaResolution;
     }
 
-    const result = schemaResolution.schema.safeParse(
-      parsedResult.data,
-    );
+    const result = schemaResolution.schema.safeParse(parsedResult.data);
 
     if (!result.success) {
       return {
@@ -543,11 +514,9 @@ export class AiStructuredOutputService {
     schema: AiJsonSchema,
     schemaName: string,
   ): SchemaValidatorResolutionSuccess {
-    const fingerprint =
-      this.createSchemaFingerprint(schema);
+    const fingerprint = this.createSchemaFingerprint(schema);
 
-    const cached =
-      this.validatorCache.get(schemaName);
+    const cached = this.validatorCache.get(schemaName);
 
     if (cached) {
       if (cached.fingerprint !== fingerprint) {
@@ -563,8 +532,7 @@ export class AiStructuredOutputService {
     }
 
     try {
-      const validator =
-        this.ajv.compile(schema);
+      const validator = this.ajv.compile(schema);
 
       this.validatorCache.set(schemaName, {
         fingerprint,
@@ -575,14 +543,11 @@ export class AiStructuredOutputService {
         validator,
       };
     } catch (error: unknown) {
-      throw new InternalServerErrorException(
-        {
-          message:
-            `Response schema "${schemaName}" is invalid.`,
+      throw new InternalServerErrorException({
+        message: `Response schema "${schemaName}" is invalid.`,
 
-          cause: this.readSafeInternalErrorMessage(error),
-        },
-      );
+        cause: this.readSafeInternalErrorMessage(error),
+      });
     }
   }
 
@@ -605,9 +570,7 @@ export class AiStructuredOutputService {
 
           code: 'schema_validation_failed',
 
-          message:
-            `The response does not match schema ` +
-            `"${schemaName}".`,
+          message: `The response does not match schema ` + `"${schemaName}".`,
         },
       ];
     }
@@ -618,8 +581,7 @@ export class AiStructuredOutputService {
       code: error.keyword,
 
       message:
-        error.message ??
-        `The value does not match schema "${schemaName}".`,
+        error.message ?? `The value does not match schema "${schemaName}".`,
     }));
   }
 
@@ -636,37 +598,21 @@ export class AiStructuredOutputService {
    * @param error AJV validation error.
    * @returns Normalized path beginning with "$".
    */
-  private resolveAjvErrorPath(
-    error: ErrorObject,
-  ): string {
-    const basePath = this.normalizeAjvPath(
-      error.instancePath,
-    );
+  private resolveAjvErrorPath(error: ErrorObject): string {
+    const basePath = this.normalizeAjvPath(error.instancePath);
 
     if (
       error.keyword === 'required' &&
-      this.hasStringParameter(
-        error.params,
-        'missingProperty',
-      )
+      this.hasStringParameter(error.params, 'missingProperty')
     ) {
-      return this.appendPathSegment(
-        basePath,
-        error.params.missingProperty,
-      );
+      return this.appendPathSegment(basePath, error.params.missingProperty);
     }
 
     if (
       error.keyword === 'additionalProperties' &&
-      this.hasStringParameter(
-        error.params,
-        'additionalProperty',
-      )
+      this.hasStringParameter(error.params, 'additionalProperty')
     ) {
-      return this.appendPathSegment(
-        basePath,
-        error.params.additionalProperty,
-      );
+      return this.appendPathSegment(basePath, error.params.additionalProperty);
     }
 
     return basePath;
@@ -680,9 +626,7 @@ export class AiStructuredOutputService {
    * @param propertyName Parameter property to check.
    * @returns True when the requested parameter exists as a string.
    */
-  private hasStringParameter<
-    TPropertyName extends string,
-  >(
+  private hasStringParameter<TPropertyName extends string>(
     params: unknown,
     propertyName: TPropertyName,
   ): params is Record<TPropertyName, string> {
@@ -690,9 +634,7 @@ export class AiStructuredOutputService {
       typeof params === 'object' &&
       params !== null &&
       propertyName in params &&
-      typeof (
-        params as Record<string, unknown>
-      )[propertyName] === 'string'
+      typeof (params as Record<string, unknown>)[propertyName] === 'string'
     );
   }
 
@@ -713,9 +655,7 @@ export class AiStructuredOutputService {
    * @param instancePath AJV JSON Pointer.
    * @returns Root-based readable property path.
    */
-  private normalizeAjvPath(
-    instancePath: string,
-  ): string {
+  private normalizeAjvPath(instancePath: string): string {
     if (!instancePath) {
       return '$';
     }
@@ -723,11 +663,7 @@ export class AiStructuredOutputService {
     const segments = instancePath
       .split('/')
       .filter(Boolean)
-      .map((segment) =>
-        segment
-          .replace(/~1/g, '/')
-          .replace(/~0/g, '~'),
-      );
+      .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
 
     return this.buildRootPath(segments);
   }
@@ -739,12 +675,8 @@ export class AiStructuredOutputService {
    * @param path Zod issue path.
    * @returns Root-based readable property path.
    */
-  private normalizeZodPath(
-    path: readonly PropertyKey[],
-  ): string {
-    return this.buildRootPath(
-      path.map(String),
-    );
+  private normalizeZodPath(path: readonly PropertyKey[]): string {
+    return this.buildRootPath(path.map(String));
   }
 
   /**
@@ -753,9 +685,7 @@ export class AiStructuredOutputService {
    * @param segments Property or array-index path segments.
    * @returns Root-based path.
    */
-  private buildRootPath(
-    segments: readonly string[],
-  ): string {
+  private buildRootPath(segments: readonly string[]): string {
     if (segments.length === 0) {
       return '$';
     }
@@ -770,13 +700,8 @@ export class AiStructuredOutputService {
    * @param segment Property name to append.
    * @returns Extended normalized path.
    */
-  private appendPathSegment(
-    basePath: string,
-    segment: string,
-  ): string {
-    return basePath === '$'
-      ? `$.${segment}`
-      : `${basePath}.${segment}`;
+  private appendPathSegment(basePath: string, segment: string): string {
+    return basePath === '$' ? `$.${segment}` : `${basePath}.${segment}`;
   }
 
   /**
@@ -793,12 +718,8 @@ export class AiStructuredOutputService {
    * @param schema Provider-neutral JSON Schema.
    * @returns Deterministic JSON fingerprint.
    */
-  private createSchemaFingerprint(
-    schema: AiJsonSchema,
-  ): string {
-    return JSON.stringify(
-      this.sortObjectKeysRecursively(schema),
-    );
+  private createSchemaFingerprint(schema: AiJsonSchema): string {
+    return JSON.stringify(this.sortObjectKeysRecursively(schema));
   }
 
   /**
@@ -810,38 +731,24 @@ export class AiStructuredOutputService {
    * @param value JSON-compatible value.
    * @returns Structurally equivalent value with sorted object keys.
    */
-  private sortObjectKeysRecursively(
-    value: unknown,
-  ): unknown {
+  private sortObjectKeysRecursively(value: unknown): unknown {
     if (Array.isArray(value)) {
-      return value.map((item) =>
-        this.sortObjectKeysRecursively(item),
-      );
+      return value.map((item) => this.sortObjectKeysRecursively(item));
     }
 
-    if (
-      typeof value !== 'object' ||
-      value === null
-    ) {
+    if (typeof value !== 'object' || value === null) {
       return value;
     }
 
-    const record =
-      value as Record<string, unknown>;
+    const record = value as Record<string, unknown>;
 
     return Object.keys(record)
       .sort()
-      .reduce<Record<string, unknown>>(
-        (sortedObject, key) => {
-          sortedObject[key] =
-            this.sortObjectKeysRecursively(
-              record[key],
-            );
+      .reduce<Record<string, unknown>>((sortedObject, key) => {
+        sortedObject[key] = this.sortObjectKeysRecursively(record[key]);
 
-          return sortedObject;
-        },
-        {},
-      );
+        return sortedObject;
+      }, {});
   }
 
   /**
@@ -897,8 +804,7 @@ export class AiStructuredOutputService {
             code: 'missing_generation_type',
 
             message:
-              'generationType is required for structured ' +
-              'idea generation.',
+              'generationType is required for structured ' + 'idea generation.',
           },
         ],
       };
@@ -924,9 +830,7 @@ export class AiStructuredOutputService {
         };
 
       default:
-        return this.resolveUnsupportedIdeaGenerationType(
-          generationType,
-        );
+        return this.resolveUnsupportedIdeaGenerationType(generationType);
     }
   }
 
@@ -957,9 +861,7 @@ export class AiStructuredOutputService {
 
           code: 'unsupported_generation_type',
 
-          message:
-            'Unsupported idea generation type: ' +
-            `${String(value)}.`,
+          message: 'Unsupported idea generation type: ' + `${String(value)}.`,
         },
       ],
     };
@@ -976,11 +878,8 @@ export class AiStructuredOutputService {
    *
    * @throws InternalServerErrorException when the schema name is empty.
    */
-  private normalizeRequiredSchemaName(
-    schemaName: string,
-  ): string {
-    const normalizedSchemaName =
-      schemaName.trim();
+  private normalizeRequiredSchemaName(schemaName: string): string {
+    const normalizedSchemaName = schemaName.trim();
 
     if (!normalizedSchemaName) {
       throw new InternalServerErrorException(
@@ -1003,10 +902,7 @@ export class AiStructuredOutputService {
    * @param fallback Message returned when no safe message is available.
    * @returns Safe normalized error message.
    */
-  private readSafeErrorMessage(
-    error: unknown,
-    fallback: string,
-  ): string {
+  private readSafeErrorMessage(error: unknown, fallback: string): string {
     if (error instanceof BadGatewayException) {
       const response = error.getResponse();
 
@@ -1026,17 +922,12 @@ export class AiStructuredOutputService {
         }
 
         if (Array.isArray(message)) {
-          return message
-            .map(String)
-            .join('; ');
+          return message.map(String).join('; ');
         }
       }
     }
 
-    if (
-      error instanceof Error &&
-      error.message.trim()
-    ) {
+    if (error instanceof Error && error.message.trim()) {
       return error.message;
     }
 
@@ -1053,13 +944,8 @@ export class AiStructuredOutputService {
    * @param error Unknown AJV compilation error.
    * @returns Safe internal error description.
    */
-  private readSafeInternalErrorMessage(
-    error: unknown,
-  ): string {
-    if (
-      error instanceof Error &&
-      error.message.trim()
-    ) {
+  private readSafeInternalErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim()) {
       return error.message;
     }
 

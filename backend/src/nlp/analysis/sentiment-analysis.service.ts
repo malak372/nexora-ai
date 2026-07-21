@@ -57,7 +57,7 @@ const CONFIDENCE_DECIMAL_PLACES = 3;
 export class SentimentAnalysisService {
   constructor(
     private readonly sentimentScoringPolicyService: SentimentScoringPolicyService,
-  ) { }
+  ) {}
 
   /**
    * Refines sentiment for all lexicon-analyzed texts.
@@ -85,10 +85,7 @@ export class SentimentAnalysisService {
     return {
       ...text,
       sentiment: this.resolveSentiment(score),
-      confidence: this.calculateConfidence(
-        text.confidence,
-        score,
-      ),
+      confidence: this.calculateConfidence(text.confidence, score),
     };
   }
 
@@ -128,13 +125,9 @@ export class SentimentAnalysisService {
     baseConfidence: number,
     score: SentimentScore,
   ): number {
-    const normalizedBaseConfidence =
-      this.normalizeConfidence(baseConfidence);
+    const normalizedBaseConfidence = this.normalizeConfidence(baseConfidence);
 
-    if (
-      !Number.isFinite(score.totalScore) ||
-      score.totalScore <= 0
-    ) {
+    if (!Number.isFinite(score.totalScore) || score.totalScore <= 0) {
       return this.roundConfidence(normalizedBaseConfidence);
     }
 
@@ -146,9 +139,7 @@ export class SentimentAnalysisService {
       normalizedBaseConfidence * BASE_CONFIDENCE_WEIGHT +
       sentimentStrength * SENTIMENT_STRENGTH_WEIGHT;
 
-    return this.roundConfidence(
-      this.normalizeConfidence(confidence),
-    );
+    return this.roundConfidence(this.normalizeConfidence(confidence));
   }
 
   /**
@@ -175,8 +166,6 @@ export class SentimentAnalysisService {
    * @returns Rounded confidence.
    */
   private roundConfidence(confidence: number): number {
-    return Number(
-      confidence.toFixed(CONFIDENCE_DECIMAL_PLACES),
-    );
+    return Number(confidence.toFixed(CONFIDENCE_DECIMAL_PLACES));
   }
 }

@@ -3,11 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  ApiRequestType,
-  IdeaGenerationType,
-  PromptType,
-} from '@prisma/client';
+import { ApiRequestType, IdeaGenerationType, PromptType } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';

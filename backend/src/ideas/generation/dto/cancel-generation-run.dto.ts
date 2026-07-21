@@ -1,10 +1,6 @@
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 
-import {
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * Optional request body used when cancelling an active
@@ -34,7 +30,7 @@ export class CancelGenerationRunDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  @Transform(({ value }) => {
+  @Transform(({ value }: TransformFnParams): unknown => {
     if (typeof value !== 'string') {
       return value;
     }

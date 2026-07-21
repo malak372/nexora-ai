@@ -37,9 +37,7 @@ import type { AiRoutingCostContext } from './types/ai-model-routing.type';
  */
 @Injectable()
 export class AiModelRoutingService {
-  constructor(
-    private readonly aiModelsService: AiModelsService,
-  ) {}
+  constructor(private readonly aiModelsService: AiModelsService) {}
 
   /**
    * Resolves the ordered list of AI models that should be attempted for
@@ -77,10 +75,7 @@ export class AiModelRoutingService {
         return this.orderDefaultFirst(models);
 
       case AiRoutingStrategy.LOWEST_COST:
-        return this.orderByEstimatedCost(
-          models,
-          costContext,
-        );
+        return this.orderByEstimatedCost(models, costContext);
 
       case AiRoutingStrategy.BALANCED:
         return this.orderBalanced(models);
@@ -103,18 +98,13 @@ export class AiModelRoutingService {
    * @param models Routable AI models.
    * @returns Newly ordered AI-model array.
    */
-  private orderDefaultFirst(
-    models: readonly AiModel[],
-  ): AiModel[] {
+  private orderDefaultFirst(models: readonly AiModel[]): AiModel[] {
     return [...models].sort((first, second) => {
       if (first.isDefault !== second.isDefault) {
         return first.isDefault ? -1 : 1;
       }
 
-      return this.compareFallbackOrder(
-        first,
-        second,
-      );
+      return this.compareFallbackOrder(first, second);
     });
   }
 
@@ -148,11 +138,9 @@ export class AiModelRoutingService {
      * Explicit zero values remain valid because the nullish-coalescing
      * operator does not replace zero.
      */
-    const inputTokens =
-      context.estimatedInputTokens ?? 1;
+    const inputTokens = context.estimatedInputTokens ?? 1;
 
-    const outputTokens =
-      context.estimatedOutputTokens ?? 1;
+    const outputTokens = context.estimatedOutputTokens ?? 1;
 
     return [...models].sort((first, second) => {
       const firstCost = this.calculateEstimatedCost(
@@ -171,10 +159,7 @@ export class AiModelRoutingService {
         return firstCost - secondCost;
       }
 
-      return this.compareFallbackOrder(
-        first,
-        second,
-      );
+      return this.compareFallbackOrder(first, second);
     });
   }
 
@@ -196,14 +181,10 @@ export class AiModelRoutingService {
     outputTokens: number,
   ): number {
     const inputCost =
-      (model.inputCostPerMillion.toNumber() *
-        inputTokens) /
-      1_000_000;
+      (model.inputCostPerMillion.toNumber() * inputTokens) / 1_000_000;
 
     const outputCost =
-      (model.outputCostPerMillion.toNumber() *
-        outputTokens) /
-      1_000_000;
+      (model.outputCostPerMillion.toNumber() * outputTokens) / 1_000_000;
 
     return inputCost + outputCost;
   }
@@ -223,17 +204,14 @@ export class AiModelRoutingService {
    * @param models Routable AI models.
    * @returns Weighted-random ordering of the supplied models.
    */
-  private orderBalanced(
-    models: readonly AiModel[],
-  ): AiModel[] {
+  private orderBalanced(models: readonly AiModel[]): AiModel[] {
     const remaining = [...models];
 
     const ordered: AiModel[] = [];
 
     while (remaining.length > 0) {
       const totalWeight = remaining.reduce(
-        (sum, model) =>
-          sum + this.resolveEffectiveWeight(model),
+        (sum, model) => sum + this.resolveEffectiveWeight(model),
         0,
       );
 
@@ -245,14 +223,8 @@ export class AiModelRoutingService {
        */
       let selectedIndex = remaining.length - 1;
 
-      for (
-        let index = 0;
-        index < remaining.length;
-        index += 1
-      ) {
-        cursor -= this.resolveEffectiveWeight(
-          remaining[index],
-        );
+      for (let index = 0; index < remaining.length; index += 1) {
+        cursor -= this.resolveEffectiveWeight(remaining[index]);
 
         if (cursor <= 0) {
           selectedIndex = index;
@@ -261,10 +233,7 @@ export class AiModelRoutingService {
         }
       }
 
-      const [selectedModel] = remaining.splice(
-        selectedIndex,
-        1,
-      );
+      const [selectedModel] = remaining.splice(selectedIndex, 1);
 
       ordered.push(selectedModel);
     }
@@ -282,9 +251,7 @@ export class AiModelRoutingService {
    * @param model AI model being considered for weighted routing.
    * @returns Positive effective routing weight.
    */
-  private resolveEffectiveWeight(
-    model: AiModel,
-  ): number {
+  private resolveEffectiveWeight(model: AiModel): number {
     return Math.max(model.weight, 1);
   }
 
@@ -300,18 +267,12 @@ export class AiModelRoutingService {
    * @returns Negative, positive, or zero according to Array.sort()
    * comparison rules.
    */
-  private compareFallbackOrder(
-    first: AiModel,
-    second: AiModel,
-  ): number {
+  private compareFallbackOrder(first: AiModel, second: AiModel): number {
     if (first.priority !== second.priority) {
       return second.priority - first.priority;
     }
 
-    return (
-      first.createdAt.getTime() -
-      second.createdAt.getTime()
-    );
+    return first.createdAt.getTime() - second.createdAt.getTime();
   }
 
   /**
@@ -329,20 +290,15 @@ export class AiModelRoutingService {
    * @throws BadRequestException When one of the supplied token counts
    * is negative, fractional, NaN, or otherwise non-integer.
    */
-  private validateCostContext(
-    context: AiRoutingCostContext,
-  ): void {
+  private validateCostContext(context: AiRoutingCostContext): void {
     const tokenCounts = [
       context.estimatedInputTokens,
       context.estimatedOutputTokens,
     ];
 
-    const hasInvalidTokenCount =
-      tokenCounts.some(
-        (value) =>
-          value !== undefined &&
-          (!Number.isInteger(value) || value < 0),
-      );
+    const hasInvalidTokenCount = tokenCounts.some(
+      (value) => value !== undefined && (!Number.isInteger(value) || value < 0),
+    );
 
     if (hasInvalidTokenCount) {
       throw new BadRequestException(

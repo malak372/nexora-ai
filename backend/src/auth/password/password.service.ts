@@ -19,17 +19,14 @@ const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_BYTES = 32;
 const PASSWORD_RESET_TOKEN_EXPIRES_MINUTES = 15;
 
-const PASSWORD_CHANGED_SUCCESSFULLY_MESSAGE =
-  'Password changed successfully';
+const PASSWORD_CHANGED_SUCCESSFULLY_MESSAGE = 'Password changed successfully';
 
-const PASSWORD_RESET_SUCCESSFULLY_MESSAGE =
-  'Password reset successfully';
+const PASSWORD_RESET_SUCCESSFULLY_MESSAGE = 'Password reset successfully';
 
 const PASSWORD_RESET_REQUEST_RESPONSE_MESSAGE =
   'If this email exists, a password reset link has been sent';
 
-const INVALID_OR_EXPIRED_RESET_TOKEN_MESSAGE =
-  'Invalid or expired reset token';
+const INVALID_OR_EXPIRED_RESET_TOKEN_MESSAGE = 'Invalid or expired reset token';
 
 const NEW_PASSWORD_MUST_BE_DIFFERENT_MESSAGE =
   'New password must be different from current password';
@@ -61,7 +58,7 @@ export class AuthPasswordService {
     private readonly mailService: MailService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Changes the password of an authenticated and active user.
@@ -112,9 +109,7 @@ export class AuthPasswordService {
         ...meta,
       });
 
-      throw new UnauthorizedException(
-        'User is not active or does not exist',
-      );
+      throw new UnauthorizedException('User is not active or does not exist');
     }
 
     const isCurrentPasswordValid = await bcrypt.compare(
@@ -128,8 +123,7 @@ export class AuthPasswordService {
         email: user.email,
         action: AuthAction.CHANGE_PASSWORD,
         isSuccess: false,
-        message:
-          'Password change failed because current password is incorrect',
+        message: 'Password change failed because current password is incorrect',
         ...meta,
       });
 
@@ -152,15 +146,10 @@ export class AuthPasswordService {
         ...meta,
       });
 
-      throw new BadRequestException(
-        NEW_PASSWORD_MUST_BE_DIFFERENT_MESSAGE,
-      );
+      throw new BadRequestException(NEW_PASSWORD_MUST_BE_DIFFERENT_MESSAGE);
     }
 
-    const newPasswordHash = await bcrypt.hash(
-      dto.newPassword,
-      SALT_ROUNDS,
-    );
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
 
     const now = new Date();
 
@@ -216,10 +205,7 @@ export class AuthPasswordService {
    * @param meta Optional request metadata such as IP address and user agent.
    * @returns Password reset request confirmation message.
    */
-  async forgotPassword(
-    dto: ForgotPasswordDto,
-    meta?: AuthRequestMeta,
-  ) {
+  async forgotPassword(dto: ForgotPasswordDto, meta?: AuthRequestMeta) {
     const user = await this.prisma.user.findUnique({
       where: {
         email: dto.email,
@@ -251,16 +237,12 @@ export class AuthPasswordService {
       },
     });
 
-    const resetToken = randomBytes(
-      PASSWORD_RESET_TOKEN_BYTES,
-    ).toString('hex');
+    const resetToken = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString('hex');
 
-    const tokenHash =
-      this.authTokenService.hashToken(resetToken);
+    const tokenHash = this.authTokenService.hashToken(resetToken);
 
     const expiresAt = new Date(
-      now.getTime() +
-      PASSWORD_RESET_TOKEN_EXPIRES_MINUTES * 60_000,
+      now.getTime() + PASSWORD_RESET_TOKEN_EXPIRES_MINUTES * 60_000,
     );
 
     await this.prisma.passwordResetToken.create({
@@ -271,16 +253,11 @@ export class AuthPasswordService {
       },
     });
 
-    const frontendUrl =
-      process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
+    const frontendUrl = process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
 
-    const resetLink =
-      `${frontendUrl}/reset-password?token=${resetToken}`;
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    await this.mailService.sendPasswordResetEmail(
-      user.email,
-      resetLink,
-    );
+    await this.mailService.sendPasswordResetEmail(user.email, resetLink);
 
     await this.authAuditService.createLog({
       userId: user.id,
@@ -318,32 +295,27 @@ export class AuthPasswordService {
    * @throws BadRequestException if the reset token is invalid,
    * expired, already used, or the new password matches the current password.
    */
-  async resetPassword(
-    dto: ResetPasswordDto,
-    meta?: AuthRequestMeta,
-  ) {
-    const tokenHash =
-      this.authTokenService.hashToken(dto.token);
+  async resetPassword(dto: ResetPasswordDto, meta?: AuthRequestMeta) {
+    const tokenHash = this.authTokenService.hashToken(dto.token);
 
-    const storedToken =
-      await this.prisma.passwordResetToken.findUnique({
-        where: {
-          tokenHash,
-        },
-        select: {
-          id: true,
-          userId: true,
-          expiresAt: true,
-          usedAt: true,
-          user: {
-            select: {
-              email: true,
-              passwordHash: true,
-              isActive: true,
-            },
+    const storedToken = await this.prisma.passwordResetToken.findUnique({
+      where: {
+        tokenHash,
+      },
+      select: {
+        id: true,
+        userId: true,
+        expiresAt: true,
+        usedAt: true,
+        user: {
+          select: {
+            email: true,
+            passwordHash: true,
+            isActive: true,
           },
         },
-      });
+      },
+    });
 
     const now = new Date();
 
@@ -362,9 +334,7 @@ export class AuthPasswordService {
         ...meta,
       });
 
-      throw new BadRequestException(
-        INVALID_OR_EXPIRED_RESET_TOKEN_MESSAGE,
-      );
+      throw new BadRequestException(INVALID_OR_EXPIRED_RESET_TOKEN_MESSAGE);
     }
 
     const isSamePassword = await bcrypt.compare(
@@ -382,15 +352,10 @@ export class AuthPasswordService {
         ...meta,
       });
 
-      throw new BadRequestException(
-        NEW_PASSWORD_MUST_BE_DIFFERENT_MESSAGE,
-      );
+      throw new BadRequestException(NEW_PASSWORD_MUST_BE_DIFFERENT_MESSAGE);
     }
 
-    const newPasswordHash = await bcrypt.hash(
-      dto.newPassword,
-      SALT_ROUNDS,
-    );
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
 
     await this.prisma.$transaction([
       this.prisma.user.update({

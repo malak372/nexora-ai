@@ -97,7 +97,7 @@ export class AiMonitoringService {
     return {
       ...buildDateFilter(query),
       ...searchFilter,
-      ...buildExactFilter('provider', query.provider),
+      ...buildExactFilter('providerKey', query.providerKey),
       ...buildExactFilter('requestType', query.requestType),
       ...buildExactFilter('isSuccess', query.isSuccess),
     };
@@ -125,7 +125,7 @@ export class AiMonitoringService {
     const orderBy = buildOrderBy(
       query,
       [
-        'provider',
+        'providerKey',
         'requestType',
         'isSuccess',
         'statusCode',
@@ -144,7 +144,7 @@ export class AiMonitoringService {
         orderBy,
         select: {
           id: true,
-          provider: true,
+          providerKey: true,
           endpoint: true,
           requestId: true,
           requestType: true,
@@ -201,7 +201,7 @@ export class AiMonitoringService {
     const orderBy = buildOrderBy(
       query,
       [
-        'provider',
+        'providerKey',
         'requestType',
         'isSuccess',
         'statusCode',
@@ -217,7 +217,7 @@ export class AiMonitoringService {
       orderBy,
       select: {
         id: true,
-        provider: true,
+        providerKey: true,
         endpoint: true,
         requestId: true,
         requestType: true,
@@ -266,7 +266,7 @@ export class AiMonitoringService {
 
     const rows = logs.map((log) => [
       log.id,
-      log.provider,
+      log.providerKey,
       log.endpoint,
       log.requestId ?? '',
       log.requestType,
@@ -362,14 +362,14 @@ export class AiMonitoringService {
     const [requestsByProvider, requestsByType, successCount, failedCount] =
       await Promise.all([
         this.prisma.externalApiLog.groupBy({
-          by: ['provider'],
+          by: ['providerKey'],
           where,
           _count: {
-            provider: true,
+            providerKey: true,
           },
           orderBy: {
             _count: {
-              provider: 'desc',
+              providerKey: 'desc',
             },
           },
         }),
@@ -404,8 +404,8 @@ export class AiMonitoringService {
 
     return {
       requestsByProvider: requestsByProvider.map((item) => ({
-        label: item.provider,
-        count: item._count.provider,
+        label: item.providerKey,
+        count: item._count.providerKey,
       })),
 
       requestsByType: requestsByType.map((item) => ({

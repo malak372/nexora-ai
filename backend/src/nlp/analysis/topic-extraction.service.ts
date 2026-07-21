@@ -5,10 +5,7 @@ import {
   WeightedKeyword,
   WeightedTopic,
 } from '../pipeline/types/intelligent-analysis.types';
-import {
-  TopicRule,
-  TopicRuleService,
-} from '../topic-rules/topic-rule.service';
+import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
 
 /**
  * Maximum number of extracted topics returned by the service.
@@ -38,7 +35,7 @@ const MAX_EXTRACTED_TOPICS = 15;
  */
 @Injectable()
 export class TopicExtractionService {
-  constructor(private readonly topicRuleService: TopicRuleService) { }
+  constructor(private readonly topicRuleService: TopicRuleService) {}
 
   /**
    * Extracts the most relevant discussion topics from weighted keywords.
@@ -68,10 +65,7 @@ export class TopicExtractionService {
       const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
       const currentFrequency = topicFrequencyMap.get(topic) ?? 0;
 
-      topicFrequencyMap.set(
-        topic,
-        currentFrequency + keyword.frequency,
-      );
+      topicFrequencyMap.set(topic, currentFrequency + keyword.frequency);
     }
 
     return Array.from(topicFrequencyMap, ([topic, frequency]) => ({

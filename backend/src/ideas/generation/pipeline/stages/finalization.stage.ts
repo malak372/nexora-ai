@@ -36,8 +36,7 @@ export class FinalizationStage implements IdeaGenerationStage {
   readonly key = IDEA_GENERATION_STAGE_KEYS.FINALIZATION;
 
   /** Static pipeline-stage definition. */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   /**
    * Validates the final committed generation context.
@@ -45,12 +44,12 @@ export class FinalizationStage implements IdeaGenerationStage {
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     this.validateContext(context);
 
     return {
       context,
-      resultPreview:
-        `Idea generation finalized successfully for idea "${context.ideaId}".`,
+      resultPreview: `Idea generation finalized successfully for idea "${context.ideaId}".`,
       metadata: {
         runId: context.runId,
         ideaId: context.ideaId,
@@ -59,11 +58,9 @@ export class FinalizationStage implements IdeaGenerationStage {
         domainName: context.domainName,
         collectionJobId: context.collection?.collectionJobId ?? null,
         collectionReused: context.collection?.reused ?? false,
-        generatedOutputsCount: Object.keys(
-          context.generatedOutputIdsByKey,
-        ).length,
-        premiumOutputsEnabled:
-          context.policy?.includePremiumOutputs ?? false,
+        generatedOutputsCount: Object.keys(context.generatedOutputIdsByKey)
+          .length,
+        premiumOutputsEnabled: context.policy?.includePremiumOutputs ?? false,
         completedAt: new Date().toISOString(),
       },
     };
@@ -120,8 +117,7 @@ export class FinalizationStage implements IdeaGenerationStage {
     const persistedOutputIds = REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS.map(
       (outputKey) => ({
         outputKey,
-        generatedOutputId:
-          context.generatedOutputIdsByKey[outputKey],
+        generatedOutputId: context.generatedOutputIdsByKey[outputKey],
       }),
     );
 

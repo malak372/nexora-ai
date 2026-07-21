@@ -200,12 +200,11 @@ export const IDEA_ADVANCED_OUTPUT_DEFINITIONS = [
  * The array is derived from IDEA_ADVANCED_OUTPUT_DEFINITIONS to
  * prevent requirement definitions from becoming inconsistent.
  */
-export const REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS =
-  Object.freeze(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.filter(
-      (definition) => definition.requiredForPremium,
-    ).map((definition) => definition.outputKey),
-  ) as readonly IdeaAdvancedOutputKey[];
+export const REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS = Object.freeze(
+  IDEA_ADVANCED_OUTPUT_DEFINITIONS.filter(
+    (definition) => definition.requiredForPremium,
+  ).map((definition) => definition.outputKey),
+) as readonly IdeaAdvancedOutputKey[];
 
 /**
  * Internal read-only set containing all supported advanced-output
@@ -216,9 +215,7 @@ export const REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS =
  */
 const IDEA_ADVANCED_OUTPUT_KEY_SET: ReadonlySet<IdeaAdvancedOutputKey> =
   new Set<IdeaAdvancedOutputKey>(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition) => definition.outputKey,
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition) => definition.outputKey),
   );
 
 /**
@@ -230,9 +227,7 @@ const IDEA_ADVANCED_OUTPUT_KEY_SET: ReadonlySet<IdeaAdvancedOutputKey> =
  */
 const IDEA_ADVANCED_OUTPUT_FIELD_SET: ReadonlySet<IdeaAdvancedOutputField> =
   new Set<IdeaAdvancedOutputField>(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition) => definition.field,
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition) => definition.field),
   );
 
 /**
@@ -244,11 +239,7 @@ const IDEA_ADVANCED_OUTPUT_DEFINITION_BY_KEY: ReadonlyMap<
   IdeaAdvancedOutputDefinition
 > = new Map<IdeaAdvancedOutputKey, IdeaAdvancedOutputDefinition>(
   IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-    (definition) =>
-      [
-        definition.outputKey,
-        definition,
-      ] as const,
+    (definition) => [definition.outputKey, definition] as const,
   ),
 );
 
@@ -259,16 +250,9 @@ const IDEA_ADVANCED_OUTPUT_DEFINITION_BY_KEY: ReadonlyMap<
 const IDEA_ADVANCED_OUTPUT_DEFINITION_BY_FIELD: ReadonlyMap<
   IdeaAdvancedOutputField,
   IdeaAdvancedOutputDefinition
-> = new Map<
-  IdeaAdvancedOutputField,
-  IdeaAdvancedOutputDefinition
->(
+> = new Map<IdeaAdvancedOutputField, IdeaAdvancedOutputDefinition>(
   IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-    (definition) =>
-      [
-        definition.field,
-        definition,
-      ] as const,
+    (definition) => [definition.field, definition] as const,
   ),
 );
 
@@ -282,19 +266,12 @@ const IDEA_ADVANCED_OUTPUT_DEFINITION_BY_FIELD: ReadonlyMap<
  */
 export const IDEA_OUTPUT_FIELD_BY_KEY = Object.freeze(
   Object.fromEntries(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition) => [
-        definition.outputKey,
-        definition.field,
-      ],
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition) => [
+      definition.outputKey,
+      definition.field,
+    ]),
   ),
-) as Readonly<
-  Record<
-    IdeaAdvancedOutputKey,
-    IdeaAdvancedOutputField
-  >
->;
+) as Readonly<Record<IdeaAdvancedOutputKey, IdeaAdvancedOutputField>>;
 
 /**
  * Maps every structured AI response field to its stable
@@ -302,19 +279,12 @@ export const IDEA_OUTPUT_FIELD_BY_KEY = Object.freeze(
  */
 export const IDEA_OUTPUT_KEY_BY_FIELD = Object.freeze(
   Object.fromEntries(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition) => [
-        definition.field,
-        definition.outputKey,
-      ],
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition) => [
+      definition.field,
+      definition.outputKey,
+    ]),
   ),
-) as Readonly<
-  Record<
-    IdeaAdvancedOutputField,
-    IdeaAdvancedOutputKey
-  >
->;
+) as Readonly<Record<IdeaAdvancedOutputField, IdeaAdvancedOutputKey>>;
 
 /**
  * Maps every stable output key to its human-readable title.
@@ -324,16 +294,12 @@ export const IDEA_OUTPUT_KEY_BY_FIELD = Object.freeze(
  */
 export const IDEA_OUTPUT_TITLE_BY_KEY = Object.freeze(
   Object.fromEntries(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition) => [
-        definition.outputKey,
-        definition.title,
-      ],
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition) => [
+      definition.outputKey,
+      definition.title,
+    ]),
   ),
-) as Readonly<
-  Record<IdeaAdvancedOutputKey, string>
->;
+) as Readonly<Record<IdeaAdvancedOutputKey, string>>;
 
 /**
  * Maps every stable output key to its default one-based
@@ -344,16 +310,12 @@ export const IDEA_OUTPUT_TITLE_BY_KEY = Object.freeze(
  */
 export const IDEA_OUTPUT_SEQUENCE_BY_KEY = Object.freeze(
   Object.fromEntries(
-    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map(
-      (definition, index) => [
-        definition.outputKey,
-        index + 1,
-      ],
-    ),
+    IDEA_ADVANCED_OUTPUT_DEFINITIONS.map((definition, index) => [
+      definition.outputKey,
+      index + 1,
+    ]),
   ),
-) as Readonly<
-  Record<IdeaAdvancedOutputKey, number>
->;
+) as Readonly<Record<IdeaAdvancedOutputKey, number>>;
 
 /**
  * Finds an advanced-output definition by its stable persistence
@@ -372,9 +334,7 @@ export function findIdeaAdvancedOutputDefinitionByKey(
     return undefined;
   }
 
-  return IDEA_ADVANCED_OUTPUT_DEFINITION_BY_KEY.get(
-    outputKey,
-  );
+  return IDEA_ADVANCED_OUTPUT_DEFINITION_BY_KEY.get(outputKey);
 }
 
 /**
@@ -394,9 +354,7 @@ export function findIdeaAdvancedOutputDefinitionByField(
     return undefined;
   }
 
-  return IDEA_ADVANCED_OUTPUT_DEFINITION_BY_FIELD.get(
-    field,
-  );
+  return IDEA_ADVANCED_OUTPUT_DEFINITION_BY_FIELD.get(field);
 }
 
 /**
@@ -412,9 +370,7 @@ export function findIdeaAdvancedOutputDefinitionByField(
 export function isIdeaAdvancedOutputKey(
   value: string,
 ): value is IdeaAdvancedOutputKey {
-  return IDEA_ADVANCED_OUTPUT_KEY_SET.has(
-    value as IdeaAdvancedOutputKey,
-  );
+  return IDEA_ADVANCED_OUTPUT_KEY_SET.has(value as IdeaAdvancedOutputKey);
 }
 
 /**
@@ -430,9 +386,7 @@ export function isIdeaAdvancedOutputKey(
 export function isIdeaAdvancedOutputField(
   value: string,
 ): value is IdeaAdvancedOutputField {
-  return IDEA_ADVANCED_OUTPUT_FIELD_SET.has(
-    value as IdeaAdvancedOutputField,
-  );
+  return IDEA_ADVANCED_OUTPUT_FIELD_SET.has(value as IdeaAdvancedOutputField);
 }
 
 /**
@@ -446,9 +400,7 @@ export function isIdeaAdvancedOutputField(
  * @param outputKey Stable or unknown generated-output key.
  * @returns One-based GeneratedOutput sequence.
  */
-export function getIdeaAdvancedOutputSequence(
-  outputKey: string,
-): number {
+export function getIdeaAdvancedOutputSequence(outputKey: string): number {
   if (!isIdeaAdvancedOutputKey(outputKey)) {
     return IDEA_ADVANCED_OUTPUT_DEFINITIONS.length + 1;
   }

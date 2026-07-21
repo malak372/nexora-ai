@@ -29,9 +29,7 @@ import { IdeaOutputsService } from '../services/idea-outputs.service';
 @Controller('users/ideas/:ideaId/outputs')
 @UseGuards(JwtAuthGuard)
 export class IdeaOutputsController {
-  constructor(
-    private readonly ideaOutputsService: IdeaOutputsService,
-  ) {}
+  constructor(private readonly ideaOutputsService: IdeaOutputsService) {}
 
   /**
    * Retrieves all successfully generated advanced outputs for one

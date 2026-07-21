@@ -450,7 +450,9 @@ export class AdminContactMessagesService {
       }
     }
 
-    const { replyChanged: _replyChanged, ...response } = result;
+    const { replyChanged, ...response } = result;
+
+    void replyChanged;
 
     return {
       ...response,

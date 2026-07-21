@@ -38,7 +38,7 @@ import { GetAdminPaymentsQueryDto } from '../dto/get-admin-payments-query.dto';
  */
 @Injectable()
 export class AdminPaymentsService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Shared selection used by payment list operations.
@@ -505,15 +505,9 @@ export class AdminPaymentsService {
 
       ...(buildExactFilter('status', query.status) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentPurpose',
-        query.paymentPurpose,
-      ) ?? {}),
+      ...(buildExactFilter('paymentPurpose', query.paymentPurpose) ?? {}),
 
-      ...(buildExactFilter(
-        'paymentMethodKey',
-        query.paymentMethodKey,
-      ) ?? {}),
+      ...(buildExactFilter('paymentMethodKey', query.paymentMethodKey) ?? {}),
 
       ...(buildExactFilter('providerKey', query.providerKey) ?? {}),
 

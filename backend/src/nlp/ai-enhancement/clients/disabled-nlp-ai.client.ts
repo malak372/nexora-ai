@@ -25,9 +25,7 @@ export class DisabledNlpAiClient implements NlpAiClient {
    * @returns A rejected promise indicating that AI enhancement is
    * currently unavailable.
    */
-  enhance(
-    _request: NlpAiClientRequest,
-  ): Promise<NlpAiClientResponse> {
+  enhance(_request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
     return Promise.reject(
       new ServiceUnavailableException(
         'AI enhancement is currently unavailable.',

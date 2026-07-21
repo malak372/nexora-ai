@@ -92,9 +92,7 @@ export class IdeaGenerationProgressService {
   getDefinitionsForGenerationType(
     generationType: IdeaGenerationType,
   ): readonly IdeaGenerationStageDefinition[] {
-    return this.getDefinitions(
-      this.includesPremiumStages(generationType),
-    );
+    return this.getDefinitions(this.includesPremiumStages(generationType));
   }
 
   /**
@@ -106,10 +104,7 @@ export class IdeaGenerationProgressService {
   getDefinitions(
     includePremiumStages: boolean,
   ): readonly IdeaGenerationStageDefinition[] {
-    const definitions =
-      getIdeaGenerationStageDefinitions(
-        includePremiumStages,
-      );
+    const definitions = getIdeaGenerationStageDefinitions(includePremiumStages);
 
     this.validateDefinitions(definitions);
 
@@ -128,18 +123,14 @@ export class IdeaGenerationProgressService {
     stageKey: IdeaGenerationStageKey,
     includePremiumStages: boolean,
   ): IdeaGenerationStageDefinition {
-    const definition = this.getDefinitions(
-      includePremiumStages,
-    ).find(
+    const definition = this.getDefinitions(includePremiumStages).find(
       ({ key }) => key === stageKey,
     );
 
     if (!definition) {
       throw new NotFoundException({
-        code:
-          'IDEA_GENERATION_STAGE_DEFINITION_NOT_FOUND',
-        message:
-          `Idea-generation stage "${stageKey}" is not part of the selected pipeline.`,
+        code: 'IDEA_GENERATION_STAGE_DEFINITION_NOT_FOUND',
+        message: `Idea-generation stage "${stageKey}" is not part of the selected pipeline.`,
       });
     }
 
@@ -160,9 +151,7 @@ export class IdeaGenerationProgressService {
   ): IdeaGenerationStageDefinition {
     return this.getDefinition(
       stageKey,
-      this.includesPremiumStages(
-        generationType,
-      ),
+      this.includesPremiumStages(generationType),
     );
   }
 
@@ -177,17 +166,13 @@ export class IdeaGenerationProgressService {
   ): IdeaGenerationStageProgress {
     const progress = {
       stageKey: definition.key,
-      startProgressPercent:
-        definition.progressStart,
-      completedProgressPercent:
-        this.getCompletedProgress(definition),
+      startProgressPercent: definition.progressStart,
+      completedProgressPercent: this.getCompletedProgress(definition),
     };
 
     this.validateProgress({
-      startProgressPercent:
-        progress.startProgressPercent,
-      completedProgressPercent:
-        progress.completedProgressPercent,
+      startProgressPercent: progress.startProgressPercent,
+      completedProgressPercent: progress.completedProgressPercent,
     });
 
     return progress;
@@ -203,13 +188,8 @@ export class IdeaGenerationProgressService {
    * @param definition Stage definition.
    * @returns Safe completed-stage progress.
    */
-  getCompletedProgress(
-    definition: IdeaGenerationStageDefinition,
-  ): number {
-    return Math.min(
-      definition.progressEnd,
-      99,
-    );
+  getCompletedProgress(definition: IdeaGenerationStageDefinition): number {
+    return Math.min(definition.progressEnd, 99);
   }
 
   /**
@@ -219,13 +199,8 @@ export class IdeaGenerationProgressService {
    * @param generationType Selected generation type.
    * @returns True only for premium-credit generation.
    */
-  includesPremiumStages(
-    generationType: IdeaGenerationType,
-  ): boolean {
-    return (
-      generationType ===
-      IdeaGenerationType.PREMIUM_CREDIT
-    );
+  includesPremiumStages(generationType: IdeaGenerationType): boolean {
+    return generationType === IdeaGenerationType.PREMIUM_CREDIT;
   }
 
   /**
@@ -235,9 +210,7 @@ export class IdeaGenerationProgressService {
    * @param input Stage progress range.
    * @throws BadRequestException when progress metadata is invalid.
    */
-  validateProgress(
-    input: ValidateIdeaGenerationProgressInput,
-  ): void {
+  validateProgress(input: ValidateIdeaGenerationProgressInput): void {
     this.validateProgressValue(
       input.startProgressPercent,
       'Stage start progress',
@@ -248,13 +221,9 @@ export class IdeaGenerationProgressService {
       'Stage completed progress',
     );
 
-    if (
-      input.completedProgressPercent <
-      input.startProgressPercent
-    ) {
+    if (input.completedProgressPercent < input.startProgressPercent) {
       throw new BadRequestException({
-        code:
-          'INVALID_IDEA_GENERATION_PROGRESS_ORDER',
+        code: 'INVALID_IDEA_GENERATION_PROGRESS_ORDER',
         message:
           'Stage completed progress cannot be lower than stage start progress.',
       });
@@ -274,11 +243,9 @@ export class IdeaGenerationProgressService {
    * @param definitions Ordered pipeline definitions.
    */
   private validateDefinitions(
-    definitions:
-      readonly IdeaGenerationStageDefinition[],
+    definitions: readonly IdeaGenerationStageDefinition[],
   ): void {
-    const stageKeys =
-      new Set<IdeaGenerationStageKey>();
+    const stageKeys = new Set<IdeaGenerationStageKey>();
 
     const sequences = new Set<number>();
 
@@ -288,93 +255,60 @@ export class IdeaGenerationProgressService {
     for (const definition of definitions) {
       if (stageKeys.has(definition.key)) {
         throw new BadRequestException({
-          code:
-            'DUPLICATE_IDEA_GENERATION_STAGE_KEY',
-          message:
-            `Duplicate idea-generation stage key "${definition.key}".`,
+          code: 'DUPLICATE_IDEA_GENERATION_STAGE_KEY',
+          message: `Duplicate idea-generation stage key "${definition.key}".`,
         });
       }
 
       if (sequences.has(definition.sequence)) {
         throw new BadRequestException({
-          code:
-            'DUPLICATE_IDEA_GENERATION_STAGE_SEQUENCE',
-          message:
-            `Duplicate idea-generation stage sequence "${definition.sequence}".`,
+          code: 'DUPLICATE_IDEA_GENERATION_STAGE_SEQUENCE',
+          message: `Duplicate idea-generation stage sequence "${definition.sequence}".`,
         });
       }
 
-      if (
-        !Number.isInteger(
-          definition.sequence,
-        ) ||
-        definition.sequence <= 0
-      ) {
+      if (!Number.isInteger(definition.sequence) || definition.sequence <= 0) {
         throw new BadRequestException({
-          code:
-            'INVALID_IDEA_GENERATION_STAGE_SEQUENCE',
-          message:
-            `Stage "${definition.key}" must have a positive integer sequence.`,
+          code: 'INVALID_IDEA_GENERATION_STAGE_SEQUENCE',
+          message: `Stage "${definition.key}" must have a positive integer sequence.`,
         });
       }
 
-      if (
-        definition.sequence <=
-        previousSequence
-      ) {
+      if (definition.sequence <= previousSequence) {
         throw new BadRequestException({
-          code:
-            'INVALID_IDEA_GENERATION_STAGE_ORDER',
-          message:
-            `Stage "${definition.key}" is not ordered correctly.`,
+          code: 'INVALID_IDEA_GENERATION_STAGE_ORDER',
+          message: `Stage "${definition.key}" is not ordered correctly.`,
         });
       }
 
       this.validateProgress({
-        startProgressPercent:
-          definition.progressStart,
-        completedProgressPercent:
-          this.getCompletedProgress(
-            definition,
-          ),
+        startProgressPercent: definition.progressStart,
+        completedProgressPercent: this.getCompletedProgress(definition),
       });
 
-      if (
-        definition.progressStart <
-        previousProgressEnd
-      ) {
+      if (definition.progressStart < previousProgressEnd) {
         throw new BadRequestException({
-          code:
-            'INVALID_IDEA_GENERATION_PROGRESS_SEQUENCE',
-          message:
-            `Stage "${definition.key}" starts before the previous stage progress has completed.`,
+          code: 'INVALID_IDEA_GENERATION_PROGRESS_SEQUENCE',
+          message: `Stage "${definition.key}" starts before the previous stage progress has completed.`,
         });
       }
 
       if (
-        !Number.isInteger(
-          definition.maxAttempts,
-        ) ||
+        !Number.isInteger(definition.maxAttempts) ||
         definition.maxAttempts <= 0
       ) {
         throw new BadRequestException({
-          code:
-            'INVALID_IDEA_GENERATION_STAGE_ATTEMPTS',
-          message:
-            `Stage "${definition.key}" must allow at least one execution attempt.`,
+          code: 'INVALID_IDEA_GENERATION_STAGE_ATTEMPTS',
+          message: `Stage "${definition.key}" must allow at least one execution attempt.`,
         });
       }
 
       stageKeys.add(definition.key);
       sequences.add(definition.sequence);
 
-      previousSequence =
-        definition.sequence;
+      previousSequence = definition.sequence;
 
-      previousProgressEnd =
-        this.getCompletedProgress(
-          definition,
-        );
+      previousProgressEnd = this.getCompletedProgress(definition);
     }
   }
 
@@ -396,10 +330,8 @@ export class IdeaGenerationProgressService {
       progressPercent > 99
     ) {
       throw new BadRequestException({
-        code:
-          'INVALID_IDEA_GENERATION_PROGRESS',
-        message:
-          `${fieldName} must be an integer between 0 and 99.`,
+        code: 'INVALID_IDEA_GENERATION_PROGRESS',
+        message: `${fieldName} must be an integer between 0 and 99.`,
       });
     }
   }

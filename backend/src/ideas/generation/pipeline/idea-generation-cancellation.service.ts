@@ -1,7 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 
 import {
   IdeaGenerationRun,
@@ -12,17 +9,11 @@ import {
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
-import type {
-  IdeaOwner,
-} from '../../shared/types/idea-owner.type';
+import type { IdeaOwner } from '../../shared/types/idea-owner.type';
 
-import {
-  IdeaGenerationRunService,
-} from '../services/idea-generation-run.service';
+import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
 
 /**
  * Database client accepted by transaction-aware cancellation
@@ -111,17 +102,15 @@ export class IdeaGenerationCancellationService {
    * Generation-run statuses after which cancellation no longer
    * changes normal workflow execution.
    */
-  private readonly terminalStatuses =
-    new Set<IdeaGenerationRunStatus>([
-      IdeaGenerationRunStatus.COMPLETED,
-      IdeaGenerationRunStatus.FAILED,
-      IdeaGenerationRunStatus.CANCELLED,
-    ]);
+  private readonly terminalStatuses = new Set<IdeaGenerationRunStatus>([
+    IdeaGenerationRunStatus.COMPLETED,
+    IdeaGenerationRunStatus.FAILED,
+    IdeaGenerationRunStatus.CANCELLED,
+  ]);
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly runService:
-      IdeaGenerationRunService,
+    private readonly runService: IdeaGenerationRunService,
   ) {}
 
   /**
@@ -138,23 +127,15 @@ export class IdeaGenerationCancellationService {
     runId: string,
     owner: IdeaOwner,
   ): Promise<RequestIdeaGenerationCancellationResult> {
-    const run = await this.findOwnedRunOrThrow(
-      runId,
-      owner,
-    );
+    const run = await this.findOwnedRunOrThrow(runId, owner);
 
-    const alreadyTerminal =
-      this.terminalStatuses.has(run.status);
+    const alreadyTerminal = this.terminalStatuses.has(run.status);
 
     const alreadyRequested =
       run.cancelRequestedAt !== null ||
-      run.status ===
-        IdeaGenerationRunStatus.CANCELLED;
+      run.status === IdeaGenerationRunStatus.CANCELLED;
 
-    if (
-      alreadyTerminal ||
-      alreadyRequested
-    ) {
+    if (alreadyTerminal || alreadyRequested) {
       return {
         run,
         alreadyTerminal,
@@ -162,9 +143,7 @@ export class IdeaGenerationCancellationService {
       };
     }
 
-    const updatedRun =
-      await this.runService
-        .requestCancellation(run.id);
+    const updatedRun = await this.runService.requestCancellation(run.id);
 
     return {
       run: updatedRun,
@@ -182,11 +161,8 @@ export class IdeaGenerationCancellationService {
    * @param runId Generation-run identifier.
    * @returns Whether cancellation was requested.
    */
-  async isCancellationRequested(
-    runId: string,
-  ): Promise<boolean> {
-    return this.runService
-      .isCancellationRequested(runId);
+  async isCancellationRequested(runId: string): Promise<boolean> {
+    return this.runService.isCancellationRequested(runId);
   }
 
   /**
@@ -195,11 +171,8 @@ export class IdeaGenerationCancellationService {
    * @param runId Generation-run identifier.
    * @returns Cancellation state.
    */
-  async getCancellationState(
-    runId: string,
-  ) {
-    return this.runService
-      .getCancellationState(runId);
+  async getCancellationState(runId: string) {
+    return this.runService.getCancellationState(runId);
   }
 
   /**
@@ -214,30 +187,25 @@ export class IdeaGenerationCancellationService {
    */
   async skipPendingStages(
     runId: string,
-    db: IdeaGenerationCancellationDatabaseClient =
-      this.prisma,
+    db: IdeaGenerationCancellationDatabaseClient = this.prisma,
   ): Promise<number> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
     const now = new Date();
 
-    const result =
-      await db.ideaGenerationStage.updateMany({
-        where: {
-          runId: normalizedRunId,
-          status:
-            IdeaGenerationStageStatus.PENDING,
-        },
-        data: {
-          status:
-            IdeaGenerationStageStatus.SKIPPED,
-          completedAt: now,
-        },
-      });
+    const result = await db.ideaGenerationStage.updateMany({
+      where: {
+        runId: normalizedRunId,
+        status: IdeaGenerationStageStatus.PENDING,
+      },
+      data: {
+        status: IdeaGenerationStageStatus.SKIPPED,
+        completedAt: now,
+      },
+    });
 
     return result.count;
   }
@@ -254,32 +222,24 @@ export class IdeaGenerationCancellationService {
   async finalizeCancellation(
     runId: string,
   ): Promise<FinalizeIdeaGenerationCancellationResult> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    return this.prisma.$transaction(async (transaction) => {
+      const skippedStagesCount = await this.skipPendingStages(
+        normalizedRunId,
+        transaction,
       );
 
-    return this.prisma.$transaction(
-      async (transaction) => {
-        const skippedStagesCount =
-          await this.skipPendingStages(
-            normalizedRunId,
-            transaction,
-          );
+      const run = await this.runService.cancelRun(normalizedRunId, transaction);
 
-        const run =
-          await this.runService.cancelRun(
-            normalizedRunId,
-            transaction,
-          );
-
-        return {
-          run,
-          skippedStagesCount,
-        };
-      },
-    );
+      return {
+        run,
+        skippedStagesCount,
+      };
+    });
   }
 
   /**
@@ -294,29 +254,22 @@ export class IdeaGenerationCancellationService {
     runId: string,
     owner: IdeaOwner,
   ): Promise<IdeaGenerationRun> {
-    const normalizedRunId =
-      this.normalizeRequiredValue(
-        runId,
-        'Generation-run ID',
-      );
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
 
-    const run =
-      await this.runService.findRunOrThrow(
-        normalizedRunId,
-      );
+    const run = await this.runService.findRunOrThrow(normalizedRunId);
 
     const ownsRun =
       owner.type === IDEA_OWNER_TYPES.USER
         ? run.userId === owner.userId
-        : run.guestSessionId ===
-          owner.guestSessionId;
+        : run.guestSessionId === owner.guestSessionId;
 
     if (!ownsRun) {
       throw new ForbiddenException({
-        code:
-          'IDEA_GENERATION_RUN_ACCESS_DENIED',
-        message:
-          'You do not have access to this idea-generation run.',
+        code: 'IDEA_GENERATION_RUN_ACCESS_DENIED',
+        message: 'You do not have access to this idea-generation run.',
       });
     }
 
@@ -330,22 +283,15 @@ export class IdeaGenerationCancellationService {
    * @param fieldName Field name used in validation errors.
    * @returns Normalized required value.
    */
-  private normalizeRequiredValue(
-    value: string,
-    fieldName: string,
-  ): string {
+  private normalizeRequiredValue(value: string, fieldName: string): string {
     if (typeof value !== 'string') {
-      throw new Error(
-        `${fieldName} is required.`,
-      );
+      throw new Error(`${fieldName} is required.`);
     }
 
     const normalizedValue = value.trim();
 
     if (!normalizedValue) {
-      throw new Error(
-        `${fieldName} is required.`,
-      );
+      throw new Error(`${fieldName} is required.`);
     }
 
     return normalizedValue;

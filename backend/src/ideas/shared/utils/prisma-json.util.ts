@@ -6,9 +6,7 @@ import { Prisma } from '@prisma/client';
  * Prisma distinguishes between a database null and a JSON null
  * when the value is stored at the top level of a JSON field.
  */
-type SanitizedJsonValue =
-  | Prisma.InputJsonValue
-  | null;
+type SanitizedJsonValue = Prisma.InputJsonValue | null;
 
 /**
  * Represents a mutable JSON object while it is being constructed.
@@ -16,22 +14,13 @@ type SanitizedJsonValue =
  * Prisma.InputJsonObject contains readonly properties, so a
  * mutable record is used while building the result.
  */
-type MutableInputJsonObject = Record<
-  string,
-  SanitizedJsonValue
->;
+type MutableInputJsonObject = Record<string, SanitizedJsonValue>;
 
 /**
  * Determines whether a value is a plain JSON object.
  */
-export function isJsonObject(
-  value: unknown,
-): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  );
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -48,9 +37,7 @@ export function toPrismaJsonValue(
 
   const sanitizedValue = sanitizeJsonValue(value);
 
-  return sanitizedValue === null
-    ? Prisma.JsonNull
-    : sanitizedValue;
+  return sanitizedValue === null ? Prisma.JsonNull : sanitizedValue;
 }
 
 /**
@@ -64,24 +51,17 @@ export function toPrismaJsonValue(
  * - Undefined object properties become null.
  * - Functions and symbols are omitted from objects.
  */
-function sanitizeJsonValue(
-  value: unknown,
-): SanitizedJsonValue {
+function sanitizeJsonValue(value: unknown): SanitizedJsonValue {
   if (value === null) {
     return null;
   }
 
-  if (
-    typeof value === 'string' ||
-    typeof value === 'boolean'
-  ) {
+  if (typeof value === 'string' || typeof value === 'boolean') {
     return value;
   }
 
   if (typeof value === 'number') {
-    return Number.isFinite(value)
-      ? value
-      : String(value);
+    return Number.isFinite(value) ? value : String(value);
   }
 
   if (typeof value === 'bigint') {
@@ -110,23 +90,17 @@ function sanitizeJsonValue(
     const result: MutableInputJsonObject = {};
 
     for (const [key, item] of Object.entries(value)) {
-      if (
-        typeof item === 'function' ||
-        typeof item === 'symbol'
-      ) {
+      if (typeof item === 'function' || typeof item === 'symbol') {
         continue;
       }
 
-      result[key] =
-        item === undefined
-          ? null
-          : sanitizeJsonValue(item);
+      result[key] = item === undefined ? null : sanitizeJsonValue(item);
     }
 
     return result;
   }
 
-  return String(value);
+  return typeof value === 'bigint' ? value.toString() : null;
 }
 
 /**
@@ -141,7 +115,7 @@ export function readPrismaJsonObject(
     return null;
   }
 
-  return value as Prisma.JsonObject;
+  return value;
 }
 
 /**
@@ -152,7 +126,5 @@ export function readPrismaJsonObject(
 export function readPrismaJsonArray(
   value: Prisma.JsonValue | null,
 ): Prisma.JsonArray {
-  return Array.isArray(value)
-    ? (value as Prisma.JsonArray)
-    : [];
+  return Array.isArray(value) ? value : [];
 }

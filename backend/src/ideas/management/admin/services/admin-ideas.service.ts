@@ -1,13 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-  Prisma,
-  UnlockMethod,
-} from '@prisma/client';
+import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 
@@ -63,42 +56,26 @@ export class AdminIdeasService {
    * analytics. A separate recovery workflow should be introduced
    * if administrators need to inspect deleted ideas.
    */
-  private buildIdeasWhere(
-    query: GetAdminIdeasQueryDto,
-  ): Prisma.IdeaWhereInput {
+  private buildIdeasWhere(query: GetAdminIdeasQueryDto): Prisma.IdeaWhereInput {
     const isUnlocked =
-      query.isUnlocked === undefined
-        ? undefined
-        : query.isUnlocked === 'true';
+      query.isUnlocked === undefined ? undefined : query.isUnlocked === 'true';
 
     return {
       deletedAt: null,
 
       ...(buildDateFilter(query) ?? {}),
 
-      ...(buildSearchFilter(
-        ['title', 'problemStatement'],
-        query.search,
-      ) ?? {}),
+      ...(buildSearchFilter(['title', 'problemStatement'], query.search) ?? {}),
 
       ...(buildExactFilter('domainId', query.domainId) ?? {}),
 
-      ...(buildExactFilter(
-        'generationType',
-        query.generationType,
-      ) ?? {}),
+      ...(buildExactFilter('generationType', query.generationType) ?? {}),
 
-      ...(buildExactFilter(
-        'unlockMethod',
-        query.unlockMethod,
-      ) ?? {}),
+      ...(buildExactFilter('unlockMethod', query.unlockMethod) ?? {}),
 
       ...(buildExactFilter('isUnlocked', isUnlocked) ?? {}),
 
-      ...(buildStringFilter(
-        'selectedRegion',
-        query.region,
-      ) ?? {}),
+      ...(buildStringFilter('selectedRegion', query.region) ?? {}),
 
       ...(query.userType
         ? {
@@ -149,8 +126,7 @@ export class AdminIdeasService {
     gte: Date,
   ): Prisma.IdeaWhereInput {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' &&
-      where.createdAt !== null
+      typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
         : {};
 
@@ -169,12 +145,7 @@ export class AdminIdeasService {
    * pagination and safe sorting.
    */
   async getIdeas(query: GetAdminIdeasQueryDto) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+    const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildIdeasWhere(query);
 
@@ -328,15 +299,9 @@ export class AdminIdeasService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const todayWhere = this.mergeCreatedAtGte(
-      where,
-      todayStart,
-    );
+    const todayWhere = this.mergeCreatedAtGte(where, todayStart);
 
-    const monthWhere = this.mergeCreatedAtGte(
-      where,
-      monthStart,
-    );
+    const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
     const [
       totalIdeas,
@@ -383,40 +348,35 @@ export class AdminIdeasService {
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.GUEST_FREE,
+          generationType: IdeaGenerationType.GUEST_FREE,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.NORMAL_FREE,
+          generationType: IdeaGenerationType.NORMAL_FREE,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType:
-            IdeaGenerationType.PREMIUM_CREDIT,
+          generationType: IdeaGenerationType.PREMIUM_CREDIT,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          unlockMethod:
-            UnlockMethod.DIRECT_PAYMENT,
+          unlockMethod: UnlockMethod.DIRECT_PAYMENT,
         },
       }),
 
       this.prisma.idea.count({
         where: {
           ...where,
-          unlockMethod:
-            UnlockMethod.CREDIT_GENERATION,
+          unlockMethod: UnlockMethod.CREDIT_GENERATION,
         },
       }),
 
@@ -500,11 +460,9 @@ export class AdminIdeasService {
       },
 
       communityData: {
-        totalCommentsUsed:
-          aggregate._sum.commentsCount ?? 0,
+        totalCommentsUsed: aggregate._sum.commentsCount ?? 0,
 
-        averageCommentsPerIdea:
-          aggregate._avg.commentsCount ?? 0,
+        averageCommentsPerIdea: aggregate._avg.commentsCount ?? 0,
       },
     };
   }
@@ -636,9 +594,7 @@ export class AdminIdeasService {
       }),
     ]);
 
-    const domainIds = ideasByDomain.map(
-      (item) => item.domainId,
-    );
+    const domainIds = ideasByDomain.map((item) => item.domainId);
 
     const domains = await this.prisma.domain.findMany({
       where: {
@@ -654,10 +610,7 @@ export class AdminIdeasService {
     });
 
     const domainMap = new Map(
-      domains.map((domain) => [
-        domain.id,
-        domain.name,
-      ]),
+      domains.map((domain) => [domain.id, domain.name]),
     );
 
     const dataSourceCounts = new Map<
@@ -671,25 +624,20 @@ export class AdminIdeasService {
     >();
 
     for (const idea of matchedIdeas) {
-      const sources =
-        idea.collectionJob?.sources ?? [];
+      const sources = idea.collectionJob?.sources ?? [];
 
       const uniqueDataSourceKeys = new Set<string>();
 
       for (const source of sources) {
         const dataSource = source.dataSource;
 
-        if (
-          uniqueDataSourceKeys.has(dataSource.key)
-        ) {
+        if (uniqueDataSourceKeys.has(dataSource.key)) {
           continue;
         }
 
         uniqueDataSourceKeys.add(dataSource.key);
 
-        const existing = dataSourceCounts.get(
-          dataSource.key,
-        );
+        const existing = dataSourceCounts.get(dataSource.key);
 
         dataSourceCounts.set(dataSource.key, {
           dataSourceId: dataSource.id,
@@ -700,12 +648,8 @@ export class AdminIdeasService {
       }
     }
 
-    const ideasByDataSource = [
-      ...dataSourceCounts.values(),
-    ]
-      .sort((first, second) =>
-        second.count - first.count,
-      )
+    const ideasByDataSource = [...dataSourceCounts.values()]
+      .sort((first, second) => second.count - first.count)
       .slice(0, 10)
       .map((item) => ({
         label: item.displayName,
@@ -713,67 +657,52 @@ export class AdminIdeasService {
       }));
 
     return {
-      ideasByGenerationType:
-        ideasByGenerationType.map((item) => ({
-          label: item.generationType,
-          generationType: item.generationType,
-          count: item._count.generationType,
-        })),
+      ideasByGenerationType: ideasByGenerationType.map((item) => ({
+        label: item.generationType,
+        generationType: item.generationType,
+        count: item._count.generationType,
+      })),
 
-      ideasByUnlockMethod:
-        ideasByUnlockMethod.map((item) => ({
-          label: item.unlockMethod,
-          unlockMethod: item.unlockMethod,
-          count: item._count.unlockMethod,
-        })),
+      ideasByUnlockMethod: ideasByUnlockMethod.map((item) => ({
+        label: item.unlockMethod,
+        unlockMethod: item.unlockMethod,
+        count: item._count.unlockMethod,
+      })),
 
-      ideasByUnlockStatus:
-        ideasByUnlockStatus.map((item) => ({
-          label: item.isUnlocked
-            ? 'UNLOCKED'
-            : 'LOCKED',
+      ideasByUnlockStatus: ideasByUnlockStatus.map((item) => ({
+        label: item.isUnlocked ? 'UNLOCKED' : 'LOCKED',
 
-          isUnlocked: item.isUnlocked,
-          count: item._count.isUnlocked,
-        })),
+        isUnlocked: item.isUnlocked,
+        count: item._count.isUnlocked,
+      })),
 
-      ideasByDomain: ideasByDomain.map(
-        (item) => {
-          const domainName =
-            domainMap.get(item.domainId) ?? null;
+      ideasByDomain: ideasByDomain.map((item) => {
+        const domainName = domainMap.get(item.domainId) ?? null;
 
-          return {
-            label:
-              domainName ?? 'Unknown Domain',
+        return {
+          label: domainName ?? 'Unknown Domain',
 
-            domainId: item.domainId,
-            domainName,
-            count: item._count.domainId,
-          };
-        },
-      ),
+          domainId: item.domainId,
+          domainName,
+          count: item._count.domainId,
+        };
+      }),
 
       ideasByDataSource,
 
-      ideasByRegion: ideasByRegion.map(
-        (item) => ({
-          label:
-            item.selectedRegion ??
-            'Unknown Region',
+      ideasByRegion: ideasByRegion.map((item) => ({
+        label: item.selectedRegion ?? 'Unknown Region',
 
-          region: item.selectedRegion,
-          count: item._count.selectedRegion,
-        }),
-      ),
+        region: item.selectedRegion,
+        count: item._count.selectedRegion,
+      })),
     };
   }
 
   /**
    * Exports the currently filtered ideas as CSV.
    */
-  async exportIdeasCsv(
-    query: GetAdminIdeasQueryDto,
-  ) {
+  async exportIdeasCsv(query: GetAdminIdeasQueryDto) {
     const where = this.buildIdeasWhere(query);
 
     const orderBy = buildOrderBy(
@@ -1477,7 +1406,6 @@ export class AdminIdeasService {
 
             _count: {
               select: {
-                favorites: true,
                 audiences: true,
                 ratings: true,
                 votes: true,
@@ -1530,9 +1458,7 @@ export class AdminIdeasService {
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found.',
-      );
+      throw new NotFoundException('Idea not found.');
     }
 
     return idea;

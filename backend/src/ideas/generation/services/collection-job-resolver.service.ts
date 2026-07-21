@@ -1,13 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  CollectionJobStatus,
-  LanguageCode,
-  Prisma,
-} from '@prisma/client';
+import { CollectionJobStatus, LanguageCode, Prisma } from '@prisma/client';
 
 import {
   DataCollectionService,
@@ -20,9 +13,7 @@ import type { IntelligentAnalysisOutput } from '../../../nlp/pipeline/types/inte
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
-import {
-  REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS,
-} from '../constants/idea-generation.constants';
+import { REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS } from '../constants/idea-generation.constants';
 
 /**
  * Collection-job record loaded by the resolver.
@@ -33,31 +24,30 @@ import {
  *
  * @author Malak
  */
-export type ResolvedCollectionJob =
-  Prisma.CollectionJobGetPayload<{
-    include: {
-      domain: {
-        select: {
-          id: true;
-          name: true;
-        };
+export type ResolvedCollectionJob = Prisma.CollectionJobGetPayload<{
+  include: {
+    domain: {
+      select: {
+        id: true;
+        name: true;
       };
+    };
 
-      sources: {
-        include: {
-          dataSource: {
-            select: {
-              id: true;
-              key: true;
-              displayName: true;
-            };
+    sources: {
+      include: {
+        dataSource: {
+          select: {
+            id: true;
+            key: true;
+            displayName: true;
           };
         };
       };
-
-      nlpAnalysis: true;
     };
-  }>;
+
+    nlpAnalysis: true;
+  };
+}>;
 
 /**
  * Input used to resolve a compatible collection job.
@@ -193,11 +183,9 @@ export class CollectionJobResolverService {
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly dataCollectionService:
-      DataCollectionService,
+    private readonly dataCollectionService: DataCollectionService,
 
-    private readonly intelligentAnalysisService:
-      IntelligentAnalysisService,
+    private readonly intelligentAnalysisService: IntelligentAnalysisService,
   ) {}
 
   /**
@@ -210,102 +198,67 @@ export class CollectionJobResolverService {
   async resolve(
     input: ResolveCollectionJobInput,
   ): Promise<ResolveCollectionJobResult> {
-    const normalizedInput =
-      this.normalizeInput(input);
+    const normalizedInput = this.normalizeInput(input);
 
-    const reusableJob =
-      await this.findReusableJob(
-        normalizedInput,
-      );
+    const reusableJob = await this.findReusableJob(normalizedInput);
 
     if (reusableJob) {
-      const nlpOutput =
-        reusableJob.nlpAnalysis
-          ? this.mapPersistedAnalysis(
-              reusableJob,
-            )
-          : await this.intelligentAnalysisService.analyze(
-              reusableJob.id,
-            );
+      const nlpOutput = reusableJob.nlpAnalysis
+        ? this.mapPersistedAnalysis(reusableJob)
+        : await this.intelligentAnalysisService.analyze(reusableJob.id);
 
       return {
         job: reusableJob,
         nlpOutput,
         reused: true,
 
-        selectedPlatformId:
-          this.resolveSingleDataSourceId(
-            reusableJob,
-          ),
+        selectedPlatformId: this.resolveSingleDataSourceId(reusableJob),
       };
     }
 
-    const collectionInput:
-      IdeaGenerationCollectionInput = {
-      userId:
-        normalizedInput.userId,
+    const collectionInput: IdeaGenerationCollectionInput = {
+      userId: normalizedInput.userId,
 
-      domainId:
-        normalizedInput.domainId,
+      domainId: normalizedInput.domainId,
 
-      country:
-        normalizedInput.country,
+      country: normalizedInput.country,
 
-      city:
-        normalizedInput.city,
+      city: normalizedInput.city,
 
-      region:
-        normalizedInput.region,
+      region: normalizedInput.region,
 
-      language:
-        normalizedInput.language,
+      language: normalizedInput.language,
 
-      radiusKm:
-        normalizedInput.radiusKm,
+      radiusKm: normalizedInput.radiusKm,
 
-      dataSourceKeys: [
-        ...normalizedInput.dataSourceKeys,
-      ],
+      dataSourceKeys: [...normalizedInput.dataSourceKeys],
 
-      keywords:
-        normalizedInput.keywords
-          ? [...normalizedInput.keywords]
-          : undefined,
+      keywords: normalizedInput.keywords
+        ? [...normalizedInput.keywords]
+        : undefined,
     };
 
     const startedJob =
-      await this.dataCollectionService.runForIdeaGeneration(
-        collectionInput,
-      );
+      await this.dataCollectionService.runForIdeaGeneration(collectionInput);
 
-    if (
-      startedJob.status !==
-      CollectionJobStatus.COMPLETED
-    ) {
+    if (startedJob.status !== CollectionJobStatus.COMPLETED) {
       throw new BadRequestException(
         `Data collection did not complete successfully. Final status: ${startedJob.status}.`,
       );
     }
 
-    const nlpOutput =
-      await this.intelligentAnalysisService.analyze(
-        startedJob.id,
-      );
+    const nlpOutput = await this.intelligentAnalysisService.analyze(
+      startedJob.id,
+    );
 
-    const completedJob =
-      await this.loadResolvedJob(
-        startedJob.id,
-      );
+    const completedJob = await this.loadResolvedJob(startedJob.id);
 
     return {
       job: completedJob,
       nlpOutput,
       reused: false,
 
-      selectedPlatformId:
-        this.resolveSingleDataSourceId(
-          completedJob,
-        ),
+      selectedPlatformId: this.resolveSingleDataSourceId(completedJob),
     };
   }
 
@@ -323,90 +276,74 @@ export class CollectionJobResolverService {
   private async findReusableJob(
     input: ResolveCollectionJobInput,
   ): Promise<ResolvedCollectionJob | null> {
-    const createdAfter =
-      this.createReuseCutoffDate();
+    const createdAfter = this.createReuseCutoffDate();
 
-    const candidates =
-      await this.prisma.collectionJob.findMany({
-        where: {
-          domainId:
-            input.domainId,
+    const candidates = await this.prisma.collectionJob.findMany({
+      where: {
+        domainId: input.domainId,
 
-          status:
-            CollectionJobStatus.COMPLETED,
+        status: CollectionJobStatus.COMPLETED,
 
-          language:
-            input.language,
+        language: input.language,
 
-          country: {
-            equals:
-              input.country,
+        country: {
+          equals: input.country,
 
-            mode: 'insensitive',
-          },
+          mode: 'insensitive',
+        },
 
-          city:
-            input.city ?? null,
+        city: input.city ?? null,
 
-          region:
-            input.region ?? null,
+        region: input.region ?? null,
 
-          radiusKm:
-            input.radiusKm ?? null,
+        radiusKm: input.radiusKm ?? null,
 
-          completedAt: {
-            not: null,
-          },
+        completedAt: {
+          not: null,
+        },
 
-          createdAt: {
-            gte: createdAfter,
+        createdAt: {
+          gte: createdAfter,
+        },
+      },
+
+      include: {
+        domain: {
+          select: {
+            id: true,
+            name: true,
           },
         },
 
-        include: {
-          domain: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-
-          sources: {
-            include: {
-              dataSource: {
-                select: {
-                  id: true,
-                  key: true,
-                  displayName: true,
-                },
+        sources: {
+          include: {
+            dataSource: {
+              select: {
+                id: true,
+                key: true,
+                displayName: true,
               },
             },
           },
-
-          nlpAnalysis: true,
         },
 
-        orderBy: {
-          completedAt: 'desc',
-        },
+        nlpAnalysis: true,
+      },
 
-        take: 20,
-      });
+      orderBy: {
+        completedAt: 'desc',
+      },
+
+      take: 20,
+    });
 
     return (
       candidates.find(
         (candidate) =>
           this.sameStringSet(
-            candidate.sources.map(
-              (source) =>
-                source.dataSource.key,
-            ),
+            candidate.sources.map((source) => source.dataSource.key),
             input.dataSourceKeys,
-          ) &&
-          this.sameOptionalStringSet(
-            candidate.keywords,
-            input.keywords,
-          ),
+          ) && this.sameOptionalStringSet(candidate.keywords, input.keywords),
       ) ?? null
     );
   }
@@ -474,8 +411,7 @@ export class CollectionJobResolverService {
   private mapPersistedAnalysis(
     job: ResolvedCollectionJob,
   ): IntelligentAnalysisOutput {
-    const analysis =
-      job.nlpAnalysis;
+    const analysis = job.nlpAnalysis;
 
     if (!analysis) {
       throw new BadRequestException(
@@ -484,94 +420,74 @@ export class CollectionJobResolverService {
     }
 
     const sentimentStats =
-      analysis.sentimentStats as
-        IntelligentAnalysisOutput['sentimentStats'];
+      analysis.sentimentStats as IntelligentAnalysisOutput['sentimentStats'];
 
-    const keywords =
-      analysis.keywords as
-        IntelligentAnalysisOutput['keywords'];
+    const keywords = analysis.keywords as IntelligentAnalysisOutput['keywords'];
 
     const topics =
-      (analysis.topics as
-        IntelligentAnalysisOutput['topics'] | null) ??
-      [];
+      (analysis.topics as IntelligentAnalysisOutput['topics'] | null) ?? [];
 
     const recurringProblems =
-      analysis.recurringProblems as
-        IntelligentAnalysisOutput['recurringProblems'];
+      analysis.recurringProblems as IntelligentAnalysisOutput['recurringProblems'];
 
     const extractedNeeds =
       (analysis.extractedNeeds as
-        IntelligentAnalysisOutput['extractedNeeds'] | null) ??
-      [];
+        | IntelligentAnalysisOutput['extractedNeeds']
+        | null) ?? [];
 
     const featureRequests =
       (analysis.featureRequests as
-        IntelligentAnalysisOutput['featureRequests'] | null) ??
-      [];
+        | IntelligentAnalysisOutput['featureRequests']
+        | null) ?? [];
 
     const opportunities =
       (analysis.opportunities as
-        IntelligentAnalysisOutput['opportunities'] | null) ??
-      [];
+        | IntelligentAnalysisOutput['opportunities']
+        | null) ?? [];
 
     const insights =
-      (analysis.insights as
-        IntelligentAnalysisOutput['insights'] | null) ??
+      (analysis.insights as IntelligentAnalysisOutput['insights'] | null) ??
       this.createEmptyInsights();
 
     const dataQuality =
       (analysis.dataQuality as
-        IntelligentAnalysisOutput['dataQuality'] | null) ??
-      this.createEmptyDataQuality();
+        | IntelligentAnalysisOutput['dataQuality']
+        | null) ?? this.createEmptyDataQuality();
 
     const samplePosts =
       (analysis.samplePosts as
-        IntelligentAnalysisOutput['samplePosts'] | null) ??
-      [];
+        | IntelligentAnalysisOutput['samplePosts']
+        | null) ?? [];
 
     const sampleComments =
       (analysis.sampleComments as
-        IntelligentAnalysisOutput['sampleComments'] | null) ??
-      [];
+        | IntelligentAnalysisOutput['sampleComments']
+        | null) ?? [];
 
     return {
-      collectionJobId:
-        job.id,
+      collectionJobId: job.id,
 
       domain: {
-        id:
-          job.domain.id,
+        id: job.domain.id,
 
-        name:
-          job.domain.name,
+        name: job.domain.name,
       },
 
       location: {
-        country:
-          job.country,
+        country: job.country,
 
-        city:
-          job.city,
+        city: job.city,
 
-        region:
-          job.region,
+        region: job.region,
       },
 
-      platforms:
-        job.sources.map(
-          (source) =>
-            source.dataSource.displayName,
-        ),
+      platforms: job.sources.map((source) => source.dataSource.displayName),
 
-      totalTextsAnalyzed:
-        analysis.totalTextsAnalyzed,
+      totalTextsAnalyzed: analysis.totalTextsAnalyzed,
 
-      totalPostsAnalyzed:
-        analysis.totalPostsAnalyzed,
+      totalPostsAnalyzed: analysis.totalPostsAnalyzed,
 
-      totalCommentsAnalyzed:
-        analysis.totalCommentsAnalyzed,
+      totalCommentsAnalyzed: analysis.totalCommentsAnalyzed,
 
       dataQuality,
 
@@ -595,12 +511,9 @@ export class CollectionJobResolverService {
 
       sampleComments,
 
-      aiUsed:
-        analysis.aiUsed,
+      aiUsed: analysis.aiUsed,
 
-      confidence:
-        analysis.confidence?.toNumber() ??
-        0,
+      confidence: analysis.confidence?.toNumber() ?? 0,
 
       analyzedTexts: [],
     };
@@ -669,69 +582,42 @@ export class CollectionJobResolverService {
   private normalizeInput(
     input: ResolveCollectionJobInput,
   ): ResolveCollectionJobInput {
-    const domainId =
-      input.domainId.trim();
+    const domainId = input.domainId.trim();
 
-    const country =
-      input.country.trim();
+    const country = input.country.trim();
 
     if (!domainId) {
-      throw new BadRequestException(
-        'Domain ID is required.',
-      );
+      throw new BadRequestException('Domain ID is required.');
     }
 
     if (!country) {
-      throw new BadRequestException(
-        'Country is required.',
-      );
+      throw new BadRequestException('Country is required.');
     }
 
-    const dataSourceKeys =
-      this.normalizeDataSourceKeys(
-        input.dataSourceKeys,
-      );
+    const dataSourceKeys = this.normalizeDataSourceKeys(input.dataSourceKeys);
 
-    if (
-      dataSourceKeys.length === 0
-    ) {
-      throw new BadRequestException(
-        'At least one data source is required.',
-      );
+    if (dataSourceKeys.length === 0) {
+      throw new BadRequestException('At least one data source is required.');
     }
 
     return {
-      userId:
-        this.normalizeOptionalText(
-          input.userId,
-        ),
+      userId: this.normalizeOptionalText(input.userId),
 
       domainId,
 
       country,
 
-      city:
-        this.normalizeOptionalText(
-          input.city,
-        ),
+      city: this.normalizeOptionalText(input.city),
 
-      region:
-        this.normalizeOptionalText(
-          input.region,
-        ),
+      region: this.normalizeOptionalText(input.region),
 
-      language:
-        input.language,
+      language: input.language,
 
-      radiusKm:
-        input.radiusKm,
+      radiusKm: input.radiusKm,
 
       dataSourceKeys,
 
-      keywords:
-        this.normalizeKeywords(
-          input.keywords,
-        ),
+      keywords: this.normalizeKeywords(input.keywords),
     };
   }
 
@@ -742,13 +628,9 @@ export class CollectionJobResolverService {
    * @returns Reuse cutoff date.
    */
   private createReuseCutoffDate(): Date {
-    const cutoff =
-      new Date();
+    const cutoff = new Date();
 
-    cutoff.setDate(
-      cutoff.getDate() -
-        REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS,
-    );
+    cutoff.setDate(cutoff.getDate() - REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS);
 
     return cutoff;
   }
@@ -765,20 +647,11 @@ export class CollectionJobResolverService {
     persisted: Prisma.JsonValue | null,
     requested?: readonly string[],
   ): boolean {
-    const persistedValues =
-      Array.isArray(persisted)
-        ? persisted.filter(
-            (
-              value,
-            ): value is string =>
-              typeof value === 'string',
-          )
-        : [];
+    const persistedValues = Array.isArray(persisted)
+      ? persisted.filter((value): value is string => typeof value === 'string')
+      : [];
 
-    return this.sameStringSet(
-      persistedValues,
-      requested ?? [],
-    );
+    return this.sameStringSet(persistedValues, requested ?? []);
   }
 
   /**
@@ -798,24 +671,13 @@ export class CollectionJobResolverService {
     first: readonly string[],
     second: readonly string[],
   ): boolean {
-    const firstValues =
-      this.normalizeComparableSet(
-        first,
-      );
+    const firstValues = this.normalizeComparableSet(first);
 
-    const secondValues =
-      this.normalizeComparableSet(
-        second,
-      );
+    const secondValues = this.normalizeComparableSet(second);
 
     return (
-      firstValues.length ===
-        secondValues.length &&
-      firstValues.every(
-        (value, index) =>
-          value ===
-          secondValues[index],
-      )
+      firstValues.length === secondValues.length &&
+      firstValues.every((value, index) => value === secondValues[index])
     );
   }
 
@@ -828,16 +690,10 @@ export class CollectionJobResolverService {
    * @param values Raw source keys.
    * @returns Unique normalized keys.
    */
-  private normalizeDataSourceKeys(
-    values: readonly string[],
-  ): string[] {
+  private normalizeDataSourceKeys(values: readonly string[]): string[] {
     return [
       ...new Set(
-        values
-          .map((value) =>
-            this.normalizeKey(value),
-          )
-          .filter(Boolean),
+        values.map((value) => this.normalizeKey(value)).filter(Boolean),
       ),
     ];
   }
@@ -858,41 +714,25 @@ export class CollectionJobResolverService {
       return undefined;
     }
 
-    const uniqueKeywords =
-      new Map<string, string>();
+    const uniqueKeywords = new Map<string, string>();
 
     for (const keyword of keywords) {
-      const normalizedDisplayValue =
-        keyword.trim();
+      const normalizedDisplayValue = keyword.trim();
 
       if (!normalizedDisplayValue) {
         continue;
       }
 
-      const comparisonKey =
-        this.normalizeKey(
-          normalizedDisplayValue,
-        );
+      const comparisonKey = this.normalizeKey(normalizedDisplayValue);
 
-      if (
-        !uniqueKeywords.has(
-          comparisonKey,
-        )
-      ) {
-        uniqueKeywords.set(
-          comparisonKey,
-          normalizedDisplayValue,
-        );
+      if (!uniqueKeywords.has(comparisonKey)) {
+        uniqueKeywords.set(comparisonKey, normalizedDisplayValue);
       }
     }
 
-    const normalized = [
-      ...uniqueKeywords.values(),
-    ];
+    const normalized = [...uniqueKeywords.values()];
 
-    return normalized.length > 0
-      ? normalized
-      : undefined;
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   /**
@@ -902,16 +742,10 @@ export class CollectionJobResolverService {
    * @param values Raw values.
    * @returns Sorted normalized unique values.
    */
-  private normalizeComparableSet(
-    values: readonly string[],
-  ): string[] {
+  private normalizeComparableSet(values: readonly string[]): string[] {
     return [
       ...new Set(
-        values
-          .map((value) =>
-            this.normalizeKey(value),
-          )
-          .filter(Boolean),
+        values.map((value) => this.normalizeKey(value)).filter(Boolean),
       ),
     ].sort();
   }
@@ -922,12 +756,8 @@ export class CollectionJobResolverService {
    * @param value Raw value.
    * @returns Trimmed lowercase value.
    */
-  private normalizeKey(
-    value: string,
-  ): string {
-    return value
-      .trim()
-      .toLowerCase();
+  private normalizeKey(value: string): string {
+    return value.trim().toLowerCase();
   }
 
   /**
@@ -936,17 +766,12 @@ export class CollectionJobResolverService {
    * @param value Optional raw value.
    * @returns Trimmed string or undefined.
    */
-  private normalizeOptionalText(
-    value?: string,
-  ): string | undefined {
-    if (
-      typeof value !== 'string'
-    ) {
+  private normalizeOptionalText(value?: string): string | undefined {
+    if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalized =
-      value.trim();
+    const normalized = value.trim();
 
     return normalized || undefined;
   }

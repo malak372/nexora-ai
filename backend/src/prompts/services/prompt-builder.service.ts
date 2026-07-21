@@ -1,11 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  createHash,
-} from 'crypto';
+import { createHash } from 'crypto';
 
 import {
   CollectionJobStatus,
@@ -14,9 +9,7 @@ import {
   PromptType,
 } from '@prisma/client';
 
-import {
-  PrismaService,
-} from '../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 import {
   ARABIC_TOKEN_RATIO,
@@ -36,28 +29,19 @@ import {
   UNLOCK_OUTPUT_SCHEMA,
 } from '../output-formats';
 
-import {
-  JsonSchema,
-} from '../types/json-schema.type';
+import { JsonSchema } from '../types/json-schema.type';
 
-import {
-  PromptBuilderInput,
-} from '../types/prompt-builder-input.type';
+import { PromptBuilderInput } from '../types/prompt-builder-input.type';
 
-import {
-  PromptBuilderOutput,
-} from '../types/prompt-builder-output.type';
+import { PromptBuilderOutput } from '../types/prompt-builder-output.type';
 
-import {
-  PromptTemplateService,
-} from './prompt-template.service';
+import { PromptTemplateService } from './prompt-template.service';
 import { BadRequestException } from '@nestjs/common';
 
 /**
  * Detects Arabic Unicode characters in rendered prompt content.
  */
-const ARABIC_TEXT_PATTERN =
-  /[\u0600-\u06ff]/;
+const ARABIC_TEXT_PATTERN = /[\u0600-\u06ff]/;
 
 /**
  * Provider-neutral structured-output contract selected according to
@@ -109,13 +93,11 @@ const COLLECTION_JOB_PROMPT_QUERY = {
     nlpAnalysis: true,
 
     sources: {
-      take:
-        MAX_PROMPT_DATA_SOURCES,
+      take: MAX_PROMPT_DATA_SOURCES,
 
       orderBy: {
         dataSource: {
-          displayName:
-            Prisma.SortOrder.asc,
+          displayName: Prisma.SortOrder.asc,
         },
       },
 
@@ -136,10 +118,9 @@ const COLLECTION_JOB_PROMPT_QUERY = {
 /**
  * CollectionJob result inferred directly from the Prisma query.
  */
-type CollectionJobPromptContext =
-  Prisma.CollectionJobGetPayload<
-    typeof COLLECTION_JOB_PROMPT_QUERY
-  >;
+type CollectionJobPromptContext = Prisma.CollectionJobGetPayload<
+  typeof COLLECTION_JOB_PROMPT_QUERY
+>;
 
 /**
  * Existing Idea fields required for direct-unlock prompt context.
@@ -161,11 +142,9 @@ const EXISTING_IDEA_SELECT = {
 /**
  * Existing Idea context inferred directly from Prisma.
  */
-type ExistingIdeaContext =
-  Prisma.IdeaGetPayload<{
-    select:
-      typeof EXISTING_IDEA_SELECT;
-  }>;
+type ExistingIdeaContext = Prisma.IdeaGetPayload<{
+  select: typeof EXISTING_IDEA_SELECT;
+}>;
 
 /**
  * Builds provider-neutral prompts from persisted collection and NLP
@@ -202,11 +181,9 @@ type ExistingIdeaContext =
 @Injectable()
 export class PromptBuilderService {
   constructor(
-    private readonly prisma:
-      PrismaService,
+    private readonly prisma: PrismaService,
 
-    private readonly promptTemplateService:
-      PromptTemplateService,
+    private readonly promptTemplateService: PromptTemplateService,
   ) {}
 
   /**
@@ -224,233 +201,122 @@ export class PromptBuilderService {
   async buildIdeaPrompt(
     input: PromptBuilderInput,
   ): Promise<PromptBuilderOutput> {
-    const collectionJob =
-      await this.getCollectionJobContext(
-        input.collectionJobId,
-      );
-
-    this.validateCollectionJob(
-      collectionJob,
-      input,
+    const collectionJob = await this.getCollectionJobContext(
+      input.collectionJobId,
     );
 
-    const existingIdea =
-      await this.getExistingIdea(
-        input,
-      );
+    this.validateCollectionJob(collectionJob, input);
 
-    const template =
-      await this.promptTemplateService
-        .getIdeaPromptTemplate();
+    const existingIdea = await this.getExistingIdea(input);
 
-    const outputContract =
-      this.getOutputContract(
-        input,
-      );
+    const template = await this.promptTemplateService.getIdeaPromptTemplate();
 
-    const renderedPrompt =
-      this.promptTemplateService
-        .renderTemplate(
-          template,
-          {
-            domain:
-              collectionJob.domain.name,
+    const outputContract = this.getOutputContract(input);
 
-            country:
-              this.normalizeLocation(
-                collectionJob.country,
-              ),
+    const renderedPrompt = this.promptTemplateService.renderTemplate(template, {
+      domain: collectionJob.domain.name,
 
-            city:
-              this.normalizeLocation(
-                collectionJob.city,
-              ),
+      country: this.normalizeLocation(collectionJob.country),
 
-            region:
-              this.normalizeLocation(
-                collectionJob.region,
-              ),
+      city: this.normalizeLocation(collectionJob.city),
 
-            platforms:
-              this.formatDataSources(
-                collectionJob,
-              ),
+      region: this.normalizeLocation(collectionJob.region),
 
-            commentsCount:
-              String(
-                collectionJob
-                  .nlpAnalysis!
-                  .totalCommentsAnalyzed,
-              ),
+      platforms: this.formatDataSources(collectionJob),
 
-            sentimentStats:
-              this.wrapUntrustedData(
-                'sentiment_statistics',
+      commentsCount: String(collectionJob.nlpAnalysis!.totalCommentsAnalyzed),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .sentimentStats,
-                ),
-              ),
+      sentimentStats: this.wrapUntrustedData(
+        'sentiment_statistics',
 
-            keywords:
-              this.wrapUntrustedData(
-                'extracted_keywords',
+        this.formatJson(collectionJob.nlpAnalysis!.sentimentStats),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .keywords,
-                ),
-              ),
+      keywords: this.wrapUntrustedData(
+        'extracted_keywords',
 
-            topics:
-              this.wrapUntrustedData(
-                'detected_topics',
+        this.formatJson(collectionJob.nlpAnalysis!.keywords),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .topics,
-                ),
-              ),
+      topics: this.wrapUntrustedData(
+        'detected_topics',
 
-            recurringProblems:
-              this.wrapUntrustedData(
-                'recurring_problems',
+        this.formatJson(collectionJob.nlpAnalysis!.topics),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .recurringProblems,
-                ),
-              ),
+      recurringProblems: this.wrapUntrustedData(
+        'recurring_problems',
 
-            extractedNeeds:
-              this.wrapUntrustedData(
-                'extracted_needs',
+        this.formatJson(collectionJob.nlpAnalysis!.recurringProblems),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .extractedNeeds,
-                ),
-              ),
+      extractedNeeds: this.wrapUntrustedData(
+        'extracted_needs',
 
-            featureRequests:
-              this.wrapUntrustedData(
-                'feature_requests',
+        this.formatJson(collectionJob.nlpAnalysis!.extractedNeeds),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .featureRequests,
-                ),
-              ),
+      featureRequests: this.wrapUntrustedData(
+        'feature_requests',
 
-            opportunities:
-              this.wrapUntrustedData(
-                'potential_opportunities',
+        this.formatJson(collectionJob.nlpAnalysis!.featureRequests),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .opportunities,
-                ),
-              ),
+      opportunities: this.wrapUntrustedData(
+        'potential_opportunities',
 
-            insights:
-              this.wrapUntrustedData(
-                'additional_insights',
+        this.formatJson(collectionJob.nlpAnalysis!.opportunities),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .insights,
-                ),
-              ),
+      insights: this.wrapUntrustedData(
+        'additional_insights',
 
-            dataQuality:
-              this.wrapUntrustedData(
-                'data_quality',
+        this.formatJson(collectionJob.nlpAnalysis!.insights),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .dataQuality,
-                ),
-              ),
+      dataQuality: this.wrapUntrustedData(
+        'data_quality',
 
-            samplePosts:
-              this.wrapUntrustedData(
-                'sample_posts',
+        this.formatJson(collectionJob.nlpAnalysis!.dataQuality),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .samplePosts,
-                ),
-              ),
+      samplePosts: this.wrapUntrustedData(
+        'sample_posts',
 
-            sampleComments:
-              this.wrapUntrustedData(
-                'sample_comments',
+        this.formatJson(collectionJob.nlpAnalysis!.samplePosts),
+      ),
 
-                this.formatJson(
-                  collectionJob
-                    .nlpAnalysis!
-                    .sampleComments,
-                ),
-              ),
+      sampleComments: this.wrapUntrustedData(
+        'sample_comments',
 
-            existingIdea:
-              this.wrapUntrustedData(
-                'existing_idea',
+        this.formatJson(collectionJob.nlpAnalysis!.sampleComments),
+      ),
 
-                this.formatExistingIdea(
-                  existingIdea,
-                ),
-              ),
+      existingIdea: this.wrapUntrustedData(
+        'existing_idea',
 
-            requestedOutputFormat:
-              outputContract.format,
-          },
-        );
+        this.formatExistingIdea(existingIdea),
+      ),
 
-    const compactPrompt =
-      this.compactPrompt(
-        renderedPrompt,
-      );
+      requestedOutputFormat: outputContract.format,
+    });
 
-    this.validateRenderedPromptLength(
-      compactPrompt,
-    );
+    const compactPrompt = this.compactPrompt(renderedPrompt);
+
+    this.validateRenderedPromptLength(compactPrompt);
 
     return {
-      promptType:
-        this.getPromptType(
-          input,
-        ),
+      promptType: this.getPromptType(input),
 
-      promptText:
-        compactPrompt,
+      promptText: compactPrompt,
 
-      estimatedInputTokens:
-        this.estimateApproximateInputTokens(
-          compactPrompt,
-        ),
+      estimatedInputTokens: this.estimateApproximateInputTokens(compactPrompt),
 
-      templateHash:
-        this.createTemplateHash(
-          template,
-        ),
+      templateHash: this.createTemplateHash(template),
 
-      responseSchemaName:
-        outputContract.schemaName,
+      responseSchemaName: outputContract.schemaName,
 
-      responseSchema:
-        outputContract.schema,
+      responseSchema: outputContract.schema,
     };
   }
 
@@ -461,28 +327,21 @@ export class PromptBuilderService {
   private async getCollectionJobContext(
     collectionJobId: string,
   ): Promise<CollectionJobPromptContext> {
-    const normalizedCollectionJobId =
-      this.requireIdentifier(
-        collectionJobId,
-        'Collection job ID',
-      );
+    const normalizedCollectionJobId = this.requireIdentifier(
+      collectionJobId,
+      'Collection job ID',
+    );
 
-    const collectionJob =
-      await this.prisma
-        .collectionJob
-        .findUnique({
-          where: {
-            id:
-              normalizedCollectionJobId,
-          },
+    const collectionJob = await this.prisma.collectionJob.findUnique({
+      where: {
+        id: normalizedCollectionJobId,
+      },
 
-          ...COLLECTION_JOB_PROMPT_QUERY,
-        });
+      ...COLLECTION_JOB_PROMPT_QUERY,
+    });
 
     if (!collectionJob) {
-      throw new NotFoundException(
-        'Collection job not found.',
-      );
+      throw new NotFoundException('Collection job not found.');
     }
 
     return collectionJob;
@@ -492,34 +351,24 @@ export class PromptBuilderService {
    * Validates collection and NLP pipeline prerequisites.
    */
   private validateCollectionJob(
-    collectionJob:
-      CollectionJobPromptContext,
+    collectionJob: CollectionJobPromptContext,
 
-    input:
-      PromptBuilderInput,
+    input: PromptBuilderInput,
   ): void {
-    if (
-      collectionJob.status !==
-      CollectionJobStatus.COMPLETED
-    ) {
+    if (collectionJob.status !== CollectionJobStatus.COMPLETED) {
       throw new BadRequestException(
         'Collection job must be completed before building an idea prompt.',
       );
     }
 
     if (!collectionJob.nlpAnalysis) {
-      throw new BadRequestException(
-        'NLP analysis is not ready yet.',
-      );
+      throw new BadRequestException('NLP analysis is not ready yet.');
     }
 
     if (
-      input.purpose ===
-        'IDEA_UNLOCK' &&
-      collectionJob.createdById !==
-        null &&
-      collectionJob.createdById !==
-        input.requesterUserId
+      input.purpose === 'IDEA_UNLOCK' &&
+      collectionJob.createdById !== null &&
+      collectionJob.createdById !== input.requesterUserId
     ) {
       /*
        * NotFoundException avoids revealing that another user's
@@ -536,50 +385,37 @@ export class PromptBuilderService {
    */
   private async getExistingIdea(
     input: PromptBuilderInput,
-  ): Promise<
-    ExistingIdeaContext | null
-  > {
-    if (
-      input.purpose !==
-      'IDEA_UNLOCK'
-    ) {
+  ): Promise<ExistingIdeaContext | null> {
+    if (input.purpose !== 'IDEA_UNLOCK') {
       return null;
     }
 
-    const normalizedIdeaId =
-      this.requireIdentifier(
-        input.existingIdeaId,
-        'Existing idea ID',
-      );
+    const normalizedIdeaId = this.requireIdentifier(
+      input.existingIdeaId,
+      'Existing idea ID',
+    );
 
-    const normalizedRequesterId =
-      this.requireIdentifier(
-        input.requesterUserId,
-        'Requester user ID',
-      );
+    const normalizedRequesterId = this.requireIdentifier(
+      input.requesterUserId,
+      'Requester user ID',
+    );
 
-    const normalizedCollectionJobId =
-      this.requireIdentifier(
-        input.collectionJobId,
-        'Collection job ID',
-      );
+    const normalizedCollectionJobId = this.requireIdentifier(
+      input.collectionJobId,
+      'Collection job ID',
+    );
 
-    const idea =
-      await this.prisma.idea.findFirst({
-        where: {
-          id:
-            normalizedIdeaId,
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: normalizedIdeaId,
 
-          userId:
-            normalizedRequesterId,
+        userId: normalizedRequesterId,
 
-          deletedAt:
-            null,
-        },
+        deletedAt: null,
+      },
 
-        select:
-          EXISTING_IDEA_SELECT,
-      });
+      select: EXISTING_IDEA_SELECT,
+    });
 
     if (!idea) {
       throw new NotFoundException(
@@ -587,28 +423,20 @@ export class PromptBuilderService {
       );
     }
 
-    if (
-      idea.collectionJobId !==
-      normalizedCollectionJobId
-    ) {
+    if (idea.collectionJobId !== normalizedCollectionJobId) {
       throw new BadRequestException(
         'Idea does not belong to the provided collection job.',
       );
     }
 
-    if (
-      idea.generationType !==
-      IdeaGenerationType.NORMAL_FREE
-    ) {
+    if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
       throw new BadRequestException(
         'Only registered free-tier ideas can be directly unlocked.',
       );
     }
 
     if (idea.isUnlocked) {
-      throw new BadRequestException(
-        'The idea is already unlocked.',
-      );
+      throw new BadRequestException('The idea is already unlocked.');
     }
 
     return idea;
@@ -617,11 +445,8 @@ export class PromptBuilderService {
   /**
    * Converts the prompt-building purpose into PromptType.
    */
-  private getPromptType(
-    input: PromptBuilderInput,
-  ): PromptType {
-    return input.purpose ===
-      'IDEA_UNLOCK'
+  private getPromptType(input: PromptBuilderInput): PromptType {
+    return input.purpose === 'IDEA_UNLOCK'
       ? PromptType.IDEA_UNLOCK
       : PromptType.IDEA_GENERATION;
   }
@@ -629,78 +454,56 @@ export class PromptBuilderService {
   /**
    * Selects the structured-output contract for the operation.
    */
-  private getOutputContract(
-    input: PromptBuilderInput,
-  ): OutputContract {
-    if (
-      input.purpose ===
-      'IDEA_UNLOCK'
-    ) {
+  private getOutputContract(input: PromptBuilderInput): OutputContract {
+    if (input.purpose === 'IDEA_UNLOCK') {
       return {
-        schemaName:
-          'nexora_idea_unlock',
+        schemaName: 'nexora_idea_unlock',
 
-        format:
-          UNLOCK_OUTPUT_FORMAT,
+        format: UNLOCK_OUTPUT_FORMAT,
 
-        schema:
-          UNLOCK_OUTPUT_SCHEMA,
+        schema: UNLOCK_OUTPUT_SCHEMA,
       };
     }
 
-    const generationType =
-      input.generationType;
+    const generationType = input.generationType;
 
     switch (generationType) {
       case IdeaGenerationType.GUEST_FREE:
         return {
-          schemaName:
-            'nexora_guest_idea',
+          schemaName: 'nexora_guest_idea',
 
-          format:
-            GUEST_OUTPUT_FORMAT,
+          format: GUEST_OUTPUT_FORMAT,
 
-          schema:
-            GUEST_OUTPUT_SCHEMA,
+          schema: GUEST_OUTPUT_SCHEMA,
         };
 
       case IdeaGenerationType.NORMAL_FREE:
         return {
-          schemaName:
-            'nexora_free_idea',
+          schemaName: 'nexora_free_idea',
 
-          format:
-            FREE_OUTPUT_FORMAT,
+          format: FREE_OUTPUT_FORMAT,
 
-          schema:
-            FREE_OUTPUT_SCHEMA,
+          schema: FREE_OUTPUT_SCHEMA,
         };
 
       case IdeaGenerationType.PREMIUM_CREDIT:
         return {
-          schemaName:
-            'nexora_premium_idea',
+          schemaName: 'nexora_premium_idea',
 
-          format:
-            PREMIUM_OUTPUT_FORMAT,
+          format: PREMIUM_OUTPUT_FORMAT,
 
-          schema:
-            PREMIUM_OUTPUT_SCHEMA,
+          schema: PREMIUM_OUTPUT_SCHEMA,
         };
 
       default:
-        return this.assertNever(
-          generationType,
-        );
+        return this.assertNever(generationType);
     }
   }
 
   /**
    * Enforces exhaustive IdeaGenerationType handling.
    */
-  private assertNever(
-    value: never,
-  ): never {
+  private assertNever(value: never): never {
     throw new BadRequestException(
       `Unsupported idea generation type: ${String(value)}`,
     );
@@ -713,15 +516,9 @@ export class PromptBuilderService {
    * The formatter accepts unknown values defensively so malformed or
    * legacy records cannot break prompt construction.
    */
-  private formatExistingIdea(
-    idea:
-      ExistingIdeaContext | null,
-  ): string {
+  private formatExistingIdea(idea: ExistingIdeaContext | null): string {
     if (!idea) {
-      return (
-        'Not applicable. ' +
-        'This is a new idea generation request.'
-      );
+      return 'Not applicable. ' + 'This is a new idea generation request.';
     }
 
     return this.compactPrompt(`
@@ -757,36 +554,19 @@ ${idea.partialAbstract ?? 'Not available'}
    *
    * @param value Stored Prisma JSON value.
    */
-  private formatStoredStringArray(
-    value: unknown,
-  ): string {
+  private formatStoredStringArray(value: unknown): string {
     if (Array.isArray(value)) {
-      const items =
-        value
-          .filter(
-            (
-              item,
-            ): item is string =>
-              typeof item ===
-                'string' &&
-              item.trim().length >
-                0,
-          )
-          .map(
-            (item) =>
-              `- ${item.trim()}`,
-          );
+      const items = value
+        .filter(
+          (item): item is string =>
+            typeof item === 'string' && item.trim().length > 0,
+        )
+        .map((item) => `- ${item.trim()}`);
 
-      return items.length > 0
-        ? items.join('\n')
-        : 'Not available';
+      return items.length > 0 ? items.join('\n') : 'Not available';
     }
 
-    if (
-      typeof value ===
-        'string' &&
-      value.trim().length > 0
-    ) {
+    if (typeof value === 'string' && value.trim().length > 0) {
       /*
        * Defensive fallback for legacy data.
        */
@@ -799,81 +579,52 @@ ${idea.partialAbstract ?? 'Not available'}
   /**
    * Formats the DataSource records selected for collection.
    */
-  private formatDataSources(
-    collectionJob:
-      CollectionJobPromptContext,
-  ): string {
-    if (
-      collectionJob.sources.length ===
-      0
-    ) {
+  private formatDataSources(collectionJob: CollectionJobPromptContext): string {
+    if (collectionJob.sources.length === 0) {
       return 'Not specified';
     }
 
     return collectionJob.sources
-      .map(
-        ({
-          dataSource,
-        }) => {
-          const availability =
-            dataSource.isActive &&
-            dataSource.isImplemented
-              ? 'available'
-              : 'unavailable';
+      .map(({ dataSource }) => {
+        const availability =
+          dataSource.isActive && dataSource.isImplemented
+            ? 'available'
+            : 'unavailable';
 
-          return (
-            `${dataSource.displayName} ` +
-            `(${dataSource.key}, ${availability})`
-          );
-        },
-      )
+        return (
+          `${dataSource.displayName} ` + `(${dataSource.key}, ${availability})`
+        );
+      })
       .join(', ');
   }
 
   /**
    * Formats nullable JSON-like values for readable prompt inclusion.
    */
-  private formatJson(
-    value: unknown,
-  ): string {
-    if (
-      value === null ||
-      value === undefined
-    ) {
+  private formatJson(value: unknown): string {
+    if (value === null || value === undefined) {
+      return 'Not enough data';
+    }
+
+    if (Array.isArray(value) && value.length === 0) {
       return 'Not enough data';
     }
 
     if (
-      Array.isArray(value) &&
-      value.length === 0
-    ) {
-      return 'Not enough data';
-    }
-
-    if (
-      typeof value ===
-        'object' &&
+      typeof value === 'object' &&
       !Array.isArray(value) &&
-      Object.keys(value).length ===
-        0
+      Object.keys(value).length === 0
     ) {
       return 'Not enough data';
     }
 
-    return JSON.stringify(
-      value,
-      null,
-      2,
-    );
+    return JSON.stringify(value, null, 2);
   }
 
   /**
    * Wraps external or generated context inside explicit boundaries.
    */
-  private wrapUntrustedData(
-    label: string,
-    value: string,
-  ): string {
+  private wrapUntrustedData(label: string, value: string): string {
     return `<untrusted_${label}>
 ${value}
 </untrusted_${label}>`;
@@ -882,40 +633,23 @@ ${value}
   /**
    * Normalizes optional location values.
    */
-  private normalizeLocation(
-    value: string | null,
-  ): string {
-    return (
-      value?.trim() ||
-      'Not specified'
-    );
+  private normalizeLocation(value: string | null): string {
+    return value?.trim() || 'Not specified';
   }
 
   /**
    * Removes excessive blank lines while preserving paragraph
    * separation.
    */
-  private compactPrompt(
-    prompt: string,
-  ): string {
-    return prompt
-      .replace(
-        /\n{3,}/g,
-        '\n\n',
-      )
-      .trim();
+  private compactPrompt(prompt: string): string {
+    return prompt.replace(/\n{3,}/g, '\n\n').trim();
   }
 
   /**
    * Rejects a rendered prompt exceeding the configured limit.
    */
-  private validateRenderedPromptLength(
-    prompt: string,
-  ): void {
-    if (
-      prompt.length >
-      MAX_RENDERED_PROMPT_LENGTH
-    ) {
+  private validateRenderedPromptLength(prompt: string): void {
+    if (prompt.length > MAX_RENDERED_PROMPT_LENGTH) {
       throw new BadRequestException(
         `Rendered prompt exceeds the maximum supported length of ${MAX_RENDERED_PROMPT_LENGTH} characters.`,
       );
@@ -928,49 +662,29 @@ ${value}
    * This is an approximation only. Provider-reported usage remains
    * the final source of truth.
    */
-  private estimateApproximateInputTokens(
-    text: string,
-  ): number {
-    const ratio =
-      ARABIC_TEXT_PATTERN.test(
-        text,
-      )
-        ? ARABIC_TOKEN_RATIO
-        : DEFAULT_TOKEN_RATIO;
+  private estimateApproximateInputTokens(text: string): number {
+    const ratio = ARABIC_TEXT_PATTERN.test(text)
+      ? ARABIC_TOKEN_RATIO
+      : DEFAULT_TOKEN_RATIO;
 
-    return Math.ceil(
-      text.length /
-        ratio,
-    );
+    return Math.ceil(text.length / ratio);
   }
 
   /**
    * Creates the SHA-256 hash identifying the template version.
    */
-  private createTemplateHash(
-    template: string,
-  ): string {
-    return createHash(
-      'sha256',
-    )
-      .update(template)
-      .digest('hex');
+  private createTemplateHash(template: string): string {
+    return createHash('sha256').update(template).digest('hex');
   }
 
   /**
    * Normalizes and validates a required identifier.
    */
-  private requireIdentifier(
-    value: string,
-    fieldName: string,
-  ): string {
-    const normalizedValue =
-      value.trim();
+  private requireIdentifier(value: string, fieldName: string): string {
+    const normalizedValue = value.trim();
 
     if (!normalizedValue) {
-      throw new BadRequestException(
-        `${fieldName} is required.`,
-      );
+      throw new BadRequestException(`${fieldName} is required.`);
     }
 
     return normalizedValue;

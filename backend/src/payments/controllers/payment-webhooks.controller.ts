@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Headers,
-  Param,
-  Post,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, Headers, Param, Post, Req } from '@nestjs/common';
 
 import type { RawBodyRequest } from '@nestjs/common';
 
@@ -33,7 +26,7 @@ import type { PaymentWebhookInput } from '../types/payment-webhook-input.type';
  */
 @Controller('payments/webhooks')
 export class PaymentWebhooksController {
-  constructor(private readonly paymentWebhookService: PaymentWebhookService) { }
+  constructor(private readonly paymentWebhookService: PaymentWebhookService) {}
 
   /**
    * Receives and processes one payment-provider webhook.

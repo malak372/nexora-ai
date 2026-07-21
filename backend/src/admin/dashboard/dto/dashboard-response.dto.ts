@@ -2,9 +2,7 @@ import {
   AccountStatus,
   ComplaintPriority,
   ComplaintStatus,
-  GeneratedOutputType,
   IdeaGenerationType,
-  PaymentMethod,
   PaymentPurpose,
   PaymentStatus,
   UserRole,
@@ -35,16 +33,16 @@ export class DashboardRegionChartDto {
   count!: number;
 }
 
-export class DashboardPlatformChartDto {
+export class DashboardDataSourceChartDto {
   label!: string;
-  platformId!: string | null;
-  platformName!: string | null;
+  dataSourceId!: string;
+  dataSourceKey!: string | null;
   count!: number;
 }
 
-export class DashboardGeneratedOutputTypeDto {
+export class DashboardGeneratedOutputDto {
   label!: string;
-  outputType!: GeneratedOutputType;
+  outputKey!: string;
   count!: number;
 }
 
@@ -54,7 +52,7 @@ export class DashboardRecentUserDto {
   email!: string;
   role!: UserRole;
   accountStatus!: AccountStatus;
-  userType!: UserType | null;
+  userType!: UserType;
   isActive!: boolean;
   isVerified!: boolean;
   createdAt!: Date;
@@ -64,17 +62,13 @@ export class DashboardRecentPaymentDto {
   id!: string;
   amount!: number;
   currency!: string;
-  paymentMethod!: PaymentMethod;
+  paymentMethodKey!: string;
+  providerKey!: string;
   paymentPurpose!: PaymentPurpose;
   status!: PaymentStatus;
   creditsAmount!: number;
   createdAt!: Date;
-
-  user!: {
-    id: string;
-    fullName: string;
-    email: string;
-  };
+  user!: { id: string; fullName: string; email: string };
 }
 
 export class DashboardRecentIdeaDto {
@@ -84,18 +78,13 @@ export class DashboardRecentIdeaDto {
   isUnlocked!: boolean;
   selectedRegion!: string | null;
   createdAt!: Date;
-
   user!: {
     id: string;
     fullName: string;
     email: string;
-    userType: UserType | null;
+    userType: UserType;
   } | null;
-
-  domain!: {
-    id: string;
-    name: string;
-  } | null;
+  domain!: { id: string; name: string };
 }
 
 export class DashboardRecentComplaintDto {
@@ -104,12 +93,7 @@ export class DashboardRecentComplaintDto {
   status!: ComplaintStatus;
   priority!: ComplaintPriority;
   createdAt!: Date;
-
-  user!: {
-    id: string;
-    fullName: string;
-    email: string;
-  };
+  user!: { id: string; fullName: string; email: string };
 }
 
 export class DashboardRecentActivityDto {
@@ -119,11 +103,7 @@ export class DashboardRecentActivityDto {
   recentComplaints!: DashboardRecentComplaintDto[];
 }
 
-/**
- * Main DTO representing the complete Admin dashboard response.
- *
- * @author Malak
- */
+/** Complete administrative analytics response. */
 export class DashboardResponseDto {
   users!: number;
   normalUsers!: number;
@@ -149,13 +129,7 @@ export class DashboardResponseDto {
   creditPurchasePaymentsCount!: number;
 
   comments!: number;
-
   creditsSold!: number;
-  creditPurchases!: number;
-  creditRefunds!: number;
-  manualCreditAdjustments!: number;
-  averageCreditsPerPremiumUser!: number;
-
   revenueTotal!: number;
   refundsTotal!: number;
 
@@ -173,17 +147,10 @@ export class DashboardResponseDto {
   rejectedComplaints!: number;
 
   generatedOutputs!: number;
-  generatedOutputsByType!: DashboardGeneratedOutputTypeDto[];
+  generatedOutputsByKey!: DashboardGeneratedOutputDto[];
 
-  domainsStatus!: {
-    active: number;
-    inactive: number;
-  };
-
-  platformsStatus!: {
-    active: number;
-    inactive: number;
-  };
+  domainsStatus!: { active: number; inactive: number };
+  dataSourcesStatus!: { active: number; inactive: number };
 
   todayStats!: {
     users: number;
@@ -201,10 +168,8 @@ export class DashboardResponseDto {
 
   usersGrowthChart!: DashboardUserGrowthChartDto[];
   usersByType!: DashboardUserTypeChartDto[];
-
   mostSelectedDomains!: DashboardDomainChartDto[];
   mostRequestedRegions!: DashboardRegionChartDto[];
-  mostUsedPlatforms!: DashboardPlatformChartDto[];
-
+  mostUsedDataSources!: DashboardDataSourceChartDto[];
   recentActivity!: DashboardRecentActivityDto;
 }

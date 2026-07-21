@@ -77,10 +77,7 @@ export class AdminIdeasController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="nexora-ideas.csv"',
-  )
+  @Header('Content-Disposition', 'attachment; filename="nexora-ideas.csv"')
   exportIdeasCsv(@Query() query: GetAdminIdeasQueryDto) {
     return this.adminIdeasService.exportIdeasCsv(query);
   }

@@ -133,6 +133,22 @@ enum IdeaPublicationStatus {
   ARCHIVED
 }
 
+enum PublicationReportReason {
+  SPAM
+  OFFENSIVE
+  MISLEADING
+  COPYRIGHT
+  PRIVACY
+  OTHER
+}
+
+enum ModerationReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
 enum LanguageCode {
   ANY
   EN
@@ -216,6 +232,14 @@ enum AuditAction {
   USER_PUBLISH_IDEA
   USER_UPDATE_PUBLICATION
   USER_ARCHIVE_PUBLICATION
+
+  USER_REPORT_PUBLICATION
+
+  ADMIN_HIDE_PUBLICATION
+  ADMIN_RESTORE_PUBLICATION
+  ADMIN_ARCHIVE_PUBLICATION
+
+  ADMIN_REVIEW_PUBLICATION_REPORT
 }
 
 enum AiModelHealthStatus {
@@ -242,6 +266,8 @@ enum AuditTargetType {
   COMPLAINT
   AI_MODEL
   IDEA_PUBLICATION
+  IDEA_PUBLICATION_FEEDBACK
+  IDEA_PUBLICATION_REPORT
 
   CONTACT_MESSAGE
   ALERT
@@ -411,7 +437,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   authenticationLogs      AuthenticationLog[]
-  favoritePublications    FavoritePublication[]
+  favoriteIdeas           FavoriteIdea[]
   preference              UserPreference?
   savedGenerationSearches SavedGenerationSearch[]
   contactMessages         ContactMessage[]
@@ -429,6 +455,9 @@ model User {
   publicationFeedback IdeaPublicationFeedback[]
   generationRuns      IdeaGenerationRun[]
   collectionJobs      CollectionJob[]           @relation("CollectionJobsCreatedBy")
+
+  publicationReportsSubmitted IdeaPublicationReport[] @relation("PublicationReportsSubmitted")
+  publicationReportsReviewed  IdeaPublicationReport[] @relation("PublicationReportsReviewed")
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -622,6 +651,7 @@ model Idea {
   creditTransactions CreditTransaction[]
   chatSessions       ChatSession[]
   generatedOutputs   GeneratedOutput[]
+  favorites          FavoriteIdea[]
   complaints         Complaint[]
   externalApiLogs    ExternalApiLog[]
 
@@ -1165,21 +1195,20 @@ model PromptHistory {
   @@map("prompt_histories")
 }
 
-model FavoritePublication {
-  id String @id @default(uuid())
-
+model FavoriteIdea {
+  id     String @id @default(uuid())
   userId String @map("user_id")
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  ideaId String @map("idea_id")
+  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@unique([userId, publicationId])
-  @@index([userId])
-  @@index([publicationId])
-  @@map("favorite_publications")
+  @@unique([userId, ideaId])
+  @@index([userId, createdAt])
+  @@index([ideaId])
+  @@map("favorite_ideas")
 }
 
 model UserPreference {
@@ -1409,10 +1438,9 @@ model IdeaPublication {
   revisions         IdeaPublicationRevision[]
   publicTargetUsers String?                   @map("public_target_users")
 
-  allowRatings  Boolean               @default(true) @map("allow_ratings")
-  allowFeedback Boolean               @default(true) @map("allow_feedback")
-  allowVoting   Boolean               @default(true) @map("allow_voting")
-  favorites     FavoritePublication[]
+  allowRatings  Boolean @default(true) @map("allow_ratings")
+  allowFeedback Boolean @default(true) @map("allow_feedback")
+  allowVoting   Boolean @default(true) @map("allow_voting")
 
   averageRating Decimal @default(0) @map("average_rating") @db.Decimal(3, 2)
 
@@ -1422,8 +1450,11 @@ model IdeaPublication {
   downvotesCount Int @default(0) @map("downvotes_count")
   feedbackCount  Int @default(0) @map("feedback_count")
 
-  publishedAt DateTime? @map("published_at")
-  archivedAt  DateTime? @map("archived_at")
+  publishedAt  DateTime? @map("published_at")
+  archivedAt   DateTime? @map("archived_at")
+  isHidden     Boolean   @default(false) @map("is_hidden")
+  hiddenAt     DateTime? @map("hidden_at")
+  hiddenReason String?   @map("hidden_reason")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1432,14 +1463,46 @@ model IdeaPublication {
   ratings   IdeaPublicationRating[]
   votes     IdeaPublicationVote[]
   feedback  IdeaPublicationFeedback[]
+  reports   IdeaPublicationReport[]
 
   @@index([status, visibility, publishedAt])
   @@index([publisherId, status, createdAt])
   @@index([status, publishedAt])
   @@index([publisherId])
+  @@index([isHidden, status, publishedAt])
   @@index([averageRating])
   @@index([upvotesCount])
   @@map("idea_publications")
+}
+
+model IdeaPublicationReport {
+  id String @id @default(uuid())
+
+  publicationId String          @map("publication_id")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  reporterId String @map("reporter_id")
+  reporter   User   @relation("PublicationReportsSubmitted", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  reason  PublicationReportReason
+  details String?
+
+  status ModerationReportStatus @default(PENDING)
+
+  reviewedById String? @map("reviewed_by_id")
+  reviewedBy   User?   @relation("PublicationReportsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  reviewedAt DateTime? @map("reviewed_at")
+  adminNote  String?   @map("admin_note")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([publicationId, reporterId])
+  @@index([publicationId, status])
+  @@index([reporterId, createdAt])
+  @@index([status, createdAt])
+  @@map("idea_publication_reports")
 }
 
 model IdeaPublicationAudience {

@@ -98,9 +98,9 @@ import { UserPaymentsService } from './services/user-payments.service';
         stripePaymentGateway: StripePaymentGateway,
         payPalPaymentGateway: PayPalPaymentGateway,
       ): readonly PaymentGateway[] => [
-          stripePaymentGateway,
-          payPalPaymentGateway,
-        ],
+        stripePaymentGateway,
+        payPalPaymentGateway,
+      ],
     },
 
     PaymentGatewayFactory,
@@ -113,4 +113,4 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentGatewayFactory,
   ],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}

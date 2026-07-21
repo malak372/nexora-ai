@@ -25,7 +25,7 @@ import { AuthLoginService } from './login.service';
  */
 @Controller('auth/login')
 export class LoginController {
-  constructor(private readonly authLoginService: AuthLoginService) { }
+  constructor(private readonly authLoginService: AuthLoginService) {}
 
   /**
    * Authenticates an active and verified user.

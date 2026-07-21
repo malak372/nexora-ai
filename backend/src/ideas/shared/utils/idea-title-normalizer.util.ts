@@ -1,6 +1,4 @@
-import {
-  MAX_NORMALIZED_IDEA_TITLE_LENGTH,
-} from '../constants/ideas.constants';
+import { MAX_NORMALIZED_IDEA_TITLE_LENGTH } from '../constants/ideas.constants';
 
 /**
  * Normalizes an idea title for comparison and
@@ -16,19 +14,14 @@ import {
  * - Whitespace normalization.
  * - Maximum-length enforcement.
  */
-export function normalizeIdeaTitle(
-  title: string,
-): string {
+export function normalizeIdeaTitle(title: string): string {
   return title
     .normalize('NFKC')
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(
-      0,
-      MAX_NORMALIZED_IDEA_TITLE_LENGTH,
-    );
+    .slice(0, MAX_NORMALIZED_IDEA_TITLE_LENGTH);
 }
 
 /**
@@ -38,10 +31,7 @@ export function areIdeaTitlesEquivalent(
   firstTitle: string,
   secondTitle: string,
 ): boolean {
-  return (
-    normalizeIdeaTitle(firstTitle) ===
-    normalizeIdeaTitle(secondTitle)
-  );
+  return normalizeIdeaTitle(firstTitle) === normalizeIdeaTitle(secondTitle);
 }
 
 /**
@@ -50,9 +40,6 @@ export function areIdeaTitlesEquivalent(
  *
  * This value is not a cryptographic hash.
  */
-export function buildNormalizedIdeaTitleKey(
-  title: string,
-): string {
-  return normalizeIdeaTitle(title)
-    .replace(/\s+/g, '-');
+export function buildNormalizedIdeaTitleKey(title: string): string {
+  return normalizeIdeaTitle(title).replace(/\s+/g, '-');
 }
