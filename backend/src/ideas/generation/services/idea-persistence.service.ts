@@ -20,21 +20,13 @@ import {
   UnlockMethod,
 } from '@prisma/client';
 
-import {
-  CreditBalanceService,
-} from '../../../credits/services/credit-balance.service';
+import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
 
-import {
-  CreditCacheService,
-} from '../../../credits/services/credit-cache.service';
+import { CreditCacheService } from '../../../credits/services/credit-cache.service';
 
-import {
-  PrismaService,
-} from '../../../prisma/prisma.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 
-import {
-  PREMIUM_IDEA_CREDIT_COST,
-} from '../constants/idea-generation.constants';
+import { PREMIUM_IDEA_CREDIT_COST } from '../constants/idea-generation.constants';
 
 import {
   findIdeaAdvancedOutputDefinitionByKey,
@@ -49,23 +41,19 @@ import type {
   ParsedIdeaAiOutput,
 } from '../types/idea-ai-output.type';
 
-import {
-  IdeaDuplicateDetectionService,
-} from './idea-duplicate-detection.service';
+import { IdeaDuplicateDetectionService } from './idea-duplicate-detection.service';
 
 /**
  * Maximum number of attempts used when a serializable transaction
  * fails because of a write conflict or deadlock.
  */
-const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS =
-  3;
+const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 
 /**
  * Prisma transaction client accepted by idea-persistence
  * operations.
  */
-export type IdeaPersistenceDatabaseClient =
-  Prisma.TransactionClient;
+export type IdeaPersistenceDatabaseClient = Prisma.TransactionClient;
 
 /**
  * Input required to persist one successfully generated idea.
@@ -117,14 +105,12 @@ export type PersistGeneratedIdeaInput = {
   /**
    * Entitlement tier used for generation.
    */
-  readonly generationType:
-    IdeaGenerationType;
+  readonly generationType: IdeaGenerationType;
 
   /**
    * Parsed and normalized AI output.
    */
-  readonly parsedOutput:
-    ParsedIdeaAiOutput;
+  readonly parsedOutput: ParsedIdeaAiOutput;
 };
 
 /**
@@ -133,31 +119,30 @@ export type PersistGeneratedIdeaInput = {
  * Generated outputs are included so the pipeline can use the
  * complete committed result without performing another query.
  */
-export type PersistedGeneratedIdea =
-  Prisma.IdeaGetPayload<{
-    include: {
-      generatedOutputs: {
-        orderBy: {
-          sequence: 'asc';
-        };
-      };
-
-      domain: {
-        select: {
-          id: true;
-          name: true;
-        };
-      };
-
-      generationRun: {
-        select: {
-          id: true;
-          status: true;
-          progressPercent: true;
-        };
+export type PersistedGeneratedIdea = Prisma.IdeaGetPayload<{
+  include: {
+    generatedOutputs: {
+      orderBy: {
+        sequence: 'asc';
       };
     };
-  }>;
+
+    domain: {
+      select: {
+        id: true;
+        name: true;
+      };
+    };
+
+    generationRun: {
+      select: {
+        id: true;
+        status: true;
+        progressPercent: true;
+      };
+    };
+  };
+}>;
 
 /**
  * Persists generated ideas and consumes their corresponding
@@ -201,23 +186,16 @@ export type PersistedGeneratedIdea =
  */
 @Injectable()
 export class IdeaPersistenceService {
-  private readonly logger =
-    new Logger(
-      IdeaPersistenceService.name,
-    );
+  private readonly logger = new Logger(IdeaPersistenceService.name);
 
   constructor(
-    private readonly prisma:
-      PrismaService,
+    private readonly prisma: PrismaService,
 
-    private readonly duplicateDetectionService:
-      IdeaDuplicateDetectionService,
+    private readonly duplicateDetectionService: IdeaDuplicateDetectionService,
 
-    private readonly creditBalanceService:
-      CreditBalanceService,
+    private readonly creditBalanceService: CreditBalanceService,
 
-    private readonly creditCacheService:
-      CreditCacheService,
+    private readonly creditCacheService: CreditCacheService,
   ) {}
 
   /**
@@ -236,17 +214,12 @@ export class IdeaPersistenceService {
   async persistIdea(
     input: PersistGeneratedIdeaInput,
   ): Promise<PersistedGeneratedIdea> {
-    const normalizedInput =
-      this.normalizeInput(input);
+    const normalizedInput = this.normalizeInput(input);
 
     const persistedIdea =
-      await this.executeSerializableTransaction(
-        normalizedInput,
-      );
+      await this.executeSerializableTransaction(normalizedInput);
 
-    await this.invalidatePremiumCreditCaches(
-      normalizedInput,
-    );
+    await this.invalidatePremiumCreditCaches(normalizedInput);
 
     return persistedIdea;
   }
@@ -267,52 +240,28 @@ export class IdeaPersistenceService {
   ): Promise<PersistedGeneratedIdea> {
     for (
       let attempt = 1;
-      attempt <=
-      SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
+      attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
       attempt += 1
     ) {
       try {
         return await this.prisma.$transaction(
-          async (
-            transaction,
-          ): Promise<PersistedGeneratedIdea> => {
-            const run =
-              await this.validateGenerationRun(
-                transaction,
-                input,
-              );
+          async (transaction): Promise<PersistedGeneratedIdea> => {
+            const run = await this.validateGenerationRun(transaction, input);
 
-            await this.validatePromptHistory(
+            await this.validatePromptHistory(transaction, input);
+
+            await this.validateCollectionJob(transaction, input);
+
+            await this.duplicateDetectionService.assertNotDuplicate(
+              input.userId,
+              input.domainId,
+              input.parsedOutput.coreIdea.title,
               transaction,
-              input,
             );
 
-            await this.validateCollectionJob(
-              transaction,
-              input,
-            );
+            const idea = await this.createIdea(transaction, input);
 
-            await this
-              .duplicateDetectionService
-              .assertNotDuplicate(
-                input.userId,
-                input.domainId,
-                input.parsedOutput
-                  .coreIdea.title,
-                transaction,
-              );
-
-            const idea =
-              await this.createIdea(
-                transaction,
-                input,
-              );
-
-            await this.consumeEntitlement(
-              transaction,
-              input,
-              idea.id,
-            );
+            await this.consumeEntitlement(transaction, input, idea.id);
 
             await this.createGeneratedOutputs(
               transaction,
@@ -327,25 +276,16 @@ export class IdeaPersistenceService {
               input.collectionJobId,
             );
 
-            return this.loadPersistedIdea(
-              transaction,
-              idea.id,
-            );
+            return this.loadPersistedIdea(transaction, idea.id);
           },
           {
-            isolationLevel:
-              Prisma
-                .TransactionIsolationLevel
-                .Serializable,
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
           },
         );
       } catch (error: unknown) {
         if (
-          !this.isRetryableTransactionError(
-            error,
-          ) ||
-          attempt ===
-            SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS
+          !this.isRetryableTransactionError(error) ||
+          attempt === SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS
         ) {
           throw error;
         }
@@ -356,9 +296,7 @@ export class IdeaPersistenceService {
       }
     }
 
-    throw new BadRequestException(
-      'Idea persistence could not be completed.',
-    );
+    throw new BadRequestException('Idea persistence could not be completed.');
   }
 
   /**
@@ -376,56 +314,32 @@ export class IdeaPersistenceService {
   private normalizeInput(
     input: PersistGeneratedIdeaInput,
   ): PersistGeneratedIdeaInput {
-    const runId =
-      this.requireText(
-        input.runId,
-        'Generation run ID',
-      );
+    const runId = this.requireText(input.runId, 'Generation run ID');
 
-    const promptHistoryId =
-      this.requireText(
-        input.promptHistoryId,
-        'Prompt history ID',
-      );
-
-    const domainId =
-      this.requireText(
-        input.domainId,
-        'Domain ID',
-      );
-
-    const selectedRegion =
-      this.requireText(
-        input.selectedRegion,
-        'Selected region',
-      );
-
-    const collectionJobId =
-      this.requireText(
-        input.collectionJobId,
-        'Collection job ID',
-      );
-
-    const userId =
-      this.normalizeOptionalText(
-        input.userId,
-      );
-
-    const guestSessionId =
-      this.normalizeOptionalText(
-        input.guestSessionId,
-      );
-
-    this.validateOwner(
-      input.generationType,
-      userId,
-      guestSessionId,
+    const promptHistoryId = this.requireText(
+      input.promptHistoryId,
+      'Prompt history ID',
     );
 
-    this.validateParsedOutput(
-      input.generationType,
-      input.parsedOutput,
+    const domainId = this.requireText(input.domainId, 'Domain ID');
+
+    const selectedRegion = this.requireText(
+      input.selectedRegion,
+      'Selected region',
     );
+
+    const collectionJobId = this.requireText(
+      input.collectionJobId,
+      'Collection job ID',
+    );
+
+    const userId = this.normalizeOptionalText(input.userId);
+
+    const guestSessionId = this.normalizeOptionalText(input.guestSessionId);
+
+    this.validateOwner(input.generationType, userId, guestSessionId);
+
+    this.validateParsedOutput(input.generationType, input.parsedOutput);
 
     return {
       runId,
@@ -435,10 +349,8 @@ export class IdeaPersistenceService {
       domainId,
       selectedRegion,
       collectionJobId,
-      generationType:
-        input.generationType,
-      parsedOutput:
-        input.parsedOutput,
+      generationType: input.generationType,
+      parsedOutput: input.parsedOutput,
     };
   }
 
@@ -450,8 +362,7 @@ export class IdeaPersistenceService {
    * @param guestSessionId Optional guest owner.
    */
   private validateOwner(
-    generationType:
-      IdeaGenerationType,
+    generationType: IdeaGenerationType,
     userId?: string,
     guestSessionId?: string,
   ): void {
@@ -488,9 +399,7 @@ export class IdeaPersistenceService {
         return;
 
       default:
-        this.assertNeverGenerationType(
-          generationType,
-        );
+        this.assertNeverGenerationType(generationType);
     }
   }
 
@@ -506,17 +415,13 @@ export class IdeaPersistenceService {
    * @param parsedOutput Parsed AI output.
    */
   private validateParsedOutput(
-    generationType:
-      IdeaGenerationType,
-    parsedOutput:
-      ParsedIdeaAiOutput,
+    generationType: IdeaGenerationType,
+    parsedOutput: ParsedIdeaAiOutput,
   ): void {
     if (
       !parsedOutput ||
       !parsedOutput.coreIdea ||
-      !Array.isArray(
-        parsedOutput.advancedOutputs,
-      )
+      !Array.isArray(parsedOutput.advancedOutputs)
     ) {
       throw new BadRequestException(
         'Parsed AI output is required before idea persistence.',
@@ -526,59 +431,45 @@ export class IdeaPersistenceService {
     switch (generationType) {
       case IdeaGenerationType.GUEST_FREE:
         this.requireNonBlankOutputField(
-          parsedOutput.coreIdea
-            .limitedAbstract,
+          parsedOutput.coreIdea.limitedAbstract,
           'limitedAbstract',
           generationType,
         );
 
         this.requireNonBlankOutputField(
-          parsedOutput.coreIdea
-            .partialAbstract,
+          parsedOutput.coreIdea.partialAbstract,
           'partialAbstract',
           generationType,
         );
 
-        this.rejectPremiumOutputForFreeTier(
-          parsedOutput,
-          generationType,
-        );
+        this.rejectPremiumOutputForFreeTier(parsedOutput, generationType);
 
         return;
 
       case IdeaGenerationType.NORMAL_FREE:
         this.requireNonBlankOutputField(
-          parsedOutput.coreIdea
-            .partialAbstract,
+          parsedOutput.coreIdea.partialAbstract,
           'partialAbstract',
           generationType,
         );
 
-        this.rejectPremiumOutputForFreeTier(
-          parsedOutput,
-          generationType,
-        );
+        this.rejectPremiumOutputForFreeTier(parsedOutput, generationType);
 
         return;
 
       case IdeaGenerationType.PREMIUM_CREDIT:
         this.requireNonBlankOutputField(
-          parsedOutput.coreIdea
-            .fullAbstract,
+          parsedOutput.coreIdea.fullAbstract,
           'fullAbstract',
           generationType,
         );
 
-        this.validatePremiumOutputs(
-          parsedOutput.advancedOutputs,
-        );
+        this.validatePremiumOutputs(parsedOutput.advancedOutputs);
 
         return;
 
       default:
-        this.assertNeverGenerationType(
-          generationType,
-        );
+        this.assertNeverGenerationType(generationType);
     }
   }
 
@@ -590,24 +481,16 @@ export class IdeaPersistenceService {
    * @param generationType Free generation type.
    */
   private rejectPremiumOutputForFreeTier(
-    parsedOutput:
-      ParsedIdeaAiOutput,
-    generationType:
-      IdeaGenerationType,
+    parsedOutput: ParsedIdeaAiOutput,
+    generationType: IdeaGenerationType,
   ): void {
-    if (
-      parsedOutput.coreIdea
-        .fullAbstract !== undefined
-    ) {
+    if (parsedOutput.coreIdea.fullAbstract !== undefined) {
       throw new BadRequestException(
         `${generationType} persistence must not contain a full abstract.`,
       );
     }
 
-    if (
-      parsedOutput.advancedOutputs
-        .length > 0
-    ) {
+    if (parsedOutput.advancedOutputs.length > 0) {
       throw new BadRequestException(
         `${generationType} persistence must not contain advanced premium outputs.`,
       );
@@ -621,17 +504,14 @@ export class IdeaPersistenceService {
    * @param outputs Parsed premium outputs.
    */
   private validatePremiumOutputs(
-    outputs:
-      readonly AdvancedIdeaAiOutput[],
+    outputs: readonly AdvancedIdeaAiOutput[],
   ): void {
-    const outputKeys =
-      new Set<IdeaAdvancedOutputKey>();
+    const outputKeys = new Set<IdeaAdvancedOutputKey>();
 
     for (const output of outputs) {
-      const definition =
-        findIdeaAdvancedOutputDefinitionByKey(
-          output.outputKey,
-        );
+      const definition = findIdeaAdvancedOutputDefinitionByKey(
+        output.outputKey,
+      );
 
       if (!definition) {
         throw new BadRequestException(
@@ -639,21 +519,15 @@ export class IdeaPersistenceService {
         );
       }
 
-      if (
-        outputKeys.has(
-          output.outputKey,
-        )
-      ) {
+      if (outputKeys.has(output.outputKey)) {
         throw new BadRequestException(
           `Duplicated advanced output key "${output.outputKey}".`,
         );
       }
 
       if (
-        typeof output.title !==
-          'string' ||
-        output.title.trim() !==
-          definition.title
+        typeof output.title !== 'string' ||
+        output.title.trim() !== definition.title
       ) {
         throw new BadRequestException(
           `Advanced output "${output.outputKey}" has an invalid title.`,
@@ -661,10 +535,8 @@ export class IdeaPersistenceService {
       }
 
       if (
-        typeof output.content !==
-          'string' ||
-        output.content.trim().length ===
-          0
+        typeof output.content !== 'string' ||
+        output.content.trim().length === 0
       ) {
         throw new BadRequestException(
           `Advanced output "${output.outputKey}" must contain non-empty content.`,
@@ -673,43 +545,25 @@ export class IdeaPersistenceService {
 
       if (
         definition.collection &&
-        (
-          !Array.isArray(
-            output.structuredContent,
-          ) ||
-          output.structuredContent
-            .length === 0 ||
+        (!Array.isArray(output.structuredContent) ||
+          output.structuredContent.length === 0 ||
           output.structuredContent.some(
-            (item) =>
-              typeof item !==
-                'string' ||
-              item.trim().length === 0,
-          )
-        )
+            (item) => typeof item !== 'string' || item.trim().length === 0,
+          ))
       ) {
         throw new BadRequestException(
           `Advanced output "${output.outputKey}" must contain a non-empty structured string array.`,
         );
       }
 
-      outputKeys.add(
-        output.outputKey,
-      );
+      outputKeys.add(output.outputKey);
     }
 
-    const missingOutputKeys =
-      REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS
-        .filter(
-          (outputKey) =>
-            !outputKeys.has(
-              outputKey,
-            ),
-        );
+    const missingOutputKeys = REQUIRED_PREMIUM_IDEA_OUTPUT_KEYS.filter(
+      (outputKey) => !outputKeys.has(outputKey),
+    );
 
-    if (
-      missingOutputKeys.length >
-      0
-    ) {
+    if (missingOutputKeys.length > 0) {
       throw new BadRequestException(
         `Premium persistence is missing required outputs: ${missingOutputKeys.join(', ')}.`,
       );
@@ -734,31 +588,25 @@ export class IdeaPersistenceService {
    * @returns Validated generation run.
    */
   private async validateGenerationRun(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ) {
-    const run =
-      await transaction
-        .ideaGenerationRun
-        .findUnique({
-          where: {
-            id:
-              input.runId,
-          },
+    const run = await transaction.ideaGenerationRun.findUnique({
+      where: {
+        id: input.runId,
+      },
 
-          select: {
-            id: true,
-            userId: true,
-            guestSessionId: true,
-            ideaId: true,
-            collectionJobId: true,
-            generationType: true,
-            status: true,
-            cancelRequestedAt: true,
-          },
-        });
+      select: {
+        id: true,
+        userId: true,
+        guestSessionId: true,
+        ideaId: true,
+        collectionJobId: true,
+        generationType: true,
+        status: true,
+        cancelRequestedAt: true,
+      },
+    });
 
     if (!run) {
       throw new NotFoundException(
@@ -772,37 +620,25 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (
-      run.status !==
-      IdeaGenerationRunStatus.RUNNING
-    ) {
+    if (run.status !== IdeaGenerationRunStatus.RUNNING) {
       throw new BadRequestException(
         `The generation run cannot persist an idea while its status is "${run.status}".`,
       );
     }
 
-    if (
-      run.generationType !==
-      input.generationType
-    ) {
+    if (run.generationType !== input.generationType) {
       throw new BadRequestException(
         'The generation run type does not match the persistence request.',
       );
     }
 
-    if (
-      run.userId !==
-      (input.userId ?? null)
-    ) {
+    if (run.userId !== (input.userId ?? null)) {
       throw new BadRequestException(
         'The generation run does not belong to the provided user.',
       );
     }
 
-    if (
-      run.guestSessionId !==
-      (input.guestSessionId ?? null)
-    ) {
+    if (run.guestSessionId !== (input.guestSessionId ?? null)) {
       throw new BadRequestException(
         'The generation run does not belong to the provided guest session.',
       );
@@ -810,8 +646,7 @@ export class IdeaPersistenceService {
 
     if (
       run.collectionJobId !== null &&
-      run.collectionJobId !==
-        input.collectionJobId
+      run.collectionJobId !== input.collectionJobId
     ) {
       throw new BadRequestException(
         'The generation run is already associated with a different collection job.',
@@ -836,25 +671,19 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    */
   private async validatePromptHistory(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ): Promise<void> {
-    const promptHistory =
-      await transaction
-        .promptHistory
-        .findUnique({
-          where: {
-            id:
-              input.promptHistoryId,
-          },
+    const promptHistory = await transaction.promptHistory.findUnique({
+      where: {
+        id: input.promptHistoryId,
+      },
 
-          select: {
-            id: true,
-            generationRunId: true,
-          },
-        });
+      select: {
+        id: true,
+        generationRunId: true,
+      },
+    });
 
     if (!promptHistory) {
       throw new NotFoundException(
@@ -862,11 +691,7 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (
-      promptHistory
-        .generationRunId !==
-      input.runId
-    ) {
+    if (promptHistory.generationRunId !== input.runId) {
       throw new BadRequestException(
         'The prompt history does not belong to the provided generation run.',
       );
@@ -883,25 +708,19 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    */
   private async validateCollectionJob(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ): Promise<void> {
-    const collectionJob =
-      await transaction
-        .collectionJob
-        .findUnique({
-          where: {
-            id:
-              input.collectionJobId,
-          },
+    const collectionJob = await transaction.collectionJob.findUnique({
+      where: {
+        id: input.collectionJobId,
+      },
 
-          select: {
-            id: true,
-            domainId: true,
-          },
-        });
+      select: {
+        id: true,
+        domainId: true,
+      },
+    });
 
     if (!collectionJob) {
       throw new NotFoundException(
@@ -909,10 +728,7 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (
-      collectionJob.domainId !==
-      input.domainId
-    ) {
+    if (collectionJob.domainId !== input.domainId) {
       throw new BadRequestException(
         'The collection job does not belong to the selected domain.',
       );
@@ -928,39 +744,25 @@ export class IdeaPersistenceService {
    * @param ideaId Newly created idea identifier.
    */
   private async consumeEntitlement(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
     ideaId: string,
   ): Promise<void> {
     switch (input.generationType) {
       case IdeaGenerationType.GUEST_FREE:
-        await this.consumeGuestGeneration(
-          transaction,
-          input,
-        );
+        await this.consumeGuestGeneration(transaction, input);
         return;
 
       case IdeaGenerationType.NORMAL_FREE:
-        await this.consumeFreeGeneration(
-          transaction,
-          input,
-        );
+        await this.consumeFreeGeneration(transaction, input);
         return;
 
       case IdeaGenerationType.PREMIUM_CREDIT:
-        await this.consumePremiumCredit(
-          transaction,
-          input,
-          ideaId,
-        );
+        await this.consumePremiumCredit(transaction, input, ideaId);
         return;
 
       default:
-        this.assertNeverGenerationType(
-          input.generationType,
-        );
+        this.assertNeverGenerationType(input.generationType);
     }
   }
 
@@ -976,13 +778,10 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    */
   private async consumeGuestGeneration(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ): Promise<void> {
-    const guestSessionId =
-      input.guestSessionId;
+    const guestSessionId = input.guestSessionId;
 
     if (!guestSessionId) {
       throw new BadRequestException(
@@ -990,63 +789,48 @@ export class IdeaPersistenceService {
       );
     }
 
-    const now =
-      new Date();
+    const now = new Date();
 
-    const updated =
-      await transaction
-        .guestSession
-        .updateMany({
-          where: {
-            id:
-              guestSessionId,
+    const updated = await transaction.guestSession.updateMany({
+      where: {
+        id: guestSessionId,
 
-            hasGenerated:
-              false,
+        hasGenerated: false,
 
-            OR: [
-              {
-                expiresAt:
-                  null,
-              },
-              {
-                expiresAt: {
-                  gt:
-                    now,
-                },
-              },
-            ],
+        OR: [
+          {
+            expiresAt: null,
           },
-
-          data: {
-            hasGenerated:
-              true,
+          {
+            expiresAt: {
+              gt: now,
+            },
           },
-        });
+        ],
+      },
+
+      data: {
+        hasGenerated: true,
+      },
+    });
 
     if (updated.count === 1) {
       return;
     }
 
-    const session =
-      await transaction
-        .guestSession
-        .findUnique({
-          where: {
-            id:
-              guestSessionId,
-          },
+    const session = await transaction.guestSession.findUnique({
+      where: {
+        id: guestSessionId,
+      },
 
-          select: {
-            hasGenerated: true,
-            expiresAt: true,
-          },
-        });
+      select: {
+        hasGenerated: true,
+        expiresAt: true,
+      },
+    });
 
     if (!session) {
-      throw new NotFoundException(
-        'Guest session was not found.',
-      );
+      throw new NotFoundException('Guest session was not found.');
     }
 
     if (session.hasGenerated) {
@@ -1055,10 +839,7 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (
-      session.expiresAt &&
-      session.expiresAt <= now
-    ) {
+    if (session.expiresAt && session.expiresAt <= now) {
       throw new BadRequestException(
         'The guest session has expired and cannot generate an idea.',
       );
@@ -1079,13 +860,10 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    */
   private async consumeFreeGeneration(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ): Promise<void> {
-    const userId =
-      input.userId;
+    const userId = input.userId;
 
     if (!userId) {
       throw new BadRequestException(
@@ -1093,45 +871,37 @@ export class IdeaPersistenceService {
       );
     }
 
-    const user =
-      await transaction.user.findUnique({
-        where: {
-          id:
-            userId,
-        },
+    const user = await transaction.user.findUnique({
+      where: {
+        id: userId,
+      },
 
-        select: {
-          id: true,
-          freeGenerationLimit: true,
-          freeGenerationsUsed: true,
-        },
-      });
+      select: {
+        id: true,
+        freeGenerationLimit: true,
+        freeGenerationsUsed: true,
+      },
+    });
 
     if (!user) {
-      throw new NotFoundException(
-        'User not found.',
-      );
+      throw new NotFoundException('User not found.');
     }
 
-    const updated =
-      await transaction.user.updateMany({
-        where: {
-          id:
-            user.id,
+    const updated = await transaction.user.updateMany({
+      where: {
+        id: user.id,
 
-          freeGenerationsUsed: {
-            lt:
-              user.freeGenerationLimit,
-          },
+        freeGenerationsUsed: {
+          lt: user.freeGenerationLimit,
         },
+      },
 
-        data: {
-          freeGenerationsUsed: {
-            increment:
-              1,
-          },
+      data: {
+        freeGenerationsUsed: {
+          increment: 1,
         },
-      });
+      },
+    });
 
     if (updated.count !== 1) {
       throw new BadRequestException(
@@ -1150,14 +920,11 @@ export class IdeaPersistenceService {
    * @param ideaId Newly created premium idea identifier.
    */
   private async consumePremiumCredit(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
     ideaId: string,
   ): Promise<void> {
-    const userId =
-      input.userId;
+    const userId = input.userId;
 
     if (!userId) {
       throw new BadRequestException(
@@ -1165,13 +932,12 @@ export class IdeaPersistenceService {
       );
     }
 
-    await this.creditBalanceService
-      .consumeForIdeaGeneration(
-        userId,
-        ideaId,
-        PREMIUM_IDEA_CREDIT_COST,
-        transaction,
-      );
+    await this.creditBalanceService.consumeForIdeaGeneration(
+      userId,
+      ideaId,
+      PREMIUM_IDEA_CREDIT_COST,
+      transaction,
+    );
   }
 
   /**
@@ -1187,87 +953,53 @@ export class IdeaPersistenceService {
    * @returns Newly created idea.
    */
   private async createIdea(
-    transaction:
-      IdeaPersistenceDatabaseClient,
-    input:
-      PersistGeneratedIdeaInput,
+    transaction: IdeaPersistenceDatabaseClient,
+    input: PersistGeneratedIdeaInput,
   ) {
-    const core =
-      input.parsedOutput.coreIdea;
+    const core = input.parsedOutput.coreIdea;
 
     const isPremium =
-      input.generationType ===
-      IdeaGenerationType.PREMIUM_CREDIT;
+      input.generationType === IdeaGenerationType.PREMIUM_CREDIT;
 
-    const now =
-      new Date();
+    const now = new Date();
 
     return transaction.idea.create({
       data: {
-        userId:
-          input.userId ??
-          null,
+        userId: input.userId ?? null,
 
-        guestSessionId:
-          input.guestSessionId ??
-          null,
+        guestSessionId: input.guestSessionId ?? null,
 
-        domainId:
-          input.domainId,
+        domainId: input.domainId,
 
-        promptHistoryId:
-          input.promptHistoryId,
+        promptHistoryId: input.promptHistoryId,
 
-        collectionJobId:
-          input.collectionJobId,
+        collectionJobId: input.collectionJobId,
 
-        selectedRegion:
-          input.selectedRegion,
+        selectedRegion: input.selectedRegion,
 
-        title:
-          core.title,
+        title: core.title,
 
-        problemStatement:
-          core.problemStatement,
+        problemStatement: core.problemStatement,
 
-        objectives:
-          this.toInputJsonValue(
-            core.objectives,
-          ),
+        objectives: this.toInputJsonValue(core.objectives),
 
-        targetUsers:
-          this.toInputJsonValue(
-            core.targetUsers,
-          ),
+        targetUsers: this.toInputJsonValue(core.targetUsers),
 
-        limitedAbstract:
-          core.limitedAbstract ??
-          null,
+        limitedAbstract: core.limitedAbstract ?? null,
 
-        partialAbstract:
-          core.partialAbstract ??
-          null,
+        partialAbstract: core.partialAbstract ?? null,
 
-        fullAbstract:
-          core.fullAbstract ??
-          null,
+        fullAbstract: core.fullAbstract ?? null,
 
-        generationType:
-          input.generationType,
+        generationType: input.generationType,
 
-        isUnlocked:
-          isPremium,
+        isUnlocked: isPremium,
 
-        unlockMethod:
-          isPremium
-            ? UnlockMethod
-                .CREDIT_GENERATION
-            : UnlockMethod.NONE,
+        unlockMethod: isPremium
+          ? UnlockMethod.CREDIT_GENERATION
+          : UnlockMethod.NONE,
 
-        unlockedAt:
-          isPremium
-            ? now
-            : null,
+        unlockedAt: isPremium ? now : null,
       },
     });
   }
@@ -1284,67 +1016,42 @@ export class IdeaPersistenceService {
    * @param parsedOutput Parsed and validated AI output.
    */
   private async createGeneratedOutputs(
-    transaction:
-      IdeaPersistenceDatabaseClient,
+    transaction: IdeaPersistenceDatabaseClient,
     ideaId: string,
-    parsedOutput:
-      ParsedIdeaAiOutput,
+    parsedOutput: ParsedIdeaAiOutput,
   ): Promise<void> {
-    const advancedOutputs =
-      parsedOutput.advancedOutputs;
+    const advancedOutputs = parsedOutput.advancedOutputs;
 
-    if (
-      advancedOutputs.length === 0
-    ) {
+    if (advancedOutputs.length === 0) {
       return;
     }
 
-    const generatedAt =
-      new Date();
+    const generatedAt = new Date();
 
-    await transaction
-      .generatedOutput
-      .createMany({
-        data:
-          advancedOutputs.map(
-            (output) => ({
-              ideaId,
+    await transaction.generatedOutput.createMany({
+      data: advancedOutputs.map((output) => ({
+        ideaId,
 
-              outputKey:
-                output.outputKey,
+        outputKey: output.outputKey,
 
-              title:
-                output.title,
+        title: output.title,
 
-              sequence:
-                getIdeaAdvancedOutputSequence(
-                  output.outputKey,
-                ),
+        sequence: getIdeaAdvancedOutputSequence(output.outputKey),
 
-              status:
-                GeneratedOutputStatus
-                  .COMPLETED,
+        status: GeneratedOutputStatus.COMPLETED,
 
-              content:
-                output.content,
+        content: output.content,
 
-              structuredContent:
-                output
-                  .structuredContent ===
-                undefined
-                  ? undefined
-                  : this.toInputJsonValue(
-                      output
-                        .structuredContent,
-                    ),
+        structuredContent:
+          output.structuredContent === undefined
+            ? undefined
+            : this.toInputJsonValue(output.structuredContent),
 
-              errorMessage:
-                null,
+        errorMessage: null,
 
-              generatedAt,
-            }),
-          ),
-      });
+        generatedAt,
+      })),
+    });
   }
 
   /**
@@ -1360,40 +1067,30 @@ export class IdeaPersistenceService {
    * @param collectionJobId Collection-job identifier.
    */
   private async attachIdeaToGenerationRun(
-    transaction:
-      IdeaPersistenceDatabaseClient,
+    transaction: IdeaPersistenceDatabaseClient,
     runId: string,
     ideaId: string,
     collectionJobId: string,
   ): Promise<void> {
-    const updated =
-      await transaction
-        .ideaGenerationRun
-        .updateMany({
-          where: {
-            id:
-              runId,
+    const updated = await transaction.ideaGenerationRun.updateMany({
+      where: {
+        id: runId,
 
-            status:
-              IdeaGenerationRunStatus
-                .RUNNING,
+        status: IdeaGenerationRunStatus.RUNNING,
 
-            ideaId:
-              null,
+        ideaId: null,
 
-            cancelRequestedAt:
-              null,
-          },
+        cancelRequestedAt: null,
+      },
 
-          data: {
-            ideaId,
+      data: {
+        ideaId,
 
-            collectionJobId,
+        collectionJobId,
 
-            lastHeartbeatAt:
-              new Date(),
-          },
-        });
+        lastHeartbeatAt: new Date(),
+      },
+    });
 
     if (updated.count !== 1) {
       throw new BadRequestException(
@@ -1411,41 +1108,37 @@ export class IdeaPersistenceService {
    * @returns Complete persisted idea result.
    */
   private async loadPersistedIdea(
-    transaction:
-      IdeaPersistenceDatabaseClient,
+    transaction: IdeaPersistenceDatabaseClient,
     ideaId: string,
   ): Promise<PersistedGeneratedIdea> {
-    return transaction.idea
-      .findUniqueOrThrow({
-        where: {
-          id:
-            ideaId,
-        },
+    return transaction.idea.findUniqueOrThrow({
+      where: {
+        id: ideaId,
+      },
 
-        include: {
-          generatedOutputs: {
-            orderBy: {
-              sequence:
-                'asc',
-            },
-          },
-
-          domain: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-
-          generationRun: {
-            select: {
-              id: true,
-              status: true,
-              progressPercent: true,
-            },
+      include: {
+        generatedOutputs: {
+          orderBy: {
+            sequence: 'asc',
           },
         },
-      });
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        generationRun: {
+          select: {
+            id: true,
+            status: true,
+            progressPercent: true,
+          },
+        },
+      },
+    });
   }
 
   /**
@@ -1458,28 +1151,19 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    */
   private async invalidatePremiumCreditCaches(
-    input:
-      PersistGeneratedIdeaInput,
+    input: PersistGeneratedIdeaInput,
   ): Promise<void> {
     if (
-      input.generationType !==
-        IdeaGenerationType
-          .PREMIUM_CREDIT ||
+      input.generationType !== IdeaGenerationType.PREMIUM_CREDIT ||
       !input.userId
     ) {
       return;
     }
 
     try {
-      await this.creditCacheService
-        .invalidateUserCreditCaches(
-          input.userId,
-        );
+      await this.creditCacheService.invalidateUserCreditCaches(input.userId);
     } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(error);
+      const message = error instanceof Error ? error.message : String(error);
 
       this.logger.warn(
         `Premium idea persisted, but credit caches could not be invalidated for user "${input.userId}": ${message}`,
@@ -1497,11 +1181,8 @@ export class IdeaPersistenceService {
    * @param value Validated JSON-compatible value.
    * @returns Prisma-compatible JSON input value.
    */
-  private toInputJsonValue(
-    value: JsonValue,
-  ): Prisma.InputJsonValue {
-    return value as
-      Prisma.InputJsonValue;
+  private toInputJsonValue(value: JsonValue): Prisma.InputJsonValue {
+    return value as Prisma.InputJsonValue;
   }
 
   /**
@@ -1512,19 +1193,11 @@ export class IdeaPersistenceService {
    * @param generationType Generation type requiring the field.
    */
   private requireNonBlankOutputField(
-    value:
-      string |
-      undefined,
+    value: string | undefined,
     fieldName: string,
-    generationType:
-      IdeaGenerationType,
+    generationType: IdeaGenerationType,
   ): void {
-    if (
-      typeof value !==
-        'string' ||
-      value.trim().length ===
-        0
-    ) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
       throw new BadRequestException(
         `${generationType} persistence requires a non-empty "${fieldName}" field.`,
       );
@@ -1538,26 +1211,15 @@ export class IdeaPersistenceService {
    * @param fieldName Human-readable field name.
    * @returns Trimmed non-empty text.
    */
-  private requireText(
-    value: string,
-    fieldName: string,
-  ): string {
-    if (
-      typeof value !==
-      'string'
-    ) {
-      throw new BadRequestException(
-        `${fieldName} is required.`,
-      );
+  private requireText(value: string, fieldName: string): string {
+    if (typeof value !== 'string') {
+      throw new BadRequestException(`${fieldName} is required.`);
     }
 
-    const normalized =
-      value.trim();
+    const normalized = value.trim();
 
     if (!normalized) {
-      throw new BadRequestException(
-        `${fieldName} is required.`,
-      );
+      throw new BadRequestException(`${fieldName} is required.`);
     }
 
     return normalized;
@@ -1573,20 +1235,13 @@ export class IdeaPersistenceService {
    * @returns Trimmed text or undefined.
    */
   private normalizeOptionalText(
-    value:
-      string |
-      null |
-      undefined,
+    value: string | null | undefined,
   ): string | undefined {
-    if (
-      typeof value !==
-      'string'
-    ) {
+    if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalized =
-      value.trim();
+    const normalized = value.trim();
 
     return normalized || undefined;
   }
@@ -1598,12 +1253,9 @@ export class IdeaPersistenceService {
    * @param error Unknown transaction error.
    * @returns Whether the complete transaction may be retried.
    */
-  private isRetryableTransactionError(
-    error: unknown,
-  ): boolean {
+  private isRetryableTransactionError(error: unknown): boolean {
     return (
-      error instanceof
-        Prisma.PrismaClientKnownRequestError &&
+      error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2034'
     );
   }
@@ -1614,9 +1266,7 @@ export class IdeaPersistenceService {
    *
    * @param generationType Unexpected generation type.
    */
-  private assertNeverGenerationType(
-    generationType: never,
-  ): never {
+  private assertNeverGenerationType(generationType: never): never {
     throw new BadRequestException(
       `Unsupported idea generation type "${String(generationType)}".`,
     );

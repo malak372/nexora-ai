@@ -137,8 +137,7 @@ export type GuestIdeaGenerationPolicyInput = {
   /**
    * The only generation type available to guest sessions.
    */
-  requestedGenerationType:
-    typeof IdeaGenerationType.GUEST_FREE;
+  requestedGenerationType: typeof IdeaGenerationType.GUEST_FREE;
 
   /**
    * Guest-session data required by the policy rules.

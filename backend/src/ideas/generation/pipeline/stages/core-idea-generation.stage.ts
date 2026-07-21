@@ -1,12 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  ApiRequestType,
-  PromptType,
-} from '@prisma/client';
+import { ApiRequestType, PromptType } from '@prisma/client';
 
 import { AiExecutionService } from '../../../../ai/services/ai-execution.service';
 
@@ -71,28 +65,21 @@ import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
  * @author Malak
  */
 @Injectable()
-export class CoreIdeaGenerationStage
-  implements IdeaGenerationStage
-{
+export class CoreIdeaGenerationStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS
-      .CORE_IDEA_GENERATION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly aiExecutionService:
-      AiExecutionService,
+    private readonly aiExecutionService: AiExecutionService,
 
-    private readonly outputParserService:
-      IdeaAiOutputParserService,
+    private readonly outputParserService: IdeaAiOutputParserService,
   ) {}
 
   /**
@@ -108,109 +95,76 @@ export class CoreIdeaGenerationStage
 
     const persistedPrompt = context.prompt!;
 
-    const aiResult =
-      await this.aiExecutionService.execute({
-        userPrompt:
-          persistedPrompt.promptText,
+    const aiResult = await this.aiExecutionService.execute({
+      userPrompt: persistedPrompt.promptText,
 
-        requestType:
-          ApiRequestType.IDEA_GENERATION,
+      requestType: ApiRequestType.IDEA_GENERATION,
 
-        promptType:
-          PromptType.IDEA_GENERATION,
+      promptType: PromptType.IDEA_GENERATION,
 
-        generationType:
-          context.generationType,
+      generationType: context.generationType,
 
-        userId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
 
-        guestSessionId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.GUEST
-            ? context.owner.guestSessionId
-            : undefined,
+      guestSessionId:
+        context.owner.type === IDEA_OWNER_TYPES.GUEST
+          ? context.owner.guestSessionId
+          : undefined,
 
-        responseFormat:
-          AiResponseFormat.JSON,
+      responseFormat: AiResponseFormat.JSON,
 
-        responseSchema:
-          persistedPrompt.responseSchema,
+      responseSchema: persistedPrompt.responseSchema,
 
-        responseSchemaName:
-          persistedPrompt.responseSchemaName,
+      responseSchemaName: persistedPrompt.responseSchemaName,
 
-        estimatedOutputTokens:
-          this.resolveEstimatedOutputTokens(
-            context,
-          ),
-      });
+      estimatedOutputTokens: this.resolveEstimatedOutputTokens(context),
+    });
 
-    const parsedOutput =
-      this.outputParserService.parseOrThrow(
-        aiResult.text,
-      );
+    const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
-      coreIdea:
-        parsedOutput.coreIdea,
+      coreIdea: parsedOutput.coreIdea,
 
-      advancedOutputs:
-        this.mergeAdvancedOutputs(
-          context.advancedOutputs,
-          parsedOutput.advancedOutputs,
-        ),
+      advancedOutputs: this.mergeAdvancedOutputs(
+        context.advancedOutputs,
+        parsedOutput.advancedOutputs,
+      ),
     };
 
     return {
       context: updatedContext,
 
-      resultPreview:
-        this.createResponsePreview(
-          aiResult.text,
-        ),
+      resultPreview: this.createResponsePreview(aiResult.text),
 
       metadata: {
-        operationId:
-          aiResult.operationId,
+        operationId: aiResult.operationId,
 
-        aiModelId:
-          aiResult.aiModelId,
+        aiModelId: aiResult.aiModelId,
 
-        providerKey:
-          aiResult.providerKey,
+        providerKey: aiResult.providerKey,
 
-        apiModelId:
-          aiResult.apiModelId,
+        apiModelId: aiResult.apiModelId,
 
-        inputTokens:
-          aiResult.inputTokens,
+        inputTokens: aiResult.inputTokens,
 
-        outputTokens:
-          aiResult.outputTokens,
+        outputTokens: aiResult.outputTokens,
 
-        costEstimate:
-          aiResult.costEstimate,
+        costEstimate: aiResult.costEstimate,
 
-        responseTimeMs:
-          aiResult.responseTimeMs,
+        responseTimeMs: aiResult.responseTimeMs,
 
-        finishReason:
-          aiResult.finishReason,
+        finishReason: aiResult.finishReason,
 
-        fallbackUsed:
-          aiResult.fallbackUsed,
+        fallbackUsed: aiResult.fallbackUsed,
 
-        attemptCount:
-          aiResult.attemptCount,
+        attemptCount: aiResult.attemptCount,
 
-        advancedOutputsReturned:
-          parsedOutput.advancedOutputs.length,
+        advancedOutputsReturned: parsedOutput.advancedOutputs.length,
       },
     };
   }
@@ -221,74 +175,52 @@ export class CoreIdeaGenerationStage
    *
    * @param context Current generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'Generation entitlement must be resolved before AI execution.',
+        message: 'Generation entitlement must be resolved before AI execution.',
       });
     }
 
     if (!context.collection) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'Collection-job information is required before AI execution.',
+        message: 'Collection-job information is required before AI execution.',
       });
     }
 
     if (!context.nlp) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'NLP analysis is required before AI execution.',
+        message: 'NLP analysis is required before AI execution.',
       });
     }
 
     if (!context.prompt) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'A persisted rendered prompt is required before AI execution.',
+        message: 'A persisted rendered prompt is required before AI execution.',
       });
     }
 
     if (!context.prompt.promptText.trim()) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'The rendered AI prompt cannot be empty.',
+        message: 'The rendered AI prompt cannot be empty.',
       });
     }
 
-    if (
-      !context.prompt.responseSchemaName.trim()
-    ) {
+    if (!context.prompt.responseSchemaName.trim()) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .AI_GENERATION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
 
-        message:
-          'The structured AI response-schema name is required.',
+        message: 'The structured AI response-schema name is required.',
       });
     }
   }
@@ -304,13 +236,8 @@ export class CoreIdeaGenerationStage
    * @param context Current generation context.
    * @returns Estimated output-token count.
    */
-  private resolveEstimatedOutputTokens(
-    context: IdeaGenerationContext,
-  ): number {
-    return context.policy
-      ?.includePremiumOutputs
-      ? 4_096
-      : 2_048;
+  private resolveEstimatedOutputTokens(context: IdeaGenerationContext): number {
+    return context.policy?.includePremiumOutputs ? 4_096 : 2_048;
   }
 
   /**
@@ -324,30 +251,19 @@ export class CoreIdeaGenerationStage
    * @returns Merged output list.
    */
   private mergeAdvancedOutputs(
-    existing:
-      IdeaGenerationContext['advancedOutputs'],
+    existing: IdeaGenerationContext['advancedOutputs'],
 
-    incoming:
-      IdeaGenerationContext['advancedOutputs'],
+    incoming: IdeaGenerationContext['advancedOutputs'],
   ): IdeaGenerationContext['advancedOutputs'] {
-    const outputsByKey =
-      new Map(
-        existing.map((output) => [
-          output.outputKey,
-          output,
-        ]),
-      );
+    const outputsByKey = new Map(
+      existing.map((output) => [output.outputKey, output]),
+    );
 
     for (const output of incoming) {
-      outputsByKey.set(
-        output.outputKey,
-        output,
-      );
+      outputsByKey.set(output.outputKey, output);
     }
 
-    return Array.from(
-      outputsByKey.values(),
-    );
+    return Array.from(outputsByKey.values());
   }
 
   /**
@@ -359,23 +275,14 @@ export class CoreIdeaGenerationStage
    * @param responseText Complete provider response.
    * @returns Safe bounded preview.
    */
-  private createResponsePreview(
-    responseText: string,
-  ): string {
-    const normalizedResponse =
-      responseText.trim();
+  private createResponsePreview(responseText: string): string {
+    const normalizedResponse = responseText.trim();
 
-    if (
-      normalizedResponse.length <=
-      MAX_AI_RESPONSE_PREVIEW_LENGTH
-    ) {
+    if (normalizedResponse.length <= MAX_AI_RESPONSE_PREVIEW_LENGTH) {
       return normalizedResponse;
     }
 
-    return normalizedResponse.slice(
-      0,
-      MAX_AI_RESPONSE_PREVIEW_LENGTH,
-    );
+    return normalizedResponse.slice(0, MAX_AI_RESPONSE_PREVIEW_LENGTH);
   }
 
   /**
@@ -384,10 +291,7 @@ export class CoreIdeaGenerationStage
    * @returns Core-generation stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

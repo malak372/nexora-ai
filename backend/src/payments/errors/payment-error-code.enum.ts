@@ -76,8 +76,7 @@ export enum PaymentErrorCode {
    * The selected payment method cannot be processed by the
    * resolved payment provider.
    */
-  PAYMENT_METHOD_PROVIDER_MISMATCH =
-  'PAYMENT_METHOD_PROVIDER_MISMATCH',
+  PAYMENT_METHOD_PROVIDER_MISMATCH = 'PAYMENT_METHOD_PROVIDER_MISMATCH',
 
   /**
    * A provided checkout redirect URL is invalid or not allowed.
@@ -98,8 +97,7 @@ export enum PaymentErrorCode {
   /**
    * The payment-provider webhook signature could not be verified.
    */
-  PAYMENT_WEBHOOK_VERIFICATION_FAILED =
-  'PAYMENT_WEBHOOK_VERIFICATION_FAILED',
+  PAYMENT_WEBHOOK_VERIFICATION_FAILED = 'PAYMENT_WEBHOOK_VERIFICATION_FAILED',
 
   /**
    * The provider webhook payload could not be parsed or normalized.
@@ -165,8 +163,7 @@ export enum PaymentErrorCode {
    * Purchased credits could not be applied consistently to the
    * user's balance and credit-transaction history.
    */
-  CREDIT_PURCHASE_PROCESSING_FAILED =
-  'CREDIT_PURCHASE_PROCESSING_FAILED',
+  CREDIT_PURCHASE_PROCESSING_FAILED = 'CREDIT_PURCHASE_PROCESSING_FAILED',
 
   /**
    * The requested idea does not exist.
@@ -186,15 +183,13 @@ export enum PaymentErrorCode {
   /**
    * The selected idea is not eligible for direct-payment unlock.
    */
-  IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK =
-  'IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK',
+  IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK = 'IDEA_NOT_ELIGIBLE_FOR_DIRECT_UNLOCK',
 
   /**
    * The selected idea could not be unlocked consistently after
    * successful payment confirmation.
    */
-  DIRECT_UNLOCK_PROCESSING_FAILED =
-  'DIRECT_UNLOCK_PROCESSING_FAILED',
+  DIRECT_UNLOCK_PROCESSING_FAILED = 'DIRECT_UNLOCK_PROCESSING_FAILED',
 
   /**
    * The payment could not be processed because of an unexpected

@@ -35,7 +35,7 @@ export class AuthTokenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   /**
    * Hashes a plain token using SHA-256.
@@ -47,9 +47,7 @@ export class AuthTokenService {
    * @returns SHA-256 hexadecimal token hash.
    */
   hashToken(token: string): string {
-    return createHash('sha256')
-      .update(token)
-      .digest('hex');
+    return createHash('sha256').update(token).digest('hex');
   }
 
   /**
@@ -66,21 +64,15 @@ export class AuthTokenService {
    * @param user - User identity required for the JWT payload.
    * @returns Signed JWT access token.
    */
-  async generateAccessToken(user: {
-    readonly id: string;
-  }): Promise<string> {
-    const accessTokenSecret =
-      process.env.JWT_ACCESS_SECRET?.trim();
+  async generateAccessToken(user: { readonly id: string }): Promise<string> {
+    const accessTokenSecret = process.env.JWT_ACCESS_SECRET?.trim();
 
     if (!accessTokenSecret) {
-      throw new Error(
-        'JWT_ACCESS_SECRET is not configured',
-      );
+      throw new Error('JWT_ACCESS_SECRET is not configured');
     }
 
-    const expiresIn =
-      (process.env.JWT_ACCESS_EXPIRES_IN?.trim() ||
-        DEFAULT_ACCESS_TOKEN_EXPIRES_IN) as StringValue;
+    const expiresIn = (process.env.JWT_ACCESS_EXPIRES_IN?.trim() ||
+      DEFAULT_ACCESS_TOKEN_EXPIRES_IN) as StringValue;
 
     return this.jwtService.signAsync(
       {
@@ -113,19 +105,14 @@ export class AuthTokenService {
     meta?: RefreshTokenMeta,
     tx?: Prisma.TransactionClient,
   ): Promise<string> {
-    const refreshToken = randomBytes(
-      REFRESH_TOKEN_BYTES,
-    ).toString('hex');
+    const refreshToken = randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
 
     const tokenHash = this.hashToken(refreshToken);
 
     const now = new Date();
 
     const expiresAt = new Date(now);
-    expiresAt.setUTCDate(
-      expiresAt.getUTCDate() +
-      REFRESH_TOKEN_EXPIRES_DAYS,
-    );
+    expiresAt.setUTCDate(expiresAt.getUTCDate() + REFRESH_TOKEN_EXPIRES_DAYS);
 
     const client = tx ?? this.prisma;
 

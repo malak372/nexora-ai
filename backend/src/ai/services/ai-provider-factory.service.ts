@@ -51,10 +51,7 @@ export class AiProviderFactoryService {
    * The property is exposed as ReadonlyMap so the registry cannot be
    * modified after service construction.
    */
-  private readonly providerRegistry: ReadonlyMap<
-    AiProviderKey,
-    AiProvider
-  >;
+  private readonly providerRegistry: ReadonlyMap<AiProviderKey, AiProvider>;
 
   constructor(
     googleProvider: GoogleProvider,
@@ -108,10 +105,7 @@ export class AiProviderFactoryService {
       );
     }
 
-    this.validateProviderRegistration(
-      normalizedProviderKey,
-      provider,
-    );
+    this.validateProviderRegistration(normalizedProviderKey, provider);
 
     return provider;
   }
@@ -129,9 +123,7 @@ export class AiProviderFactoryService {
    * @param providerKey Raw provider-key candidate.
    * @returns True when the value can be normalized to AiProviderKey.
    */
-  isSupportedProviderKey(
-    providerKey: string,
-  ): providerKey is AiProviderKey {
+  isSupportedProviderKey(providerKey: string): providerKey is AiProviderKey {
     return normalizeAiProviderKey(providerKey) !== undefined;
   }
 
@@ -158,14 +150,8 @@ export class AiProviderFactoryService {
     openRouterProvider: OpenRouterProvider,
   ): ReadonlyMap<AiProviderKey, AiProvider> {
     return new Map<AiProviderKey, AiProvider>([
-      [
-        AI_PROVIDER_KEYS.GOOGLE,
-        googleProvider,
-      ],
-      [
-        AI_PROVIDER_KEYS.OPENROUTER,
-        openRouterProvider,
-      ],
+      [AI_PROVIDER_KEYS.GOOGLE, googleProvider],
+      [AI_PROVIDER_KEYS.OPENROUTER, openRouterProvider],
     ]);
   }
 
@@ -177,11 +163,8 @@ export class AiProviderFactoryService {
    * @returns Normalized supported provider key.
    * @throws BadRequestException when the value is not supported.
    */
-  private normalizeRequiredProviderKey(
-    providerKey: string,
-  ): AiProviderKey {
-    const normalizedProviderKey =
-      normalizeAiProviderKey(providerKey);
+  private normalizeRequiredProviderKey(providerKey: string): AiProviderKey {
+    const normalizedProviderKey = normalizeAiProviderKey(providerKey);
 
     if (!normalizedProviderKey) {
       throw new BadRequestException(
@@ -227,8 +210,7 @@ export class AiProviderFactoryService {
    * to discover an incomplete or inconsistent provider registry.
    */
   private validateRegistry(): void {
-    const missingProviderKeys =
-      this.findMissingProviderKeys();
+    const missingProviderKeys = this.findMissingProviderKeys();
 
     if (missingProviderKeys.length > 0) {
       throw new InternalServerErrorException(
@@ -236,10 +218,7 @@ export class AiProviderFactoryService {
       );
     }
 
-    if (
-      this.providerRegistry.size !==
-      SUPPORTED_AI_PROVIDER_KEYS.length
-    ) {
+    if (this.providerRegistry.size !== SUPPORTED_AI_PROVIDER_KEYS.length) {
       throw new InternalServerErrorException(
         'The AI provider registry contains unexpected adapters.',
       );
@@ -249,10 +228,7 @@ export class AiProviderFactoryService {
       registeredProviderKey,
       provider,
     ] of this.providerRegistry.entries()) {
-      this.validateProviderRegistration(
-        registeredProviderKey,
-        provider,
-      );
+      this.validateProviderRegistration(registeredProviderKey, provider);
     }
   }
 
@@ -262,8 +238,7 @@ export class AiProviderFactoryService {
    */
   private findMissingProviderKeys(): AiProviderKey[] {
     return SUPPORTED_AI_PROVIDER_KEYS.filter(
-      (providerKey) =>
-        !this.providerRegistry.has(providerKey),
+      (providerKey) => !this.providerRegistry.has(providerKey),
     );
   }
 }

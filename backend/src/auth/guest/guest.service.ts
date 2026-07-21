@@ -24,7 +24,7 @@ import type { AttachGuestIdeasResult } from './types/attach-guest-ideas-result.t
  */
 @Injectable()
 export class AuthGuestService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Transfers guest ideas and their related activity

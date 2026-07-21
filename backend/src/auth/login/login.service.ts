@@ -56,7 +56,7 @@ export class AuthLoginService {
     private readonly prisma: PrismaService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Authenticates an active and verified user.
@@ -142,9 +142,7 @@ export class AuthLoginService {
         meta,
       });
 
-      throw new UnauthorizedException(
-        'This account is currently unavailable.',
-      );
+      throw new UnauthorizedException('This account is currently unavailable.');
     }
 
     if (!user.isVerified) {
@@ -173,11 +171,12 @@ export class AuthLoginService {
       },
     });
 
-    const accessToken =
-      await this.authTokenService.generateAccessToken(user);
+    const accessToken = await this.authTokenService.generateAccessToken(user);
 
-    const refreshToken =
-      await this.authTokenService.generateRefreshToken(user.id, meta);
+    const refreshToken = await this.authTokenService.generateRefreshToken(
+      user.id,
+      meta,
+    );
 
     await this.authAuditService.createLog({
       userId: user.id,
@@ -283,8 +282,7 @@ export class AuthLoginService {
       },
     });
 
-    const formattedDuration =
-      this.formatLockDuration(lockDurationMinutes);
+    const formattedDuration = this.formatLockDuration(lockDurationMinutes);
 
     await this.authAuditService.createLog({
       userId: user.id,
@@ -315,13 +313,11 @@ export class AuthLoginService {
     const remainingMinutes = Math.max(
       1,
       Math.ceil(
-        (lockedUntil.getTime() - now.getTime()) /
-        MILLISECONDS_PER_MINUTE,
+        (lockedUntil.getTime() - now.getTime()) / MILLISECONDS_PER_MINUTE,
       ),
     );
 
-    const formattedDuration =
-      this.formatLockDuration(remainingMinutes);
+    const formattedDuration = this.formatLockDuration(remainingMinutes);
 
     await this.logFailedLogin({
       userId: user.id,
@@ -377,8 +373,7 @@ export class AuthLoginService {
       return false;
     }
 
-    const elapsedMilliseconds =
-      now.getTime() - windowStartedAt.getTime();
+    const elapsedMilliseconds = now.getTime() - windowStartedAt.getTime();
 
     return (
       elapsedMilliseconds <=
@@ -411,8 +406,7 @@ export class AuthLoginService {
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
 
-    const formattedHours =
-      `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+    const formattedHours = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 
     if (remainingMinutes === 0) {
       return formattedHours;

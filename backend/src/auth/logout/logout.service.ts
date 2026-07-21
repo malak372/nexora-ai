@@ -25,7 +25,7 @@ export class AuthLogoutService {
     private readonly prisma: PrismaService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Logs out the user by revoking the provided refresh token.

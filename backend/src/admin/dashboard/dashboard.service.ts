@@ -1,26 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import {
   AccountStatus,
+  ApiRequestType,
   ComplaintStatus,
   CreditTransactionType,
   IdeaGenerationType,
   PaymentPurpose,
   PaymentStatus,
-  Prisma,
-  UserRole,
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
-import { toNumber } from '../../utilities/analytics/analytics.helper';
-
-type UsersGrowthRow = {
-  date: Date;
-  count: number;
-};
 
 /**
- * Service responsible for providing Admin dashboard analytics.
+ * Produces system-wide administrative analytics using the current Prisma
+ * schema. Platform analytics are derived from CollectionJobSource/DataSource.
  *
  * @author Malak
  */
@@ -28,368 +22,235 @@ type UsersGrowthRow = {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Retrieves summarized analytics for the Admin dashboard.
-   *
-   * Notes:
-   * - Admin accounts are excluded from platform-user statistics.
-   * - Premium users are USER accounts with PREMIUM account status.
-   * - AI success/error rates are returned as percentages.
-   */
+  /** Returns the full administrative dashboard. */
   async getDashboard(): Promise<DashboardResponseDto> {
     const now = new Date();
-
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const startOfLast30Days = new Date(now);
-    startOfLast30Days.setDate(now.getDate() - 30);
-    startOfLast30Days.setHours(0, 0, 0, 0);
 
     const [
       users,
       normalUsers,
       premiumUsers,
       activeUsers,
-      inactiveUsers,
       verifiedUsers,
-      unverifiedUsers,
-
       ideas,
       guestIdeas,
       normalFreeIdeas,
       premiumCreditIdeas,
       unlockedIdeas,
-      lockedIdeas,
-
       payments,
-      successfulPaymentsCount,
-      pendingPaymentsCount,
-      failedPaymentsCount,
-      refundedPaymentsCount,
-      directUnlockPaymentsCount,
-      creditPurchasePaymentsCount,
-
+      succeededPayments,
+      pendingPayments,
+      failedPayments,
+      refundedPayments,
+      directUnlockPayments,
+      creditPurchasePayments,
       comments,
-
       creditsSold,
-      totalPremiumCreditBalance,
-      creditPurchases,
-      creditRefunds,
-      manualCreditAdjustments,
-
-      revenueTotal,
-      refundsTotal,
-
+      revenue,
+      refunds,
       aiRequests,
       failedAiRequests,
-      aiStats,
-
+      aiResponseTime,
+      aiCost,
       openComplaints,
       inProgressComplaints,
       resolvedComplaints,
       rejectedComplaints,
-
       generatedOutputs,
-      generatedOutputsByType,
-
-      activeDomainsCount,
-      inactiveDomainsCount,
-      activePlatformsCount,
-      inactivePlatformsCount,
-
+      generatedOutputsByKey,
+      activeDomains,
+      inactiveDomains,
+      activeDataSources,
+      inactiveDataSources,
       todayUsers,
       todayIdeas,
       todayPayments,
       todayRevenue,
-
       monthlyUsers,
       monthlyIdeas,
       monthlyPayments,
       monthlyRevenue,
-
-      mostSelectedDomains,
-      mostRequestedRegions,
-      mostUsedPlatforms,
-      usersGrowthRaw,
-      usersByType,
-
+      usersByTypeRaw,
+      domainsRaw,
+      regionsRaw,
+      sourceUsageRaw,
       recentUsers,
-      recentPaymentsRaw,
+      recentPayments,
       recentIdeas,
       recentComplaints,
     ] = await Promise.all([
-      this.prisma.user.count(),
-
+      this.prisma.user.count({ where: { deletedAt: null } }),
       this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          accountStatus: AccountStatus.NORMAL,
-        },
+        where: { deletedAt: null, accountStatus: AccountStatus.NORMAL },
       }),
-
       this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          accountStatus: AccountStatus.PREMIUM,
-        },
+        where: { deletedAt: null, accountStatus: AccountStatus.PREMIUM },
       }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          isActive: true,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          isActive: false,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          isVerified: true,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          isVerified: false,
-        },
-      }),
-
-      this.prisma.idea.count(),
-
+      this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
+      this.prisma.user.count({ where: { deletedAt: null, isVerified: true } }),
+      this.prisma.idea.count({ where: { deletedAt: null } }),
       this.prisma.idea.count({
-        where: { generationType: IdeaGenerationType.GUEST_FREE },
+        where: {
+          deletedAt: null,
+          generationType: IdeaGenerationType.GUEST_FREE,
+        },
       }),
-
       this.prisma.idea.count({
-        where: { generationType: IdeaGenerationType.NORMAL_FREE },
+        where: {
+          deletedAt: null,
+          generationType: IdeaGenerationType.NORMAL_FREE,
+        },
       }),
-
       this.prisma.idea.count({
-        where: { generationType: IdeaGenerationType.PREMIUM_CREDIT },
+        where: {
+          deletedAt: null,
+          generationType: IdeaGenerationType.PREMIUM_CREDIT,
+        },
       }),
-
-      this.prisma.idea.count({
-        where: { isUnlocked: true },
-      }),
-
-      this.prisma.idea.count({
-        where: { isUnlocked: false },
-      }),
-
+      this.prisma.idea.count({ where: { deletedAt: null, isUnlocked: true } }),
       this.prisma.payment.count(),
-
-      this.prisma.payment.count({
-        where: { status: PaymentStatus.SUCCESS },
-      }),
-
-      this.prisma.payment.count({
-        where: { status: PaymentStatus.PENDING },
-      }),
-
-      this.prisma.payment.count({
-        where: { status: PaymentStatus.FAILED },
-      }),
-
-      this.prisma.payment.count({
-        where: { status: PaymentStatus.REFUNDED },
-      }),
-
+      this.prisma.payment.count({ where: { status: PaymentStatus.SUCCEEDED } }),
+      this.prisma.payment.count({ where: { status: PaymentStatus.PENDING } }),
+      this.prisma.payment.count({ where: { status: PaymentStatus.FAILED } }),
+      this.prisma.payment.count({ where: { status: PaymentStatus.REFUNDED } }),
       this.prisma.payment.count({
         where: { paymentPurpose: PaymentPurpose.DIRECT_UNLOCK },
       }),
-
       this.prisma.payment.count({
         where: { paymentPurpose: PaymentPurpose.BUY_CREDITS },
       }),
-
       this.prisma.socialComment.count(),
-
-      this.prisma.payment.aggregate({
-        where: { status: PaymentStatus.SUCCESS },
-        _sum: { creditsAmount: true },
-      }),
-
-      this.prisma.user.aggregate({
+      this.prisma.creditTransaction.aggregate({
         where: {
-          role: UserRole.USER,
-          accountStatus: AccountStatus.PREMIUM,
+          type: {
+            in: [CreditTransactionType.PURCHASE, CreditTransactionType.BONUS],
+          },
         },
-        _sum: { creditBalance: true },
-      }),
-
-      this.prisma.creditTransaction.count({
-        where: { type: CreditTransactionType.PURCHASE },
-      }),
-
-      this.prisma.creditTransaction.count({
-        where: { type: CreditTransactionType.REFUND },
-      }),
-
-      this.prisma.creditTransaction.count({
-        where: { type: CreditTransactionType.ADMIN_ADJUSTMENT },
-      }),
-
-      this.prisma.payment.aggregate({
-        where: { status: PaymentStatus.SUCCESS },
         _sum: { amount: true },
       }),
-
+      this.prisma.payment.aggregate({
+        where: { status: PaymentStatus.SUCCEEDED },
+        _sum: { amount: true },
+      }),
       this.prisma.payment.aggregate({
         where: { status: PaymentStatus.REFUNDED },
         _sum: { amount: true },
       }),
-
-      this.prisma.externalApiLog.count(),
-
       this.prisma.externalApiLog.count({
-        where: { isSuccess: false },
+        where: {
+          requestType: {
+            in: [
+              ApiRequestType.IDEA_GENERATION,
+              ApiRequestType.NLP_ENHANCEMENT,
+              ApiRequestType.AI_CHAT,
+            ],
+          },
+        },
       }),
-
+      this.prisma.externalApiLog.count({
+        where: {
+          requestType: {
+            in: [
+              ApiRequestType.IDEA_GENERATION,
+              ApiRequestType.NLP_ENHANCEMENT,
+              ApiRequestType.AI_CHAT,
+            ],
+          },
+          isSuccess: false,
+        },
+      }),
       this.prisma.externalApiLog.aggregate({
+        where: { responseTimeMs: { not: null } },
         _avg: { responseTimeMs: true },
+      }),
+      this.prisma.externalApiLog.aggregate({
         _sum: { costEstimate: true },
       }),
-
       this.prisma.complaint.count({
-        where: { status: ComplaintStatus.OPEN },
+        where: { deletedAt: null, status: ComplaintStatus.OPEN },
       }),
-
       this.prisma.complaint.count({
-        where: { status: ComplaintStatus.IN_PROGRESS },
+        where: { deletedAt: null, status: ComplaintStatus.IN_PROGRESS },
       }),
-
       this.prisma.complaint.count({
-        where: { status: ComplaintStatus.RESOLVED },
+        where: { deletedAt: null, status: ComplaintStatus.RESOLVED },
       }),
-
       this.prisma.complaint.count({
-        where: { status: ComplaintStatus.REJECTED },
+        where: { deletedAt: null, status: ComplaintStatus.REJECTED },
       }),
-
       this.prisma.generatedOutput.count(),
-
       this.prisma.generatedOutput.groupBy({
-        by: ['outputType'],
+        by: ['outputKey'],
         _count: { _all: true },
+        orderBy: { _count: { outputKey: 'desc' } },
       }),
-
-      this.prisma.domain.count({
-        where: { isActive: true },
-      }),
-
-      this.prisma.domain.count({
-        where: { isActive: false },
-      }),
-
-      this.prisma.platform.count({
-        where: { isActive: true },
-      }),
-
-      this.prisma.platform.count({
-        where: { isActive: false },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          createdAt: { gte: startOfToday },
-        },
-      }),
-
+      this.prisma.domain.count({ where: { isActive: true } }),
+      this.prisma.domain.count({ where: { isActive: false } }),
+      this.prisma.dataSource.count({ where: { isActive: true } }),
+      this.prisma.dataSource.count({ where: { isActive: false } }),
+      this.prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
       this.prisma.idea.count({
-        where: { createdAt: { gte: startOfToday } },
+        where: { deletedAt: null, createdAt: { gte: startOfToday } },
       }),
-
       this.prisma.payment.count({
         where: { createdAt: { gte: startOfToday } },
       }),
-
       this.prisma.payment.aggregate({
         where: {
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
           createdAt: { gte: startOfToday },
         },
         _sum: { amount: true },
       }),
-
-      this.prisma.user.count({
-        where: {
-          role: UserRole.USER,
-          createdAt: { gte: startOfMonth },
-        },
-      }),
-
+      this.prisma.user.count({ where: { createdAt: { gte: startOfMonth } } }),
       this.prisma.idea.count({
-        where: { createdAt: { gte: startOfMonth } },
+        where: { deletedAt: null, createdAt: { gte: startOfMonth } },
       }),
-
       this.prisma.payment.count({
         where: { createdAt: { gte: startOfMonth } },
       }),
-
       this.prisma.payment.aggregate({
         where: {
-          status: PaymentStatus.SUCCESS,
+          status: PaymentStatus.SUCCEEDED,
           createdAt: { gte: startOfMonth },
         },
         _sum: { amount: true },
       }),
-
-      this.prisma.idea.groupBy({
-        by: ['domainId'],
-        _count: { domainId: true },
-        orderBy: { _count: { domainId: 'desc' } },
-        take: 5,
-      }),
-
-      this.prisma.idea.groupBy({
-        by: ['selectedRegion'],
-        where: { selectedRegion: { not: null } },
-        _count: { selectedRegion: true },
-        orderBy: { _count: { selectedRegion: 'desc' } },
-        take: 5,
-      }),
-
-      this.prisma.socialPost.groupBy({
-        by: ['platformId'],
-        where: { platformId: { not: null } },
-        _count: { platformId: true },
-        orderBy: { _count: { platformId: 'desc' } },
-        take: 5,
-      }),
-
-      this.prisma.$queryRaw<UsersGrowthRow[]>(Prisma.sql`
-        SELECT
-          DATE(created_at) AS date,
-          COUNT(*)::int AS count
-        FROM users
-        WHERE created_at >= ${startOfLast30Days}
-          AND role = 'USER'
-        GROUP BY DATE(created_at)
-        ORDER BY DATE(created_at) ASC
-      `),
-
       this.prisma.user.groupBy({
         by: ['userType'],
-        where: { role: UserRole.USER },
+        where: { deletedAt: null },
         _count: { _all: true },
       }),
-
+      this.prisma.idea.groupBy({
+        by: ['domainId'],
+        where: { deletedAt: null },
+        _count: { _all: true },
+        orderBy: { _count: { domainId: 'desc' } },
+        take: 10,
+      }),
+      this.prisma.idea.groupBy({
+        by: ['selectedRegion'],
+        where: { deletedAt: null, selectedRegion: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { selectedRegion: 'desc' } },
+        take: 10,
+      }),
+      this.prisma.collectionJobSource.groupBy({
+        by: ['dataSourceId'],
+        _sum: { totalPosts: true, totalComments: true },
+        orderBy: { _sum: { totalPosts: 'desc' } },
+        take: 10,
+      }),
       this.prisma.user.findMany({
-        take: 5,
-        where: { role: UserRole.USER },
+        where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
+        take: 5,
         select: {
           id: true,
           fullName: true,
@@ -402,32 +263,26 @@ export class DashboardService {
           createdAt: true,
         },
       }),
-
       this.prisma.payment.findMany({
-        take: 5,
         orderBy: { createdAt: 'desc' },
+        take: 5,
         select: {
           id: true,
           amount: true,
           currency: true,
-          paymentMethod: true,
+          paymentMethodKey: true,
+          providerKey: true,
           paymentPurpose: true,
           status: true,
           creditsAmount: true,
           createdAt: true,
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
+          user: { select: { id: true, fullName: true, email: true } },
         },
       }),
-
       this.prisma.idea.findMany({
-        take: 5,
+        where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
+        take: 5,
         select: {
           id: true,
           title: true,
@@ -436,225 +291,142 @@ export class DashboardService {
           selectedRegion: true,
           createdAt: true,
           user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              userType: true,
-            },
+            select: { id: true, fullName: true, email: true, userType: true },
           },
-          domain: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
+          domain: { select: { id: true, name: true } },
         },
       }),
-
       this.prisma.complaint.findMany({
-        take: 5,
+        where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
+        take: 5,
         select: {
           id: true,
           subject: true,
           status: true,
           priority: true,
           createdAt: true,
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
+          user: { select: { id: true, fullName: true, email: true } },
         },
       }),
     ]);
 
-    const domainIds = mostSelectedDomains.map((item) => item.domainId);
-
-    const platformIds = mostUsedPlatforms
-      .map((item) => item.platformId)
-      .filter((id): id is string => Boolean(id));
-
-    const [domains, platforms] = await Promise.all([
+    const domainIds = domainsRaw.map((item) => item.domainId);
+    const sourceIds = sourceUsageRaw.map((item) => item.dataSourceId);
+    const [domains, dataSources] = await Promise.all([
       this.prisma.domain.findMany({
         where: { id: { in: domainIds } },
         select: { id: true, name: true },
       }),
-
-      this.prisma.platform.findMany({
-        where: { id: { in: platformIds } },
-        select: { id: true, name: true },
+      this.prisma.dataSource.findMany({
+        where: { id: { in: sourceIds } },
+        select: { id: true, key: true, displayName: true },
       }),
     ]);
-
     const domainMap = new Map(
       domains.map((domain) => [domain.id, domain.name]),
     );
+    const sourceMap = new Map(dataSources.map((source) => [source.id, source]));
 
-    const platformMap = new Map(
-      platforms.map((platform) => [platform.id, platform.name]),
-    );
-
-    const usersGrowthChart = usersGrowthRaw.map((item) => ({
-      date: item.date.toISOString().split('T')[0],
-      count: item.count,
-    }));
-
-    const aiErrorRate =
-      aiRequests === 0
-        ? 0
-        : Number(((failedAiRequests / aiRequests) * 100).toFixed(2));
-
+    const aiCostNumber = Number(aiCost._sum.costEstimate ?? 0);
+    const revenueTotal = Number(revenue._sum.amount ?? 0);
+    const refundsTotal = Number(refunds._sum.amount ?? 0);
     const aiSuccessRate =
       aiRequests === 0
         ? 0
-        : Number(
-            (((aiRequests - failedAiRequests) / aiRequests) * 100).toFixed(2),
-          );
-
-    const averageAiCostPerRequest =
-      aiRequests === 0
-        ? 0
-        : Number((toNumber(aiStats._sum.costEstimate) / aiRequests).toFixed(4));
-
-    const averageCreditsPerPremiumUser =
-      premiumUsers === 0
-        ? 0
-        : Number(
-            (
-              (totalPremiumCreditBalance._sum.creditBalance ?? 0) / premiumUsers
-            ).toFixed(2),
-          );
-
-    const recentPayments = recentPaymentsRaw.map((payment) => ({
-      ...payment,
-      amount: toNumber(payment.amount),
-    }));
+        : ((aiRequests - failedAiRequests) / aiRequests) * 100;
 
     return {
       users,
       normalUsers,
       premiumUsers,
       activeUsers,
-      inactiveUsers,
+      inactiveUsers: users - activeUsers,
       verifiedUsers,
-      unverifiedUsers,
-
+      unverifiedUsers: users - verifiedUsers,
       ideas,
       guestIdeas,
       normalFreeIdeas,
       premiumCreditIdeas,
       unlockedIdeas,
-      lockedIdeas,
-
+      lockedIdeas: ideas - unlockedIdeas,
       payments,
-      successfulPaymentsCount,
-      pendingPaymentsCount,
-      failedPaymentsCount,
-      refundedPaymentsCount,
-      directUnlockPaymentsCount,
-      creditPurchasePaymentsCount,
-
+      successfulPaymentsCount: succeededPayments,
+      pendingPaymentsCount: pendingPayments,
+      failedPaymentsCount: failedPayments,
+      refundedPaymentsCount: refundedPayments,
+      directUnlockPaymentsCount: directUnlockPayments,
+      creditPurchasePaymentsCount: creditPurchasePayments,
       comments,
-
-      creditsSold: creditsSold._sum.creditsAmount ?? 0,
-      creditPurchases,
-      creditRefunds,
-      manualCreditAdjustments,
-      averageCreditsPerPremiumUser,
-
-      revenueTotal: toNumber(revenueTotal._sum.amount),
-      refundsTotal: toNumber(refundsTotal._sum.amount),
-
+      creditsSold: creditsSold._sum.amount ?? 0,
+      revenueTotal,
+      refundsTotal,
       aiRequests,
       failedAiRequests,
       aiSuccessRate,
-      aiErrorRate,
-      averageResponseTime: toNumber(aiStats._avg.responseTimeMs),
-      aiCost: toNumber(aiStats._sum.costEstimate),
-      averageAiCostPerRequest,
-
+      aiErrorRate: aiRequests === 0 ? 0 : 100 - aiSuccessRate,
+      averageResponseTime: aiResponseTime._avg.responseTimeMs ?? 0,
+      aiCost: aiCostNumber,
+      averageAiCostPerRequest: aiRequests === 0 ? 0 : aiCostNumber / aiRequests,
       openComplaints,
       inProgressComplaints,
       resolvedComplaints,
       rejectedComplaints,
-
       generatedOutputs,
-      generatedOutputsByType: generatedOutputsByType.map((item) => ({
-        label: item.outputType,
-        outputType: item.outputType,
+      generatedOutputsByKey: generatedOutputsByKey.map((item) => ({
+        label: item.outputKey,
+        outputKey: item.outputKey,
         count: item._count._all,
       })),
-
-      domainsStatus: {
-        active: activeDomainsCount,
-        inactive: inactiveDomainsCount,
+      domainsStatus: { active: activeDomains, inactive: inactiveDomains },
+      dataSourcesStatus: {
+        active: activeDataSources,
+        inactive: inactiveDataSources,
       },
-
-      platformsStatus: {
-        active: activePlatformsCount,
-        inactive: inactivePlatformsCount,
-      },
-
       todayStats: {
         users: todayUsers,
         ideas: todayIdeas,
         payments: todayPayments,
-        revenue: toNumber(todayRevenue._sum.amount),
+        revenue: Number(todayRevenue._sum.amount ?? 0),
       },
-
       monthlyStats: {
         users: monthlyUsers,
         ideas: monthlyIdeas,
         payments: monthlyPayments,
-        revenue: toNumber(monthlyRevenue._sum.amount),
+        revenue: Number(monthlyRevenue._sum.amount ?? 0),
       },
-
-      usersGrowthChart,
-
-      usersByType: usersByType.map((item) => ({
-        label: item.userType ?? 'UNKNOWN',
+      usersGrowthChart: [],
+      usersByType: usersByTypeRaw.map((item) => ({
+        label: item.userType,
         userType: item.userType,
         count: item._count._all,
       })),
-
-      mostSelectedDomains: mostSelectedDomains.map((item) => {
-        const domainName = domainMap.get(item.domainId) ?? null;
-
-        return {
-          label: domainName ?? 'Unknown Domain',
-          domainId: item.domainId,
-          domainName,
-          count: item._count.domainId,
-        };
-      }),
-
-      mostRequestedRegions: mostRequestedRegions.map((item) => ({
-        label: item.selectedRegion ?? 'Unknown Region',
-        region: item.selectedRegion,
-        count: item._count.selectedRegion,
+      mostSelectedDomains: domainsRaw.map((item) => ({
+        label: domainMap.get(item.domainId) ?? 'Unknown domain',
+        domainId: item.domainId,
+        domainName: domainMap.get(item.domainId) ?? null,
+        count: item._count._all,
       })),
-
-      mostUsedPlatforms: mostUsedPlatforms.map((item) => {
-        const platformName =
-          item.platformId !== null
-            ? (platformMap.get(item.platformId) ?? null)
-            : null;
-
+      mostRequestedRegions: regionsRaw.map((item) => ({
+        label: item.selectedRegion ?? 'Unknown',
+        region: item.selectedRegion,
+        count: item._count._all,
+      })),
+      mostUsedDataSources: sourceUsageRaw.map((item) => {
+        const source = sourceMap.get(item.dataSourceId);
         return {
-          label: platformName ?? 'Unknown Platform',
-          platformId: item.platformId,
-          platformName,
-          count: item._count.platformId,
+          label: source?.displayName ?? 'Unknown source',
+          dataSourceId: item.dataSourceId,
+          dataSourceKey: source?.key ?? null,
+          count: (item._sum.totalPosts ?? 0) + (item._sum.totalComments ?? 0),
         };
       }),
-
       recentActivity: {
         recentUsers,
-        recentPayments,
+        recentPayments: recentPayments.map((payment) => ({
+          ...payment,
+          amount: Number(payment.amount),
+        })),
         recentIdeas,
         recentComplaints,
       },

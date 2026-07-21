@@ -1,6 +1,4 @@
-import {
-  Injectable,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -13,17 +11,11 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  IdeaGenerationSelectionService,
-} from '../../services/idea-generation-selection.service';
+import { IdeaGenerationSelectionService } from '../../services/idea-generation-selection.service';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import {
-  mergeGenerationStringArrays,
-} from '../../utils/idea-generation-normalizer.util';
+import { mergeGenerationStringArrays } from '../../utils/idea-generation-normalizer.util';
 
 /**
  * Resolves the active domain and data sources used by one
@@ -48,25 +40,19 @@ import {
  * @author Malak
  */
 @Injectable()
-export class DataSourceSelectionStage
-  implements IdeaGenerationStage
-{
+export class DataSourceSelectionStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS
-      .DATA_SOURCE_SELECTION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.DATA_SOURCE_SELECTION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly selectionService:
-      IdeaGenerationSelectionService,
+    private readonly selectionService: IdeaGenerationSelectionService,
   ) {}
 
   /**
@@ -79,66 +65,50 @@ export class DataSourceSelectionStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
-    const selection =
-      await this.selectionService
-        .resolveSelection({
-          domainId: context.domainId,
+    const selection = await this.selectionService.resolveSelection({
+      domainId: context.domainId,
 
-          requestedDataSourceKeys:
-            context.requestedDataSourceKeys,
-        });
+      requestedDataSourceKeys: context.requestedDataSourceKeys,
+    });
 
-    const mergedKeywords =
-      mergeGenerationStringArrays(
-        [
-          selection.domain.keywords,
-          context.keywords,
-        ],
-        {
-          lowercase: true,
-          maxItems: 40,
-          maxItemLength: 100,
-        },
-      );
+    const mergedKeywords = mergeGenerationStringArrays(
+      [selection.domain.keywords, context.keywords],
+      {
+        lowercase: true,
+        maxItems: 40,
+        maxItemLength: 100,
+      },
+    );
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
       domainId: selection.domain.id,
 
-      domainName:
-        selection.domain.name,
+      domainName: selection.domain.name,
 
       keywords: mergedKeywords,
 
-      selectedDataSources:
-        selection.dataSources,
+      selectedDataSources: selection.dataSources,
     };
 
     return {
       context: updatedContext,
 
-      resultPreview:
-        `Selected ${selection.dataSources.length} data source(s) for domain "${selection.domain.name}".`,
+      resultPreview: `Selected ${selection.dataSources.length} data source(s) for domain "${selection.domain.name}".`,
 
       metadata: {
-        domainId:
-          selection.domain.id,
+        domainId: selection.domain.id,
 
-        domainName:
-          selection.domain.name,
+        domainName: selection.domain.name,
 
-        selectedDataSourceKeys:
-          selection.dataSources.map(
-            (dataSource) =>
-              dataSource.key,
-          ),
+        selectedDataSourceKeys: selection.dataSources.map(
+          (dataSource) => dataSource.key,
+        ),
 
-        selectedDataSourcesCount:
-          selection.dataSources.length,
+        selectedDataSourcesCount: selection.dataSources.length,
 
-        mergedKeywordsCount:
-          mergedKeywords.length,
+        mergedKeywordsCount: mergedKeywords.length,
       },
     };
   }
@@ -149,10 +119,7 @@ export class DataSourceSelectionStage
    * @returns Data-source-selection stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

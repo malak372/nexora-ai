@@ -4,10 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  GeneratedOutputStatus,
-  Prisma,
-} from '@prisma/client';
+import { GeneratedOutputStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 
@@ -19,9 +16,7 @@ import {
   buildSearchFilter,
 } from '../../../../utilities/base-query/builder';
 
-import {
-  calculateTotalPages,
-} from '../../../../utilities/analytics/analytics.helper';
+import { calculateTotalPages } from '../../../../utilities/analytics/analytics.helper';
 
 import { GetIdeaCommentsQueryDto } from '../dto/get-idea-comments-query.dto';
 import { GetUserIdeasQueryDto } from '../dto/get-user-ideas-query.dto';
@@ -56,9 +51,7 @@ import { GetUserIdeasQueryDto } from '../dto/get-user-ideas-query.dto';
  */
 @Injectable()
 export class UserIdeasService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Creates the Prisma where clause shared by the
@@ -75,33 +68,17 @@ export class UserIdeasService {
       ...(buildDateFilter(query) ?? {}),
 
       ...(buildSearchFilter(
-        [
-          'title',
-          'problemStatement',
-          'partialAbstract',
-        ],
+        ['title', 'problemStatement', 'partialAbstract'],
         query.search,
       ) ?? {}),
 
-      ...(buildExactFilter(
-        'domainId',
-        query.domainId,
-      ) ?? {}),
+      ...(buildExactFilter('domainId', query.domainId) ?? {}),
 
-      ...(buildExactFilter(
-        'generationType',
-        query.generationType,
-      ) ?? {}),
+      ...(buildExactFilter('generationType', query.generationType) ?? {}),
 
-      ...(buildExactFilter(
-        'isUnlocked',
-        query.isUnlocked,
-      ) ?? {}),
+      ...(buildExactFilter('isUnlocked', query.isUnlocked) ?? {}),
 
-      ...(buildExactFilter(
-        'unlockMethod',
-        query.unlockMethod,
-      ) ?? {}),
+      ...(buildExactFilter('unlockMethod', query.unlockMethod) ?? {}),
     };
   }
 
@@ -111,21 +88,10 @@ export class UserIdeasService {
    * List results intentionally contain summary data only.
    * Complete details are retrieved through getMyIdeaById.
    */
-  async getMyIdeas(
-    userId: string,
-    query: GetUserIdeasQueryDto,
-  ) {
-    const {
-      page,
-      limit,
-      skip,
-      take,
-    } = buildPagination(query);
+  async getMyIdeas(userId: string, query: GetUserIdeasQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
 
-    const where = this.buildUserIdeasWhere(
-      userId,
-      query,
-    );
+    const where = this.buildUserIdeasWhere(userId, query);
 
     const orderBy = buildOrderBy(
       query,
@@ -204,8 +170,7 @@ export class UserIdeasService {
 
           generatedOutputs: {
             where: {
-              status:
-                GeneratedOutputStatus.COMPLETED,
+              status: GeneratedOutputStatus.COMPLETED,
             },
 
             orderBy: {
@@ -226,6 +191,7 @@ export class UserIdeasService {
               generatedOutputs: true,
               chatSessions: true,
               payments: true,
+              favorites: true,
             },
           },
         },
@@ -242,9 +208,9 @@ export class UserIdeasService {
       /**
        * Do not expose advanced-output metadata for locked ideas.
        */
-      generatedOutputs: idea.isUnlocked
-        ? idea.generatedOutputs
-        : [],
+      generatedOutputs: idea.isUnlocked ? idea.generatedOutputs : [],
+
+      isFavorite: idea._count.favorites > 0,
 
       access: {
         canViewAdvancedOutputs: idea.isUnlocked,
@@ -261,10 +227,7 @@ export class UserIdeasService {
         page,
         limit,
         total,
-        totalPages: calculateTotalPages(
-          total,
-          limit,
-        ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -273,10 +236,7 @@ export class UserIdeasService {
    * Retrieves a complete user-facing representation
    * of one user-owned idea.
    */
-  async getMyIdeaById(
-    userId: string,
-    ideaId: string,
-  ) {
+  async getMyIdeaById(userId: string, ideaId: string) {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: ideaId,
@@ -490,7 +450,6 @@ export class UserIdeasService {
 
             _count: {
               select: {
-                favorites: true,
                 ratings: true,
                 votes: true,
                 feedback: true,
@@ -505,15 +464,14 @@ export class UserIdeasService {
             chatSessions: true,
             generatedOutputs: true,
             payments: true,
+            favorites: true,
           },
         },
       },
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found.',
-      );
+      throw new NotFoundException('Idea not found.');
     }
 
     const advancedAccess = idea.isUnlocked;
@@ -543,17 +501,13 @@ export class UserIdeasService {
        * Full abstract is returned only after advanced access
        * has been granted.
        */
-      fullAbstract: advancedAccess
-        ? idea.fullAbstract
-        : null,
+      fullAbstract: advancedAccess ? idea.fullAbstract : null,
 
       problemStatement: idea.problemStatement,
       objectives: idea.objectives,
       targetUsers: idea.targetUsers,
 
-      commentsCount: advancedAccess
-        ? idea.commentsCount
-        : undefined,
+      commentsCount: advancedAccess ? idea.commentsCount : undefined,
 
       generationRun: idea.generationRun,
 
@@ -565,38 +519,22 @@ export class UserIdeasService {
       collection: idea.collectionJob
         ? {
             id: idea.collectionJob.id,
-            country:
-              idea.collectionJob.country,
-            city:
-              idea.collectionJob.city,
-            region:
-              idea.collectionJob.region,
-            language:
-              idea.collectionJob.language,
+            country: idea.collectionJob.country,
+            city: idea.collectionJob.city,
+            region: idea.collectionJob.region,
+            language: idea.collectionJob.language,
 
-            dataSources:
-              idea.collectionJob.sources.map(
-                (source) => ({
-                  key:
-                    source.dataSource.key,
+            dataSources: idea.collectionJob.sources.map((source) => ({
+              key: source.dataSource.key,
 
-                  displayName:
-                    source.dataSource
-                      .displayName,
+              displayName: source.dataSource.displayName,
 
-                  status: source.status,
+              status: source.status,
 
-                  totalPosts:
-                    advancedAccess
-                      ? source.totalPosts
-                      : undefined,
+              totalPosts: advancedAccess ? source.totalPosts : undefined,
 
-                  totalComments:
-                    advancedAccess
-                      ? source.totalComments
-                      : undefined,
-                }),
-              ),
+              totalComments: advancedAccess ? source.totalComments : undefined,
+            })),
 
             totalPosts: advancedAccess
               ? idea.collectionJob.totalPosts
@@ -606,50 +544,36 @@ export class UserIdeasService {
               ? idea.collectionJob.totalComments
               : undefined,
 
-            nlpAnalysis: advancedAccess
-              ? idea.collectionJob.nlpAnalysis
-              : null,
+            nlpAnalysis: advancedAccess ? idea.collectionJob.nlpAnalysis : null,
           }
         : null,
 
-      generatedOutputs: advancedAccess
-        ? idea.generatedOutputs
-        : [],
+      generatedOutputs: advancedAccess ? idea.generatedOutputs : [],
 
       publication: idea.publication,
 
+      isFavorite: idea._count.favorites > 0,
+
       access: {
-        canViewAdvancedOutputs:
-          advancedAccess,
+        canViewAdvancedOutputs: advancedAccess,
 
-        canViewFullAbstract:
-          advancedAccess,
+        canViewFullAbstract: advancedAccess,
 
-        canViewCommunityData:
-          advancedAccess,
+        canViewCommunityData: advancedAccess,
 
-        canViewNlpAnalysis:
-          advancedAccess,
+        canViewNlpAnalysis: advancedAccess,
 
-        canUseAiChat:
-          advancedAccess,
+        canUseAiChat: advancedAccess,
 
         canPublish: true,
 
-        requiresDirectUnlock:
-          !advancedAccess,
+        requiresDirectUnlock: !advancedAccess,
       },
 
       counts: {
-        chatSessions:
-          advancedAccess
-            ? idea._count.chatSessions
-            : 0,
+        chatSessions: advancedAccess ? idea._count.chatSessions : 0,
 
-        generatedOutputs:
-          advancedAccess
-            ? idea._count.generatedOutputs
-            : 0,
+        generatedOutputs: advancedAccess ? idea._count.generatedOutputs : 0,
 
         payments: idea._count.payments,
       },
@@ -688,9 +612,7 @@ export class UserIdeasService {
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found.',
-      );
+      throw new NotFoundException('Idea not found.');
     }
 
     if (!idea.isUnlocked) {
@@ -725,15 +647,13 @@ export class UserIdeasService {
     const where: Prisma.SocialCommentWhereInput = {
       post: {
         is: {
-          collectionJobId:
-            idea.collectionJobId,
+          collectionJobId: idea.collectionJobId,
 
           ...(query.dataSourceKey
             ? {
                 dataSource: {
                   is: {
-                    key:
-                      query.dataSourceKey,
+                    key: query.dataSourceKey,
                   },
                 },
               }
@@ -744,10 +664,8 @@ export class UserIdeasService {
       ...(query.sentiment
         ? {
             sentiment: {
-              equals:
-                query.sentiment,
-              mode:
-                Prisma.QueryMode.insensitive,
+              equals: query.sentiment,
+              mode: Prisma.QueryMode.insensitive,
             },
           }
         : {}),
@@ -755,85 +673,82 @@ export class UserIdeasService {
       ...(query.languageCode
         ? {
             languageCode: {
-              equals:
-                query.languageCode,
-              mode:
-                Prisma.QueryMode.insensitive,
+              equals: query.languageCode,
+              mode: Prisma.QueryMode.insensitive,
             },
           }
         : {}),
     };
 
-    const [comments, total] =
-      await Promise.all([
-        this.prisma.socialComment.findMany({
-          where,
-          skip,
-          take: limit,
+    const [comments, total] = await Promise.all([
+      this.prisma.socialComment.findMany({
+        where,
+        skip,
+        take: limit,
 
-          orderBy: [
-            {
-              likesCount: 'desc',
-            },
-            {
-              collectedAt: 'desc',
-            },
-          ],
+        orderBy: [
+          {
+            likesCount: 'desc',
+          },
+          {
+            collectedAt: 'desc',
+          },
+        ],
 
-          select: {
-            id: true,
-            externalId: true,
+        select: {
+          id: true,
+          externalId: true,
 
-            content: true,
-            author: true,
+          content: true,
+          author: true,
 
-            languageCode: true,
-            sentiment: true,
+          languageCode: true,
+          sentiment: true,
 
-            likesCount: true,
+          likesCount: true,
 
-            publishedAt: true,
-            collectedAt: true,
-            createdAt: true,
+          publishedAt: true,
+          collectedAt: true,
+          createdAt: true,
 
-            post: {
-              select: {
-                id: true,
-                externalId: true,
+          post: {
+            select: {
+              id: true,
+              externalId: true,
 
-                title: true,
-                content: true,
+              title: true,
+              content: true,
 
-                author: true,
-                url: true,
+              author: true,
+              url: true,
 
-                country: true,
-                city: true,
-                region: true,
-                languageCode: true,
+              country: true,
+              city: true,
+              region: true,
+              languageCode: true,
 
-                likesCount: true,
-                repliesCount: true,
+              likesCount: true,
+              repliesCount: true,
 
-                publishedAt: true,
-                collectedAt: true,
+              publishedAt: true,
+              collectedAt: true,
 
-                dataSource: {
-                  select: {
-                    id: true,
-                    key: true,
-                    displayName: true,
-                  },
+              dataSource: {
+                select: {
+                  id: true,
+                  key: true,
+                  displayName: true,
                 },
               },
             },
           },
-        }),
+        },
+      }),
 
-        this.prisma.socialComment.count({
-          where,
-        }),
-      ]);
+      this.prisma.socialComment.count({
+        where,
+      }),
+    ]);
 
     return {
       idea: {
@@ -847,11 +762,7 @@ export class UserIdeasService {
         page,
         limit,
         total,
-        totalPages:
-          calculateTotalPages(
-            total,
-            limit,
-          ),
+        totalPages: calculateTotalPages(total, limit),
       },
     };
   }
@@ -863,10 +774,7 @@ export class UserIdeasService {
    * an actively published project could leave public references
    * in an inconsistent state.
    */
-  async deleteMyIdea(
-    userId: string,
-    ideaId: string,
-  ) {
+  async deleteMyIdea(userId: string, ideaId: string) {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: ideaId,
@@ -887,15 +795,10 @@ export class UserIdeasService {
     });
 
     if (!idea) {
-      throw new NotFoundException(
-        'Idea not found.',
-      );
+      throw new NotFoundException('Idea not found.');
     }
 
-    if (
-      idea.publication?.status ===
-      'PUBLISHED'
-    ) {
+    if (idea.publication?.status === 'PUBLISHED') {
       throw new ForbiddenException(
         'Archive the published idea before deleting it.',
       );
@@ -903,40 +806,34 @@ export class UserIdeasService {
 
     const deletedAt = new Date();
 
-    await this.prisma.$transaction(
-      async (transaction) => {
-        await transaction.idea.update({
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.idea.update({
+        where: {
+          id: ideaId,
+        },
+
+        data: {
+          deletedAt,
+        },
+      });
+
+      if (idea.publication) {
+        await transaction.ideaPublication.update({
           where: {
-            id: ideaId,
+            id: idea.publication.id,
           },
 
           data: {
-            deletedAt,
+            status: 'ARCHIVED',
+            archivedAt:
+              idea.publication.status === 'ARCHIVED' ? undefined : deletedAt,
           },
         });
-
-        if (idea.publication) {
-          await transaction.ideaPublication.update({
-            where: {
-              id: idea.publication.id,
-            },
-
-            data: {
-              status: 'ARCHIVED',
-              archivedAt:
-                idea.publication.status ===
-                'ARCHIVED'
-                  ? undefined
-                  : deletedAt,
-            },
-          });
-        }
-      },
-    );
+      }
+    });
 
     return {
-      message:
-        'Idea deleted successfully.',
+      message: 'Idea deleted successfully.',
     };
   }
 }

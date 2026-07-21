@@ -31,7 +31,7 @@ import { UserFeedbackService } from '../services/user-feedback.service';
 @Controller('users/publications')
 @UseGuards(JwtAuthGuard)
 export class UserFeedbackController {
-  constructor(private readonly userFeedbackService: UserFeedbackService) { }
+  constructor(private readonly userFeedbackService: UserFeedbackService) {}
 
   /**
    * Creates or updates the authenticated user's rating.
@@ -52,11 +52,7 @@ export class UserFeedbackController {
 
     @Body() dto: UpsertPublicationRatingDto,
   ) {
-    return this.userFeedbackService.upsertRating(
-      user.id,
-      publicationId,
-      dto,
-    );
+    return this.userFeedbackService.upsertRating(user.id, publicationId, dto);
   }
 
   /**
@@ -77,10 +73,7 @@ export class UserFeedbackController {
     )
     publicationId: string,
   ) {
-    return this.userFeedbackService.getMyRating(
-      user.id,
-      publicationId,
-    );
+    return this.userFeedbackService.getMyRating(user.id, publicationId);
   }
 
   /**
@@ -100,10 +93,7 @@ export class UserFeedbackController {
     )
     publicationId: string,
   ) {
-    return this.userFeedbackService.deleteRating(
-      user.id,
-      publicationId,
-    );
+    return this.userFeedbackService.deleteRating(user.id, publicationId);
   }
 
   /**
@@ -125,11 +115,7 @@ export class UserFeedbackController {
 
     @Body() dto: UpsertPublicationFeedbackDto,
   ) {
-    return this.userFeedbackService.upsertFeedback(
-      user.id,
-      publicationId,
-      dto,
-    );
+    return this.userFeedbackService.upsertFeedback(user.id, publicationId, dto);
   }
 
   /**
@@ -149,10 +135,7 @@ export class UserFeedbackController {
     )
     publicationId: string,
   ) {
-    return this.userFeedbackService.getMyFeedback(
-      user.id,
-      publicationId,
-    );
+    return this.userFeedbackService.getMyFeedback(user.id, publicationId);
   }
 
   /**
@@ -172,9 +155,6 @@ export class UserFeedbackController {
     )
     publicationId: string,
   ) {
-    return this.userFeedbackService.deleteFeedback(
-      user.id,
-      publicationId,
-    );
+    return this.userFeedbackService.deleteFeedback(user.id, publicationId);
   }
 }

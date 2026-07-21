@@ -4,21 +4,13 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 
-import {
-  AccountStatus,
-  AuthAction,
-  Prisma,
-  UserRole,
-} from '@prisma/client';
+import { AccountStatus, AuthAction, Prisma, UserRole } from '@prisma/client';
 
 import * as bcrypt from 'bcryptjs';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import {
-  AuthAuditService,
-  type AuthRequestMeta,
-} from '../audit/audit.service';
+import { AuthAuditService, type AuthRequestMeta } from '../audit/audit.service';
 import { RegisterDto } from '../dto/register.dto';
 import { AuthEmailService } from '../email/email.service';
 import { AuthGuestService } from '../guest/guest.service';
@@ -34,8 +26,7 @@ const EMAIL_ALREADY_EXISTS_MESSAGE = 'Email already exists';
 const REGISTRATION_SUCCESS_MESSAGE =
   'Registered successfully. Please verify your email.';
 
-const REGISTRATION_AUDIT_SUCCESS_MESSAGE =
-  'User registered successfully';
+const REGISTRATION_AUDIT_SUCCESS_MESSAGE = 'User registered successfully';
 
 const REGISTRATION_EMAIL_FAILURE_MESSAGE =
   'The account was created, but the verification email could not be sent. Request a new verification email.';
@@ -78,7 +69,7 @@ export class AuthRegisterService {
     private readonly authGuestService: AuthGuestService,
     private readonly authEmailService: AuthEmailService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Registers a user and optionally transfers eligible guest activity.
@@ -114,36 +105,20 @@ export class AuthRegisterService {
         existingUser.id,
       );
 
-      throw new BadRequestException(
-        EMAIL_ALREADY_EXISTS_MESSAGE,
-      );
+      throw new BadRequestException(EMAIL_ALREADY_EXISTS_MESSAGE);
     }
 
-    const passwordHash = await bcrypt.hash(
-      dto.password,
-      SALT_ROUNDS,
-    );
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
 
-    let result: Awaited<
-      ReturnType<AuthRegisterService['createAccount']>
-    >;
+    let result: Awaited<ReturnType<AuthRegisterService['createAccount']>>;
 
     try {
-      result = await this.createAccount(
-        dto,
-        passwordHash,
-        guestSessionToken,
-      );
+      result = await this.createAccount(dto, passwordHash, guestSessionToken);
     } catch (error: unknown) {
       if (this.isEmailUniqueConstraintViolation(error)) {
-        await this.logDuplicateEmailRegistration(
-          dto.email,
-          meta,
-        );
+        await this.logDuplicateEmailRegistration(dto.email, meta);
 
-        throw new BadRequestException(
-          EMAIL_ALREADY_EXISTS_MESSAGE,
-        );
+        throw new BadRequestException(EMAIL_ALREADY_EXISTS_MESSAGE);
       }
 
       throw error;
@@ -188,8 +163,7 @@ export class AuthRegisterService {
     return {
       message: REGISTRATION_SUCCESS_MESSAGE,
 
-      attachedGuestIdeasCount:
-        result.attachment.transferredCount,
+      attachedGuestIdeasCount: result.attachment.transferredCount,
 
       attachedGuestIdeaIds: result.attachment.ideaIds,
 
@@ -198,8 +172,7 @@ export class AuthRegisterService {
         used: result.user.freeGenerationsUsed,
         remaining: Math.max(
           0,
-          result.user.freeGenerationLimit -
-          result.user.freeGenerationsUsed,
+          result.user.freeGenerationLimit - result.user.freeGenerationsUsed,
         ),
       },
 
@@ -216,49 +189,44 @@ export class AuthRegisterService {
     passwordHash: string,
     guestSessionToken?: string,
   ) {
-    return this.prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        const createdUser = await tx.user.create({
-          data: {
-            fullName: dto.fullName,
-            email: dto.email,
-            passwordHash,
-            role: UserRole.USER,
-            accountStatus: AccountStatus.NORMAL,
-            freeGenerationLimit:
-              DEFAULT_FREE_GENERATION_LIMIT,
-            freeGenerationsUsed:
-              DEFAULT_FREE_GENERATIONS_USED,
-            creditBalance: DEFAULT_CREDIT_BALANCE,
-            userType: dto.userType,
-          },
-          select: REGISTERED_USER_SELECT,
-        });
+    return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const createdUser = await tx.user.create({
+        data: {
+          fullName: dto.fullName,
+          email: dto.email,
+          passwordHash,
+          role: UserRole.USER,
+          accountStatus: AccountStatus.NORMAL,
+          freeGenerationLimit: DEFAULT_FREE_GENERATION_LIMIT,
+          freeGenerationsUsed: DEFAULT_FREE_GENERATIONS_USED,
+          creditBalance: DEFAULT_CREDIT_BALANCE,
+          userType: dto.userType,
+        },
+        select: REGISTERED_USER_SELECT,
+      });
 
-        const attachment =
-          await this.authGuestService.attachGuestIdeasToUser(
-            guestSessionToken,
-            createdUser.id,
-            tx,
-          );
+      const attachment = await this.authGuestService.attachGuestIdeasToUser(
+        guestSessionToken,
+        createdUser.id,
+        tx,
+      );
 
-        /**
-         * Reload the user because transferring a guest idea may
-         * increment freeGenerationsUsed.
-         */
-        const user = await tx.user.findUniqueOrThrow({
-          where: {
-            id: createdUser.id,
-          },
-          select: REGISTERED_USER_SELECT,
-        });
+      /**
+       * Reload the user because transferring a guest idea may
+       * increment freeGenerationsUsed.
+       */
+      const user = await tx.user.findUniqueOrThrow({
+        where: {
+          id: createdUser.id,
+        },
+        select: REGISTERED_USER_SELECT,
+      });
 
-        return {
-          user,
-          attachment,
-        };
-      },
-    );
+      return {
+        user,
+        attachment,
+      };
+    });
   }
 
   /**
@@ -274,8 +242,7 @@ export class AuthRegisterService {
       email,
       action: AuthAction.REGISTER,
       isSuccess: false,
-      message:
-        'Registration failed because email already exists',
+      message: 'Registration failed because email already exists',
       ...meta,
     });
   }
@@ -284,9 +251,7 @@ export class AuthRegisterService {
    * Determines whether a Prisma unique-constraint error
    * was specifically caused by the user's email field.
    */
-  private isEmailUniqueConstraintViolation(
-    error: unknown,
-  ): boolean {
+  private isEmailUniqueConstraintViolation(error: unknown): boolean {
     if (
       !(error instanceof Prisma.PrismaClientKnownRequestError) ||
       error.code !== 'P2002'
@@ -299,14 +264,10 @@ export class AuthRegisterService {
     if (Array.isArray(target)) {
       return target.some(
         (field) =>
-          typeof field === 'string' &&
-          field.toLowerCase().includes('email'),
+          typeof field === 'string' && field.toLowerCase().includes('email'),
       );
     }
 
-    return (
-      typeof target === 'string' &&
-      target.toLowerCase().includes('email')
-    );
+    return typeof target === 'string' && target.toLowerCase().includes('email');
   }
 }

@@ -13,10 +13,15 @@ import {
 } from '@prisma/client';
 import * as crypto from 'crypto';
 
-import { PrismaService } from '../../prisma/prisma.service';
-import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { MailService } from '../../mail/mail.service';
+import { PrismaService } from '../../prisma/prisma.service';
+
+import {
+  buildCsv,
+  calculateTotalPages,
+  toNumber,
+} from '../../utilities/analytics/analytics.helper';
 
 import {
   buildDateFilter,
@@ -26,26 +31,28 @@ import {
   buildSearchFilter,
 } from '../../utilities/base-query/builder';
 
-import {
-  buildCsv,
-  calculateTotalPages,
-  toNumber,
-} from '../../utilities/analytics/analytics.helper';
+import { GetUsersQueryDto } from './dto/get-users-query.dto';
 
 /**
- * Service responsible for Admin user management operations.
+ * Service responsible for administrative user-management operations.
  *
- * Provides:
- * - Paginated users list.
- * - User details.
- * - User summary reports.
- * - Chart-ready user analytics.
- * - User type filtering and analytics.
- * - Activate/deactivate users.
- * - Soft delete users.
- * - Send password reset emails.
- * - CSV export.
- * - Audit logging for sensitive actions.
+ * Responsibilities:
+ * - Retrieve paginated users.
+ * - Retrieve detailed user information.
+ * - Produce user summary statistics.
+ * - Produce chart-ready user analytics.
+ * - Filter users by role, account status, user type, and activity state.
+ * - Activate and deactivate user accounts.
+ * - Soft-delete user accounts.
+ * - Send password-reset emails on behalf of administrators.
+ * - Export filtered user records as CSV.
+ * - Create audit-log records for sensitive administrative actions.
+ *
+ * Security considerations:
+ * - Administrators cannot modify their own status through this service.
+ * - Administrators cannot deactivate or delete another administrator.
+ * - Password-reset tokens are securely generated and stored as hashes.
+ * - Deleted users are excluded by default unless explicitly requested.
  *
  * @author Malak
  */
@@ -58,21 +65,31 @@ export class UsersService {
   ) {}
 
   /**
-   * Builds the shared Prisma where filter for users.
+   * Builds the shared Prisma filter used by administrative user queries.
    *
-   * Applies:
-   * - Date range filters.
-   * - Search by full name or email.
-   * - Role filter.
-   * - Account status filter.
-   * - User type filter.
-   * - Active status filter.
+   * Supported filters:
+   * - Creation date range.
+   * - Search by full name or email address.
+   * - User role.
+   * - Account status.
+   * - User type.
+   * - Active status.
+   * - Deleted-user inclusion.
+   *
+   * Soft-deleted users are excluded by default. They are included only when
+   * the caller explicitly sets includeDeleted to true.
+   *
+   * @param query Administrative user query parameters.
+   * @returns Prisma-compatible user filter.
    */
   private buildUsersWhere(query: GetUsersQueryDto): Prisma.UserWhereInput {
     const isActive =
       query.isActive !== undefined ? query.isActive === 'true' : undefined;
 
+    const includeDeleted = query.includeDeleted === 'true';
+
     return {
+      ...(includeDeleted ? {} : { deletedAt: null }),
       ...buildDateFilter(query),
       ...buildSearchFilter(['fullName', 'email'], query.search),
       ...buildExactFilter('role', query.role),
@@ -83,11 +100,18 @@ export class UsersService {
   }
 
   /**
-   * Adds a minimum createdAt date while preserving existing date filters.
+   * Adds or replaces the minimum createdAt boundary in an existing filter.
+   *
+   * Existing createdAt conditions, such as an upper date boundary, are
+   * preserved while the supplied minimum date is applied.
    *
    * Used for:
    * - Users created today.
-   * - Users created this month.
+   * - Users created during the current month.
+   *
+   * @param where Existing Prisma user filter.
+   * @param gte Minimum creation date.
+   * @returns Updated Prisma user filter.
    */
   private mergeCreatedAtGte(
     where: Prisma.UserWhereInput,
@@ -108,10 +132,13 @@ export class UsersService {
   }
 
   /**
-   * Retrieves a paginated list of users.
+   * Retrieves a paginated list of users for the admin dashboard.
    *
    * Endpoint:
    * GET /admin/users
+   *
+   * @param query Filtering, searching, sorting, and pagination parameters.
+   * @returns Paginated users and pagination metadata.
    */
   async getUsers(query: GetUsersQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -164,7 +191,9 @@ export class UsersService {
         },
       }),
 
-      this.prisma.user.count({ where }),
+      this.prisma.user.count({
+        where,
+      }),
     ]);
 
     return {
@@ -179,10 +208,23 @@ export class UsersService {
   }
 
   /**
-   * Retrieves summary statistics for users.
+   * Retrieves summary statistics for users matching the provided filters.
    *
    * Endpoint:
    * GET /admin/users/summary
+   *
+   * The summary includes:
+   * - Total users.
+   * - Active and inactive users.
+   * - Verified and unverified users.
+   * - Normal and premium accounts.
+   * - Administrator accounts.
+   * - Users created today.
+   * - Users created during the current month.
+   * - User counts grouped by user type.
+   *
+   * @param query Administrative user filters.
+   * @returns User summary statistics.
    */
   async getUsersSummary(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -210,52 +252,92 @@ export class UsersService {
       thisMonthUsers,
       userTypesGroup,
     ] = await Promise.all([
-      this.prisma.user.count({ where }),
-
       this.prisma.user.count({
-        where: { ...where, isActive: true },
+        where,
       }),
 
       this.prisma.user.count({
-        where: { ...where, isActive: false },
+        where: {
+          ...where,
+          isActive: true,
+        },
       }),
 
       this.prisma.user.count({
-        where: { ...where, isVerified: true },
+        where: {
+          ...where,
+          isActive: false,
+        },
       }),
 
       this.prisma.user.count({
-        where: { ...where, isVerified: false },
+        where: {
+          ...where,
+          isVerified: true,
+        },
       }),
 
       this.prisma.user.count({
-        where: { ...where, accountStatus: AccountStatus.NORMAL },
+        where: {
+          ...where,
+          isVerified: false,
+        },
       }),
 
       this.prisma.user.count({
-        where: { ...where, accountStatus: AccountStatus.PREMIUM },
+        where: {
+          ...where,
+          accountStatus: AccountStatus.NORMAL,
+        },
       }),
 
       this.prisma.user.count({
-        where: { ...where, role: UserRole.ADMIN },
+        where: {
+          ...where,
+          accountStatus: AccountStatus.PREMIUM,
+        },
       }),
 
-      this.prisma.user.count({ where: todayWhere }),
+      this.prisma.user.count({
+        where: {
+          ...where,
+          role: UserRole.ADMIN,
+        },
+      }),
 
-      this.prisma.user.count({ where: monthWhere }),
+      this.prisma.user.count({
+        where: todayWhere,
+      }),
 
+      this.prisma.user.count({
+        where: monthWhere,
+      }),
+
+      /**
+       * Count all records in every user-type group.
+       *
+       * `_all` is intentionally used instead of `_count.userType`.
+       * This produces a stable numeric result and avoids Prisma's conditional
+       * aggregate type that may otherwise include `true` or `undefined`.
+       */
       this.prisma.user.groupBy({
         by: ['userType'],
         where,
         _count: {
-          userType: true,
+          _all: true,
         },
       }),
     ]);
 
-    const getUserTypeCount = (userType: UserType | null) =>
-      userTypesGroup.find((item) => item.userType === userType)?._count
-        .userType ?? 0;
+    /**
+     * Retrieves the number of users assigned to a specific user type.
+     *
+     * userType is required in the current Prisma schema, so no null handling
+     * is needed for the grouped field.
+     */
+    const getUserTypeCount = (userType: UserType): number =>
+      userTypesGroup.find((item) => item.userType === userType)?._count._all ??
+      0;
 
     return {
       totalUsers,
@@ -274,16 +356,27 @@ export class UsersService {
         companyUsers: getUserTypeCount(UserType.COMPANY),
         researcherUsers: getUserTypeCount(UserType.RESEARCHER),
         otherUsers: getUserTypeCount(UserType.OTHER),
-        unknownTypeUsers: getUserTypeCount(null),
       },
     };
   }
 
   /**
-   * Retrieves chart-ready user analytics.
+   * Retrieves chart-ready user analytics for the admin dashboard.
    *
    * Endpoint:
    * GET /admin/users/charts
+   *
+   * Returned chart datasets:
+   * - Users grouped by role.
+   * - Users grouped by account status.
+   * - Users grouped by user type.
+   * - Users grouped by active status.
+   * - Users grouped by verification status.
+   * - Top users by generated-idea count.
+   * - Top users by payment count.
+   *
+   * @param query Administrative user filters.
+   * @returns Chart-ready analytics collections.
    */
   async getUsersCharts(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -300,41 +393,72 @@ export class UsersService {
       this.prisma.user.groupBy({
         by: ['role'],
         where,
-        _count: { role: true },
-        orderBy: { _count: { role: 'desc' } },
+        _count: {
+          role: true,
+        },
+        orderBy: {
+          _count: {
+            role: 'desc',
+          },
+        },
       }),
 
       this.prisma.user.groupBy({
         by: ['accountStatus'],
         where,
-        _count: { accountStatus: true },
-        orderBy: { _count: { accountStatus: 'desc' } },
-      }),
-
-      this.prisma.user.groupBy({
-        by: ['userType'],
-        where: {
-          ...where,
-          userType: {
-            not: null,
+        _count: {
+          accountStatus: true,
+        },
+        orderBy: {
+          _count: {
+            accountStatus: 'desc',
           },
         },
-        _count: { userType: true },
-        orderBy: { _count: { userType: 'desc' } },
+      }),
+
+      /**
+       * userType is required by the current Prisma schema.
+       *
+       * A `not: null` filter must not be used because null is not assignable
+       * to the generated UserType filter.
+       */
+      this.prisma.user.groupBy({
+        by: ['userType'],
+        where,
+        _count: {
+          _all: true,
+        },
+        orderBy: {
+          _count: {
+            userType: 'desc',
+          },
+        },
       }),
 
       this.prisma.user.groupBy({
         by: ['isActive'],
         where,
-        _count: { isActive: true },
-        orderBy: { _count: { isActive: 'desc' } },
+        _count: {
+          isActive: true,
+        },
+        orderBy: {
+          _count: {
+            isActive: 'desc',
+          },
+        },
       }),
 
       this.prisma.user.groupBy({
         by: ['isVerified'],
         where,
-        _count: { isVerified: true },
-        orderBy: { _count: { isVerified: 'desc' } },
+        _count: {
+          isVerified: true,
+        },
+        orderBy: {
+          _count: {
+            isVerified: 'desc',
+          },
+        },
       }),
 
       this.prisma.user.findMany({
@@ -394,9 +518,9 @@ export class UsersService {
       })),
 
       usersByType: usersByType.map((item) => ({
-        label: item.userType ?? 'UNKNOWN',
+        label: item.userType,
         userType: item.userType,
-        count: item._count.userType,
+        count: item._count._all,
       })),
 
       usersByActiveStatus: usersByActiveStatus.map((item) => ({
@@ -432,14 +556,29 @@ export class UsersService {
   }
 
   /**
-   * Retrieves detailed information for a specific user.
+   * Retrieves detailed information for one user.
    *
    * Endpoint:
    * GET /admin/users/:id
+   *
+   * The response includes:
+   * - User profile and account state.
+   * - Recent generated ideas.
+   * - Recent payments.
+   * - Recent credit transactions.
+   * - Recent complaints.
+   * - Related-record counts.
+   *
+   * @param id User identifier.
+   * @returns Detailed user information.
+   *
+   * @throws NotFoundException When the user does not exist.
    */
   async getUserById(id: string) {
     const user = await this.prisma.user.findUnique({
-      where: { id },
+      where: {
+        id,
+      },
       select: {
         id: true,
         fullName: true,
@@ -457,7 +596,9 @@ export class UsersService {
 
         ideas: {
           take: 20,
-          orderBy: { createdAt: 'desc' },
+          orderBy: {
+            createdAt: 'desc',
+          },
           select: {
             id: true,
             title: true,
@@ -470,12 +611,14 @@ export class UsersService {
 
         payments: {
           take: 20,
-          orderBy: { createdAt: 'desc' },
+          orderBy: {
+            createdAt: 'desc',
+          },
           select: {
             id: true,
             amount: true,
             currency: true,
-            paymentMethod: true,
+            paymentMethodKey: true,
             paymentPurpose: true,
             status: true,
             creditsAmount: true,
@@ -485,7 +628,9 @@ export class UsersService {
 
         creditTransactions: {
           take: 20,
-          orderBy: { createdAt: 'desc' },
+          orderBy: {
+            createdAt: 'desc',
+          },
           select: {
             id: true,
             type: true,
@@ -498,7 +643,9 @@ export class UsersService {
 
         complaints: {
           take: 20,
-          orderBy: { createdAt: 'desc' },
+          orderBy: {
+            createdAt: 'desc',
+          },
           select: {
             id: true,
             subject: true,
@@ -537,6 +684,12 @@ export class UsersService {
    *
    * Endpoint:
    * GET /admin/users/export/csv
+   *
+   * The same filtering and sorting behavior used by the administrative
+   * users list is applied to the exported records.
+   *
+   * @param query Administrative user filters and sorting parameters.
+   * @returns CSV-formatted user data.
    */
   async exportUsersCsv(query: GetUsersQueryDto) {
     const where = this.buildUsersWhere(query);
@@ -611,7 +764,7 @@ export class UsersService {
       user.email,
       user.role,
       user.accountStatus,
-      user.userType ?? '',
+      user.userType,
       user.creditBalance,
       user.freeGenerationsUsed,
       user.freeGenerationLimit,
@@ -631,8 +784,20 @@ export class UsersService {
   /**
    * Updates a user's active status.
    *
-   * Prevents admins from changing their own status
-   * or modifying another admin account.
+   * Business rules:
+   * - An administrator cannot change their own status.
+   * - An administrator cannot modify another administrator account.
+   * - No database update is performed when the requested status is already set.
+   * - Successful changes are written to the audit log.
+   *
+   * @param userId Target user identifier.
+   * @param isActive Requested active status.
+   * @param currentAdminId Authenticated administrator identifier.
+   * @returns Updated user and operation status.
+   *
+   * @throws BadRequestException When an administrator targets themselves.
+   * @throws BadRequestException When the target is another administrator.
+   * @throws NotFoundException When the target user does not exist.
    */
   async updateUserStatus(
     userId: string,
@@ -644,7 +809,9 @@ export class UsersService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
     });
 
     if (!user) {
@@ -664,8 +831,12 @@ export class UsersService {
     }
 
     const updatedUser = await this.prisma.user.update({
-      where: { id: userId },
-      data: { isActive },
+      where: {
+        id: userId,
+      },
+      data: {
+        isActive,
+      },
       select: {
         id: true,
         fullName: true,
@@ -701,10 +872,24 @@ export class UsersService {
   }
 
   /**
-   * Sends a password reset email to a user.
+   * Sends a password-reset email to a user.
    *
-   * Uses the PasswordResetToken table instead of storing
-   * reset token fields directly on the User table.
+   * The raw password-reset token is sent to the user, while only its SHA-256
+   * hash is persisted in the database.
+   *
+   * Business rules:
+   * - An administrator cannot trigger this action for their own account.
+   * - An administrator cannot trigger it for another administrator.
+   * - The target account must be active.
+   * - Existing unused password-reset tokens are invalidated first.
+   * - The generated token expires after fifteen minutes.
+   *
+   * @param userId Target user identifier.
+   * @param currentAdminId Authenticated administrator identifier.
+   * @returns Operation result and target-user summary.
+   *
+   * @throws BadRequestException When the request violates an admin rule.
+   * @throws NotFoundException When the target user does not exist.
    */
   async sendPasswordResetEmail(userId: string, currentAdminId: string) {
     if (userId === currentAdminId) {
@@ -714,7 +899,9 @@ export class UsersService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
       select: {
         id: true,
         fullName: true,
@@ -793,13 +980,24 @@ export class UsersService {
   }
 
   /**
-   * Soft deletes a user account.
+   * Soft-deletes a user account.
    *
-   * The user is not removed from the database.
-   * Instead, the account is marked as inactive.
+   * The record remains in the database. The account is marked as inactive
+   * and receives a deletion timestamp.
    *
-   * Prevents admins from deleting their own account
-   * or deleting another admin account.
+   * Business rules:
+   * - An administrator cannot delete their own account.
+   * - An administrator cannot delete another administrator account.
+   * - Repeated deletion requests do not perform another update.
+   * - Successful changes are written to the audit log.
+   *
+   * @param userId Target user identifier.
+   * @param currentAdminId Authenticated administrator identifier.
+   * @returns Updated user and operation status.
+   *
+   * @throws BadRequestException When an administrator targets themselves.
+   * @throws BadRequestException When the target is another administrator.
+   * @throws NotFoundException When the target user does not exist.
    */
   async softDeleteUser(userId: string, currentAdminId: string) {
     if (userId === currentAdminId) {
@@ -807,7 +1005,9 @@ export class UsersService {
     }
 
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
     });
 
     if (!user) {
@@ -818,18 +1018,23 @@ export class UsersService {
       throw new BadRequestException('Cannot delete another admin account');
     }
 
-    if (!user.isActive) {
+    if (user.deletedAt !== null) {
       return {
-        message: 'User is already inactive',
+        message: 'User is already soft deleted',
         user,
         updated: false,
       };
     }
 
+    const deletedAt = new Date();
+
     const deletedUser = await this.prisma.user.update({
-      where: { id: userId },
+      where: {
+        id: userId,
+      },
       data: {
         isActive: false,
+        deletedAt,
       },
       select: {
         id: true,
@@ -839,6 +1044,7 @@ export class UsersService {
         accountStatus: true,
         userType: true,
         isActive: true,
+        deletedAt: true,
         updatedAt: true,
       },
     });
@@ -850,9 +1056,11 @@ export class UsersService {
       targetId: userId,
       oldValue: {
         isActive: user.isActive,
+        deletedAt: user.deletedAt,
       },
       newValue: {
         isActive: deletedUser.isActive,
+        deletedAt: deletedUser.deletedAt,
       },
     });
 

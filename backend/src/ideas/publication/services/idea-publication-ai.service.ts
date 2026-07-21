@@ -96,8 +96,7 @@ export class IdeaPublicationAiService {
     }
 
     const language = dto.language ?? 'EN';
-    const maxWords =
-      dto.maxWords ?? DEFAULT_PUBLICATION_DESCRIPTION_MAX_WORDS;
+    const maxWords = dto.maxWords ?? DEFAULT_PUBLICATION_DESCRIPTION_MAX_WORDS;
 
     const execution = await this.aiExecutionService.execute({
       userPrompt: this.buildPrompt({
@@ -117,8 +116,7 @@ export class IdeaPublicationAiService {
       userId,
       ideaId,
       maxOutputTokens: PUBLICATION_DESCRIPTION_MAX_OUTPUT_TOKENS,
-      estimatedOutputTokens:
-        PUBLICATION_DESCRIPTION_ESTIMATED_OUTPUT_TOKENS,
+      estimatedOutputTokens: PUBLICATION_DESCRIPTION_ESTIMATED_OUTPUT_TOKENS,
       temperature: PUBLICATION_DESCRIPTION_TEMPERATURE,
     });
 
@@ -152,8 +150,8 @@ export class IdeaPublicationAiService {
     limitedAbstract: string | null;
   }): string | null {
     const candidate = idea.isUnlocked
-      ? idea.fullAbstract ?? idea.partialAbstract ?? idea.limitedAbstract
-      : idea.partialAbstract ?? idea.limitedAbstract;
+      ? (idea.fullAbstract ?? idea.partialAbstract ?? idea.limitedAbstract)
+      : (idea.partialAbstract ?? idea.limitedAbstract);
 
     const normalized = candidate?.trim();
     return normalized ? normalized : null;

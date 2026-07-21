@@ -1,12 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-  LanguageCode,
-} from '@prisma/client';
+import { IdeaGenerationType, LanguageCode } from '@prisma/client';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -14,9 +8,7 @@ import {
   type IdeaGenerationStageDefinition,
 } from '../../constants/idea-generation-stages.constants';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import type {
   IdeaGenerationStage,
@@ -36,9 +28,7 @@ import {
   normalizeRequiredGenerationText,
 } from '../../utils/idea-generation-normalizer.util';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Validates and normalizes the initial context before any
@@ -65,20 +55,16 @@ import {
  * @author Malak
  */
 @Injectable()
-export class RequestValidationStage
-  implements IdeaGenerationStage
-{
+export class RequestValidationStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   /**
    * Validates and normalizes the initial generation context.
@@ -89,85 +75,58 @@ export class RequestValidationStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     this.validateContext(context);
 
     const normalizedContext: IdeaGenerationContext = {
       ...context,
 
-      runId: normalizeGenerationId(
-        context.runId,
-        'Generation-run ID',
-      ),
+      runId: normalizeGenerationId(context.runId, 'Generation-run ID'),
 
-      domainId: normalizeGenerationId(
-        context.domainId,
-        'Domain ID',
-      ),
+      domainId: normalizeGenerationId(context.domainId, 'Domain ID'),
 
-      generationType:
-        this.validateGenerationType(
-          context.generationType,
-        ),
+      generationType: this.validateGenerationType(context.generationType),
 
       owner: this.normalizeOwner(context),
 
-      keywords: normalizeGenerationKeywords(
-        context.keywords,
-        20,
-        100,
+      keywords: normalizeGenerationKeywords(context.keywords, 20, 100),
+
+      requestedDataSourceKeys: normalizeGenerationStringArray(
+        context.requestedDataSourceKeys,
+        {
+          lowercase: true,
+          maxItems: 20,
+          maxItemLength: 50,
+        },
       ),
 
-      requestedDataSourceKeys:
-        normalizeGenerationStringArray(
-          context.requestedDataSourceKeys,
-          {
-            lowercase: true,
-            maxItems: 20,
-            maxItemLength: 50,
-          },
-        ),
+      location: this.normalizeLocation(context.location),
 
-      location: this.normalizeLocation(
-        context.location,
-      ),
-
-      cancellationRequested:
-        Boolean(
-          context.cancellationRequested,
-        ),
+      cancellationRequested: Boolean(context.cancellationRequested),
 
       createdAt:
         context.createdAt instanceof Date &&
-        !Number.isNaN(
-          context.createdAt.getTime(),
-        )
+        !Number.isNaN(context.createdAt.getTime())
           ? context.createdAt
           : new Date(),
     };
 
-    this.validateOwnerGenerationType(
-      normalizedContext,
-    );
+    this.validateOwnerGenerationType(normalizedContext);
 
     return {
       context: normalizedContext,
 
-      resultPreview:
-        'Generation request validated successfully.',
+      resultPreview: 'Generation request validated successfully.',
 
       metadata: {
-        ownerType:
-          normalizedContext.owner.type,
+        ownerType: normalizedContext.owner.type,
 
-        generationType:
-          normalizedContext.generationType,
+        generationType: normalizedContext.generationType,
 
         requestedDataSourcesCount:
-          normalizedContext
-            .requestedDataSourceKeys.length,
+          normalizedContext.requestedDataSourceKeys.length,
 
-        customKeywordsCount:
-          normalizedContext.keywords.length,
+        customKeywordsCount: normalizedContext.keywords.length,
       },
     };
   }
@@ -177,39 +136,28 @@ export class RequestValidationStage
    *
    * @param context Generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Idea-generation context is required.',
+        message: 'Idea-generation context is required.',
       });
     }
 
     if (!context.owner) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Idea-generation owner is required.',
+        message: 'Idea-generation owner is required.',
       });
     }
 
     if (!context.location) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Idea-generation location is required.',
+        message: 'Idea-generation location is required.',
       });
     }
   }
@@ -225,40 +173,29 @@ export class RequestValidationStage
   ): IdeaGenerationContext['owner'] {
     const { owner } = context;
 
-    if (
-      owner.type === IDEA_OWNER_TYPES.USER
-    ) {
+    if (owner.type === IDEA_OWNER_TYPES.USER) {
       return {
         type: IDEA_OWNER_TYPES.USER,
 
-        userId: normalizeGenerationId(
-          owner.userId,
-          'User ID',
+        userId: normalizeGenerationId(owner.userId, 'User ID'),
+      };
+    }
+
+    if (owner.type === IDEA_OWNER_TYPES.GUEST) {
+      return {
+        type: IDEA_OWNER_TYPES.GUEST,
+
+        guestSessionId: normalizeGenerationId(
+          owner.guestSessionId,
+          'Guest-session ID',
         ),
       };
     }
 
-    if (
-      owner.type === IDEA_OWNER_TYPES.GUEST
-    ) {
-      return {
-        type: IDEA_OWNER_TYPES.GUEST,
-
-        guestSessionId:
-          normalizeGenerationId(
-            owner.guestSessionId,
-            'Guest-session ID',
-          ),
-      };
-    }
-
     throw new BadRequestException({
-      code:
-        IDEA_GENERATION_ERROR_CODES
-          .INVALID_REQUEST,
+      code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-      message:
-        'Unsupported idea-generation owner type.',
+      message: 'Unsupported idea-generation owner type.',
     });
   }
 
@@ -271,60 +208,42 @@ export class RequestValidationStage
   private normalizeLocation(
     location: IdeaGenerationLocation,
   ): IdeaGenerationLocation {
-    const country =
-      normalizeRequiredGenerationText(
-        location.country,
-        'Country',
-      );
+    const country = normalizeRequiredGenerationText(
+      location.country,
+      'Country',
+    );
 
     if (country.length > 100) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Country must not exceed 100 characters.',
+        message: 'Country must not exceed 100 characters.',
       });
     }
 
-    const city =
-      normalizeNullableGenerationText(
-        location.city,
-      );
+    const city = normalizeNullableGenerationText(location.city);
 
-    const region =
-      normalizeNullableGenerationText(
-        location.region,
-      );
+    const region = normalizeNullableGenerationText(location.region);
 
     if (city && city.length > 100) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'City must not exceed 100 characters.',
+        message: 'City must not exceed 100 characters.',
       });
     }
 
     if (region && region.length > 100) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Region must not exceed 100 characters.',
+        message: 'Region must not exceed 100 characters.',
       });
     }
 
-    const radiusKm =
-      this.normalizeRadius(location.radiusKm);
+    const radiusKm = this.normalizeRadius(location.radiusKm);
 
-    const language =
-      this.validateLanguage(location.language);
+    const language = this.validateLanguage(location.language);
 
     return {
       country,
@@ -341,25 +260,14 @@ export class RequestValidationStage
    * @param radiusKm Raw radius.
    * @returns Valid radius or null.
    */
-  private normalizeRadius(
-    radiusKm: number | null,
-  ): number | null {
-    if (
-      radiusKm === null ||
-      radiusKm === undefined
-    ) {
+  private normalizeRadius(radiusKm: number | null): number | null {
+    if (radiusKm === null || radiusKm === undefined) {
       return null;
     }
 
-    if (
-      !Number.isInteger(radiusKm) ||
-      radiusKm < 1 ||
-      radiusKm > 500
-    ) {
+    if (!Number.isInteger(radiusKm) || radiusKm < 1 || radiusKm > 500) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
         message:
           'Collection radius must be an integer between 1 and 500 kilometres.',
@@ -375,22 +283,14 @@ export class RequestValidationStage
    * @param language Raw language.
    * @returns Valid language.
    */
-  private validateLanguage(
-    language: LanguageCode,
-  ): LanguageCode {
-    const supportedLanguages =
-      Object.values(LanguageCode);
+  private validateLanguage(language: LanguageCode): LanguageCode {
+    const supportedLanguages = Object.values(LanguageCode);
 
-    if (
-      !supportedLanguages.includes(language)
-    ) {
+    if (!supportedLanguages.includes(language)) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Unsupported generation language.',
+        message: 'Unsupported generation language.',
       });
     }
 
@@ -406,19 +306,13 @@ export class RequestValidationStage
   private validateGenerationType(
     generationType: IdeaGenerationType,
   ): IdeaGenerationType {
-    const supportedTypes =
-      Object.values(IdeaGenerationType);
+    const supportedTypes = Object.values(IdeaGenerationType);
 
-    if (
-      !supportedTypes.includes(generationType)
-    ) {
+    if (!supportedTypes.includes(generationType)) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Unsupported idea-generation type.',
+        message: 'Unsupported idea-generation type.',
       });
     }
 
@@ -434,41 +328,24 @@ export class RequestValidationStage
    *
    * @param context Normalized generation context.
    */
-  private validateOwnerGenerationType(
-    context: IdeaGenerationContext,
-  ): void {
-    if (
-      context.owner.type ===
-      IDEA_OWNER_TYPES.GUEST
-    ) {
-      if (
-        context.generationType !==
-        IdeaGenerationType.GUEST_FREE
-      ) {
+  private validateOwnerGenerationType(context: IdeaGenerationContext): void {
+    if (context.owner.type === IDEA_OWNER_TYPES.GUEST) {
+      if (context.generationType !== IdeaGenerationType.GUEST_FREE) {
         throw new BadRequestException({
-          code:
-            IDEA_GENERATION_ERROR_CODES
-              .INVALID_REQUEST,
+          code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-          message:
-            'Guest sessions may only request guest-free generation.',
+          message: 'Guest sessions may only request guest-free generation.',
         });
       }
 
       return;
     }
 
-    if (
-      context.generationType ===
-      IdeaGenerationType.GUEST_FREE
-    ) {
+    if (context.generationType === IdeaGenerationType.GUEST_FREE) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Registered users cannot request guest-free generation.',
+        message: 'Registered users cannot request guest-free generation.',
       });
     }
   }
@@ -479,10 +356,7 @@ export class RequestValidationStage
    * @returns Request-validation stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

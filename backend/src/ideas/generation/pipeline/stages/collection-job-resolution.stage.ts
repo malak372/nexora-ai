@@ -1,11 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
-import {
-  Prisma,
-} from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -13,27 +8,21 @@ import {
   type IdeaGenerationStageDefinition,
 } from '../../constants/idea-generation-stages.constants';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import type {
   IdeaGenerationStage,
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import {
-  CollectionJobResolverService,
-} from '../../services/collection-job-resolver.service';
+import { CollectionJobResolverService } from '../../services/collection-job-resolver.service';
 
 import type {
   IdeaGenerationContext,
   IdeaGenerationNlpContext,
 } from '../../types/idea-generation-context.type';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Resolves the collection job and the NLP analysis used by the
@@ -72,25 +61,19 @@ import {
  * @author Malak
  */
 @Injectable()
-export class CollectionJobResolutionStage
-  implements IdeaGenerationStage
-{
+export class CollectionJobResolutionStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS
-      .COLLECTION_JOB_RESOLUTION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly collectionJobResolver:
-      CollectionJobResolverService,
+    private readonly collectionJobResolver: CollectionJobResolverService,
   ) {}
 
   /**
@@ -104,77 +87,51 @@ export class CollectionJobResolutionStage
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const result =
-      await this.collectionJobResolver.resolve({
-        userId:
-          context.owner.type ===
-          IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
+    const result = await this.collectionJobResolver.resolve({
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
 
-        domainId:
-          context.domainId,
+      domainId: context.domainId,
 
-        country:
-          context.location.country,
+      country: context.location.country,
 
-        city:
-          context.location.city ??
-          undefined,
+      city: context.location.city ?? undefined,
 
-        region:
-          context.location.region ??
-          undefined,
+      region: context.location.region ?? undefined,
 
-        language:
-          context.location.language,
+      language: context.location.language,
 
-        radiusKm:
-          context.location.radiusKm ??
-          undefined,
+      radiusKm: context.location.radiusKm ?? undefined,
 
-        dataSourceKeys:
-          context.selectedDataSources.map(
-            (dataSource) =>
-              dataSource.key,
-          ),
+      dataSourceKeys: context.selectedDataSources.map(
+        (dataSource) => dataSource.key,
+      ),
 
-        keywords:
-          context.keywords.length > 0
-            ? context.keywords
-            : undefined,
-      });
+      keywords: context.keywords.length > 0 ? context.keywords : undefined,
+    });
 
-    const nlpContext =
-      this.mapNlpContext(
-        result.job.nlpAnalysis?.id ??
-          null,
-        result.nlpOutput,
-      );
+    const nlpContext = this.mapNlpContext(
+      result.job.nlpAnalysis?.id ?? null,
+      result.nlpOutput,
+    );
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
-      domainId:
-        result.job.domain.id,
+      domainId: result.job.domain.id,
 
-      domainName:
-        result.job.domain.name,
+      domainName: result.job.domain.name,
 
       collection: {
-        collectionJobId:
-          result.job.id,
+        collectionJobId: result.job.id,
 
-        reused:
-          result.reused,
+        reused: result.reused,
 
-        totalPosts:
-          result.nlpOutput
-            .totalPostsAnalyzed,
+        totalPosts: result.nlpOutput.totalPostsAnalyzed,
 
-        totalComments:
-          result.nlpOutput
-            .totalCommentsAnalyzed,
+        totalComments: result.nlpOutput.totalCommentsAnalyzed,
       },
 
       nlp: nlpContext,
@@ -183,42 +140,28 @@ export class CollectionJobResolutionStage
     return {
       context: updatedContext,
 
-      resultPreview:
-        result.reused
-          ? `Reused collection job "${result.job.id}".`
-          : `Completed new collection job "${result.job.id}".`,
+      resultPreview: result.reused
+        ? `Reused collection job "${result.job.id}".`
+        : `Completed new collection job "${result.job.id}".`,
 
       metadata: {
-        collectionJobId:
-          result.job.id,
+        collectionJobId: result.job.id,
 
-        reused:
-          result.reused,
+        reused: result.reused,
 
-        selectedPlatformId:
-          result.selectedPlatformId ??
-          null,
+        selectedPlatformId: result.selectedPlatformId ?? null,
 
-        totalTextsAnalyzed:
-          result.nlpOutput
-            .totalTextsAnalyzed,
+        totalTextsAnalyzed: result.nlpOutput.totalTextsAnalyzed,
 
-        totalPostsAnalyzed:
-          result.nlpOutput
-            .totalPostsAnalyzed,
+        totalPostsAnalyzed: result.nlpOutput.totalPostsAnalyzed,
 
-        totalCommentsAnalyzed:
-          result.nlpOutput
-            .totalCommentsAnalyzed,
+        totalCommentsAnalyzed: result.nlpOutput.totalCommentsAnalyzed,
 
-        nlpAnalysisId:
-          nlpContext.nlpAnalysisId,
+        nlpAnalysisId: nlpContext.nlpAnalysisId,
 
-        nlpAiUsed:
-          nlpContext.aiUsed,
+        nlpAiUsed: nlpContext.aiUsed,
 
-        nlpConfidence:
-          nlpContext.confidence,
+        nlpConfidence: nlpContext.confidence,
       },
     };
   }
@@ -229,14 +172,10 @@ export class CollectionJobResolutionStage
    *
    * @param context Current generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (!context.policy) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
         message:
           'Generation entitlement must be resolved before collection-job resolution.',
@@ -245,22 +184,16 @@ export class CollectionJobResolutionStage
 
     if (!context.domainName) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .DOMAIN_NOT_FOUND,
+        code: IDEA_GENERATION_ERROR_CODES.DOMAIN_NOT_FOUND,
 
         message:
           'Generation domain must be resolved before collection-job resolution.',
       });
     }
 
-    if (
-      context.selectedDataSources.length === 0
-    ) {
+    if (context.selectedDataSources.length === 0) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .NO_DATA_SOURCES_AVAILABLE,
+        code: IDEA_GENERATION_ERROR_CODES.NO_DATA_SOURCES_AVAILABLE,
 
         message:
           'At least one active data source must be selected before resolving a collection job.',
@@ -303,84 +236,42 @@ export class CollectionJobResolutionStage
       confidence: number;
     },
   ): IdeaGenerationNlpContext {
-    const nlpAnalysisId =
-      persistedAnalysisId ??
-      output.collectionJobId;
+    const nlpAnalysisId = persistedAnalysisId ?? output.collectionJobId;
 
     return {
       nlpAnalysisId,
 
-      totalTextsAnalyzed:
-        output.totalTextsAnalyzed,
+      totalTextsAnalyzed: output.totalTextsAnalyzed,
 
-      totalPostsAnalyzed:
-        output.totalPostsAnalyzed,
+      totalPostsAnalyzed: output.totalPostsAnalyzed,
 
-      totalCommentsAnalyzed:
-        output.totalCommentsAnalyzed,
+      totalCommentsAnalyzed: output.totalCommentsAnalyzed,
 
-      sentimentStats:
-        this.toJsonValue(
-          output.sentimentStats,
-        ),
+      sentimentStats: this.toJsonValue(output.sentimentStats),
 
-      keywords:
-        this.toJsonValue(
-          output.keywords,
-        ),
+      keywords: this.toJsonValue(output.keywords),
 
-      topics:
-        this.toJsonValue(
-          output.topics,
-        ),
+      topics: this.toJsonValue(output.topics),
 
-      recurringProblems:
-        this.toJsonValue(
-          output.recurringProblems,
-        ),
+      recurringProblems: this.toJsonValue(output.recurringProblems),
 
-      extractedNeeds:
-        this.toJsonValue(
-          output.extractedNeeds,
-        ),
+      extractedNeeds: this.toJsonValue(output.extractedNeeds),
 
-      featureRequests:
-        this.toJsonValue(
-          output.featureRequests,
-        ),
+      featureRequests: this.toJsonValue(output.featureRequests),
 
-      opportunities:
-        this.toJsonValue(
-          output.opportunities,
-        ),
+      opportunities: this.toJsonValue(output.opportunities),
 
-      insights:
-        this.toJsonValue(
-          output.insights,
-        ),
+      insights: this.toJsonValue(output.insights),
 
-      dataQuality:
-        this.toJsonValue(
-          output.dataQuality,
-        ),
+      dataQuality: this.toJsonValue(output.dataQuality),
 
-      samplePosts:
-        this.toJsonValue(
-          output.samplePosts,
-        ),
+      samplePosts: this.toJsonValue(output.samplePosts),
 
-      sampleComments:
-        this.toJsonValue(
-          output.sampleComments,
-        ),
+      sampleComments: this.toJsonValue(output.sampleComments),
 
-      aiUsed:
-        output.aiUsed,
+      aiUsed: output.aiUsed,
 
-      confidence:
-        Number.isFinite(output.confidence)
-          ? output.confidence
-          : null,
+      confidence: Number.isFinite(output.confidence) ? output.confidence : null,
     };
   }
 
@@ -393,17 +284,13 @@ export class CollectionJobResolutionStage
    * @param value Unknown JSON-compatible value.
    * @returns Prisma JSON value or null.
    */
-  private toJsonValue(
-    value: unknown,
-  ): Prisma.JsonValue | null {
+  private toJsonValue(value: unknown): Prisma.JsonValue | null {
     if (value === undefined) {
       return null;
     }
 
     try {
-      return JSON.parse(
-        JSON.stringify(value),
-      ) as Prisma.JsonValue;
+      return JSON.parse(JSON.stringify(value)) as Prisma.JsonValue;
     } catch {
       return null;
     }
@@ -415,10 +302,7 @@ export class CollectionJobResolutionStage
    * @returns Collection-job-resolution stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

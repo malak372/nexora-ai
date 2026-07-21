@@ -30,7 +30,7 @@ export class AuthSessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Retrieves all active authentication sessions for a user.
@@ -93,21 +93,20 @@ export class AuthSessionsService {
       },
     });
 
-    const revocationResult =
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          id: sessionId,
-          userId,
-          revokedAt: null,
-          expiresAt: {
-            gt: now,
-          },
+    const revocationResult = await this.prisma.refreshToken.updateMany({
+      where: {
+        id: sessionId,
+        userId,
+        revokedAt: null,
+        expiresAt: {
+          gt: now,
         },
-        data: {
-          revokedAt: now,
-          lastUsedAt: now,
-        },
-      });
+      },
+      data: {
+        revokedAt: now,
+        lastUsedAt: now,
+      },
+    });
 
     if (revocationResult.count !== 1) {
       throw new NotFoundException('Session not found');
@@ -165,8 +164,7 @@ export class AuthSessionsService {
       email: user?.email,
       action: AuthAction.LOGOUT,
       isSuccess: true,
-      message:
-        'All active authentication sessions revoked successfully',
+      message: 'All active authentication sessions revoked successfully',
     });
 
     return {

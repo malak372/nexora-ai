@@ -428,7 +428,7 @@ export class AuthEmailService {
      */
     try {
       await this.mailService.sendWelcomeEmail(user.email, user.fullName);
-    } catch (error: unknown) {
+    } catch {
       this.logger.warn(`Welcome email could not be sent for user ${user.id}.`);
     }
 

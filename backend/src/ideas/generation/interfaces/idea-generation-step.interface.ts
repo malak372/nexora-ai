@@ -60,9 +60,7 @@ export interface IdeaGenerationStep<
    *
    * @param input Input required by this step.
    */
-  execute(
-    input: TInput,
-  ): Promise<IdeaGenerationStepResult<TResult>>;
+  execute(input: TInput): Promise<IdeaGenerationStepResult<TResult>>;
 }
 
 /**
@@ -76,10 +74,7 @@ export interface IdeaGenerationStep<
  *
  * @author Malak
  */
-export interface SynchronousIdeaGenerationStep<
-  TInput,
-  TResult,
-> {
+export interface SynchronousIdeaGenerationStep<TInput, TResult> {
   /**
    * Stable internal key used for logs and debugging.
    */
@@ -88,7 +83,5 @@ export interface SynchronousIdeaGenerationStep<
   /**
    * Executes the synchronous operation.
    */
-  execute(
-    input: TInput,
-  ): IdeaGenerationStepResult<TResult>;
+  execute(input: TInput): IdeaGenerationStepResult<TResult>;
 }

@@ -95,7 +95,7 @@ export class UserActivityService {
           id: true,
           amount: true,
           currency: true,
-          paymentMethod: true,
+          paymentMethodKey: true,
           status: true,
           paymentPurpose: true,
           createdAt: true,

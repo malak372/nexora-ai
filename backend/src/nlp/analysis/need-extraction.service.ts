@@ -118,36 +118,29 @@ export class NeedExtractionService {
 
       for (const [needKey, normalizedNeed] of uniqueNeedsForText) {
         const current =
-          needMap.get(needKey) ??
-          this.createAccumulator(normalizedNeed);
+          needMap.get(needKey) ?? this.createAccumulator(normalizedNeed);
 
         current.frequency += 1;
         current.hasFeatureRequestSignal =
-          current.hasFeatureRequestSignal ||
-          featureRequestKeys.has(needKey);
+          current.hasFeatureRequestSignal || featureRequestKeys.has(needKey);
 
-        this.addEvidenceSample(
-          current.evidenceSamples,
-          text.originalText,
-        );
+        this.addEvidenceSample(current.evidenceSamples, text.originalText);
 
         needMap.set(needKey, current);
       }
     }
 
-    const sortedNeeds = [...needMap.values()].sort(
-      (first, second) => {
-        const firstPriority = this.calculatePriority(first);
-        const secondPriority = this.calculatePriority(second);
+    const sortedNeeds = [...needMap.values()].sort((first, second) => {
+      const firstPriority = this.calculatePriority(first);
+      const secondPriority = this.calculatePriority(second);
 
-        return (
-          this.priorityWeight(secondPriority) -
+      return (
+        this.priorityWeight(secondPriority) -
           this.priorityWeight(firstPriority) ||
-          second.frequency - first.frequency ||
-          first.need.localeCompare(second.need)
-        );
-      },
-    );
+        second.frequency - first.frequency ||
+        first.need.localeCompare(second.need)
+      );
+    });
 
     const selectedNeeds =
       limit === undefined ? sortedNeeds : sortedNeeds.slice(0, limit);
@@ -248,9 +241,7 @@ export class NeedExtractionService {
    * @param accumulator Aggregated need information.
    * @returns Calculated need priority.
    */
-  private calculatePriority(
-    accumulator: NeedAccumulator,
-  ): PriorityLevel {
+  private calculatePriority(accumulator: NeedAccumulator): PriorityLevel {
     if (
       accumulator.hasFeatureRequestSignal ||
       accumulator.frequency >= HIGH_PRIORITY_FREQUENCY_THRESHOLD
@@ -258,9 +249,7 @@ export class NeedExtractionService {
       return 'HIGH';
     }
 
-    if (
-      accumulator.frequency >= MEDIUM_PRIORITY_FREQUENCY_THRESHOLD
-    ) {
+    if (accumulator.frequency >= MEDIUM_PRIORITY_FREQUENCY_THRESHOLD) {
       return 'MEDIUM';
     }
 
@@ -288,16 +277,10 @@ export class NeedExtractionService {
    * @param samples Existing evidence samples.
    * @param sample New evidence candidate.
    */
-  private addEvidenceSample(
-    samples: string[],
-    sample: string,
-  ): void {
+  private addEvidenceSample(samples: string[], sample: string): void {
     const normalizedSample = sample.trim();
 
-    if (
-      !normalizedSample ||
-      samples.length >= MAX_NEED_EVIDENCE_SAMPLES
-    ) {
+    if (!normalizedSample || samples.length >= MAX_NEED_EVIDENCE_SAMPLES) {
       return;
     }
 
@@ -329,10 +312,7 @@ export class NeedExtractionService {
    * @throws BadRequestException when the limit is not a positive integer.
    */
   private validateLimit(limit?: number): void {
-    if (
-      limit !== undefined &&
-      (!Number.isInteger(limit) || limit <= 0)
-    ) {
+    if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
       throw new BadRequestException(
         'Need extraction limit must be a positive integer.',
       );

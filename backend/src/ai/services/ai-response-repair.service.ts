@@ -145,9 +145,7 @@ export class AiResponseRepairService {
    * @throws BadRequestException when required repair input is empty or
    * invalid.
    */
-  buildRepairPrompt(
-    input: BuildAiResponseRepairPromptInput,
-  ): string {
+  buildRepairPrompt(input: BuildAiResponseRepairPromptInput): string {
     this.validateInput(input);
 
     const originalPrompt = this.truncateMiddle(
@@ -202,31 +200,23 @@ export class AiResponseRepairService {
    * @param input Candidate repair-prompt input.
    * @throws BadRequestException when a required value is invalid.
    */
-  private validateInput(
-    input: BuildAiResponseRepairPromptInput,
-  ): void {
+  private validateInput(input: BuildAiResponseRepairPromptInput): void {
     if (
       typeof input.originalPrompt !== 'string' ||
       !input.originalPrompt.trim()
     ) {
-      throw new BadRequestException(
-        'originalPrompt must not be empty.',
-      );
+      throw new BadRequestException('originalPrompt must not be empty.');
     }
 
     if (
       typeof input.invalidResponse !== 'string' ||
       !input.invalidResponse.trim()
     ) {
-      throw new BadRequestException(
-        'invalidResponse must not be empty.',
-      );
+      throw new BadRequestException('invalidResponse must not be empty.');
     }
 
     if (!Array.isArray(input.validationIssues)) {
-      throw new BadRequestException(
-        'validationIssues must be an array.',
-      );
+      throw new BadRequestException('validationIssues must be an array.');
     }
   }
 
@@ -247,15 +237,9 @@ export class AiResponseRepairService {
       .map((issue, index) => ({
         number: index + 1,
 
-        path: this.normalizeIssueText(
-          issue.path,
-          '$',
-        ),
+        path: this.normalizeIssueText(issue.path, '$'),
 
-        code: this.normalizeIssueText(
-          issue.code,
-          'unknown',
-        ),
+        code: this.normalizeIssueText(issue.code, 'unknown'),
 
         message: this.normalizeIssueText(
           issue.message,
@@ -284,8 +268,7 @@ export class AiResponseRepairService {
               number: 1,
               path: '$',
               code: 'invalid_json',
-              message:
-                'The response is not valid structured JSON.',
+              message: 'The response is not valid structured JSON.',
             },
           ];
 
@@ -302,13 +285,8 @@ export class AiResponseRepairService {
    * @param fallback Value returned when the candidate is empty.
    * @returns Normalized single-line issue text.
    */
-  private normalizeIssueText(
-    value: string,
-    fallback: string,
-  ): string {
-    const normalizedValue = value
-      .replace(/\s+/g, ' ')
-      .trim();
+  private normalizeIssueText(value: string, fallback: string): string {
+    const normalizedValue = value.replace(/\s+/g, ' ').trim();
 
     return normalizedValue || fallback;
   }
@@ -342,13 +320,9 @@ export class AiResponseRepairService {
       return marker.slice(0, maximumLength);
     }
 
-    const permittedContentLength =
-      maximumLength - marker.length;
+    const permittedContentLength = maximumLength - marker.length;
 
-    return (
-      normalizedValue.slice(0, permittedContentLength) +
-      marker
-    );
+    return normalizedValue.slice(0, permittedContentLength) + marker;
   }
 
   /**
@@ -381,26 +355,15 @@ export class AiResponseRepairService {
       return marker.slice(0, maximumLength);
     }
 
-    const availableContentLength =
-      maximumLength - marker.length;
+    const availableContentLength = maximumLength - marker.length;
 
-    const beginningLength = Math.ceil(
-      availableContentLength / 2,
-    );
+    const beginningLength = Math.ceil(availableContentLength / 2);
 
-    const endingLength = Math.floor(
-      availableContentLength / 2,
-    );
+    const endingLength = Math.floor(availableContentLength / 2);
 
-    const beginning = normalizedValue.slice(
-      0,
-      beginningLength,
-    );
+    const beginning = normalizedValue.slice(0, beginningLength);
 
-    const ending =
-      endingLength > 0
-        ? normalizedValue.slice(-endingLength)
-        : '';
+    const ending = endingLength > 0 ? normalizedValue.slice(-endingLength) : '';
 
     return beginning + marker + ending;
   }

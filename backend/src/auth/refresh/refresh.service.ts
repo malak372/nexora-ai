@@ -30,7 +30,7 @@ export class AuthRefreshService {
     private readonly prisma: PrismaService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) { }
+  ) {}
 
   /**
    * Rotates a valid refresh token and returns a new token pair.
@@ -46,47 +46,40 @@ export class AuthRefreshService {
    * @throws UnauthorizedException when token rotation fails.
    */
   async refresh(dto: RefreshDto, meta?: AuthRequestMeta) {
-    const tokenHash =
-      this.authTokenService.hashToken(dto.refreshToken);
+    const tokenHash = this.authTokenService.hashToken(dto.refreshToken);
 
-    const storedToken =
-      await this.prisma.refreshToken.findUnique({
-        where: {
-          tokenHash,
-        },
-        select: {
-          id: true,
-          userId: true,
-          expiresAt: true,
-          revokedAt: true,
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              role: true,
-              accountStatus: true,
-              userType: true,
-              freeGenerationLimit: true,
-              freeGenerationsUsed: true,
-              creditBalance: true,
-              isActive: true,
-              isVerified: true,
-              deletedAt: true,
-            },
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: {
+        tokenHash,
+      },
+      select: {
+        id: true,
+        userId: true,
+        expiresAt: true,
+        revokedAt: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            accountStatus: true,
+            userType: true,
+            freeGenerationLimit: true,
+            freeGenerationsUsed: true,
+            creditBalance: true,
+            isActive: true,
+            isVerified: true,
+            deletedAt: true,
           },
         },
-      });
+      },
+    });
 
     if (!storedToken) {
-      await this.logFailedRefresh(
-        'Refresh token was not found',
-        meta,
-      );
+      await this.logFailedRefresh('Refresh token was not found', meta);
 
-      throw new UnauthorizedException(
-        INVALID_REFRESH_TOKEN_MESSAGE,
-      );
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     const now = new Date();
@@ -99,9 +92,7 @@ export class AuthRefreshService {
         storedToken.user.email,
       );
 
-      throw new UnauthorizedException(
-        INVALID_REFRESH_TOKEN_MESSAGE,
-      );
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     if (storedToken.expiresAt <= now) {
@@ -112,9 +103,7 @@ export class AuthRefreshService {
         storedToken.user.email,
       );
 
-      throw new UnauthorizedException(
-        INVALID_REFRESH_TOKEN_MESSAGE,
-      );
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     if (
@@ -129,9 +118,7 @@ export class AuthRefreshService {
         storedToken.user.email,
       );
 
-      throw new UnauthorizedException(
-        INVALID_REFRESH_TOKEN_MESSAGE,
-      );
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
     /**
@@ -140,20 +127,19 @@ export class AuthRefreshService {
      * The revokedAt condition ensures that if concurrent requests
      * attempt to use the same token, only one request succeeds.
      */
-    const revocationResult =
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          id: storedToken.id,
-          revokedAt: null,
-          expiresAt: {
-            gt: now,
-          },
+    const revocationResult = await this.prisma.refreshToken.updateMany({
+      where: {
+        id: storedToken.id,
+        revokedAt: null,
+        expiresAt: {
+          gt: now,
         },
-        data: {
-          revokedAt: now,
-          lastUsedAt: now,
-        },
-      });
+      },
+      data: {
+        revokedAt: now,
+        lastUsedAt: now,
+      },
+    });
 
     if (revocationResult.count !== 1) {
       await this.logFailedRefresh(
@@ -163,21 +149,17 @@ export class AuthRefreshService {
         storedToken.user.email,
       );
 
-      throw new UnauthorizedException(
-        INVALID_REFRESH_TOKEN_MESSAGE,
-      );
+      throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
-    const accessToken =
-      await this.authTokenService.generateAccessToken(
-        storedToken.user,
-      );
+    const accessToken = await this.authTokenService.generateAccessToken(
+      storedToken.user,
+    );
 
-    const refreshToken =
-      await this.authTokenService.generateRefreshToken(
-        storedToken.userId,
-        meta,
-      );
+    const refreshToken = await this.authTokenService.generateRefreshToken(
+      storedToken.userId,
+      meta,
+    );
 
     await this.authAuditService.createLog({
       userId: storedToken.userId,

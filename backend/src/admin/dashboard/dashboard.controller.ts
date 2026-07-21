@@ -1,45 +1,21 @@
-import { Controller, Get, UseGuards, UseInterceptors } from '@nestjs/common';
-import { CacheInterceptor } from '@nestjs/cache-manager';
-import { ApiOkResponse } from '@nestjs/swagger';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
-import { DashboardService } from './dashboard.service';
-import { DashboardResponseDto } from './dto/dashboard-response.dto';
-
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
+import { DashboardService } from './dashboard.service';
 
-/**
- * Administrative Dashboard Controller.
- *
- * Provides aggregated analytics for system monitoring.
- *
- * Security:
- * - Requires JWT authentication.
- * - Restricted to ADMIN role only.
- *
- * Base route:
- * /admin/dashboard
- *
- * @author Malak
- */
+/** Administrative analytics dashboard endpoints. @author Malak */
 @Controller('admin/dashboard')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  /**
-   * Returns the complete Admin dashboard analytics summary.
-   *
-   * Endpoint:
-   * GET /admin/dashboard
-   */
+  /** Returns the consolidated Nexora AI operational dashboard. */
   @Get()
-  @UseInterceptors(CacheInterceptor)
-  @ApiOkResponse({ type: DashboardResponseDto })
-  getDashboard(): Promise<DashboardResponseDto> {
+  getDashboard() {
     return this.dashboardService.getDashboard();
   }
 }

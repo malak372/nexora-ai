@@ -62,7 +62,7 @@ export class AiExecutionNlpClient implements NlpAiClient {
   constructor(
     private readonly aiExecutionService: AiExecutionService,
     private readonly aiResponseParserService: AiResponseParserService,
-  ) { }
+  ) {}
 
   /**
    * Executes one structured NLP AI-enhancement operation.

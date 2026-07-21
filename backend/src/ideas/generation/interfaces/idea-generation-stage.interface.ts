@@ -89,9 +89,7 @@ export interface IdeaGenerationStage {
    *
    * @param context Current idea-generation context.
    */
-  shouldExecute?(
-    context: IdeaGenerationContext,
-  ): boolean | Promise<boolean>;
+  shouldExecute?(context: IdeaGenerationContext): boolean | Promise<boolean>;
 
   /**
    * Optional cancellation cleanup hook.
@@ -101,9 +99,7 @@ export interface IdeaGenerationStage {
    *
    * It must not hide or suppress the original cancellation.
    */
-  onCancel?(
-    context: IdeaGenerationContext,
-  ): Promise<void>;
+  onCancel?(context: IdeaGenerationContext): Promise<void>;
 
   /**
    * Optional failure cleanup hook.
@@ -113,8 +109,5 @@ export interface IdeaGenerationStage {
    *
    * It must not throw unless cleanup failure is itself critical.
    */
-  onFailure?(
-    context: IdeaGenerationContext,
-    error: Error,
-  ): Promise<void>;
+  onFailure?(context: IdeaGenerationContext, error: Error): Promise<void>;
 }

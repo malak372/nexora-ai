@@ -31,8 +31,7 @@ const GUEST_GENERATION_RATE_LIMIT = 3;
  *
  * @author Malak
  */
-const GUEST_GENERATION_RATE_LIMIT_TTL_MS =
-  60_000;
+const GUEST_GENERATION_RATE_LIMIT_TTL_MS = 60_000;
 
 /**
  * Controller responsible for starting guest idea generation.
@@ -61,8 +60,7 @@ const GUEST_GENERATION_RATE_LIMIT_TTL_MS =
 @Controller('guest/ideas/generate')
 export class GuestIdeaGenerationController {
   constructor(
-    private readonly orchestrator:
-      IdeaGenerationOrchestratorService,
+    private readonly orchestrator: IdeaGenerationOrchestratorService,
   ) {}
 
   /**
@@ -79,30 +77,25 @@ export class GuestIdeaGenerationController {
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({
     default: {
-      limit:
-        GUEST_GENERATION_RATE_LIMIT,
+      limit: GUEST_GENERATION_RATE_LIMIT,
 
-      ttl:
-        GUEST_GENERATION_RATE_LIMIT_TTL_MS,
+      ttl: GUEST_GENERATION_RATE_LIMIT_TTL_MS,
     },
   })
   generateGuestIdea(
     @Body() dto: GenerateGuestIdeaDto,
     @Req() request: Request,
   ) {
-    const guestSessionToken =
-      this.readCookie(
-        request,
-        GUEST_SESSION_COOKIE_NAME,
-      );
+    const guestSessionToken = this.readCookie(
+      request,
+      GUEST_SESSION_COOKIE_NAME,
+    );
 
     if (!guestSessionToken) {
       throw new UnauthorizedException({
-        code:
-          'GUEST_SESSION_REQUIRED',
+        code: 'GUEST_SESSION_REQUIRED',
 
-        message:
-          'A valid guest session is required to generate a guest idea.',
+        message: 'A valid guest session is required to generate a guest idea.',
       });
     }
 
@@ -123,53 +116,36 @@ export class GuestIdeaGenerationController {
    * @param cookieName Requested cookie name.
    * @returns Decoded cookie value or undefined.
    */
-  private readCookie(
-    request: Request,
-    cookieName: string,
-  ): string | undefined {
-    const rawCookieHeader =
-      request.headers.cookie;
+  private readCookie(request: Request, cookieName: string): string | undefined {
+    const rawCookieHeader = request.headers.cookie;
 
     if (!rawCookieHeader) {
       return undefined;
     }
 
-    for (
-      const cookiePart of
-      rawCookieHeader.split(';')
-    ) {
-      const separatorIndex =
-        cookiePart.indexOf('=');
+    for (const cookiePart of rawCookieHeader.split(';')) {
+      const separatorIndex = cookiePart.indexOf('=');
 
       if (separatorIndex < 0) {
         continue;
       }
 
-      const name = cookiePart
-        .slice(0, separatorIndex)
-        .trim();
+      const name = cookiePart.slice(0, separatorIndex).trim();
 
       if (name !== cookieName) {
         continue;
       }
 
-      const encodedValue = cookiePart
-        .slice(separatorIndex + 1)
-        .trim();
+      const encodedValue = cookiePart.slice(separatorIndex + 1).trim();
 
       if (!encodedValue) {
         return undefined;
       }
 
       try {
-        const decodedValue =
-          decodeURIComponent(
-            encodedValue,
-          ).trim();
+        const decodedValue = decodeURIComponent(encodedValue).trim();
 
-        return (
-          decodedValue || undefined
-        );
+        return decodedValue || undefined;
       } catch {
         return undefined;
       }

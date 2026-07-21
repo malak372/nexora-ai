@@ -1,11 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-} from '@prisma/client';
+import { IdeaGenerationType } from '@prisma/client';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -13,34 +8,22 @@ import {
   type IdeaGenerationStageDefinition,
 } from '../../constants/idea-generation-stages.constants';
 
-import {
-  IDEA_GENERATION_ERROR_CODES,
-} from '../../constants/idea-generation.constants';
+import { IDEA_GENERATION_ERROR_CODES } from '../../constants/idea-generation.constants';
 
 import type {
   IdeaGenerationStage,
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import type {
-  IdeaGenerationPolicyInput,
-} from '../../types/idea-generation-policy.type';
+import type { IdeaGenerationPolicyInput } from '../../types/idea-generation-policy.type';
 
-import {
-  IdeaGenerationPolicyService,
-} from '../../services/idea-generation-policy.service';
+import { IdeaGenerationPolicyService } from '../../services/idea-generation-policy.service';
 
-import {
-  PrismaService,
-} from '../../../../prisma/prisma.service';
+import { PrismaService } from '../../../../prisma/prisma.service';
 
-import {
-  IDEA_OWNER_TYPES,
-} from '../../../shared/constants/ideas.constants';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Resolves and validates the entitlement associated with one
@@ -66,26 +49,21 @@ import {
  * @author Malak
  */
 @Injectable()
-export class EntitlementCheckStage
-  implements IdeaGenerationStage
-{
+export class EntitlementCheckStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.ENTITLEMENT_CHECK;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.ENTITLEMENT_CHECK;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
     private readonly prisma: PrismaService,
 
-    private readonly policyService:
-      IdeaGenerationPolicyService,
+    private readonly policyService: IdeaGenerationPolicyService,
   ) {}
 
   /**
@@ -97,19 +75,14 @@ export class EntitlementCheckStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
-    const policyInput =
-      await this.buildPolicyInput(context);
+    const policyInput = await this.buildPolicyInput(context);
 
-    const policy =
-      this.policyService.evaluate(
-        policyInput,
-      );
+    const policy = this.policyService.evaluate(policyInput);
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
-      generationType:
-        policy.generationType,
+      generationType: policy.generationType,
 
       policy,
     };
@@ -117,32 +90,22 @@ export class EntitlementCheckStage
     return {
       context: updatedContext,
 
-      resultPreview:
-        this.createResultPreview(
-          policy.generationType,
-        ),
+      resultPreview: this.createResultPreview(policy.generationType),
 
       metadata: {
-        generationType:
-          policy.generationType,
+        generationType: policy.generationType,
 
-        includePremiumOutputs:
-          policy.includePremiumOutputs,
+        includePremiumOutputs: policy.includePremiumOutputs,
 
-        consumesFreeGeneration:
-          policy.consumesFreeGeneration,
+        consumesFreeGeneration: policy.consumesFreeGeneration,
 
-        consumesGuestGeneration:
-          policy.consumesGuestGeneration,
+        consumesGuestGeneration: policy.consumesGuestGeneration,
 
-        creditsToConsume:
-          policy.creditsToConsume,
+        creditsToConsume: policy.creditsToConsume,
 
-        remainingFreeGenerations:
-          policy.remainingFreeGenerations,
+        remainingFreeGenerations: policy.remainingFreeGenerations,
 
-        expectedCreditBalance:
-          policy.expectedCreditBalance,
+        expectedCreditBalance: policy.expectedCreditBalance,
       },
     };
   }
@@ -156,18 +119,11 @@ export class EntitlementCheckStage
   private async buildPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    if (
-      context.owner.type ===
-      IDEA_OWNER_TYPES.USER
-    ) {
-      return this.buildUserPolicyInput(
-        context,
-      );
+    if (context.owner.type === IDEA_OWNER_TYPES.USER) {
+      return this.buildUserPolicyInput(context);
     }
 
-    return this.buildGuestPolicyInput(
-      context,
-    );
+    return this.buildGuestPolicyInput(context);
   }
 
   /**
@@ -179,56 +135,45 @@ export class EntitlementCheckStage
   private async buildUserPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    const user =
-      await this.prisma.user.findFirst({
-        where: {
-          id: context.owner.userId,
-          deletedAt: null,
-        },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: context.owner.userId,
+        deletedAt: null,
+      },
 
-        select: {
-          id: true,
-          role: true,
-          userType: true,
-          accountStatus: true,
-          isActive: true,
-          isVerified: true,
-          creditBalance: true,
-          freeGenerationLimit: true,
-          freeGenerationsUsed: true,
-        },
-      });
+      select: {
+        id: true,
+        role: true,
+        userType: true,
+        accountStatus: true,
+        isActive: true,
+        isVerified: true,
+        creditBalance: true,
+        freeGenerationLimit: true,
+        freeGenerationsUsed: true,
+      },
+    });
 
     if (!user) {
       throw new NotFoundException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'The registered generation owner was not found.',
+        message: 'The registered generation owner was not found.',
       });
     }
 
-    if (
-      context.generationType ===
-      IdeaGenerationType.GUEST_FREE
-    ) {
+    if (context.generationType === IdeaGenerationType.GUEST_FREE) {
       throw new NotFoundException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'Registered users cannot use guest-free generation.',
+        message: 'Registered users cannot use guest-free generation.',
       });
     }
 
     return {
       ownerType: IDEA_OWNER_TYPES.USER,
 
-      requestedGenerationType:
-        context.generationType,
+      requestedGenerationType: context.generationType,
 
       user,
     };
@@ -243,36 +188,30 @@ export class EntitlementCheckStage
   private async buildGuestPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    const guestSession =
-      await this.prisma.guestSession.findUnique({
-        where: {
-          id:
-            context.owner.guestSessionId,
-        },
+    const guestSession = await this.prisma.guestSession.findUnique({
+      where: {
+        id: context.owner.guestSessionId,
+      },
 
-        select: {
-          id: true,
-          hasGenerated: true,
-          expiresAt: true,
-        },
-      });
+      select: {
+        id: true,
+        hasGenerated: true,
+        expiresAt: true,
+      },
+    });
 
     if (!guestSession) {
       throw new NotFoundException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
-        message:
-          'The guest generation session was not found.',
+        message: 'The guest generation session was not found.',
       });
     }
 
     return {
       ownerType: IDEA_OWNER_TYPES.GUEST,
 
-      requestedGenerationType:
-        IdeaGenerationType.GUEST_FREE,
+      requestedGenerationType: IdeaGenerationType.GUEST_FREE,
 
       guestSession,
     };
@@ -284,9 +223,7 @@ export class EntitlementCheckStage
    * @param generationType Authorized generation type.
    * @returns Result preview.
    */
-  private createResultPreview(
-    generationType: IdeaGenerationType,
-  ): string {
+  private createResultPreview(generationType: IdeaGenerationType): string {
     switch (generationType) {
       case IdeaGenerationType.GUEST_FREE:
         return 'Guest-free generation entitlement approved.';
@@ -308,10 +245,7 @@ export class EntitlementCheckStage
    * @returns Entitlement-check stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

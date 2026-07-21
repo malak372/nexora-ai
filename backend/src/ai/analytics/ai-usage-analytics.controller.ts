@@ -1,9 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -43,16 +38,10 @@ import type { AiUsageAnalyticsSummary } from './types/ai-usage-analytics.type';
  * @author Malak
  */
 @Controller('admin/ai/analytics')
-@UseGuards(
-  JwtAuthGuard,
-  RolesGuard,
-)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AiUsageAnalyticsController {
-  constructor(
-    private readonly analyticsService:
-      AiUsageAnalyticsService,
-  ) {}
+  constructor(private readonly analyticsService: AiUsageAnalyticsService) {}
 
   /**
    * Returns aggregated AI usage analytics.
@@ -81,8 +70,6 @@ export class AiUsageAnalyticsController {
     @Query()
     query: GetAiAnalyticsQueryDto,
   ): Promise<AiUsageAnalyticsSummary> {
-    return this.analyticsService.getSummary(
-      query,
-    );
+    return this.analyticsService.getSummary(query);
   }
 }

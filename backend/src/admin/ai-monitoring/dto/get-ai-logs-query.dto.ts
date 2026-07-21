@@ -1,77 +1,30 @@
-import { ApiProvider, ApiRequestType } from '@prisma/client';
+import { ApiRequestType } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
-
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
-/**
- * DTO for filtering, searching, sorting, and paginating external API logs.
- *
- * Used in:
- * - GET /admin/ai-monitoring/logs
- * - GET /admin/ai-monitoring/summary
- * - GET /admin/ai-monitoring/charts
- * - GET /admin/ai-monitoring/logs/export/csv
- *
- * Supports:
- * - Pagination.
- * - Sorting.
- * - Date filtering.
- * - Search.
- * - Provider filtering.
- * - Request type filtering.
- * - Success status filtering.
- *
- * @author Malak
- */
+/** Filters external API logs using extensible provider registry keys. @author Malak */
 export class GetAiLogsQueryDto extends ListQueryDto {
-  /**
-   * External API provider filter.
-   *
-   * Examples:
-   * - OPENAI
-   * - REDDIT
-   * - FACEBOOK
-   * - PAYPAL
-   * - STRIPE
-   */
   @IsOptional()
-  @IsEnum(ApiProvider)
-  provider?: ApiProvider;
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  providerKey?: string;
 
-  /**
-   * External API request type filter.
-   *
-   * Examples:
-   * - OPENROUTER
-   * - GOOGLE
-   * - GROQ
-   */
   @IsOptional()
   @IsEnum(ApiRequestType)
   requestType?: ApiRequestType;
 
-  /**
-   * Success status filter.
-   *
-   * Query examples:
-   * - ?isSuccess=true
-   * - ?isSuccess=false
-   */
   @IsOptional()
   @Transform(({ value }: { value: unknown }): unknown => {
-    if (typeof value === 'string') {
-      const normalized = value.toLowerCase();
-
-      if (normalized === 'true') {
-        return true;
-      }
-
-      if (normalized === 'false') {
-        return false;
-      }
-    }
-
+    if (typeof value !== 'string') return value;
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
     return value;
   })
   @IsBoolean()

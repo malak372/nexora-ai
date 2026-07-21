@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 
 import {
   IdeaGenerationStageStatus,
@@ -143,16 +139,12 @@ type ResolvedPipelineStage = {
  */
 @Injectable()
 export class IdeaGenerationPipelineService {
-  private readonly logger = new Logger(
-    IdeaGenerationPipelineService.name,
-  );
+  private readonly logger = new Logger(IdeaGenerationPipelineService.name);
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly stageService:
-      IdeaGenerationStageService,
-    private readonly runService:
-      IdeaGenerationRunService,
+    private readonly stageService: IdeaGenerationStageService,
+    private readonly runService: IdeaGenerationRunService,
   ) {}
 
   /**
@@ -179,46 +171,35 @@ export class IdeaGenerationPipelineService {
   ): Promise<IdeaGenerationPipelineResult> {
     this.validateContext(input.context);
 
-    const resolvedStages =
-      this.resolvePipelineStages(
-        input.context,
-        input.stages,
-      );
+    const resolvedStages = this.resolvePipelineStages(
+      input.context,
+      input.stages,
+    );
 
     await this.initializeStageRecords(
       input.context.runId,
-      resolvedStages.map(
-        ({ definition }) => definition,
-      ),
+      resolvedStages.map(({ definition }) => definition),
     );
 
-    await this.runService.startRun(
-      input.context.runId,
-    );
+    await this.runService.startRun(input.context.runId);
 
     let currentContext = input.context;
 
-    const processedStages:
-      IdeaGenerationPipelineStageResult[] = [];
+    const processedStages: IdeaGenerationPipelineStageResult[] = [];
 
     try {
       for (const resolvedStage of resolvedStages) {
-        const stageResult =
-          await this.executeResolvedStage(
-            currentContext,
-            resolvedStage,
-          );
+        const stageResult = await this.executeResolvedStage(
+          currentContext,
+          resolvedStage,
+        );
 
         currentContext = stageResult.context;
 
-        processedStages.push(
-          stageResult.summary,
-        );
+        processedStages.push(stageResult.summary);
       }
 
-      await this.runService.completeRun(
-        currentContext.runId,
-      );
+      await this.runService.completeRun(currentContext.runId);
 
       this.logger.log(
         `Idea-generation pipeline completed successfully for run "${currentContext.runId}".`,
@@ -229,13 +210,8 @@ export class IdeaGenerationPipelineService {
         stages: processedStages,
       };
     } catch (error: unknown) {
-      if (
-        error instanceof
-        IdeaGenerationCancelledError
-      ) {
-        await this.cancelRunSafely(
-          currentContext.runId,
-        );
+      if (error instanceof IdeaGenerationCancelledError) {
+        await this.cancelRunSafely(currentContext.runId);
 
         this.logger.warn(
           `Idea-generation pipeline was cancelled for run "${currentContext.runId}" at stage "${error.stageKey}".`,
@@ -244,13 +220,9 @@ export class IdeaGenerationPipelineService {
         throw error;
       }
 
-      const normalizedError =
-        this.normalizeError(error);
+      const normalizedError = this.normalizeError(error);
 
-      await this.failRunSafely(
-        currentContext.runId,
-        normalizedError,
-      );
+      await this.failRunSafely(currentContext.runId, normalizedError);
 
       this.logger.error(
         `Idea-generation pipeline failed for run "${currentContext.runId}": ${normalizedError.message}`,
@@ -283,49 +255,32 @@ export class IdeaGenerationPipelineService {
     implementations: readonly IdeaGenerationStage[],
   ): ResolvedPipelineStage[] {
     const includePremiumStages =
-      context.generationType ===
-      IdeaGenerationType.PREMIUM_CREDIT;
+      context.generationType === IdeaGenerationType.PREMIUM_CREDIT;
 
-    const definitions =
-      getIdeaGenerationStageDefinitions(
-        includePremiumStages,
-      );
+    const definitions = getIdeaGenerationStageDefinitions(includePremiumStages);
 
-    const implementationMap =
-      this.buildImplementationMap(
-        implementations,
-      );
+    const implementationMap = this.buildImplementationMap(implementations);
 
-    const resolvedStages = definitions.map(
-      (definition) => {
-        const implementation =
-          implementationMap.get(definition.key);
+    const resolvedStages = definitions.map((definition) => {
+      const implementation = implementationMap.get(definition.key);
 
-        if (!implementation) {
-          throw new ConflictException({
-            code:
-              'IDEA_GENERATION_STAGE_NOT_REGISTERED',
-            message:
-              `No implementation is registered for pipeline stage "${definition.key}".`,
-          });
-        }
+      if (!implementation) {
+        throw new ConflictException({
+          code: 'IDEA_GENERATION_STAGE_NOT_REGISTERED',
+          message: `No implementation is registered for pipeline stage "${definition.key}".`,
+        });
+      }
 
-        this.validateStageDefinition(
-          implementation,
-          definition,
-        );
+      this.validateStageDefinition(implementation, definition);
 
-        return {
-          definition,
-          implementation,
-        };
-      },
-    );
+      return {
+        definition,
+        implementation,
+      };
+    });
 
     return resolvedStages.sort(
-      (first, second) =>
-        first.definition.sequence -
-        second.definition.sequence,
+      (first, second) => first.definition.sequence - second.definition.sequence,
     );
   }
 
@@ -342,33 +297,21 @@ export class IdeaGenerationPipelineService {
    */
   private buildImplementationMap(
     implementations: readonly IdeaGenerationStage[],
-  ): Map<
-    IdeaGenerationStageKey,
-    IdeaGenerationStage
-  > {
+  ): Map<IdeaGenerationStageKey, IdeaGenerationStage> {
     const implementationMap = new Map<
       IdeaGenerationStageKey,
       IdeaGenerationStage
     >();
 
     for (const implementation of implementations) {
-      if (
-        implementationMap.has(
-          implementation.key,
-        )
-      ) {
+      if (implementationMap.has(implementation.key)) {
         throw new ConflictException({
-          code:
-            'DUPLICATE_IDEA_GENERATION_STAGE',
-          message:
-            `Multiple implementations are registered for stage "${implementation.key}".`,
+          code: 'DUPLICATE_IDEA_GENERATION_STAGE',
+          message: `Multiple implementations are registered for stage "${implementation.key}".`,
         });
       }
 
-      implementationMap.set(
-        implementation.key,
-        implementation,
-      );
+      implementationMap.set(implementation.key, implementation);
     }
 
     return implementationMap;
@@ -393,40 +336,29 @@ export class IdeaGenerationPipelineService {
     implementation: IdeaGenerationStage,
     expectedDefinition: IdeaGenerationStageDefinition,
   ): void {
-    const actualDefinition =
-      implementation.definition;
+    const actualDefinition = implementation.definition;
 
     if (
-      implementation.key !==
-        expectedDefinition.key ||
-      actualDefinition.key !==
-        expectedDefinition.key
+      implementation.key !== expectedDefinition.key ||
+      actualDefinition.key !== expectedDefinition.key
     ) {
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_STAGE_KEY_MISMATCH',
-        message:
-          `Stage implementation "${implementation.key}" declares a mismatched definition key.`,
+        code: 'IDEA_GENERATION_STAGE_KEY_MISMATCH',
+        message: `Stage implementation "${implementation.key}" declares a mismatched definition key.`,
       });
     }
 
     if (
-      actualDefinition.sequence !==
-        expectedDefinition.sequence ||
-      actualDefinition.progressStart !==
-        expectedDefinition.progressStart ||
-      actualDefinition.progressEnd !==
-        expectedDefinition.progressEnd ||
-      actualDefinition.maxAttempts !==
-        expectedDefinition.maxAttempts ||
+      actualDefinition.sequence !== expectedDefinition.sequence ||
+      actualDefinition.progressStart !== expectedDefinition.progressStart ||
+      actualDefinition.progressEnd !== expectedDefinition.progressEnd ||
+      actualDefinition.maxAttempts !== expectedDefinition.maxAttempts ||
       actualDefinition.requiredForPremium !==
         expectedDefinition.requiredForPremium
     ) {
       throw new ConflictException({
-        code:
-          'IDEA_GENERATION_STAGE_DEFINITION_MISMATCH',
-        message:
-          `Stage "${implementation.key}" configuration does not match the central pipeline definition.`,
+        code: 'IDEA_GENERATION_STAGE_DEFINITION_MISMATCH',
+        message: `Stage "${implementation.key}" configuration does not match the central pipeline definition.`,
       });
     }
   }
@@ -445,8 +377,7 @@ export class IdeaGenerationPipelineService {
    */
   private async initializeStageRecords(
     runId: string,
-    definitions:
-      readonly IdeaGenerationStageDefinition[],
+    definitions: readonly IdeaGenerationStageDefinition[],
   ): Promise<void> {
     await this.prisma.$transaction(
       definitions.map((definition) =>
@@ -460,36 +391,28 @@ export class IdeaGenerationPipelineService {
           create: {
             runId,
             stageKey: definition.key,
-            displayName:
-              definition.displayName,
+            displayName: definition.displayName,
             sequence: definition.sequence,
-            status:
-              IdeaGenerationStageStatus.PENDING,
-            progressPercent:
-              definition.progressStart,
+            status: IdeaGenerationStageStatus.PENDING,
+            progressPercent: definition.progressStart,
             resultPreview: Prisma.JsonNull,
             errorMessage: null,
             startedAt: null,
             completedAt: null,
             attemptCount: 0,
-            maxAttempts:
-              definition.maxAttempts,
+            maxAttempts: definition.maxAttempts,
           },
           update: {
-            displayName:
-              definition.displayName,
+            displayName: definition.displayName,
             sequence: definition.sequence,
-            status:
-              IdeaGenerationStageStatus.PENDING,
-            progressPercent:
-              definition.progressStart,
+            status: IdeaGenerationStageStatus.PENDING,
+            progressPercent: definition.progressStart,
             resultPreview: Prisma.JsonNull,
             errorMessage: null,
             startedAt: null,
             completedAt: null,
             attemptCount: 0,
-            maxAttempts:
-              definition.maxAttempts,
+            maxAttempts: definition.maxAttempts,
           },
         }),
       ),
@@ -519,54 +442,37 @@ export class IdeaGenerationPipelineService {
     context: IdeaGenerationContext;
     summary: IdeaGenerationPipelineStageResult;
   }> {
-    const { definition, implementation } =
-      resolvedStage;
+    const { definition, implementation } = resolvedStage;
 
-    const startProgressPercent =
-      this.resolveActiveRunProgress(
-        definition.progressStart,
-      );
+    const startProgressPercent = this.resolveActiveRunProgress(
+      definition.progressStart,
+    );
 
-    const completedProgressPercent =
-      this.resolveActiveRunProgress(
-        definition.progressEnd,
-      );
+    const completedProgressPercent = this.resolveActiveRunProgress(
+      definition.progressEnd,
+    );
 
     let lastError: Error | null = null;
 
-    for (
-      let attempt = 1;
-      attempt <= definition.maxAttempts;
-      attempt += 1
-    ) {
-      await this.markStageRunning(
-        context.runId,
-        definition,
-        attempt,
-      );
+    for (let attempt = 1; attempt <= definition.maxAttempts; attempt += 1) {
+      await this.markStageRunning(context.runId, definition, attempt);
 
       try {
-        const result =
-          await this.stageService.executeStage({
-            stage: implementation,
-            context,
-            startProgressPercent,
-            completedProgressPercent,
-          });
+        const result = await this.stageService.executeStage({
+          stage: implementation,
+          context,
+          startProgressPercent,
+          completedProgressPercent,
+        });
 
         if (!result.executed) {
-          await this.markStageSkipped(
-            context.runId,
-            definition,
-            attempt,
-          );
+          await this.markStageSkipped(context.runId, definition, attempt);
 
           return {
             context: result.context,
             summary: {
               stageKey: definition.key,
-              status:
-                IdeaGenerationStageStatus.SKIPPED,
+              status: IdeaGenerationStageStatus.SKIPPED,
               attemptCount: attempt,
             },
           };
@@ -583,39 +489,26 @@ export class IdeaGenerationPipelineService {
           context: result.context,
           summary: {
             stageKey: definition.key,
-            status:
-              IdeaGenerationStageStatus.COMPLETED,
+            status: IdeaGenerationStageStatus.COMPLETED,
             attemptCount: attempt,
 
-            ...(result.resultPreview !==
-            undefined
+            ...(result.resultPreview !== undefined
               ? {
-                  resultPreview:
-                    result.resultPreview,
+                  resultPreview: result.resultPreview,
                 }
               : {}),
           },
         };
       } catch (error: unknown) {
-        if (
-          error instanceof
-          IdeaGenerationCancelledError
-        ) {
-          await this.markStageCancellation(
-            context.runId,
-            definition,
-            attempt,
-          );
+        if (error instanceof IdeaGenerationCancelledError) {
+          await this.markStageCancellation(context.runId, definition, attempt);
 
           throw error;
         }
 
         lastError = this.normalizeError(error);
 
-        if (
-          attempt <
-          definition.maxAttempts
-        ) {
+        if (attempt < definition.maxAttempts) {
           await this.recordRetryableFailure(
             context.runId,
             definition,
@@ -643,9 +536,7 @@ export class IdeaGenerationPipelineService {
 
     throw (
       lastError ??
-      new Error(
-        `Stage "${definition.key}" failed without an execution error.`,
-      )
+      new Error(`Stage "${definition.key}" failed without an execution error.`)
     );
   }
 
@@ -669,10 +560,8 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.RUNNING,
-        progressPercent:
-          definition.progressStart,
+        status: IdeaGenerationStageStatus.RUNNING,
+        progressPercent: definition.progressStart,
         attemptCount: attempt,
         startedAt: new Date(),
         completedAt: null,
@@ -703,15 +592,11 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.COMPLETED,
-        progressPercent:
-          definition.progressEnd,
+        status: IdeaGenerationStageStatus.COMPLETED,
+        progressPercent: definition.progressEnd,
         attemptCount: attempt,
         resultPreview:
-          resultPreview !== undefined
-            ? resultPreview
-            : Prisma.JsonNull,
+          resultPreview !== undefined ? resultPreview : Prisma.JsonNull,
         errorMessage: null,
         completedAt: new Date(),
       },
@@ -741,10 +626,8 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.SKIPPED,
-        progressPercent:
-          definition.progressEnd,
+        status: IdeaGenerationStageStatus.SKIPPED,
+        progressPercent: definition.progressEnd,
         attemptCount: attempt,
         resultPreview: Prisma.JsonNull,
         errorMessage: null,
@@ -782,14 +665,11 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.SKIPPED,
-        progressPercent:
-          definition.progressStart,
+        status: IdeaGenerationStageStatus.SKIPPED,
+        progressPercent: definition.progressStart,
         attemptCount: attempt,
         resultPreview: Prisma.JsonNull,
-        errorMessage:
-          'Stage execution was cancelled.',
+        errorMessage: 'Stage execution was cancelled.',
         completedAt: new Date(),
       },
     });
@@ -818,11 +698,9 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.PENDING,
+        status: IdeaGenerationStageStatus.PENDING,
         attemptCount: attempt,
-        errorMessage:
-          this.toSafeErrorMessage(error),
+        errorMessage: this.toSafeErrorMessage(error),
         completedAt: null,
       },
     });
@@ -851,11 +729,9 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
-        status:
-          IdeaGenerationStageStatus.FAILED,
+        status: IdeaGenerationStageStatus.FAILED,
         attemptCount: attempt,
-        errorMessage:
-          this.toSafeErrorMessage(error),
+        errorMessage: this.toSafeErrorMessage(error),
         completedAt: new Date(),
       },
     });
@@ -872,9 +748,7 @@ export class IdeaGenerationPipelineService {
    * @param progressPercent Configured stage progress.
    * @returns Active-run-safe progress value.
    */
-  private resolveActiveRunProgress(
-    progressPercent: number,
-  ): number {
+  private resolveActiveRunProgress(progressPercent: number): number {
     return Math.min(progressPercent, 99);
   }
 
@@ -884,14 +758,11 @@ export class IdeaGenerationPipelineService {
    *
    * @param runId Generation-run identifier.
    */
-  private async cancelRunSafely(
-    runId: string,
-  ): Promise<void> {
+  private async cancelRunSafely(runId: string): Promise<void> {
     try {
       await this.runService.cancelRun(runId);
     } catch (error: unknown) {
-      const cancellationError =
-        this.normalizeError(error);
+      const cancellationError = this.normalizeError(error);
 
       this.logger.error(
         `Failed to persist cancellation for generation run "${runId}": ${cancellationError.message}`,
@@ -907,23 +778,15 @@ export class IdeaGenerationPipelineService {
    * @param runId Generation-run identifier.
    * @param error Original pipeline error.
    */
-  private async failRunSafely(
-    runId: string,
-    error: Error,
-  ): Promise<void> {
+  private async failRunSafely(runId: string, error: Error): Promise<void> {
     try {
       await this.runService.failRun({
         runId,
-        errorCode:
-          'IDEA_GENERATION_PIPELINE_FAILED',
-        errorMessage:
-          this.toSafeErrorMessage(error),
+        errorCode: 'IDEA_GENERATION_PIPELINE_FAILED',
+        errorMessage: this.toSafeErrorMessage(error),
       });
     } catch (persistenceError: unknown) {
-      const normalizedPersistenceError =
-        this.normalizeError(
-          persistenceError,
-        );
+      const normalizedPersistenceError = this.normalizeError(persistenceError);
 
       this.logger.error(
         `Failed to persist failure for generation run "${runId}": ${normalizedPersistenceError.message}`,
@@ -938,28 +801,22 @@ export class IdeaGenerationPipelineService {
    *
    * @param context Initial generation context.
    */
-  private validateContext(
-    context: IdeaGenerationContext,
-  ): void {
+  private validateContext(context: IdeaGenerationContext): void {
     if (
       !context ||
       typeof context.runId !== 'string' ||
       !context.runId.trim()
     ) {
       throw new ConflictException({
-        code:
-          'INVALID_IDEA_GENERATION_CONTEXT',
-        message:
-          'The idea-generation context must contain a valid run ID.',
+        code: 'INVALID_IDEA_GENERATION_CONTEXT',
+        message: 'The idea-generation context must contain a valid run ID.',
       });
     }
 
     if (!context.generationType) {
       throw new ConflictException({
-        code:
-          'MISSING_IDEA_GENERATION_TYPE',
-        message:
-          'The idea-generation context must contain a generation type.',
+        code: 'MISSING_IDEA_GENERATION_TYPE',
+        message: 'The idea-generation context must contain a generation type.',
       });
     }
   }
@@ -970,9 +827,7 @@ export class IdeaGenerationPipelineService {
    * @param error Unknown thrown value.
    * @returns Normalized Error instance.
    */
-  private normalizeError(
-    error: unknown,
-  ): Error {
+  private normalizeError(error: unknown): Error {
     if (error instanceof Error) {
       return error;
     }
@@ -981,9 +836,7 @@ export class IdeaGenerationPipelineService {
       return new Error(error);
     }
 
-    return new Error(
-      'Unknown idea-generation pipeline error.',
-    );
+    return new Error('Unknown idea-generation pipeline error.');
   }
 
   /**
@@ -996,12 +849,9 @@ export class IdeaGenerationPipelineService {
    * @param error Error whose message should be persisted.
    * @returns Safe bounded error message.
    */
-  private toSafeErrorMessage(
-    error: Error,
-  ): string {
+  private toSafeErrorMessage(error: Error): string {
     const message =
-      error.message.trim() ||
-      'Idea-generation stage execution failed.';
+      error.message.trim() || 'Idea-generation stage execution failed.';
 
     return message.slice(0, 1_000);
   }

@@ -18,7 +18,4 @@ export {
   type PremiumIdeaOutput,
 } from './premium-idea.schema';
 
-export {
-  UnlockIdeaSchema,
-  type UnlockIdeaOutput,
-} from './unlock-idea.schema';
+export { UnlockIdeaSchema, type UnlockIdeaOutput } from './unlock-idea.schema';

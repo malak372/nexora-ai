@@ -100,7 +100,8 @@ type PayPalWebhookVerificationResponse = {
  */
 @Injectable()
 export class PayPalPaymentGateway
-  implements PaymentGateway, PaymentCaptureGateway {
+  implements PaymentGateway, PaymentCaptureGateway
+{
   readonly providerKey = 'paypal';
 
   private readonly clientId: string;
@@ -469,8 +470,8 @@ export class PayPalPaymentGateway
 
       ...(status === PaymentStatus.FAILED
         ? {
-          failureReason: 'PayPal reported that the payment capture failed.',
-        }
+            failureReason: 'PayPal reported that the payment capture failed.',
+          }
         : {}),
 
       occurredAt: this.parseDate(
@@ -513,14 +514,14 @@ export class PayPalPaymentGateway
 
       ...(input.providerEventId
         ? {
-          providerEventId: input.providerEventId,
-        }
+            providerEventId: input.providerEventId,
+          }
         : {}),
 
       ...(status === PaymentStatus.FAILED
         ? {
-          failureReason: 'PayPal payment capture failed.',
-        }
+            failureReason: 'PayPal payment capture failed.',
+          }
         : {}),
 
       occurredAt: input.occurredAt,
@@ -943,20 +944,20 @@ export class PayPalPaymentGateway
     return {
       ...(typeof value.name === 'string'
         ? {
-          name: value.name,
-        }
+            name: value.name,
+          }
         : {}),
 
       ...(typeof value.message === 'string'
         ? {
-          message: value.message,
-        }
+            message: value.message,
+          }
         : {}),
 
       ...(typeof value.debug_id === 'string'
         ? {
-          debugId: value.debug_id,
-        }
+            debugId: value.debug_id,
+          }
         : {}),
     };
   }

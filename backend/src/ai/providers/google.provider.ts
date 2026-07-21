@@ -1,12 +1,6 @@
-import {
-  GoogleGenAI,
-  type GenerateContentConfig,
-} from '@google/genai';
+import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import {
   AI_PROVIDER_KEYS,
@@ -26,18 +20,6 @@ import {
 } from '../types/ai-provider.type';
 
 import type { AiProvider } from './ai-provider.interface';
-
-/**
- * Exact responseJsonSchema type expected by the installed Google Gen AI
- * SDK.
- *
- * AiJsonSchema remains provider-neutral throughout the application.
- * Conversion into Google's SDK-specific schema type is intentionally
- * isolated inside this provider adapter.
- */
-type GoogleResponseJsonSchema = NonNullable<
-  GenerateContentConfig['responseJsonSchema']
->;
 
 /**
  * Minimal object structure used when inspecting unknown SDK errors.
@@ -81,8 +63,7 @@ export class GoogleProvider implements AiProvider {
   /**
    * Stable backend provider-registry key.
    */
-  readonly providerKey: AiProviderKey =
-    AI_PROVIDER_KEYS.GOOGLE;
+  readonly providerKey: AiProviderKey = AI_PROVIDER_KEYS.GOOGLE;
 
   /**
    * Google Gen AI SDK client.
@@ -92,13 +73,9 @@ export class GoogleProvider implements AiProvider {
    */
   private readonly client: GoogleGenAI;
 
-  constructor(
-    credentialsService: AiProviderCredentialsService,
-  ) {
+  constructor(credentialsService: AiProviderCredentialsService) {
     this.client = new GoogleGenAI({
-      apiKey: credentialsService.getApiKey(
-        this.providerKey,
-      ),
+      apiKey: credentialsService.getApiKey(this.providerKey),
     });
   }
 
@@ -129,48 +106,37 @@ export class GoogleProvider implements AiProvider {
     try {
       const config = this.buildGenerateConfig(input);
 
-      const response =
-        await this.client.models.generateContent({
-          model: apiModelId,
-          contents: userPrompt,
-          config,
-        });
+      const response = await this.client.models.generateContent({
+        model: apiModelId,
+        contents: userPrompt,
+        config,
+      });
 
       /*
        * Google may reject the prompt before producing any candidate.
        * In that case, promptFeedback.blockReason is more useful than a
        * missing candidate finish reason.
        */
-      const promptBlockReason =
-        this.readPromptBlockReason(
-          response.promptFeedback,
-        );
+      const promptBlockReason = this.readPromptBlockReason(
+        response.promptFeedback,
+      );
 
       if (promptBlockReason) {
         throw new AiProviderError(
-          this.buildContentFilterMessage(
-            promptBlockReason,
-          ),
+          this.buildContentFilterMessage(promptBlockReason),
           AiProviderErrorCode.CONTENT_FILTERED,
           false,
         );
       }
 
-      const candidate =
-        response.candidates?.[0];
+      const candidate = response.candidates?.[0];
 
-      const finishReason =
-        this.mapFinishReason(
-          candidate?.finishReason,
-        );
+      const finishReason = this.mapFinishReason(candidate?.finishReason);
 
       const text = response.text?.trim();
 
       if (!text) {
-        if (
-          finishReason ===
-          AiFinishReason.CONTENT_FILTER
-        ) {
+        if (finishReason === AiFinishReason.CONTENT_FILTER) {
           throw new AiProviderError(
             'Google AI blocked the generated response because of content-safety policies.',
             AiProviderErrorCode.CONTENT_FILTERED,
@@ -201,21 +167,17 @@ export class GoogleProvider implements AiProvider {
          */
         requestId: undefined,
 
-        inputTokens:
-          this.normalizeTokenCount(
-            response.usageMetadata?.promptTokenCount,
-          ),
+        inputTokens: this.normalizeTokenCount(
+          response.usageMetadata?.promptTokenCount,
+        ),
 
-        outputTokens:
-          this.normalizeTokenCount(
-            response.usageMetadata
-              ?.candidatesTokenCount,
-          ),
+        outputTokens: this.normalizeTokenCount(
+          response.usageMetadata?.candidatesTokenCount,
+        ),
 
         finishReason,
 
-        providerLatencyMs:
-          Date.now() - startedAt,
+        providerLatencyMs: Date.now() - startedAt,
       };
     } catch (error: unknown) {
       /*
@@ -225,20 +187,12 @@ export class GoogleProvider implements AiProvider {
         throw error;
       }
 
-      const statusCode =
-        this.readStatusCode(error);
+      const statusCode = this.readStatusCode(error);
 
-      const errorCode =
-        this.resolveErrorCode(
-          error,
-          statusCode,
-        );
+      const errorCode = this.resolveErrorCode(error, statusCode);
 
       throw new AiProviderError(
-        this.readMessage(
-          error,
-          'Google AI request failed.',
-        ),
+        this.readMessage(error, 'Google AI request failed.'),
         errorCode,
         this.isRetryableCode(errorCode),
         statusCode,
@@ -261,8 +215,7 @@ export class GoogleProvider implements AiProvider {
   private buildGenerateConfig(
     input: AiProviderGenerateInput,
   ): GenerateContentConfig {
-    const systemInstruction =
-      input.systemInstruction?.trim();
+    const systemInstruction = input.systemInstruction?.trim();
 
     return {
       ...(systemInstruction
@@ -279,11 +232,9 @@ export class GoogleProvider implements AiProvider {
           }
         : {}),
 
-      ...(input.responseFormat ===
-      AiResponseFormat.JSON
+      ...(input.responseFormat === AiResponseFormat.JSON
         ? {
-            responseMimeType:
-              'application/json',
+            responseMimeType: 'application/json',
 
             ...(input.responseSchema
               ? {
@@ -294,9 +245,7 @@ export class GoogleProvider implements AiProvider {
                    * application services do not depend on Google SDK
                    * schema types.
                    */
-                  responseJsonSchema:
-                    input.responseSchema as
-                      GoogleResponseJsonSchema,
+                  responseJsonSchema: input.responseSchema,
                 }
               : {}),
           }
@@ -323,40 +272,21 @@ export class GoogleProvider implements AiProvider {
    * @param input Candidate generation input.
    * @throws BadRequestException when a required value is invalid.
    */
-  private validateInput(
-    input: AiProviderGenerateInput,
-  ): void {
-    if (
-      typeof input !== 'object' ||
-      input === null
-    ) {
-      throw new BadRequestException(
-        'Google AI generation input is required.',
-      );
+  private validateInput(input: AiProviderGenerateInput): void {
+    if (typeof input !== 'object' || input === null) {
+      throw new BadRequestException('Google AI generation input is required.');
+    }
+
+    if (typeof input.apiModelId !== 'string' || !input.apiModelId.trim()) {
+      throw new BadRequestException('Google AI apiModelId is required.');
+    }
+
+    if (typeof input.userPrompt !== 'string' || !input.userPrompt.trim()) {
+      throw new BadRequestException('Google AI userPrompt is required.');
     }
 
     if (
-      typeof input.apiModelId !== 'string' ||
-      !input.apiModelId.trim()
-    ) {
-      throw new BadRequestException(
-        'Google AI apiModelId is required.',
-      );
-    }
-
-    if (
-      typeof input.userPrompt !== 'string' ||
-      !input.userPrompt.trim()
-    ) {
-      throw new BadRequestException(
-        'Google AI userPrompt is required.',
-      );
-    }
-
-    if (
-      !Number.isSafeInteger(
-        input.maxOutputTokens,
-      ) ||
+      !Number.isSafeInteger(input.maxOutputTokens) ||
       input.maxOutputTokens <= 0
     ) {
       throw new BadRequestException(
@@ -366,13 +296,9 @@ export class GoogleProvider implements AiProvider {
 
     if (
       input.temperature !== undefined &&
-      (
-        !Number.isFinite(
-          input.temperature,
-        ) ||
+      (!Number.isFinite(input.temperature) ||
         input.temperature < 0 ||
-        input.temperature > 2
-      )
+        input.temperature > 2)
     ) {
       throw new BadRequestException(
         'Google AI temperature must be a finite number between 0 and 2.',
@@ -381,32 +307,24 @@ export class GoogleProvider implements AiProvider {
 
     if (
       input.systemInstruction !== undefined &&
-      typeof input.systemInstruction !==
-        'string'
+      typeof input.systemInstruction !== 'string'
     ) {
       throw new BadRequestException(
         'Google AI systemInstruction must be a string when provided.',
       );
     }
 
-    if (
-      input.signal !== undefined &&
-      !this.isAbortSignal(input.signal)
-    ) {
+    if (input.signal !== undefined && !this.isAbortSignal(input.signal)) {
       throw new BadRequestException(
         'Google AI signal must be a valid AbortSignal when provided.',
       );
     }
 
     if (
-      input.responseFormat ===
-        AiResponseFormat.JSON &&
+      input.responseFormat === AiResponseFormat.JSON &&
       input.responseSchema !== undefined &&
-      (
-        typeof input.responseSchema !==
-          'object' ||
-        input.responseSchema === null
-      )
+      (typeof input.responseSchema !== 'object' ||
+        input.responseSchema === null)
     ) {
       throw new BadRequestException(
         'Google AI responseSchema must be an object when provided.',
@@ -423,25 +341,17 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate cancellation signal.
    * @returns True when the value exposes the required signal behavior.
    */
-  private isAbortSignal(
-    value: unknown,
-  ): value is AbortSignal {
-    if (
-      typeof value !== 'object' ||
-      value === null
-    ) {
+  private isAbortSignal(value: unknown): value is AbortSignal {
+    if (typeof value !== 'object' || value === null) {
       return false;
     }
 
-    const record =
-      value as UnknownRecord;
+    const record = value as UnknownRecord;
 
     return (
       typeof record.aborted === 'boolean' &&
-      typeof record.addEventListener ===
-        'function' &&
-      typeof record.removeEventListener ===
-        'function'
+      typeof record.addEventListener === 'function' &&
+      typeof record.removeEventListener === 'function'
     );
   }
 
@@ -455,15 +365,9 @@ export class GoogleProvider implements AiProvider {
    * @param finishReason Google SDK candidate finish reason.
    * @returns Provider-neutral finish reason.
    */
-  private mapFinishReason(
-    finishReason: unknown,
-  ): AiFinishReason {
+  private mapFinishReason(finishReason: unknown): AiFinishReason {
     const normalizedReason =
-      typeof finishReason === 'string'
-        ? finishReason
-            .trim()
-            .toUpperCase()
-        : '';
+      typeof finishReason === 'string' ? finishReason.trim().toUpperCase() : '';
 
     switch (normalizedReason) {
       case 'STOP':
@@ -499,27 +403,22 @@ export class GoogleProvider implements AiProvider {
    * @param promptFeedback Unknown Google prompt-feedback object.
    * @returns Normalized block reason or undefined.
    */
-  private readPromptBlockReason(
-    promptFeedback: unknown,
-  ): string | undefined {
+  private readPromptBlockReason(promptFeedback: unknown): string | undefined {
     if (!this.isRecord(promptFeedback)) {
       return undefined;
     }
 
-    const blockReason =
-      promptFeedback.blockReason;
+    const blockReason = promptFeedback.blockReason;
 
     if (typeof blockReason !== 'string') {
       return undefined;
     }
 
-    const normalizedBlockReason =
-      blockReason.trim();
+    const normalizedBlockReason = blockReason.trim();
 
     if (
       !normalizedBlockReason ||
-      normalizedBlockReason.toUpperCase() ===
-        'BLOCK_REASON_UNSPECIFIED'
+      normalizedBlockReason.toUpperCase() === 'BLOCK_REASON_UNSPECIFIED'
     ) {
       return undefined;
     }
@@ -537,14 +436,11 @@ export class GoogleProvider implements AiProvider {
    * @param blockReason Google prompt block reason.
    * @returns Safe content-filter error message.
    */
-  private buildContentFilterMessage(
-    blockReason: string,
-  ): string {
-    const safeBlockReason =
-      blockReason
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100);
+  private buildContentFilterMessage(blockReason: string): string {
+    const safeBlockReason = blockReason
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 100);
 
     return (
       'Google AI blocked the request because of ' +
@@ -580,51 +476,36 @@ export class GoogleProvider implements AiProvider {
       return AiProviderErrorCode.CANCELLED;
     }
 
-    if (
-      this.isInsufficientQuotaError(
-        error,
-      )
-    ) {
-      return AiProviderErrorCode
-        .INSUFFICIENT_QUOTA;
+    if (this.isInsufficientQuotaError(error)) {
+      return AiProviderErrorCode.INSUFFICIENT_QUOTA;
     }
 
-    if (
-      statusCode === undefined &&
-      this.isNetworkError(error)
-    ) {
+    if (statusCode === undefined && this.isNetworkError(error)) {
       return AiProviderErrorCode.NETWORK;
     }
 
     switch (statusCode) {
       case 400:
       case 422:
-        return this.isModelConfigurationError(
-          error,
-        )
-          ? AiProviderErrorCode
-              .INVALID_MODEL_CONFIGURATION
-          : AiProviderErrorCode
-              .INVALID_PROMPT;
+        return this.isModelConfigurationError(error)
+          ? AiProviderErrorCode.INVALID_MODEL_CONFIGURATION
+          : AiProviderErrorCode.INVALID_PROMPT;
 
       case 401:
-        return AiProviderErrorCode
-          .INVALID_CREDENTIALS;
+        return AiProviderErrorCode.INVALID_CREDENTIALS;
 
       case 403:
         return AiProviderErrorCode.FORBIDDEN;
 
       case 404:
-        return AiProviderErrorCode
-          .MODEL_NOT_FOUND;
+        return AiProviderErrorCode.MODEL_NOT_FOUND;
 
       case 408:
       case 504:
         return AiProviderErrorCode.TIMEOUT;
 
       case 409:
-        return AiProviderErrorCode
-          .PROVIDER_UNAVAILABLE;
+        return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
 
       case 429:
         return AiProviderErrorCode.RATE_LIMIT;
@@ -635,8 +516,7 @@ export class GoogleProvider implements AiProvider {
           statusCode >= 500 &&
           statusCode <= 599
         ) {
-          return AiProviderErrorCode
-            .PROVIDER_UNAVAILABLE;
+          return AiProviderErrorCode.PROVIDER_UNAVAILABLE;
         }
 
         return AiProviderErrorCode.UNKNOWN;
@@ -654,35 +534,24 @@ export class GoogleProvider implements AiProvider {
    * @param code Provider-neutral error code.
    * @returns True when the failure may be temporary.
    */
-  private isRetryableCode(
-    code: AiProviderErrorCode,
-  ): boolean {
+  private isRetryableCode(code: AiProviderErrorCode): boolean {
     switch (code) {
       case AiProviderErrorCode.TIMEOUT:
       case AiProviderErrorCode.NETWORK:
       case AiProviderErrorCode.RATE_LIMIT:
-      case AiProviderErrorCode
-        .PROVIDER_UNAVAILABLE:
-      case AiProviderErrorCode
-        .EMPTY_RESPONSE:
-      case AiProviderErrorCode
-        .INVALID_STRUCTURED_OUTPUT:
+      case AiProviderErrorCode.PROVIDER_UNAVAILABLE:
+      case AiProviderErrorCode.EMPTY_RESPONSE:
+      case AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT:
       case AiProviderErrorCode.UNKNOWN:
         return true;
 
-      case AiProviderErrorCode
-        .INSUFFICIENT_QUOTA:
-      case AiProviderErrorCode
-        .INVALID_CREDENTIALS:
+      case AiProviderErrorCode.INSUFFICIENT_QUOTA:
+      case AiProviderErrorCode.INVALID_CREDENTIALS:
       case AiProviderErrorCode.FORBIDDEN:
-      case AiProviderErrorCode
-        .MODEL_NOT_FOUND:
-      case AiProviderErrorCode
-        .INVALID_MODEL_CONFIGURATION:
-      case AiProviderErrorCode
-        .INVALID_PROMPT:
-      case AiProviderErrorCode
-        .CONTENT_FILTERED:
+      case AiProviderErrorCode.MODEL_NOT_FOUND:
+      case AiProviderErrorCode.INVALID_MODEL_CONFIGURATION:
+      case AiProviderErrorCode.INVALID_PROMPT:
+      case AiProviderErrorCode.CONTENT_FILTERED:
       case AiProviderErrorCode.CANCELLED:
         return false;
 
@@ -702,13 +571,8 @@ export class GoogleProvider implements AiProvider {
    * @returns True when the error likely represents exhausted quota or
    * unavailable billing capacity.
    */
-  private isInsufficientQuotaError(
-    error: unknown,
-  ): boolean {
-    const message = this.readMessage(
-      error,
-      '',
-    ).toLowerCase();
+  private isInsufficientQuotaError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'quota exceeded',
@@ -721,9 +585,7 @@ export class GoogleProvider implements AiProvider {
       'daily quota',
       'monthly quota',
       'limit: 0',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
@@ -736,13 +598,8 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown provider exception.
    * @returns True when the message likely refers to model configuration.
    */
-  private isModelConfigurationError(
-    error: unknown,
-  ): boolean {
-    const message = this.readMessage(
-      error,
-      '',
-    ).toLowerCase();
+  private isModelConfigurationError(error: unknown): boolean {
+    const message = this.readMessage(error, '').toLowerCase();
 
     return [
       'unknown model',
@@ -760,9 +617,7 @@ export class GoogleProvider implements AiProvider {
       'unsupported field',
       'invalid schema',
       'schema is invalid',
-    ].some((term) =>
-      message.includes(term),
-    );
+    ].some((term) => message.includes(term));
   }
 
   /**
@@ -780,23 +635,15 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown SDK exception.
    * @returns Valid HTTP status code or undefined.
    */
-  private readStatusCode(
-    error: unknown,
-  ): number | undefined {
+  private readStatusCode(error: unknown): number | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
     const directStatus =
-      this.readHttpStatusValue(
-        error.status,
-      ) ??
-      this.readHttpStatusValue(
-        error.statusCode,
-      ) ??
-      this.readHttpStatusValue(
-        error.code,
-      );
+      this.readHttpStatusValue(error.status) ??
+      this.readHttpStatusValue(error.statusCode) ??
+      this.readHttpStatusValue(error.code);
 
     if (directStatus !== undefined) {
       return directStatus;
@@ -804,12 +651,8 @@ export class GoogleProvider implements AiProvider {
 
     if (this.isRecord(error.response)) {
       const responseStatus =
-        this.readHttpStatusValue(
-          error.response.status,
-        ) ??
-        this.readHttpStatusValue(
-          error.response.statusCode,
-        );
+        this.readHttpStatusValue(error.response.status) ??
+        this.readHttpStatusValue(error.response.statusCode);
 
       if (responseStatus !== undefined) {
         return responseStatus;
@@ -818,12 +661,8 @@ export class GoogleProvider implements AiProvider {
 
     if (this.isRecord(error.cause)) {
       return (
-        this.readHttpStatusValue(
-          error.cause.status,
-        ) ??
-        this.readHttpStatusValue(
-          error.cause.statusCode,
-        )
+        this.readHttpStatusValue(error.cause.status) ??
+        this.readHttpStatusValue(error.cause.statusCode)
       );
     }
 
@@ -839,14 +678,11 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate status value.
    * @returns Valid HTTP status code or undefined.
    */
-  private readHttpStatusValue(
-    value: unknown,
-  ): number | undefined {
+  private readHttpStatusValue(value: unknown): number | undefined {
     const numericValue =
       typeof value === 'number'
         ? value
-        : typeof value === 'string' &&
-            /^\d{3}$/.test(value.trim())
+        : typeof value === 'string' && /^\d{3}$/.test(value.trim())
           ? Number(value.trim())
           : undefined;
 
@@ -874,20 +710,14 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown SDK exception.
    * @returns Normalized request ID or undefined.
    */
-  private readRequestId(
-    error: unknown,
-  ): string | undefined {
+  private readRequestId(error: unknown): string | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
     const directRequestId =
-      this.normalizeOptionalText(
-        error.request_id,
-      ) ??
-      this.normalizeOptionalText(
-        error.requestId,
-      );
+      this.normalizeOptionalText(error.request_id) ??
+      this.normalizeOptionalText(error.requestId);
 
     if (directRequestId) {
       return directRequestId;
@@ -898,20 +728,14 @@ export class GoogleProvider implements AiProvider {
     }
 
     const responseRequestId =
-      this.normalizeOptionalText(
-        error.response.request_id,
-      ) ??
-      this.normalizeOptionalText(
-        error.response.requestId,
-      );
+      this.normalizeOptionalText(error.response.request_id) ??
+      this.normalizeOptionalText(error.response.requestId);
 
     if (responseRequestId) {
       return responseRequestId;
     }
 
-    return this.readRequestIdFromHeaders(
-      error.response.headers,
-    );
+    return this.readRequestIdFromHeaders(error.response.headers);
   }
 
   /**
@@ -923,9 +747,7 @@ export class GoogleProvider implements AiProvider {
    * @param headers Unknown response-header collection.
    * @returns Request ID header value or undefined.
    */
-  private readRequestIdFromHeaders(
-    headers: unknown,
-  ): string | undefined {
+  private readRequestIdFromHeaders(headers: unknown): string | undefined {
     if (
       typeof headers === 'object' &&
       headers !== null &&
@@ -936,25 +758,14 @@ export class GoogleProvider implements AiProvider {
         }
       ).get === 'function'
     ) {
-      const getHeader =
-        (
-          headers as {
-            get: (
-              name: string,
-            ) => unknown;
-          }
-        ).get.bind(headers);
+      const getHeader = (headers as { get: (name: string) => unknown }).get;
 
       return (
+        this.normalizeOptionalText(getHeader.call(headers, 'x-request-id')) ??
         this.normalizeOptionalText(
-          getHeader('x-request-id'),
+          getHeader.call(headers, 'x-goog-request-id'),
         ) ??
-        this.normalizeOptionalText(
-          getHeader('x-goog-request-id'),
-        ) ??
-        this.normalizeOptionalText(
-          getHeader('request-id'),
-        )
+        this.normalizeOptionalText(getHeader.call(headers, 'request-id'))
       );
     }
 
@@ -963,15 +774,9 @@ export class GoogleProvider implements AiProvider {
     }
 
     return (
-      this.normalizeOptionalText(
-        headers['x-request-id'],
-      ) ??
-      this.normalizeOptionalText(
-        headers['x-goog-request-id'],
-      ) ??
-      this.normalizeOptionalText(
-        headers['request-id'],
-      )
+      this.normalizeOptionalText(headers['x-request-id']) ??
+      this.normalizeOptionalText(headers['x-goog-request-id']) ??
+      this.normalizeOptionalText(headers['request-id'])
     );
   }
 
@@ -988,15 +793,9 @@ export class GoogleProvider implements AiProvider {
    * @param fallback Message returned when no safe message is available.
    * @returns Normalized provider message.
    */
-  private readMessage(
-    error: unknown,
-    fallback: string,
-  ): string {
+  private readMessage(error: unknown, fallback: string): string {
     if (error instanceof Error) {
-      const normalizedMessage =
-        error.message
-          .replace(/\s+/g, ' ')
-          .trim();
+      const normalizedMessage = error.message.replace(/\s+/g, ' ').trim();
 
       if (normalizedMessage) {
         return normalizedMessage;
@@ -1004,8 +803,7 @@ export class GoogleProvider implements AiProvider {
     }
 
     if (typeof error === 'string') {
-      const normalizedMessage =
-        error.replace(/\s+/g, ' ').trim();
+      const normalizedMessage = error.replace(/\s+/g, ' ').trim();
 
       if (normalizedMessage) {
         return normalizedMessage;
@@ -1013,28 +811,16 @@ export class GoogleProvider implements AiProvider {
     }
 
     if (this.isRecord(error)) {
-      const directMessage =
-        this.normalizeOptionalText(
-          error.message,
-        );
+      const directMessage = this.normalizeOptionalText(error.message);
 
       if (directMessage) {
         return directMessage;
       }
 
-      if (
-        this.isRecord(error.response) &&
-        this.isRecord(
-          error.response.data,
-        )
-      ) {
+      if (this.isRecord(error.response) && this.isRecord(error.response.data)) {
         const responseMessage =
-          this.normalizeOptionalText(
-            error.response.data.message,
-          ) ??
-          this.normalizeOptionalText(
-            error.response.data.error,
-          );
+          this.normalizeOptionalText(error.response.data.message) ??
+          this.normalizeOptionalText(error.response.data.error);
 
         if (responseMessage) {
           return responseMessage;
@@ -1057,18 +843,12 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown provider exception.
    * @returns True when the error represents a timeout.
    */
-  private isTimeoutError(
-    error: unknown,
-  ): boolean {
-    if (
-      error instanceof Error &&
-      error.name === 'TimeoutError'
-    ) {
+  private isTimeoutError(error: unknown): boolean {
+    if (error instanceof Error && error.name === 'TimeoutError') {
       return true;
     }
 
-    const transportCode =
-      this.readTransportErrorCode(error);
+    const transportCode = this.readTransportErrorCode(error);
 
     return [
       'ETIMEDOUT',
@@ -1090,13 +870,8 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown provider exception.
    * @returns True when the request was cancelled.
    */
-  private isAbortError(
-    error: unknown,
-  ): boolean {
-    return (
-      error instanceof Error &&
-      error.name === 'AbortError'
-    );
+  private isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
   }
 
   /**
@@ -1112,11 +887,8 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown provider exception.
    * @returns True when the error likely represents a network failure.
    */
-  private isNetworkError(
-    error: unknown,
-  ): boolean {
-    const transportCode =
-      this.readTransportErrorCode(error);
+  private isNetworkError(error: unknown): boolean {
+    const transportCode = this.readTransportErrorCode(error);
 
     if (
       [
@@ -1133,18 +905,12 @@ export class GoogleProvider implements AiProvider {
       return true;
     }
 
-    if (
-      error instanceof Error &&
-      error.name === 'FetchError'
-    ) {
+    if (error instanceof Error && error.name === 'FetchError') {
       return true;
     }
 
-    if (
-      error instanceof TypeError
-    ) {
-      const message =
-        error.message.toLowerCase();
+    if (error instanceof TypeError) {
+      const message = error.message.toLowerCase();
 
       return [
         'fetch failed',
@@ -1152,9 +918,7 @@ export class GoogleProvider implements AiProvider {
         'network request failed',
         'networkerror',
         'load failed',
-      ].some((term) =>
-        message.includes(term),
-      );
+      ].some((term) => message.includes(term));
     }
 
     return false;
@@ -1166,17 +930,12 @@ export class GoogleProvider implements AiProvider {
    * @param error Unknown provider exception.
    * @returns Normalized uppercase transport code or undefined.
    */
-  private readTransportErrorCode(
-    error: unknown,
-  ): string | undefined {
+  private readTransportErrorCode(error: unknown): string | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
-    const directCode =
-      this.normalizeTransportCode(
-        error.code,
-      );
+    const directCode = this.normalizeTransportCode(error.code);
 
     if (directCode) {
       return directCode;
@@ -1186,9 +945,7 @@ export class GoogleProvider implements AiProvider {
       return undefined;
     }
 
-    return this.normalizeTransportCode(
-      error.cause.code,
-    );
+    return this.normalizeTransportCode(error.cause.code);
   }
 
   /**
@@ -1200,15 +957,12 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate transport code.
    * @returns Uppercase transport code or undefined.
    */
-  private normalizeTransportCode(
-    value: unknown,
-  ): string | undefined {
+  private normalizeTransportCode(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalizedCode =
-      value.trim().toUpperCase();
+    const normalizedCode = value.trim().toUpperCase();
 
     return normalizedCode || undefined;
   }
@@ -1222,9 +976,7 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate token count.
    * @returns Non-negative safe integer.
    */
-  private normalizeTokenCount(
-    value: unknown,
-  ): number {
+  private normalizeTokenCount(value: unknown): number {
     if (
       typeof value !== 'number' ||
       !Number.isSafeInteger(value) ||
@@ -1245,15 +997,12 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate textual value.
    * @returns Normalized non-empty text or undefined.
    */
-  private normalizeOptionalText(
-    value: unknown,
-  ): string | undefined {
+  private normalizeOptionalText(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalizedValue =
-      value.replace(/\s+/g, ' ').trim();
+    const normalizedValue = value.replace(/\s+/g, ' ').trim();
 
     return normalizedValue || undefined;
   }
@@ -1264,13 +1013,8 @@ export class GoogleProvider implements AiProvider {
    * @param value Candidate value.
    * @returns True when the value can safely be inspected as a record.
    */
-  private isRecord(
-    value: unknown,
-  ): value is UnknownRecord {
-    return (
-      typeof value === 'object' &&
-      value !== null
-    );
+  private isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null;
   }
 
   /**
@@ -1281,11 +1025,7 @@ export class GoogleProvider implements AiProvider {
    *
    * @param value Unhandled provider error code.
    */
-  private assertNeverErrorCode(
-    value: never,
-  ): never {
-    throw new Error(
-      `Unsupported AI provider error code: ${String(value)}.`,
-    );
+  private assertNeverErrorCode(value: never): never {
+    throw new Error(`Unsupported AI provider error code: ${String(value)}.`);
   }
 }

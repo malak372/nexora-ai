@@ -34,9 +34,7 @@ import { IdeaVotingService } from '../services/idea-voting.service';
 @Controller('users/publications')
 @UseGuards(JwtAuthGuard)
 export class PublicationVotesController {
-  constructor(
-    private readonly votingService: IdeaVotingService,
-  ) {}
+  constructor(private readonly votingService: IdeaVotingService) {}
 
   /**
    * Creates or updates the authenticated user's vote on a publication.
@@ -57,18 +55,11 @@ export class PublicationVotesController {
   @Put(':publicationId/vote')
   upsertVote(
     @CurrentUser() user: AuthenticatedUser,
-    @Param(
-      'publicationId',
-      new ParseUUIDPipe({ version: '4' }),
-    )
+    @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
     @Body() dto: VotePublicationDto,
   ) {
-    return this.votingService.upsertVote(
-      user.id,
-      publicationId,
-      dto,
-    );
+    return this.votingService.upsertVote(user.id, publicationId, dto);
   }
 
   /**
@@ -84,16 +75,10 @@ export class PublicationVotesController {
   @Get(':publicationId/vote')
   getMyVote(
     @CurrentUser() user: AuthenticatedUser,
-    @Param(
-      'publicationId',
-      new ParseUUIDPipe({ version: '4' }),
-    )
+    @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
   ) {
-    return this.votingService.getMyVote(
-      user.id,
-      publicationId,
-    );
+    return this.votingService.getMyVote(user.id, publicationId);
   }
 
   /**
@@ -109,15 +94,9 @@ export class PublicationVotesController {
   @Delete(':publicationId/vote')
   deleteVote(
     @CurrentUser() user: AuthenticatedUser,
-    @Param(
-      'publicationId',
-      new ParseUUIDPipe({ version: '4' }),
-    )
+    @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
   ) {
-    return this.votingService.deleteVote(
-      user.id,
-      publicationId,
-    );
+    return this.votingService.deleteVote(user.id, publicationId);
   }
 }

@@ -458,7 +458,9 @@ export class AdminComplaintsService {
       await this.invalidateComplaintCaches(result.affectedUserId);
     }
 
-    const { affectedUserId: _affectedUserId, ...response } = result;
+    const { affectedUserId, ...response } = result;
+
+    void affectedUserId;
 
     return response;
   }

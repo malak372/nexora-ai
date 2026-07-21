@@ -71,10 +71,7 @@ export class AiTimeoutService {
     });
 
     try {
-      return await Promise.race([
-        operationPromise,
-        timeoutPromise,
-      ]);
+      return await Promise.race([operationPromise, timeoutPromise]);
     } finally {
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
@@ -92,9 +89,7 @@ export class AiTimeoutService {
    * @param timeoutMs Configured timeout duration in milliseconds.
    * @returns Retryable AI-provider timeout error.
    */
-  private createTimeoutError(
-    timeoutMs: number,
-  ): AiProviderError {
+  private createTimeoutError(timeoutMs: number): AiProviderError {
     return new AiProviderError(
       `AI request exceeded the configured timeout of ${timeoutMs}ms.`,
       AiProviderErrorCode.TIMEOUT,

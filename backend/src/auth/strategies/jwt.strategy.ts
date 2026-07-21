@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
@@ -30,18 +27,14 @@ type JwtPayload = {
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
-    const accessTokenSecret =
-      process.env.JWT_ACCESS_SECRET?.trim();
+    const accessTokenSecret = process.env.JWT_ACCESS_SECRET?.trim();
 
     if (!accessTokenSecret) {
-      throw new Error(
-        'JWT_ACCESS_SECRET is not configured',
-      );
+      throw new Error('JWT_ACCESS_SECRET is not configured');
     }
 
     super({
-      jwtFromRequest:
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: accessTokenSecret,
     });
@@ -87,21 +80,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    if (
-      !user ||
-      !user.isActive ||
-      !user.isVerified ||
-      user.deletedAt
-    ) {
+    if (!user || !user.isActive || !user.isVerified || user.deletedAt) {
       throw new UnauthorizedException('Unauthorized');
     }
 
     if (
       user.passwordChangedAt &&
-      this.wasIssuedBeforePasswordChange(
-        payload.iat,
-        user.passwordChangedAt,
-      )
+      this.wasIssuedBeforePasswordChange(payload.iat, user.passwordChangedAt)
     ) {
       throw new UnauthorizedException('Unauthorized');
     }
@@ -130,12 +115,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return true;
     }
 
-    const issuedAtMilliseconds =
-      issuedAtSeconds * 1_000;
+    const issuedAtMilliseconds = issuedAtSeconds * 1_000;
 
-    return (
-      issuedAtMilliseconds <
-      passwordChangedAt.getTime()
-    );
+    return issuedAtMilliseconds < passwordChangedAt.getTime();
   }
 }

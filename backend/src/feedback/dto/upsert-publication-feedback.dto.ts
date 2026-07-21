@@ -1,4 +1,4 @@
-import { Transform } from 'class-transformer';
+import { Transform, type TransformFnParams } from 'class-transformer';
 
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
@@ -14,14 +14,14 @@ import { MAX_FEEDBACK_COMMENT_LENGTH } from '../constants/feedback.constants';
  * @author Eman
  */
 export class UpsertPublicationFeedbackDto {
-    /**
-     * Textual publication feedback.
-     */
-    @Transform(({ value }) =>
-        typeof value === 'string' ? value.trim() : value,
-    )
-    @IsString()
-    @IsNotEmpty()
-    @MaxLength(MAX_FEEDBACK_COMMENT_LENGTH)
-    comment!: string;
+  /**
+   * Textual publication feedback.
+   */
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_FEEDBACK_COMMENT_LENGTH)
+  comment!: string;
 }

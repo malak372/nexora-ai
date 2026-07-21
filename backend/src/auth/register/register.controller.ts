@@ -1,16 +1,6 @@
-import {
-  Body,
-  Controller,
-  Post,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type {
-  CookieOptions,
-  Request,
-  Response,
-} from 'express';
+import type { CookieOptions, Request, Response } from 'express';
 
 import { GUEST_SESSION_COOKIE_NAME } from '../../utilities/constants/guest-session.constants';
 
@@ -40,9 +30,7 @@ const GUEST_SESSION_CLEAR_COOKIE_OPTIONS: CookieOptions = {
  */
 @Controller('auth/register')
 export class RegisterController {
-  constructor(
-    private readonly authRegisterService: AuthRegisterService,
-  ) { }
+  constructor(private readonly authRegisterService: AuthRegisterService) {}
 
   /**
    * Registers a new user and transfers guest-owned activity
@@ -106,10 +94,7 @@ export class RegisterController {
    * @param cookieName - Name of the requested cookie.
    * @returns Decoded cookie value, or undefined when unavailable.
    */
-  private readCookie(
-    request: Request,
-    cookieName: string,
-  ): string | undefined {
+  private readCookie(request: Request, cookieName: string): string | undefined {
     const rawCookieHeader = request.headers.cookie;
 
     if (!rawCookieHeader) {
@@ -123,26 +108,20 @@ export class RegisterController {
         continue;
       }
 
-      const name = cookiePart
-        .slice(0, separatorIndex)
-        .trim();
+      const name = cookiePart.slice(0, separatorIndex).trim();
 
       if (name !== cookieName) {
         continue;
       }
 
-      const encodedValue = cookiePart
-        .slice(separatorIndex + 1)
-        .trim();
+      const encodedValue = cookiePart.slice(separatorIndex + 1).trim();
 
       if (!encodedValue) {
         return undefined;
       }
 
       try {
-        const decodedValue = decodeURIComponent(
-          encodedValue,
-        ).trim();
+        const decodedValue = decodeURIComponent(encodedValue).trim();
 
         return decodedValue || undefined;
       } catch {

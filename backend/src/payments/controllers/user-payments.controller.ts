@@ -26,7 +26,7 @@ import { UserPaymentsService } from '../services/user-payments.service';
 @Controller('users/payments')
 @UseGuards(JwtAuthGuard)
 export class UserPaymentsController {
-  constructor(private readonly userPaymentsService: UserPaymentsService) { }
+  constructor(private readonly userPaymentsService: UserPaymentsService) {}
 
   /**
    * Retrieves the authenticated user's payment history.
@@ -83,10 +83,7 @@ export class UserPaymentsController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="user-payments.csv"',
-  )
+  @Header('Content-Disposition', 'attachment; filename="user-payments.csv"')
   exportPaymentsCsv(
     @CurrentUser()
     user: AuthenticatedUser,

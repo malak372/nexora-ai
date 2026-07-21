@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import OpenAI from 'openai';
 
@@ -29,8 +26,7 @@ import type { AiProvider } from './ai-provider.interface';
 /**
  * OpenRouter OpenAI-compatible API base URL.
  */
-const OPENROUTER_BASE_URL =
-  'https://openrouter.ai/api/v1';
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
 /**
  * Maximum provider-message length copied into a normalized application
@@ -101,32 +97,24 @@ type UnknownRecord = Record<string, unknown>;
  * @author Malak
  */
 @Injectable()
-export class OpenRouterProvider
-  implements AiProvider {
+export class OpenRouterProvider implements AiProvider {
   /**
    * Stable backend provider-registry key.
    */
-  readonly providerKey: AiProviderKey =
-    AI_PROVIDER_KEYS.OPENROUTER;
+  readonly providerKey: AiProviderKey = AI_PROVIDER_KEYS.OPENROUTER;
 
   /**
    * OpenAI-compatible SDK client configured for OpenRouter.
    */
   private readonly client: OpenAI;
 
-  constructor(
-    credentialsService: AiProviderCredentialsService,
-  ) {
-    const siteUrl =
-      credentialsService.getOpenRouterSiteUrl();
+  constructor(credentialsService: AiProviderCredentialsService) {
+    const siteUrl = credentialsService.getOpenRouterSiteUrl();
 
-    const applicationName =
-      credentialsService.getOpenRouterAppName();
+    const applicationName = credentialsService.getOpenRouterAppName();
 
     this.client = new OpenAI({
-      apiKey: credentialsService.getApiKey(
-        this.providerKey,
-      ),
+      apiKey: credentialsService.getApiKey(this.providerKey),
 
       baseURL: OPENROUTER_BASE_URL,
 
@@ -139,15 +127,14 @@ export class OpenRouterProvider
       defaultHeaders: {
         ...(siteUrl
           ? {
-            'HTTP-Referer': siteUrl,
-          }
+              'HTTP-Referer': siteUrl,
+            }
           : {}),
 
         ...(applicationName
           ? {
-            'X-OpenRouter-Title':
-              applicationName,
-          }
+              'X-OpenRouter-Title': applicationName,
+            }
           : {}),
       },
     });
@@ -169,73 +156,56 @@ export class OpenRouterProvider
   ): Promise<AiProviderGenerateResult> {
     this.validateInput(input);
 
-    const apiModelId =
-      input.apiModelId.trim();
+    const apiModelId = input.apiModelId.trim();
 
     const startedAt = Date.now();
 
     try {
-      const messages =
-        this.buildMessages(input);
+      const messages = this.buildMessages(input);
 
-      const responseFormat =
-        this.buildResponseFormat(input);
+      const responseFormat = this.buildResponseFormat(input);
 
-      const completion =
-        await this.client.chat.completions.create(
-          {
-            model: apiModelId,
+      const completion = await this.client.chat.completions.create(
+        {
+          model: apiModelId,
 
-            messages,
+          messages,
 
-            max_tokens:
-              input.maxOutputTokens,
+          max_tokens: input.maxOutputTokens,
 
-            ...(input.temperature !== undefined
-              ? {
-                temperature:
-                  input.temperature,
+          ...(input.temperature !== undefined
+            ? {
+                temperature: input.temperature,
               }
-              : {}),
+            : {}),
 
-            ...(responseFormat
-              ? {
-                response_format:
-                  responseFormat,
+          ...(responseFormat
+            ? {
+                response_format: responseFormat,
               }
-              : {}),
+            : {}),
 
-            stream: false,
-          },
-          {
-            signal: input.signal,
-          },
-        );
+          stream: false,
+        },
+        {
+          signal: input.signal,
+        },
+      );
 
-      const firstChoice =
-        completion.choices[0];
+      const firstChoice = completion.choices[0];
 
-      const finishReason =
-        this.mapFinishReason(
-          firstChoice?.finish_reason,
-        );
+      const finishReason = this.mapFinishReason(firstChoice?.finish_reason);
 
-      const text =
-        firstChoice?.message?.content?.trim();
+      const text = firstChoice?.message?.content?.trim();
 
       if (!text) {
-        if (
-          finishReason ===
-          AiFinishReason.CONTENT_FILTER
-        ) {
+        if (finishReason === AiFinishReason.CONTENT_FILTER) {
           throw new AiProviderError(
             'OpenRouter blocked the generated response because of content-safety policies.',
             AiProviderErrorCode.CONTENT_FILTERED,
             false,
             403,
-            this.normalizeOptionalText(
-              completion.id,
-            ),
+            this.normalizeOptionalText(completion.id),
           );
         }
 
@@ -244,9 +214,7 @@ export class OpenRouterProvider
           AiProviderErrorCode.EMPTY_RESPONSE,
           true,
           502,
-          this.normalizeOptionalText(
-            completion.id,
-          ),
+          this.normalizeOptionalText(completion.id),
         );
       }
 
@@ -257,26 +225,17 @@ export class OpenRouterProvider
 
         text,
 
-        requestId:
-          this.normalizeOptionalText(
-            completion.id,
-          ),
+        requestId: this.normalizeOptionalText(completion.id),
 
-        inputTokens:
-          this.normalizeTokenCount(
-            completion.usage?.prompt_tokens,
-          ),
+        inputTokens: this.normalizeTokenCount(completion.usage?.prompt_tokens),
 
-        outputTokens:
-          this.normalizeTokenCount(
-            completion.usage
-              ?.completion_tokens,
-          ),
+        outputTokens: this.normalizeTokenCount(
+          completion.usage?.completion_tokens,
+        ),
 
         finishReason,
 
-        providerLatencyMs:
-          Date.now() - startedAt,
+        providerLatencyMs: Date.now() - startedAt,
       };
     } catch (error: unknown) {
       /*
@@ -308,17 +267,14 @@ export class OpenRouterProvider
   private buildMessages(
     input: AiProviderGenerateInput,
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-      [];
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
-    const callerSystemInstruction =
-      input.systemInstruction?.trim();
+    const callerSystemInstruction = input.systemInstruction?.trim();
 
-    const systemInstruction =
-      this.buildSystemInstruction(
-        callerSystemInstruction,
-        input.responseFormat,
-      );
+    const systemInstruction = this.buildSystemInstruction(
+      callerSystemInstruction,
+      input.responseFormat,
+    );
 
     if (systemInstruction) {
       messages.push({
@@ -346,9 +302,7 @@ export class OpenRouterProvider
     callerInstruction: string | undefined,
     responseFormat: AiResponseFormat | undefined,
   ): string | undefined {
-    if (
-      responseFormat !== AiResponseFormat.JSON
-    ) {
+    if (responseFormat !== AiResponseFormat.JSON) {
       return callerInstruction;
     }
 
@@ -356,10 +310,7 @@ export class OpenRouterProvider
       return OPENROUTER_JSON_SYSTEM_INSTRUCTION;
     }
 
-    return [
-      callerInstruction,
-      OPENROUTER_JSON_SYSTEM_INSTRUCTION,
-    ].join('\n\n');
+    return [callerInstruction, OPENROUTER_JSON_SYSTEM_INSTRUCTION].join('\n\n');
   }
 
   /**
@@ -378,10 +329,7 @@ export class OpenRouterProvider
   private buildResponseFormat(
     input: AiProviderGenerateInput,
   ): OpenRouterResponseFormat | undefined {
-    if (
-      input.responseFormat !==
-      AiResponseFormat.JSON
-    ) {
+    if (input.responseFormat !== AiResponseFormat.JSON) {
       return undefined;
     }
 
@@ -400,40 +348,21 @@ export class OpenRouterProvider
    * @param input Candidate generation input.
    * @throws BadRequestException when required values are invalid.
    */
-  private validateInput(
-    input: AiProviderGenerateInput,
-  ): void {
-    if (
-      typeof input !== 'object' ||
-      input === null
-    ) {
-      throw new BadRequestException(
-        'OpenRouter generation input is required.',
-      );
+  private validateInput(input: AiProviderGenerateInput): void {
+    if (typeof input !== 'object' || input === null) {
+      throw new BadRequestException('OpenRouter generation input is required.');
+    }
+
+    if (typeof input.apiModelId !== 'string' || !input.apiModelId.trim()) {
+      throw new BadRequestException('OpenRouter apiModelId is required.');
+    }
+
+    if (typeof input.userPrompt !== 'string' || !input.userPrompt.trim()) {
+      throw new BadRequestException('OpenRouter userPrompt is required.');
     }
 
     if (
-      typeof input.apiModelId !== 'string' ||
-      !input.apiModelId.trim()
-    ) {
-      throw new BadRequestException(
-        'OpenRouter apiModelId is required.',
-      );
-    }
-
-    if (
-      typeof input.userPrompt !== 'string' ||
-      !input.userPrompt.trim()
-    ) {
-      throw new BadRequestException(
-        'OpenRouter userPrompt is required.',
-      );
-    }
-
-    if (
-      !Number.isSafeInteger(
-        input.maxOutputTokens,
-      ) ||
+      !Number.isSafeInteger(input.maxOutputTokens) ||
       input.maxOutputTokens <= 0
     ) {
       throw new BadRequestException(
@@ -443,13 +372,9 @@ export class OpenRouterProvider
 
     if (
       input.temperature !== undefined &&
-      (
-        !Number.isFinite(
-          input.temperature,
-        ) ||
+      (!Number.isFinite(input.temperature) ||
         input.temperature < 0 ||
-        input.temperature > 2
-      )
+        input.temperature > 2)
     ) {
       throw new BadRequestException(
         'OpenRouter temperature must be a finite number between 0 and 2.',
@@ -458,32 +383,24 @@ export class OpenRouterProvider
 
     if (
       input.systemInstruction !== undefined &&
-      typeof input.systemInstruction !==
-      'string'
+      typeof input.systemInstruction !== 'string'
     ) {
       throw new BadRequestException(
         'OpenRouter systemInstruction must be a string when provided.',
       );
     }
 
-    if (
-      input.signal !== undefined &&
-      !this.isAbortSignal(input.signal)
-    ) {
+    if (input.signal !== undefined && !this.isAbortSignal(input.signal)) {
       throw new BadRequestException(
         'OpenRouter signal must be a valid AbortSignal when provided.',
       );
     }
 
     if (
-      input.responseFormat ===
-      AiResponseFormat.JSON &&
+      input.responseFormat === AiResponseFormat.JSON &&
       input.responseSchema !== undefined &&
-      (
-        typeof input.responseSchema !==
-        'object' ||
-        input.responseSchema === null
-      )
+      (typeof input.responseSchema !== 'object' ||
+        input.responseSchema === null)
     ) {
       throw new BadRequestException(
         'OpenRouter responseSchema must be an object when provided.',
@@ -500,19 +417,15 @@ export class OpenRouterProvider
    * @param value Candidate cancellation signal.
    * @returns True when the value has AbortSignal behavior.
    */
-  private isAbortSignal(
-    value: unknown,
-  ): value is AbortSignal {
+  private isAbortSignal(value: unknown): value is AbortSignal {
     if (!this.isRecord(value)) {
       return false;
     }
 
     return (
       typeof value.aborted === 'boolean' &&
-      typeof value.addEventListener ===
-      'function' &&
-      typeof value.removeEventListener ===
-      'function'
+      typeof value.addEventListener === 'function' &&
+      typeof value.removeEventListener === 'function'
     );
   }
 
@@ -560,17 +473,12 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns Normalized AiProviderError.
    */
-  private normalizeError(
-    error: unknown,
-  ): AiProviderError {
-    const statusCode =
-      this.readStatusCode(error);
+  private normalizeError(error: unknown): AiProviderError {
+    const statusCode = this.readStatusCode(error);
 
-    const requestId =
-      this.readRequestId(error);
+    const requestId = this.readRequestId(error);
 
-    const providerMessage =
-      this.readSafeProviderMessage(error);
+    const providerMessage = this.readSafeProviderMessage(error);
 
     if (this.isTimeoutError(error)) {
       return new AiProviderError(
@@ -597,18 +505,13 @@ export class OpenRouterProvider
       );
     }
 
-    if (
-      this.indicatesInsufficientQuota(
-        providerMessage,
-      )
-    ) {
+    if (this.indicatesInsufficientQuota(providerMessage)) {
       return new AiProviderError(
         this.buildErrorMessage(
           'OpenRouter account credit or quota is unavailable.',
           providerMessage,
         ),
-        AiProviderErrorCode
-          .INSUFFICIENT_QUOTA,
+        AiProviderErrorCode.INSUFFICIENT_QUOTA,
         false,
         statusCode,
         requestId,
@@ -616,10 +519,7 @@ export class OpenRouterProvider
       );
     }
 
-    if (
-      statusCode === undefined &&
-      this.isNetworkError(error)
-    ) {
+    if (statusCode === undefined && this.isNetworkError(error)) {
       return new AiProviderError(
         this.buildErrorMessage(
           'OpenRouter network request failed.',
@@ -636,15 +536,11 @@ export class OpenRouterProvider
     switch (statusCode) {
       case 400:
       case 422: {
-        const errorCode =
-          this.resolveInvalidRequestCode(
-            providerMessage,
-          );
+        const errorCode = this.resolveInvalidRequestCode(providerMessage);
 
         return new AiProviderError(
           this.buildErrorMessage(
-            errorCode ===
-              AiProviderErrorCode.INVALID_PROMPT
+            errorCode === AiProviderErrorCode.INVALID_PROMPT
               ? 'OpenRouter rejected the supplied prompt.'
               : 'OpenRouter rejected the configured model or generation parameters.',
             providerMessage,
@@ -660,8 +556,7 @@ export class OpenRouterProvider
       case 401:
         return new AiProviderError(
           'OpenRouter credentials are invalid.',
-          AiProviderErrorCode
-            .INVALID_CREDENTIALS,
+          AiProviderErrorCode.INVALID_CREDENTIALS,
           false,
           statusCode,
           requestId,
@@ -671,8 +566,7 @@ export class OpenRouterProvider
       case 402:
         return new AiProviderError(
           'OpenRouter account has insufficient credits.',
-          AiProviderErrorCode
-            .INSUFFICIENT_QUOTA,
+          AiProviderErrorCode.INSUFFICIENT_QUOTA,
           false,
           statusCode,
           requestId,
@@ -723,8 +617,7 @@ export class OpenRouterProvider
             'OpenRouter could not process the request temporarily.',
             providerMessage,
           ),
-          AiProviderErrorCode
-            .PROVIDER_UNAVAILABLE,
+          AiProviderErrorCode.PROVIDER_UNAVAILABLE,
           true,
           statusCode,
           requestId,
@@ -753,8 +646,7 @@ export class OpenRouterProvider
             'OpenRouter is temporarily unavailable.',
             providerMessage,
           ),
-          AiProviderErrorCode
-            .PROVIDER_UNAVAILABLE,
+          AiProviderErrorCode.PROVIDER_UNAVAILABLE,
           true,
           statusCode,
           requestId,
@@ -770,9 +662,7 @@ export class OpenRouterProvider
           AiProviderErrorCode.UNKNOWN,
           statusCode === undefined
             ? this.isNetworkError(error)
-            : isRetryableAiProviderStatus(
-              statusCode,
-            ),
+            : isRetryableAiProviderStatus(statusCode),
           statusCode,
           requestId,
           error,
@@ -787,16 +677,12 @@ export class OpenRouterProvider
    * @param message Optional provider error message.
    * @returns Normalized invalid-request error code.
    */
-  private resolveInvalidRequestCode(
-    message?: string,
-  ): AiProviderErrorCode {
+  private resolveInvalidRequestCode(message?: string): AiProviderErrorCode {
     if (this.isPromptError(message)) {
-      return AiProviderErrorCode
-        .INVALID_PROMPT;
+      return AiProviderErrorCode.INVALID_PROMPT;
     }
 
-    return AiProviderErrorCode
-      .INVALID_MODEL_CONFIGURATION;
+    return AiProviderErrorCode.INVALID_MODEL_CONFIGURATION;
   }
 
   /**
@@ -809,11 +695,8 @@ export class OpenRouterProvider
    * @param message Optional normalized provider message.
    * @returns True when the failure likely originates from prompt input.
    */
-  private isPromptError(
-    message?: string,
-  ): boolean {
-    const normalizedMessage =
-      message?.toLowerCase() ?? '';
+  private isPromptError(message?: string): boolean {
+    const normalizedMessage = message?.toLowerCase() ?? '';
 
     return [
       'prompt',
@@ -825,9 +708,7 @@ export class OpenRouterProvider
       'maximum context',
       'too many tokens',
       'token limit exceeded',
-    ].some((term) =>
-      normalizedMessage.includes(term),
-    );
+    ].some((term) => normalizedMessage.includes(term));
   }
 
   /**
@@ -839,11 +720,8 @@ export class OpenRouterProvider
    * @param message Optional normalized provider message.
    * @returns True when the account lacks usable credit or quota.
    */
-  private indicatesInsufficientQuota(
-    message?: string,
-  ): boolean {
-    const normalizedMessage =
-      message?.toLowerCase() ?? '';
+  private indicatesInsufficientQuota(message?: string): boolean {
+    const normalizedMessage = message?.toLowerCase() ?? '';
 
     return [
       'insufficient credits',
@@ -856,9 +734,7 @@ export class OpenRouterProvider
       'daily quota',
       'billing',
       'limit: 0',
-    ].some((term) =>
-      normalizedMessage.includes(term),
-    );
+    ].some((term) => normalizedMessage.includes(term));
   }
 
   /**
@@ -871,18 +747,12 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns True when the error represents a timeout.
    */
-  private isTimeoutError(
-    error: unknown,
-  ): boolean {
-    if (
-      error instanceof Error &&
-      error.name === 'TimeoutError'
-    ) {
+  private isTimeoutError(error: unknown): boolean {
+    if (error instanceof Error && error.name === 'TimeoutError') {
       return true;
     }
 
-    const transportCode =
-      this.readTransportErrorCode(error);
+    const transportCode = this.readTransportErrorCode(error);
 
     return [
       'ETIMEDOUT',
@@ -903,18 +773,12 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns True when the request was explicitly cancelled.
    */
-  private isAbortError(
-    error: unknown,
-  ): boolean {
+  private isAbortError(error: unknown): boolean {
     if (!(error instanceof Error)) {
       return false;
     }
 
-    return (
-      error.name === 'AbortError' ||
-      error.name ===
-      'APIUserAbortError'
-    );
+    return error.name === 'AbortError' || error.name === 'APIUserAbortError';
   }
 
   /**
@@ -928,11 +792,8 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns True when the error likely represents a network failure.
    */
-  private isNetworkError(
-    error: unknown,
-  ): boolean {
-    const transportCode =
-      this.readTransportErrorCode(error);
+  private isNetworkError(error: unknown): boolean {
+    const transportCode = this.readTransportErrorCode(error);
 
     if (
       [
@@ -949,16 +810,12 @@ export class OpenRouterProvider
       return true;
     }
 
-    if (
-      error instanceof Error &&
-      error.name === 'FetchError'
-    ) {
+    if (error instanceof Error && error.name === 'FetchError') {
       return true;
     }
 
     if (error instanceof TypeError) {
-      const message =
-        error.message.toLowerCase();
+      const message = error.message.toLowerCase();
 
       return [
         'fetch failed',
@@ -966,9 +823,7 @@ export class OpenRouterProvider
         'network request failed',
         'networkerror',
         'load failed',
-      ].some((term) =>
-        message.includes(term),
-      );
+      ].some((term) => message.includes(term));
     }
 
     return false;
@@ -980,17 +835,12 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns Normalized uppercase transport error code or undefined.
    */
-  private readTransportErrorCode(
-    error: unknown,
-  ): string | undefined {
+  private readTransportErrorCode(error: unknown): string | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
-    const directCode =
-      this.normalizeTransportCode(
-        error.code,
-      );
+    const directCode = this.normalizeTransportCode(error.code);
 
     if (directCode) {
       return directCode;
@@ -1000,9 +850,7 @@ export class OpenRouterProvider
       return undefined;
     }
 
-    return this.normalizeTransportCode(
-      error.cause.code,
-    );
+    return this.normalizeTransportCode(error.cause.code);
   }
 
   /**
@@ -1014,15 +862,12 @@ export class OpenRouterProvider
    * @param value Candidate transport error code.
    * @returns Uppercase code or undefined.
    */
-  private normalizeTransportCode(
-    value: unknown,
-  ): string | undefined {
+  private normalizeTransportCode(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalizedCode =
-      value.trim().toUpperCase();
+    const normalizedCode = value.trim().toUpperCase();
 
     return normalizedCode || undefined;
   }
@@ -1042,23 +887,15 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns Valid HTTP status code or undefined.
    */
-  private readStatusCode(
-    error: unknown,
-  ): number | undefined {
+  private readStatusCode(error: unknown): number | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
     const directStatus =
-      this.normalizeHttpStatus(
-        error.status,
-      ) ??
-      this.normalizeHttpStatus(
-        error.statusCode,
-      ) ??
-      this.normalizeHttpStatus(
-        error.code,
-      );
+      this.normalizeHttpStatus(error.status) ??
+      this.normalizeHttpStatus(error.statusCode) ??
+      this.normalizeHttpStatus(error.code);
 
     if (directStatus !== undefined) {
       return directStatus;
@@ -1066,12 +903,8 @@ export class OpenRouterProvider
 
     if (this.isRecord(error.response)) {
       const responseStatus =
-        this.normalizeHttpStatus(
-          error.response.status,
-        ) ??
-        this.normalizeHttpStatus(
-          error.response.statusCode,
-        );
+        this.normalizeHttpStatus(error.response.status) ??
+        this.normalizeHttpStatus(error.response.statusCode);
 
       if (responseStatus !== undefined) {
         return responseStatus;
@@ -1080,12 +913,8 @@ export class OpenRouterProvider
 
     if (this.isRecord(error.cause)) {
       return (
-        this.normalizeHttpStatus(
-          error.cause.status,
-        ) ??
-        this.normalizeHttpStatus(
-          error.cause.statusCode,
-        )
+        this.normalizeHttpStatus(error.cause.status) ??
+        this.normalizeHttpStatus(error.cause.statusCode)
       );
     }
 
@@ -1101,14 +930,11 @@ export class OpenRouterProvider
    * @param value Candidate status value.
    * @returns Valid HTTP status code or undefined.
    */
-  private normalizeHttpStatus(
-    value: unknown,
-  ): number | undefined {
+  private normalizeHttpStatus(value: unknown): number | undefined {
     const numericValue =
       typeof value === 'number'
         ? value
-        : typeof value === 'string' &&
-          /^\d{3}$/.test(value.trim())
+        : typeof value === 'string' && /^\d{3}$/.test(value.trim())
           ? Number(value.trim())
           : undefined;
 
@@ -1137,23 +963,15 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns Normalized request ID or undefined.
    */
-  private readRequestId(
-    error: unknown,
-  ): string | undefined {
+  private readRequestId(error: unknown): string | undefined {
     if (!this.isRecord(error)) {
       return undefined;
     }
 
     const directRequestId =
-      this.normalizeOptionalText(
-        error.request_id,
-      ) ??
-      this.normalizeOptionalText(
-        error.requestId,
-      ) ??
-      this.normalizeOptionalText(
-        error.requestID,
-      );
+      this.normalizeOptionalText(error.request_id) ??
+      this.normalizeOptionalText(error.requestId) ??
+      this.normalizeOptionalText(error.requestID);
 
     if (directRequestId) {
       return directRequestId;
@@ -1164,23 +982,15 @@ export class OpenRouterProvider
     }
 
     const responseRequestId =
-      this.normalizeOptionalText(
-        error.response.request_id,
-      ) ??
-      this.normalizeOptionalText(
-        error.response.requestId,
-      ) ??
-      this.normalizeOptionalText(
-        error.response.requestID,
-      );
+      this.normalizeOptionalText(error.response.request_id) ??
+      this.normalizeOptionalText(error.response.requestId) ??
+      this.normalizeOptionalText(error.response.requestID);
 
     if (responseRequestId) {
       return responseRequestId;
     }
 
-    return this.readRequestIdFromHeaders(
-      error.response.headers,
-    );
+    return this.readRequestIdFromHeaders(error.response.headers);
   }
 
   /**
@@ -1190,32 +1000,16 @@ export class OpenRouterProvider
    * @param headers Unknown response-header collection.
    * @returns Normalized request ID or undefined.
    */
-  private readRequestIdFromHeaders(
-    headers: unknown,
-  ): string | undefined {
-    if (
-      this.isRecord(headers) &&
-      typeof headers.get === 'function'
-    ) {
-      const getHeader =
-        (
-          headers as {
-            get: (
-              name: string,
-            ) => unknown;
-          }
-        ).get.bind(headers);
+  private readRequestIdFromHeaders(headers: unknown): string | undefined {
+    if (this.isRecord(headers) && typeof headers.get === 'function') {
+      const getHeader = (headers as { get: (name: string) => unknown }).get;
 
       return (
+        this.normalizeOptionalText(getHeader.call(headers, 'x-request-id')) ??
         this.normalizeOptionalText(
-          getHeader('x-request-id'),
+          getHeader.call(headers, 'x-openrouter-request-id'),
         ) ??
-        this.normalizeOptionalText(
-          getHeader('x-openrouter-request-id'),
-        ) ??
-        this.normalizeOptionalText(
-          getHeader('request-id'),
-        )
+        this.normalizeOptionalText(getHeader.call(headers, 'request-id'))
       );
     }
 
@@ -1224,17 +1018,9 @@ export class OpenRouterProvider
     }
 
     return (
-      this.normalizeOptionalText(
-        headers['x-request-id'],
-      ) ??
-      this.normalizeOptionalText(
-        headers[
-        'x-openrouter-request-id'
-        ],
-      ) ??
-      this.normalizeOptionalText(
-        headers['request-id'],
-      )
+      this.normalizeOptionalText(headers['x-request-id']) ??
+      this.normalizeOptionalText(headers['x-openrouter-request-id']) ??
+      this.normalizeOptionalText(headers['request-id'])
     );
   }
 
@@ -1255,9 +1041,7 @@ export class OpenRouterProvider
    * @param error Unknown SDK exception.
    * @returns Bounded provider message or undefined.
    */
-  private readSafeProviderMessage(
-    error: unknown,
-  ): string | undefined {
+  private readSafeProviderMessage(error: unknown): string | undefined {
     const candidates: unknown[] = [];
 
     if (error instanceof Error) {
@@ -1268,49 +1052,25 @@ export class OpenRouterProvider
       candidates.push(error.message);
 
       if (this.isRecord(error.error)) {
-        candidates.push(
-          error.error.message,
-        );
+        candidates.push(error.error.message);
       }
 
-      if (
-        this.isRecord(error.response) &&
-        this.isRecord(
-          error.response.data,
-        )
-      ) {
-        candidates.push(
-          error.response.data.message,
-        );
+      if (this.isRecord(error.response) && this.isRecord(error.response.data)) {
+        candidates.push(error.response.data.message);
 
-        if (
-          this.isRecord(
-            error.response.data.error,
-          )
-        ) {
-          candidates.push(
-            error.response.data.error
-              .message,
-          );
+        if (this.isRecord(error.response.data.error)) {
+          candidates.push(error.response.data.error.message);
         } else {
-          candidates.push(
-            error.response.data.error,
-          );
+          candidates.push(error.response.data.error);
         }
       }
     }
 
     for (const candidate of candidates) {
-      const normalizedMessage =
-        this.normalizeOptionalText(
-          candidate,
-        );
+      const normalizedMessage = this.normalizeOptionalText(candidate);
 
       if (normalizedMessage) {
-        return normalizedMessage.slice(
-          0,
-          MAX_OPENROUTER_ERROR_MESSAGE_LENGTH,
-        );
+        return normalizedMessage.slice(0, MAX_OPENROUTER_ERROR_MESSAGE_LENGTH);
       }
     }
 
@@ -1347,9 +1107,7 @@ export class OpenRouterProvider
    * @param value Candidate token count.
    * @returns Non-negative safe integer.
    */
-  private normalizeTokenCount(
-    value: unknown,
-  ): number {
+  private normalizeTokenCount(value: unknown): number {
     if (
       typeof value !== 'number' ||
       !Number.isSafeInteger(value) ||
@@ -1369,15 +1127,12 @@ export class OpenRouterProvider
    * @param value Candidate textual value.
    * @returns Normalized text or undefined.
    */
-  private normalizeOptionalText(
-    value: unknown,
-  ): string | undefined {
+  private normalizeOptionalText(value: unknown): string | undefined {
     if (typeof value !== 'string') {
       return undefined;
     }
 
-    const normalizedValue =
-      value.replace(/\s+/g, ' ').trim();
+    const normalizedValue = value.replace(/\s+/g, ' ').trim();
 
     return normalizedValue || undefined;
   }
@@ -1388,12 +1143,7 @@ export class OpenRouterProvider
    * @param value Candidate value.
    * @returns True when the value can safely be inspected as a record.
    */
-  private isRecord(
-    value: unknown,
-  ): value is UnknownRecord {
-    return (
-      typeof value === 'object' &&
-      value !== null
-    );
+  private isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null;
   }
 }

@@ -111,6 +111,7 @@ export class PremiumOutputGenerationStage implements IdeaGenerationStage {
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     this.validateContext(context);
 
     const matchingOutputs = context.advancedOutputs.filter(
@@ -121,8 +122,7 @@ export class PremiumOutputGenerationStage implements IdeaGenerationStage {
       if (!this.required) {
         return {
           context,
-          resultPreview:
-            `Optional premium output "${this.outputTitle}" was not returned.`,
+          resultPreview: `Optional premium output "${this.outputTitle}" was not returned.`,
           metadata: {
             outputKey: this.outputKey,
             outputTitle: this.outputTitle,
@@ -146,15 +146,11 @@ export class PremiumOutputGenerationStage implements IdeaGenerationStage {
 
     const output = matchingOutputs[0];
 
-    this.validateOutputContent(
-      output.content,
-      output.structuredContent,
-    );
+    this.validateOutputContent(output.content, output.structuredContent);
 
     return {
       context,
-      resultPreview:
-        `Premium output "${this.outputTitle}" validated successfully.`,
+      resultPreview: `Premium output "${this.outputTitle}" validated successfully.`,
       metadata: {
         outputKey: output.outputKey,
         outputTitle: output.title,
@@ -214,10 +210,7 @@ export class PremiumOutputGenerationStage implements IdeaGenerationStage {
       return;
     }
 
-    if (
-      structuredContent === null ||
-      typeof structuredContent !== 'object'
-    ) {
+    if (structuredContent === null || typeof structuredContent !== 'object') {
       this.throwInvalidOutput(
         `Premium output "${this.outputTitle}" contains invalid structured content.`,
       );

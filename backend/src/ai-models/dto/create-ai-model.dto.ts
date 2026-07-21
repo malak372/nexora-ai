@@ -24,11 +24,7 @@ import {
  * This prevents optional textual database fields from being persisted
  * as empty strings.
  */
-const normalizeOptionalString = ({
-  value,
-}: {
-  value: unknown;
-}): unknown => {
+const normalizeOptionalString = ({ value }: { value: unknown }): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
@@ -57,9 +53,7 @@ export class CreateAiModelDto {
    * - openrouter
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : value,
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsString()
   @IsIn(SUPPORTED_AI_PROVIDER_KEYS)
@@ -72,9 +66,7 @@ export class CreateAiModelDto {
    * the provider-side model identifier.
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+    typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty()
@@ -89,9 +81,7 @@ export class CreateAiModelDto {
    * - google/gemini-2.0-flash-exp:free
    */
   @Transform(({ value }: { value: unknown }): unknown =>
-    typeof value === 'string'
-      ? value.trim()
-      : value,
+    typeof value === 'string' ? value.trim() : value,
   )
   @IsString()
   @IsNotEmpty()

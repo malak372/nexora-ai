@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -28,9 +22,7 @@ import { AdminFeedbackService } from '../services/admin-feedback.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminFeedbackController {
-  constructor(
-    private readonly adminFeedbackService: AdminFeedbackService,
-  ) { }
+  constructor(private readonly adminFeedbackService: AdminFeedbackService) {}
 
   /**
    * Returns paginated textual feedback.

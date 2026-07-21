@@ -288,16 +288,17 @@ export class ProductHuntCollector
     let after: string | null = null;
 
     while (collectedPosts.length < this.maxFetchedPosts) {
-      const response = await this.graphqlRequest<ProductHuntPostsResponse>(
-        query,
-        {
-          first: this.pageSize,
-          after,
-        },
-        token,
-        (value: unknown): value is ProductHuntPostsResponse =>
-          this.isProductHuntPostsResponse(value),
-      );
+      const response: ProductHuntPostsResponse =
+        await this.graphqlRequest<ProductHuntPostsResponse>(
+          query,
+          {
+            first: this.pageSize,
+            after,
+          },
+          token,
+          (value: unknown): value is ProductHuntPostsResponse =>
+            this.isProductHuntPostsResponse(value),
+        );
 
       const postsConnection = response.data?.posts;
 

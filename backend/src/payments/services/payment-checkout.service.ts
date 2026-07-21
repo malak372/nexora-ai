@@ -113,7 +113,7 @@ export class PaymentCheckoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
-  ) { }
+  ) {}
 
   /**
    * Creates a checkout session for purchasing generation credits.

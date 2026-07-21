@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserValidationService } from '../validation/validation.service';
 import { CreateSavedSearchDto } from './dto/create-saved-search.dto';
+import { UpdateSavedSearchDto } from './dto/update-saved-search.dto';
 import { GetSavedSearchesQueryDto } from './dto/get-saved-searches-query.dto';
 
 import {
@@ -19,7 +20,7 @@ import {
  *
  * This service manages reusable idea generation criteria for Nexora AI users.
  * A saved search represents a previously selected generation context that may
- * include the software domain, geographical filters, language, target platforms,
+ * include the software domain, geographical filters, language, target data sources,
  * and custom keywords.
  *
  * Purpose in Nexora AI:
@@ -47,7 +48,7 @@ import {
  * Business rules:
  * - The geographical fields are optional because region-based collection
  *   is only applied when the user provides location filters.
- * - Platforms and keywords are stored as JSON arrays to support flexible
+ * - Data-source keys and keywords are stored as JSON arrays to support flexible
  *   platform selection and future expansion.
  * - lastUsedAt is updated when the user reuses a saved search for generation.
  *
@@ -67,7 +68,7 @@ export class UserSavedSearchesService {
    * - Domain.
    * - Country, city, or region.
    * - Preferred language.
-   * - Selected platforms.
+   * - Selected data-source keys.
    * - Custom keywords.
    *
    * If a domain ID is provided, the domain must exist and be active.
@@ -83,20 +84,7 @@ export class UserSavedSearchesService {
    */
   async createSavedSearch(userId: string, dto: CreateSavedSearchDto) {
     await this.userCommonService.findUserOrThrow(userId);
-
-    if (dto.domainId) {
-      const domain = await this.prisma.domain.findFirst({
-        where: {
-          id: dto.domainId,
-          isActive: true,
-        },
-        select: { id: true },
-      });
-
-      if (!domain) {
-        throw new NotFoundException('Domain not found');
-      }
-    }
+    await this.validateReferences(dto.domainId, dto.dataSourceKeys);
 
     return this.prisma.savedGenerationSearch.create({
       data: {
@@ -107,7 +95,7 @@ export class UserSavedSearchesService {
         city: dto.city,
         region: dto.region,
         language: dto.language,
-        platforms: dto.platforms ?? [],
+        dataSourceKeys: dto.dataSourceKeys ?? [],
         keywords: dto.keywords ?? [],
       },
       select: this.savedSearchSelect,
@@ -207,6 +195,63 @@ export class UserSavedSearchesService {
     return savedSearch;
   }
 
+  /** Updates a saved search owned by the authenticated user. */
+  async updateSavedSearch(
+    userId: string,
+    savedSearchId: string,
+    dto: UpdateSavedSearchDto,
+  ) {
+    await this.userCommonService.findUserOrThrow(userId);
+    await this.getSavedSearchById(userId, savedSearchId);
+    await this.validateReferences(dto.domainId, dto.dataSourceKeys);
+
+    return this.prisma.savedGenerationSearch.update({
+      where: { id: savedSearchId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.domainId !== undefined ? { domainId: dto.domainId } : {}),
+        ...(dto.country !== undefined ? { country: dto.country } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.region !== undefined ? { region: dto.region } : {}),
+        ...(dto.language !== undefined ? { language: dto.language } : {}),
+        ...(dto.dataSourceKeys !== undefined
+          ? { dataSourceKeys: dto.dataSourceKeys }
+          : {}),
+        ...(dto.keywords !== undefined ? { keywords: dto.keywords } : {}),
+      },
+      select: this.savedSearchSelect,
+    });
+  }
+
+  /** Validates optional domain and collector registry keys before persistence. */
+  private async validateReferences(
+    domainId?: string,
+    dataSourceKeys?: string[],
+  ): Promise<void> {
+    if (domainId) {
+      const domain = await this.prisma.domain.findFirst({
+        where: { id: domainId, isActive: true },
+        select: { id: true },
+      });
+      if (!domain) throw new NotFoundException('Active domain not found.');
+    }
+
+    const keys = [...new Set(dataSourceKeys ?? [])];
+    if (keys.length === 0) return;
+
+    const sources = await this.prisma.dataSource.findMany({
+      where: { key: { in: keys }, isActive: true, isImplemented: true },
+      select: { key: true },
+    });
+    const found = new Set(sources.map((source) => source.key));
+    const missing = keys.filter((key) => !found.has(key));
+    if (missing.length > 0) {
+      throw new NotFoundException(
+        `Active implemented data sources not found: ${missing.join(', ')}`,
+      );
+    }
+  }
+
   /**
    * Marks a saved generation search as used.
    *
@@ -296,7 +341,7 @@ export class UserSavedSearchesService {
     city: true,
     region: true,
     language: true,
-    platforms: true,
+    dataSourceKeys: true,
     keywords: true,
     lastUsedAt: true,
     createdAt: true,

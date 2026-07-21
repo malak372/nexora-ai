@@ -62,7 +62,5 @@ export interface PaymentGateway {
    * @param input Raw webhook request information.
    * @returns Verified and normalized payment confirmation.
    */
-  verifyWebhook(
-    input: PaymentWebhookInput,
-  ): Promise<PaymentConfirmation>;
+  verifyWebhook(input: PaymentWebhookInput): Promise<PaymentConfirmation>;
 }

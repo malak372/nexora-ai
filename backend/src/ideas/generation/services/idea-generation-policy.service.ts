@@ -4,10 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 
-import {
-  IdeaGenerationType,
-  UnlockMethod,
-} from '@prisma/client';
+import { IdeaGenerationType, UnlockMethod } from '@prisma/client';
 
 import {
   GUEST_GENERATION_LIMIT,
@@ -50,9 +47,7 @@ export class IdeaGenerationPolicyService {
    * @param input Owner and requested generation information.
    * @returns Resolved generation policy.
    */
-  evaluate(
-    input: IdeaGenerationPolicyInput,
-  ): IdeaGenerationPolicy {
+  evaluate(input: IdeaGenerationPolicyInput): IdeaGenerationPolicy {
     if (input.ownerType === 'GUEST') {
       return this.evaluateGuestPolicy(input);
     }
@@ -82,9 +77,7 @@ export class IdeaGenerationPolicyService {
 
       default:
         throw new BadRequestException({
-          code:
-            IDEA_GENERATION_ERROR_CODES
-              .INVALID_REQUEST,
+          code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
           message:
             'The requested generation type is not available for registered users.',
         });
@@ -104,53 +97,34 @@ export class IdeaGenerationPolicyService {
   private evaluateGuestPolicy(
     input: GuestIdeaGenerationPolicyInput,
   ): IdeaGenerationPolicy {
-    const {
-      guestSession,
-      requestedGenerationType,
-    } = input;
+    const { guestSession, requestedGenerationType } = input;
 
-    if (
-      requestedGenerationType !==
-      IdeaGenerationType.GUEST_FREE
-    ) {
+    if (requestedGenerationType !== IdeaGenerationType.GUEST_FREE) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
-        message:
-          'Guest sessions may only request guest-free generation.',
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
+        message: 'Guest sessions may only request guest-free generation.',
       });
     }
 
     if (
       guestSession.expiresAt !== null &&
-      guestSession.expiresAt.getTime() <=
-        Date.now()
+      guestSession.expiresAt.getTime() <= Date.now()
     ) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INVALID_REQUEST,
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
         message: 'The guest session has expired.',
       });
     }
 
-    if (
-      GUEST_GENERATION_LIMIT <= 0 ||
-      guestSession.hasGenerated
-    ) {
+    if (GUEST_GENERATION_LIMIT <= 0 || guestSession.hasGenerated) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .GUEST_LIMIT_REACHED,
-        message:
-          'The guest generation limit has been reached.',
+        code: IDEA_GENERATION_ERROR_CODES.GUEST_LIMIT_REACHED,
+        message: 'The guest generation limit has been reached.',
       });
     }
 
     return {
-      generationType:
-        IdeaGenerationType.GUEST_FREE,
+      generationType: IdeaGenerationType.GUEST_FREE,
 
       includePremiumOutputs: false,
       unlockOnGeneration: false,
@@ -181,15 +155,9 @@ export class IdeaGenerationPolicyService {
   ): IdeaGenerationPolicy {
     const { user } = input;
 
-    const freeGenerationLimit = Math.max(
-      0,
-      user.freeGenerationLimit,
-    );
+    const freeGenerationLimit = Math.max(0, user.freeGenerationLimit);
 
-    const freeGenerationsUsed = Math.max(
-      0,
-      user.freeGenerationsUsed,
-    );
+    const freeGenerationsUsed = Math.max(0, user.freeGenerationsUsed);
 
     const remainingBeforeGeneration = Math.max(
       0,
@@ -198,17 +166,13 @@ export class IdeaGenerationPolicyService {
 
     if (remainingBeforeGeneration <= 0) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .FREE_LIMIT_REACHED,
-        message:
-          'The free idea-generation limit has been reached.',
+        code: IDEA_GENERATION_ERROR_CODES.FREE_LIMIT_REACHED,
+        message: 'The free idea-generation limit has been reached.',
       });
     }
 
     return {
-      generationType:
-        IdeaGenerationType.NORMAL_FREE,
+      generationType: IdeaGenerationType.NORMAL_FREE,
 
       includePremiumOutputs: false,
       unlockOnGeneration: false,
@@ -222,8 +186,7 @@ export class IdeaGenerationPolicyService {
       canViewCommunityData: false,
       canUseAiChat: false,
 
-      remainingFreeGenerations:
-        remainingBeforeGeneration - 1,
+      remainingFreeGenerations: remainingBeforeGeneration - 1,
 
       expectedCreditBalance: null,
     };
@@ -244,39 +207,26 @@ export class IdeaGenerationPolicyService {
   ): IdeaGenerationPolicy {
     const { user } = input;
 
-    const currentCreditBalance = Math.max(
-      0,
-      user.creditBalance,
-    );
+    const currentCreditBalance = Math.max(0, user.creditBalance);
 
-    if (
-      currentCreditBalance <
-      PREMIUM_IDEA_CREDIT_COST
-    ) {
+    if (currentCreditBalance < PREMIUM_IDEA_CREDIT_COST) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INSUFFICIENT_CREDITS,
+        code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_CREDITS,
         message:
           'The user does not have enough credits to generate a premium idea.',
-        requiredCredits:
-          PREMIUM_IDEA_CREDIT_COST,
-        availableCredits:
-          currentCreditBalance,
+        requiredCredits: PREMIUM_IDEA_CREDIT_COST,
+        availableCredits: currentCreditBalance,
       });
     }
 
     return {
-      generationType:
-        IdeaGenerationType.PREMIUM_CREDIT,
+      generationType: IdeaGenerationType.PREMIUM_CREDIT,
 
       includePremiumOutputs: true,
       unlockOnGeneration: true,
-      unlockMethod:
-        UnlockMethod.CREDIT_GENERATION,
+      unlockMethod: UnlockMethod.CREDIT_GENERATION,
 
-      creditsToConsume:
-        PREMIUM_IDEA_CREDIT_COST,
+      creditsToConsume: PREMIUM_IDEA_CREDIT_COST,
 
       consumesFreeGeneration: false,
       consumesGuestGeneration: false,
@@ -287,9 +237,7 @@ export class IdeaGenerationPolicyService {
 
       remainingFreeGenerations: null,
 
-      expectedCreditBalance:
-        currentCreditBalance -
-        PREMIUM_IDEA_CREDIT_COST,
+      expectedCreditBalance: currentCreditBalance - PREMIUM_IDEA_CREDIT_COST,
     };
   }
 
@@ -304,21 +252,15 @@ export class IdeaGenerationPolicyService {
   ): void {
     if (!user.isActive) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .ACCOUNT_INACTIVE,
-        message:
-          'The user account is inactive.',
+        code: IDEA_GENERATION_ERROR_CODES.ACCOUNT_INACTIVE,
+        message: 'The user account is inactive.',
       });
     }
 
     if (!user.isVerified) {
       throw new ForbiddenException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .ACCOUNT_NOT_VERIFIED,
-        message:
-          'The user account must be verified before generating ideas.',
+        code: IDEA_GENERATION_ERROR_CODES.ACCOUNT_NOT_VERIFIED,
+        message: 'The user account must be verified before generating ideas.',
       });
     }
   }

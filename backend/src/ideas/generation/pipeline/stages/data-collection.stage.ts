@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -19,9 +16,7 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 
-import type {
-  IdeaGenerationContext,
-} from '../../types/idea-generation-context.type';
+import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
 /**
  * Verifies that the collection-job resolution stage produced
@@ -48,20 +43,16 @@ import type {
  * @author Malak
  */
 @Injectable()
-export class DataCollectionStage
-  implements IdeaGenerationStage
-{
+export class DataCollectionStage implements IdeaGenerationStage {
   /**
    * Stable pipeline-stage key.
    */
-  readonly key =
-    IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION;
+  readonly key = IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION;
 
   /**
    * Static pipeline-stage definition.
    */
-  readonly definition: IdeaGenerationStageDefinition =
-    this.resolveDefinition();
+  readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   /**
    * Determines whether the collection checkpoint needs to run.
@@ -85,45 +76,34 @@ export class DataCollectionStage
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
+    await Promise.resolve();
     const collection = context.collection;
 
     if (!collection) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .COLLECTION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.COLLECTION_FAILED,
 
-        message:
-          'Collection-job resolution did not provide collection data.',
+        message: 'Collection-job resolution did not provide collection data.',
       });
     }
 
-    const totalPosts =
-      this.normalizeCount(
-        collection.totalPosts,
-        'Collected posts count',
-      );
+    const totalPosts = this.normalizeCount(
+      collection.totalPosts,
+      'Collected posts count',
+    );
 
-    const totalComments =
-      this.normalizeCount(
-        collection.totalComments,
-        'Collected comments count',
-      );
+    const totalComments = this.normalizeCount(
+      collection.totalComments,
+      'Collected comments count',
+    );
 
-    const totalCollectedTexts =
-      totalPosts + totalComments;
+    const totalCollectedTexts = totalPosts + totalComments;
 
-    if (
-      totalCollectedTexts <
-      MIN_COLLECTED_TEXTS_FOR_GENERATION
-    ) {
+    if (totalCollectedTexts < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .INSUFFICIENT_COLLECTED_DATA,
+        code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_COLLECTED_DATA,
 
-        message:
-          `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} collected text record is required before idea generation.`,
+        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} collected text record is required before idea generation.`,
       });
     }
 
@@ -140,15 +120,12 @@ export class DataCollectionStage
     return {
       context: updatedContext,
 
-      resultPreview:
-        `Collection data verified successfully: ${totalPosts} post(s) and ${totalComments} comment(s).`,
+      resultPreview: `Collection data verified successfully: ${totalPosts} post(s) and ${totalComments} comment(s).`,
 
       metadata: {
-        collectionJobId:
-          collection.collectionJobId,
+        collectionJobId: collection.collectionJobId,
 
-        reused:
-          collection.reused,
+        reused: collection.reused,
 
         totalPosts,
 
@@ -166,21 +143,12 @@ export class DataCollectionStage
    * @param fieldName Field name used in validation errors.
    * @returns Safe non-negative integer.
    */
-  private normalizeCount(
-    value: number,
-    fieldName: string,
-  ): number {
-    if (
-      !Number.isInteger(value) ||
-      value < 0
-    ) {
+  private normalizeCount(value: number, fieldName: string): number {
+    if (!Number.isInteger(value) || value < 0) {
       throw new BadRequestException({
-        code:
-          IDEA_GENERATION_ERROR_CODES
-            .COLLECTION_FAILED,
+        code: IDEA_GENERATION_ERROR_CODES.COLLECTION_FAILED,
 
-        message:
-          `${fieldName} must be a non-negative integer.`,
+        message: `${fieldName} must be a non-negative integer.`,
       });
     }
 
@@ -193,10 +161,7 @@ export class DataCollectionStage
    * @returns Data-collection stage definition.
    */
   private resolveDefinition(): IdeaGenerationStageDefinition {
-    const definition =
-      findIdeaGenerationStageDefinition(
-        this.key,
-      );
+    const definition = findIdeaGenerationStageDefinition(this.key);
 
     if (!definition) {
       throw new Error(

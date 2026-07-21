@@ -27,9 +27,7 @@ const REFRESH_RATE_LIMIT_TTL_MS = 60_000;
  */
 @Controller('auth/refresh')
 export class RefreshController {
-  constructor(
-    private readonly authRefreshService: AuthRefreshService,
-  ) { }
+  constructor(private readonly authRefreshService: AuthRefreshService) {}
 
   /**
    * Refreshes authentication tokens using a valid refresh token.
@@ -55,10 +53,7 @@ export class RefreshController {
       ttl: REFRESH_RATE_LIMIT_TTL_MS,
     },
   })
-  refresh(
-    @Body() dto: RefreshDto,
-    @Req() request: Request,
-  ) {
+  refresh(@Body() dto: RefreshDto, @Req() request: Request) {
     return this.authRefreshService.refresh(dto, {
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],

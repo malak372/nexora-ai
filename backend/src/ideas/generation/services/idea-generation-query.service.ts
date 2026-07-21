@@ -21,9 +21,7 @@ export class IdeaGenerationQueryService {
     const where: Prisma.IdeaGenerationRunWhereInput = {
       userId,
       ...(query.status ? { status: query.status } : {}),
-      ...(query.generationType
-        ? { generationType: query.generationType }
-        : {}),
+      ...(query.generationType ? { generationType: query.generationType } : {}),
       ...(query.ideaId ? { ideaId: query.ideaId } : {}),
       ...(query.domainId
         ? { collectionJob: { domainId: query.domainId } }

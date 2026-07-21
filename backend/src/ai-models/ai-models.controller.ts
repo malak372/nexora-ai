@@ -76,9 +76,7 @@ const AI_MODEL_ID_PIPE = new ParseUUIDPipe({
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AiModelsController {
-  constructor(
-    private readonly aiModelsService: AiModelsService,
-  ) {}
+  constructor(private readonly aiModelsService: AiModelsService) {}
 
   /**
    * Returns the AI providers implemented by the deployed backend.
@@ -124,10 +122,7 @@ export class AiModelsController {
     @CurrentUser()
     user: AuthenticatedUser,
   ): Promise<AiModel> {
-    return this.aiModelsService.create(
-      dto,
-      user.id,
-    );
+    return this.aiModelsService.create(dto, user.id);
   }
 
   /**
@@ -224,11 +219,7 @@ export class AiModelsController {
     @CurrentUser()
     user: AuthenticatedUser,
   ): Promise<AiModel> {
-    return this.aiModelsService.update(
-      id,
-      dto,
-      user.id,
-    );
+    return this.aiModelsService.update(id, dto, user.id);
   }
 
   /**
@@ -253,10 +244,7 @@ export class AiModelsController {
     @CurrentUser()
     user: AuthenticatedUser,
   ): Promise<AiModel> {
-    return this.aiModelsService.setDefault(
-      id,
-      user.id,
-    );
+    return this.aiModelsService.setDefault(id, user.id);
   }
 
   /**
@@ -283,10 +271,7 @@ export class AiModelsController {
     @CurrentUser()
     user: AuthenticatedUser,
   ): Promise<AiModel> {
-    return this.aiModelsService.activate(
-      id,
-      user.id,
-    );
+    return this.aiModelsService.activate(id, user.id);
   }
 
   /**
@@ -313,9 +298,6 @@ export class AiModelsController {
     @CurrentUser()
     user: AuthenticatedUser,
   ): Promise<AiModel> {
-    return this.aiModelsService.deactivate(
-      id,
-      user.id,
-    );
+    return this.aiModelsService.deactivate(id, user.id);
   }
 }

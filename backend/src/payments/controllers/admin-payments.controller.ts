@@ -29,7 +29,7 @@ import { AdminPaymentsService } from '../services/admin-payments.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminPaymentsController {
-  constructor(private readonly adminPaymentsService: AdminPaymentsService) { }
+  constructor(private readonly adminPaymentsService: AdminPaymentsService) {}
 
   /**
    * Retrieves paginated payment records.
@@ -77,10 +77,7 @@ export class AdminPaymentsController {
    */
   @Get('export/csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  @Header(
-    'Content-Disposition',
-    'attachment; filename="payments-report.csv"',
-  )
+  @Header('Content-Disposition', 'attachment; filename="payments-report.csv"')
   exportPaymentsCsv(
     @Query()
     query: GetAdminPaymentsQueryDto,

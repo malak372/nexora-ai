@@ -38,7 +38,7 @@ import type { PaymentCheckoutResult } from '../services/payment-checkout.service
 export class PaymentCheckoutController {
   constructor(
     private readonly paymentCheckoutService: PaymentCheckoutService,
-  ) { }
+  ) {}
 
   /**
    * Creates a checkout session for purchasing

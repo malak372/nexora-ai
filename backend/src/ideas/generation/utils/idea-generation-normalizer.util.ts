@@ -61,10 +61,7 @@ export function normalizeOptionalGenerationText(
 export function normalizeNullableGenerationText(
   value: string | null | undefined,
 ): string | null {
-  return (
-    normalizeOptionalGenerationText(value) ??
-    null
-  );
+  return normalizeOptionalGenerationText(value) ?? null;
 }
 
 /**
@@ -81,13 +78,10 @@ export function normalizeRequiredGenerationText(
   value: string,
   fieldName: string,
 ): string {
-  const normalizedValue =
-    normalizeOptionalGenerationText(value);
+  const normalizedValue = normalizeOptionalGenerationText(value);
 
   if (!normalizedValue) {
-    throw new Error(
-      `${fieldName} is required.`,
-    );
+    throw new Error(`${fieldName} is required.`);
   }
 
   return normalizedValue;
@@ -109,10 +103,7 @@ export function normalizeGenerationId(
   value: string,
   fieldName: string,
 ): string {
-  return normalizeRequiredGenerationText(
-    value,
-    fieldName,
-  );
+  return normalizeRequiredGenerationText(value, fieldName);
 }
 
 /**
@@ -130,27 +121,16 @@ export function normalizeGenerationId(
  * @author Malak
  */
 export function normalizeGenerationStringArray(
-  values:
-    | readonly string[]
-    | null
-    | undefined,
-  options:
-    NormalizeGenerationStringArrayOptions = {},
+  values: readonly string[] | null | undefined,
+  options: NormalizeGenerationStringArrayOptions = {},
 ): string[] {
   if (!Array.isArray(values)) {
     return [];
   }
 
-  const {
-    lowercase = false,
-    maxItems,
-    maxItemLength,
-  } = options;
+  const { lowercase = false, maxItems, maxItemLength } = options;
 
-  validateOptionalPositiveInteger(
-    maxItems,
-    'Maximum generation array items',
-  );
+  validateOptionalPositiveInteger(maxItems, 'Maximum generation array items');
 
   validateOptionalPositiveInteger(
     maxItemLength,
@@ -158,7 +138,6 @@ export function normalizeGenerationStringArray(
   );
 
   const normalizedValues: string[] = [];
-
   const seenValues = new Set<string>();
 
   for (const value of values) {
@@ -172,21 +151,12 @@ export function normalizeGenerationStringArray(
       continue;
     }
 
-    if (
-      maxItemLength !== undefined &&
-      normalizedValue.length >
-        maxItemLength
-    ) {
-      normalizedValue =
-        normalizedValue.slice(
-          0,
-          maxItemLength,
-        );
+    if (maxItemLength !== undefined && normalizedValue.length > maxItemLength) {
+      normalizedValue = normalizedValue.slice(0, maxItemLength);
     }
 
     if (lowercase) {
-      normalizedValue =
-        normalizedValue.toLowerCase();
+      normalizedValue = normalizedValue.toLowerCase();
     }
 
     if (seenValues.has(normalizedValue)) {
@@ -196,10 +166,7 @@ export function normalizeGenerationStringArray(
     seenValues.add(normalizedValue);
     normalizedValues.push(normalizedValue);
 
-    if (
-      maxItems !== undefined &&
-      normalizedValues.length >= maxItems
-    ) {
+    if (maxItems !== undefined && normalizedValues.length >= maxItems) {
       break;
     }
   }
@@ -223,29 +190,27 @@ export function normalizeGenerationStringArray(
  * @author Malak
  */
 export function normalizeGenerationKeywords(
-  keywords:
-    | readonly string[]
-    | null
-    | undefined,
+  keywords: readonly string[] | null | undefined,
   maxItems?: number,
   maxItemLength?: number,
 ): string[] {
-  return normalizeGenerationStringArray(
-    keywords,
-    {
-      lowercase: true,
-      maxItems,
-      maxItemLength,
-    },
-  );
+  return normalizeGenerationStringArray(keywords, {
+    lowercase: true,
+    maxItems,
+    maxItemLength,
+  });
 }
 
 /**
- * Merges multiple string arrays into one normalized deduplicated
- * list.
+ * Merges multiple string arrays into one normalized and
+ * deduplicated list.
  *
  * Values keep the order in which they first appear across the
  * input arrays.
+ *
+ * The merge is implemented with an explicit loop instead of
+ * Array.prototype.flatMap so TypeScript preserves the concrete
+ * string-array type and strict ESLint rules do not infer any[].
  *
  * @param groups String-array groups to merge.
  * @param options Normalization options.
@@ -254,23 +219,24 @@ export function normalizeGenerationKeywords(
  * @author Malak
  */
 export function mergeGenerationStringArrays(
-  groups: readonly (
-    | readonly string[]
-    | null
-    | undefined
-  )[],
-  options:
-    NormalizeGenerationStringArrayOptions = {},
+  groups: readonly (readonly string[] | null | undefined)[],
+  options: NormalizeGenerationStringArrayOptions = {},
 ): string[] {
-  const mergedValues = groups.flatMap(
-    (group) =>
-      Array.isArray(group) ? group : [],
-  );
+  const mergedValues: string[] = [];
 
-  return normalizeGenerationStringArray(
-    mergedValues,
-    options,
-  );
+  for (const group of groups) {
+    if (!Array.isArray(group)) {
+      continue;
+    }
+
+    for (const value of group) {
+      if (typeof value === 'string') {
+        mergedValues.push(value);
+      }
+    }
+  }
+
+  return normalizeGenerationStringArray(mergedValues, options);
 }
 
 /**
@@ -284,10 +250,7 @@ export function mergeGenerationStringArrays(
 export function normalizeOptionalGenerationNumber(
   value: number | null | undefined,
 ): number | undefined {
-  if (
-    typeof value !== 'number' ||
-    !Number.isFinite(value)
-  ) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return undefined;
   }
 
@@ -305,13 +268,9 @@ export function normalizeOptionalGenerationNumber(
 export function normalizeOptionalGenerationInteger(
   value: number | null | undefined,
 ): number | undefined {
-  const normalizedValue =
-    normalizeOptionalGenerationNumber(value);
+  const normalizedValue = normalizeOptionalGenerationNumber(value);
 
-  if (
-    normalizedValue === undefined ||
-    !Number.isInteger(normalizedValue)
-  ) {
+  if (normalizedValue === undefined || !Number.isInteger(normalizedValue)) {
     return undefined;
   }
 
@@ -324,6 +283,10 @@ export function normalizeOptionalGenerationInteger(
  *
  * @param value Optional numeric value.
  * @param fieldName Field name used in errors.
+ *
+ * @throws Error When the provided value is not a positive integer.
+ *
+ * @author Malak
  */
 function validateOptionalPositiveInteger(
   value: number | undefined,
@@ -333,12 +296,7 @@ function validateOptionalPositiveInteger(
     return;
   }
 
-  if (
-    !Number.isInteger(value) ||
-    value <= 0
-  ) {
-    throw new Error(
-      `${fieldName} must be a positive integer.`,
-    );
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${fieldName} must be a positive integer.`);
   }
 }

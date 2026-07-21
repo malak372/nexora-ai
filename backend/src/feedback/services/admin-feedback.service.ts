@@ -28,7 +28,7 @@ import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
  */
 @Injectable()
 export class AdminFeedbackService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns paginated textual publication feedback.
@@ -234,9 +234,7 @@ export class AdminFeedbackService {
       thisMonthComments: monthComments,
       thisMonthRatings: monthRatings,
 
-      averageRating: Number(
-        (averageResult._avg.value ?? 0).toFixed(2),
-      ),
+      averageRating: Number((averageResult._avg.value ?? 0).toFixed(2)),
     };
   }
 
@@ -246,23 +244,22 @@ export class AdminFeedbackService {
   async getFeedbackCharts(query: GetFeedbackQueryDto) {
     const ratingWhere = this.buildRatingWhere(query);
 
-    const [ratingDistribution, topRatedPublications] =
-      await Promise.all([
-        this.prisma.ideaPublicationRating.groupBy({
-          by: ['value'],
-          where: ratingWhere,
+    const [ratingDistribution, topRatedPublications] = await Promise.all([
+      this.prisma.ideaPublicationRating.groupBy({
+        by: ['value'],
+        where: ratingWhere,
 
-          _count: {
-            value: true,
-          },
+        _count: {
+          value: true,
+        },
 
-          orderBy: {
-            value: 'desc',
-          },
-        }),
+        orderBy: {
+          value: 'desc',
+        },
+      }),
 
-        this.findTopRatedPublications(query),
-      ]);
+      this.findTopRatedPublications(query),
+    ]);
 
     const distribution = Array.from(
       {
@@ -286,15 +283,13 @@ export class AdminFeedbackService {
     return {
       ratingDistribution: distribution,
 
-      topRatedPublications: topRatedPublications.map(
-        (publication) => ({
-          id: publication.id,
-          title: publication.publicTitle,
-          averageRating: Number(publication.averageRating),
-          ratingsCount: publication.ratingsCount,
-          feedbackCount: publication.feedbackCount,
-        }),
-      ),
+      topRatedPublications: topRatedPublications.map((publication) => ({
+        id: publication.id,
+        title: publication.publicTitle,
+        averageRating: Number(publication.averageRating),
+        ratingsCount: publication.ratingsCount,
+        feedbackCount: publication.feedbackCount,
+      })),
     };
   }
 
@@ -302,43 +297,42 @@ export class AdminFeedbackService {
    * Exports textual feedback as CSV.
    */
   async exportFeedbackCsv(query: GetFeedbackQueryDto) {
-    const feedback =
-      await this.prisma.ideaPublicationFeedback.findMany({
-        where: this.buildCommentWhere(query),
+    const feedback = await this.prisma.ideaPublicationFeedback.findMany({
+      where: this.buildCommentWhere(query),
 
-        orderBy: {
-          createdAt: 'desc',
+      orderBy: {
+        createdAt: 'desc',
+      },
+
+      select: {
+        id: true,
+        comment: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
         },
 
-        select: {
-          id: true,
-          comment: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
+        publication: {
+          select: {
+            id: true,
+            publicTitle: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          publication: {
-            select: {
-              id: true,
-              publicTitle: true,
-
-              idea: {
-                select: {
-                  id: true,
-                },
+            idea: {
+              select: {
+                id: true,
               },
             },
           },
         },
-      });
+      },
+    });
 
     const headers = [
       'Feedback ID',
@@ -375,42 +369,41 @@ export class AdminFeedbackService {
    * Exports ratings as CSV.
    */
   async exportRatingsCsv(query: GetFeedbackQueryDto) {
-    const ratings =
-      await this.prisma.ideaPublicationRating.findMany({
-        where: this.buildRatingWhere(query),
+    const ratings = await this.prisma.ideaPublicationRating.findMany({
+      where: this.buildRatingWhere(query),
 
-        orderBy: {
-          createdAt: 'desc',
+      orderBy: {
+        createdAt: 'desc',
+      },
+
+      select: {
+        id: true,
+        value: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
         },
 
-        select: {
-          id: true,
-          value: true,
-          createdAt: true,
-          updatedAt: true,
+        publication: {
+          select: {
+            id: true,
+            publicTitle: true,
 
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          publication: {
-            select: {
-              id: true,
-              publicTitle: true,
-
-              idea: {
-                select: {
-                  id: true,
-                },
+            idea: {
+              select: {
+                id: true,
               },
             },
           },
         },
-      });
+      },
+    });
 
     const headers = [
       'Rating ID',
@@ -452,36 +445,36 @@ export class AdminFeedbackService {
 
       ...(query.publicationId
         ? {
-          id: query.publicationId,
-        }
+            id: query.publicationId,
+          }
         : {}),
 
       ...(query.ideaId
         ? {
-          ideaId: query.ideaId,
-        }
+            ideaId: query.ideaId,
+          }
         : {}),
 
       ...(query.userId || query.rating
         ? {
-          ratings: {
-            some: {
-              ...(query.userId
-                ? {
-                  userId: query.userId,
-                }
-                : {}),
+            ratings: {
+              some: {
+                ...(query.userId
+                  ? {
+                      userId: query.userId,
+                    }
+                  : {}),
 
-              ...(query.rating
-                ? {
-                  value: query.rating,
-                }
-                : {}),
+                ...(query.rating
+                  ? {
+                      value: query.rating,
+                    }
+                  : {}),
 
-              ...(buildDateFilter(query) ?? {}),
+                ...(buildDateFilter(query) ?? {}),
+              },
             },
-          },
-        }
+          }
         : {}),
     };
 
@@ -522,19 +515,16 @@ export class AdminFeedbackService {
 
       ...(buildExactFilter('userId', query.userId) ?? {}),
 
-      ...(buildExactFilter(
-        'publicationId',
-        query.publicationId,
-      ) ?? {}),
+      ...(buildExactFilter('publicationId', query.publicationId) ?? {}),
 
       ...(query.ideaId
         ? {
-          publication: {
-            is: {
-              ideaId: query.ideaId,
+            publication: {
+              is: {
+                ideaId: query.ideaId,
+              },
             },
-          },
-        }
+          }
         : {}),
     };
 
@@ -600,19 +590,16 @@ export class AdminFeedbackService {
 
       ...(buildExactFilter('userId', query.userId) ?? {}),
 
-      ...(buildExactFilter(
-        'publicationId',
-        query.publicationId,
-      ) ?? {}),
+      ...(buildExactFilter('publicationId', query.publicationId) ?? {}),
 
       ...(query.ideaId
         ? {
-          publication: {
-            is: {
-              ideaId: query.ideaId,
+            publication: {
+              is: {
+                ideaId: query.ideaId,
+              },
             },
-          },
-        }
+          }
         : {}),
     };
 
@@ -668,8 +655,7 @@ export class AdminFeedbackService {
     },
   >(where: T, gte: Date): T {
     const existingCreatedAt =
-      typeof where.createdAt === 'object' &&
-        where.createdAt !== null
+      typeof where.createdAt === 'object' && where.createdAt !== null
         ? where.createdAt
         : {};
 

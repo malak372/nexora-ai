@@ -94,7 +94,7 @@ export class PaymentNotificationService {
    */
   private readonly logger = new Logger(PaymentNotificationService.name);
 
-  constructor(private readonly mailService: MailService) { }
+  constructor(private readonly mailService: MailService) {}
 
   /**
    * Sends a payment-success email notification.
