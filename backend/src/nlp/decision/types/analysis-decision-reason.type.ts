@@ -7,7 +7,10 @@
 /**
  * Stable machine-readable reason codes produced by the NLP decision engine.
  *
- * These codes support logging, testing, auditing, and future admin dashboards.
+ * These codes support logging, testing, auditing, and future
+ * administrative dashboards while remaining independent of
+ * presentation-specific wording.
+ *
  */
 export enum AnalysisDecisionReasonCode {
   INSUFFICIENT_TEXTS = 'INSUFFICIENT_TEXTS',
@@ -30,7 +33,12 @@ export enum AnalysisDecisionReasonCode {
 }
 
 /**
- * Represents a reason that contributed to the final NLP decision.
+ * Represents one explanation that contributed to the final
+ * NLP decision.
+ *
+ * Each decision may contain multiple reasons describing why
+ * the decision engine selected the final outcome.
+ *
  */
 export type AnalysisDecisionReason = {
   /**
@@ -44,9 +52,13 @@ export type AnalysisDecisionReason = {
   readonly message: string;
 
   /**
-   * Relative importance of this reason in the final decision.
+   * Relative contribution of this reason to the final decision.
    *
-   * Must be a normalized value between 0 and 1.
+   * Values are normalized between 0 and 1 and are intended
+   * for explanation, ranking, and auditing purposes only.
+   *
+   * This value does not affect the decision itself. It only
+   * describes the significance of the reported reason.
    */
   readonly weight: number;
 };

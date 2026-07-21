@@ -5,12 +5,13 @@ import { Sentiment } from '../common/enums/sentiment.enum';
 import { DomainRelevanceService } from '../domain-relevance/domain-relevance.service';
 import { LanguageDetectionService } from '../language-detection/language-detection.service';
 import {
-  CleanTextResult,
+  type CleanTextResult,
   TextCleaningService,
 } from '../text-cleaning/text-cleaning.service';
 
-import {
+import type {
   IntelligentTextInput,
+  ResolvedLanguageCode,
   TextAnalysisResult,
 } from './types/intelligent-analysis.types';
 
@@ -18,8 +19,10 @@ import {
  * Represents a cleaned and validated text item ready for deeper NLP analysis.
  *
  * This type preserves the original metadata from the collected post or comment
- * while adding preprocessing results such as cleaned text, final language,
- * and domain relevance information.
+ * while adding preprocessing results such as cleaned text, resolved language,
+ * and domain-relevance information.
+ *
+ * @author Eman
  */
 export type PreprocessedTextInput = IntelligentTextInput & {
   /**
@@ -28,12 +31,12 @@ export type PreprocessedTextInput = IntelligentTextInput & {
   cleaning: CleanTextResult;
 
   /**
-   * Final language used by the NLP pipeline.
+   * Final specific language used by the NLP pipeline.
    *
-   * If the collector already stored a specific language, it is reused.
-   * Otherwise, the language is detected from the cleaned text.
+   * ANY is not allowed here because every individual text must have a
+   * resolved supported language before language-aware analysis begins.
    */
-  finalLanguage: LanguageCode;
+  finalLanguage: ResolvedLanguageCode;
 
   /**
    * Relevance score in the range [0, 1] showing how strongly the text
@@ -42,20 +45,20 @@ export type PreprocessedTextInput = IntelligentTextInput & {
   relevanceScore: number;
 
   /**
-   * Confidence score in the range [0, 1] produced by the domain
-   * relevance analysis.
+   * Confidence score in the range [0, 1] produced by domain-relevance
+   * analysis.
    */
   relevanceConfidence: number;
 
   /**
    * Single-word domain keywords matched in the cleaned text.
    */
-  matchedKeywords: string[];
+  matchedKeywords: readonly string[];
 
   /**
    * Multi-word domain phrases matched in the cleaned text.
    */
-  matchedPhrases: string[];
+  matchedPhrases: readonly string[];
 };
 
 /**
@@ -64,6 +67,8 @@ export type PreprocessedTextInput = IntelligentTextInput & {
  *
  * The relevance flag remains internal and is not forwarded to later
  * NLP pipeline stages.
+ *
+ * @author Eman
  */
 type RelevanceEvaluatedText = {
   readonly text: PreprocessedTextInput;
@@ -73,9 +78,11 @@ type RelevanceEvaluatedText = {
 /**
  * Summary returned after preprocessing collected community texts.
  *
- * This summary is used later by the intelligent NLP pipeline to
- * calculate data quality, build transparent analysis outputs, and
- * provide reliable community evidence for prompt generation.
+ * This summary is used later by the intelligent NLP pipeline to calculate
+ * data quality, build transparent analysis outputs, and provide reliable
+ * community evidence for prompt generation.
+ *
+ * @author Eman
  */
 export type TextPreprocessingOutput = {
   /**
@@ -103,8 +110,8 @@ export type TextPreprocessingOutput = {
   /**
    * Initial per-text analysis records used for debugging and auditing.
    *
-   * Later NLP services enrich these records with sentiment,
-   * lexicon matches, extracted insights, and confidence values.
+   * Later NLP services enrich these records with sentiment, lexicon matches,
+   * extracted insights, and confidence values.
    */
   initialAnalysisResults: TextAnalysisResult[];
 };
@@ -112,9 +119,8 @@ export type TextPreprocessingOutput = {
 /**
  * Preprocesses unified text inputs before deeper NLP analysis.
  *
- * This service represents the preprocessing stage of the Nexora AI
- * intelligent NLP pipeline. It receives unified post and comment
- * inputs produced by TextInputBuilderService and prepares them for:
+ * This service receives unified post and comment inputs produced by
+ * TextInputBuilderService and prepares them for:
  * - Lexicon analysis.
  * - Keyword extraction.
  * - Topic extraction.
@@ -125,7 +131,7 @@ export type TextPreprocessingOutput = {
  * Responsibilities:
  * - Clean raw post and comment content.
  * - Remove empty and duplicate texts.
- * - Resolve the final language for every text.
+ * - Resolve a specific language for every text.
  * - Filter unrelated texts using selected-domain keywords.
  * - Preserve relevance metadata for later confidence calculations.
  * - Produce initial analysis records for auditing and observability.
@@ -145,7 +151,7 @@ export class TextPreprocessingService {
     private readonly textCleaningService: TextCleaningService,
     private readonly languageDetectionService: LanguageDetectionService,
     private readonly domainRelevanceService: DomainRelevanceService,
-  ) {}
+  ) { }
 
   /**
    * Runs preprocessing for collected posts and comments.
@@ -155,80 +161,83 @@ export class TextPreprocessingService {
    * @returns Cleaned, deduplicated, language-aware, and relevant texts.
    */
   process(
-    inputs: IntelligentTextInput[],
-    domainKeywords: string[],
+    inputs: ReadonlyArray<IntelligentTextInput>,
+    domainKeywords: ReadonlyArray<string>,
   ): TextPreprocessingOutput {
     const cleanedItems = inputs.map((input) => ({
       input,
       cleaning: this.textCleaningService.clean(input.content),
     }));
 
-    const nonEmptyItems = cleanedItems.filter((item) => !item.cleaning.isEmpty);
+    const nonEmptyItems = cleanedItems.filter(
+      (item) => !item.cleaning.isEmpty,
+    );
 
-    const emptyTextsRemoved = cleanedItems.length - nonEmptyItems.length;
+    const emptyTextsRemoved =
+      cleanedItems.length - nonEmptyItems.length;
 
     const uniqueItems = this.removeDuplicateItems(nonEmptyItems);
 
-    const duplicateTextsRemoved = nonEmptyItems.length - uniqueItems.length;
+    const duplicateTextsRemoved =
+      nonEmptyItems.length - uniqueItems.length;
 
-    const evaluatedTexts: RelevanceEvaluatedText[] = uniqueItems.map((item) => {
-      const finalLanguage = this.resolveLanguage(
-        item.input.language,
-        item.cleaning.cleanedText,
-      );
+    const evaluatedTexts: RelevanceEvaluatedText[] = uniqueItems.map(
+      (item) => {
+        const finalLanguage = this.resolveLanguage(
+          item.input.language,
+          item.cleaning.cleanedText,
+        );
 
-      const relevance = this.domainRelevanceService.analyze(
-        item.cleaning.cleanedText,
-        domainKeywords,
-      );
+        const relevance = this.domainRelevanceService.analyze(
+          item.cleaning.cleanedText,
+          domainKeywords,
+        );
 
-      const text: PreprocessedTextInput = {
-        ...item.input,
-        cleaning: item.cleaning,
-        finalLanguage,
-        relevanceScore: relevance.score,
-        relevanceConfidence: relevance.confidence,
-        matchedKeywords: relevance.matchedKeywords,
-        matchedPhrases: relevance.matchedPhrases,
-      };
+        const text: PreprocessedTextInput = {
+          ...item.input,
+          cleaning: item.cleaning,
+          finalLanguage,
+          relevanceScore: relevance.score,
+          relevanceConfidence: relevance.confidence,
+          matchedKeywords: relevance.matchedKeywords,
+          matchedPhrases: relevance.matchedPhrases,
+        };
 
-      return {
-        text,
-        isRelevant: relevance.isRelevant,
-      };
-    });
+        return {
+          text,
+          isRelevant: relevance.isRelevant,
+        };
+      },
+    );
 
     const relevantTexts = evaluatedTexts
       .filter((item) => item.isRelevant)
       .map((item) => item.text);
 
-    const irrelevantTextsRemoved = evaluatedTexts.length - relevantTexts.length;
+    const irrelevantTextsRemoved =
+      evaluatedTexts.length - relevantTexts.length;
 
     return {
       texts: relevantTexts,
       emptyTextsRemoved,
       duplicateTextsRemoved,
       irrelevantTextsRemoved,
-      initialAnalysisResults: this.buildInitialAnalysisResults(relevantTexts),
+      initialAnalysisResults:
+        this.buildInitialAnalysisResults(relevantTexts),
     };
   }
 
   /**
-   * Removes duplicate collected texts based on their cleaned
-   * representation.
+   * Removes duplicate collected texts based on their cleaned representation.
    *
-   * Duplicates may appear after repeated collection runs, mirrored
-   * discussions, or identical posts shared across supported sources.
-   *
-   * The first occurrence is preserved to retain stable upstream
-   * ordering.
+   * The first occurrence is preserved to retain stable upstream ordering.
    *
    * @param items Cleaned input items.
    * @returns Unique cleaned input items.
    */
-  private removeDuplicateItems<T extends { cleaning: CleanTextResult }>(
-    items: T[],
-  ): T[] {
+  private removeDuplicateItems<
+    T extends Readonly<{ cleaning: CleanTextResult }>,
+  >(items: ReadonlyArray<T>): T[] {
     const seen = new Set<string>();
 
     return items.filter((item) => {
@@ -245,20 +254,20 @@ export class TextPreprocessingService {
   }
 
   /**
-   * Resolves the final language used for NLP analysis.
+   * Resolves the final specific language used for NLP analysis.
    *
-   * Collector-provided languages are reused when available and
-   * specific. Missing or generic language values are resolved using
-   * lightweight language detection on the cleaned text.
+   * Collector-provided languages are reused when valid and specific.
+   * Missing or generic values are resolved through language detection.
    *
    * @param storedLanguage Language stored during data collection.
    * @param cleanedText Cleaned text used for fallback detection.
-   * @returns Final language code.
+   * @returns Specific supported language code.
+   * @throws Error When no specific supported language can be resolved.
    */
   private resolveLanguage(
     storedLanguage: LanguageCode | null | undefined,
     cleanedText: string,
-  ): LanguageCode {
+  ): ResolvedLanguageCode {
     if (
       storedLanguage !== null &&
       storedLanguage !== undefined &&
@@ -267,22 +276,30 @@ export class TextPreprocessingService {
       return storedLanguage;
     }
 
-    return this.languageDetectionService.detect(cleanedText);
+    const detectedLanguage =
+      this.languageDetectionService.detectCode(cleanedText);
+
+    if (detectedLanguage === LanguageCode.ANY) {
+      throw new Error(
+        'Unable to resolve a supported language for the analyzed text.',
+      );
+    }
+
+    return detectedLanguage;
   }
 
   /**
    * Builds initial analysis records for preprocessed texts.
    *
-   * These records provide a consistent analysis structure from the
-   * beginning of the pipeline. Later services replace the initial
-   * neutral sentiment and enrich confidence, lexicon matches, and
-   * AI-usage metadata.
+   * These records provide a consistent structure from the beginning of the
+   * pipeline. Later services replace the initial neutral sentiment and enrich
+   * confidence, lexicon matches, and AI-usage metadata.
    *
    * @param texts Preprocessed and domain-relevant texts.
    * @returns Initial per-text analysis records.
    */
   private buildInitialAnalysisResults(
-    texts: PreprocessedTextInput[],
+    texts: ReadonlyArray<PreprocessedTextInput>,
   ): TextAnalysisResult[] {
     return texts.map((text) => ({
       id: text.id,

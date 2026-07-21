@@ -7,6 +7,8 @@
  *
  * All ratio and score thresholds are normalized between 0 and 1.
  *
+ * This configuration is independent of Prisma and does not persist data.
+ *
  * @author Eman
  */
 export const ANALYSIS_DECISION_THRESHOLDS = {
@@ -16,7 +18,7 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
   dataset: {
     /**
      * Minimum number of analyzed texts required to produce
-     * a reliable aggregated NLP result.
+     * a reasonably reliable aggregated NLP result.
      */
     minimumTexts: 30,
   },
@@ -26,13 +28,14 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
    */
   quality: {
     /**
-     * Minimum acceptable overall confidence for the rule-based analysis.
+     * Minimum acceptable overall confidence for the
+     * rule-based analysis.
      */
     minimumConfidence: 0.8,
 
     /**
-     * Minimum ratio of meaningful extracted results relative
-     * to the analyzed dataset.
+     * Minimum ratio of meaningful extracted results
+     * relative to the analyzed dataset.
      */
     minimumResultDensity: 0.5,
 
@@ -43,14 +46,15 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
     minimumEvidenceCoverage: 0.6,
 
     /**
-     * Minimum ratio of collected texts retained after cleaning,
-     * duplicate removal, spam filtering, and relevance filtering.
+     * Minimum ratio of collected texts retained after
+     * cleaning, deduplication, spam filtering, and
+     * relevance filtering.
      */
     minimumDataRetentionRate: 0.5,
 
     /**
-     * Minimum ratio of analyzed texts containing at least one
-     * meaningful rule-based lexicon signal.
+     * Minimum ratio of analyzed texts containing at least
+     * one meaningful rule-based lexicon signal.
      */
     minimumLexicalCoverage: 0.6,
   },
@@ -58,44 +62,48 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
   /**
    * Text-complexity thresholds.
    *
-   * Exceeding these thresholds contributes to the decision to request
-   * AI enhancement.
+   * Exceeding one or more of these thresholds indicates
+   * that AI enhancement may improve the final analysis.
    */
   complexity: {
     /**
-     * Maximum acceptable overall complexity score.
+     * Maximum acceptable overall text-complexity score.
      */
     maximumComplexityScore: 0.45,
 
     /**
-     * Maximum acceptable ratio of low-confidence text results.
+     * Maximum acceptable ratio of analyzed texts whose
+     * rule-based results have low confidence.
      */
     maximumLowConfidenceRatio: 0.4,
 
     /**
-     * Maximum acceptable ratio of texts containing negation.
+     * Maximum acceptable ratio of texts containing
+     * negation signals.
      */
     maximumNegationRatio: 0.45,
 
     /**
-     * Maximum acceptable ratio of texts containing contrastive language.
+     * Maximum acceptable ratio of texts containing
+     * contrastive language.
      */
     maximumContrastRatio: 0.4,
 
     /**
-     * Maximum acceptable ratio of texts containing both positive
-     * and negative sentiment signals.
+     * Maximum acceptable ratio of texts containing both
+     * positive and negative sentiment signals.
      */
     maximumMixedSentimentRatio: 0.35,
 
     /**
-     * Maximum acceptable ratio of texts associated with multiple topics.
+     * Maximum acceptable ratio of texts associated with
+     * multiple detected topics.
      */
     maximumMultiTopicRatio: 0.4,
 
     /**
-     * Maximum acceptable ratio of texts containing no meaningful
-     * lexicon matches.
+     * Maximum acceptable ratio of texts containing no
+     * meaningful lexicon matches.
      */
     maximumUnmatchedLexiconRatio: 0.4,
   },
@@ -103,8 +111,8 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
   /**
    * Weights used to calculate the rule-based suitability score.
    *
-   * Quality contributes positively, while complexity is inverted
-   * before being included in the final score.
+   * Quality metrics contribute positively, while complexity
+   * is inverted before being included in the final score.
    *
    * The sum of all weights must equal 1.
    */
@@ -117,3 +125,15 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
     inverseComplexity: 0.2,
   },
 } as const;
+
+/**
+ * Strongly typed representation of the configured NLP
+ * decision thresholds.
+ *
+ * This type can be used by decision services without
+ * redefining the configuration structure.
+ *
+ * @author Eman
+ */
+export type AnalysisDecisionThresholds =
+  typeof ANALYSIS_DECISION_THRESHOLDS;

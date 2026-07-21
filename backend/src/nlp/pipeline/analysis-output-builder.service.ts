@@ -3,8 +3,8 @@ import { NlpLexiconType } from '@prisma/client';
 
 import { AnalysisEvidenceService } from './analysis-evidence.service';
 import { AnalysisStatisticsService } from './analysis-statistics.service';
-import { AnalysisContext } from './types/analysis-context.type';
-import {
+import type { AnalysisContext } from './types/analysis-context.type';
+import type {
   IntelligentAnalysisOutput,
   TextAnalysisResult,
 } from './types/intelligent-analysis.types';
@@ -24,7 +24,7 @@ export class AnalysisOutputBuilderService {
   constructor(
     private readonly analysisStatisticsService: AnalysisStatisticsService,
     private readonly analysisEvidenceService: AnalysisEvidenceService,
-  ) {}
+  ) { }
 
   /**
    * Builds the final intelligent analysis output.
@@ -35,10 +35,13 @@ export class AnalysisOutputBuilderService {
   build(context: AnalysisContext): IntelligentAnalysisOutput {
     return {
       collectionJobId: context.collectionJobId,
+      language: context.language,
+
       domain: {
         id: context.domain.id,
         name: context.domain.name,
       },
+
       location: context.location,
       platforms: context.platforms,
 
@@ -55,6 +58,7 @@ export class AnalysisOutputBuilderService {
         spamTextsRemoved: context.preprocessing.spamTextsRemoved,
         irrelevantTextsRemoved: context.preprocessing.irrelevantTextsRemoved,
       },
+
       sentimentStats: this.analysisStatisticsService.buildSentimentStats(
         context.analyzedTexts,
       ),
@@ -67,6 +71,7 @@ export class AnalysisOutputBuilderService {
       opportunities: context.opportunities,
 
       insights: this.buildInsights(context.analyzedTexts),
+
       samplePosts: this.analysisEvidenceService.extractSamplePosts(
         context.analyzedTexts,
       ),
@@ -78,35 +83,49 @@ export class AnalysisOutputBuilderService {
       confidence: this.analysisStatisticsService.calculateOverallConfidence(
         context.analyzedTexts,
       ),
+
       analyzedTexts: context.analyzedTexts,
     };
   }
 
   /**
-   * Builds classified concern signals from matched lexicons.
+   * Builds classified rule-based concern signals from matched lexicons.
+   *
+   * Additional AI insights start empty and may be added later by the optional
+   * AI-enhancement and merge layer.
    *
    * @param analyzedTexts Final analyzed text records.
    * @returns Classified insight signals.
    */
   private buildInsights(
-    analyzedTexts: TextAnalysisResult[],
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
   ): IntelligentAnalysisOutput['insights'] {
     return {
       urgencySignals: this.collectSignals(
         analyzedTexts,
         NlpLexiconType.URGENCY,
       ),
-      costConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.COST),
-      timeConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.TIME),
+      costConcerns: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.COST,
+      ),
+      timeConcerns: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.TIME,
+      ),
       accessibilityConcerns: this.collectSignals(
         analyzedTexts,
         NlpLexiconType.ACCESSIBILITY,
       ),
-      safetyConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.SAFETY),
+      safetyConcerns: this.collectSignals(
+        analyzedTexts,
+        NlpLexiconType.SAFETY,
+      ),
       reliabilityConcerns: this.collectSignals(
         analyzedTexts,
         NlpLexiconType.RELIABILITY,
       ),
+      additionalInsights: [],
     };
   }
 
@@ -118,15 +137,15 @@ export class AnalysisOutputBuilderService {
    * @returns Unique normalized signals.
    */
   private collectSignals(
-    analyzedTexts: TextAnalysisResult[],
+    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
     type: NlpLexiconType,
   ): string[] {
     return [
       ...new Set(
         analyzedTexts
           .flatMap((text) => text.matchedLexicons[type] ?? [])
-          .map((signal) => signal.toLowerCase().trim())
-          .filter(Boolean),
+          .map((signal) => signal.trim().toLowerCase())
+          .filter((signal) => signal.length > 0),
       ),
     ];
   }

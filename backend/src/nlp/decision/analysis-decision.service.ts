@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { ANALYSIS_DECISION_THRESHOLDS } from './constants/analysis-decision-thresholds';
 import type { AnalysisDecisionInput } from './types/analysis-decision-input.type';
@@ -57,7 +57,7 @@ export class AnalysisDecisionService {
    * @returns The selected action, suitability score, original metrics,
    * and explainable decision reasons.
    *
-   * @throws Error when counters or metric values are invalid.
+   * @throws BadRequestException when counters or metric values are invalid.
    */
   decide(input: AnalysisDecisionInput): AnalysisDecisionResult {
     this.validateInput(input);
@@ -428,7 +428,7 @@ export class AnalysisDecisionService {
    * Validates all decision input values before evaluation.
    *
    * @param input Decision input.
-   * @throws Error when the dataset count or metric values are invalid.
+   * @throws BadRequestException when the dataset count or metric values are invalid.
    */
   private validateInput(input: AnalysisDecisionInput): void {
     this.validateAnalyzedTextCount(input.totalAnalyzedTexts);
@@ -440,7 +440,7 @@ export class AnalysisDecisionService {
    * Validates the analyzed text count.
    *
    * @param totalAnalyzedTexts Number of analyzed texts.
-   * @throws Error when the count is not a finite non-negative integer.
+   * @throws BadRequestException when the count is not a finite non-negative integer.
    */
   private validateAnalyzedTextCount(totalAnalyzedTexts: number): void {
     if (
@@ -448,7 +448,7 @@ export class AnalysisDecisionService {
       !Number.isInteger(totalAnalyzedTexts) ||
       totalAnalyzedTexts < 0
     ) {
-      throw new Error(
+      throw new BadRequestException(
         'Total analyzed texts must be a finite non-negative integer.',
       );
     }
@@ -458,7 +458,7 @@ export class AnalysisDecisionService {
    * Validates all normalized quality and complexity metrics.
    *
    * @param input Decision input.
-   * @throws Error when any normalized metric falls outside the range 0 to 1.
+   * @throws BadRequestException when any normalized metric falls outside the range 0 to 1.
    */
   private validateNormalizedMetrics(input: AnalysisDecisionInput): void {
     const normalizedMetrics = [
@@ -481,7 +481,7 @@ export class AnalysisDecisionService {
     );
 
     if (hasInvalidNormalizedMetric) {
-      throw new Error(
+      throw new BadRequestException(
         'Decision metrics must be finite numbers between 0 and 1.',
       );
     }
@@ -491,11 +491,11 @@ export class AnalysisDecisionService {
    * Validates the raw average text length.
    *
    * @param averageTextLength Average analyzed word count.
-   * @throws Error when the value is negative or non-finite.
+   * @throws BadRequestException when the value is negative or non-finite.
    */
   private validateAverageTextLength(averageTextLength: number): void {
     if (!Number.isFinite(averageTextLength) || averageTextLength < 0) {
-      throw new Error(
+      throw new BadRequestException(
         'Average text length must be a finite non-negative number.',
       );
     }

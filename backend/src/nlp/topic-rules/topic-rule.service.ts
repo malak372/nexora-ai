@@ -15,7 +15,7 @@ export type TopicRule = {
   /**
    * Keywords associated with the topic.
    */
-  terms: string[];
+  terms: readonly string[];
 };
 
 /**
@@ -26,7 +26,7 @@ export type TopicRule = {
  * generation.
  *
  * Keeping topic rules in the database allows administrators to extend,
- * customize, and fine-tune topic classification without modifying the
+ * customize, * and fine-tune topic classification without modifying the
  * application source code.
  *
  * This service is responsible only for data retrieval and normalization.
@@ -36,7 +36,7 @@ export type TopicRule = {
  */
 @Injectable()
 export class TopicRuleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Returns all active topic rules for a specific language.
@@ -60,9 +60,14 @@ export class TopicRuleService {
         topic: true,
         terms: true,
       },
-      orderBy: {
-        topic: 'asc',
-      },
+      orderBy: [
+        {
+          topic: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
     });
 
     return rules.map((rule) => ({
@@ -77,7 +82,9 @@ export class TopicRuleService {
    * @param terms Raw keyword collection.
    * @returns Unique normalized keywords.
    */
-  private normalizeTerms(terms: unknown): string[] {
+  private normalizeTerms(
+    terms: unknown,
+  ): readonly string[] {
     if (!Array.isArray(terms)) {
       return [];
     }

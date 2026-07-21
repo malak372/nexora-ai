@@ -1,124 +1,148 @@
 import { LanguageCode, NlpLexiconType } from '@prisma/client';
 
+import { FeatureRequest } from '../../analysis/types/feature-request.type';
 import { Sentiment } from '../../common/enums/sentiment.enum';
 
 /**
  * Identifies the original source of a text item inside the NLP pipeline.
  *
- * Nexora AI analyzes both collected social posts and their comments because:
+ * Nexora AI analyzes both collected posts and their comments because:
  * - Posts provide the general discussion context.
- * - Comments usually contain real user pain points, needs, complaints, and suggestions.
+ * - Comments frequently contain direct user problems, complaints, needs,
+ *   and feature suggestions.
  *
  * @author Eman
  */
 export type TextSourceType = 'POST' | 'COMMENT';
 
 /**
- * Generic priority level used for problems, needs, and insight severity.
+ * Generic priority level used for recurring problems, extracted needs,
+ * and other severity-based NLP results.
  *
- * This helps the Prompt Builder understand which signals should receive more
- * attention during idea generation.
+ * @author Eman
  */
 export type PriorityLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 
 /**
- * Represents a keyword extracted from posts/comments with its frequency.
+ * Represents a language that was resolved for an individual analyzed text.
  *
- * Frequency helps the AI understand which terms are most important instead
- * of treating all keywords equally.
+ * ANY is a collection preference and not an actual detected text language.
+ * Therefore, final per-text analysis results should contain a specific
+ * supported language whenever language detection succeeds.
+ *
+ * @author Eman
+ */
+export type ResolvedLanguageCode = Exclude<
+  LanguageCode,
+  typeof LanguageCode.ANY
+>;
+
+/**
+ * Represents a weighted keyword extracted from analyzed community texts.
+ *
+ * @author Eman
  */
 export type WeightedKeyword = {
   /**
-   * Normalized keyword extracted from analyzed community text.
+   * Normalized keyword extracted from analyzed text.
    */
   keyword: string;
 
   /**
-   * Number of times the keyword appeared in relevant analyzed texts.
+   * Number of occurrences across relevant analyzed texts.
    */
   frequency: number;
 };
 
 /**
- * Represents a discovered topic with its frequency.
+ * Represents a discussion topic and its supporting frequency.
  *
- * Topics summarize recurring discussion areas and guide the AI toward the
- * most common community concerns.
+ * @author Eman
  */
 export type WeightedTopic = {
   /**
-   * Topic name inferred from recurring keywords, problems, or AI analysis.
+   * Normalized topic label.
    */
   topic: string;
 
   /**
-   * Number of occurrences or supporting mentions for this topic.
+   * Number of occurrences or supporting mentions.
    */
   frequency: number;
 };
 
 /**
- * Unified input format for every text that enters the Intelligent NLP pipeline.
+ * Unified input format for each post or comment entering the intelligent
+ * NLP pipeline.
  *
- * This type allows the pipeline to treat posts and comments consistently while
- * still preserving important metadata such as source type, post relation,
- * engagement counts, and detected/original language.
+ * This contract allows posts and comments to be processed consistently while
+ * preserving their relevant source metadata.
+ *
+ * @author Eman
  */
 export type IntelligentTextInput = {
   /**
-   * Database ID of the SocialPost or SocialComment.
+   * Database identifier of the SocialPost or SocialComment.
    */
   id: string;
 
   /**
-   * Indicates whether this text came from a post or a comment.
+   * Indicates whether the input originated from a post or a comment.
    */
   sourceType: TextSourceType;
 
   /**
-   * Parent post ID.
+   * Parent SocialPost identifier.
    *
-   * Exists only when sourceType is COMMENT.
+   * Required for comments and omitted for posts.
    */
   postId?: string;
 
   /**
-   * Optional post title.
+   * Optional title of the source post.
    *
-   * Used only for posts to improve analysis context.
+   * The title may be combined with the post body to improve relevance and
+   * topic analysis.
    */
   title?: string | null;
 
   /**
-   * Raw text content before cleaning.
+   * Raw text content before preprocessing.
    */
   content: string;
 
   /**
-   * Language stored by the collector or detected later by the NLP pipeline.
+   * Validated language supplied by the collector or resolved before the main
+   * language-specific analysis stages.
+   *
+   * The Prisma SocialPost and SocialComment models currently store their
+   * languageCode fields as nullable strings. Those values must be validated
+   * and converted to LanguageCode before constructing this input.
    */
   language?: LanguageCode | null;
 
   /**
-   * Engagement count used later for ranking evidence samples.
+   * Engagement count used when ranking evidence samples.
    */
   likesCount?: number;
 
   /**
-   * Reply count used for post-level importance ranking.
+   * Reply count used for post-level relevance and importance ranking.
    */
   repliesCount?: number;
 };
 
 /**
- * Result of analyzing a single text item.
+ * Represents the result of analyzing one post or comment.
  *
- * This is useful for debugging, auditing, confidence calculation, and future
- * admin dashboards that need to show how the NLP engine interpreted each item.
+ * This structure supports debugging, auditing, confidence calculation,
+ * evidence selection, and administrative analysis views.
+ *
+ * @author Eman
  */
 export type TextAnalysisResult = {
   /**
-   * ID of the analyzed SocialPost or SocialComment.
+   * Identifier of the analyzed SocialPost or SocialComment.
    */
   id: string;
 
@@ -128,40 +152,41 @@ export type TextAnalysisResult = {
   sourceType: TextSourceType;
 
   /**
-   * Parent post ID when the analyzed item is a comment.
+   * Parent SocialPost identifier when the analyzed text is a comment.
    */
   postId?: string;
 
   /**
-   * Original raw text before preprocessing.
+   * Original text before preprocessing.
    */
   originalText: string;
 
   /**
-   * Cleaned and normalized text used for NLP matching and extraction.
+   * Cleaned and normalized text used by the NLP engine.
    */
   cleanedText: string;
 
   /**
-   * Final language used during analysis.
+   * Specific language used for language-aware lexicon, topic, and sentiment
+   * analysis.
+   *
+   * ANY must not be used here because it represents a collection preference,
+   * not the actual language of an individual text.
    */
-  language: LanguageCode;
+  language: ResolvedLanguageCode;
 
   /**
-   * Final sentiment classification for this text.
+   * Final sentiment classification.
    */
   sentiment: Sentiment;
 
   /**
-   * Confidence score from 0 to 1.
-   *
-   * Higher confidence means the rule-based engine or AI analysis found clear
-   * signals in the text.
+   * Analysis confidence score between 0 and 1.
    */
   confidence: number;
 
   /**
-   * Matched NLP lexicon terms grouped by lexicon type.
+   * Matched NLP lexicon terms grouped by lexicon category.
    *
    * Example:
    * {
@@ -172,85 +197,101 @@ export type TextAnalysisResult = {
   matchedLexicons: Partial<Record<NlpLexiconType, string[]>>;
 
   /**
-   * Indicates whether AI fallback was used for this specific text.
+   * Indicates whether AI fallback or enhancement was used for this text.
    */
   aiUsed: boolean;
 };
 
 /**
- * Final output returned by IntelligentAnalysisService.
+ * Represents the final aggregated output produced by the intelligent NLP
+ * pipeline.
  *
- * This is the contract between:
+ * This contract connects:
  *
  * NLP Pipeline
  * → Prompt Builder
  * → AI Idea Generation
  *
- * The structure is designed to support Nexora AI requirements:
- * - Analyze real posts and comments.
- * - Detect recurring problems and unmet needs.
- * - Extract weighted keywords and topics.
- * - Provide evidence samples.
- * - Support local context, domain, platforms, and data quality.
- * - Enable premium idea generation with richer AI prompts.
+ * @author Eman
  */
 export type IntelligentAnalysisOutput = {
   /**
-   * Collection job analyzed by the NLP engine.
+   * Identifier of the analyzed collection job.
    */
   collectionJobId: string;
 
   /**
-   * Domain selected for the collection job.
+   * Language preference selected for the collection job.
    *
-   * Used by the Prompt Builder to keep generated ideas aligned with the
-   * selected field, such as healthcare, education, fintech, etc.
+   * When this value is ANY, the dataset may contain multiple resolved
+   * languages. Individual TextAnalysisResult records still use specific
+   * resolved languages.
+   */
+  language: LanguageCode;
+
+  /**
+   * Software domain selected for data collection and analysis.
    */
   domain: {
+    /**
+     * Domain database identifier.
+     */
     id: string;
+
+    /**
+     * Human-readable domain name.
+     */
     name: string;
   };
 
   /**
-   * Local context of the collected data.
-   *
-   * This helps the AI generate ideas that fit the selected country, city,
-   * or region instead of producing generic global ideas.
+   * Geographical context associated with the collected data.
    */
   location: {
+    /**
+     * Selected country, when provided.
+     */
     country?: string | null;
+
+    /**
+     * Selected city, when provided.
+     */
     city?: string | null;
+
+    /**
+     * Selected region, when provided.
+     */
     region?: string | null;
   };
 
   /**
-   * Platforms used during data collection.
+   * Stable data-source keys used during data collection.
    *
-   * Example:
-   * ['Reddit', 'Facebook', 'GitHub']
+   * Examples:
+   * - youtube
+   * - github
+   * - stackoverflow
+   * - dev-to
    */
   platforms: string[];
 
   /**
-   * Total number of relevant texts analyzed after cleaning and filtering.
+   * Total number of relevant texts analyzed after preprocessing.
    */
   totalTextsAnalyzed: number;
 
   /**
-   * Number of posts analyzed.
+   * Total number of analyzed posts.
    */
   totalPostsAnalyzed: number;
 
   /**
-   * Number of comments analyzed.
+   * Total number of analyzed comments.
    */
   totalCommentsAnalyzed: number;
 
   /**
-   * Data quality summary.
-   *
-   * This improves transparency and helps the Prompt Builder know how reliable
-   * the analysis is.
+   * Preprocessing and data-quality statistics.
    */
   dataQuality: {
     /**
@@ -259,200 +300,245 @@ export type IntelligentAnalysisOutput = {
     duplicateTextsRemoved: number;
 
     /**
-     * Number of spam-like or too-low-quality texts removed.
+     * Number of spam-like or insufficient-quality texts removed.
      */
     spamTextsRemoved: number;
 
     /**
-     * Number of texts removed because they were not related to the selected domain.
+     * Number of texts removed because they were unrelated to the selected
+     * software domain.
      */
     irrelevantTextsRemoved: number;
   };
 
   /**
    * Sentiment distribution across analyzed posts and comments.
-   *
-   * Used by dashboards and prompts to understand whether the community is
-   * mostly complaining, satisfied, or neutral.
    */
   sentimentStats: {
+    /**
+     * Number of positively classified texts.
+     */
     positive: number;
+
+    /**
+     * Number of negatively classified texts.
+     */
     negative: number;
+
+    /**
+     * Number of neutrally classified texts.
+     */
     neutral: number;
+
+    /**
+     * Most common sentiment in the analyzed dataset.
+     */
     dominantSentiment: Sentiment;
   };
 
   /**
-   * Most frequent keywords extracted from analyzed texts.
-   *
-   * Frequencies help the AI prioritize the most repeated terms.
+   * Most frequent normalized keywords.
    */
   keywords: WeightedKeyword[];
 
   /**
-   * Most discussed topics inferred from the analyzed dataset.
+   * Most frequent discussion topics.
    */
   topics: WeightedTopic[];
 
   /**
-   * Recurring problems detected from posts and comments.
-   *
-   * These are the strongest signals for generating useful software project ideas.
+   * Recurring community problems identified from posts and comments.
    */
   recurringProblems: {
+    /**
+     * Human-readable normalized problem title.
+     */
     title: string;
+
+    /**
+     * Number of analyzed texts supporting the problem.
+     */
     frequency: number;
+
+    /**
+     * Estimated problem severity.
+     */
     severity: PriorityLevel;
+
+    /**
+     * Representative community evidence supporting the problem.
+     */
     evidenceSamples: string[];
   }[];
 
   /**
-   * Extracted user needs and unmet requirements.
-   *
-   * These needs are used to transform real complaints into actionable project ideas.
+   * User needs and unmet requirements extracted from community feedback.
    */
   extractedNeeds: {
+    /**
+     * Human-readable need statement.
+     */
     need: string;
+
+    /**
+     * Estimated priority of the extracted need.
+     */
     priority: PriorityLevel;
+
+    /**
+     * Recurring problem related to this need, when available.
+     */
     relatedProblem?: string;
+
+    /**
+     * Representative community evidence supporting the need.
+     */
     evidenceSamples: string[];
   }[];
 
   /**
-   * Feature requests mentioned by users.
-   *
-   * These can become product features or advanced requirements in generated ideas.
+   * Repeated feature requests extracted from community feedback.
    */
-  featureRequests: {
-    feature: string;
-    frequency: number;
-    evidenceSamples: string[];
-  }[];
+  featureRequests: FeatureRequest[];
 
   /**
-   * Structured software opportunity signals detected from community discussion.
-   *
-   * These are not final project ideas. They provide evidence-based direction
-   * for the Prompt Builder and AI idea-generation layer.
+   * Structured software-opportunity signals inferred from problems, needs,
+   * topics, and keywords.
    */
   opportunities: {
     /**
-     * Recurring problem connected to this opportunity.
+     * Recurring problem connected to the opportunity.
      */
     problem?: string;
 
     /**
-     * User need connected to this opportunity.
+     * Extracted user need connected to the opportunity.
      */
     need?: string;
 
     /**
-     * Main discussion topic related to this opportunity.
+     * Discussion topic connected to the opportunity.
      */
     topic?: string;
 
     /**
-     * Suggested solution area inferred from problems, needs, topics,
-     * and keywords.
+     * Suggested solution area.
      */
     solutionArea: string;
 
     /**
-     * Opportunity strength score from 0 to 1.
+     * Opportunity-strength score between 0 and 1.
      */
     score: number;
 
     /**
-     * Representative community evidence supporting this opportunity.
+     * Representative evidence supporting the opportunity.
      */
     evidenceSamples: string[];
   }[];
 
   /**
-   * Classified concern signals based on extended NLP lexicon categories.
-   *
-   * These make the analysis richer than basic sentiment analysis.
+   * Classified concern signals detected from community feedback.
    */
   insights: {
     /**
-     * Urgency-related signals extracted from community feedback.
+     * Urgency-related signals.
      */
     urgencySignals: string[];
 
     /**
-     * Cost-related concerns identified in analyzed texts.
+     * Cost-related concerns.
      */
     costConcerns: string[];
 
     /**
-     * Time-related concerns such as delays or slow processes.
+     * Time-related concerns.
      */
     timeConcerns: string[];
 
     /**
-     * Accessibility barriers or usability concerns.
+     * Accessibility or usability concerns.
      */
     accessibilityConcerns: string[];
 
     /**
-     * Safety-related concerns found in community discussions.
+     * Safety-related concerns.
      */
     safetyConcerns: string[];
 
     /**
-     * Reliability-related concerns such as failures or instability.
+     * Reliability-related concerns.
      */
     reliabilityConcerns: string[];
 
     /**
-     * Additional evidence-supported insights produced by the optional
-     * AI-enhancement layer.
-     *
-     * Rule-based concern categories remain authoritative, while this
-     * collection stores only validated insights that do not fit one of
-     * the predefined concern groups.
+     * Validated AI-enhanced insights that do not belong to one of the
+     * predefined rule-based concern categories.
      */
     additionalInsights: string[];
   };
 
   /**
-   * Representative analyzed posts used as evidence in prompts and premium outputs.
+   * Representative analyzed posts used as supporting evidence.
    */
   samplePosts: {
+    /**
+     * SocialPost identifier.
+     */
     id: string;
+
+    /**
+     * Representative post text.
+     */
     text: string;
+
+    /**
+     * Final post sentiment.
+     */
     sentiment: Sentiment;
   }[];
 
   /**
-   * Representative analyzed comments used as evidence in prompts and premium outputs.
+   * Representative analyzed comments used as supporting evidence.
    */
   sampleComments: {
+    /**
+     * SocialComment identifier.
+     */
     id: string;
+
+    /**
+     * Parent SocialPost identifier.
+     */
     postId: string;
+
+    /**
+     * Representative comment text.
+     */
     text: string;
+
+    /**
+     * Final comment sentiment.
+     */
     sentiment: Sentiment;
   }[];
 
   /**
-   * Indicates whether AI was used at least once during this analysis.
+   * Indicates whether AI was used at least once during the analysis.
    */
   aiUsed: boolean;
 
   /**
-   * Overall confidence score from 0 to 1 for the complete analysis.
+   * Overall analysis-confidence score between 0 and 1.
    */
   confidence: number;
 
   /**
-   * Optional detailed per-text analysis results.
+   * Detailed per-text analysis results.
    *
-   * These records are primarily intended for debugging, auditing,
-   * administrative review, and future improvements of the NLP engine.
-   *
-   * Since this collection can become quite large, it is optional and
-   * does not have to be forwarded to the Prompt Builder. The AI prompt
-   * typically requires only the aggregated analysis results.
+   * These records are intended primarily for debugging, auditing,
+   * administrative review, and metric calculations. They normally do not
+   * need to be forwarded to the Prompt Builder.
    */
   analyzedTexts: TextAnalysisResult[];
 };

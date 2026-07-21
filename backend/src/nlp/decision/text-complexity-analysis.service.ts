@@ -1,15 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import {
   COMPLEX_TEXT_WORD_TARGET,
-  CONTRAST_SIGNALS,
   LOW_TEXT_CONFIDENCE_THRESHOLD,
   MULTI_TOPIC_MINIMUM_COUNT,
-  NEGATION_SIGNALS,
   TEXT_COMPLEXITY_WEIGHTS,
 } from './constants/text-complexity.constants';
-import { TextComplexityAnalysisInput } from './types/text-complexity-analysis-input.type';
-import { TextComplexityMetrics } from './types/text-complexity-metrics.type';
+import {
+  CONTRAST_SIGNALS_BY_LANGUAGE,
+  NEGATION_SIGNALS_BY_LANGUAGE,
+} from './constants/text-complexity.constants';
+import type { TextComplexityAnalysisInput } from './types/text-complexity-analysis-input.type';
+import type { TextComplexityMetrics } from './types/text-complexity-metrics.type';
 
 /**
  * Evaluates linguistic and analytical complexity across community texts.
@@ -47,11 +49,11 @@ export class TextComplexityAnalysisService {
    * Calculates all text-complexity metrics for the analyzed dataset.
    *
    * @param input Detailed analyzed texts and aggregate topics produced
-   * by the rule-based NLP pipeline.
+   * by the rule-based NLP pipeline, together with the analysis language.
    *
    * @returns Text-complexity metrics used by the decision layer.
    *
-   * @throws Error when confidence values or topic frequencies are invalid.
+   * @throws BadRequestException when confidence values or topic frequencies are invalid.
    */
   analyze(input: TextComplexityAnalysisInput): TextComplexityMetrics {
     this.validateInput(input);
@@ -65,9 +67,15 @@ export class TextComplexityAnalysisService {
     const normalizedTextLength =
       this.normalizeAverageTextLength(averageTextLength);
 
-    const negationRatio = this.calculateSignalRatio(input, NEGATION_SIGNALS);
+    const negationRatio = this.calculateSignalRatio(
+      input,
+      NEGATION_SIGNALS_BY_LANGUAGE[input.language],
+    );
 
-    const contrastRatio = this.calculateSignalRatio(input, CONTRAST_SIGNALS);
+    const contrastRatio = this.calculateSignalRatio(
+      input,
+      CONTRAST_SIGNALS_BY_LANGUAGE[input.language],
+    );
 
     const mixedSentimentRatio = this.calculateMixedSentimentRatio(input);
 
@@ -294,7 +302,7 @@ export class TextComplexityAnalysisService {
       input.lowConfidenceRatio * TEXT_COMPLEXITY_WEIGHTS.lowConfidenceRatio +
       input.multiTopicRatio * TEXT_COMPLEXITY_WEIGHTS.multiTopicRatio +
       input.unmatchedLexiconRatio *
-        TEXT_COMPLEXITY_WEIGHTS.unmatchedLexiconRatio;
+      TEXT_COMPLEXITY_WEIGHTS.unmatchedLexiconRatio;
 
     return this.round(this.clamp(complexityScore));
   }
@@ -382,7 +390,7 @@ export class TextComplexityAnalysisService {
    * - Non-finite numeric values.
    *
    * @param input Text-complexity analysis input.
-   * @throws Error when input values are invalid.
+   * @throws BadRequestException when input values are invalid.
    */
   private validateInput(input: TextComplexityAnalysisInput): void {
     const hasInvalidConfidence = input.analyzedTexts.some(
@@ -393,7 +401,7 @@ export class TextComplexityAnalysisService {
     );
 
     if (hasInvalidConfidence) {
-      throw new Error(
+      throw new BadRequestException(
         'Text confidence values must be finite numbers between 0 and 1.',
       );
     }
@@ -406,7 +414,7 @@ export class TextComplexityAnalysisService {
     );
 
     if (hasInvalidTopicFrequency) {
-      throw new Error(
+      throw new BadRequestException(
         'Topic frequencies must be finite non-negative integers.',
       );
     }

@@ -8,79 +8,100 @@ import { PreprocessedTextInput } from '../pipeline/text-preprocessing.service';
 import { NlpLexiconService } from './nlp-lexicon.service';
 
 /**
+ * Lexicon groups indexed by NLP lexicon type.
+ *
+ * @author Eman
+ */
+type LexiconsByType = Record<NlpLexiconType, readonly string[]>;
+
+/**
  * Represents the result of lexicon-based analysis for a single text item.
+ *
+ * @author Eman
  */
 export type LexiconTextAnalysisResult = TextAnalysisResult & {
   /**
    * Number of matched lexicon terms across all categories.
    */
-  totalLexiconMatches: number;
+  readonly totalLexiconMatches: number;
 
   /**
    * Number of positive lexicon matches.
    */
-  positiveMatches: number;
+  readonly positiveMatches: number;
 
   /**
    * Number of negative lexicon matches.
    */
-  negativeMatches: number;
+  readonly negativeMatches: number;
 };
 
 /**
  * Output returned after running lexicon analysis on preprocessed texts.
+ *
+ * @author Eman
  */
 export type LexiconAnalysisOutput = {
   /**
-   * Enriched text analysis records after lexicon matching.
+   * Enriched text-analysis records after lexicon matching.
    */
-  analyzedTexts: LexiconTextAnalysisResult[];
+  readonly analyzedTexts: readonly LexiconTextAnalysisResult[];
 
   /**
    * Number of analyzed texts.
    */
-  totalAnalyzed: number;
+  readonly totalAnalyzed: number;
 
   /**
    * Number of texts classified as positive.
    */
-  positiveTexts: number;
+  readonly positiveTexts: number;
 
   /**
    * Number of texts classified as negative.
    */
-  negativeTexts: number;
+  readonly negativeTexts: number;
 
   /**
    * Number of texts classified as neutral.
    */
-  neutralTexts: number;
+  readonly neutralTexts: number;
 };
 
 /**
- * Performs rule-based lexicon analysis on preprocessed community texts.
- *
- * This service is the first semantic analysis stage in the Nexora AI NLP
- * pipeline. It matches cleaned social posts and comments against configurable
- * lexicon entries stored in the database to detect meaningful community
- * signals before keyword extraction, problem detection, and AI prompt building.
+ * Performs multilingual, rule-based lexicon analysis on preprocessed texts.
  *
  * Responsibilities:
- * - Match texts against multilingual NLP lexicons.
- * - Detect problem, need, complaint, urgency, cost, time, accessibility,
- *   safety, reliability, opportunity, and feature-request signals.
- * - Calculate an initial sentiment label from positive and negative signals.
- * - Produce confidence scores for each analyzed text.
- * - Enrich per-text analysis records for later insight extraction.
+ * - Load configured lexicons once for every language used in the analysis run.
+ * - Match cleaned posts and comments against all lexicon categories.
+ * - Calculate initial sentiment from positive and negative signals.
+ * - Calculate a confidence score for every analyzed text.
+ * - Enrich analysis records for later NLP stages.
  *
- * This service does not persist analysis results. Persistence is handled by
- * a later NLP persistence service.
+ * This service is stateless and does not persist analysis results.
  *
  * @author Eman
  */
 @Injectable()
 export class LexiconAnalysisService {
-  constructor(private readonly nlpLexiconService: NlpLexiconService) {}
+  /**
+   * Number of lexicon matches considered sufficient for maximum
+   * match-density confidence.
+   */
+  private static readonly FULL_MATCH_CONFIDENCE_COUNT = 6;
+
+  /**
+   * Positive-to-negative match difference considered sufficient
+   * for maximum sentiment-strength confidence.
+   */
+  private static readonly FULL_SENTIMENT_STRENGTH_DIFFERENCE = 3;
+
+  /**
+   * Minimum confidence returned when no lexicon terms are matched.
+   */
+  private static readonly MINIMUM_FALLBACK_CONFIDENCE = 0.1;
+
+  constructor(private readonly nlpLexiconService: NlpLexiconService) { }
 
   /**
    * Runs lexicon analysis for all preprocessed texts.
@@ -90,54 +111,41 @@ export class LexiconAnalysisService {
    * @returns Lexicon-enriched analysis output.
    */
   async analyze(
-    texts: PreprocessedTextInput[],
-    initialResults: TextAnalysisResult[],
+    texts: readonly PreprocessedTextInput[],
+    initialResults: readonly TextAnalysisResult[],
   ): Promise<LexiconAnalysisOutput> {
-    const lexiconsByLanguage = await this.loadLexiconsByLanguage(texts);
+    if (texts.length === 0) {
+      return this.buildEmptyOutput();
+    }
 
+    const lexiconsByLanguage = await this.loadLexiconsByLanguage(texts);
     const initialResultsById = new Map(
       initialResults.map((result) => [result.id, result]),
     );
 
-    const analyzedTexts = texts.map((text) => {
-      const baseResult = initialResultsById.get(text.id);
-
-      return this.analyzeText(
+    const analyzedTexts = texts.map((text) =>
+      this.analyzeText(
         text,
-        lexiconsByLanguage.get(text.finalLanguage) ?? this.buildEmptyLexicons(),
-        baseResult,
-      );
-    });
+        lexiconsByLanguage.get(text.finalLanguage) ??
+        this.buildEmptyLexicons(),
+        initialResultsById.get(text.id),
+      ),
+    );
 
-    return {
-      analyzedTexts,
-      totalAnalyzed: analyzedTexts.length,
-
-      positiveTexts: analyzedTexts.filter(
-        (text) => text.sentiment === Sentiment.POSITIVE,
-      ).length,
-
-      negativeTexts: analyzedTexts.filter(
-        (text) => text.sentiment === Sentiment.NEGATIVE,
-      ).length,
-
-      neutralTexts: analyzedTexts.filter(
-        (text) => text.sentiment === Sentiment.NEUTRAL,
-      ).length,
-    };
+    return this.buildOutput(analyzedTexts);
   }
 
   /**
-   * Analyzes one preprocessed text using lexicon matches.
+   * Analyzes one preprocessed text using language-specific lexicons.
    *
    * @param text Preprocessed text input.
    * @param lexicons Lexicon terms grouped by type.
    * @param baseResult Optional initial analysis record.
-   * @returns Enriched text analysis result.
+   * @returns Enriched text-analysis result.
    */
   private analyzeText(
     text: PreprocessedTextInput,
-    lexicons: Record<NlpLexiconType, string[]>,
+    lexicons: LexiconsByType,
     baseResult?: TextAnalysisResult,
   ): LexiconTextAnalysisResult {
     const matchedLexicons = this.matchLexicons(
@@ -152,17 +160,8 @@ export class LexiconAnalysisService {
       matchedLexicons[NlpLexiconType.NEGATIVE]?.length ?? 0;
 
     const totalLexiconMatches = Object.values(matchedLexicons).reduce(
-      (total, matches) => total + matches.length,
+      (total, matches) => total + (matches?.length ?? 0),
       0,
-    );
-
-    const sentiment = this.calculateSentiment(positiveMatches, negativeMatches);
-
-    const confidence = this.calculateConfidence(
-      totalLexiconMatches,
-      positiveMatches,
-      negativeMatches,
-      text.relevanceConfidence,
     );
 
     return {
@@ -172,8 +171,16 @@ export class LexiconAnalysisService {
       originalText: text.cleaning.originalText,
       cleanedText: text.cleaning.cleanedText,
       language: text.finalLanguage,
-      sentiment,
-      confidence,
+      sentiment: this.calculateSentiment(
+        positiveMatches,
+        negativeMatches,
+      ),
+      confidence: this.calculateConfidence(
+        totalLexiconMatches,
+        positiveMatches,
+        negativeMatches,
+        text.relevanceConfidence,
+      ),
       matchedLexicons,
       aiUsed: baseResult?.aiUsed ?? false,
       totalLexiconMatches,
@@ -183,64 +190,86 @@ export class LexiconAnalysisService {
   }
 
   /**
-   * Loads all required lexicons for the languages present in the input texts.
+   * Loads and normalizes lexicons for all languages present in the input.
    *
-   * Each language is loaded once and cached in a map for the duration of the
-   * analysis run. This avoids repeated database calls while processing many
-   * posts and comments in the same collection job.
+   * Each language is loaded once. Independent database reads are executed
+   * concurrently to reduce total analysis latency.
    *
    * @param texts Preprocessed text inputs.
-   * @returns Lexicon terms grouped by language and type.
+   * @returns Lexicons grouped by language and type.
    */
   private async loadLexiconsByLanguage(
-    texts: PreprocessedTextInput[],
-  ): Promise<Map<LanguageCode, Record<NlpLexiconType, string[]>>> {
-    const languages = [...new Set(texts.map((text) => text.finalLanguage))];
+    texts: readonly PreprocessedTextInput[],
+  ): Promise<Map<LanguageCode, LexiconsByType>> {
+    const languages = [
+      ...new Set(texts.map((text) => text.finalLanguage)),
+    ];
 
-    const result = new Map<LanguageCode, Record<NlpLexiconType, string[]>>();
+    const entries = await Promise.all(
+      languages.map(async (language) => {
+        const lexicons = await this.nlpLexiconService.getGroupedWords(
+          language,
+        );
 
-    for (const language of languages) {
-      result.set(language, await this.loadLexiconsForLanguage(language));
+        return [
+          language,
+          this.normalizeLexicons(lexicons),
+        ] as const;
+      }),
+    );
+
+    return new Map(entries);
+  }
+
+  /**
+   * Normalizes and deduplicates all lexicon terms once before text matching.
+   *
+   * @param lexicons Raw lexicon groups loaded from storage.
+   * @returns Normalized lexicon groups.
+   */
+  private normalizeLexicons(
+    lexicons: Record<NlpLexiconType, string[]>,
+  ): LexiconsByType {
+    const normalizedLexicons = this.buildEmptyLexicons();
+
+    for (const type of this.getLexiconTypes()) {
+      normalizedLexicons[type] = [
+        ...new Set(
+          (lexicons[type] ?? [])
+            .map((term) => this.normalizeText(term))
+            .filter(Boolean),
+        ),
+      ];
     }
 
-    return result;
+    return normalizedLexicons;
   }
 
   /**
-   * Loads lexicon terms for one language and groups them by lexicon type.
-   *
-   * @param language Language used for lexicon lookup.
-   * @returns Lexicon terms grouped by type.
-   */
-  private async loadLexiconsForLanguage(
-    language: LanguageCode,
-  ): Promise<Record<NlpLexiconType, string[]>> {
-    return this.nlpLexiconService.getGroupedWords(language);
-  }
-
-  /**
-   * Matches cleaned text against all configured lexicon categories.
+   * Matches cleaned text against every configured lexicon category.
    *
    * @param cleanedText Cleaned text ready for analysis.
-   * @param lexicons Lexicon terms grouped by category.
-   * @returns Matched lexicon terms grouped by category.
+   * @param lexicons Normalized lexicon terms grouped by category.
+   * @returns Matched terms grouped by category.
    */
   private matchLexicons(
     cleanedText: string,
-    lexicons: Record<NlpLexiconType, string[]>,
+    lexicons: LexiconsByType,
   ): Partial<Record<NlpLexiconType, string[]>> {
+    const normalizedText = this.normalizeText(cleanedText);
     const matches: Partial<Record<NlpLexiconType, string[]>> = {};
 
-    for (const [type, words] of Object.entries(lexicons) as [
-      NlpLexiconType,
-      string[],
-    ][]) {
-      const matchedWords = words.filter((word) =>
-        this.containsTerm(cleanedText, word),
+    if (!normalizedText) {
+      return matches;
+    }
+
+    for (const type of this.getLexiconTypes()) {
+      const matchedTerms = lexicons[type].filter((term) =>
+        this.containsTerm(normalizedText, term),
       );
 
-      if (matchedWords.length > 0) {
-        matches[type] = matchedWords;
+      if (matchedTerms.length > 0) {
+        matches[type] = matchedTerms;
       }
     }
 
@@ -248,56 +277,66 @@ export class LexiconAnalysisService {
   }
 
   /**
-   * Determines whether a cleaned text contains a lexicon term.
+   * Determines whether normalized text contains a complete lexicon term.
    *
-   * @param text Cleaned text.
-   * @param term Lexicon term.
-   * @returns True when the term appears in the text.
+   * Unicode-aware letter and number boundaries allow matches beside
+   * punctuation while preventing partial-word matches.
+   *
+   * @param normalizedText Normalized text.
+   * @param normalizedTerm Normalized lexicon term.
+   * @returns True when the complete term appears in the text.
    */
-  private containsTerm(text: string, term: string): boolean {
-    const normalizedTerm = term.toLowerCase().trim();
-
-    if (!normalizedTerm) {
+  private containsTerm(
+    normalizedText: string,
+    normalizedTerm: string,
+  ): boolean {
+    if (!normalizedText || !normalizedTerm) {
       return false;
     }
 
-    const escapedTerm = normalizedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedTerm = this.escapeRegExp(normalizedTerm);
 
-    const pattern = new RegExp(`(^|\\s)${escapedTerm}(\\s|$)`, 'i');
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}_])${escapedTerm}(?![\\p{L}\\p{N}_])`,
+      'iu',
+    );
 
-    return pattern.test(text);
+    return pattern.test(normalizedText);
   }
 
   /**
    * Calculates sentiment from positive and negative lexicon signals.
    *
-   * @param positiveMatches Number of positive signals.
-   * @param negativeMatches Number of negative signals.
+   * @param positiveMatches Number of positive matches.
+   * @param negativeMatches Number of negative matches.
    * @returns Final sentiment classification.
    */
   private calculateSentiment(
     positiveMatches: number,
     negativeMatches: number,
   ): Sentiment {
-    if (negativeMatches > positiveMatches) {
-      return Sentiment.NEGATIVE;
+    if (positiveMatches === negativeMatches) {
+      return Sentiment.NEUTRAL;
     }
 
-    if (positiveMatches > negativeMatches) {
-      return Sentiment.POSITIVE;
-    }
-
-    return Sentiment.NEUTRAL;
+    return positiveMatches > negativeMatches
+      ? Sentiment.POSITIVE
+      : Sentiment.NEGATIVE;
   }
 
   /**
-   * Calculates confidence for a lexicon-based text analysis result.
+   * Calculates confidence for a lexicon-based analysis result.
+   *
+   * Confidence combines:
+   * - Lexicon match density.
+   * - Positive/negative sentiment separation.
+   * - Domain-relevance confidence.
    *
    * @param totalMatches Total lexicon matches.
    * @param positiveMatches Number of positive matches.
    * @param negativeMatches Number of negative matches.
-   * @param relevanceConfidence Confidence from domain relevance filtering.
-   * @returns Confidence score between 0 and 1.
+   * @param relevanceConfidence Domain-relevance confidence.
+   * @returns Confidence between 0 and 1.
    */
   private calculateConfidence(
     totalMatches: number,
@@ -305,37 +344,157 @@ export class LexiconAnalysisService {
     negativeMatches: number,
     relevanceConfidence: number,
   ): number {
+    const normalizedRelevanceConfidence =
+      this.clamp(relevanceConfidence);
+
     if (totalMatches === 0) {
-      return Number(Math.max(relevanceConfidence * 0.5, 0.1).toFixed(3));
+      return this.round(
+        Math.max(
+          normalizedRelevanceConfidence * 0.5,
+          LexiconAnalysisService.MINIMUM_FALLBACK_CONFIDENCE,
+        ),
+      );
     }
 
-    const matchConfidence = Math.min(totalMatches / 6, 1);
-
-    const sentimentStrength = Math.min(
-      Math.abs(positiveMatches - negativeMatches) / 3,
-      1,
+    const matchConfidence = this.clamp(
+      totalMatches /
+      LexiconAnalysisService.FULL_MATCH_CONFIDENCE_COUNT,
     );
 
-    const confidence =
+    const sentimentStrength = this.clamp(
+      Math.abs(positiveMatches - negativeMatches) /
+      LexiconAnalysisService.FULL_SENTIMENT_STRENGTH_DIFFERENCE,
+    );
+
+    return this.round(
       matchConfidence * 0.6 +
       sentimentStrength * 0.2 +
-      relevanceConfidence * 0.2;
-
-    return Number(Math.min(confidence, 1).toFixed(3));
+      normalizedRelevanceConfidence * 0.2,
+    );
   }
 
   /**
-   * Builds an empty lexicon grouping object containing all lexicon types.
+   * Normalizes text and lexicon terms before matching.
+   *
+   * @param value Raw text value.
+   * @returns Unicode-normalized lowercase text.
+   */
+  private normalizeText(value: string): string {
+    if (typeof value !== 'string') {
+      return '';
+    }
+
+    return value
+      .normalize('NFKC')
+      .replace(/[\u200B-\u200D\uFEFF]/gu, '')
+      .toLocaleLowerCase()
+      .trim()
+      .replace(/\s+/gu, ' ');
+  }
+
+  /**
+   * Escapes a value before inserting it into a regular expression.
+   *
+   * @param value Raw regular-expression value.
+   * @returns Escaped value.
+   */
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  }
+
+  /**
+   * Returns all Prisma NLP lexicon enum values with strong typing.
+   *
+   * @returns Supported lexicon types.
+   */
+  private getLexiconTypes(): NlpLexiconType[] {
+    return Object.values(NlpLexiconType);
+  }
+
+  /**
+   * Builds an empty lexicon object containing all configured categories.
    *
    * @returns Empty lexicon groups.
    */
   private buildEmptyLexicons(): Record<NlpLexiconType, string[]> {
-    return Object.values(NlpLexiconType).reduce(
-      (accumulator, type) => ({
-        ...accumulator,
-        [type]: [],
-      }),
-      {} as Record<NlpLexiconType, string[]>,
-    );
+    const lexicons = {} as Record<NlpLexiconType, string[]>;
+
+    for (const type of this.getLexiconTypes()) {
+      lexicons[type] = [];
+    }
+
+    return lexicons;
+  }
+
+  /**
+   * Builds aggregate output statistics.
+   *
+   * @param analyzedTexts Completed per-text analysis records.
+   * @returns Lexicon-analysis output.
+   */
+  private buildOutput(
+    analyzedTexts: readonly LexiconTextAnalysisResult[],
+  ): LexiconAnalysisOutput {
+    let positiveTexts = 0;
+    let negativeTexts = 0;
+    let neutralTexts = 0;
+
+    for (const text of analyzedTexts) {
+      switch (text.sentiment) {
+        case Sentiment.POSITIVE:
+          positiveTexts += 1;
+          break;
+
+        case Sentiment.NEGATIVE:
+          negativeTexts += 1;
+          break;
+
+        default:
+          neutralTexts += 1;
+      }
+    }
+
+    return {
+      analyzedTexts,
+      totalAnalyzed: analyzedTexts.length,
+      positiveTexts,
+      negativeTexts,
+      neutralTexts,
+    };
+  }
+
+  /**
+   * Builds an empty analysis output.
+   *
+   * @returns Empty lexicon-analysis output.
+   */
+  private buildEmptyOutput(): LexiconAnalysisOutput {
+    return {
+      analyzedTexts: [],
+      totalAnalyzed: 0,
+      positiveTexts: 0,
+      negativeTexts: 0,
+      neutralTexts: 0,
+    };
+  }
+
+  /**
+   * Restricts a numeric value to the normalized range from 0 to 1.
+   *
+   * @param value Numeric value.
+   * @returns Clamped value.
+   */
+  private clamp(value: number): number {
+    return Math.min(1, Math.max(0, value));
+  }
+
+  /**
+   * Rounds a numeric value to three decimal places.
+   *
+   * @param value Numeric value.
+   * @returns Rounded value.
+   */
+  private round(value: number): number {
+    return Number(value.toFixed(3));
   }
 }
