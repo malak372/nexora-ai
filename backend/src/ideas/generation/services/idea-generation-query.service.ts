@@ -5,15 +5,20 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import type { GetGenerationRunsQueryDto } from '../dto/get-generation-runs-query.dto';
 
 /**
- * Read-only application service for generation-run monitoring endpoints.
+ * Read-only application service for idea-generation monitoring endpoints.
  *
- * Keeping Prisma queries here leaves controllers responsible only for HTTP
- * mapping, authentication context, and input validation.
+ * Persisted stage sequence values remain the canonical internal pipeline
+ * order. A contiguous displaySequence is added only to API responses.
+ *
+ * @author Malak
  */
 @Injectable()
 export class IdeaGenerationQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Returns paginated generation runs owned by one authenticated user.
+   */
   async findUserRuns(userId: string, query: GetGenerationRunsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -44,7 +49,11 @@ export class IdeaGenerationQueryService {
             },
           },
           collectionJob: {
-            select: { id: true, domainId: true, status: true },
+            select: {
+              id: true,
+              domainId: true,
+              status: true,
+            },
           },
           stages: {
             orderBy: { sequence: 'asc' },
@@ -55,7 +64,13 @@ export class IdeaGenerationQueryService {
     ]);
 
     return {
-      data: items,
+      data: items.map((run) => ({
+        ...run,
+        stages: run.stages.map((stage, index) => ({
+          ...stage,
+          displaySequence: index + 1,
+        })),
+      })),
       pagination: {
         page,
         limit,
@@ -65,6 +80,10 @@ export class IdeaGenerationQueryService {
     };
   }
 
+  /**
+   * Returns one generation run when it belongs to the authenticated user.
+   * Benchmark Decimal values are converted to JSON-safe numbers.
+   */
   async findOwnedUserRun(userId: string, runId: string) {
     const run = await this.prisma.ideaGenerationRun.findFirst({
       where: { id: runId, userId },
@@ -91,7 +110,44 @@ export class IdeaGenerationQueryService {
             completedAt: true,
           },
         },
-        stages: { orderBy: { sequence: 'asc' } },
+        stages: {
+          orderBy: { sequence: 'asc' },
+        },
+        benchmarkCandidates: {
+          orderBy: [
+            { selected: 'desc' },
+            { overallScore: 'desc' },
+            { responseTimeMs: 'asc' },
+          ],
+          select: {
+            id: true,
+            aiModelId: true,
+            providerKey: true,
+            apiModelId: true,
+            modelName: true,
+            displayName: true,
+            overallScore: true,
+            innovationScore: true,
+            marketFitScore: true,
+            technicalQualityScore: true,
+            completenessScore: true,
+            originalityScore: true,
+            inputTokens: true,
+            outputTokens: true,
+            costEstimate: true,
+            responseTimeMs: true,
+            selected: true,
+            errorCode: true,
+            errorMessage: true,
+            createdAt: true,
+            aiModel: {
+              select: {
+                modelName: true,
+                displayName: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -99,6 +155,23 @@ export class IdeaGenerationQueryService {
       throw new NotFoundException('The generation run was not found.');
     }
 
-    return run;
+    return {
+      ...run,
+      stages: run.stages.map((stage, index) => ({
+        ...stage,
+        displaySequence: index + 1,
+      })),
+      benchmarkCandidates: run.benchmarkCandidates.map((candidate) => ({
+        ...candidate,
+        overallScore: candidate.overallScore?.toNumber() ?? null,
+        innovationScore: candidate.innovationScore?.toNumber() ?? null,
+        marketFitScore: candidate.marketFitScore?.toNumber() ?? null,
+        technicalQualityScore:
+          candidate.technicalQualityScore?.toNumber() ?? null,
+        completenessScore: candidate.completenessScore?.toNumber() ?? null,
+        originalityScore: candidate.originalityScore?.toNumber() ?? null,
+        costEstimate: candidate.costEstimate?.toNumber() ?? null,
+      })),
+    };
   }
 }

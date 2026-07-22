@@ -597,32 +597,18 @@ export const ALL_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[
  * Complete stage list used by guest and registered-user free
  * generation.
  *
- * Premium stages are excluded and finalization receives the next
- * continuous sequence number.
+ * Premium-only output stages are excluded. Core-stage and finalization
+ * definitions are intentionally reused without modification so every
+ * stage implementation and pipeline policy references the same central
+ * configuration.
+ *
+ * Sequence gaps are valid because execution order is determined by the
+ * configured sequence values. Keeping the original definitions prevents
+ * runtime configuration conflicts between stage implementations and the
+ * resolved free-generation pipeline.
  */
 export const FREE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition[] =
-  [
-    ...CORE_IDEA_GENERATION_STAGES.map((stage) =>
-      stage.key === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
-        ? {
-            ...stage,
-            sequence: 11,
-            progressStart: 75,
-            progressEnd: 80,
-          }
-        : stage,
-    ),
-
-    {
-      ...IDEA_GENERATION_FINALIZATION_STAGE,
-
-      sequence: 12,
-
-      progressStart: 80,
-
-      progressEnd: 100,
-    },
-  ] as const;
+  [...CORE_IDEA_GENERATION_STAGES, IDEA_GENERATION_FINALIZATION_STAGE] as const;
 
 /**
  * Returns the correct pipeline-stage definitions for the

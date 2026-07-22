@@ -50,6 +50,22 @@ import { IdeaDuplicateDetectionService } from './idea-duplicate-detection.servic
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 
 /**
+ * Maximum time Prisma may wait to acquire an interactive
+ * transaction connection before failing the persistence attempt.
+ */
+const SERIALIZABLE_TRANSACTION_MAX_WAIT_MS = 10_000;
+
+/**
+ * Maximum lifetime of one interactive persistence transaction.
+ *
+ * The persistence flow performs several dependent validation and
+ * write operations. The explicit timeout prevents Prisma's shorter
+ * default timeout from closing the transaction before entitlement
+ * consumption and generation-run linking are completed.
+ */
+const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 30_000;
+
+/**
  * Prisma transaction client accepted by idea-persistence
  * operations.
  */
@@ -216,12 +232,11 @@ export class IdeaPersistenceService {
   ): Promise<PersistedGeneratedIdea> {
     const normalizedInput = this.normalizeInput(input);
 
-    const persistedIdea =
-      await this.executeSerializableTransaction(normalizedInput);
+    const ideaId = await this.executeSerializableTransaction(normalizedInput);
 
     await this.invalidatePremiumCreditCaches(normalizedInput);
 
-    return persistedIdea;
+    return this.loadPersistedIdea(ideaId);
   }
 
   /**
@@ -233,11 +248,11 @@ export class IdeaPersistenceService {
    * a rolled-back attempt.
    *
    * @param input Normalized persistence input.
-   * @returns Fully persisted generated idea.
+   * @returns Identifier of the committed generated idea.
    */
   private async executeSerializableTransaction(
     input: PersistGeneratedIdeaInput,
-  ): Promise<PersistedGeneratedIdea> {
+  ): Promise<string> {
     for (
       let attempt = 1;
       attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
@@ -245,7 +260,7 @@ export class IdeaPersistenceService {
     ) {
       try {
         return await this.prisma.$transaction(
-          async (transaction): Promise<PersistedGeneratedIdea> => {
+          async (transaction): Promise<string> => {
             const run = await this.validateGenerationRun(transaction, input);
 
             await this.validatePromptHistory(transaction, input);
@@ -260,6 +275,12 @@ export class IdeaPersistenceService {
             );
 
             const idea = await this.createIdea(transaction, input);
+
+            await this.attachPromptHistoryToIdea(
+              transaction,
+              input.promptHistoryId,
+              idea.id,
+            );
 
             await this.consumeEntitlement(transaction, input, idea.id);
 
@@ -276,10 +297,12 @@ export class IdeaPersistenceService {
               input.collectionJobId,
             );
 
-            return this.loadPersistedIdea(transaction, idea.id);
+            return idea.id;
           },
           {
             isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: SERIALIZABLE_TRANSACTION_MAX_WAIT_MS,
+            timeout: SERIALIZABLE_TRANSACTION_TIMEOUT_MS,
           },
         );
       } catch (error: unknown) {
@@ -971,8 +994,6 @@ export class IdeaPersistenceService {
 
         domainId: input.domainId,
 
-        promptHistoryId: input.promptHistoryId,
-
         collectionJobId: input.collectionJobId,
 
         selectedRegion: input.selectedRegion,
@@ -1000,6 +1021,31 @@ export class IdeaPersistenceService {
           : UnlockMethod.NONE,
 
         unlockedAt: isPremium ? now : null,
+      },
+    });
+  }
+
+  /**
+   * Associates the prompt-history record with the persisted idea.
+   *
+   * The relation is owned by PromptHistory through ideaId.
+   *
+   * @param transaction Active Prisma transaction.
+   * @param promptHistoryId Prompt-history identifier.
+   * @param ideaId Persisted idea identifier.
+   */
+  private async attachPromptHistoryToIdea(
+    transaction: IdeaPersistenceDatabaseClient,
+    promptHistoryId: string,
+    ideaId: string,
+  ): Promise<void> {
+    await transaction.promptHistory.update({
+      where: {
+        id: promptHistoryId,
+      },
+
+      data: {
+        ideaId,
       },
     });
   }
@@ -1100,18 +1146,20 @@ export class IdeaPersistenceService {
   }
 
   /**
-   * Loads the complete persisted result before committing the
-   * transaction.
+   * Loads the complete persisted result after the persistence
+   * transaction has committed successfully.
    *
-   * @param transaction Active Prisma transaction.
+   * Keeping this read outside the interactive transaction reduces
+   * transaction lifetime and avoids holding the transaction open
+   * for a non-mutating response query.
+   *
    * @param ideaId Persisted idea identifier.
-   * @returns Complete persisted idea result.
+   * @returns Complete committed idea result.
    */
   private async loadPersistedIdea(
-    transaction: IdeaPersistenceDatabaseClient,
     ideaId: string,
   ): Promise<PersistedGeneratedIdea> {
-    return transaction.idea.findUniqueOrThrow({
+    return this.prisma.idea.findUniqueOrThrow({
       where: {
         id: ideaId,
       },
