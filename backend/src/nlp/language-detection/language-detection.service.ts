@@ -360,10 +360,7 @@ export class LanguageDetectionService {
       return 0;
     }
 
-    return (
-      matches.length *
-      LanguageDetectionService.SPECIFIC_CHARACTER_SCORE
-    );
+    return matches.length * LanguageDetectionService.SPECIFIC_CHARACTER_SCORE;
   }
 
   /**
@@ -425,8 +422,7 @@ export class LanguageDetectionService {
 
     const dominance = (highestScore - secondHighestScore) / highestScore;
     const strength = Math.min(
-      highestScore /
-      (LanguageDetectionService.MINIMUM_LANGUAGE_SCORE * 2),
+      highestScore / (LanguageDetectionService.MINIMUM_LANGUAGE_SCORE * 2),
       1,
     );
 

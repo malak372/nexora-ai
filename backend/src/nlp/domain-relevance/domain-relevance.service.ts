@@ -89,10 +89,7 @@ export class DomainRelevanceService {
    * @param keywords Domain keywords and optional user-provided keywords.
    * @returns Relevance result containing matched terms and normalized metrics.
    */
-  analyze(
-    text: string,
-    keywords: readonly string[],
-  ): DomainRelevanceResult {
+  analyze(text: string, keywords: readonly string[]): DomainRelevanceResult {
     const normalizedText = this.normalizeText(text);
     const normalizedKeywords = this.normalizeKeywords(keywords);
 
@@ -134,13 +131,9 @@ export class DomainRelevanceService {
     const totalMatches = matchedKeywords.length + matchedPhrases.length;
 
     return this.buildResult({
-      isRelevant:
-        totalMatches >= DomainRelevanceService.MINIMUM_MATCHED_TERMS,
+      isRelevant: totalMatches >= DomainRelevanceService.MINIMUM_MATCHED_TERMS,
       score: this.calculateScore(totalMatches, normalizedKeywords.length),
-      confidence: this.calculateConfidence(
-        totalMatches,
-        matchedPhrases.length,
-      ),
+      confidence: this.calculateConfidence(totalMatches, matchedPhrases.length),
       matchedKeywords,
       matchedPhrases,
     });
@@ -194,10 +187,6 @@ export class DomainRelevanceService {
    * @returns Unique normalized keywords.
    */
   private normalizeKeywords(keywords: readonly string[]): string[] {
-    if (!Array.isArray(keywords)) {
-      return [];
-    }
-
     return [
       ...new Set(
         keywords
@@ -261,10 +250,7 @@ export class DomainRelevanceService {
    * @param totalKeywords Number of configured normalized domain terms.
    * @returns Normalized relevance score between 0 and 1.
    */
-  private calculateScore(
-    totalMatches: number,
-    totalKeywords: number,
-  ): number {
+  private calculateScore(totalMatches: number, totalKeywords: number): number {
     if (totalKeywords <= 0) {
       return 0;
     }
@@ -292,8 +278,7 @@ export class DomainRelevanceService {
     }
 
     const baseConfidence = Math.min(
-      totalMatches /
-      DomainRelevanceService.MATCHES_FOR_MAXIMUM_CONFIDENCE,
+      totalMatches / DomainRelevanceService.MATCHES_FOR_MAXIMUM_CONFIDENCE,
       1,
     );
 

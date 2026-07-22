@@ -21,9 +21,7 @@ const PROBLEM_SEVERITY_THRESHOLDS = {
   },
 } as const;
 
-const PROBLEM_SEVERITY_WEIGHTS: Readonly<
-  Record<PriorityLevel, number>
-> = {
+const PROBLEM_SEVERITY_WEIGHTS: Readonly<Record<PriorityLevel, number>> = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
@@ -49,27 +47,25 @@ export class ProblemSeverityPolicyService {
    * @returns Problem severity.
    */
   calculate(input: ProblemSeverityInput): PriorityLevel {
-    const normalizedInput =
-      this.normalizeInput(input);
+    const normalizedInput = this.normalizeInput(input);
 
     if (
-      normalizedInput.frequency >=
-      PROBLEM_SEVERITY_THRESHOLDS.high.frequency ||
+      normalizedInput.frequency >= PROBLEM_SEVERITY_THRESHOLDS.high.frequency ||
       normalizedInput.negativeSignals >=
-      PROBLEM_SEVERITY_THRESHOLDS.high.negativeSignals ||
+        PROBLEM_SEVERITY_THRESHOLDS.high.negativeSignals ||
       normalizedInput.urgencySignals >=
-      PROBLEM_SEVERITY_THRESHOLDS.high.urgencySignals
+        PROBLEM_SEVERITY_THRESHOLDS.high.urgencySignals
     ) {
       return 'HIGH';
     }
 
     if (
       normalizedInput.frequency >=
-      PROBLEM_SEVERITY_THRESHOLDS.medium.frequency ||
+        PROBLEM_SEVERITY_THRESHOLDS.medium.frequency ||
       normalizedInput.negativeSignals >=
-      PROBLEM_SEVERITY_THRESHOLDS.medium.negativeSignals ||
+        PROBLEM_SEVERITY_THRESHOLDS.medium.negativeSignals ||
       normalizedInput.urgencySignals >=
-      PROBLEM_SEVERITY_THRESHOLDS.medium.urgencySignals
+        PROBLEM_SEVERITY_THRESHOLDS.medium.urgencySignals
     ) {
       return 'MEDIUM';
     }
@@ -93,17 +89,11 @@ export class ProblemSeverityPolicyService {
    * @param input Raw severity counters.
    * @returns Safe non-negative integer counters.
    */
-  private normalizeInput(
-    input: ProblemSeverityInput,
-  ): ProblemSeverityInput {
+  private normalizeInput(input: ProblemSeverityInput): ProblemSeverityInput {
     return {
       frequency: this.normalizeCounter(input.frequency),
-      negativeSignals: this.normalizeCounter(
-        input.negativeSignals,
-      ),
-      urgencySignals: this.normalizeCounter(
-        input.urgencySignals,
-      ),
+      negativeSignals: this.normalizeCounter(input.negativeSignals),
+      urgencySignals: this.normalizeCounter(input.urgencySignals),
     };
   }
 

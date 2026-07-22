@@ -77,7 +77,7 @@ export type TextInputContext = {
  */
 @Injectable()
 export class TextInputBuilderService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Loads a collection job and converts its posts and comments into unified
@@ -159,8 +159,8 @@ export class TextInputBuilderService {
       }),
     );
 
-    const commentInputs: IntelligentTextInput[] =
-      collectionJob.posts.flatMap((post) =>
+    const commentInputs: IntelligentTextInput[] = collectionJob.posts.flatMap(
+      (post) =>
         post.comments.map((comment) => ({
           id: comment.id,
           sourceType: 'COMMENT' as const,
@@ -169,7 +169,7 @@ export class TextInputBuilderService {
           language: this.parseLanguageCode(comment.languageCode),
           likesCount: comment.likesCount,
         })),
-      );
+    );
 
     return {
       collectionJobId: collectionJob.id,
@@ -247,10 +247,7 @@ export class TextInputBuilderService {
       return null;
     }
 
-    const normalizedValue = value
-      .trim()
-      .toLowerCase()
-      .replace('_', '-');
+    const normalizedValue = value.trim().toLowerCase().replace('_', '-');
 
     const primaryLanguage = normalizedValue.split('-')[0];
 
@@ -274,11 +271,7 @@ export class TextInputBuilderService {
       turkish: LanguageCode.TR,
     };
 
-    return (
-      languageMap[normalizedValue] ??
-      languageMap[primaryLanguage] ??
-      null
-    );
+    return languageMap[normalizedValue] ?? languageMap[primaryLanguage] ?? null;
   }
 
   /**

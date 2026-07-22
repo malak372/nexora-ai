@@ -27,4 +27,4 @@ import { ProblemSeverityPolicyService } from './problem-severity-policy.service'
     ProblemSeverityPolicyService,
   ],
 })
-export class ProblemsModule { }
+export class ProblemsModule {}

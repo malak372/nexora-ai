@@ -28,166 +28,113 @@ export class ProblemNormalizerService {
   private readonly problemGroups: Partial<
     Record<LanguageCode, ReadonlyArray<ProblemGroup>>
   > = {
-      [LanguageCode.EN]: [
-        {
-          title: 'Waiting Time',
-          terms: [
-            'waiting',
-            'wait',
-            'queue',
-            'delay',
-            'delayed',
-            'slow',
-          ],
-        },
-        {
-          title: 'Appointment Difficulty',
-          terms: [
-            'appointment',
-            'booking',
-            'reservation',
-            'schedule',
-            'scheduling',
-          ],
-        },
-        {
-          title: 'High Cost',
-          terms: [
-            'cost',
-            'price',
-            'expensive',
-            'fee',
-            'payment',
-          ],
-        },
-        {
-          title: 'Limited Accessibility',
-          terms: [
-            'access',
-            'accessible',
-            'availability',
-            'unavailable',
-            'disabled',
-          ],
-        },
-        {
-          title: 'Reliability Issues',
-          terms: [
-            'reliable',
-            'reliability',
-            'crash',
-            'error',
-            'bug',
-            'broken',
-            'failure',
-          ],
-        },
-        {
-          title: 'Safety Concerns',
-          terms: [
-            'safe',
-            'safety',
-            'risk',
-            'danger',
-            'privacy',
-            'secure',
-            'security',
-          ],
-        },
-        {
-          title: 'Poor Communication',
-          terms: [
-            'message',
-            'notification',
-            'call',
-            'contact',
-            'reply',
-            'response',
-            'update',
-          ],
-        },
-      ],
+    [LanguageCode.EN]: [
+      {
+        title: 'Waiting Time',
+        terms: ['waiting', 'wait', 'queue', 'delay', 'delayed', 'slow'],
+      },
+      {
+        title: 'Appointment Difficulty',
+        terms: [
+          'appointment',
+          'booking',
+          'reservation',
+          'schedule',
+          'scheduling',
+        ],
+      },
+      {
+        title: 'High Cost',
+        terms: ['cost', 'price', 'expensive', 'fee', 'payment'],
+      },
+      {
+        title: 'Limited Accessibility',
+        terms: [
+          'access',
+          'accessible',
+          'availability',
+          'unavailable',
+          'disabled',
+        ],
+      },
+      {
+        title: 'Reliability Issues',
+        terms: [
+          'reliable',
+          'reliability',
+          'crash',
+          'error',
+          'bug',
+          'broken',
+          'failure',
+        ],
+      },
+      {
+        title: 'Safety Concerns',
+        terms: [
+          'safe',
+          'safety',
+          'risk',
+          'danger',
+          'privacy',
+          'secure',
+          'security',
+        ],
+      },
+      {
+        title: 'Poor Communication',
+        terms: [
+          'message',
+          'notification',
+          'call',
+          'contact',
+          'reply',
+          'response',
+          'update',
+        ],
+      },
+    ],
 
-      [LanguageCode.AR]: [
-        {
-          title: 'وقت انتظار طويل',
-          terms: [
-            'انتظار',
-            'طابور',
-            'تأخير',
-            'متأخر',
-            'بطيء',
-            'بطء',
-          ],
-        },
-        {
-          title: 'صعوبة حجز المواعيد',
-          terms: [
-            'موعد',
-            'مواعيد',
-            'حجز',
-            'جدولة',
-          ],
-        },
-        {
-          title: 'تكلفة مرتفعة',
-          terms: [
-            'تكلفة',
-            'سعر',
-            'أسعار',
-            'غالي',
-            'مرتفعة',
-            'رسوم',
-            'دفع',
-          ],
-        },
-        {
-          title: 'محدودية الوصول',
-          terms: [
-            'وصول',
-            'إتاحة',
-            'متاح',
-            'غير متاح',
-            'ذوي الإعاقة',
-          ],
-        },
-        {
-          title: 'مشكلات الموثوقية',
-          terms: [
-            'موثوقية',
-            'عطل',
-            'أعطال',
-            'خطأ',
-            'أخطاء',
-            'مشكلة',
-            'تعطل',
-            'فشل',
-          ],
-        },
-        {
-          title: 'مخاوف السلامة',
-          terms: [
-            'سلامة',
-            'أمان',
-            'خطر',
-            'مخاطر',
-            'خصوصية',
-            'حماية',
-          ],
-        },
-        {
-          title: 'ضعف التواصل',
-          terms: [
-            'رسالة',
-            'إشعار',
-            'اتصال',
-            'تواصل',
-            'رد',
-            'تحديث',
-          ],
-        },
-      ],
-    };
+    [LanguageCode.AR]: [
+      {
+        title: 'وقت انتظار طويل',
+        terms: ['انتظار', 'طابور', 'تأخير', 'متأخر', 'بطيء', 'بطء'],
+      },
+      {
+        title: 'صعوبة حجز المواعيد',
+        terms: ['موعد', 'مواعيد', 'حجز', 'جدولة'],
+      },
+      {
+        title: 'تكلفة مرتفعة',
+        terms: ['تكلفة', 'سعر', 'أسعار', 'غالي', 'مرتفعة', 'رسوم', 'دفع'],
+      },
+      {
+        title: 'محدودية الوصول',
+        terms: ['وصول', 'إتاحة', 'متاح', 'غير متاح', 'ذوي الإعاقة'],
+      },
+      {
+        title: 'مشكلات الموثوقية',
+        terms: [
+          'موثوقية',
+          'عطل',
+          'أعطال',
+          'خطأ',
+          'أخطاء',
+          'مشكلة',
+          'تعطل',
+          'فشل',
+        ],
+      },
+      {
+        title: 'مخاوف السلامة',
+        terms: ['سلامة', 'أمان', 'خطر', 'مخاطر', 'خصوصية', 'حماية'],
+      },
+      {
+        title: 'ضعف التواصل',
+        terms: ['رسالة', 'إشعار', 'اتصال', 'تواصل', 'رد', 'تحديث'],
+      },
+    ],
+  };
 
   /**
    * Converts a raw term into a stable language-aware problem title.
@@ -196,10 +143,7 @@ export class ProblemNormalizerService {
    * @param language Resolved language of the supporting text.
    * @returns Stable recurring problem title.
    */
-  normalize(
-    term: string,
-    language: LanguageCode,
-  ): string {
+  normalize(term: string, language: LanguageCode): string {
     const normalizedTerm = this.normalizeTerm(term);
 
     if (normalizedTerm.length === 0) {
@@ -233,12 +177,8 @@ export class ProblemNormalizerService {
    * @param groupTerm Configured group term.
    * @returns True when the terms are related.
    */
-  private isRelatedTerm(
-    term: string,
-    groupTerm: string,
-  ): boolean {
-    const normalizedGroupTerm =
-      this.normalizeTerm(groupTerm);
+  private isRelatedTerm(term: string, groupTerm: string): boolean {
+    const normalizedGroupTerm = this.normalizeTerm(groupTerm);
 
     if (term === normalizedGroupTerm) {
       return true;

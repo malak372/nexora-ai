@@ -24,7 +24,7 @@ export class AnalysisOutputBuilderService {
   constructor(
     private readonly analysisStatisticsService: AnalysisStatisticsService,
     private readonly analysisEvidenceService: AnalysisEvidenceService,
-  ) { }
+  ) {}
 
   /**
    * Builds the final intelligent analysis output.
@@ -105,22 +105,13 @@ export class AnalysisOutputBuilderService {
         analyzedTexts,
         NlpLexiconType.URGENCY,
       ),
-      costConcerns: this.collectSignals(
-        analyzedTexts,
-        NlpLexiconType.COST,
-      ),
-      timeConcerns: this.collectSignals(
-        analyzedTexts,
-        NlpLexiconType.TIME,
-      ),
+      costConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.COST),
+      timeConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.TIME),
       accessibilityConcerns: this.collectSignals(
         analyzedTexts,
         NlpLexiconType.ACCESSIBILITY,
       ),
-      safetyConcerns: this.collectSignals(
-        analyzedTexts,
-        NlpLexiconType.SAFETY,
-      ),
+      safetyConcerns: this.collectSignals(analyzedTexts, NlpLexiconType.SAFETY),
       reliabilityConcerns: this.collectSignals(
         analyzedTexts,
         NlpLexiconType.RELIABILITY,

@@ -3,9 +3,7 @@ import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
 
-import type {
-  TextAnalysisResult,
-} from './types/intelligent-analysis.types';
+import type { TextAnalysisResult } from './types/intelligent-analysis.types';
 
 /**
  * Builds statistical summaries for intelligent NLP analysis results.
@@ -29,9 +27,7 @@ export class AnalysisStatisticsService {
    * @param analyzedTexts Final analyzed text records.
    * @returns Sentiment distribution and dominant sentiment.
    */
-  buildSentimentStats(
-    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
-  ): {
+  buildSentimentStats(analyzedTexts: ReadonlyArray<TextAnalysisResult>): {
     positive: number;
     negative: number;
     neutral: number;
@@ -86,9 +82,7 @@ export class AnalysisStatisticsService {
    * @returns Number of analyzed comments.
    */
   countComments(analyzedTexts: ReadonlyArray<TextAnalysisResult>): number {
-    return analyzedTexts.filter(
-      (text) => text.sourceType === 'COMMENT',
-    ).length;
+    return analyzedTexts.filter((text) => text.sourceType === 'COMMENT').length;
   }
 
   /**
@@ -136,8 +130,7 @@ export class AnalysisStatisticsService {
     }
 
     const totalConfidence = analyzedTexts.reduce(
-      (total, text) =>
-        total + Math.min(1, Math.max(0, text.confidence)),
+      (total, text) => total + Math.min(1, Math.max(0, text.confidence)),
       0,
     );
 
