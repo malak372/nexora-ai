@@ -101,6 +101,16 @@ type AiExecutionBaseInput = {
   readonly ideaId?: string;
 
   /**
+   * Optional exact AiModel database identifier.
+   *
+   * When supplied, the runtime executes only this active and routable model.
+   * This is used by controlled benchmarking so every configured model receives
+   * the same prompt independently. Ordinary operations should omit this field
+   * and allow the normal routing strategy to select a model.
+   */
+  readonly aiModelId?: string;
+
+  /**
    * Optional AI-model routing strategy.
    *
    * When omitted, AiExecutionService uses the configured default routing

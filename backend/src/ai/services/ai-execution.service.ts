@@ -339,6 +339,23 @@ export class AiExecutionService {
    * external request.
    */
   private async resolveModels(input: AiExecutionInput): Promise<AiModel[]> {
+    if (input.aiModelId) {
+      const selectedModel = await this.modelRoutingService.resolveSpecificModel(
+        input.aiModelId,
+      );
+
+      if (
+        input.responseFormat === AiResponseFormat.JSON &&
+        !selectedModel.supportsJsonOutput
+      ) {
+        throw new ServiceUnavailableException(
+          `AI model "${selectedModel.id}" does not support structured JSON output.`,
+        );
+      }
+
+      return [selectedModel];
+    }
+
     const estimatedInputTokens = this.estimateTokens(
       [input.systemInstruction ?? '', input.userPrompt].join('\n'),
     );
