@@ -107,5 +107,14 @@ export type CollectorPost = {
 
   publishedAt?: Date;
 
+  /**
+   * Optional source-provided tags used only during transient
+   * relevance evaluation.
+   *
+   * These values are not persisted by SocialPostService unless
+   * the database schema explicitly adds a tags field later.
+   */
+  tags?: string[];
+
   comments: CollectorComment[];
 };
