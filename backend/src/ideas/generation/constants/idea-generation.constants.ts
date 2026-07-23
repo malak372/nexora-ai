@@ -161,7 +161,16 @@ export const REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS =
  * Minimum number of collected posts required for a completed
  * CollectionJob to be considered reusable.
  */
-export const MIN_REUSABLE_COLLECTION_POSTS = 1;
+export const MIN_REUSABLE_COLLECTION_POSTS = 5;
+
+/**
+ * Minimum total number of analyzed texts required before a completed
+ * collection job may be reused by idea generation.
+ *
+ * Reuse is deliberately stricter than the absolute generation minimum so a
+ * tiny historical test job cannot keep supplying weak data to new runs.
+ */
+export const MIN_REUSABLE_COLLECTION_TEXTS = 20;
 
 /**
  * Minimum total number of collected texts required before
@@ -171,7 +180,7 @@ export const MIN_REUSABLE_COLLECTION_POSTS = 1;
  * - Social posts.
  * - Social comments.
  */
-export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 1;
+export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 8;
 
 /**
  * Maximum number of previously generated idea titles loaded

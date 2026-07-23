@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { createHash } from 'crypto';
 
@@ -15,7 +19,12 @@ import {
   ARABIC_TOKEN_RATIO,
   DEFAULT_TOKEN_RATIO,
   MAX_PROMPT_DATA_SOURCES,
+  MAX_PROMPT_JSON_ARRAY_ITEMS,
+  MAX_PROMPT_JSON_DEPTH,
+  MAX_PROMPT_JSON_STRING_LENGTH,
   MAX_RENDERED_PROMPT_LENGTH,
+  PROMPT_SECTION_CHARACTER_BUDGETS,
+  PROMPT_TRUNCATION_MARKER,
 } from '../constants/prompt.constants';
 
 import {
@@ -36,7 +45,6 @@ import { PromptBuilderInput } from '../types/prompt-builder-input.type';
 import { PromptBuilderOutput } from '../types/prompt-builder-output.type';
 
 import { PromptTemplateService } from './prompt-template.service';
-import { BadRequestException } from '@nestjs/common';
 
 /**
  * Detects Arabic Unicode characters in rendered prompt content.
@@ -213,93 +221,153 @@ export class PromptBuilderService {
 
     const outputContract = this.getOutputContract(input);
 
-    const renderedPrompt = this.promptTemplateService.renderTemplate(template, {
-      domain: collectionJob.domain.name,
+    const normalizedCountry = this.normalizeLocation(collectionJob.country);
+    const normalizedCity = this.normalizeLocation(collectionJob.city);
+    const normalizedRegion = this.normalizeLocation(collectionJob.region);
 
-      country: this.normalizeLocation(collectionJob.country),
+    const renderedTemplate = this.promptTemplateService.renderTemplate(
+      template,
+      {
+        domain: collectionJob.domain.name,
 
-      city: this.normalizeLocation(collectionJob.city),
+        country: normalizedCountry,
 
-      region: this.normalizeLocation(collectionJob.region),
+        city: normalizedCity,
 
-      platforms: this.formatDataSources(collectionJob),
+        region: normalizedRegion,
 
-      commentsCount: String(collectionJob.nlpAnalysis!.totalCommentsAnalyzed),
+        platforms: this.formatDataSources(collectionJob),
 
-      sentimentStats: this.wrapUntrustedData(
-        'sentiment_statistics',
+        commentsCount: String(collectionJob.nlpAnalysis!.totalCommentsAnalyzed),
 
-        this.formatJson(collectionJob.nlpAnalysis!.sentimentStats),
-      ),
+        sentimentStats: this.wrapUntrustedData(
+          'sentiment_statistics',
 
-      keywords: this.wrapUntrustedData(
-        'extracted_keywords',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.sentimentStats,
+            PROMPT_SECTION_CHARACTER_BUDGETS.sentimentStats,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.keywords),
-      ),
+        keywords: this.wrapUntrustedData(
+          'extracted_keywords',
 
-      topics: this.wrapUntrustedData(
-        'detected_topics',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.keywords,
+            PROMPT_SECTION_CHARACTER_BUDGETS.keywords,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.topics),
-      ),
+        topics: this.wrapUntrustedData(
+          'detected_topics',
 
-      recurringProblems: this.wrapUntrustedData(
-        'recurring_problems',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.topics,
+            PROMPT_SECTION_CHARACTER_BUDGETS.topics,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.recurringProblems),
-      ),
+        recurringProblems: this.wrapUntrustedData(
+          'recurring_problems',
 
-      extractedNeeds: this.wrapUntrustedData(
-        'extracted_needs',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.recurringProblems,
+            PROMPT_SECTION_CHARACTER_BUDGETS.recurringProblems,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.extractedNeeds),
-      ),
+        extractedNeeds: this.wrapUntrustedData(
+          'extracted_needs',
 
-      featureRequests: this.wrapUntrustedData(
-        'feature_requests',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.extractedNeeds,
+            PROMPT_SECTION_CHARACTER_BUDGETS.extractedNeeds,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.featureRequests),
-      ),
+        featureRequests: this.wrapUntrustedData(
+          'feature_requests',
 
-      opportunities: this.wrapUntrustedData(
-        'potential_opportunities',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.featureRequests,
+            PROMPT_SECTION_CHARACTER_BUDGETS.featureRequests,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.opportunities),
-      ),
+        opportunities: this.wrapUntrustedData(
+          'potential_opportunities',
 
-      insights: this.wrapUntrustedData(
-        'additional_insights',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.opportunities,
+            PROMPT_SECTION_CHARACTER_BUDGETS.opportunities,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.insights),
-      ),
+        insights: this.wrapUntrustedData(
+          'additional_insights',
 
-      dataQuality: this.wrapUntrustedData(
-        'data_quality',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.insights,
+            PROMPT_SECTION_CHARACTER_BUDGETS.insights,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.dataQuality),
-      ),
+        dataQuality: this.wrapUntrustedData(
+          'data_quality',
 
-      samplePosts: this.wrapUntrustedData(
-        'sample_posts',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.dataQuality,
+            PROMPT_SECTION_CHARACTER_BUDGETS.dataQuality,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.samplePosts),
-      ),
+        samplePosts: this.wrapUntrustedData(
+          'sample_posts',
 
-      sampleComments: this.wrapUntrustedData(
-        'sample_comments',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.samplePosts,
+            PROMPT_SECTION_CHARACTER_BUDGETS.samplePosts,
+          ),
+        ),
 
-        this.formatJson(collectionJob.nlpAnalysis!.sampleComments),
-      ),
+        sampleComments: this.wrapUntrustedData(
+          'sample_comments',
 
-      existingIdea: this.wrapUntrustedData(
-        'existing_idea',
+          this.formatJsonForPrompt(
+            collectionJob.nlpAnalysis!.sampleComments,
+            PROMPT_SECTION_CHARACTER_BUDGETS.sampleComments,
+          ),
+        ),
 
-        this.formatExistingIdea(existingIdea),
-      ),
+        existingIdea: this.wrapUntrustedData(
+          'existing_idea',
 
-      requestedOutputFormat: outputContract.format,
-    });
+          this.formatExistingIdea(existingIdea),
+        ),
+
+        requestedOutputFormat: outputContract.format,
+      },
+    );
+
+    /*
+     * This application-controlled directive is deliberately injected
+     * outside the configurable template.
+     *
+     * A SystemSetting may contain an older or weaker custom template.
+     * Keeping the directive here guarantees that country, city, and
+     * region remain authoritative generation constraints regardless
+     * of which compatible template is currently active.
+     */
+    const renderedPrompt = [
+      this.buildEvidenceGroundingDirective(),
+      this.buildLocalGroundingDirective({
+        domain: collectionJob.domain.name,
+        country: normalizedCountry,
+        city: normalizedCity,
+        region: normalizedRegion,
+      }),
+      renderedTemplate,
+    ].join('\n\n');
 
     const compactPrompt = this.compactPrompt(renderedPrompt);
 
@@ -599,26 +667,141 @@ ${idea.partialAbstract ?? 'Not available'}
   }
 
   /**
-   * Formats nullable JSON-like values for readable prompt inclusion.
+   * Formats persisted JSON context for provider input while enforcing
+   * a strict per-section character budget.
+   *
+   * The complete NLP result remains stored in the database. This
+   * method only produces a compact provider-facing representation so
+   * one unusually long post, comment, evidence sample, or nested
+   * analysis object cannot make the complete prompt unusable.
+   *
+   * @param value Persisted JSON-like value.
+   * @param characterBudget Maximum rendered characters for the section.
+   * @returns Readable and bounded prompt context.
    */
-  private formatJson(value: unknown): string {
+  private formatJsonForPrompt(value: unknown, characterBudget: number): string {
+    if (this.isEmptyJsonValue(value)) {
+      return 'Not enough data';
+    }
+
+    const compactedValue = this.compactJsonValue(value, 0);
+    const serializedValue = JSON.stringify(compactedValue, null, 2);
+
+    if (serializedValue.length <= characterBudget) {
+      return serializedValue;
+    }
+
+    const safeContentLength = Math.max(
+      0,
+      characterBudget - PROMPT_TRUNCATION_MARKER.length,
+    );
+
+    return (
+      serializedValue.slice(0, safeContentLength).trimEnd() +
+      PROMPT_TRUNCATION_MARKER
+    );
+  }
+
+  /**
+   * Creates a bounded clone of arbitrary persisted JSON.
+   *
+   * Arrays preserve their original order because NLP services already
+   * persist the most relevant evidence first. Objects preserve their
+   * keys while deeply nested or oversized values are shortened.
+   */
+  private compactJsonValue(value: unknown, depth: number): unknown {
     if (value === null || value === undefined) {
-      return 'Not enough data';
+      return null;
     }
 
-    if (Array.isArray(value) && value.length === 0) {
-      return 'Not enough data';
+    if (typeof value === 'string') {
+      return this.truncatePromptString(value);
     }
 
-    if (
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      Object.keys(value).length === 0
-    ) {
-      return 'Not enough data';
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value;
     }
 
-    return JSON.stringify(value, null, 2);
+    if (depth >= MAX_PROMPT_JSON_DEPTH) {
+      return '[nested value omitted]';
+    }
+
+    if (Array.isArray(value)) {
+      const retainedItems = value
+        .slice(0, MAX_PROMPT_JSON_ARRAY_ITEMS)
+        .map((item) => this.compactJsonValue(item, depth + 1));
+
+      if (value.length > MAX_PROMPT_JSON_ARRAY_ITEMS) {
+        retainedItems.push(
+          `[${value.length - MAX_PROMPT_JSON_ARRAY_ITEMS} additional item(s) omitted]`,
+        );
+      }
+
+      return retainedItems;
+    }
+
+    if (typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(
+          ([key, nestedValue]) => [
+            key,
+            this.compactJsonValue(nestedValue, depth + 1),
+          ],
+        ),
+      );
+    }
+
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+
+    if (typeof value === 'symbol') {
+      return value.description ?? '[symbol]';
+    }
+
+    if (typeof value === 'function') {
+      return '[function omitted]';
+    }
+
+    return '[unsupported value omitted]';
+  }
+
+  /**
+   * Shortens one free-text JSON value without cutting surrogate pairs.
+   */
+  private truncatePromptString(value: string): string {
+    const normalizedValue = value.trim();
+
+    if (normalizedValue.length <= MAX_PROMPT_JSON_STRING_LENGTH) {
+      return normalizedValue;
+    }
+
+    return (
+      normalizedValue.slice(0, MAX_PROMPT_JSON_STRING_LENGTH).trimEnd() + '…'
+    );
+  }
+
+  /**
+   * Determines whether a JSON-like value contains usable content.
+   */
+  private isEmptyJsonValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value).length === 0;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim().length === 0;
+    }
+
+    return false;
   }
 
   /**
@@ -628,6 +811,174 @@ ${idea.partialAbstract ?? 'Not available'}
     return `<untrusted_${label}>
 ${value}
 </untrusted_${label}>`;
+  }
+
+  /**
+   * Builds the immutable evidence-grounding instruction applied to every
+   * idea-generation and direct-unlock prompt.
+   *
+   * This directive is intentionally injected outside the configurable
+   * template so an outdated or weakened SystemSetting template cannot
+   * permit unsupported factual claims.
+   *
+   * The model may:
+   * - State findings directly when they are supported by supplied NLP data.
+   * - Make cautious product inferences when evidence suggests a need.
+   *
+   * The model may not:
+   * - Convert a requested feature into proof that the local problem exists.
+   * - Treat the request location as evidence about local conditions.
+   * - Invent local statistics, institutions, service failures, regulations,
+   *   infrastructure constraints, or user behavior.
+   *
+   * @returns Application-controlled evidence policy.
+   */
+  private buildEvidenceGroundingDirective(): string {
+    return `
+APPLICATION-ENFORCED EVIDENCE POLICY
+
+Evidence hierarchy:
+1. Direct evidence:
+   A claim explicitly represented by supplied recurring problems, extracted
+   needs, feature requests, opportunities, insights, data-quality results, or
+   representative post/comment samples.
+2. Supported inference:
+   A cautious product or user-need inference reasonably derived from multiple
+   supplied findings, but not stated as a verified local fact.
+3. Unsupported assumption:
+   A claim based only on the requested domain, location, common knowledge,
+   stereotypes, plausibility, or the model's external knowledge.
+
+Mandatory writing rules:
+1. Build the central problem primarily from direct evidence.
+2. Use supported inferences only with cautious wording such as:
+   - "the supplied discussions indicate"
+   - "the collected feedback suggests"
+   - "users may benefit from"
+   - "there appears to be an opportunity"
+   - "the proposed product is designed to support"
+3. Never transform a requested keyword or desired feature into proof that a
+   local problem currently exists.
+4. Never claim that a city, region, institution, authority, service provider,
+   school, clinic, business sector, or population has a specific failure,
+   shortage, behavior, rate, policy, workflow, or infrastructure condition
+   unless the supplied evidence directly supports it.
+5. Do not use definitive phrases such as:
+   - "residents face"
+   - "the city suffers from"
+   - "services are unreliable"
+   - "recycling rates are low"
+   - "schools lack"
+   - "businesses cannot"
+   - "the government fails to"
+   unless direct evidence supports that exact meaning.
+6. Location fields establish the target deployment context only. They are not
+   evidence that any location-specific problem, language preference, economic
+   condition, connectivity issue, public policy, or institutional practice
+   exists.
+7. Feature requests establish desired capabilities, not verified root causes.
+8. Sample evidence illustrates themes but does not prove population-wide facts.
+9. Frequency, confidence, and data-quality values must be treated as internal
+   evidence-strength signals. Never expose or invent numeric claims unless the
+   requested output format explicitly permits them and the supplied data
+   directly contains them.
+10. If evidence is weak, mixed, indirect, or non-local:
+    - describe a general problem discovered in the source data;
+    - position the solution as suitable for deployment in the requested
+      location;
+    - avoid claiming that the problem is unique to or proven within that
+      location.
+11. Internally review every sentence before returning JSON:
+    - Is this statement directly supported?
+    - Is it a cautious inference?
+    - Is it an unsupported local assumption?
+    Rewrite or remove every unsupported assumption.
+`.trim();
+  }
+
+  /**
+   * Builds the immutable local-grounding instruction applied to every
+   * generated idea and direct-unlock request.
+   *
+   * The location must influence the product definition itself rather
+   * than being appended only to the title, target users, or abstract.
+   * At the same time, the model must not fabricate local facts that
+   * are absent from the supplied collection and NLP evidence.
+   *
+   * @param context Persisted generation domain and location.
+   * @returns Application-controlled prompt directive.
+   */
+  private buildLocalGroundingDirective(context: {
+    readonly domain: string;
+    readonly country: string;
+    readonly city: string;
+    readonly region: string;
+  }): string {
+    const hasCountry = this.isSpecifiedLocation(context.country);
+    const hasCity = this.isSpecifiedLocation(context.city);
+    const hasRegion = this.isSpecifiedLocation(context.region);
+    const hasAnyLocation = hasCountry || hasCity || hasRegion;
+
+    if (!hasAnyLocation) {
+      return `
+APPLICATION-ENFORCED CONTEXT RULES
+
+- Target domain: ${context.domain}
+- No specific geographic location was supplied.
+- Generate a domain-grounded idea from the supplied evidence.
+- Do not invent a country, city, region, local regulation, institution,
+  infrastructure constraint, market fact, or cultural assumption.
+`.trim();
+    }
+
+    return `
+APPLICATION-ENFORCED LOCAL GROUNDING RULES
+
+Authoritative target context:
+- Domain: ${context.domain}
+- Country: ${context.country}
+- City: ${context.city}
+- Region: ${context.region}
+
+Mandatory behavior:
+1. Treat the supplied country, city, and region as product-design
+   constraints, not decorative labels.
+2. The generated idea must explain through its permitted output fields
+   how the discovered problem, affected workflow, target users, or
+   solution requirements relate to this target context.
+3. Do not create a globally generic idea and merely append phrases such
+   as "for local users", "for Palestinian users", or the location name.
+4. Prefer evidence-supported local implications involving language,
+   connectivity, device access, operating workflows, institutional
+   practices, affordability, adoption barriers, privacy, infrastructure,
+   or service availability only when the supplied evidence supports them.
+5. When the evidence establishes a general problem but does not establish
+   a truly location-specific cause, generate a locally deployable version
+   of the solution and clearly avoid claiming that the problem is unique
+   to the target location.
+6. Never invent local laws, statistics, institutions, integrations,
+   economic conditions, cultural practices, government requirements, or
+   infrastructure limitations.
+7. Regulatory or legal content may only be preliminary high-level
+   guidance and must never be presented as verified legal advice.
+8. Keep the core problem coherent. Security, localization, analytics, and
+   administration should remain supporting requirements unless the
+   supplied evidence identifies them as primary recurring problems.
+9. Ensure the title communicates the product's distinctive capability.
+   The location may appear in the title only when it improves clarity and
+   is genuinely central to the product positioning.
+10. Before returning the JSON, internally verify that removing the
+    location from the proposal would materially change at least one of:
+    the problem framing, target users, product behavior, deployment
+    constraints, accessibility requirements, or implementation priorities.
+`.trim();
+  }
+
+  /**
+   * Determines whether a normalized location value was provided.
+   */
+  private isSpecifiedLocation(value: string): boolean {
+    return value !== 'Not specified';
   }
 
   /**

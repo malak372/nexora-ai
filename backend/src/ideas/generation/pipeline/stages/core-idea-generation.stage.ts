@@ -19,15 +19,14 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 /**
  * Generates the core idea through a dynamic multi-model benchmark.
  *
- * Every active routable JSON-capable model stored in ai_models receives the
- * same prompt. The stage selects the highest-quality valid candidate and keeps
- * the complete comparison in idea_generation_candidates.
+ * Every active routable JSON-capable model receives the same prompt. Every
+ * successful candidate is sent to the AI judge, which selects one existing
+ * candidate without hybrid or deterministic winner scoring.
  *
- * No model name, provider name, or database identifier is hard-coded here.
- * Adding, disabling, or deleting a model changes future benchmark runs
- * automatically.
+ * Deterministic quality data remains visible only for diagnostics and does not
+ * participate in selection.
  *
- * @author Malak
+ * @author Eman
  */
 @Injectable()
 export class CoreIdeaGenerationStage implements IdeaGenerationStage {
@@ -61,31 +60,53 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
       resultPreview: this.createResponsePreview(winner.aiResult.text),
       metadata: {
         winner: {
+          candidateId: winner.candidateId,
           operationId: winner.aiResult.operationId,
           aiModelId: winner.aiResult.aiModelId,
           providerKey: winner.aiResult.providerKey,
           apiModelId: winner.aiResult.apiModelId,
-          overallScore: winner.quality.score,
-          ...winner.quality.dimensions,
+          aiJudgeScore: winner.aiJudge?.overallScore ?? null,
+          localRelevance: winner.aiJudge?.localRelevance ?? null,
+          problemImportance: winner.aiJudge?.problemImportance ?? null,
+          innovation: winner.aiJudge?.innovation ?? null,
+          regulatoryFeasibility: winner.aiJudge?.regulatoryFeasibility ?? null,
+          technicalFeasibility: winner.aiJudge?.technicalFeasibility ?? null,
+          marketPotential: winner.aiJudge?.marketPotential ?? null,
+          implementationClarity: winner.aiJudge?.implementationClarity ?? null,
           inputTokens: winner.aiResult.inputTokens,
           outputTokens: winner.aiResult.outputTokens,
           costEstimate: winner.aiResult.costEstimate,
           responseTimeMs: winner.aiResult.responseTimeMs,
         },
-        comparedModels: benchmark.candidates.length,
+        comparedCandidates: benchmark.candidates.length,
+        aiJudgeUsed: benchmark.judgeEvaluation !== null,
+        judgeConfidence: benchmark.judgeEvaluation?.confidence ?? null,
+        judgeReason: benchmark.judgeEvaluation?.reason ?? null,
+        requiresLegalVerification:
+          benchmark.judgeEvaluation?.requiresLegalVerification ?? null,
         candidates: benchmark.candidates.map((candidate, index) => ({
           rank: index + 1,
+          candidateId: candidate.candidateId,
           aiModelId: candidate.aiResult.aiModelId,
           providerKey: candidate.aiResult.providerKey,
           apiModelId: candidate.aiResult.apiModelId,
           selected: candidate.selected,
-          overallScore: candidate.quality.score,
-          ...candidate.quality.dimensions,
+          aiJudgeScore: candidate.aiJudge?.overallScore ?? null,
+          localRelevance: candidate.aiJudge?.localRelevance ?? null,
+          problemImportance: candidate.aiJudge?.problemImportance ?? null,
+          innovation: candidate.aiJudge?.innovation ?? null,
+          regulatoryFeasibility:
+            candidate.aiJudge?.regulatoryFeasibility ?? null,
+          technicalFeasibility: candidate.aiJudge?.technicalFeasibility ?? null,
+          marketPotential: candidate.aiJudge?.marketPotential ?? null,
+          implementationClarity:
+            candidate.aiJudge?.implementationClarity ?? null,
           inputTokens: candidate.aiResult.inputTokens,
           outputTokens: candidate.aiResult.outputTokens,
           costEstimate: candidate.aiResult.costEstimate,
           responseTimeMs: candidate.aiResult.responseTimeMs,
-          qualityIssues: candidate.quality.issues.map((issue) => issue.code),
+          validationScore: candidate.quality.score,
+          validationIssues: candidate.quality.issues.map((issue) => issue.code),
         })),
       },
     };
