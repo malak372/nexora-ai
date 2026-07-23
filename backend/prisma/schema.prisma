@@ -85,6 +85,14 @@ enum ChatSender {
   AI
 }
 
+enum ChatMessageStatus {
+  PENDING
+  STREAMING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 enum ComplaintStatus {
   OPEN
   IN_PROGRESS
@@ -768,14 +776,16 @@ model ChatSession {
 
   title String?
 
+  lastMessageAt DateTime  @default(now()) @map("last_message_at")
+  deletedAt     DateTime? @map("deleted_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   messages ChatMessage[]
 
-  @@index([userId])
-  @@index([ideaId])
-  @@index([createdAt])
+  @@index([userId, deletedAt, lastMessageAt])
+  @@index([ideaId, deletedAt])
   @@map("chat_sessions")
 }
 
@@ -785,12 +795,22 @@ model ChatMessage {
   sessionId String      @map("session_id")
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  sender  ChatSender
-  message String
+  sender ChatSender
+  status ChatMessageStatus @default(COMPLETED)
+
+  message String @db.Text
+
+  errorCode    String? @map("error_code")
+  errorMessage String? @map("error_message") @db.Text
+
+  completedAt DateTime? @map("completed_at")
+  deletedAt   DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([sessionId, createdAt])
+  @@index([sessionId, deletedAt, createdAt])
+  @@index([sessionId, status])
   @@map("chat_messages")
 }
 
