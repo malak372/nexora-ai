@@ -85,6 +85,14 @@ enum ChatSender {
   AI
 }
 
+enum ChatMessageStatus {
+  PENDING
+  STREAMING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 enum ComplaintStatus {
   OPEN
   IN_PROGRESS
@@ -768,14 +776,16 @@ model ChatSession {
 
   title String?
 
+  lastMessageAt DateTime  @default(now()) @map("last_message_at")
+  deletedAt     DateTime? @map("deleted_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   messages ChatMessage[]
 
-  @@index([userId])
-  @@index([ideaId])
-  @@index([createdAt])
+  @@index([userId, deletedAt, lastMessageAt])
+  @@index([ideaId, deletedAt])
   @@map("chat_sessions")
 }
 
@@ -785,12 +795,22 @@ model ChatMessage {
   sessionId String      @map("session_id")
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  sender  ChatSender
-  message String
+  sender ChatSender
+  status ChatMessageStatus @default(COMPLETED)
+
+  message String @db.Text
+
+  errorCode    String? @map("error_code")
+  errorMessage String? @map("error_message") @db.Text
+
+  completedAt DateTime? @map("completed_at")
+  deletedAt   DateTime? @map("deleted_at")
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([sessionId, createdAt])
+  @@index([sessionId, deletedAt, createdAt])
+  @@index([sessionId, status])
   @@map("chat_messages")
 }
 
@@ -1143,20 +1163,20 @@ model PromptHistory {
    */
   userId String? @map("user_id")
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
- 
+
   /**
    * Guest session that requested the prompt.
    * Null when the prompt was requested by an authenticated user.
    */
-  guestSessionId String?       @map("guest_session_id")
-  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
+  guestSessionId  String?            @map("guest_session_id")
+  guestSession    GuestSession?      @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
   generationRunId String?            @map("generation_run_id")
-  generationRun   IdeaGenerationRun? @relation(fields: [generationRunId],references: [id],onDelete: SetNull  )
+  generationRun   IdeaGenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: SetNull)
   /**
    * Collection job supplying the persisted NLP analysis.
    */
-  collectionJobId String?        @map("collection_job_id")
-  collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
+  collectionJobId String?            @map("collection_job_id")
+  collectionJob   CollectionJob?     @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
 
   /**
    * Idea associated with this prompt-history record.
@@ -1303,7 +1323,7 @@ model AiModel {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  externalApiLogs ExternalApiLog[]
+  externalApiLogs      ExternalApiLog[]
   generationCandidates IdeaGenerationCandidate[]
 
   @@unique([providerKey, apiModelId])
@@ -1318,35 +1338,31 @@ model IdeaGenerationCandidate {
 
   /**
    * Generation run for which this candidate was produced.
-   *
    * Deleting the run also removes all associated benchmark candidates.
    */
   runId String            @map("run_id")
-  run   IdeaGenerationRun @relation(fields: [runId],references: [id],onDelete: Cascade)
+  run   IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
   /**
    * Configured AI-model record used during execution.
-   *
    * Nullable so historical benchmark results remain available if an
    * administrator later removes the model from the ai_models table.
    */
   aiModelId String?  @map("ai_model_id")
-  aiModel   AiModel? @relation(fields: [aiModelId],references: [id],onDelete: SetNull )
+  aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
 
   /**
    * Immutable provider and model snapshots.
-   *
    * These values must be copied from AiModel when execution begins.
    * They remain available even when aiModelId becomes null.
    */
-  providerKey String @map("provider_key")
-  apiModelId  String @map("api_model_id")
-  modelName   String @map("model_name")
+  providerKey String  @map("provider_key")
+  apiModelId  String  @map("api_model_id")
+  modelName   String  @map("model_name")
   displayName String? @map("display_name")
 
   /**
    * Raw provider response retained for debugging and audit purposes.
-   *
    * This field must never be returned directly to normal users.
    */
   rawResponse String? @map("raw_response")
@@ -1366,16 +1382,13 @@ model IdeaGenerationCandidate {
   completenessScore     Decimal? @map("completeness_score") @db.Decimal(5, 2)
   originalityScore      Decimal? @map("originality_score") @db.Decimal(5, 2)
 
-
-  inputTokens   Int? @map("input_tokens")
-  outputTokens  Int? @map("output_tokens")
+  inputTokens    Int? @map("input_tokens")
+  outputTokens   Int? @map("output_tokens")
   responseTimeMs Int? @map("response_time_ms")
 
-  costEstimate Decimal?@map("cost_estimate")@db.Decimal(12, 6)
-
+  costEstimate Decimal? @map("cost_estimate") @db.Decimal(12, 6)
 
   selected Boolean @default(false)
-
 
   errorCode    String? @map("error_code")
   errorMessage String? @map("error_message")
@@ -1383,15 +1396,12 @@ model IdeaGenerationCandidate {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-
   @@unique([runId, providerKey, apiModelId])
-
   @@index([runId, selected])
   @@index([aiModelId])
   @@index([providerKey, apiModelId])
   @@index([overallScore])
   @@index([createdAt])
-
   @@map("idea_generation_candidates")
 }
 
@@ -1724,8 +1734,8 @@ model IdeaGenerationRun {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  stages          IdeaGenerationStage[]
-  promptHistories PromptHistory[]
+  stages              IdeaGenerationStage[]
+  promptHistories     PromptHistory[]
   benchmarkCandidates IdeaGenerationCandidate[]
 
   @@index([userId, createdAt])
