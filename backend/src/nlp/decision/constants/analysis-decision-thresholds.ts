@@ -135,5 +135,4 @@ export const ANALYSIS_DECISION_THRESHOLDS = {
  *
  * @author Eman
  */
-export type AnalysisDecisionThresholds =
-  typeof ANALYSIS_DECISION_THRESHOLDS;
+export type AnalysisDecisionThresholds = typeof ANALYSIS_DECISION_THRESHOLDS;

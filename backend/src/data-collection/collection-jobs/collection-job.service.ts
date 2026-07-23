@@ -229,6 +229,16 @@ export class CollectionJobService {
 
     createdById?: string,
   ) {
+    /*
+     * Assign one application timestamp to both lifecycle fields.
+     *
+     * PostgreSQL otherwise generates createdAt a few milliseconds after
+     * the application-generated startedAt value. That small difference can
+     * violate the collection_jobs_dates_check constraint, which requires
+     * startedAt to be equal to or later than createdAt.
+     */
+    const startedAt = new Date();
+
     return this.prisma.collectionJob.create({
       data: {
         createdById,
@@ -248,7 +258,8 @@ export class CollectionJobService {
 
         status: CollectionJobStatus.RUNNING,
 
-        startedAt: new Date(),
+        createdAt: startedAt,
+        startedAt,
 
         sources: {
           create: dataSources.map((source) => ({

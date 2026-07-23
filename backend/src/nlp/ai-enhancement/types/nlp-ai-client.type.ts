@@ -1,11 +1,11 @@
-import { AiProviderType } from '@prisma/client';
+import type { AiProviderKey } from '../../../ai/constants/ai-provider.constants';
 
 /**
  * Request sent by the NLP AI-enhancement layer to an AI client
  * implementation.
  *
- * This contract remains independent from provider SDKs and the
- * central AI execution implementation.
+ * This contract remains independent from provider SDKs and delegates
+ * operation-ID generation to the central AI execution runtime.
  *
  * @author Eman
  */
@@ -14,15 +14,6 @@ export type NlpAiClientRequest = {
    * Fully rendered NLP enhancement prompt.
    */
   readonly prompt: string;
-
-  /**
-   * Optional logical operation identifier used for tracing and
-   * correlating provider attempts and logs.
-   *
-   * Undefined when the client implementation delegates operation-ID
-   * generation to the central AI execution layer.
-   */
-  readonly operationId?: string;
 };
 
 /**
@@ -31,8 +22,9 @@ export type NlpAiClientRequest = {
  * The returned data remains unknown until it is validated by
  * AiAnalysisOutputValidatorService.
  *
- * This prevents external AI responses from being trusted as
- * AiEnhancementOutput before domain-level validation succeeds.
+ * Provider-specific SDK response objects are intentionally not exposed
+ * through this contract. All execution metadata is copied from the
+ * authoritative AiExecutionResult returned by the central AI runtime.
  *
  * @author Eman
  */
@@ -46,49 +38,66 @@ export type NlpAiClientResponse = {
   readonly data: unknown;
 
   /**
-   * Provider that produced the successful response.
-   *
-   * Undefined when the request fails before a provider returns a
+   * Stable identifier shared by every request attempt that belongs to
+   * the same logical AI operation.
+   */
+  readonly operationId: string;
+
+  /**
+   * Database identifier of the AiModel record that produced the final
    * successful response.
    */
-  readonly provider?: AiProviderType;
+  readonly aiModelId: string;
+
+  /**
+   * Stable backend registry key identifying the successful provider.
+   *
+   * Current examples:
+   * - google
+   * - openrouter
+   */
+  readonly providerKey: AiProviderKey;
 
   /**
    * Exact provider-side model identifier used for generation.
-   *
-   * Undefined when execution fails before a model produces a
-   * successful response.
    */
-  readonly modelId?: string;
+  readonly apiModelId: string;
 
   /**
-   * Actual number of input tokens reported by the provider.
+   * Number of input tokens reported by the successful provider.
    *
-   * Undefined when token usage is unavailable or execution fails
-   * before usage metadata is returned.
+   * A zero value means usage metadata was unavailable or reported as
+   * zero by the provider adapter.
    */
-  readonly inputTokens?: number;
+  readonly inputTokens: number;
 
   /**
-   * Actual number of output tokens reported by the provider.
+   * Number of output tokens reported by the successful provider.
    *
-   * Undefined when token usage is unavailable or execution fails
-   * before usage metadata is returned.
+   * A zero value means usage metadata was unavailable or reported as
+   * zero by the provider adapter.
    */
-  readonly outputTokens?: number;
+  readonly outputTokens: number;
 
   /**
-   * Total AI execution duration in milliseconds.
-   *
-   * Undefined when execution timing metadata is not provided by the
-   * underlying AI implementation.
+   * Total duration of the complete logical AI operation in
+   * milliseconds, including retries, repair, and fallback work.
    */
-  readonly responseTimeMs?: number;
+  readonly responseTimeMs: number;
 
   /**
-   * Estimated monetary cost of the successful AI request.
-   *
-   * Undefined when pricing metadata is unavailable.
+   * Estimated monetary cost of the final successful provider request.
    */
-  readonly estimatedCost?: number;
+  readonly costEstimate: number;
+
+  /**
+   * Indicates whether a fallback model produced the final response.
+   */
+  readonly fallbackUsed: boolean;
+
+  /**
+   * Total number of external provider requests executed during the
+   * logical operation.
+   */
+  readonly attemptCount: number;
 };

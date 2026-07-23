@@ -698,9 +698,20 @@ export class IdeaGenerationPipelineService {
         },
       },
       data: {
+        /*
+         * Return the stage to a clean pending lifecycle state before the
+         * next attempt. A pending stage is not actively executing, so both
+         * lifecycle timestamps must be null.
+         *
+         * The bounded error message is intentionally retained to make the
+         * previous failed attempt observable while the retry is pending.
+         */
         status: IdeaGenerationStageStatus.PENDING,
+        progressPercent: definition.progressStart,
         attemptCount: attempt,
+        resultPreview: Prisma.JsonNull,
         errorMessage: this.toSafeErrorMessage(error),
+        startedAt: null,
         completedAt: null,
       },
     });

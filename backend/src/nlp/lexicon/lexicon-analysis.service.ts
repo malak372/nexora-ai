@@ -101,7 +101,7 @@ export class LexiconAnalysisService {
    */
   private static readonly MINIMUM_FALLBACK_CONFIDENCE = 0.1;
 
-  constructor(private readonly nlpLexiconService: NlpLexiconService) { }
+  constructor(private readonly nlpLexiconService: NlpLexiconService) {}
 
   /**
    * Runs lexicon analysis for all preprocessed texts.
@@ -126,8 +126,7 @@ export class LexiconAnalysisService {
     const analyzedTexts = texts.map((text) =>
       this.analyzeText(
         text,
-        lexiconsByLanguage.get(text.finalLanguage) ??
-        this.buildEmptyLexicons(),
+        lexiconsByLanguage.get(text.finalLanguage) ?? this.buildEmptyLexicons(),
         initialResultsById.get(text.id),
       ),
     );
@@ -171,10 +170,7 @@ export class LexiconAnalysisService {
       originalText: text.cleaning.originalText,
       cleanedText: text.cleaning.cleanedText,
       language: text.finalLanguage,
-      sentiment: this.calculateSentiment(
-        positiveMatches,
-        negativeMatches,
-      ),
+      sentiment: this.calculateSentiment(positiveMatches, negativeMatches),
       confidence: this.calculateConfidence(
         totalLexiconMatches,
         positiveMatches,
@@ -201,20 +197,13 @@ export class LexiconAnalysisService {
   private async loadLexiconsByLanguage(
     texts: readonly PreprocessedTextInput[],
   ): Promise<Map<LanguageCode, LexiconsByType>> {
-    const languages = [
-      ...new Set(texts.map((text) => text.finalLanguage)),
-    ];
+    const languages = [...new Set(texts.map((text) => text.finalLanguage))];
 
     const entries = await Promise.all(
       languages.map(async (language) => {
-        const lexicons = await this.nlpLexiconService.getGroupedWords(
-          language,
-        );
+        const lexicons = await this.nlpLexiconService.getGroupedWords(language);
 
-        return [
-          language,
-          this.normalizeLexicons(lexicons),
-        ] as const;
+        return [language, this.normalizeLexicons(lexicons)] as const;
       }),
     );
 
@@ -344,8 +333,7 @@ export class LexiconAnalysisService {
     negativeMatches: number,
     relevanceConfidence: number,
   ): number {
-    const normalizedRelevanceConfidence =
-      this.clamp(relevanceConfidence);
+    const normalizedRelevanceConfidence = this.clamp(relevanceConfidence);
 
     if (totalMatches === 0) {
       return this.round(
@@ -357,19 +345,18 @@ export class LexiconAnalysisService {
     }
 
     const matchConfidence = this.clamp(
-      totalMatches /
-      LexiconAnalysisService.FULL_MATCH_CONFIDENCE_COUNT,
+      totalMatches / LexiconAnalysisService.FULL_MATCH_CONFIDENCE_COUNT,
     );
 
     const sentimentStrength = this.clamp(
       Math.abs(positiveMatches - negativeMatches) /
-      LexiconAnalysisService.FULL_SENTIMENT_STRENGTH_DIFFERENCE,
+        LexiconAnalysisService.FULL_SENTIMENT_STRENGTH_DIFFERENCE,
     );
 
     return this.round(
       matchConfidence * 0.6 +
-      sentimentStrength * 0.2 +
-      normalizedRelevanceConfidence * 0.2,
+        sentimentStrength * 0.2 +
+        normalizedRelevanceConfidence * 0.2,
     );
   }
 

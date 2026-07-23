@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AiModelsModule } from '../../ai-models/ai-models.module';
 import { AiModule } from '../../ai/ai.module';
 import { CreditsModule } from '../../credits/credits.module';
 import { DataCollectionModule } from '../../data-collection/data-collection.module';
@@ -35,15 +36,18 @@ import { CollectionJobResolverService } from './services/collection-job-resolver
 import { GuestIdeaSessionService } from './services/guest-idea-session.service';
 import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.service';
 import { IdeaDuplicateDetectionService } from './services/idea-duplicate-detection.service';
+import { IdeaGenerationBenchmarkService } from './services/idea-generation-benchmark.service';
 import { IdeaGenerationLockService } from './services/idea-generation-lock.service';
 import {
   IDEA_GENERATION_STAGES,
   IdeaGenerationOrchestratorService,
 } from './services/idea-generation-orchestrator.service';
 import { IdeaGenerationPolicyService } from './services/idea-generation-policy.service';
+import { IdeaGenerationQueryService } from './services/idea-generation-query.service';
 import { IdeaGenerationRunService } from './services/idea-generation-run.service';
 import { IdeaGenerationSelectionService } from './services/idea-generation-selection.service';
 import { IdeaPersistenceService } from './services/idea-persistence.service';
+import { IdeaQualityEvaluatorService } from './services/idea-quality-evaluator.service';
 import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-parser.service';
 
 /**
@@ -58,6 +62,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
 @Module({
   imports: [
     PrismaModule,
+    AiModelsModule,
     AiModule,
     NlpModule,
     PromptsModule,
@@ -71,6 +76,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
   ],
   providers: [
     IdeaGenerationRunService,
+    IdeaGenerationQueryService,
     IdeaGenerationProgressService,
     IdeaGenerationCancellationService,
     IdeaGenerationStageService,
@@ -86,6 +92,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaUnlockOutputParserService,
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
+    IdeaQualityEvaluatorService,
+    IdeaGenerationBenchmarkService,
 
     RequestValidationStage,
     EntitlementCheckStage,
@@ -170,11 +178,14 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
   exports: [
     IdeaGenerationOrchestratorService,
     IdeaGenerationRunService,
+    IdeaGenerationQueryService,
     IdeaGenerationCancellationService,
     IdeaAiOutputParserService,
     IdeaUnlockOutputParserService,
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
+    IdeaQualityEvaluatorService,
+    IdeaGenerationBenchmarkService,
   ],
 })
 export class IdeaGenerationModule {}

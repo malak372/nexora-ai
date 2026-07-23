@@ -10,8 +10,6 @@ import { CommentsController } from './comments/comments.controller';
 import { CommentsService } from './comments/comments.service';
 import { DashboardController } from './dashboard/dashboard.controller';
 import { DashboardService } from './dashboard/dashboard.service';
-import { DomainsController } from './domains/domains.controller';
-import { DomainsService } from './domains/domains.service';
 import { SettingsController } from './settings/settings.controller';
 import { SettingsService } from './settings/settings.service';
 import { UsersController } from './users/users.controller';
@@ -35,7 +33,6 @@ import { UsersService } from './users/users.service';
     UsersController,
     SettingsController,
     CommentsController,
-    DomainsController,
   ],
   providers: [
     DashboardService,
@@ -43,7 +40,6 @@ import { UsersService } from './users/users.service';
     UsersService,
     SettingsService,
     CommentsService,
-    DomainsService,
   ],
 })
 export class AdminModule {}

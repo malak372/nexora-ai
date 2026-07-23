@@ -10,15 +10,17 @@ import {
   AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
 } from '../schemas/ai-enhancement-output.schema';
 
-import type { NlpAiClientRequest } from '../types/nlp-ai-client.type';
-import type { NlpAiClientResponse } from '../types/nlp-ai-client.type';
+import type {
+  NlpAiClientRequest,
+  NlpAiClientResponse,
+} from '../types/nlp-ai-client.type';
 
 import type { NlpAiClient } from './nlp-ai-client.interface';
 
 /**
  * Deterministic temperature used for analytical NLP enhancement.
  *
- * A low value is preferred because the operation refines an existing
+ * A low value is preferred because this operation refines an existing
  * evidence-based analysis rather than generating creative content.
  */
 const NLP_AI_ENHANCEMENT_TEMPERATURE = 0.2;
@@ -36,8 +38,8 @@ const NLP_AI_ENHANCEMENT_TEMPERATURE = 0.2;
  * - Translate the NLP-specific request contract into AiExecutionInput.
  * - Supply the NLP enhancement JSON Schema to the central AI runtime.
  * - Classify the operation correctly for logging and analytics.
- * - Parse the validated JSON text returned by AiExecutionService.
- * - Normalize provider and usage metadata for the NLP layer.
+ * - Parse the centrally validated JSON text into an unknown value.
+ * - Normalize authoritative execution metadata for the NLP layer.
  *
  * The adapter intentionally does not:
  * - Select an AI model or provider.
@@ -47,8 +49,8 @@ const NLP_AI_ENHANCEMENT_TEMPERATURE = 0.2;
  * - Persist NLP results.
  *
  * Provider routing, retries, fallback, response repair, health
- * tracking, cost calculation, and ExternalApiLog persistence remain
- * owned by AiExecutionService.
+ * tracking, cost calculation, operation-ID generation, and
+ * ExternalApiLog persistence remain owned by AiExecutionService.
  *
  * Domain-level validation remains owned by
  * AiAnalysisOutputValidatorService because JSON Schema validation
@@ -70,15 +72,12 @@ export class AiExecutionNlpClient implements NlpAiClient {
    * AiExecutionService validates the provider response against
    * AI_ENHANCEMENT_OUTPUT_SCHEMA before returning successful text.
    *
-   * The parsed value remains unknown so the NLP-specific validator
-   * can enforce evidence references and domain business rules.
-   *
-   * The central AI runtime owns operation-ID generation across retry
-   * and fallback attempts. The authoritative operation identifier is
-   * persisted through the central ExternalApiLog workflow.
+   * The parsed value remains unknown so the NLP-specific validator can
+   * enforce evidence references and domain business rules before the
+   * value enters the final analysis.
    *
    * @param request Fully rendered NLP AI-enhancement request.
-   * @returns Normalized parsed response and execution metadata.
+   * @returns Parsed response and authoritative execution metadata.
    */
   async enhance(request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
     const result = await this.aiExecutionService.execute({
@@ -95,12 +94,16 @@ export class AiExecutionNlpClient implements NlpAiClient {
 
     return {
       data,
-      provider: result.provider,
-      modelId: result.apiModelId,
+      operationId: result.operationId,
+      aiModelId: result.aiModelId,
+      providerKey: result.providerKey,
+      apiModelId: result.apiModelId,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       responseTimeMs: result.responseTimeMs,
-      estimatedCost: result.costEstimate,
+      costEstimate: result.costEstimate,
+      fallbackUsed: result.fallbackUsed,
+      attemptCount: result.attemptCount,
     };
   }
 }

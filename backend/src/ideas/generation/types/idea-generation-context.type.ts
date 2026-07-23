@@ -112,12 +112,18 @@ export type IdeaGenerationCollectionResolution = {
   reused: boolean;
 
   /**
-   * Number of collected post records.
+   * Number of collected post records retained and analyzed by NLP.
+   *
+   * This may be lower than CollectionJob.totalPosts when filtering,
+   * preprocessing, or quality validation excludes records.
    */
   totalPosts: number;
 
   /**
-   * Number of collected comment records.
+   * Number of collected comment records retained and analyzed by NLP.
+   *
+   * This may be lower than CollectionJob.totalComments when filtering,
+   * preprocessing, or quality validation excludes records.
    */
   totalComments: number;
 };

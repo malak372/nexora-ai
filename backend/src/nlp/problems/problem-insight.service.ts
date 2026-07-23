@@ -10,8 +10,7 @@ import { ProblemSeverityPolicyService } from './problem-severity-policy.service'
 
 const MAX_PROBLEM_EVIDENCE_SAMPLES = 3;
 
-type RecurringProblem =
-  IntelligentAnalysisOutput['recurringProblems'][number];
+type RecurringProblem = IntelligentAnalysisOutput['recurringProblems'][number];
 
 type ProblemAccumulator = {
   frequency: number;
@@ -43,7 +42,7 @@ export class ProblemInsightService {
   constructor(
     private readonly problemNormalizerService: ProblemNormalizerService,
     private readonly problemSeverityPolicyService: ProblemSeverityPolicyService,
-  ) { }
+  ) {}
 
   /**
    * Extracts recurring problems from lexicon-enriched text results.
@@ -76,8 +75,7 @@ export class ProblemInsightService {
       );
 
       for (const title of normalizedProblems) {
-        const current =
-          problemMap.get(title) ?? this.createAccumulator();
+        const current = problemMap.get(title) ?? this.createAccumulator();
 
         current.frequency += 1;
 
@@ -89,10 +87,7 @@ export class ProblemInsightService {
           current.urgencySignals += 1;
         }
 
-        this.addEvidenceSample(
-          current.evidenceSamples,
-          text.originalText,
-        );
+        this.addEvidenceSample(current.evidenceSamples, text.originalText);
 
         problemMap.set(title, current);
       }
@@ -142,9 +137,7 @@ export class ProblemInsightService {
    * @param text Lexicon-enriched text.
    * @returns True when the text contains problem-worthy signals.
    */
-  private shouldAnalyzeText(
-    text: LexiconTextAnalysisResult,
-  ): boolean {
+  private shouldAnalyzeText(text: LexiconTextAnalysisResult): boolean {
     return (
       text.sentiment === Sentiment.NEGATIVE ||
       this.hasLexiconMatches(text, NlpLexiconType.PROBLEM) ||
@@ -158,9 +151,7 @@ export class ProblemInsightService {
    * @param text Lexicon-enriched text.
    * @returns Cleaned problem-related terms.
    */
-  private extractProblemTerms(
-    text: LexiconTextAnalysisResult,
-  ): string[] {
+  private extractProblemTerms(text: LexiconTextAnalysisResult): string[] {
     const relevantTypes: ReadonlyArray<NlpLexiconType> = [
       NlpLexiconType.PROBLEM,
       NlpLexiconType.COMPLAINT,
@@ -183,13 +174,8 @@ export class ProblemInsightService {
    * @param text Lexicon-enriched text.
    * @returns True when urgency terms were matched.
    */
-  private hasUrgencySignal(
-    text: LexiconTextAnalysisResult,
-  ): boolean {
-    return this.hasLexiconMatches(
-      text,
-      NlpLexiconType.URGENCY,
-    );
+  private hasUrgencySignal(text: LexiconTextAnalysisResult): boolean {
+    return this.hasLexiconMatches(text, NlpLexiconType.URGENCY);
   }
 
   /**
@@ -226,10 +212,7 @@ export class ProblemInsightService {
    * @param samples Existing evidence samples.
    * @param sample New sample candidate.
    */
-  private addEvidenceSample(
-    samples: string[],
-    sample: string,
-  ): void {
+  private addEvidenceSample(samples: string[], sample: string): void {
     const normalizedSample = sample.trim();
 
     if (

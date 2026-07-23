@@ -8,45 +8,75 @@ import { AuthenticatedUser } from '../types/authenticated-user.type';
 
 /**
  * HTTP request containing a successfully authenticated user.
+ *
+ * Passport attaches this value after JwtAuthGuard validates
+ * the access token through JwtStrategy.
+ *
+ * @author Eman
  */
 type AuthenticatedRequest = {
   user?: AuthenticatedUser;
 };
 
 /**
- * Retrieves the currently authenticated user from the HTTP request.
- *
- * The user is attached to the request by Passport after successful
- * authentication through JwtAuthGuard and JwtStrategy.
- *
- * This decorator must only be used on routes protected by
- * JwtAuthGuard.
- *
- * @example
- *
- * @Get('me')
- * @UseGuards(JwtAuthGuard)
- * getCurrentUser(
- *   @CurrentUser() user: AuthenticatedUser,
- * ) {
- *   return user;
- * }
- *
- * @throws UnauthorizedException When no authenticated user exists
- * on the current request.
+ * Supported property names that may be extracted from the
+ * authenticated user object.
  *
  * @author Eman
  */
-export const CurrentUser = createParamDecorator(
-  (_data: unknown, context: ExecutionContext): AuthenticatedUser => {
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+type AuthenticatedUserProperty = keyof AuthenticatedUser;
 
-    if (!request.user) {
-      throw new UnauthorizedException(
-        'Authenticated user was not found in the request.',
-      );
-    }
+/**
+ * Retrieves the authenticated user, or one selected property,
+ * from the current HTTP request.
+ *
+ * The route must be protected by JwtAuthGuard so Passport can
+ * attach the authenticated user to request.user.
+ *
+ * Usage examples:
+ *
+ * @example
+ * ```ts
+ * @CurrentUser() user: AuthenticatedUser
+ * ```
+ *
+ * @example
+ * ```ts
+ * @CurrentUser('id') userId: string
+ * ```
+ *
+ * @throws UnauthorizedException When the request does not contain
+ * an authenticated user.
+ *
+ * @throws UnauthorizedException When the requested user property
+ * does not exist or resolves to undefined.
+ *
+ * @author Eman
+ */
+export const CurrentUser = createParamDecorator<
+  AuthenticatedUserProperty | undefined,
+  AuthenticatedUser | AuthenticatedUser[AuthenticatedUserProperty]
+>((property, context: ExecutionContext) => {
+  const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+  const user = request.user;
 
-    return request.user;
-  },
-);
+  if (!user) {
+    throw new UnauthorizedException(
+      'Authenticated user was not found in the request.',
+    );
+  }
+
+  if (property === undefined) {
+    return user;
+  }
+
+  const value = user[property];
+
+  if (value === undefined) {
+    throw new UnauthorizedException(
+      `Authenticated user property "${property}" was not found.`,
+    );
+  }
+
+  return value;
+});

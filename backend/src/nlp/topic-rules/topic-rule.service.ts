@@ -36,7 +36,7 @@ export type TopicRule = {
  */
 @Injectable()
 export class TopicRuleService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns all active topic rules for a specific language.
@@ -82,9 +82,7 @@ export class TopicRuleService {
    * @param terms Raw keyword collection.
    * @returns Unique normalized keywords.
    */
-  private normalizeTerms(
-    terms: unknown,
-  ): readonly string[] {
+  private normalizeTerms(terms: unknown): readonly string[] {
     if (!Array.isArray(terms)) {
       return [];
     }

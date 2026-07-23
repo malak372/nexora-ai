@@ -12,31 +12,30 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 
-import { DomainsService } from './domains.service';
-import { CreateDomainDto } from './dto/create-domain.dto';
-import { UpdateDomainDto } from './dto/update-domain.dto';
-import { GetDomainsQueryDto } from './dto/get-domains-query.dto';
-
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+
+import { DomainsService } from '../domains.service';
+import { CreateDomainDto } from '../dto/create-domain.dto';
+import { GetDomainsQueryDto } from '../dto/get-domains-query.dto';
+import { UpdateDomainDto } from '../dto/update-domain.dto';
 
 type AuthenticatedAdmin = {
-  id: string;
-  role: UserRole;
+  readonly id: string;
+  readonly role: UserRole;
 };
 
 /**
- * Controller responsible for managing software project domains.
+ * Provides administrative domain-management endpoints.
  *
- * Provides admin-only endpoints for:
- * - Listing domains.
- * - Creating domains.
- * - Updating domains.
- * - Deactivating domains.
- * - Viewing domain summary reports.
- * - Viewing chart-ready domain analytics.
+ * Responsibilities:
+ * - List all active and inactive domains.
+ * - Create domains.
+ * - Update domains and discovery keywords.
+ * - Deactivate domains.
+ * - Return administrative summaries and charts.
  *
  * Base route:
  * /admin/domains
@@ -46,11 +45,11 @@ type AuthenticatedAdmin = {
 @Controller('admin/domains')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
-export class DomainsController {
+export class AdminDomainsController {
   constructor(private readonly domainsService: DomainsService) {}
 
   /**
-   * Retrieves configured domains.
+   * Returns the administrative paginated domain list.
    *
    * Endpoint:
    * GET /admin/domains
@@ -61,7 +60,7 @@ export class DomainsController {
   }
 
   /**
-   * Retrieves domain summary statistics.
+   * Returns administrative domain summary statistics.
    *
    * Endpoint:
    * GET /admin/domains/summary
@@ -72,7 +71,7 @@ export class DomainsController {
   }
 
   /**
-   * Retrieves chart-ready domain analytics.
+   * Returns chart-ready administrative domain analytics.
    *
    * Endpoint:
    * GET /admin/domains/charts
@@ -83,7 +82,7 @@ export class DomainsController {
   }
 
   /**
-   * Creates a new domain.
+   * Creates a new software domain.
    *
    * Endpoint:
    * POST /admin/domains
@@ -97,7 +96,7 @@ export class DomainsController {
   }
 
   /**
-   * Updates an existing domain.
+   * Updates an existing software domain.
    *
    * Endpoint:
    * PATCH /admin/domains/:id
@@ -112,7 +111,7 @@ export class DomainsController {
   }
 
   /**
-   * Deactivates an existing domain.
+   * Deactivates an existing software domain.
    *
    * Endpoint:
    * DELETE /admin/domains/:id

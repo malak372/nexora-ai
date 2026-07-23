@@ -1,258 +1,124 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { ApiRequestType, PromptType } from '@prisma/client';
-
-import { AiExecutionService } from '../../../../ai/services/ai-execution.service';
-
-import { AiResponseFormat } from '../../../../ai/types/ai-provider.type';
-
 import {
   IDEA_GENERATION_ERROR_CODES,
   MAX_AI_RESPONSE_PREVIEW_LENGTH,
 } from '../../constants/idea-generation.constants';
-
 import {
   findIdeaGenerationStageDefinition,
   IDEA_GENERATION_STAGE_KEYS,
   type IdeaGenerationStageDefinition,
 } from '../../constants/idea-generation-stages.constants';
-
 import type {
   IdeaGenerationStage,
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
-
-import { IdeaAiOutputParserService } from '../../services/idea-ai-output-parser.service';
-
+import { IdeaGenerationBenchmarkService } from '../../services/idea-generation-benchmark.service';
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
-
 /**
- * Executes the core structured idea-generation request.
+ * Generates the core idea through a dynamic multi-model benchmark.
  *
- * Responsibilities:
- * - Reuse the exact provider-neutral response schema stored in
- *   the pipeline context during prompt building.
- * - Execute the central AI runtime.
- * - Request structured JSON output.
- * - Parse the centrally validated response into business-level
- *   idea output.
- * - Store the normalized core idea in pipeline context.
- * - Preserve premium advanced fields returned by the core
- *   response when available.
+ * Every active routable JSON-capable model stored in ai_models receives the
+ * same prompt. The stage selects the highest-quality valid candidate and keeps
+ * the complete comparison in idea_generation_candidates.
  *
- * The AI runtime already handles:
- * - Model routing.
- * - Provider selection.
- * - Request timeout.
- * - Temporary retries.
- * - Fallback models.
- * - JSON parsing and schema validation.
- * - Bounded structured-output repair.
- * - External API logging.
- *
- * IdeaAiOutputParserService adds a second business-level
- * validation boundary before persistence.
- *
- * This stage does not:
- * - Rebuild the prompt.
- * - Persist the Idea record.
- * - Consume free generations or credits.
- * - Perform duplicate detection.
- * - Complete the generation run.
+ * No model name, provider name, or database identifier is hard-coded here.
+ * Adding, disabling, or deleting a model changes future benchmark runs
+ * automatically.
  *
  * @author Malak
  */
 @Injectable()
 export class CoreIdeaGenerationStage implements IdeaGenerationStage {
-  /**
-   * Stable pipeline-stage key.
-   */
   readonly key = IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION;
 
-  /**
-   * Static pipeline-stage definition.
-   */
   readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
 
   constructor(
-    private readonly aiExecutionService: AiExecutionService,
-
-    private readonly outputParserService: IdeaAiOutputParserService,
+    private readonly benchmarkService: IdeaGenerationBenchmarkService,
   ) {}
 
-  /**
-   * Executes one structured core idea-generation operation.
-   *
-   * @param context Current generation context.
-   * @returns Context containing parsed core and advanced output.
-   */
   async execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const persistedPrompt = context.prompt!;
-
-    const aiResult = await this.aiExecutionService.execute({
-      userPrompt: persistedPrompt.promptText,
-
-      requestType: ApiRequestType.IDEA_GENERATION,
-
-      promptType: PromptType.IDEA_GENERATION,
-
-      generationType: context.generationType,
-
-      userId:
-        context.owner.type === IDEA_OWNER_TYPES.USER
-          ? context.owner.userId
-          : undefined,
-
-      guestSessionId:
-        context.owner.type === IDEA_OWNER_TYPES.GUEST
-          ? context.owner.guestSessionId
-          : undefined,
-
-      responseFormat: AiResponseFormat.JSON,
-
-      responseSchema: persistedPrompt.responseSchema,
-
-      responseSchemaName: persistedPrompt.responseSchemaName,
-
-      estimatedOutputTokens: this.resolveEstimatedOutputTokens(context),
-    });
-
-    const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
+    const benchmark = await this.benchmarkService.benchmark(context);
+    const winner = benchmark.winner;
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
-
-      coreIdea: parsedOutput.coreIdea,
-
+      coreIdea: winner.parsedOutput.coreIdea,
       advancedOutputs: this.mergeAdvancedOutputs(
         context.advancedOutputs,
-        parsedOutput.advancedOutputs,
+        winner.parsedOutput.advancedOutputs,
       ),
     };
 
     return {
       context: updatedContext,
-
-      resultPreview: this.createResponsePreview(aiResult.text),
-
+      resultPreview: this.createResponsePreview(winner.aiResult.text),
       metadata: {
-        operationId: aiResult.operationId,
-
-        aiModelId: aiResult.aiModelId,
-
-        providerKey: aiResult.providerKey,
-
-        apiModelId: aiResult.apiModelId,
-
-        inputTokens: aiResult.inputTokens,
-
-        outputTokens: aiResult.outputTokens,
-
-        costEstimate: aiResult.costEstimate,
-
-        responseTimeMs: aiResult.responseTimeMs,
-
-        finishReason: aiResult.finishReason,
-
-        fallbackUsed: aiResult.fallbackUsed,
-
-        attemptCount: aiResult.attemptCount,
-
-        advancedOutputsReturned: parsedOutput.advancedOutputs.length,
+        winner: {
+          operationId: winner.aiResult.operationId,
+          aiModelId: winner.aiResult.aiModelId,
+          providerKey: winner.aiResult.providerKey,
+          apiModelId: winner.aiResult.apiModelId,
+          overallScore: winner.quality.score,
+          ...winner.quality.dimensions,
+          inputTokens: winner.aiResult.inputTokens,
+          outputTokens: winner.aiResult.outputTokens,
+          costEstimate: winner.aiResult.costEstimate,
+          responseTimeMs: winner.aiResult.responseTimeMs,
+        },
+        comparedModels: benchmark.candidates.length,
+        candidates: benchmark.candidates.map((candidate, index) => ({
+          rank: index + 1,
+          aiModelId: candidate.aiResult.aiModelId,
+          providerKey: candidate.aiResult.providerKey,
+          apiModelId: candidate.aiResult.apiModelId,
+          selected: candidate.selected,
+          overallScore: candidate.quality.score,
+          ...candidate.quality.dimensions,
+          inputTokens: candidate.aiResult.inputTokens,
+          outputTokens: candidate.aiResult.outputTokens,
+          costEstimate: candidate.aiResult.costEstimate,
+          responseTimeMs: candidate.aiResult.responseTimeMs,
+          qualityIssues: candidate.quality.issues.map((issue) => issue.code),
+        })),
       },
     };
   }
 
-  /**
-   * Validates all required context values before provider
-   * execution.
-   *
-   * @param context Current generation context.
-   */
   private validateContext(context: IdeaGenerationContext): void {
-    if (!context.policy) {
+    if (
+      !context.policy ||
+      !context.collection ||
+      !context.nlp ||
+      !context.prompt
+    ) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'Generation entitlement must be resolved before AI execution.',
+        message:
+          'Entitlement, collection data, NLP analysis, and a persisted prompt are required before model benchmarking.',
       });
     }
 
-    if (!context.collection) {
+    if (
+      !context.prompt.promptText.trim() ||
+      !context.prompt.responseSchemaName.trim()
+    ) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'Collection-job information is required before AI execution.',
-      });
-    }
-
-    if (!context.nlp) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'NLP analysis is required before AI execution.',
-      });
-    }
-
-    if (!context.prompt) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'A persisted rendered prompt is required before AI execution.',
-      });
-    }
-
-    if (!context.prompt.promptText.trim()) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'The rendered AI prompt cannot be empty.',
-      });
-    }
-
-    if (!context.prompt.responseSchemaName.trim()) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
-
-        message: 'The structured AI response-schema name is required.',
+        message:
+          'The rendered prompt and structured response schema are required.',
       });
     }
   }
 
-  /**
-   * Resolves a routing estimate for expected output-token usage.
-   *
-   * Premium responses are expected to be larger because their
-   * schema may include advanced outputs.
-   *
-   * This estimate does not limit the actual provider response.
-   *
-   * @param context Current generation context.
-   * @returns Estimated output-token count.
-   */
-  private resolveEstimatedOutputTokens(context: IdeaGenerationContext): number {
-    return context.policy?.includePremiumOutputs ? 4_096 : 2_048;
-  }
-
-  /**
-   * Merges advanced outputs without duplicating stable output
-   * keys.
-   *
-   * Newer outputs replace older outputs with the same key.
-   *
-   * @param existing Existing context outputs.
-   * @param incoming Newly parsed outputs.
-   * @returns Merged output list.
-   */
   private mergeAdvancedOutputs(
     existing: IdeaGenerationContext['advancedOutputs'],
-
     incoming: IdeaGenerationContext['advancedOutputs'],
   ): IdeaGenerationContext['advancedOutputs'] {
     const outputsByKey = new Map(
@@ -266,30 +132,14 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
     return Array.from(outputsByKey.values());
   }
 
-  /**
-   * Creates a bounded raw-response preview for stage history.
-   *
-   * Complete generated data remains in the generation context
-   * and is later persisted in its dedicated models.
-   *
-   * @param responseText Complete provider response.
-   * @returns Safe bounded preview.
-   */
   private createResponsePreview(responseText: string): string {
-    const normalizedResponse = responseText.trim();
+    const normalized = responseText.trim();
 
-    if (normalizedResponse.length <= MAX_AI_RESPONSE_PREVIEW_LENGTH) {
-      return normalizedResponse;
-    }
-
-    return normalizedResponse.slice(0, MAX_AI_RESPONSE_PREVIEW_LENGTH);
+    return normalized.length <= MAX_AI_RESPONSE_PREVIEW_LENGTH
+      ? normalized
+      : normalized.slice(0, MAX_AI_RESPONSE_PREVIEW_LENGTH);
   }
 
-  /**
-   * Resolves the static stage definition.
-   *
-   * @returns Core-generation stage definition.
-   */
   private resolveDefinition(): IdeaGenerationStageDefinition {
     const definition = findIdeaGenerationStageDefinition(this.key);
 

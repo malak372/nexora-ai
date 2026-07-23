@@ -7,10 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
  * Lexicon words grouped by their semantic NLP category.
  *
  */
-export type GroupedNlpLexiconWords = Record<
-  NlpLexiconType,
-  readonly string[]
->;
+export type GroupedNlpLexiconWords = Record<NlpLexiconType, readonly string[]>;
 
 /**
  * Provides centralized, read-only access to active NLP lexicon entries.
@@ -31,7 +28,7 @@ export type GroupedNlpLexiconWords = Record<
  */
 @Injectable()
 export class NlpLexiconService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Returns active lexicon terms for one category and target language.
@@ -62,9 +59,7 @@ export class NlpLexiconService {
       },
     });
 
-    return this.normalizeWords(
-      lexicons.map((lexicon) => lexicon.word),
-    );
+    return this.normalizeWords(lexicons.map((lexicon) => lexicon.word));
   }
 
   /**

@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import {
   AuditAction,
@@ -86,9 +90,26 @@ type CollectionTrigger = 'USER_MANUAL' | 'SYSTEM_INTERNAL';
 @Injectable()
 export class DataCollectionService {
   /**
-   * Minimum score required before a post is stored.
+   * Service logger used for centralized relevance diagnostics.
    */
-  private readonly MIN_RELEVANCE_SCORE = 60;
+  private readonly logger = new Logger(DataCollectionService.name);
+
+  /**
+   * Minimum relevance score required before a collected post is persisted.
+   *
+   * A score of 50 keeps the centralized filter strict enough to reject weak
+   * results while still allowing strong title, body, or source-tag matches.
+   */
+  private readonly MIN_RELEVANCE_SCORE = 50;
+
+  /**
+   * Additional score granted when a source-provided tag exactly matches one
+   * of the normalized domain or user relevance terms.
+   *
+   * This is especially useful for platforms such as DEV.to, where the source
+   * API already classifies articles under meaningful tags.
+   */
+  private readonly EXACT_SOURCE_TAG_MATCH_BONUS = 35;
 
   /**
    * Reserved domain name representing all domains.
@@ -471,35 +492,97 @@ export class DataCollectionService {
   }
 
   /**
-   * Filters collector results using shared relevance scoring.
+   * Filters collector results using the centralized relevance policy.
+   *
+   * Relevance is calculated from:
+   * - The normalized post title.
+   * - The normalized post content.
+   * - Optional source-provided tags.
+   * - Domain keywords and user-provided keywords.
+   * - Engagement values and publication recency.
+   *
+   * An exact source-tag match receives an additional bonus because source
+   * platforms such as DEV.to already classify content under those tags.
+   *
+   * @param posts Posts returned by a source collector.
+   * @param relevanceTerms Domain and user relevance terms.
+   * @returns Posts that satisfy the configured minimum relevance score.
    */
   private filterRelevantPosts(
     posts: CollectorPost[],
     relevanceTerms: string[],
   ): CollectorPost[] {
-    if (!relevanceTerms.length) {
+    const normalizedTerms = this.normalizeRelevanceTerms(relevanceTerms);
+
+    if (!normalizedTerms.length) {
       return posts;
     }
 
     return posts.filter((post) => {
-      const score = RelevanceScoreUtil.scoreText({
+      const normalizedTags = this.normalizeRelevanceTerms(post.tags ?? []);
+
+      const baseScore = RelevanceScoreUtil.scoreText({
         title: post.title,
 
-        body: post.content,
+        body: [post.content, ...normalizedTags].filter(Boolean).join(' '),
 
-        domainTerms: relevanceTerms,
+        domainTerms: normalizedTerms,
 
         problemTerms: [],
 
-        likes: post.likesCount,
+        likes: post.likesCount ?? 0,
 
-        replies: post.repliesCount,
+        replies: post.repliesCount ?? 0,
 
         publishedAt: post.publishedAt,
       });
 
-      return score >= this.MIN_RELEVANCE_SCORE;
+      const hasExactSourceTagMatch = normalizedTags.some((tag) =>
+        normalizedTerms.includes(tag),
+      );
+
+      const sourceTagBonus = hasExactSourceTagMatch
+        ? this.EXACT_SOURCE_TAG_MATCH_BONUS
+        : 0;
+
+      const finalScore = baseScore + sourceTagBonus;
+
+      this.logger.debug(
+        [
+          'Central relevance evaluation',
+          `title="${post.title}"`,
+          `baseScore=${baseScore}`,
+          `sourceTagBonus=${sourceTagBonus}`,
+          `finalScore=${finalScore}`,
+          `minimum=${this.MIN_RELEVANCE_SCORE}`,
+          `accepted=${finalScore >= this.MIN_RELEVANCE_SCORE}`,
+        ].join(' | '),
+      );
+
+      return finalScore >= this.MIN_RELEVANCE_SCORE;
     });
+  }
+
+  /**
+   * Normalizes relevance terms and source tags for stable comparison.
+   *
+   * Normalization:
+   * - Trims surrounding whitespace.
+   * - Converts values to lowercase.
+   * - Replaces repeated internal whitespace with a single space.
+   * - Removes empty and duplicate values.
+   *
+   * @param values Raw domain terms, user keywords, or source tags.
+   * @returns Unique normalized relevance values.
+   */
+  private normalizeRelevanceTerms(values: readonly string[]): string[] {
+    return [
+      ...new Set(
+        values
+          .map((value) => value.trim().toLowerCase().replace(/\s+/g, ' '))
+          .filter(Boolean),
+      ),
+    ];
   }
 
   /**

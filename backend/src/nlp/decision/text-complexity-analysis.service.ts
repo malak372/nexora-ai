@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { LanguageCode } from '@prisma/client';
 
 import {
+  ALL_CONTRAST_SIGNALS,
+  ALL_NEGATION_SIGNALS,
   COMPLEX_TEXT_WORD_TARGET,
   LOW_TEXT_CONFIDENCE_THRESHOLD,
   MULTI_TOPIC_MINIMUM_COUNT,
@@ -69,12 +72,20 @@ export class TextComplexityAnalysisService {
 
     const negationRatio = this.calculateSignalRatio(
       input,
-      NEGATION_SIGNALS_BY_LANGUAGE[input.language],
+      this.resolveSignals(
+        input.language,
+        NEGATION_SIGNALS_BY_LANGUAGE,
+        ALL_NEGATION_SIGNALS,
+      ),
     );
 
     const contrastRatio = this.calculateSignalRatio(
       input,
-      CONTRAST_SIGNALS_BY_LANGUAGE[input.language],
+      this.resolveSignals(
+        input.language,
+        CONTRAST_SIGNALS_BY_LANGUAGE,
+        ALL_CONTRAST_SIGNALS,
+      ),
     );
 
     const mixedSentimentRatio = this.calculateMixedSentimentRatio(input);
@@ -137,6 +148,32 @@ export class TextComplexityAnalysisService {
    */
   private normalizeAverageTextLength(averageTextLength: number): number {
     return this.round(this.clamp(averageTextLength / COMPLEX_TEXT_WORD_TARGET));
+  }
+
+  /**
+   * Resolves the language-specific linguistic signals used by the analyzer.
+   *
+   * LanguageCode.ANY intentionally selects the pre-combined collection for
+   * all supported languages. Specific language values select only their
+   * dedicated signal collection.
+   *
+   * @param language Requested NLP analysis language.
+   * @param signalsByLanguage Language-specific signal registry.
+   * @param allSignals Combined signal collection used for LanguageCode.ANY.
+   * @returns Signals applicable to the requested language.
+   */
+  private resolveSignals(
+    language: LanguageCode,
+    signalsByLanguage: Readonly<
+      Partial<Record<LanguageCode, readonly (readonly string[])[]>>
+    >,
+    allSignals: readonly (readonly string[])[],
+  ): readonly (readonly string[])[] {
+    if (language === LanguageCode.ANY) {
+      return allSignals;
+    }
+
+    return signalsByLanguage[language] ?? [];
   }
 
   /**
@@ -302,7 +339,7 @@ export class TextComplexityAnalysisService {
       input.lowConfidenceRatio * TEXT_COMPLEXITY_WEIGHTS.lowConfidenceRatio +
       input.multiTopicRatio * TEXT_COMPLEXITY_WEIGHTS.multiTopicRatio +
       input.unmatchedLexiconRatio *
-      TEXT_COMPLEXITY_WEIGHTS.unmatchedLexiconRatio;
+        TEXT_COMPLEXITY_WEIGHTS.unmatchedLexiconRatio;
 
     return this.round(this.clamp(complexityScore));
   }

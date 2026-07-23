@@ -480,6 +480,7 @@ export class CollectionJobResolverService {
 
         region: job.region,
       },
+      language: job.language,
 
       platforms: job.sources.map((source) => source.dataSource.displayName),
 

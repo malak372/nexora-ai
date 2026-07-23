@@ -86,6 +86,39 @@ export class AiModelRoutingService {
   }
 
   /**
+   * Resolves one exact model for an explicit benchmark execution.
+   *
+   * The lookup is intentionally performed against the routable-model list so
+   * inactive, unsupported, or unhealthy models cannot be forced by callers.
+   * Adding, disabling, or deleting AiModel rows therefore changes benchmark
+   * participation automatically without any hard-coded model registry.
+   *
+   * @param modelId AiModel database identifier.
+   * @returns Exact routable model.
+   * @throws ServiceUnavailableException when the model is not routable.
+   */
+  async resolveSpecificModel(modelId: string): Promise<AiModel> {
+    const normalizedModelId = modelId.trim();
+
+    if (!normalizedModelId) {
+      throw new BadRequestException('AI model identifier is required.');
+    }
+
+    const models = await this.aiModelsService.getRoutableModels();
+    const model = models.find(
+      (candidate) => candidate.id === normalizedModelId,
+    );
+
+    if (!model) {
+      throw new ServiceUnavailableException(
+        `AI model "${normalizedModelId}" is not active or routable.`,
+      );
+    }
+
+    return model;
+  }
+
+  /**
    * Orders models according to the default routing strategy.
    *
    * Ordering rules:
