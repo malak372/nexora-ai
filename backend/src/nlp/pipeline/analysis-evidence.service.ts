@@ -40,9 +40,7 @@ export class AnalysisEvidenceService {
    * @param analyzedTexts Final analyzed text records.
    * @returns High-confidence post samples.
    */
-  extractSamplePosts(
-    analyzedTexts: ReadonlyArray<TextAnalysisResult>,
-  ): Array<{
+  extractSamplePosts(analyzedTexts: ReadonlyArray<TextAnalysisResult>): Array<{
     id: string;
     text: string;
     sentiment: Sentiment;

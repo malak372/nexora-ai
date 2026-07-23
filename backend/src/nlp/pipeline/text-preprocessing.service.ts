@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
@@ -33,8 +33,8 @@ export type PreprocessedTextInput = IntelligentTextInput & {
   /**
    * Final specific language used by the NLP pipeline.
    *
-   * ANY is not allowed here because every individual text must have a
-   * resolved supported language before language-aware analysis begins.
+   * LanguageCode.ANY is not allowed here because every text forwarded to
+   * language-aware analysis must have a specific supported language.
    */
   finalLanguage: ResolvedLanguageCode;
 
@@ -86,8 +86,8 @@ type RelevanceEvaluatedText = {
  */
 export type TextPreprocessingOutput = {
   /**
-   * Text inputs that passed cleaning, duplicate filtering, and
-   * domain-relevance filtering.
+   * Text inputs that passed cleaning, duplicate filtering,
+   * language resolution, and domain-relevance filtering.
    */
   texts: PreprocessedTextInput[];
 
@@ -100,6 +100,12 @@ export type TextPreprocessingOutput = {
    * Number of duplicate texts removed after normalization.
    */
   duplicateTextsRemoved: number;
+
+  /**
+   * Number of texts removed because a specific supported language
+   * could not be resolved reliably.
+   */
+  unresolvedLanguageTextsRemoved: number;
 
   /**
    * Number of texts removed because they were not related to the
@@ -117,6 +123,26 @@ export type TextPreprocessingOutput = {
 };
 
 /**
+ * Internal item produced after cleaning and duplicate filtering.
+ *
+ * @author Eman
+ */
+type CleanedTextItem = {
+  readonly input: IntelligentTextInput;
+  readonly cleaning: CleanTextResult;
+};
+
+/**
+ * Internal item containing a cleaned text and its successfully
+ * resolved language.
+ *
+ * @author Eman
+ */
+type LanguageResolvedTextItem = CleanedTextItem & {
+  readonly finalLanguage: ResolvedLanguageCode;
+};
+
+/**
  * Preprocesses unified text inputs before deeper NLP analysis.
  *
  * This service receives unified post and comment inputs produced by
@@ -131,7 +157,8 @@ export type TextPreprocessingOutput = {
  * Responsibilities:
  * - Clean raw post and comment content.
  * - Remove empty and duplicate texts.
- * - Resolve a specific language for every text.
+ * - Resolve a specific supported language for every accepted text.
+ * - Exclude texts whose language cannot be resolved reliably.
  * - Filter unrelated texts using selected-domain keywords.
  * - Preserve relevance metadata for later confidence calculations.
  * - Produce initial analysis records for auditing and observability.
@@ -147,14 +174,21 @@ export type TextPreprocessingOutput = {
  */
 @Injectable()
 export class TextPreprocessingService {
+  private readonly logger = new Logger(TextPreprocessingService.name);
+
   constructor(
     private readonly textCleaningService: TextCleaningService,
     private readonly languageDetectionService: LanguageDetectionService,
     private readonly domainRelevanceService: DomainRelevanceService,
-  ) { }
+  ) {}
 
   /**
    * Runs preprocessing for collected posts and comments.
+   *
+   * Individual texts whose language cannot be resolved are excluded instead
+   * of terminating the complete NLP analysis. Community sources can contain
+   * short identifiers, code fragments, links, emoji-only comments, or mixed
+   * language content that cannot be classified reliably.
    *
    * @param inputs Unified post and comment inputs.
    * @param domainKeywords Domain keywords used to evaluate relevance.
@@ -163,31 +197,31 @@ export class TextPreprocessingService {
   process(
     inputs: ReadonlyArray<IntelligentTextInput>,
     domainKeywords: ReadonlyArray<string>,
+    fallbackLanguage: LanguageCode = LanguageCode.EN,
   ): TextPreprocessingOutput {
-    const cleanedItems = inputs.map((input) => ({
+    const cleanedItems: CleanedTextItem[] = inputs.map((input) => ({
       input,
       cleaning: this.textCleaningService.clean(input.content),
     }));
 
-    const nonEmptyItems = cleanedItems.filter(
-      (item) => !item.cleaning.isEmpty,
-    );
+    const nonEmptyItems = cleanedItems.filter((item) => !item.cleaning.isEmpty);
 
-    const emptyTextsRemoved =
-      cleanedItems.length - nonEmptyItems.length;
+    const emptyTextsRemoved = cleanedItems.length - nonEmptyItems.length;
 
     const uniqueItems = this.removeDuplicateItems(nonEmptyItems);
 
-    const duplicateTextsRemoved =
-      nonEmptyItems.length - uniqueItems.length;
+    const duplicateTextsRemoved = nonEmptyItems.length - uniqueItems.length;
 
-    const evaluatedTexts: RelevanceEvaluatedText[] = uniqueItems.map(
+    const languageResolvedItems = this.resolveItemLanguages(
+      uniqueItems,
+      fallbackLanguage,
+    );
+
+    const unresolvedLanguageTextsRemoved =
+      uniqueItems.length - languageResolvedItems.length;
+
+    const evaluatedTexts: RelevanceEvaluatedText[] = languageResolvedItems.map(
       (item) => {
-        const finalLanguage = this.resolveLanguage(
-          item.input.language,
-          item.cleaning.cleanedText,
-        );
-
         const relevance = this.domainRelevanceService.analyze(
           item.cleaning.cleanedText,
           domainKeywords,
@@ -196,7 +230,7 @@ export class TextPreprocessingService {
         const text: PreprocessedTextInput = {
           ...item.input,
           cleaning: item.cleaning,
-          finalLanguage,
+          finalLanguage: item.finalLanguage,
           relevanceScore: relevance.score,
           relevanceConfidence: relevance.confidence,
           matchedKeywords: relevance.matchedKeywords,
@@ -210,20 +244,28 @@ export class TextPreprocessingService {
       },
     );
 
-    const relevantTexts = evaluatedTexts
-      .filter((item) => item.isRelevant)
-      .map((item) => item.text);
+    /*
+     * Collection already performs the authoritative relevance decision before
+     * persistence. NLP therefore analyzes every stored, non-empty, unique text
+     * instead of silently applying a second destructive relevance filter.
+     * Relevance scores are still preserved as analytical metadata.
+     */
+    const relevantTexts = evaluatedTexts.map((item) => item.text);
+    const irrelevantTextsRemoved = 0;
 
-    const irrelevantTextsRemoved =
-      evaluatedTexts.length - relevantTexts.length;
+    if (unresolvedLanguageTextsRemoved > 0) {
+      this.logger.debug(
+        `Removed ${unresolvedLanguageTextsRemoved} text(s) because a specific supported language could not be resolved.`,
+      );
+    }
 
     return {
       texts: relevantTexts,
       emptyTextsRemoved,
       duplicateTextsRemoved,
+      unresolvedLanguageTextsRemoved,
       irrelevantTextsRemoved,
-      initialAnalysisResults:
-        this.buildInitialAnalysisResults(relevantTexts),
+      initialAnalysisResults: this.buildInitialAnalysisResults(relevantTexts),
     };
   }
 
@@ -254,20 +296,63 @@ export class TextPreprocessingService {
   }
 
   /**
+   * Resolves languages for cleaned text items.
+   *
+   * Items whose language remains generic or unsupported are excluded.
+   * Excluding only the affected item prevents one ambiguous community text
+   * from terminating the complete collection-job NLP analysis.
+   *
+   * @param items Cleaned and deduplicated text items.
+   * @returns Items with a successfully resolved specific language.
+   */
+  private resolveItemLanguages(
+    items: ReadonlyArray<CleanedTextItem>,
+    fallbackLanguage: LanguageCode,
+  ): LanguageResolvedTextItem[] {
+    const resolvedItems: LanguageResolvedTextItem[] = [];
+
+    for (const item of items) {
+      const finalLanguage = this.resolveLanguage(
+        item.input.language,
+        item.cleaning.cleanedText,
+        fallbackLanguage,
+      );
+
+      if (finalLanguage === null) {
+        this.logger.debug(
+          `Skipping text "${item.input.id}" because its language could not be resolved.`,
+        );
+
+        continue;
+      }
+
+      resolvedItems.push({
+        ...item,
+        finalLanguage,
+      });
+    }
+
+    return resolvedItems;
+  }
+
+  /**
    * Resolves the final specific language used for NLP analysis.
    *
    * Collector-provided languages are reused when valid and specific.
    * Missing or generic values are resolved through language detection.
    *
+   * A null result means that the language detector could not classify the
+   * text as one of the specific languages supported by the NLP pipeline.
+   *
    * @param storedLanguage Language stored during data collection.
    * @param cleanedText Cleaned text used for fallback detection.
-   * @returns Specific supported language code.
-   * @throws Error When no specific supported language can be resolved.
+   * @returns A specific supported language, or null when unresolved.
    */
   private resolveLanguage(
     storedLanguage: LanguageCode | null | undefined,
     cleanedText: string,
-  ): ResolvedLanguageCode {
+    fallbackLanguage: LanguageCode,
+  ): ResolvedLanguageCode | null {
     if (
       storedLanguage !== null &&
       storedLanguage !== undefined &&
@@ -279,13 +364,18 @@ export class TextPreprocessingService {
     const detectedLanguage =
       this.languageDetectionService.detectCode(cleanedText);
 
-    if (detectedLanguage === LanguageCode.ANY) {
-      throw new Error(
-        'Unable to resolve a supported language for the analyzed text.',
-      );
+    if (detectedLanguage !== LanguageCode.ANY) {
+      return detectedLanguage;
     }
 
-    return detectedLanguage;
+    /*
+     * A short but meaningful text must not disappear only because language
+     * detection is inconclusive. Reuse the collection language when specific;
+     * otherwise use English as the neutral supported fallback.
+     */
+    return fallbackLanguage !== LanguageCode.ANY
+      ? fallbackLanguage
+      : LanguageCode.EN;
   }
 
   /**

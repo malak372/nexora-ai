@@ -30,6 +30,15 @@ export type SavePromptParams = {
   readonly guestSessionId?: string | null;
 
   /**
+   * Idea-generation run that owns this prompt.
+   *
+   * This value is required for IDEA_GENERATION prompts so the
+   * persistence stage can verify that the saved prompt belongs to
+   * the same pipeline run that is creating the Idea.
+   */
+  readonly generationRunId?: string | null;
+
+  /**
    * Collection job supplying the persisted NLP analysis.
    */
   readonly collectionJobId?: string | null;

@@ -17,6 +17,7 @@ import { ContactMessagesModule } from './contact-messages/contact-messages.modul
 import { DataCollectionModule } from './data-collection/data-collection.module';
 import { DataSourcesModule } from './data-sources/data-sources.module';
 import { IdeasModule } from './ideas/ideas.module';
+import { DomainsModule } from './domains/domains.module';
 import { MailModule } from './mail/mail.module';
 import { NlpModule } from './nlp/nlp.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -85,6 +86,7 @@ import { UsersModule } from './users/users.module';
     PromptsModule,
     AlertsModule,
     ComplaintsModule,
+    DomainsModule,
     ContactMessagesModule,
     PaymentsModule,
     IdeasModule,

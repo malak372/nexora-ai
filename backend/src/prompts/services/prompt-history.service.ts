@@ -80,6 +80,17 @@ const COLLECTION_JOB_REQUIRED_PROMPT_TYPES = new Set<PromptType>([
 ]);
 
 /**
+ * Prompt types that must be linked to an IdeaGenerationRun.
+ *
+ * Core idea-generation prompts are created during a specific
+ * pipeline run. Persisting the run identifier prevents prompts from
+ * being reused accidentally across concurrent or retried runs.
+ */
+const GENERATION_RUN_REQUIRED_PROMPT_TYPES = new Set<PromptType>([
+  PromptType.IDEA_GENERATION,
+]);
+
+/**
  * Handles PromptHistory persistence and administrator retrieval.
  *
  * Prompt history provides:
@@ -113,6 +124,7 @@ export class PromptHistoryService {
    * - User-facing prompts must identify exactly one requester.
    * - IDEA_UNLOCK and CHAT_RESPONSE require a registered user.
    * - IDEA_GENERATION and IDEA_UNLOCK require a CollectionJob.
+   * - IDEA_GENERATION requires an IdeaGenerationRun.
    * - The rendered prompt must not be blank.
    * - Estimated token usage cannot be negative.
    * - Template hashes must be valid SHA-256 values.
@@ -133,6 +145,8 @@ export class PromptHistoryService {
         userId: normalizedParams.userId,
 
         guestSessionId: normalizedParams.guestSessionId,
+
+        generationRunId: normalizedParams.generationRunId,
 
         collectionJobId: normalizedParams.collectionJobId,
 
@@ -359,6 +373,20 @@ export class PromptHistoryService {
     }
 
     /*
+     * Core idea generation must preserve exact pipeline-run
+     * traceability. Without this relation, the persistence stage
+     * cannot safely prove that the prompt belongs to the run.
+     */
+    if (
+      GENERATION_RUN_REQUIRED_PROMPT_TYPES.has(params.promptType) &&
+      params.generationRunId === undefined
+    ) {
+      throw new BadRequestException(
+        `${params.promptType} prompt history must be associated with a generation run.`,
+      );
+    }
+
+    /*
      * Generation and unlock depend on collection and NLP context.
      */
     if (
@@ -522,6 +550,8 @@ export class PromptHistoryService {
 
       guestSessionId: this.normalizeOptionalString(params.guestSessionId),
 
+      generationRunId: this.normalizeOptionalString(params.generationRunId),
+
       collectionJobId: this.normalizeOptionalString(params.collectionJobId),
 
       ideaId: this.normalizeOptionalString(params.ideaId),
@@ -580,6 +610,7 @@ export class PromptHistoryService {
 type NormalizedSavePromptParams = {
   readonly userId?: string;
   readonly guestSessionId?: string;
+  readonly generationRunId?: string;
   readonly collectionJobId?: string;
   readonly ideaId?: string;
   readonly promptType: PromptType;

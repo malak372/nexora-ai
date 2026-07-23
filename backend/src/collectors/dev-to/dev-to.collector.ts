@@ -1,5 +1,4 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-
 import { ConfigService } from '@nestjs/config';
 
 import { BaseCollector } from '../base/base.collector';
@@ -16,11 +15,24 @@ import { CollectorHeaderUtil } from '../base/collector-header.util';
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
 
+/**
+ * Minimal DEV.to user representation returned by the public API.
+ *
+ * @author Malak
+ */
 type DevToUser = {
   username?: string;
   name?: string;
 };
 
+/**
+ * DEV.to article representation used by the collector.
+ *
+ * The DEV.to API may return `tag_list` as either an array or a
+ * comma-separated string depending on the endpoint representation.
+ *
+ * @author Malak
+ */
 type DevToArticle = {
   id?: number;
   title?: string;
@@ -29,9 +41,16 @@ type DevToArticle = {
   positive_reactions_count?: number;
   comments_count?: number;
   published_at?: string;
+  tag_list?: string[] | string;
+  tags?: string;
   user?: DevToUser;
 };
 
+/**
+ * DEV.to comment representation used by the collector.
+ *
+ * @author Malak
+ */
 type DevToComment = {
   id?: number;
   id_code?: string;
@@ -44,26 +63,58 @@ type DevToComment = {
 /**
  * DEV.to collector.
  *
- * Collects public DEV Community articles and comments.
+ * Collects publicly available DEV Community articles and comments.
+ *
+ * Responsibilities:
+ * - Build valid DEV.to tag queries.
+ * - Search public articles by source tags.
+ * - Remove duplicate and invalid articles.
+ * - Rank articles by domain relevance.
+ * - Preserve source tags for centralized relevance filtering.
+ * - Collect useful article comments.
+ * - Map external API data into normalized collector contracts.
+ *
+ * This collector does not persist records directly.
  *
  * @author Malak
  */
 @Injectable()
 export class DevToCollector extends BaseCollector implements SocialCollector {
   /**
-   * Must match DataSource.key.
+   * Source identifier.
+   *
+   * Must match the corresponding DataSource.key value.
    */
   readonly sourceKey = 'dev-to';
 
+  /**
+   * DEV.to public API base URL.
+   */
   private readonly apiBaseUrl = 'https://dev.to/api';
+
+  /**
+   * Additional relevance score granted when a DEV.to source tag
+   * exactly matches one of the requested relevance terms.
+   *
+   * DEV.to already classifies articles by source tags, so an exact
+   * tag match is stronger evidence than a normal body occurrence.
+   */
+  private readonly exactTagMatchBonus = 35;
 
   constructor(configService: ConfigService) {
     super(configService, DevToCollector.name);
   }
 
   /**
-   * Collects, deduplicates, ranks, and maps
-   * DEV.to articles.
+   * Collects, validates, deduplicates, ranks, and maps DEV.to articles.
+   *
+   * The collector searches several relevant DEV.to tags, combines their
+   * results, removes duplicate articles, calculates relevance, and returns
+   * the highest-ranked normalized posts.
+   *
+   * @param input Collection request input.
+   * @returns Normalized DEV.to posts and their comments.
+   * @throws ServiceUnavailableException When DEV.to collection fails.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
@@ -71,7 +122,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
 
       if (!searchQueries.length) {
         this.logger.warn(
-          'DEV.to collection skipped because no search keywords exist.',
+          'DEV.to collection skipped because no valid search tags exist.',
         );
 
         return [];
@@ -94,13 +145,13 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       const rankedArticles = collectedArticles
         .filter((article) => this.isValidArticle(article))
         .filter((article) => {
-          const id = article.id?.toString();
+          const articleId = article.id?.toString();
 
-          if (!id || seenArticleIds.has(id)) {
+          if (!articleId || seenArticleIds.has(articleId)) {
             return false;
           }
 
-          seenArticleIds.add(id);
+          seenArticleIds.add(articleId);
 
           return true;
         })
@@ -113,8 +164,8 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         .slice(0, this.maxSavedPosts);
 
       const posts = await Promise.all(
-        rankedArticles.map((item) =>
-          this.mapArticleToCollectorPost(item.article, input),
+        rankedArticles.map(({ article }) =>
+          this.mapArticleToCollectorPost(article, input),
         ),
       );
 
@@ -123,7 +174,7 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       return posts;
     } catch (error: unknown) {
       this.logger.error(
-        'DEV.to collection failed',
+        'DEV.to collection failed.',
         this.getErrorMessage(error),
       );
 
@@ -134,20 +185,28 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Searches DEV.to articles by tag.
+   * Searches DEV.to articles using a valid source tag.
+   *
+   * Multi-word values are not passed to this method because DEV.to
+   * expects a real tag rather than a general full-text search phrase.
+   *
+   * @param tag Normalized DEV.to tag.
+   * @returns Articles returned by the DEV.to API.
    */
-  private async searchArticles(query: string): Promise<DevToArticle[]> {
+  private async searchArticles(tag: string): Promise<DevToArticle[]> {
     const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'articles', [
-      query,
+      tag,
     ]);
 
-    return CollectorHttpUtil.getWithRetryAndCache<DevToArticle[]>(
+    const articles = await CollectorHttpUtil.getWithRetryAndCache<
+      DevToArticle[]
+    >(
       `${this.apiBaseUrl}/articles`,
       {
         headers: this.buildHeaders(),
 
         params: {
-          tag: query.replace(/\s+/g, '').toLowerCase(),
+          tag: tag.toLowerCase(),
 
           per_page: Math.min(this.maxFetchedPosts, 100),
 
@@ -163,29 +222,74 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
         retryDelayMs: this.retryDelayMs,
       },
     );
+
+    return articles ?? [];
   }
 
   /**
-   * Builds search queries.
+   * Builds valid DEV.to search tags.
+   *
+   * Search terms are built from:
+   * - User-provided keywords.
+   * - Configured domain keywords.
+   * - The selected domain name.
+   *
+   * Multi-word terms are excluded because removing their spaces would
+   * produce an invented DEV.to tag. For example, `education technology`
+   * must not be converted into `educationtechnology`.
+   *
+   * @param input Collection request input.
+   * @returns Unique single-token DEV.to search tags.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
-    const domainKeywords = this.getDomainKeywords(input);
+    return this.buildRelevanceTerms(input)
+      .filter((term) => term.length >= 3)
+      .filter((term) => !term.includes(' '))
+      .slice(0, 6);
+  }
 
-    const fallbackDomain = input.domainName
-      ? [this.cleanNormalizedText(input.domainName)]
-      : [];
+  /**
+   * Builds the complete normalized relevance-term collection.
+   *
+   * User keywords are included explicitly because they represent the
+   * user's requested search focus and may not exist among the configured
+   * domain keywords.
+   *
+   * @param input Collection request input.
+   * @returns Unique normalized relevance terms.
+   */
+  private buildRelevanceTerms(input: CollectorInput): string[] {
+    const domainKeywords = this.getDomainKeywords(input)
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
 
     const userKeywords = (input.keywords ?? [])
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([...userKeywords, ...domainKeywords, ...fallbackDomain])
-      .filter((term) => term.length >= 3)
-      .slice(0, 6);
+    const fallbackDomain = input.domainName
+      ? [this.cleanNormalizedText(input.domainName)]
+      : [];
+
+    return this.unique([
+      ...userKeywords,
+      ...domainKeywords,
+      ...fallbackDomain,
+    ]).filter(Boolean);
   }
 
   /**
-   * Validates an article.
+   * Validates whether an article contains enough usable information.
+   *
+   * An article must provide:
+   * - A valid identifier.
+   * - A non-empty title.
+   * - A public URL.
+   * - Sufficient title and description content.
+   * - No configured blocked-word occurrence.
+   *
+   * @param article DEV.to article.
+   * @returns True when the article is valid for relevance evaluation.
    */
   private isValidArticle(article: DevToArticle): boolean {
     const title = this.cleanPlainText(article.title);
@@ -206,18 +310,40 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Calculates article relevance.
+   * Calculates the article relevance score.
+   *
+   * Relevance is evaluated using:
+   * - Article title.
+   * - Article description.
+   * - DEV.to source tags.
+   * - Domain keywords.
+   * - User-provided keywords.
+   * - Problem-related vocabulary.
+   * - Reactions, comments, and publication date.
+   *
+   * An exact source-tag match receives an additional bonus because the
+   * DEV.to platform itself classified the article under that tag.
+   *
+   * @param article DEV.to article.
+   * @param input Collection request input.
+   * @returns Calculated article relevance score.
    */
   private calculateArticleRelevanceScore(
     article: DevToArticle,
     input: CollectorInput,
   ): number {
-    return RelevanceScoreUtil.scoreText({
+    const articleTags = this.extractArticleTags(article);
+
+    const relevanceTerms = this.buildRelevanceTerms(input);
+
+    const baseScore = RelevanceScoreUtil.scoreText({
       title: this.cleanPlainText(article.title),
 
-      body: this.cleanPlainText(article.description),
+      body: [this.cleanPlainText(article.description), ...articleTags]
+        .filter(Boolean)
+        .join(' '),
 
-      domainTerms: this.getDomainKeywords(input),
+      domainTerms: relevanceTerms,
 
       problemTerms: this.getProblemWords(),
 
@@ -225,14 +351,25 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
 
       replies: article.comments_count ?? 0,
 
-      publishedAt: article.published_at
-        ? new Date(article.published_at)
-        : undefined,
+      publishedAt: this.parseOptionalDate(article.published_at),
     });
+
+    const hasExactTagMatch = articleTags.some((tag) =>
+      relevanceTerms.includes(tag),
+    );
+
+    return baseScore + (hasExactTagMatch ? this.exactTagMatchBonus : 0);
   }
 
   /**
-   * Maps an article to CollectorPost.
+   * Maps a DEV.to article into the normalized CollectorPost contract.
+   *
+   * Source tags are retained in the transient collector result so the
+   * centralized data-collection filter can use the same relevance evidence.
+   *
+   * @param article DEV.to article.
+   * @param input Collection request input.
+   * @returns Normalized collector post.
    */
   private async mapArticleToCollectorPost(
     article: DevToArticle,
@@ -257,22 +394,68 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       city: input.city,
       region: input.region,
 
+      /*
+       * This value currently represents the requested collection language.
+       * It is not automatic content-language detection.
+       */
       languageCode: this.resolveStoredLanguageCode(input.language),
 
       likesCount: article.positive_reactions_count ?? 0,
 
       repliesCount: article.comments_count ?? comments.length,
 
-      publishedAt: article.published_at
-        ? new Date(article.published_at)
-        : undefined,
+      publishedAt: this.parseOptionalDate(article.published_at),
+
+      tags: this.extractArticleTags(article),
 
       comments,
     };
   }
 
   /**
-   * Collects public article comments.
+   * Extracts normalized source tags returned by the DEV.to API.
+   *
+   * The API may return:
+   * - `tag_list` as a string array.
+   * - `tag_list` as a comma-separated string.
+   * - `tags` as a fallback comma-separated string.
+   *
+   * @param article DEV.to article.
+   * @returns Unique normalized article tags.
+   */
+  private extractArticleTags(article: DevToArticle): string[] {
+    if (Array.isArray(article.tag_list)) {
+      return this.unique(
+        article.tag_list
+          .map((tag) => this.cleanNormalizedText(tag))
+          .filter(Boolean),
+      );
+    }
+
+    const rawTags =
+      typeof article.tag_list === 'string' ? article.tag_list : article.tags;
+
+    if (!rawTags) {
+      return [];
+    }
+
+    return this.unique(
+      rawTags
+        .split(',')
+        .map((tag) => this.cleanNormalizedText(tag))
+        .filter(Boolean),
+    );
+  }
+
+  /**
+   * Collects public comments associated with one DEV.to article.
+   *
+   * Comment failure does not fail the complete article collection.
+   * Instead, the failure is logged and the article is returned without
+   * comments.
+   *
+   * @param article DEV.to article.
+   * @returns Normalized useful comments.
    */
   private async collectArticleComments(
     article: DevToArticle,
@@ -310,9 +493,11 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
       return (comments ?? [])
         .filter((comment) => this.isUsefulComment(comment))
         .slice(0, this.maxSavedComments)
-        .map(
-          (comment): CollectorComment => ({
-            externalId: comment.id_code ?? comment.id?.toString() ?? '',
+        .map((comment): CollectorComment => {
+          const externalId = comment.id_code ?? comment.id?.toString() ?? '';
+
+          return {
+            externalId,
 
             content: this.cleanPlainText(
               comment.body_html ?? comment.body_markdown,
@@ -322,14 +507,12 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
 
             likesCount: 0,
 
-            publishedAt: comment.created_at
-              ? new Date(comment.created_at)
-              : undefined,
-          }),
-        );
+            publishedAt: this.parseOptionalDate(comment.created_at),
+          };
+        });
     } catch (error: unknown) {
       this.logger.warn(
-        `DEV.to comments collection failed for article ${article.id}`,
+        `DEV.to comments collection failed for article ${article.id}.`,
         this.getErrorMessage(error),
       );
 
@@ -338,7 +521,15 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Filters low-value comments.
+   * Determines whether a DEV.to comment contains meaningful content.
+   *
+   * A useful comment must:
+   * - Have a valid external identifier.
+   * - Contain enough normalized text.
+   * - Not contain configured blocked words.
+   *
+   * @param comment DEV.to comment.
+   * @returns True when the comment is suitable for collection.
    */
   private isUsefulComment(comment: DevToComment): boolean {
     const content = this.cleanNormalizedText(
@@ -357,21 +548,47 @@ export class DevToCollector extends BaseCollector implements SocialCollector {
   }
 
   /**
-   * Reads DEV.to blocked words.
+   * Converts an optional date string into a valid Date value.
+   *
+   * Invalid or missing values are returned as undefined to avoid
+   * persisting invalid date objects.
+   *
+   * @param value Optional external date string.
+   * @returns Parsed date or undefined.
+   */
+  private parseOptionalDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const parsedDate = new Date(value);
+
+    return Number.isNaN(parsedDate.getTime()) ? undefined : parsedDate;
+  }
+
+  /**
+   * Reads DEV.to-specific blocked words from configuration.
+   *
+   * @returns Configured blocked words.
    */
   protected getBlockedWords(): string[] {
     return super.getBlockedWords('DEV_TO_BLOCKED_WORDS');
   }
 
   /**
-   * Builds API headers.
+   * Builds standard JSON headers for DEV.to requests.
+   *
+   * @returns HTTP request headers.
    */
   private buildHeaders(): Record<string, string> {
     return CollectorHeaderUtil.json();
   }
 
   /**
-   * Extracts a safe error message.
+   * Converts an unknown caught value into a safe log message.
+   *
+   * @param error Unknown caught value.
+   * @returns Safe error message.
    */
   private getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);

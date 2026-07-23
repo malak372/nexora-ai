@@ -72,9 +72,7 @@ export class TextCleaningService {
    * @param texts Collection of raw texts.
    * @returns Cleaned text results.
    */
-  cleanMany(
-    texts: readonly string[],
-  ): CleanTextResult[] {
+  cleanMany(texts: readonly string[]): CleanTextResult[] {
     return texts.map((text) => this.clean(text));
   }
 
@@ -84,9 +82,7 @@ export class TextCleaningService {
    * @param texts Cleaned text results.
    * @returns Unique cleaned texts.
    */
-  removeDuplicates(
-    texts: readonly CleanTextResult[],
-  ): CleanTextResult[] {
+  removeDuplicates(texts: readonly CleanTextResult[]): CleanTextResult[] {
     const seen = new Set<string>();
 
     return texts.filter((text) => {

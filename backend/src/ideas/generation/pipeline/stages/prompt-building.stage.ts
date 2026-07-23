@@ -38,6 +38,7 @@ import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
  *
  * Persisting PromptHistory before provider execution preserves:
  * - Requester ownership.
+ * - Generation-run traceability.
  * - Collection-job traceability.
  * - Prompt-template version.
  * - The exact rendered prompt sent to the provider.
@@ -107,6 +108,8 @@ export class PromptBuildingStage implements IdeaGenerationStage {
           ? context.owner.guestSessionId
           : null,
 
+      generationRunId: context.runId,
+
       collectionJobId: collection.collectionJobId,
 
       ideaId: null,
@@ -165,6 +168,14 @@ export class PromptBuildingStage implements IdeaGenerationStage {
    * @param context Current generation context.
    */
   private validateContext(context: IdeaGenerationContext): void {
+    if (!context.runId.trim()) {
+      throw new BadRequestException({
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
+
+        message: 'Generation run ID is required before prompt building.',
+      });
+    }
+
     if (!context.policy) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,

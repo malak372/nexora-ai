@@ -90,7 +90,7 @@ export class IntelligentAnalysisService {
     private readonly analysisOutputBuilderService: AnalysisOutputBuilderService,
     private readonly aiEnhancementService: AiEnhancementService,
     private readonly nlpPersistenceService: NlpPersistenceService,
-  ) { }
+  ) {}
 
   /**
    * Runs the complete intelligent NLP analysis for one collection job.
@@ -112,6 +112,7 @@ export class IntelligentAnalysisService {
     const preprocessingOutput = this.textPreprocessingService.process(
       inputContext.inputs,
       inputContext.domain.keywords,
+      inputContext.language,
     );
 
     const lexiconOutput = await this.lexiconAnalysisService.analyze(
@@ -123,8 +124,7 @@ export class IntelligentAnalysisService {
       lexiconOutput.analyzedTexts,
     );
 
-    const keywords =
-      this.keywordExtractionService.extract(analyzedTexts);
+    const keywords = this.keywordExtractionService.extract(analyzedTexts);
 
     const dominantLanguage =
       this.analysisStatisticsService.detectDominantLanguage(analyzedTexts);
@@ -134,11 +134,9 @@ export class IntelligentAnalysisService {
       dominantLanguage,
     );
 
-    const recurringProblems =
-      this.problemInsightService.extract(analyzedTexts);
+    const recurringProblems = this.problemInsightService.extract(analyzedTexts);
 
-    const extractedNeeds =
-      this.needExtractionService.extract(analyzedTexts);
+    const extractedNeeds = this.needExtractionService.extract(analyzedTexts);
 
     const featureRequests =
       this.featureRequestExtractionService.extract(analyzedTexts);
@@ -198,12 +196,11 @@ export class IntelligentAnalysisService {
       aiUsed: false,
     };
 
-    const complexityMetrics =
-      this.textComplexityAnalysisService.analyze({
-        analyzedTexts: ruleBasedOutput.analyzedTexts,
-        topics: ruleBasedOutput.topics,
-        language: dominantLanguage,
-      });
+    const complexityMetrics = this.textComplexityAnalysisService.analyze({
+      analyzedTexts: ruleBasedOutput.analyzedTexts,
+      topics: ruleBasedOutput.topics,
+      language: dominantLanguage,
+    });
 
     const decision = this.analysisDecisionService.decide({
       totalAnalyzedTexts: ruleBasedOutput.totalTextsAnalyzed,
@@ -214,9 +211,7 @@ export class IntelligentAnalysisService {
     const finalOutput = await this.resolveFinalOutput(
       ruleBasedOutput,
       decision.action,
-      decision.reasons.map(
-        (reason) => `${reason.code}: ${reason.message}`,
-      ),
+      decision.reasons.map((reason) => `${reason.code}: ${reason.message}`),
       {
         averageTextLength: complexityMetrics.averageTextLength,
         negationRatio: complexityMetrics.negationRatio,

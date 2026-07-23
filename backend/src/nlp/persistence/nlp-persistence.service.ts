@@ -33,7 +33,7 @@ import type { PersistAnalysisCommand } from './types/persist-analysis.command';
 export class NlpPersistenceService {
   private readonly logger = new Logger(NlpPersistenceService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Creates or updates the NLP analysis associated with a collection job.
@@ -167,9 +167,7 @@ export class NlpPersistenceService {
     try {
       return JSON.parse(serializedValue) as Prisma.InputJsonValue;
     } catch {
-      throw new BadRequestException(
-        'NLP analysis contains invalid JSON data.',
-      );
+      throw new BadRequestException('NLP analysis contains invalid JSON data.');
     }
   }
 
@@ -237,10 +235,7 @@ export class NlpPersistenceService {
    * @param collectionJobId Collection job identifier.
    * @param error Persistence error.
    */
-  private logPersistenceError(
-    collectionJobId: string,
-    error: unknown,
-  ): void {
+  private logPersistenceError(collectionJobId: string, error: unknown): void {
     const message =
       error instanceof Error ? error.message : 'Unknown persistence error.';
 

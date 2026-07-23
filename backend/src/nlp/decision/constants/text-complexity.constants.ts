@@ -122,35 +122,14 @@ export const NEGATION_SIGNALS_BY_LANGUAGE = {
     ['بدون'],
   ],
 
-  [LanguageCode.FR]: [
-    ['pas'],
-    ['ne'],
-    ['jamais'],
-    ['aucun'],
-  ],
+  [LanguageCode.FR]: [['pas'], ['ne'], ['jamais'], ['aucun']],
 
-  [LanguageCode.ES]: [
-    ['no'],
-    ['sin'],
-    ['nunca'],
-  ],
+  [LanguageCode.ES]: [['no'], ['sin'], ['nunca']],
 
-  [LanguageCode.DE]: [
-    ['nicht'],
-    ['kein'],
-    ['keine'],
-    ['nie'],
-  ],
+  [LanguageCode.DE]: [['nicht'], ['kein'], ['keine'], ['nie']],
 
-  [LanguageCode.TR]: [
-    ['değil'],
-    ['yok'],
-    ['hayır'],
-  ],
-} as const satisfies Record<
-  SpecificLanguageCode,
-  LinguisticSignalCollection
->;
+  [LanguageCode.TR]: [['değil'], ['yok'], ['hayır']],
+} as const satisfies Record<SpecificLanguageCode, LinguisticSignalCollection>;
 
 /**
  * Contrast expressions grouped by their supported language.
@@ -180,36 +159,14 @@ export const CONTRAST_SIGNALS_BY_LANGUAGE = {
     ['إلا', 'أن'],
   ],
 
-  [LanguageCode.FR]: [
-    ['mais'],
-    ['cependant'],
-    ['pourtant'],
-    ['bien', 'que'],
-  ],
+  [LanguageCode.FR]: [['mais'], ['cependant'], ['pourtant'], ['bien', 'que']],
 
-  [LanguageCode.ES]: [
-    ['pero'],
-    ['aunque'],
-    ['sin', 'embargo'],
-  ],
+  [LanguageCode.ES]: [['pero'], ['aunque'], ['sin', 'embargo']],
 
-  [LanguageCode.DE]: [
-    ['aber'],
-    ['jedoch'],
-    ['obwohl'],
-    ['trotzdem'],
-  ],
+  [LanguageCode.DE]: [['aber'], ['jedoch'], ['obwohl'], ['trotzdem']],
 
-  [LanguageCode.TR]: [
-    ['ama'],
-    ['ancak'],
-    ['fakat'],
-    ['rağmen'],
-  ],
-} as const satisfies Record<
-  SpecificLanguageCode,
-  LinguisticSignalCollection
->;
+  [LanguageCode.TR]: [['ama'], ['ancak'], ['fakat'], ['rağmen']],
+} as const satisfies Record<SpecificLanguageCode, LinguisticSignalCollection>;
 
 /**
  * All configured negation expressions.
@@ -217,8 +174,9 @@ export const CONTRAST_SIGNALS_BY_LANGUAGE = {
  * This collection is used when the requested analysis language is ANY.
  *
  */
-export const ALL_NEGATION_SIGNALS: LinguisticSignalCollection =
-  Object.values(NEGATION_SIGNALS_BY_LANGUAGE).flat();
+export const ALL_NEGATION_SIGNALS: LinguisticSignalCollection = Object.values(
+  NEGATION_SIGNALS_BY_LANGUAGE,
+).flat();
 
 /**
  * All configured contrast expressions.
@@ -226,5 +184,6 @@ export const ALL_NEGATION_SIGNALS: LinguisticSignalCollection =
  * This collection is used when the requested analysis language is ANY.
  *
  */
-export const ALL_CONTRAST_SIGNALS: LinguisticSignalCollection =
-  Object.values(CONTRAST_SIGNALS_BY_LANGUAGE).flat();
+export const ALL_CONTRAST_SIGNALS: LinguisticSignalCollection = Object.values(
+  CONTRAST_SIGNALS_BY_LANGUAGE,
+).flat();

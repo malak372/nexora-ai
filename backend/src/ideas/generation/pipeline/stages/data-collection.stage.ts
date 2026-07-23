@@ -20,7 +20,7 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 
 /**
  * Verifies that the collection-job resolution stage produced
- * sufficient community data for idea generation.
+ * sufficient analyzed community data for idea generation.
  *
  * The actual collection operation is currently coordinated by
  * CollectionJobResolverService during the
@@ -29,8 +29,8 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  * Therefore, this stage acts as an explicit pipeline checkpoint
  * that:
  * - Confirms that a collection job was resolved.
- * - Confirms that the collection job contains collected texts.
- * - Prevents prompt building from continuing with empty data.
+ * - Confirms that the resolved NLP result contains analyzed texts.
+ * - Prevents prompt building from continuing with empty analyzed data.
  * - Preserves a dedicated DATA_COLLECTION stage in run progress
  *   and stage history.
  *
@@ -89,21 +89,21 @@ export class DataCollectionStage implements IdeaGenerationStage {
 
     const totalPosts = this.normalizeCount(
       collection.totalPosts,
-      'Collected posts count',
+      'Analyzed posts count',
     );
 
     const totalComments = this.normalizeCount(
       collection.totalComments,
-      'Collected comments count',
+      'Analyzed comments count',
     );
 
-    const totalCollectedTexts = totalPosts + totalComments;
+    const totalAnalyzedTexts = totalPosts + totalComments;
 
-    if (totalCollectedTexts < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
+    if (totalAnalyzedTexts < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_COLLECTED_DATA,
 
-        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} collected text record is required before idea generation.`,
+        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record is required before idea generation.`,
       });
     }
 
@@ -120,7 +120,7 @@ export class DataCollectionStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
 
-      resultPreview: `Collection data verified successfully: ${totalPosts} post(s) and ${totalComments} comment(s).`,
+      resultPreview: `Collection data verified successfully: ${totalPosts} analyzed post(s) and ${totalComments} analyzed comment(s) are available for idea generation.`,
 
       metadata: {
         collectionJobId: collection.collectionJobId,
@@ -131,7 +131,7 @@ export class DataCollectionStage implements IdeaGenerationStage {
 
         totalComments,
 
-        totalCollectedTexts,
+        totalAnalyzedTexts,
       },
     };
   }
