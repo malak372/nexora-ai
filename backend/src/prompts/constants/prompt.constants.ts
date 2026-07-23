@@ -57,3 +57,49 @@ export const ARABIC_TOKEN_RATIO = 2.5;
  * limit protects the prompt from unexpected relation growth.
  */
 export const MAX_PROMPT_DATA_SOURCES = 50;
+
+/**
+ * Maximum character budget allocated to each rendered NLP section.
+ *
+ * These limits keep the final provider prompt below
+ * MAX_RENDERED_PROMPT_LENGTH without discarding the complete NLP
+ * analysis stored in the database. Only the provider-facing
+ * representation is compacted.
+ */
+export const PROMPT_SECTION_CHARACTER_BUDGETS = {
+  sentimentStats: 2_500,
+  keywords: 3_000,
+  topics: 4_500,
+  recurringProblems: 7_000,
+  extractedNeeds: 7_000,
+  featureRequests: 7_000,
+  opportunities: 6_000,
+  insights: 5_000,
+  dataQuality: 3_000,
+  samplePosts: 5_000,
+  sampleComments: 5_000,
+} as const;
+
+/**
+ * Maximum number of array items retained in one provider-facing NLP
+ * section before lower-priority trailing entries are omitted.
+ */
+export const MAX_PROMPT_JSON_ARRAY_ITEMS = 25;
+
+/**
+ * Maximum nesting depth retained while compacting arbitrary NLP JSON
+ * values for provider input.
+ */
+export const MAX_PROMPT_JSON_DEPTH = 6;
+
+/**
+ * Maximum length retained for one string value inside compacted NLP
+ * prompt context.
+ */
+export const MAX_PROMPT_JSON_STRING_LENGTH = 1_200;
+
+/**
+ * Marker appended when provider-facing context is shortened.
+ */
+export const PROMPT_TRUNCATION_MARKER =
+  '\n...[additional persisted context omitted to respect prompt limits]';

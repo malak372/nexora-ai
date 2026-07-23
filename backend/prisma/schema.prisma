@@ -377,6 +377,7 @@ model CollectionJobSource {
 
 enum PromptType {
   IDEA_GENERATION
+  IDEA_EVALUATION
   IDEA_UNLOCK
   CHAT_RESPONSE
   NLP_ANALYSIS
@@ -1382,6 +1383,24 @@ model IdeaGenerationCandidate {
   completenessScore     Decimal? @map("completeness_score") @db.Decimal(5, 2)
   originalityScore      Decimal? @map("originality_score") @db.Decimal(5, 2)
 
+  aiJudgeScore               Decimal? @map("ai_judge_score") @db.Decimal(5, 2)
+  localRelevanceScore        Decimal? @map("local_relevance_score") @db.Decimal(5, 2)
+  problemImportanceScore     Decimal? @map("problem_importance_score") @db.Decimal(5, 2)
+  regulatoryFeasibilityScore Decimal? @map("regulatory_feasibility_score") @db.Decimal(5, 2)
+  technicalFeasibilityScore  Decimal? @map("technical_feasibility_score") @db.Decimal(5, 2)
+  marketPotentialScore       Decimal? @map("market_potential_score") @db.Decimal(5, 2)
+  implementationClarityScore Decimal? @map("implementation_clarity_score") @db.Decimal(5, 2)
+  aiJudgeInnovationScore Decimal? @map("ai_judge_innovation_score") @db.Decimal(5, 2)
+
+  judgeStrengths Json?   @map("judge_strengths")
+  judgeRisks     Json?   @map("judge_risks")
+  judgeReason    String? @map("judge_reason")
+
+
+  judgeConfidence Decimal? @map("judge_confidence") @db.Decimal(5, 2)
+
+  requiresLegalVerification Boolean? @map("requires_legal_verification")
+
   inputTokens    Int? @map("input_tokens")
   outputTokens   Int? @map("output_tokens")
   responseTimeMs Int? @map("response_time_ms")
@@ -1401,7 +1420,9 @@ model IdeaGenerationCandidate {
   @@index([aiModelId])
   @@index([providerKey, apiModelId])
   @@index([overallScore])
+  @@index([aiJudgeScore])
   @@index([createdAt])
+
   @@map("idea_generation_candidates")
 }
 

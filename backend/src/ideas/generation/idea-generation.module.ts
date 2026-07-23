@@ -35,6 +35,8 @@ import {
 import { CollectionJobResolverService } from './services/collection-job-resolver.service';
 import { GuestIdeaSessionService } from './services/guest-idea-session.service';
 import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.service';
+import { IdeaCandidateJudgePromptService } from './services/idea-candidate-judge-prompt.service';
+import { IdeaCandidateJudgeService } from './services/idea-candidate-judge.service';
 import { IdeaDuplicateDetectionService } from './services/idea-duplicate-detection.service';
 import { IdeaGenerationBenchmarkService } from './services/idea-generation-benchmark.service';
 import { IdeaGenerationLockService } from './services/idea-generation-lock.service';
@@ -57,7 +59,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
  * executable stages, entitlement handling, AI output parsing, duplicate
  * detection, transactional persistence, and generation locking.
  *
- * @author Malak
+ * @author malak
  */
 @Module({
   imports: [
@@ -93,6 +95,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
+    IdeaCandidateJudgePromptService,
+    IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
 
     RequestValidationStage,
@@ -185,6 +189,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
+    IdeaCandidateJudgePromptService,
+    IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
   ],
 })

@@ -13,7 +13,11 @@ import type { IntelligentAnalysisOutput } from '../../../nlp/pipeline/types/inte
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
-import { REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS } from '../constants/idea-generation.constants';
+import {
+  MIN_REUSABLE_COLLECTION_POSTS,
+  MIN_REUSABLE_COLLECTION_TEXTS,
+  REUSABLE_COLLECTION_JOB_MAX_AGE_DAYS,
+} from '../constants/idea-generation.constants';
 
 /**
  * Collection-job record loaded by the resolver.
@@ -338,13 +342,26 @@ export class CollectionJobResolverService {
     });
 
     return (
-      candidates.find(
-        (candidate) =>
+      candidates.find((candidate) => {
+        const analysis = candidate.nlpAnalysis;
+
+        if (!analysis) {
+          return false;
+        }
+
+        const hasEnoughReusableData =
+          analysis.totalPostsAnalyzed >= MIN_REUSABLE_COLLECTION_POSTS &&
+          analysis.totalTextsAnalyzed >= MIN_REUSABLE_COLLECTION_TEXTS;
+
+        return (
+          hasEnoughReusableData &&
           this.sameStringSet(
             candidate.sources.map((source) => source.dataSource.key),
             input.dataSourceKeys,
-          ) && this.sameOptionalStringSet(candidate.keywords, input.keywords),
-      ) ?? null
+          ) &&
+          this.sameOptionalStringSet(candidate.keywords, input.keywords)
+        );
+      }) ?? null
     );
   }
 
