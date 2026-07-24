@@ -6,6 +6,7 @@ import {
 
 import {
   IDEA_GENERATION_ERROR_CODES,
+  IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
   IDEA_TITLE_SIMILARITY_THRESHOLD,
 } from '../../constants/idea-generation.constants';
 
@@ -24,18 +25,15 @@ import { IdeaDuplicateDetectionService } from '../../services/idea-duplicate-det
 
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Checks whether the generated idea title is highly similar to an
- * existing idea owned by the same requester in the same domain.
+ * existing idea in the same domain and geographic area.
  *
  * Responsibilities:
  * - Verify that validated core idea output exists.
- * - Scope duplicate detection to the registered user when one is
- *   present.
- * - Compare the generated title with recent ideas in the selected
- *   domain.
+ * - Scope duplicate detection to the selected domain and collection area.
+ * - Compare the generated idea with recent ideas from all users in that area.
  * - Stop the pipeline when the configured similarity threshold is
  *   reached.
  * - Return diagnostic similarity metadata.
@@ -80,15 +78,10 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
-    const userId =
-      context.owner.type === IDEA_OWNER_TYPES.USER
-        ? context.owner.userId
-        : undefined;
-
     const result = await this.duplicateDetectionService.check(
-      userId,
       context.domainId,
-      context.coreIdea!.title,
+      context.collection!.collectionJobId,
+      context.coreIdea!,
     );
 
     if (result.isDuplicate) {
@@ -103,9 +96,15 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
 
           matchedTitle: result.matchedIdea?.title ?? null,
 
-          similarity: result.highestSimilarity,
+          highestSimilarity: result.highestSimilarity,
 
-          threshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
+          titleSimilarity: result.titleSimilarity,
+
+          semanticSimilarity: result.semanticSimilarity,
+
+          titleThreshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
+
+          semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
         },
       });
     }
@@ -120,9 +119,15 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
 
         highestSimilarity: result.highestSimilarity,
 
+        titleSimilarity: result.titleSimilarity,
+
+        semanticSimilarity: result.semanticSimilarity,
+
         matchedIdeaId: result.matchedIdea?.id ?? null,
 
-        threshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
+        titleThreshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
+
+        semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
     };
   }

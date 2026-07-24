@@ -1126,6 +1126,10 @@ export class AiExecutionService {
         costEstimate,
 
         errorMessage: `[${error.code}] ${error.message}`,
+
+        errorCode: error.code,
+
+        isRetryable: error.retryable,
       }),
     );
   }
@@ -1174,6 +1178,10 @@ export class AiExecutionService {
         responseTimeMs,
 
         errorMessage: `[${error.code}] ${error.message}`,
+
+        errorCode: error.code,
+
+        isRetryable: error.retryable,
       }),
     );
   }

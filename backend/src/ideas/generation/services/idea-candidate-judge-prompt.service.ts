@@ -80,7 +80,7 @@ export class IdeaCandidateJudgePromptService {
       scoringInstructions: {
         scoreRange: '0-100',
         overallScore:
-          'Calculate overallScore using exactly the supplied criterion weights. This AI-judge score alone determines ranking; do not combine it with any external score.',
+          'Calculate overallScore using exactly the supplied criterion weights. The application may combine this score with an independent deterministic quality score after your evaluation.',
         localRelevance:
           'Assess whether the solution is realistically deployable in the specified country, city, and region without treating location names as evidence. Reward meaningful local adaptation and penalize decorative localization or invented local conditions.',
         problemImportance:
@@ -105,7 +105,7 @@ export class IdeaCandidateJudgePromptService {
         preserveCandidateIdsExactly: true,
         doNotMergeCandidates: true,
         doNotCreateNewCandidate: true,
-        doNotUseExternalScores: true,
+        doNotUseExternalScoresInsideJudge: true,
         locationIsContextNotEvidence: true,
         keywordsAreSearchIntentNotEvidence: true,
         requestedFeaturesDoNotProveRootCauses: true,
@@ -138,7 +138,13 @@ export class IdeaCandidateJudgePromptService {
         candidateId: candidate.candidateId,
         idea: {
           coreIdea: candidate.parsedOutput.coreIdea,
-          advancedOutputs: candidate.parsedOutput.advancedOutputs,
+          advancedOutputSummaries: candidate.parsedOutput.advancedOutputs.map(
+            (output) => ({
+              outputKey: output.outputKey,
+              title: output.title,
+              content: output.content.slice(0, 1_500),
+            }),
+          ),
         },
       })),
     };

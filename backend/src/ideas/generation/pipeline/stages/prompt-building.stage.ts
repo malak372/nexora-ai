@@ -95,6 +95,13 @@ export class PromptBuildingStage implements IdeaGenerationStage {
       collectionJobId: collection.collectionJobId,
 
       generationType: context.generationType,
+
+      requesterUserId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
+
+      opportunityRanking: context.opportunityRanking ?? undefined,
     });
 
     const promptHistory = await this.promptHistoryService.savePrompt({
@@ -199,6 +206,15 @@ export class PromptBuildingStage implements IdeaGenerationStage {
         code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
         message: 'NLP analysis is required before prompt building.',
+      });
+    }
+
+    if (!context.opportunityRanking) {
+      throw new BadRequestException({
+        code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
+
+        message:
+          'Opportunity ranking must complete before prompt building.',
       });
     }
 

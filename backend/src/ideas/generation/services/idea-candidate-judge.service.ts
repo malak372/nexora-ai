@@ -52,7 +52,7 @@ export class IdeaCandidateJudgeService {
   async evaluate(
     context: IdeaGenerationContext,
     candidates: readonly IdeaJudgeCandidateInput[],
-  ): Promise<IdeaJudgeEvaluation> {
+  ): Promise<IdeaJudgeEvaluation | null> {
     if (candidates.length < 2) {
       throw new ServiceUnavailableException(
         'At least two successful candidates are required for AI comparison.',
@@ -94,11 +94,11 @@ export class IdeaCandidateJudgeService {
           ? error.message
           : 'Unknown comparative judge failure.';
 
-      this.logger.error(`AI candidate judge failed: ${message}`);
-
-      throw new ServiceUnavailableException(
-        'The AI judge could not compare all successful idea candidates.',
+      this.logger.warn(
+        `AI candidate judge was unavailable; deterministic ranking will be used. Reason: ${message}`,
       );
+
+      return null;
     }
   }
 

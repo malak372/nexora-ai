@@ -27,7 +27,7 @@ import { AI_CHAT_SESSION_SELECT } from '../constants/ai-chat-selects.constants';
 import { CreateChatSessionDto } from '../dto/create-chat-session.dto';
 import {
     type AiChatSessionSortField,
-    type AiChatSessionSortOrder,
+    type AiChatSortOrder,
     GetChatSessionsQueryDto,
 } from '../dto/get-chat-sessions-query.dto';
 import { UpdateChatSessionDto } from '../dto/update-chat-session.dto';
@@ -276,7 +276,7 @@ export class AiChatService {
      */
     private buildOrderBy(
         sortBy: AiChatSessionSortField,
-        sortOrder: AiChatSessionSortOrder,
+        sortOrder: AiChatSortOrder,
     ): Prisma.ChatSessionOrderByWithRelationInput {
         const orderByMap: Record<
             AiChatSessionSortField,
