@@ -119,27 +119,27 @@ export const AI_CHAT_DEFAULT_SESSION_TITLE = 'New project discussion';
  * Stable Socket.IO events emitted by the client and handled by the backend.
  */
 export const AI_CHAT_CLIENT_EVENTS = Object.freeze({
-    JOIN_SESSION: 'chat:join-session',
-    LEAVE_SESSION: 'chat:leave-session',
-    SEND_MESSAGE: 'chat:send-message',
-    CANCEL_MESSAGE: 'chat:cancel-message',
+  JOIN_SESSION: 'chat:join-session',
+  LEAVE_SESSION: 'chat:leave-session',
+  SEND_MESSAGE: 'chat:send-message',
+  CANCEL_MESSAGE: 'chat:cancel-message',
 } as const);
 
 /**
  * Stable Socket.IO events emitted by the backend and handled by the client.
  */
 export const AI_CHAT_SERVER_EVENTS = Object.freeze({
-    SESSION_JOINED: 'chat:session-joined',
-    SESSION_LEFT: 'chat:session-left',
+  SESSION_JOINED: 'chat:session-joined',
+  SESSION_LEFT: 'chat:session-left',
 
-    MESSAGE_ACCEPTED: 'chat:message-accepted',
-    MESSAGE_STREAM_STARTED: 'chat:message-stream-started',
-    MESSAGE_CHUNK: 'chat:message-chunk',
-    MESSAGE_COMPLETED: 'chat:message-completed',
-    MESSAGE_FAILED: 'chat:message-failed',
-    MESSAGE_CANCELLED: 'chat:message-cancelled',
+  MESSAGE_ACCEPTED: 'chat:message-accepted',
+  MESSAGE_STREAM_STARTED: 'chat:message-stream-started',
+  MESSAGE_CHUNK: 'chat:message-chunk',
+  MESSAGE_COMPLETED: 'chat:message-completed',
+  MESSAGE_FAILED: 'chat:message-failed',
+  MESSAGE_CANCELLED: 'chat:message-cancelled',
 
-    ERROR: 'chat:error',
+  ERROR: 'chat:error',
 } as const);
 
 /**
@@ -154,9 +154,9 @@ const AI_CHAT_ERROR_CODE_PREFIX = 'AI_CHAT';
  * @returns Stable error code prefixed with `AI_CHAT_`.
  */
 function createAiChatErrorCode<const TCode extends string>(
-    code: TCode,
+  code: TCode,
 ): `AI_CHAT_${TCode}` {
-    return `${AI_CHAT_ERROR_CODE_PREFIX}_${code}`;
+  return `${AI_CHAT_ERROR_CODE_PREFIX}_${code}`;
 }
 
 /**
@@ -166,60 +166,52 @@ function createAiChatErrorCode<const TCode extends string>(
  * relying on human-readable messages that may change over time.
  */
 export const AI_CHAT_ERROR_CODES = Object.freeze({
-    AUTHENTICATION_REQUIRED: createAiChatErrorCode(
-        'AUTHENTICATION_REQUIRED',
-    ),
-    INVALID_ACCESS_TOKEN: createAiChatErrorCode('INVALID_ACCESS_TOKEN'),
-    USER_NOT_ALLOWED: createAiChatErrorCode('USER_NOT_ALLOWED'),
+  AUTHENTICATION_REQUIRED: createAiChatErrorCode('AUTHENTICATION_REQUIRED'),
+  INVALID_ACCESS_TOKEN: createAiChatErrorCode('INVALID_ACCESS_TOKEN'),
+  USER_NOT_ALLOWED: createAiChatErrorCode('USER_NOT_ALLOWED'),
 
-    IDEA_NOT_FOUND: createAiChatErrorCode('IDEA_NOT_FOUND'),
-    IDEA_NOT_UNLOCKED: createAiChatErrorCode('IDEA_NOT_UNLOCKED'),
-    IDEA_ACCESS_DENIED: createAiChatErrorCode('IDEA_ACCESS_DENIED'),
+  IDEA_NOT_FOUND: createAiChatErrorCode('IDEA_NOT_FOUND'),
+  IDEA_NOT_UNLOCKED: createAiChatErrorCode('IDEA_NOT_UNLOCKED'),
+  IDEA_ACCESS_DENIED: createAiChatErrorCode('IDEA_ACCESS_DENIED'),
 
-    SESSION_NOT_FOUND: createAiChatErrorCode('SESSION_NOT_FOUND'),
-    SESSION_ACCESS_DENIED: createAiChatErrorCode('SESSION_ACCESS_DENIED'),
-    SESSION_LIMIT_REACHED: createAiChatErrorCode('SESSION_LIMIT_REACHED'),
-    SESSION_DELETED: createAiChatErrorCode('SESSION_DELETED'),
-    SESSION_NOT_JOINED: createAiChatErrorCode('SESSION_NOT_JOINED'),
+  SESSION_NOT_FOUND: createAiChatErrorCode('SESSION_NOT_FOUND'),
+  SESSION_ACCESS_DENIED: createAiChatErrorCode('SESSION_ACCESS_DENIED'),
+  SESSION_LIMIT_REACHED: createAiChatErrorCode('SESSION_LIMIT_REACHED'),
+  SESSION_DELETED: createAiChatErrorCode('SESSION_DELETED'),
+  SESSION_NOT_JOINED: createAiChatErrorCode('SESSION_NOT_JOINED'),
 
-    MESSAGE_NOT_FOUND: createAiChatErrorCode('MESSAGE_NOT_FOUND'),
-    MESSAGE_ALREADY_PROCESSING: createAiChatErrorCode(
-        'MESSAGE_ALREADY_PROCESSING',
-    ),
-    MESSAGE_ALREADY_COMPLETED: createAiChatErrorCode(
-        'MESSAGE_ALREADY_COMPLETED',
-    ),
-    MESSAGE_ALREADY_CANCELLED: createAiChatErrorCode(
-        'MESSAGE_ALREADY_CANCELLED',
-    ),
-    MESSAGE_GENERATION_FAILED: createAiChatErrorCode(
-        'MESSAGE_GENERATION_FAILED',
-    ),
-    MESSAGE_GENERATION_TIMEOUT: createAiChatErrorCode(
-        'MESSAGE_GENERATION_TIMEOUT',
-    ),
+  MESSAGE_NOT_FOUND: createAiChatErrorCode('MESSAGE_NOT_FOUND'),
+  MESSAGE_ALREADY_PROCESSING: createAiChatErrorCode(
+    'MESSAGE_ALREADY_PROCESSING',
+  ),
+  MESSAGE_ALREADY_COMPLETED: createAiChatErrorCode('MESSAGE_ALREADY_COMPLETED'),
+  MESSAGE_ALREADY_CANCELLED: createAiChatErrorCode('MESSAGE_ALREADY_CANCELLED'),
+  MESSAGE_GENERATION_FAILED: createAiChatErrorCode('MESSAGE_GENERATION_FAILED'),
+  MESSAGE_GENERATION_TIMEOUT: createAiChatErrorCode(
+    'MESSAGE_GENERATION_TIMEOUT',
+  ),
 
-    INVALID_PAYLOAD: createAiChatErrorCode('INVALID_PAYLOAD'),
-    INTERNAL_ERROR: createAiChatErrorCode('INTERNAL_ERROR'),
+  INVALID_PAYLOAD: createAiChatErrorCode('INVALID_PAYLOAD'),
+  INTERNAL_ERROR: createAiChatErrorCode('INTERNAL_ERROR'),
 } as const);
 
 /**
  * Union of all events accepted from connected AI chat clients.
  */
 export type AiChatClientEvent =
-    (typeof AI_CHAT_CLIENT_EVENTS)[keyof typeof AI_CHAT_CLIENT_EVENTS];
+  (typeof AI_CHAT_CLIENT_EVENTS)[keyof typeof AI_CHAT_CLIENT_EVENTS];
 
 /**
  * Union of all events emitted by the AI chat backend.
  */
 export type AiChatServerEvent =
-    (typeof AI_CHAT_SERVER_EVENTS)[keyof typeof AI_CHAT_SERVER_EVENTS];
+  (typeof AI_CHAT_SERVER_EVENTS)[keyof typeof AI_CHAT_SERVER_EVENTS];
 
 /**
  * Union of all stable AI chat error-code values.
  */
 export type AiChatErrorCode =
-    (typeof AI_CHAT_ERROR_CODES)[keyof typeof AI_CHAT_ERROR_CODES];
+  (typeof AI_CHAT_ERROR_CODES)[keyof typeof AI_CHAT_ERROR_CODES];
 
 /**
  * Builds the Socket.IO room name assigned to one chat session.
@@ -228,5 +220,5 @@ export type AiChatErrorCode =
  * @returns Stable and namespace-specific Socket.IO room name.
  */
 export function buildAiChatSessionRoom(sessionId: string): string {
-    return `${AI_CHAT_SESSION_ROOM_PREFIX}:${sessionId}`;
+  return `${AI_CHAT_SESSION_ROOM_PREFIX}:${sessionId}`;
 }

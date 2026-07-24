@@ -31,6 +31,7 @@ import {
   type AiProviderKey,
 } from '../constants/ai-provider.constants';
 
+import { AiExecutionExhaustedException } from '../errors/ai-execution-exhausted.exception';
 import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
 import { AiProviderError } from '../errors/ai-provider.error';
 
@@ -318,15 +319,17 @@ export class AiExecutionService {
 
       lastError = outcome.error;
 
-      if (!this.shouldFallback(outcome.error)) {
+      if (!this.shouldFallback(outcome.error, input)) {
         throw outcome.error;
       }
     }
 
-    throw new ServiceUnavailableException(
+    throw new AiExecutionExhaustedException(
       lastError
         ? `All configured AI models failed: ${lastError.message}`
         : 'All configured AI models failed.',
+      executionContext.operationId,
+      lastError?.code,
     );
   }
 
@@ -366,7 +369,7 @@ export class AiExecutionService {
       DEFAULT_AI_ESTIMATED_OUTPUT_TOKENS;
 
     const models = await this.modelRoutingService.resolveExecutionOrder(
-      input.strategy ?? AiRoutingStrategy.DEFAULT,
+      input.strategy ?? AiRoutingStrategy.BALANCED,
       {
         estimatedInputTokens,
         estimatedOutputTokens,
@@ -485,6 +488,7 @@ export class AiExecutionService {
     fallbackUsed: boolean,
     modelAttemptNumber: number,
     totalAttemptsForModel: number,
+    useNativeResponseSchema = true,
   ): Promise<
     | ModelExecutionSuccess
     | {
@@ -500,7 +504,11 @@ export class AiExecutionService {
       const providerResult = await this.executeProviderRequest(
         provider,
         model,
-        this.buildOriginalProviderRequest(input, model),
+        this.buildOriginalProviderRequest(
+          input,
+          model,
+          useNativeResponseSchema,
+        ),
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
@@ -597,14 +605,80 @@ export class AiExecutionService {
         Date.now() - attemptStartedAt,
       );
 
+      /*
+       * Some providers reject an otherwise valid application JSON Schema at
+       * their native structured-output boundary. Retry the same model once in
+       * JSON-only compatibility mode before moving to another model. Central
+       * parsing and AJV validation still use the complete original schema.
+       */
+      if (
+        useNativeResponseSchema &&
+        this.shouldUseJsonCompatibilityFallback(input, normalizedError)
+      ) {
+        return this.executeModelAttempt(
+          provider,
+          model,
+          input,
+          context,
+          true,
+          modelAttemptNumber,
+          totalAttemptsForModel,
+          false,
+        );
+      }
+
       const hasAnotherAttempt = modelAttemptNumber < totalAttemptsForModel;
 
       return {
         success: false,
         error: normalizedError,
-        retrySameModel: normalizedError.retryable && hasAnotherAttempt,
+
+        /*
+         * A compatibility-mode request is already the final same-model
+         * fallback. If it fails, continue with another routed model instead of
+         * repeating the provider's rejected native-schema request.
+         */
+        retrySameModel:
+          useNativeResponseSchema &&
+          hasAnotherAttempt &&
+          this.shouldRetrySameModel(model, normalizedError),
       };
     }
+  }
+
+  /**
+   * Decides whether one failed request should be repeated against the exact
+   * same model.
+   *
+   * OpenRouter free-model 429 and upstream-availability failures should move
+   * to the next interleaved benchmark model immediately. Retrying the same
+   * crowded free endpoint increases latency and can consume another request
+   * without improving availability. Network and timeout failures remain
+   * retryable according to the provider-normalized error contract.
+   */
+  private shouldRetrySameModel(
+    model: AiModel,
+    error: AiProviderError,
+  ): boolean {
+    if (!error.retryable) {
+      return false;
+    }
+
+    const isOpenRouterFreeModel =
+      model.providerKey === 'openrouter' &&
+      model.apiModelId.toLocaleLowerCase().endsWith(':free');
+
+    if (
+      isOpenRouterFreeModel &&
+      [
+        AiProviderErrorCode.RATE_LIMIT,
+        AiProviderErrorCode.PROVIDER_UNAVAILABLE,
+      ].includes(error.code)
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -613,6 +687,7 @@ export class AiExecutionService {
   private buildOriginalProviderRequest(
     input: AiExecutionInput,
     model: AiModel,
+    useNativeResponseSchema: boolean,
   ): ExecuteProviderRequestInput {
     return {
       userPrompt: input.userPrompt,
@@ -632,9 +707,13 @@ export class AiExecutionService {
        * Provider adapters that support native structured output may use
        * these values. Central validation remains mandatory.
        */
-      responseSchema: input.responseSchema,
+      responseSchema: useNativeResponseSchema
+        ? input.responseSchema
+        : undefined,
 
-      responseSchemaName: input.responseSchemaName,
+      responseSchemaName: useNativeResponseSchema
+        ? input.responseSchemaName
+        : undefined,
     };
   }
 
@@ -1339,6 +1418,15 @@ export class AiExecutionService {
     );
 
     if (
+      input.allowProviderFallbackOnInvalidPrompt !== undefined &&
+      typeof input.allowProviderFallbackOnInvalidPrompt !== 'boolean'
+    ) {
+      throw new BadRequestException(
+        'allowProviderFallbackOnInvalidPrompt must be a boolean when provided.',
+      );
+    }
+
+    if (
       input.temperature !== undefined &&
       (!Number.isFinite(input.temperature) ||
         input.temperature < 0 ||
@@ -1474,8 +1562,43 @@ export class AiExecutionService {
   /**
    * Determines whether execution may continue with another routed model.
    */
-  private shouldFallback(error: AiProviderError): boolean {
+  private shouldFallback(
+    error: AiProviderError,
+    input: AiExecutionInput,
+  ): boolean {
+    if (
+      error.code === AiProviderErrorCode.INVALID_PROMPT &&
+      input.allowProviderFallbackOnInvalidPrompt === true
+    ) {
+      return true;
+    }
+
     return !NON_FALLBACK_PROVIDER_ERROR_CODES.has(error.code);
+  }
+
+  /**
+   * Determines whether a failed native structured-output request should be
+   * retried once without sending the schema to the provider.
+   *
+   * The complete schema remains available to the central validator, so this
+   * fallback changes only provider-side enforcement and never weakens the
+   * application's final response contract.
+   */
+  private shouldUseJsonCompatibilityFallback(
+    input: AiExecutionInput,
+    error: AiProviderError,
+  ): boolean {
+    if (
+      input.responseFormat !== AiResponseFormat.JSON ||
+      input.responseSchema === undefined
+    ) {
+      return false;
+    }
+
+    return (
+      error.code === AiProviderErrorCode.INVALID_MODEL_CONFIGURATION ||
+      error.code === AiProviderErrorCode.INVALID_PROMPT
+    );
   }
 
   /**

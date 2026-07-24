@@ -14,35 +14,34 @@ import { Transform, type TransformFnParams } from 'class-transformer';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 
 import {
-    AI_CHAT_MAX_MESSAGE_LENGTH,
-    AI_CHAT_MIN_MESSAGE_LENGTH,
+  AI_CHAT_MAX_MESSAGE_LENGTH,
+  AI_CHAT_MIN_MESSAGE_LENGTH,
 } from '../constants/ai-chat.constants';
 
 /**
  * Request payload used when sending a new chat message.
  */
 export class SendChatMessageDto {
-    /**
-     * User message delivered to the AI assistant.
-     */
-    @ApiProperty({
-        description: 'User message delivered to the AI assistant.',
-        example:
-            'Suggest a scalable database architecture for this software idea.',
-        minLength: AI_CHAT_MIN_MESSAGE_LENGTH,
-        maxLength: AI_CHAT_MAX_MESSAGE_LENGTH,
-    })
-    @Transform(({ value }: TransformFnParams): unknown => {
-        if (typeof value !== 'string') {
-            return value;
-        }
+  /**
+   * User message delivered to the AI assistant.
+   */
+  @ApiProperty({
+    description: 'User message delivered to the AI assistant.',
+    example: 'Suggest a scalable database architecture for this software idea.',
+    minLength: AI_CHAT_MIN_MESSAGE_LENGTH,
+    maxLength: AI_CHAT_MAX_MESSAGE_LENGTH,
+  })
+  @Transform(({ value }: TransformFnParams): unknown => {
+    if (typeof value !== 'string') {
+      return value;
+    }
 
-        const trimmed = value.trim();
+    const trimmed = value.trim();
 
-        return trimmed;
-    })
-    @IsString()
-    @MinLength(AI_CHAT_MIN_MESSAGE_LENGTH)
-    @MaxLength(AI_CHAT_MAX_MESSAGE_LENGTH)
-    message!: string;
+    return trimmed;
+  })
+  @IsString()
+  @MinLength(AI_CHAT_MIN_MESSAGE_LENGTH)
+  @MaxLength(AI_CHAT_MAX_MESSAGE_LENGTH)
+  message!: string;
 }

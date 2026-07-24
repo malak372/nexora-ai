@@ -1,58 +1,96 @@
 import { Injectable } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
-import {
+import type {
   WeightedKeyword,
   WeightedTopic,
 } from '../pipeline/types/intelligent-analysis.types';
-import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
+import type { TopicRule } from '../topic-rules/topic-rule.service';
+import { TopicRuleService } from '../topic-rules/topic-rule.service';
+
+const MAX_EXTRACTED_TOPICS = 12;
+const MINIMUM_TOPIC_FREQUENCY = 2;
+
+/** Stable high-level topics used by idea discovery and API responses. */
+const CANONICAL_TOPIC_DEFINITIONS: ReadonlyArray<{
+  readonly topic: string;
+  readonly patterns: readonly RegExp[];
+}> = [
+  {
+    topic: 'Authentication',
+    patterns: [
+      /\b(?:authentication|login loop|account activation|email verification|session recovery|login|sign in|account access)\b/iu,
+    ],
+  },
+  {
+    topic: 'Data Synchronization',
+    patterns: [
+      /\b(?:data synchronization|data recovery|data loss|sync|backup|restore)\b/iu,
+    ],
+  },
+  {
+    topic: 'Academic Content Access',
+    patterns: [
+      /\b(?:document download|download pdf|document access|file download|syllabus)\b/iu,
+    ],
+  },
+  {
+    topic: 'Learning Resources',
+    patterns: [
+      /\b(?:course material|learning material|lecture material|reading material|assignment access|ebook|e-book)\b/iu,
+    ],
+  },
+  {
+    topic: 'Cross-Device Learning',
+    patterns: [
+      /\b(?:cross-device access|desktop access|laptop access|computer access|mobile and desktop)\b/iu,
+    ],
+  },
+  {
+    topic: 'Application Reliability',
+    patterns: [
+      /\b(?:application crash|application reliability|crash|freeze|unstable|error|slow|glitch)\b/iu,
+    ],
+  },
+  {
+    topic: 'Navigation and Usability',
+    patterns: [
+      /\b(?:navigation|user interface|back button|scrolling|tabs?|interface|ui)\b/iu,
+    ],
+  },
+  {
+    topic: 'Academic Progress and Grades',
+    patterns: [
+      /\b(?:grade analytics|grade tracker|academic analytics|progress analytics|grades?)\b/iu,
+    ],
+  },
+  {
+    topic: 'Offline Learning',
+    patterns: [
+      /\b(?:offline cache|offline access|without internet|low bandwidth)\b/iu,
+    ],
+  },
+  {
+    topic: 'Pricing and Access Restrictions',
+    patterns: [
+      /\b(?:paywall|subscription|paid feature|limited tasks|limited features)\b/iu,
+    ],
+  },
+];
+
+/** Topic labels that expose raw fragments rather than a stable concept. */
+const REJECTED_TOPIC_LABEL_PATTERNS = [
+  /^(?:data classes|plus data|transferring data|access edugate|access skill)$/iu,
+  /^(?:back main|back start|computer downloading|liked sync)$/iu,
+] as const;
 
 /**
- * Maximum number of extracted topics returned by the service.
- */
-const MAX_EXTRACTED_TOPICS = 15;
-
-/**
- * Generic standalone labels that provide no actionable product insight.
+ * Extracts only canonical or administrator-curated high-level topics.
  *
- * Multi-word phrases containing these words may still be meaningful; only
- * exact standalone matches are removed.
- */
-const GENERIC_STANDALONE_TOPICS = new Set([
-  'all',
-  'any',
-  'app',
-  'can',
-  'get',
-  'issue',
-  'just',
-  'like',
-  'need',
-  'problem',
-  'thing',
-  'time',
-  'use',
-  'work',
-]);
-
-/**
- * Extracts high-level discussion topics from weighted keywords.
- *
- * This service converts frequent keywords into broader topic groups using
- * configurable topic rules stored in the database. This allows Nexora AI to
- * classify community concerns without hardcoding domain-specific rules inside
- * the application source code.
- *
- * Responsibilities:
- * - Load configurable topic rules for the analyzed language.
- * - Group related keywords into meaningful discussion topics.
- * - Calculate topic frequency from supporting keyword frequencies.
- * - Keep unmatched but frequent keywords as standalone topic candidates.
- * - Return sorted weighted topics for insight extraction and prompt building.
- *
- * This service does not persist results and does not call external AI services.
- * AI-assisted topic refinement can be added later when rule-based confidence
- * is low.
+ * Raw keyword title-casing is intentionally prohibited. This prevents phrases
+ * such as "Data Classes", "Plus Data", and "Access Edugate" from leaking
+ * into the public NLP result merely because they appeared repeatedly beside an
+ * actionable token.
  *
  * @author Eman
  */
@@ -60,13 +98,6 @@ const GENERIC_STANDALONE_TOPICS = new Set([
 export class TopicExtractionService {
   constructor(private readonly topicRuleService: TopicRuleService) {}
 
-  /**
-   * Extracts the most relevant discussion topics from weighted keywords.
-   *
-   * @param keywords Weighted keywords extracted from analyzed community texts.
-   * @param language Language used to load matching topic rules.
-   * @returns Weighted topics sorted by frequency.
-   */
   async extract(
     keywords: readonly WeightedKeyword[],
     language: LanguageCode,
@@ -81,86 +112,78 @@ export class TopicExtractionService {
     for (const keyword of keywords) {
       const normalizedKeyword = this.normalizeTerm(keyword.keyword);
 
-      if (
-        !normalizedKeyword ||
-        keyword.frequency <= 0 ||
-        this.isGenericStandaloneTerm(normalizedKeyword)
-      ) {
+      if (!normalizedKeyword || keyword.frequency < MINIMUM_TOPIC_FREQUENCY) {
         continue;
       }
 
-      const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
+      const topic =
+        this.findCanonicalTopic(normalizedKeyword) ??
+        this.findAdministratorTopic(normalizedKeyword, topicRules);
 
-      if (this.isGenericStandaloneTerm(this.normalizeTerm(topic))) {
+      if (!topic || !this.isSafeTopicLabel(topic)) {
         continue;
       }
-      const currentFrequency = topicFrequencyMap.get(topic) ?? 0;
 
-      topicFrequencyMap.set(topic, currentFrequency + keyword.frequency);
+      topicFrequencyMap.set(
+        topic,
+        (topicFrequencyMap.get(topic) ?? 0) + keyword.frequency,
+      );
     }
 
     return Array.from(topicFrequencyMap, ([topic, frequency]) => ({
       topic,
       frequency,
     }))
-      .sort((first, second) => {
-        const frequencyDifference = second.frequency - first.frequency;
-
-        if (frequencyDifference !== 0) {
-          return frequencyDifference;
-        }
-
-        return first.topic.localeCompare(second.topic);
-      })
+      .sort(
+        (first, second) =>
+          second.frequency - first.frequency ||
+          first.topic.localeCompare(second.topic),
+      )
       .slice(0, MAX_EXTRACTED_TOPICS);
   }
 
-  /**
-   * Rejects generic one-word topic labels while preserving meaningful phrases.
-   */
-  private isGenericStandaloneTerm(value: string): boolean {
-    return !value.includes(' ') && GENERIC_STANDALONE_TOPICS.has(value);
+  private findCanonicalTopic(keyword: string): string | null {
+    return (
+      CANONICAL_TOPIC_DEFINITIONS.find((definition) =>
+        definition.patterns.some((pattern) => pattern.test(keyword)),
+      )?.topic ?? null
+    );
   }
 
-  /**
-   * Finds the best topic label for a normalized keyword.
-   *
-   * If no configured rule matches the keyword, the keyword itself is converted
-   * into a readable standalone topic. This preserves emerging signals that are
-   * not yet covered by administrator-managed topic rules.
-   *
-   * @param keyword Normalized keyword.
-   * @param topicRules Configurable topic rules loaded from the database.
-   * @returns Topic label.
-   */
-  private findMatchingTopic(
+  private findAdministratorTopic(
     keyword: string,
     topicRules: readonly TopicRule[],
-  ): string {
+  ): string | null {
     const matchedRule = topicRules.find((rule) =>
       rule.terms.some((term) =>
         this.isRelatedTerm(keyword, this.normalizeTerm(term)),
       ),
     );
 
-    return matchedRule?.topic.trim() || this.toTitleCase(keyword);
+    const topic = matchedRule?.topic.trim() ?? '';
+
+    return topic && this.isSafeTopicLabel(topic) ? topic : null;
   }
 
-  /**
-   * Checks whether a keyword is related to a configured topic term.
-   *
-   * Supports:
-   * - Exact matches.
-   * - A keyword containing a complete configured phrase.
-   * - A configured phrase containing the complete keyword.
-   *
-   * Word boundaries are respected to avoid partial matches such as
-   * "car" incorrectly matching "scarcity".
-   *
-   * @param keyword Normalized keyword.
-   * @param term Normalized topic-rule term.
-   * @returns True when the keyword is related to the topic term.
-   */
+  private isSafeTopicLabel(value: string): boolean {
+    const normalized = this.normalizeTerm(value);
+    const words = normalized.split(' ').filter(Boolean);
+
+    if (words.length === 0 || words.length > 6) {
+      return false;
+    }
+
+    if (
+      REJECTED_TOPIC_LABEL_PATTERNS.some((pattern) => pattern.test(normalized))
+    ) {
+      return false;
+    }
+
+    return words.every(
+      (word) => word.length >= 3 || ['ai', 'ui'].includes(word),
+    );
+  }
+
   private isRelatedTerm(keyword: string, term: string): boolean {
     if (!keyword || !term) {
       return false;
@@ -179,13 +202,6 @@ export class TopicExtractionService {
     );
   }
 
-  /**
-   * Checks whether one word sequence contains another consecutive sequence.
-   *
-   * @param sourceWords Words being searched.
-   * @param candidateWords Consecutive words to locate.
-   * @returns True when the candidate sequence exists in the source sequence.
-   */
   private containsConsecutiveWords(
     sourceWords: readonly string[],
     candidateWords: readonly string[],
@@ -213,29 +229,12 @@ export class TopicExtractionService {
     return false;
   }
 
-  /**
-   * Normalizes a keyword or topic-rule term before matching.
-   *
-   * @param value Value to normalize.
-   * @returns Lowercase value with normalized whitespace.
-   */
   private normalizeTerm(value: string): string {
-    return value.toLocaleLowerCase().trim().replace(/\s+/g, ' ');
-  }
-
-  /**
-   * Converts unmatched keyword candidates into readable topic labels.
-   *
-   * Languages without letter casing, such as Arabic, remain unchanged.
-   *
-   * @param value Normalized keyword.
-   * @returns Readable topic label.
-   */
-  private toTitleCase(value: string): string {
     return value
-      .split(' ')
-      .filter(Boolean)
-      .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
-      .join(' ');
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 }

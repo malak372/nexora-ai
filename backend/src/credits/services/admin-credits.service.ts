@@ -26,6 +26,7 @@ import {
 import { AdjustUserCreditsDto } from '../dto/adjust-user-credits.dto';
 import { GetAdminCreditHistoryQueryDto } from '../dto/get-admin-credit-history-query.dto';
 
+import { CreditBalanceNotificationService } from './credit-balance-notification.service';
 import { CreditBalanceService } from './credit-balance.service';
 import { CreditCacheService } from './credit-cache.service';
 
@@ -53,6 +54,9 @@ export class AdminCreditsService {
     private readonly creditBalanceService: CreditBalanceService,
 
     private readonly creditCacheService: CreditCacheService,
+
+    private readonly creditBalanceNotificationService:
+      CreditBalanceNotificationService,
 
     private readonly auditService: AuditService,
   ) {}
@@ -344,6 +348,14 @@ export class AdminCreditsService {
      * database transaction has committed successfully.
      */
     await this.creditCacheService.invalidateUserCreditCaches(dto.userId);
+
+    await this.creditBalanceNotificationService.notifyAfterCommittedBalanceChange(
+      {
+        userId: dto.userId,
+        previousBalance: result.adjustment.previousBalance,
+        balanceAfter: result.adjustment.balanceAfter,
+      },
+    );
 
     return {
       message: 'User credits adjusted successfully',

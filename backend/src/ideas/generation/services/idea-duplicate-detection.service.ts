@@ -69,11 +69,7 @@ export class IdeaDuplicateDetectionService {
       MAX_DUPLICATE_TITLE_LENGTH,
     );
 
-    if (
-      !normalizedDomainId ||
-      !normalizedCollectionJobId ||
-      !normalizedTitle
-    ) {
+    if (!normalizedDomainId || !normalizedCollectionJobId || !normalizedTitle) {
       throw new ConflictException({
         code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
         message:
@@ -133,10 +129,7 @@ export class IdeaDuplicateDetectionService {
         this.buildCandidateFingerprint(candidate),
       );
 
-      const combinedSimilarity = Math.max(
-        titleSimilarity,
-        semanticSimilarity,
-      );
+      const combinedSimilarity = Math.max(titleSimilarity, semanticSimilarity);
 
       if (combinedSimilarity > highestSimilarity) {
         highestSimilarity = combinedSimilarity;
@@ -167,12 +160,7 @@ export class IdeaDuplicateDetectionService {
     idea: CoreIdeaAiOutput,
     database?: IdeaDuplicateDetectionDatabaseClient,
   ): Promise<void> {
-    const result = await this.check(
-      domainId,
-      collectionJobId,
-      idea,
-      database,
-    );
+    const result = await this.check(domainId, collectionJobId, idea, database);
 
     if (!result.isDuplicate) {
       return;
@@ -210,7 +198,8 @@ export class IdeaDuplicateDetectionService {
     if (!collectionJob) {
       throw new ConflictException({
         code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
-        message: 'The collection job required for duplicate detection was not found.',
+        message:
+          'The collection job required for duplicate detection was not found.',
       });
     }
 
@@ -239,9 +228,7 @@ export class IdeaDuplicateDetectionService {
         equals: scope.country,
         mode: 'insensitive',
       },
-      city: scope.city
-        ? { equals: scope.city, mode: 'insensitive' }
-        : null,
+      city: scope.city ? { equals: scope.city, mode: 'insensitive' } : null,
       region: scope.region
         ? { equals: scope.region, mode: 'insensitive' }
         : null,
@@ -275,7 +262,9 @@ export class IdeaDuplicateDetectionService {
     };
   }
 
-  private buildFingerprint(idea: CoreIdeaAiOutput): Record<string, Set<string>> {
+  private buildFingerprint(
+    idea: CoreIdeaAiOutput,
+  ): Record<string, Set<string>> {
     return {
       title: this.tokenize(idea.title),
       problem: this.tokenize(idea.problemStatement),
@@ -331,7 +320,9 @@ export class IdeaDuplicateDetectionService {
   }
 
   private tokenize(value: string): Set<string> {
-    return this.toTokenSet(this.normalizeText(value, MAX_DUPLICATE_TEXT_LENGTH));
+    return this.toTokenSet(
+      this.normalizeText(value, MAX_DUPLICATE_TEXT_LENGTH),
+    );
   }
 
   private normalizeText(value: string, maxLength: number): string {

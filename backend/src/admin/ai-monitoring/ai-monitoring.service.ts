@@ -75,6 +75,25 @@ const AI_LOG_SELECT = {
 } as const satisfies Prisma.ExternalApiLogSelect;
 
 /**
+ * Aggregated failure count grouped by provider.
+ *
+ * This normalized shape avoids leaking Prisma groupBy internals to controller
+ * responses and keeps conditional Promise branches fully typed.
+ */
+type AiFailureProviderCount = {
+  readonly providerKey: string;
+  readonly count: number;
+};
+
+/**
+ * Aggregated failure count grouped by normalized provider error code.
+ */
+type AiFailureErrorCodeCount = {
+  readonly errorCode: string;
+  readonly count: number;
+};
+
+/**
  * Service responsible for administrator AI-provider monitoring.
  *
  * The service exposes both individual request attempts and complete operation
@@ -198,6 +217,82 @@ export class AiMonitoringService {
       ...buildExactFilter('isRetryable', query.isRetryable),
       ...buildExactFilter('fallbackUsed', query.fallbackUsed),
     };
+  }
+
+  /**
+   * Groups failed AI attempts by provider using a stable response shape.
+   *
+   * @param where Shared administrator filters.
+   * @returns Failure counts ordered from highest to lowest.
+   */
+  private async getFailureCountsByProvider(
+    where: Prisma.ExternalApiLogWhereInput,
+  ): Promise<AiFailureProviderCount[]> {
+    const groups = await this.prisma.externalApiLog.groupBy({
+      by: ['providerKey'],
+      where: {
+        ...where,
+        isSuccess: false,
+      },
+      _count: {
+        providerKey: true,
+      },
+      orderBy: {
+        _count: {
+          providerKey: 'desc',
+        },
+      },
+    });
+
+    return groups.map((group) => ({
+      providerKey: group.providerKey,
+      count: group._count.providerKey,
+    }));
+  }
+
+  /**
+   * Groups failed AI attempts by normalized provider error code.
+   *
+   * Null error codes belong only to legacy records and are excluded from the
+   * grouped administrator diagnostics.
+   *
+   * @param where Shared administrator filters.
+   * @returns Failure counts ordered from highest to lowest.
+   */
+  private async getFailureCountsByErrorCode(
+    where: Prisma.ExternalApiLogWhereInput,
+  ): Promise<AiFailureErrorCodeCount[]> {
+    const groups = await this.prisma.externalApiLog.groupBy({
+      by: ['errorCode'],
+      where: {
+        ...where,
+        isSuccess: false,
+        errorCode: {
+          not: null,
+        },
+      },
+      _count: {
+        errorCode: true,
+      },
+      orderBy: {
+        _count: {
+          errorCode: 'desc',
+        },
+      },
+    });
+
+    return groups.flatMap((group) => {
+      if (!group.errorCode) {
+        return [];
+      }
+
+      return [
+        {
+          errorCode: group.errorCode,
+          count: group._count.errorCode,
+        },
+      ];
+    });
   }
 
   /**
@@ -458,25 +553,11 @@ export class AiMonitoringService {
         _sum: { costEstimate: true },
       }),
       canIncludeFailure
-        ? this.prisma.externalApiLog.groupBy({
-            by: ['providerKey'],
-            where: { ...where, isSuccess: false },
-            _count: { providerKey: true },
-            orderBy: { _count: { providerKey: 'desc' } },
-          })
-        : Promise.resolve([]),
+        ? this.getFailureCountsByProvider(where)
+        : Promise.resolve<AiFailureProviderCount[]>([]),
       canIncludeFailure
-        ? this.prisma.externalApiLog.groupBy({
-            by: ['errorCode'],
-            where: {
-              ...where,
-              isSuccess: false,
-              errorCode: { not: null },
-            },
-            _count: { errorCode: true },
-            orderBy: { _count: { errorCode: 'desc' } },
-          })
-        : Promise.resolve([]),
+        ? this.getFailureCountsByErrorCode(where)
+        : Promise.resolve<AiFailureErrorCodeCount[]>([]),
     ]);
 
     return {
@@ -490,14 +571,8 @@ export class AiMonitoringService {
       errorRate: calculateSuccessRate(failedRequests, totalRequests),
       averageResponseTime: toNumber(responseTimeAggregate._avg.responseTimeMs),
       totalCost: toNumber(costAggregate._sum.costEstimate),
-      failuresByProvider: failuresByProvider.map((item) => ({
-        providerKey: item.providerKey,
-        count: item._count.providerKey,
-      })),
-      failuresByErrorCode: failuresByErrorCode.map((item) => ({
-        errorCode: item.errorCode,
-        count: item._count.errorCode,
-      })),
+      failuresByProvider,
+      failuresByErrorCode,
     };
   }
 
@@ -542,25 +617,11 @@ export class AiMonitoringService {
           })
         : Promise.resolve(0),
       canIncludeFailure
-        ? this.prisma.externalApiLog.groupBy({
-            by: ['providerKey'],
-            where: { ...where, isSuccess: false },
-            _count: { providerKey: true },
-            orderBy: { _count: { providerKey: 'desc' } },
-          })
-        : Promise.resolve([]),
+        ? this.getFailureCountsByProvider(where)
+        : Promise.resolve<AiFailureProviderCount[]>([]),
       canIncludeFailure
-        ? this.prisma.externalApiLog.groupBy({
-            by: ['errorCode'],
-            where: {
-              ...where,
-              isSuccess: false,
-              errorCode: { not: null },
-            },
-            _count: { errorCode: true },
-            orderBy: { _count: { errorCode: 'desc' } },
-          })
-        : Promise.resolve([]),
+        ? this.getFailureCountsByErrorCode(where)
+        : Promise.resolve<AiFailureErrorCodeCount[]>([]),
     ]);
 
     return {
@@ -574,11 +635,11 @@ export class AiMonitoringService {
       })),
       failuresByProvider: failuresByProvider.map((item) => ({
         label: item.providerKey,
-        count: item._count.providerKey,
+        count: item.count,
       })),
       failuresByErrorCode: failuresByErrorCode.map((item) => ({
         label: item.errorCode,
-        count: item._count.errorCode,
+        count: item.count,
       })),
       successFailureChart: [
         { label: 'SUCCESSFUL', count: successCount },

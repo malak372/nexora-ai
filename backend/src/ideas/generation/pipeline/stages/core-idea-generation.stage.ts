@@ -19,12 +19,10 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 /**
  * Generates the core idea through a dynamic multi-model benchmark.
  *
- * Every active routable JSON-capable model receives the same prompt. Every
- * successful candidate is sent to the AI judge, which selects one existing
- * candidate without hybrid or deterministic winner scoring.
- *
- * Deterministic quality data remains visible only for diagnostics and does not
- * participate in selection.
+ * Every active routable JSON-capable model receives the same prompt. Quality-
+ * approved candidates are compared using the AI judge when its confidence is
+ * sufficient. Final selection uses the persisted hybrid score, while a low-
+ * confidence or unavailable judge falls back to deterministic quality.
  *
  * @author Eman
  */
@@ -65,7 +63,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           aiModelId: winner.aiResult.aiModelId,
           providerKey: winner.aiResult.providerKey,
           apiModelId: winner.aiResult.apiModelId,
+          deterministicScore: winner.quality.score,
           aiJudgeScore: winner.aiJudge?.overallScore ?? null,
+          finalScore: winner.finalScore,
           localRelevance: winner.aiJudge?.localRelevance ?? null,
           problemImportance: winner.aiJudge?.problemImportance ?? null,
           innovation: winner.aiJudge?.innovation ?? null,
@@ -91,7 +91,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           providerKey: candidate.aiResult.providerKey,
           apiModelId: candidate.aiResult.apiModelId,
           selected: candidate.selected,
+          deterministicScore: candidate.quality.score,
           aiJudgeScore: candidate.aiJudge?.overallScore ?? null,
+          finalScore: candidate.finalScore,
           localRelevance: candidate.aiJudge?.localRelevance ?? null,
           problemImportance: candidate.aiJudge?.problemImportance ?? null,
           innovation: candidate.aiJudge?.innovation ?? null,

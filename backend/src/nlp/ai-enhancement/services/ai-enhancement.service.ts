@@ -8,6 +8,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
+import { AiExecutionExhaustedException } from '../../../ai/errors/ai-execution-exhausted.exception';
+
 import { NLP_AI_CLIENT } from '../tokens/nlp-ai-client.token';
 
 import type { NlpAiClient } from '../clients/nlp-ai-client.interface';
@@ -211,6 +213,7 @@ export class AiEnhancementService {
         operationId,
       };
     } catch (error: unknown) {
+      operationId = this.resolveOperationId(error, operationId);
       const failureReason = this.resolveFailureReason(error);
 
       this.logger.warn(
@@ -232,6 +235,23 @@ export class AiEnhancementService {
         operationId,
       };
     }
+  }
+
+  /**
+   * Extracts the logical operation identifier from a terminal central-runtime
+   * failure so administrators can correlate NLP fallback with attempt logs.
+   */
+  private resolveOperationId(
+    error: unknown,
+    currentOperationId: string | null,
+  ): string | null {
+    if (currentOperationId) {
+      return currentOperationId;
+    }
+
+    return error instanceof AiExecutionExhaustedException
+      ? error.operationId
+      : null;
   }
 
   /**

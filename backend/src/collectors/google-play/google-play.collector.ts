@@ -153,18 +153,16 @@ export class GooglePlayCollector
 
     const requestedCountry = this.resolveCountry(input.country);
 
-    const requestedResults =
-      await CollectorExternalCacheUtil.remember<GooglePlayApp[]>(
-        cacheKey,
-        this.cacheTtlMs,
-        () =>
-          googlePlayClient.search({
-            term: searchQuery,
-            num: Math.min(this.maxFetchedPosts, 20),
-            lang: this.resolveLanguage(input.language),
-            country: requestedCountry,
-          }),
-      );
+    const requestedResults = await CollectorExternalCacheUtil.remember<
+      GooglePlayApp[]
+    >(cacheKey, this.cacheTtlMs, () =>
+      googlePlayClient.search({
+        term: searchQuery,
+        num: Math.min(this.maxFetchedPosts, 20),
+        lang: this.resolveLanguage(input.language),
+        country: requestedCountry,
+      }),
+    );
 
     if (requestedResults.length > 0 || requestedCountry === 'us') {
       return requestedResults;

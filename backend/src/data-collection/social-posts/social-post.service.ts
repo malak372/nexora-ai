@@ -53,164 +53,160 @@ export class SocialPostService {
     },
 
     posts: CollectorPost[],
-  ) {
-    let totalPosts = 0;
-    let totalComments = 0;
-
+  ): Promise<{
+    totalPosts: number;
+    totalComments: number;
+  }> {
     for (const post of posts) {
       const externalId = post.externalId.trim();
-
       const content = post.content.trim();
 
-      /*
-       * Ignore malformed external records.
-       */
       if (!externalId || !content) {
         continue;
       }
 
       const comments = post.comments ?? [];
 
-      const result = await this.prisma.$transaction(async (transaction) => {
-        const savedPost = await transaction.socialPost.upsert({
-          where: {
-            collectionJobId_dataSourceId_externalId: {
+      /*
+       * A store listing may contain many reviews. Prisma's default five-second
+       * interactive-transaction timeout was too short for sequential comment
+       * upserts and could leave earlier posts persisted while the source was
+       * marked FAILED with zero counters. A bounded explicit timeout keeps the
+       * post and its comments atomic without allowing an unbounded transaction.
+       */
+      await this.prisma.$transaction(
+        async (transaction) => {
+          const savedPost = await transaction.socialPost.upsert({
+            where: {
+              collectionJobId_dataSourceId_externalId: {
+                collectionJobId,
+                dataSourceId,
+                externalId,
+              },
+            },
+            update: {
+              title: this.normalizeOptionalText(post.title),
+              content,
+              author: this.normalizeOptionalText(post.author),
+              url: this.normalizeOptionalText(post.url),
+              country: this.normalizeOptionalText(
+                post.country ?? location.country,
+              ),
+              city: this.normalizeOptionalText(post.city ?? location.city),
+              region: this.normalizeOptionalText(
+                post.region ?? location.region,
+              ),
+              languageCode: this.normalizeOptionalText(post.languageCode),
+              likesCount: this.toNonNegativeInteger(post.likesCount),
+              repliesCount: this.toNonNegativeInteger(
+                post.repliesCount ?? comments.length,
+              ),
+              publishedAt: post.publishedAt,
+              collectedAt: new Date(),
+            },
+            create: {
               collectionJobId,
               dataSourceId,
               externalId,
-            },
-          },
-
-          update: {
-            title: this.normalizeOptionalText(post.title),
-
-            content,
-
-            author: this.normalizeOptionalText(post.author),
-
-            url: this.normalizeOptionalText(post.url),
-
-            country: this.normalizeOptionalText(
-              post.country ?? location.country,
-            ),
-
-            city: this.normalizeOptionalText(post.city ?? location.city),
-
-            region: this.normalizeOptionalText(post.region ?? location.region),
-
-            languageCode: this.normalizeOptionalText(post.languageCode),
-
-            likesCount: this.toNonNegativeInteger(post.likesCount),
-
-            repliesCount: this.toNonNegativeInteger(
-              post.repliesCount ?? comments.length,
-            ),
-
-            publishedAt: post.publishedAt,
-
-            collectedAt: new Date(),
-          },
-
-          create: {
-            collectionJobId,
-            dataSourceId,
-            externalId,
-
-            title: this.normalizeOptionalText(post.title),
-
-            content,
-
-            author: this.normalizeOptionalText(post.author),
-
-            url: this.normalizeOptionalText(post.url),
-
-            country: this.normalizeOptionalText(
-              post.country ?? location.country,
-            ),
-
-            city: this.normalizeOptionalText(post.city ?? location.city),
-
-            region: this.normalizeOptionalText(post.region ?? location.region),
-
-            languageCode: this.normalizeOptionalText(post.languageCode),
-
-            likesCount: this.toNonNegativeInteger(post.likesCount),
-
-            repliesCount: this.toNonNegativeInteger(
-              post.repliesCount ?? comments.length,
-            ),
-
-            publishedAt: post.publishedAt,
-          },
-        });
-
-        let persistedComments = 0;
-
-        for (const comment of comments) {
-          const commentExternalId = comment.externalId.trim();
-
-          const commentContent = comment.content.trim();
-
-          /*
-           * Ignore malformed comments.
-           */
-          if (!commentExternalId || !commentContent) {
-            continue;
-          }
-
-          await transaction.socialComment.upsert({
-            where: {
-              postId_externalId: {
-                postId: savedPost.id,
-
-                externalId: commentExternalId,
-              },
-            },
-
-            update: {
-              content: commentContent,
-
-              author: this.normalizeOptionalText(comment.author),
-
-              languageCode: this.normalizeOptionalText(comment.languageCode),
-
-              likesCount: this.toNonNegativeInteger(comment.likesCount),
-
-              publishedAt: comment.publishedAt,
-
-              collectedAt: new Date(),
-            },
-
-            create: {
-              postId: savedPost.id,
-
-              externalId: commentExternalId,
-
-              content: commentContent,
-
-              author: this.normalizeOptionalText(comment.author),
-
-              languageCode: this.normalizeOptionalText(comment.languageCode),
-
-              likesCount: this.toNonNegativeInteger(comment.likesCount),
-
-              publishedAt: comment.publishedAt,
+              title: this.normalizeOptionalText(post.title),
+              content,
+              author: this.normalizeOptionalText(post.author),
+              url: this.normalizeOptionalText(post.url),
+              country: this.normalizeOptionalText(
+                post.country ?? location.country,
+              ),
+              city: this.normalizeOptionalText(post.city ?? location.city),
+              region: this.normalizeOptionalText(
+                post.region ?? location.region,
+              ),
+              languageCode: this.normalizeOptionalText(post.languageCode),
+              likesCount: this.toNonNegativeInteger(post.likesCount),
+              repliesCount: this.toNonNegativeInteger(
+                post.repliesCount ?? comments.length,
+              ),
+              publishedAt: post.publishedAt,
             },
           });
 
-          persistedComments += 1;
-        }
+          for (const comment of comments) {
+            const commentExternalId = comment.externalId.trim();
+            const commentContent = comment.content.trim();
 
-        return {
-          posts: 1,
-          comments: persistedComments,
-        };
-      });
+            if (!commentExternalId || !commentContent) {
+              continue;
+            }
 
-      totalPosts += result.posts;
-
-      totalComments += result.comments;
+            await transaction.socialComment.upsert({
+              where: {
+                postId_externalId: {
+                  postId: savedPost.id,
+                  externalId: commentExternalId,
+                },
+              },
+              update: {
+                content: commentContent,
+                author: this.normalizeOptionalText(comment.author),
+                languageCode: this.normalizeOptionalText(comment.languageCode),
+                likesCount: this.toNonNegativeInteger(comment.likesCount),
+                publishedAt: comment.publishedAt,
+                collectedAt: new Date(),
+              },
+              create: {
+                postId: savedPost.id,
+                externalId: commentExternalId,
+                content: commentContent,
+                author: this.normalizeOptionalText(comment.author),
+                languageCode: this.normalizeOptionalText(comment.languageCode),
+                likesCount: this.toNonNegativeInteger(comment.likesCount),
+                publishedAt: comment.publishedAt,
+              },
+            });
+          }
+        },
+        {
+          maxWait: 5_000,
+          timeout: 30_000,
+        },
+      );
     }
+
+    /*
+     * Return authoritative database counts rather than increment counters from
+     * attempted upserts. This remains correct for retries and duplicate-safe
+     * reruns because upserted records are counted exactly once.
+     */
+    return this.countByCollectionJobSource(collectionJobId, dataSourceId);
+  }
+
+  /**
+   * Counts persisted posts and comments for one collection-job source.
+   *
+   * The method is used both after successful persistence and after a partial
+   * source failure so administrative counters always match stored data.
+   */
+  async countByCollectionJobSource(
+    collectionJobId: string,
+    dataSourceId: string,
+  ): Promise<{
+    totalPosts: number;
+    totalComments: number;
+  }> {
+    const [totalPosts, totalComments] = await Promise.all([
+      this.prisma.socialPost.count({
+        where: {
+          collectionJobId,
+          dataSourceId,
+        },
+      }),
+      this.prisma.socialComment.count({
+        where: {
+          post: {
+            collectionJobId,
+            dataSourceId,
+          },
+        },
+      }),
+    ]);
 
     return {
       totalPosts,

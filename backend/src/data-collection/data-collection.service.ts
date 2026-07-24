@@ -219,9 +219,6 @@ export class DataCollectionService {
       },
     });
 
-    let totalPosts = 0;
-    let totalComments = 0;
-
     let completedSources = 0;
     let failedSources = 0;
 
@@ -306,22 +303,27 @@ export class DataCollectionService {
             totals,
           );
 
-          totalPosts += totals.totalPosts;
-
-          totalComments += totals.totalComments;
-
           completedSources += 1;
         } catch (error: unknown) {
           failedSources += 1;
 
           /*
-           * One source failure should not stop all remaining
-           * source collectors.
+           * A source may fail after some records were already persisted. Count
+           * those rows before marking the source failed so source-level and
+           * parent counters remain consistent with the data later consumed by
+           * NLP.
            */
+          const persistedTotals =
+            await this.socialPostService.countByCollectionJobSource(
+              job.id,
+              dataSource.id,
+            );
+
           await this.collectionJobService.markSourceFailed(
             job.id,
             dataSource.id,
             error,
+            persistedTotals,
           );
         }
       }
@@ -331,16 +333,16 @@ export class DataCollectionService {
        * failed. A successful source returning zero posts is
        * still considered a successful source execution.
        */
-      if (completedSources === 0) {
+      const authoritativeTotals =
+        await this.collectionJobService.countPersistedJobData(job.id);
+
+      if (completedSources === 0 && authoritativeTotals.totalPosts === 0) {
         throw new ServiceUnavailableException(
-          'All selected data sources failed.',
+          'All selected data sources failed without persisting usable data.',
         );
       }
 
-      const completedJob = await this.collectionJobService.completeJob(job.id, {
-        totalPosts,
-        totalComments,
-      });
+      const completedJob = await this.collectionJobService.completeJob(job.id);
 
       await this.auditService.createLog({
         actorId,
@@ -359,8 +361,8 @@ export class DataCollectionService {
           completedSources,
           failedSources,
 
-          totalPosts,
-          totalComments,
+          totalPosts: completedJob.totalPosts,
+          totalComments: completedJob.totalComments,
 
           completedAt: completedJob.completedAt,
         },

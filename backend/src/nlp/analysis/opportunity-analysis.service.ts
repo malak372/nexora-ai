@@ -49,11 +49,31 @@ export class OpportunityAnalysisService {
     topics: WeightedTopic[],
     keywords: WeightedKeyword[],
   ): Opportunity[] {
+    const evidenceBackedProblems = problems.filter(
+      (problem) => problem.evidenceSamples.length > 0,
+    );
+    const evidenceBackedNeeds = needs.filter(
+      (need) => need.evidenceSamples.length > 0,
+    );
     const opportunities: Opportunity[] = [
-      ...this.buildProblemNeedOpportunities(problems, needs, topics, keywords),
-      ...this.buildProblemOnlyOpportunities(problems, topics, keywords),
-      ...this.buildNeedOnlyOpportunities(needs, topics, keywords),
-      ...this.buildTopicOpportunities(topics, keywords),
+      ...this.buildProblemNeedOpportunities(
+        evidenceBackedProblems,
+        evidenceBackedNeeds,
+        topics,
+        keywords,
+      ),
+      ...this.buildUnmatchedProblemOpportunities(
+        evidenceBackedProblems,
+        evidenceBackedNeeds,
+        topics,
+        keywords,
+      ),
+      ...this.buildUnmatchedNeedOpportunities(
+        evidenceBackedProblems,
+        evidenceBackedNeeds,
+        topics,
+        keywords,
+      ),
     ];
 
     return this.mergeSimilarOpportunities(opportunities)
@@ -85,7 +105,7 @@ export class OpportunityAnalysisService {
         opportunities.push({
           problem: problem.title,
           need: need.need,
-          topic: this.selectBestTopic(topics),
+          topic: this.selectBestTopic(topics, `${problem.title} ${need.need}`),
           solutionArea: this.inferSolutionArea(
             problem.title,
             need.need,
@@ -107,53 +127,51 @@ export class OpportunityAnalysisService {
     return opportunities;
   }
 
-  /**
-   * Builds opportunities from problems when explicit needs are missing.
-   */
-  private buildProblemOnlyOpportunities(
+  /** Builds problem-only opportunities only when no related need exists. */
+  private buildUnmatchedProblemOpportunities(
     problems: RecurringProblem[],
-    topics: WeightedTopic[],
-    keywords: WeightedKeyword[],
-  ): Opportunity[] {
-    return problems.map((problem) => ({
-      problem: problem.title,
-      topic: this.selectBestTopic(topics),
-      solutionArea: this.inferSolutionArea(problem.title, undefined, keywords),
-      score: this.normalizeScore(this.problemScore(problem)),
-      evidenceSamples: this.pickEvidenceSamples(problem.evidenceSamples),
-    }));
-  }
-
-  /**
-   * Builds opportunities from needs when explicit problems are missing.
-   */
-  private buildNeedOnlyOpportunities(
     needs: ExtractedNeed[],
     topics: WeightedTopic[],
     keywords: WeightedKeyword[],
   ): Opportunity[] {
-    return needs.map((need) => ({
-      need: need.need,
-      topic: this.selectBestTopic(topics),
-      solutionArea: this.inferSolutionArea(undefined, need.need, keywords),
-      score: this.normalizeScore(this.needScore(need)),
-      evidenceSamples: this.pickEvidenceSamples(need.evidenceSamples),
-    }));
+    return problems
+      .filter((problem) => this.findRelatedNeeds(problem, needs).length === 0)
+      .map((problem) => ({
+        problem: problem.title,
+        topic: this.selectBestTopic(topics, problem.title),
+        solutionArea: this.inferSolutionArea(
+          problem.title,
+          undefined,
+          keywords,
+        ),
+        score: this.normalizeScore(this.problemScore(problem)),
+        evidenceSamples: this.pickEvidenceSamples(problem.evidenceSamples),
+      }));
   }
 
-  /**
-   * Builds opportunities from dominant topics and keyword trends.
-   */
-  private buildTopicOpportunities(
+  /** Builds need-only opportunities only when no recurring problem matches. */
+  private buildUnmatchedNeedOpportunities(
+    problems: RecurringProblem[],
+    needs: ExtractedNeed[],
     topics: WeightedTopic[],
     keywords: WeightedKeyword[],
   ): Opportunity[] {
-    return topics.slice(0, 5).map((topic) => ({
-      topic: topic.topic,
-      solutionArea: this.inferSolutionArea(topic.topic, undefined, keywords),
-      score: this.normalizeScore(Math.min(topic.frequency / 10, 1)),
-      evidenceSamples: [],
-    }));
+    return needs
+      .filter(
+        (need) =>
+          !problems.some(
+            (problem) =>
+              need.relatedProblem === problem.title ||
+              this.hasSharedTerms(problem.title, need.need),
+          ),
+      )
+      .map((need) => ({
+        need: need.need,
+        topic: this.selectBestTopic(topics, need.need),
+        solutionArea: this.inferSolutionArea(undefined, need.need, keywords),
+        score: this.normalizeScore(this.needScore(need)),
+        evidenceSamples: this.pickEvidenceSamples(need.evidenceSamples),
+      }));
   }
 
   /**
@@ -169,7 +187,7 @@ export class OpportunityAnalysisService {
         this.hasSharedTerms(problem.title, need.need),
     );
 
-    return relatedNeeds.length > 0 ? relatedNeeds : needs.slice(0, 3);
+    return relatedNeeds;
   }
 
   /**
@@ -180,14 +198,130 @@ export class OpportunityAnalysisService {
     need?: string,
     keywords: WeightedKeyword[] = [],
   ): string {
-    const sourceText = [
-      problem,
-      need,
-      ...keywords.slice(0, 5).map((item) => item.keyword),
-    ]
+    /*
+     * Problem and need labels are authoritative. Global keywords are consulted
+     * only when those labels do not identify a workflow. This prevents one
+     * frequent keyword such as "computer" from incorrectly converting every
+     * opportunity into "Cross-Device Learning Access".
+     */
+    const primaryText = [problem, need]
       .filter(Boolean)
       .join(' ')
-      .toLowerCase();
+      .toLocaleLowerCase();
+    const keywordText = keywords
+      .slice(0, 8)
+      .map((item) => item.keyword)
+      .join(' ')
+      .toLocaleLowerCase();
+
+    return (
+      this.matchSolutionArea(primaryText) ??
+      this.matchSolutionArea(keywordText) ??
+      this.toTitleCase(need ?? problem ?? 'Digital Service Improvement')
+    );
+  }
+
+  /** Maps one normalized workflow description to a stable solution area. */
+  private matchSolutionArea(sourceText: string): string | null {
+    if (!sourceText) {
+      return null;
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'activation',
+        'verification',
+        'authentication',
+        'login',
+        'sign in',
+        'account',
+        'session',
+        'otp',
+        'receive email',
+      ])
+    ) {
+      return 'Account Activation and Authentication Recovery';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'document',
+        'download',
+        'syllabus',
+        'file access',
+        'broken link',
+        'null error',
+      ])
+    ) {
+      return 'Document Access and Download Reliability';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'data loss',
+        'lost progress',
+        'missing history',
+        'synchronization',
+        'sync',
+        'recovery',
+      ])
+    ) {
+      return 'Learning Data Synchronization and Recovery';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'navigation',
+        'interface',
+        'confusing',
+        'usability',
+        'back button',
+        'scroll',
+        'popup',
+      ])
+    ) {
+      return 'Navigation and Usability Improvement';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'desktop',
+        'laptop',
+        'computer',
+        'cross-device',
+        'cross device',
+        'mobile only',
+      ])
+    ) {
+      return 'Cross-Device Learning Access';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'crash',
+        'freeze',
+        'instability',
+        'reliability',
+        'glitch',
+        'slow',
+        'error loop',
+      ])
+    ) {
+      return 'Application Reliability and Performance Recovery';
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'payment',
+        'cost',
+        'price',
+        'fee',
+        'paywall',
+        'subscription',
+      ])
+    ) {
+      return 'Pricing and Access Management';
+    }
 
     if (this.containsAny(sourceText, ['appointment', 'booking', 'schedule'])) {
       return 'Appointment Management';
@@ -201,26 +335,26 @@ export class OpportunityAnalysisService {
       return 'Communication and Notifications';
     }
 
-    if (this.containsAny(sourceText, ['payment', 'cost', 'price', 'fee'])) {
-      return 'Payment and Cost Management';
-    }
-
     if (this.containsAny(sourceText, ['access', 'available', 'availability'])) {
       return 'Access and Availability Management';
     }
 
-    if (this.containsAny(sourceText, ['error', 'crash', 'bug', 'reliable'])) {
-      return 'Reliability and Performance Improvement';
-    }
-
-    return this.toTitleCase(need ?? problem ?? 'Digital Service Improvement');
+    return null;
   }
 
   /**
    * Selects the strongest discussion topic.
    */
-  private selectBestTopic(topics: WeightedTopic[]): string | undefined {
-    return topics[0]?.topic;
+  private selectBestTopic(
+    topics: WeightedTopic[],
+    context: string,
+  ): string | undefined {
+    const normalizedContext = context.toLocaleLowerCase();
+    const related = topics.find((topic) =>
+      this.hasSharedTerms(topic.topic, normalizedContext),
+    );
+
+    return related?.topic ?? topics[0]?.topic;
   }
 
   /**
@@ -297,15 +431,62 @@ export class OpportunityAnalysisService {
    */
   private buildOpportunityKey(opportunity: Opportunity): string {
     return [
-      opportunity.problem,
-      opportunity.need,
-      opportunity.topic,
-      opportunity.solutionArea,
+      this.canonicalOpportunityLabel(opportunity.solutionArea),
+      this.canonicalOpportunityLabel(
+        opportunity.problem ?? opportunity.need ?? opportunity.topic,
+      ),
     ]
       .filter(Boolean)
       .join('|')
       .toLowerCase()
       .trim();
+  }
+
+  private canonicalOpportunityLabel(value?: string): string {
+    const normalized = value?.toLocaleLowerCase().trim() ?? '';
+
+    // Match concrete workflows before generic terms such as "failure".
+    if (
+      /document|download|syllabus|file access|broken link/iu.test(normalized)
+    ) {
+      return 'document access';
+    }
+
+    if (/data loss|sync|synchronization|recovery/iu.test(normalized)) {
+      return 'data synchronization recovery';
+    }
+
+    if (
+      /desktop|laptop|computer|cross-device|cross device/iu.test(normalized)
+    ) {
+      return 'cross device access';
+    }
+
+    if (
+      /activation|verification|login|authentication|account/iu.test(normalized)
+    ) {
+      return 'account access';
+    }
+
+    if (
+      /navigation|interface|usability|back button|scroll|popup/iu.test(
+        normalized,
+      )
+    ) {
+      return 'navigation usability';
+    }
+
+    if (/cost|price|paywall|paid|subscription/iu.test(normalized)) {
+      return 'pricing access restrictions';
+    }
+
+    if (
+      /crash|reliability|instability|freeze|generic error/iu.test(normalized)
+    ) {
+      return 'application reliability';
+    }
+
+    return normalized;
   }
 
   /**

@@ -3,7 +3,12 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ApiRequestType, PromptType, Prisma, type AiModel } from '@prisma/client';
+import {
+  ApiRequestType,
+  PromptType,
+  Prisma,
+  type AiModel,
+} from '@prisma/client';
 
 import { AiModelsService } from '../../../ai-models/ai-models.service';
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
@@ -14,9 +19,9 @@ import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
   IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT,
   IDEA_JUDGE_FINAL_SCORE_WEIGHT,
+  IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION,
 } from '../constants/idea-judge.constants';
 import {
-  IDEA_BENCHMARK_INITIAL_MODEL_COUNT,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
   IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
 } from '../constants/idea-generation.constants';
@@ -32,6 +37,7 @@ import { IdeaGenerationModelSelectorService } from './idea-generation-model-sele
 import {
   IdeaQualityEvaluatorService,
   type IdeaQualityEvaluation,
+  type IdeaQualityEvaluationContext,
 } from './idea-quality-evaluator.service';
 
 /**
@@ -67,18 +73,29 @@ export type IdeaBenchmarkResult = {
   readonly judgeEvaluation: IdeaJudgeEvaluation | null;
 };
 
+/** Result of one accepted model attempt before database persistence. */
+type AcceptedModelAttempt = {
+  readonly aiResult: AiExecutionResult;
+  readonly parsedOutput: ParsedIdeaAiOutput;
+  readonly quality: IdeaQualityEvaluation;
+};
+
 /**
- * Executes the same persisted generation prompt against every active,
- * routable model supporting structured JSON output.
+ * Executes the same persisted generation prompt against a provider-diverse
+ * selection of active, routable models supporting structured JSON output.
  *
- * Every successfully generated and parsed candidate is persisted and sent to
- * the comparative AI judge. Failed candidates are recorded but excluded from
- * comparison. Winner selection uses a stable hybrid score: 70% comparative
- * AI-judge score and 30% deterministic quality. If the judge is unavailable,
- * deterministic ranking keeps the generation pipeline operational.
+ * Important guarantees:
+ * - The initial benchmark group is interleaved by provider.
+ * - Every candidate is evaluated using one provider-independent quality gate.
+ * - A weak response receives one bounded revision attempt on the same model.
+ * - A response that still fails the quality gate is persisted as rejected and
+ *   excluded from winner selection.
+ * - The comparative judge is used when at least two candidates survive.
+ * - Deterministic ranking keeps the pipeline operational when the judge fails.
  *
- * Model eligibility is loaded dynamically from ai_models, so adding or
- * disabling a model automatically affects future benchmark runs.
+ * Model eligibility is loaded dynamically from ai_models, so adding,
+ * disabling, or recovering a model automatically affects future benchmark
+ * runs without hard-coded provider preferences.
  *
  * @author Malak
  */
@@ -97,10 +114,10 @@ export class IdeaGenerationBenchmarkService {
   ) {}
 
   /**
-   * Generates, persists, compares, and selects all successful candidates.
+   * Generates, quality-gates, persists, compares, and selects candidates.
    *
    * @param context Current generation pipeline context.
-   * @returns All successful candidates and the AI-selected winner.
+   * @returns All accepted candidates and the selected winner.
    */
   async benchmark(
     context: IdeaGenerationContext,
@@ -134,53 +151,32 @@ export class IdeaGenerationBenchmarkService {
     });
 
     const successfulCandidates: IdeaBenchmarkCandidate[] = [];
-    const attemptedModelIds = new Set<string>();
-
-    const initialModels = orderedModels.slice(
-      0,
-      IDEA_BENCHMARK_INITIAL_MODEL_COUNT,
-    );
-
-    const initialResults = await Promise.all(
-      initialModels.map((model) =>
-        this.executeModelCandidate(context, model).then(
-          (candidate) => ({ candidate, model }),
-          () => ({ candidate: null, model }),
-        ),
-      ),
-    );
-
-    for (const result of initialResults) {
-      attemptedModelIds.add(result.model.id);
-
-      if (result.candidate) {
-        successfulCandidates.push(result.candidate);
-      }
-    }
+    let attemptedModelCount = 0;
 
     /*
-     * Execute fallback models one at a time only when the initial group did
-     * not produce enough valid candidates. This improves comparison quality
-     * without paying the latency/rate-limit cost of running the full pool.
+     * Execute the provider-interleaved order sequentially.
+     *
+     * Sequential execution is deliberate: free OpenRouter models frequently
+     * apply provider-side concurrency limits. Running Google and OpenRouter in
+     * one strict alternating sequence avoids bursts such as Gemma -> Nemotron
+     * while still allowing another provider to recover the benchmark between
+     * OpenRouter attempts.
      */
     for (const model of orderedModels) {
       if (
         successfulCandidates.length >=
           IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES ||
-        attemptedModelIds.size >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS
+        attemptedModelCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS
       ) {
         break;
       }
 
-      if (attemptedModelIds.has(model.id)) {
-        continue;
-      }
-
-      attemptedModelIds.add(model.id);
+      attemptedModelCount += 1;
 
       try {
-        const candidate = await this.executeModelCandidate(context, model);
-        successfulCandidates.push(candidate);
+        successfulCandidates.push(
+          await this.executeModelCandidate(context, model),
+        );
       } catch {
         // Failure is already persisted and logged by executeModelCandidate.
       }
@@ -188,7 +184,7 @@ export class IdeaGenerationBenchmarkService {
 
     if (successfulCandidates.length === 0) {
       throw new ServiceUnavailableException(
-        'Every configured AI model failed to generate a valid idea.',
+        'Every configured AI model failed or produced an idea below the required quality threshold.',
       );
     }
 
@@ -220,21 +216,24 @@ export class IdeaGenerationBenchmarkService {
       })),
     );
 
+    const useJudgeScores =
+      judgeEvaluation !== null &&
+      judgeEvaluation.confidence >=
+        IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION;
+
     const scoredCandidates = successfulCandidates.map((candidate) => {
       const aiJudge =
         judgeEvaluation?.scores.find(
           (score) => score.candidateId === candidate.candidateId,
         ) ?? null;
 
-      const finalScore = this.calculateFinalScore(
-        candidate.quality.score,
-        aiJudge?.overallScore ?? null,
-      );
-
       return {
         ...candidate,
         aiJudge,
-        finalScore,
+        finalScore: this.calculateFinalScore(
+          candidate.quality.score,
+          useJudgeScores ? (aiJudge?.overallScore ?? null) : null,
+        ),
         selected: false,
       };
     });
@@ -269,8 +268,11 @@ export class IdeaGenerationBenchmarkService {
       ? {
           ...judgeEvaluation,
           winnerCandidateId: winner.candidateId,
-          reason:
-            `Hybrid winner selection (70% AI judge, 30% deterministic quality). ${judgeEvaluation.reason}`,
+          reason: this.buildSelectionReason(
+            winner,
+            judgeEvaluation,
+            useJudgeScores,
+          ),
         }
       : null;
 
@@ -289,10 +291,11 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /**
-   * Executes, parses, evaluates, and persists one model candidate.
+   * Executes, parses, evaluates, optionally revises, and persists one model.
    *
-   * Failures are persisted with an immutable model snapshot before the error is
-   * rethrown so adaptive fallback selection can continue safely.
+   * A candidate is successful only when it passes the deterministic quality
+   * gate. Provider failures and quality rejections are persisted separately so
+   * administrators can distinguish availability problems from weak outputs.
    */
   private async executeModelCandidate(
     context: IdeaGenerationContext,
@@ -307,50 +310,56 @@ export class IdeaGenerationBenchmarkService {
     }
 
     const startedAt = Date.now();
+    let failurePersisted = false;
 
     try {
-      const aiResult = await this.aiExecutionService.execute({
-        aiModelId: model.id,
-        userPrompt: prompt.promptText,
-        systemInstruction:
-          'Generate one specific, evidence-grounded, differentiated, locally deployable software product. Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, budgets, failure rates, or local facts. Mark estimates and assumptions explicitly.',
-        requestType: ApiRequestType.IDEA_GENERATION,
-        promptType: PromptType.IDEA_GENERATION,
-        generationType: context.generationType,
-        userId:
-          context.owner.type === IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
-        guestSessionId:
-          context.owner.type === IDEA_OWNER_TYPES.GUEST
-            ? context.owner.guestSessionId
-            : undefined,
-        responseFormat: AiResponseFormat.JSON,
-        responseSchema: prompt.responseSchema,
-        responseSchemaName: prompt.responseSchemaName,
-        estimatedOutputTokens: context.policy?.includePremiumOutputs
-          ? 4_096
-          : 2_048,
-        temperature: 0.55,
-      });
+      const qualityContext = this.buildQualityContext(context);
+      const initialAttempt = await this.generateAndEvaluate(
+        context,
+        model,
+        prompt.promptText,
+        qualityContext,
+      );
+      const acceptedAttempt = initialAttempt.quality.accepted
+        ? initialAttempt
+        : await this.reviseWeakCandidate(
+            context,
+            model,
+            initialAttempt,
+            qualityContext,
+          );
 
-      const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
-      const quality = this.qualityEvaluatorService.evaluate(parsedOutput);
+      if (!acceptedAttempt.quality.accepted) {
+        const errorMessage = this.buildQualityRejectionMessage(
+          acceptedAttempt.quality,
+        );
+
+        await this.persistRejectedCandidate({
+          runId: context.runId,
+          model,
+          attempt: acceptedAttempt,
+          errorMessage,
+        });
+        failurePersisted = true;
+
+        throw new ServiceUnavailableException(errorMessage);
+      }
+
       const candidateId = await this.persistSuccessfulCandidate({
         runId: context.runId,
         model,
-        aiResult,
-        parsedOutput,
-        quality,
+        aiResult: acceptedAttempt.aiResult,
+        parsedOutput: acceptedAttempt.parsedOutput,
+        quality: acceptedAttempt.quality,
       });
 
       return {
         candidateId,
-        aiResult,
-        parsedOutput,
-        quality,
+        aiResult: acceptedAttempt.aiResult,
+        parsedOutput: acceptedAttempt.parsedOutput,
+        quality: acceptedAttempt.quality,
         aiJudge: null,
-        finalScore: quality.score,
+        finalScore: acceptedAttempt.quality.score,
         selected: false,
       };
     } catch (error: unknown) {
@@ -359,12 +368,14 @@ export class IdeaGenerationBenchmarkService {
           ? error.message
           : 'Unknown model execution failure.';
 
-      await this.persistFailedCandidate({
-        runId: context.runId,
-        model,
-        responseTimeMs: Date.now() - startedAt,
-        errorMessage,
-      });
+      if (!failurePersisted) {
+        await this.persistFailedCandidate({
+          runId: context.runId,
+          model,
+          responseTimeMs: Date.now() - startedAt,
+          errorMessage,
+        });
+      }
 
       this.logger.warn(
         `Idea benchmark model "${model.displayName ?? model.modelName}" failed: ${errorMessage}`,
@@ -374,18 +385,240 @@ export class IdeaGenerationBenchmarkService {
     }
   }
 
+  /** Executes one exact model and evaluates its normalized response. */
+  private async generateAndEvaluate(
+    context: IdeaGenerationContext,
+    model: AiModel,
+    userPrompt: string,
+    qualityContext: IdeaQualityEvaluationContext,
+  ): Promise<AcceptedModelAttempt> {
+    const prompt = context.prompt;
+
+    if (!prompt) {
+      throw new ServiceUnavailableException(
+        'A persisted prompt is required before model execution.',
+      );
+    }
+
+    const aiResult = await this.aiExecutionService.execute({
+      aiModelId: model.id,
+      userPrompt,
+      systemInstruction: this.buildSystemInstruction(context),
+      requestType: ApiRequestType.IDEA_GENERATION,
+      promptType: PromptType.IDEA_GENERATION,
+      generationType: context.generationType,
+      userId:
+        context.owner.type === IDEA_OWNER_TYPES.USER
+          ? context.owner.userId
+          : undefined,
+      guestSessionId:
+        context.owner.type === IDEA_OWNER_TYPES.GUEST
+          ? context.owner.guestSessionId
+          : undefined,
+      responseFormat: AiResponseFormat.JSON,
+      responseSchema: prompt.responseSchema,
+      responseSchemaName: prompt.responseSchemaName,
+      estimatedOutputTokens: context.policy?.includePremiumOutputs
+        ? 4_096
+        : 2_048,
+      temperature: 0.55,
+    });
+    const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
+    const quality = this.qualityEvaluatorService.evaluate(
+      parsedOutput,
+      qualityContext,
+    );
+
+    return { aiResult, parsedOutput, quality };
+  }
+
   /**
-   * Persists one successful model execution and returns its candidate ID.
+   * Gives one weak candidate a single bounded self-revision opportunity.
+   *
+   * The same exact model is used so benchmark attribution remains correct. The
+   * revised request receives the original trusted prompt, its previous JSON,
+   * and only deterministic improvement instructions.
    */
+  private async reviseWeakCandidate(
+    context: IdeaGenerationContext,
+    model: AiModel,
+    initialAttempt: AcceptedModelAttempt,
+    qualityContext: IdeaQualityEvaluationContext,
+  ): Promise<AcceptedModelAttempt> {
+    const prompt = context.prompt;
+
+    if (!prompt) {
+      return initialAttempt;
+    }
+
+    const revisionPrompt = [
+      prompt.promptText,
+      'QUALITY-GATE REVISION:',
+      '- The previous response was valid JSON but did not meet the required quality threshold.',
+      '- Rewrite the complete response, not only the listed fields.',
+      '- Preserve every evidence-grounding, location, schema, and entitlement rule from the original prompt.',
+      '- Do not invent facts, APIs, regulations, statistics, or local evidence.',
+      this.qualityEvaluatorService.buildImprovementInstructions(
+        initialAttempt.quality,
+      ),
+      '<previous_candidate_json>',
+      JSON.stringify(initialAttempt.parsedOutput),
+      '</previous_candidate_json>',
+      '- Return exactly one complete JSON object matching the required schema.',
+    ].join('\n');
+
+    try {
+      const revisedAttempt = await this.generateAndEvaluate(
+        context,
+        model,
+        revisionPrompt,
+        qualityContext,
+      );
+
+      return revisedAttempt.quality.score > initialAttempt.quality.score
+        ? revisedAttempt
+        : initialAttempt;
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown revision failure.';
+
+      this.logger.warn(
+        `Quality revision for model "${model.displayName ?? model.modelName}" failed; retaining the initial candidate: ${message}`,
+      );
+
+      return initialAttempt;
+    }
+  }
+
+  /** Builds trusted metrics used by premium-output quality validation. */
+  private buildQualityContext(
+    context: IdeaGenerationContext,
+  ): IdeaQualityEvaluationContext {
+    return {
+      totalTextsAnalyzed: context.nlp?.totalTextsAnalyzed,
+      totalPostsAnalyzed: context.nlp?.totalPostsAnalyzed,
+      totalCommentsAnalyzed: context.nlp?.totalCommentsAnalyzed,
+      requireAdvancedOutputs: context.policy?.includePremiumOutputs ?? false,
+      targetCountry: context.location.country,
+      targetCity: context.location.city,
+      targetRegion: context.location.region,
+      localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
+    };
+  }
+
+  /** Builds the application-controlled system instruction for all candidates. */
+  private buildSystemInstruction(context: IdeaGenerationContext): string {
+    const metrics = context.nlp
+      ? `Trusted NLP totals: ${context.nlp.totalTextsAnalyzed} texts, ${context.nlp.totalPostsAnalyzed} posts, and ${context.nlp.totalCommentsAnalyzed} comments.`
+      : 'Trusted NLP totals are unavailable.';
+
+    return [
+      'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
+      'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
+      'When evidence is not locally verified, describe the discovered problem generally and use wording such as "designed for deployment in the target location". Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
+      'Mark estimates and assumptions explicitly.',
+      'Treat store descriptions and promotional product copy as contextual source material, never as direct proof of a user complaint or unmet need.',
+      metrics,
+      context.policy?.includePremiumOutputs
+        ? 'The NLP executive summary must state those exact three totals. The budget estimation must be explicitly preliminary and include a currency, numeric range, major cost categories, and assumptions.'
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  /**
+   * Returns true only when persisted sample evidence contains location metadata
+   * matching the requested target. Text mentions alone are not treated as
+   * verified geolocation.
+   */
+  private hasVerifiedLocalEvidence(context: IdeaGenerationContext): boolean {
+    const targets = [
+      context.location.country,
+      context.location.city,
+      context.location.region,
+    ]
+      .map((value) => this.normalizeLocationValue(value))
+      .filter((value): value is string => value !== null);
+
+    if (targets.length === 0 || !context.nlp) {
+      return false;
+    }
+
+    return [context.nlp.samplePosts, context.nlp.sampleComments].some((value) =>
+      this.containsMatchingLocationMetadata(value, targets),
+    );
+  }
+
+  private containsMatchingLocationMetadata(
+    value: unknown,
+    targets: readonly string[],
+  ): boolean {
+    if (Array.isArray(value)) {
+      return value.some((item) =>
+        this.containsMatchingLocationMetadata(item, targets),
+      );
+    }
+
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const normalizedKey = key.toLocaleLowerCase();
+
+      if (
+        ['country', 'city', 'region', 'location'].includes(normalizedKey) &&
+        typeof nestedValue === 'string'
+      ) {
+        const normalizedValue = this.normalizeLocationValue(nestedValue);
+
+        if (
+          normalizedValue &&
+          targets.some(
+            (target) =>
+              normalizedValue === target ||
+              normalizedValue.includes(target) ||
+              target.includes(normalizedValue),
+          )
+        ) {
+          return true;
+        }
+      }
+
+      if (this.containsMatchingLocationMetadata(nestedValue, targets)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private normalizeLocationValue(value: string | null): string | null {
+    const normalized = value
+      ?.normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    return normalized ? normalized : null;
+  }
+
+  /** Converts deterministic issues into one concise rejection reason. */
+  private buildQualityRejectionMessage(quality: IdeaQualityEvaluation): string {
+    const issueCodes = quality.issues.map((issue) => issue.code).join(', ');
+
+    return `QUALITY_GATE_REJECTED: candidate score ${quality.score} is below the required threshold. Issues: ${issueCodes || 'insufficient overall quality'}.`;
+  }
+
+  /** Persists one quality-approved model execution. */
   private async persistSuccessfulCandidate(input: {
     readonly runId: string;
-    readonly model: {
-      readonly id: string;
-      readonly providerKey: string;
-      readonly apiModelId: string;
-      readonly modelName: string;
-      readonly displayName: string | null;
-    };
+    readonly model: Pick<
+      AiModel,
+      'id' | 'providerKey' | 'apiModelId' | 'modelName' | 'displayName'
+    >;
     readonly aiResult: AiExecutionResult;
     readonly parsedOutput: ParsedIdeaAiOutput;
     readonly quality: IdeaQualityEvaluation;
@@ -401,6 +634,7 @@ export class IdeaGenerationBenchmarkService {
         rawResponse: input.aiResult.text,
         parsedResponse: this.toPrismaJson(input.parsedOutput),
         overallScore: input.quality.score,
+        finalScore: input.quality.score,
         innovationScore: input.quality.dimensions.innovation,
         marketFitScore: input.quality.dimensions.marketFit,
         technicalQualityScore: input.quality.dimensions.technicalQuality,
@@ -420,18 +654,52 @@ export class IdeaGenerationBenchmarkService {
     return candidate.id;
   }
 
-  /**
-   * Persists a failed execution while preserving its model snapshot.
-   */
+  /** Persists a structurally valid response rejected by the quality gate. */
+  private async persistRejectedCandidate(input: {
+    readonly runId: string;
+    readonly model: Pick<
+      AiModel,
+      'id' | 'providerKey' | 'apiModelId' | 'modelName' | 'displayName'
+    >;
+    readonly attempt: AcceptedModelAttempt;
+    readonly errorMessage: string;
+  }): Promise<void> {
+    await this.prisma.ideaGenerationCandidate.create({
+      data: {
+        runId: input.runId,
+        aiModelId: input.model.id,
+        providerKey: input.model.providerKey,
+        apiModelId: input.model.apiModelId,
+        modelName: input.model.modelName,
+        displayName: input.model.displayName,
+        rawResponse: input.attempt.aiResult.text,
+        parsedResponse: this.toPrismaJson(input.attempt.parsedOutput),
+        overallScore: input.attempt.quality.score,
+        finalScore: input.attempt.quality.score,
+        innovationScore: input.attempt.quality.dimensions.innovation,
+        marketFitScore: input.attempt.quality.dimensions.marketFit,
+        technicalQualityScore:
+          input.attempt.quality.dimensions.technicalQuality,
+        completenessScore: input.attempt.quality.dimensions.completeness,
+        originalityScore: input.attempt.quality.dimensions.originality,
+        inputTokens: input.attempt.aiResult.inputTokens,
+        outputTokens: input.attempt.aiResult.outputTokens,
+        costEstimate: input.attempt.aiResult.costEstimate,
+        responseTimeMs: input.attempt.aiResult.responseTimeMs,
+        selected: false,
+        errorCode: 'QUALITY_GATE_REJECTED',
+        errorMessage: input.errorMessage,
+      },
+    });
+  }
+
+  /** Persists a provider, parsing, or execution failure. */
   private async persistFailedCandidate(input: {
     readonly runId: string;
-    readonly model: {
-      readonly id: string;
-      readonly providerKey: string;
-      readonly apiModelId: string;
-      readonly modelName: string;
-      readonly displayName: string | null;
-    };
+    readonly model: Pick<
+      AiModel,
+      'id' | 'providerKey' | 'apiModelId' | 'modelName' | 'displayName'
+    >;
     readonly responseTimeMs: number;
     readonly errorMessage: string;
   }): Promise<void> {
@@ -451,18 +719,11 @@ export class IdeaGenerationBenchmarkService {
     });
   }
 
-  /**
-   * Selects the only successful candidate when comparison is unnecessary.
-   */
+  /** Selects the only quality-approved candidate atomically. */
   private async selectSingleCandidate(
     runId: string,
     candidateId: string,
   ): Promise<void> {
-    /*
-     * Use Prisma's sequential batch transaction rather than an interactive
-     * callback transaction. The batch form keeps both writes atomic without
-     * being subject to the interactive transaction's short callback timeout.
-     */
     await this.prisma.$transaction([
       this.prisma.ideaGenerationCandidate.updateMany({
         where: { runId },
@@ -470,30 +731,24 @@ export class IdeaGenerationBenchmarkService {
       }),
       this.prisma.ideaGenerationCandidate.update({
         where: { id: candidateId },
-        data: { selected: true },
+        data: {
+          selected: true,
+          judgeReason:
+            'Selected because it was the only quality-approved candidate available for this benchmark run.',
+          judgeConfidence: 0,
+          requiresLegalVerification: null,
+        },
       }),
     ]);
   }
 
-  /**
-   * Persists available judge scores and atomically marks the final winner.
-   */
+  /** Persists available judge scores and atomically marks the final winner. */
   private async persistFinalDecision(
     runId: string,
     candidates: readonly IdeaBenchmarkCandidate[],
     winnerCandidateId: string,
     evaluation: IdeaJudgeEvaluation | null,
   ): Promise<void> {
-    /*
-     * Build every database write before opening the transaction and execute
-     * them with Prisma's sequential batch transaction API.
-     *
-     * The previous interactive transaction awaited one update at a time inside
-     * a callback. Prisma closes interactive transactions after their callback
-     * timeout, which caused the winner-persistence step to fail even though AI
-     * generation and judging had already completed. Batch transactions preserve
-     * atomicity without keeping a long-running JavaScript callback open.
-     */
     const resetDecisionOperation =
       this.prisma.ideaGenerationCandidate.updateMany({
         where: { runId },
@@ -513,6 +768,7 @@ export class IdeaGenerationBenchmarkService {
         where: { id: candidate.candidateId },
         data: {
           aiJudgeScore: score?.overallScore ?? null,
+          finalScore: candidate.finalScore,
           localRelevanceScore: score?.localRelevance ?? null,
           problemImportanceScore: score?.problemImportance ?? null,
           aiJudgeInnovationScore: score?.innovation ?? null,
@@ -530,9 +786,7 @@ export class IdeaGenerationBenchmarkService {
             ? (evaluation?.reason ??
               'Selected by deterministic fallback ranking because the comparative AI judge was unavailable.')
             : null,
-          judgeConfidence: isWinner
-            ? (evaluation?.confidence ?? 0)
-            : null,
+          judgeConfidence: isWinner ? (evaluation?.confidence ?? 0) : null,
           requiresLegalVerification: isWinner
             ? (evaluation?.requiresLegalVerification ?? null)
             : null,
@@ -548,11 +802,45 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /**
-   * Calculates the final winner score.
+   * Builds an administrator-readable explanation of the final winner.
    *
-   * When the AI judge is unavailable, the deterministic score is used without
-   * penalizing otherwise valid candidates.
+   * Low-confidence judge results are retained for diagnostics but cannot
+   * override the deterministic quality evaluator.
    */
+  private buildSelectionReason(
+    winner: IdeaBenchmarkCandidate,
+    evaluation: IdeaJudgeEvaluation,
+    useJudgeScores: boolean,
+  ): string {
+    const deterministicScore = winner.quality.score.toFixed(2);
+    const judgeScore = winner.aiJudge?.overallScore;
+    const finalScore = winner.finalScore.toFixed(2);
+
+    if (!useJudgeScores) {
+      return [
+        `Deterministic winner selection was used because judge confidence ${evaluation.confidence.toFixed(2)} was below the required threshold ${IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION}.`,
+        `Winner deterministic score: ${deterministicScore}.`,
+        judgeScore === undefined
+          ? 'The judge did not return a score for the selected candidate.'
+          : `Retained judge score for diagnostics: ${judgeScore.toFixed(2)}.`,
+        `Final score: ${finalScore}.`,
+        `Original judge explanation: ${evaluation.reason}`,
+      ].join(' ');
+    }
+
+    return [
+      `Hybrid winner selection used ${Math.round(IDEA_JUDGE_FINAL_SCORE_WEIGHT * 100)}% AI judge and ${Math.round(IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT * 100)}% deterministic quality.`,
+      `Winner deterministic score: ${deterministicScore}.`,
+      judgeScore === undefined
+        ? 'Judge score was unavailable.'
+        : `Winner judge score: ${judgeScore.toFixed(2)}.`,
+      `Final score: ${finalScore}.`,
+      `Judge confidence: ${evaluation.confidence.toFixed(2)}.`,
+      `Original judge explanation: ${evaluation.reason}`,
+    ].join(' ');
+  }
+
+  /** Calculates the stable hybrid winner score. */
   private calculateFinalScore(
     deterministicScore: number,
     aiJudgeScore: number | null,
@@ -568,16 +856,12 @@ export class IdeaGenerationBenchmarkService {
     return Math.round(score * 100) / 100;
   }
 
-  /**
-   * Converts a validated idea output into a Prisma-compatible JSON value.
-   */
+  /** Converts a validated idea output into Prisma-compatible JSON. */
   private toPrismaJson(value: ParsedIdeaAiOutput): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
-  /**
-   * Converts immutable JSON-compatible values into Prisma input JSON.
-   */
+  /** Converts immutable JSON-compatible values into Prisma input JSON. */
   private toPrismaJsonValue(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }

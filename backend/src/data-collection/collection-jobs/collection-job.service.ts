@@ -417,6 +417,10 @@ export class CollectionJobService {
     collectionJobId: string,
     dataSourceId: string,
     error: unknown,
+    totals?: {
+      totalPosts: number;
+      totalComments: number;
+    },
   ) {
     return this.prisma.collectionJobSource.update({
       where: {
@@ -428,9 +432,9 @@ export class CollectionJobService {
 
       data: {
         status: CollectionJobStatus.FAILED,
-
+        totalPosts: this.toNonNegativeInteger(totals?.totalPosts ?? 0),
+        totalComments: this.toNonNegativeInteger(totals?.totalComments ?? 0),
         completedAt: new Date(),
-
         failureReason: this.getErrorMessage(error),
       },
     });
@@ -463,14 +467,9 @@ export class CollectionJobService {
   /**
    * Completes the parent collection job.
    */
-  completeJob(
-    id: string,
+  async completeJob(id: string) {
+    const totals = await this.countPersistedJobData(id);
 
-    totals: {
-      totalPosts: number;
-      totalComments: number;
-    },
-  ) {
     return this.prisma.collectionJob.update({
       where: {
         id,
@@ -478,17 +477,41 @@ export class CollectionJobService {
 
       data: {
         status: CollectionJobStatus.COMPLETED,
-
-        totalPosts: this.toNonNegativeInteger(totals.totalPosts),
-
-        totalComments: this.toNonNegativeInteger(totals.totalComments),
-
+        totalPosts: totals.totalPosts,
+        totalComments: totals.totalComments,
         completedAt: new Date(),
         failedReason: null,
       },
 
       include: collectionJobInclude,
     });
+  }
+
+  /**
+   * Counts authoritative persisted posts and comments for a collection job.
+   *
+   * Parent counters are derived from stored rows instead of source-loop
+   * accumulators so retries and partial source failures cannot leave the job
+   * summary inconsistent with the data consumed by NLP.
+   */
+  async countPersistedJobData(id: string): Promise<{
+    totalPosts: number;
+    totalComments: number;
+  }> {
+    const [totalPosts, totalComments] = await Promise.all([
+      this.prisma.socialPost.count({
+        where: { collectionJobId: id },
+      }),
+      this.prisma.socialComment.count({
+        where: {
+          post: {
+            collectionJobId: id,
+          },
+        },
+      }),
+    ]);
+
+    return { totalPosts, totalComments };
   }
 
   /**

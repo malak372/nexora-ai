@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  hasDirectCommunityComplaint,
+  isLikelyProductDescription,
+} from '../../common/utils/community-evidence.util';
+
+import {
   AI_CONFIDENCE_WEIGHT,
   RULE_BASED_CONFIDENCE_WEIGHT,
 } from '../constants/ai-enhancement.constants';
@@ -45,6 +50,8 @@ const HIGH_PRIORITY_THRESHOLD = 0.67;
  * Threshold at or above which an AI score becomes MEDIUM priority.
  */
 const MEDIUM_PRIORITY_THRESHOLD = 0.34;
+
+type EvidenceRecord = Pick<AiEnhancementEvidence, 'text' | 'sourceType'>;
 
 /**
  * Merges validated AI-enhancement output with the authoritative
@@ -158,24 +165,30 @@ export class AnalysisMergeService {
   private mergeRecurringProblems(
     ruleBasedProblems: IntelligentAnalysisOutput['recurringProblems'],
     aiProblems: ReadonlyArray<AiEnhancedRecurringProblem>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): IntelligentAnalysisOutput['recurringProblems'] {
-    const merged = ruleBasedProblems.map((problem) => ({
-      ...problem,
-      evidenceSamples: [...problem.evidenceSamples],
-    }));
+    const merged = this.consolidateRuleBasedProblems(ruleBasedProblems);
 
     const indexByKey = new Map(
-      merged.map((problem, index) => [this.normalizeKey(problem.title), index]),
+      merged.map((problem, index) => [
+        this.normalizeKey(this.canonicalizeProblemTitle(problem.title)),
+        index,
+      ]),
     );
 
     for (const aiProblem of aiProblems) {
-      const key = this.normalizeKey(aiProblem.title);
+      const canonicalTitle = this.canonicalizeProblemTitle(aiProblem.title);
+      const key = this.normalizeKey(canonicalTitle);
       const existingIndex = indexByKey.get(key);
       const aiEvidence = this.resolveEvidenceSamples(
         aiProblem.supportingEvidenceIds,
         evidenceById,
+        true,
       );
+
+      if (aiEvidence.length === 0) {
+        continue;
+      }
 
       if (existingIndex !== undefined) {
         const existing = merged[existingIndex];
@@ -196,8 +209,8 @@ export class AnalysisMergeService {
       }
 
       merged.push({
-        title: aiProblem.title,
-        frequency: aiProblem.supportingEvidenceIds.length,
+        title: canonicalTitle,
+        frequency: aiEvidence.length,
         severity: this.scoreToPriority(aiProblem.severity),
         evidenceSamples: aiEvidence,
       });
@@ -215,24 +228,30 @@ export class AnalysisMergeService {
   private mergeExtractedNeeds(
     ruleBasedNeeds: IntelligentAnalysisOutput['extractedNeeds'],
     aiNeeds: ReadonlyArray<AiEnhancedNeed>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): IntelligentAnalysisOutput['extractedNeeds'] {
-    const merged = ruleBasedNeeds.map((need) => ({
-      ...need,
-      evidenceSamples: [...need.evidenceSamples],
-    }));
+    const merged = this.consolidateRuleBasedNeeds(ruleBasedNeeds);
 
     const indexByKey = new Map(
-      merged.map((need, index) => [this.normalizeKey(need.need), index]),
+      merged.map((need, index) => [
+        this.normalizeKey(this.canonicalizeNeedTitle(need.need)),
+        index,
+      ]),
     );
 
     for (const aiNeed of aiNeeds) {
-      const key = this.normalizeKey(aiNeed.need);
+      const canonicalNeed = this.canonicalizeNeedTitle(aiNeed.need);
+      const key = this.normalizeKey(canonicalNeed);
       const existingIndex = indexByKey.get(key);
       const aiEvidence = this.resolveEvidenceSamples(
         aiNeed.supportingEvidenceIds,
         evidenceById,
+        true,
       );
+
+      if (aiEvidence.length === 0) {
+        continue;
+      }
 
       if (existingIndex !== undefined) {
         const existing = merged[existingIndex];
@@ -253,8 +272,9 @@ export class AnalysisMergeService {
       }
 
       merged.push({
-        need: aiNeed.need,
+        need: canonicalNeed,
         priority: this.scoreToPriority(aiNeed.confidence),
+        relatedProblem: this.inferRelatedProblemForNeed(canonicalNeed),
         evidenceSamples: aiEvidence,
       });
 
@@ -273,7 +293,7 @@ export class AnalysisMergeService {
   private mergeFeatureRequests(
     ruleBasedRequests: IntelligentAnalysisOutput['featureRequests'],
     aiRequests: ReadonlyArray<AiEnhancedFeatureRequest>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): IntelligentAnalysisOutput['featureRequests'] {
     const merged = ruleBasedRequests.map((request) => ({
       ...request,
@@ -293,6 +313,7 @@ export class AnalysisMergeService {
       const aiEvidence = this.resolveEvidenceSamples(
         aiRequest.supportingEvidenceIds,
         evidenceById,
+        false,
       );
 
       if (existingIndex !== undefined) {
@@ -331,7 +352,7 @@ export class AnalysisMergeService {
   private mergeOpportunities(
     ruleBasedOpportunities: IntelligentAnalysisOutput['opportunities'],
     aiOpportunities: ReadonlyArray<AiEnhancedOpportunity>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): IntelligentAnalysisOutput['opportunities'] {
     const merged = ruleBasedOpportunities.map((opportunity) => ({
       ...opportunity,
@@ -351,7 +372,12 @@ export class AnalysisMergeService {
       const aiEvidence = this.resolveEvidenceSamples(
         aiOpportunity.supportingEvidenceIds,
         evidenceById,
+        true,
       );
+
+      if (aiEvidence.length === 0) {
+        continue;
+      }
 
       if (existingIndex !== undefined) {
         const existing = merged[existingIndex];
@@ -391,7 +417,7 @@ export class AnalysisMergeService {
   private mergeAdditionalInsights(
     ruleBasedInsights: ReadonlyArray<string>,
     aiInsights: ReadonlyArray<AiEnhancedInsight>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): string[] {
     const merged = [...ruleBasedInsights];
     const seen = new Set(merged.map((item) => this.normalizeKey(item)));
@@ -405,6 +431,7 @@ export class AnalysisMergeService {
       this.resolveEvidenceSamples(
         aiInsight.supportingEvidenceIds,
         evidenceById,
+        false,
       );
 
       const key = this.normalizeKey(aiInsight.insight);
@@ -427,15 +454,15 @@ export class AnalysisMergeService {
    */
   private buildEvidenceLookup(
     evidence: ReadonlyArray<AiEnhancementEvidence>,
-  ): ReadonlyMap<string, string> {
-    const lookup = new Map<string, string>();
+  ): ReadonlyMap<string, EvidenceRecord> {
+    const lookup = new Map<string, EvidenceRecord>();
 
     for (const item of evidence) {
       const id = item.id.trim();
       const text = item.text.trim();
 
       if (!lookup.has(id)) {
-        lookup.set(id, text);
+        lookup.set(id, { text, sourceType: item.sourceType });
       }
     }
 
@@ -450,19 +477,272 @@ export class AnalysisMergeService {
    */
   private resolveEvidenceSamples(
     evidenceIds: ReadonlyArray<string>,
-    evidenceById: ReadonlyMap<string, string>,
+    evidenceById: ReadonlyMap<string, EvidenceRecord>,
+    requireDirectEvidence: boolean,
   ): string[] {
     const samples: string[] = [];
 
     for (const id of evidenceIds) {
-      const sample = evidenceById.get(id);
+      const evidence = evidenceById.get(id);
 
-      if (sample !== undefined && sample.length > 0) {
-        samples.push(sample);
+      if (!evidence?.text) {
+        continue;
       }
+
+      if (isLikelyProductDescription(evidence.text, evidence.sourceType)) {
+        continue;
+      }
+
+      if (
+        requireDirectEvidence &&
+        !hasDirectCommunityComplaint(evidence.text)
+      ) {
+        continue;
+      }
+
+      samples.push(evidence.text);
     }
 
     return this.mergeUniqueStrings([], samples);
+  }
+
+  /**
+   * Consolidates semantically equivalent rule-based problem labels before AI
+   * output is merged. Frequencies are summed and evidence is deduplicated.
+   */
+  private consolidateRuleBasedProblems(
+    problems: IntelligentAnalysisOutput['recurringProblems'],
+  ): IntelligentAnalysisOutput['recurringProblems'] {
+    const groups = new Map<
+      string,
+      IntelligentAnalysisOutput['recurringProblems'][number]
+    >();
+
+    for (const problem of problems) {
+      const directEvidence = problem.evidenceSamples.filter((sample) =>
+        hasDirectCommunityComplaint(sample),
+      );
+
+      if (directEvidence.length === 0) {
+        continue;
+      }
+
+      const title = this.canonicalizeProblemTitle(problem.title);
+      const key = this.normalizeKey(title);
+      const current = groups.get(key);
+
+      if (!current) {
+        groups.set(key, {
+          ...problem,
+          title,
+          evidenceSamples: this.mergeUniqueStrings([], directEvidence),
+        });
+        continue;
+      }
+
+      groups.set(key, {
+        ...current,
+        frequency: current.frequency + problem.frequency,
+        severity: this.maxPriority(current.severity, problem.severity),
+        evidenceSamples: this.mergeUniqueStrings(
+          current.evidenceSamples,
+          directEvidence,
+        ),
+      });
+    }
+
+    return [...groups.values()].sort(
+      (first, second) =>
+        second.frequency - first.frequency ||
+        this.priorityToScore(second.severity) -
+          this.priorityToScore(first.severity) ||
+        first.title.localeCompare(second.title),
+    );
+  }
+
+  /**
+   * Consolidates equivalent rule-based needs and removes product-description
+   * evidence before AI additions are considered.
+   */
+  private consolidateRuleBasedNeeds(
+    needs: IntelligentAnalysisOutput['extractedNeeds'],
+  ): IntelligentAnalysisOutput['extractedNeeds'] {
+    const groups = new Map<
+      string,
+      IntelligentAnalysisOutput['extractedNeeds'][number]
+    >();
+
+    for (const need of needs) {
+      const canonicalNeed = this.canonicalizeNeedTitle(need.need);
+      const key = this.normalizeKey(canonicalNeed);
+      const directEvidence = need.evidenceSamples.filter((sample) =>
+        hasDirectCommunityComplaint(sample),
+      );
+
+      if (directEvidence.length === 0) {
+        continue;
+      }
+
+      const current = groups.get(key);
+
+      if (!current) {
+        groups.set(key, {
+          ...need,
+          need: canonicalNeed,
+          relatedProblem:
+            need.relatedProblem ??
+            this.inferRelatedProblemForNeed(canonicalNeed),
+          evidenceSamples: this.mergeUniqueStrings([], directEvidence),
+        });
+        continue;
+      }
+
+      groups.set(key, {
+        ...current,
+        priority: this.maxPriority(current.priority, need.priority),
+        relatedProblem:
+          current.relatedProblem ??
+          need.relatedProblem ??
+          this.inferRelatedProblemForNeed(canonicalNeed),
+        evidenceSamples: this.mergeUniqueStrings(
+          current.evidenceSamples,
+          directEvidence,
+        ),
+      });
+    }
+
+    return [...groups.values()];
+  }
+
+  /** Maps semantically equivalent need phrases to one stable label. */
+  private canonicalizeNeedTitle(value: string): string {
+    const normalized = this.normalizeKey(value);
+
+    // Match concrete workflows before generic words such as "reliable".
+    if (/offline|without internet|no internet/iu.test(normalized)) {
+      return 'Offline Access to Learning Materials';
+    }
+
+    if (
+      /desktop|laptop|computer|cross device|cross platform/iu.test(normalized)
+    ) {
+      return 'Cross-Device Desktop and Laptop Access';
+    }
+
+    if (/navigation|interface|back button|scroll|popup/iu.test(normalized)) {
+      return 'Clear and Stable Navigation';
+    }
+
+    if (/data|sync|synchronization|recovery|lost progress/iu.test(normalized)) {
+      return 'Reliable Data Synchronization and Recovery';
+    }
+
+    if (/activation|verification|login|sign in|account/iu.test(normalized)) {
+      return 'Reliable Account Activation and Login';
+    }
+
+    if (/document|download|syllabus|file access/iu.test(normalized)) {
+      return 'Reliable Document Access and Downloads';
+    }
+
+    if (
+      /crash|stable app|stable application|reliability|performance/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Stable and Reliable Application Operation';
+    }
+
+    return value.replace(/\s+/gu, ' ').trim();
+  }
+
+  /** Infers the canonical problem related to one normalized need. */
+  private inferRelatedProblemForNeed(value: string): string | undefined {
+    const normalized = this.normalizeKey(value);
+
+    if (/crash|stable|reliable application|performance/iu.test(normalized)) {
+      return 'Application Reliability and Crash Failures';
+    }
+
+    if (/desktop|laptop|cross device|cross platform/iu.test(normalized)) {
+      return 'Cross-Device Access Barriers';
+    }
+
+    if (/navigation|interface/iu.test(normalized)) {
+      return 'Navigation and Interface Failures';
+    }
+
+    if (/data|sync|recovery/iu.test(normalized)) {
+      return 'Data Loss and Synchronization Failures';
+    }
+
+    if (/activation|verification|login|account/iu.test(normalized)) {
+      return 'Account Activation and Login Failures';
+    }
+
+    if (/document|download|syllabus|file/iu.test(normalized)) {
+      return 'Document Access and Download Failures';
+    }
+
+    return undefined;
+  }
+
+  /** Maps equivalent AI and rule-based labels to one stable problem title. */
+  private canonicalizeProblemTitle(value: string): string {
+    const normalized = this.normalizeKey(value);
+
+    // Match concrete workflows before generic terms such as "failure".
+    if (
+      /document|download|syllabus|file access|broken link/iu.test(normalized)
+    ) {
+      return 'Document Access and Download Failures';
+    }
+
+    if (
+      /data loss|synchronization|sync|recovery|missing history/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Data Loss and Synchronization Failures';
+    }
+
+    if (
+      /cross-device|cross device|desktop|laptop|computer|mobile only/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Cross-Device Access Barriers';
+    }
+
+    if (
+      /activation|verification|authentication|login|sign in|account access/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Account Activation and Login Failures';
+    }
+
+    if (
+      /navigation|interface|usability|back button|scroll|popup/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Navigation and Interface Failures';
+    }
+
+    if (/cost|paywall|paid|price|subscription/iu.test(normalized)) {
+      return 'High Cost or Paywall Restrictions';
+    }
+
+    if (
+      /crash|instability|reliability|freeze|generic error|glitch/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Application Reliability and Crash Failures';
+    }
+
+    return value.replace(/\s+/gu, ' ').trim();
   }
 
   /**
