@@ -18,6 +18,11 @@ import {
   calculateTotalPages,
 } from '../../../../utilities/analytics/analytics.helper';
 
+import {
+  buildIdeaBenchmarkSummary,
+  IDEA_BENCHMARK_CANDIDATE_SELECT,
+  mapIdeaBenchmarkCandidate,
+} from '../../../generation/mappers/idea-benchmark-response.mapper';
 import { GetAdminIdeasQueryDto } from '../dto/get-admin-ideas-query.dto';
 
 /**
@@ -994,6 +999,16 @@ export class AdminIdeasService {
                 updatedAt: true,
               },
             },
+
+            benchmarkCandidates: {
+              orderBy: [
+                { selected: 'desc' },
+                { finalScore: 'desc' },
+                { overallScore: 'desc' },
+                { responseTimeMs: 'asc' },
+              ],
+              select: IDEA_BENCHMARK_CANDIDATE_SELECT,
+            },
           },
         },
 
@@ -1461,6 +1476,19 @@ export class AdminIdeasService {
       throw new NotFoundException('Idea not found.');
     }
 
-    return idea;
+    const benchmarkCandidates = idea.generationRun
+      ? idea.generationRun.benchmarkCandidates.map(mapIdeaBenchmarkCandidate)
+      : [];
+
+    return {
+      ...idea,
+      generationRun: idea.generationRun
+        ? {
+            ...idea.generationRun,
+            benchmarkCandidates,
+            benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+          }
+        : null,
+    };
   }
 }

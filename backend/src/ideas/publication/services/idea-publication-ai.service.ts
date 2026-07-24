@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { ApiRequestType, Prisma, PromptType } from '@prisma/client';
+import {
+  AiRoutingStrategy,
+  ApiRequestType,
+  Prisma,
+  PromptType,
+} from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -118,6 +123,7 @@ export class IdeaPublicationAiService {
       maxOutputTokens: PUBLICATION_DESCRIPTION_MAX_OUTPUT_TOKENS,
       estimatedOutputTokens: PUBLICATION_DESCRIPTION_ESTIMATED_OUTPUT_TOKENS,
       temperature: PUBLICATION_DESCRIPTION_TEMPERATURE,
+      strategy: AiRoutingStrategy.BALANCED,
     });
 
     const description = execution.text.trim();

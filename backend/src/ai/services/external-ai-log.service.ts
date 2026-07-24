@@ -380,9 +380,7 @@ export class ExternalAiLogService {
     }
 
     if (input.isRetryable === undefined) {
-      throw new BadRequestException(
-        'Failed AI logs must include isRetryable.',
-      );
+      throw new BadRequestException('Failed AI logs must include isRetryable.');
     }
   }
 
@@ -464,13 +462,17 @@ export class ExternalAiLogService {
       return;
     }
 
+    if (typeof value !== 'string') {
+      throw new BadRequestException(
+        'AI log errorCode must be a string when provided.',
+      );
+    }
+
     if (
-      !Object.values(AiProviderErrorCode).includes(
-        value as AiProviderErrorCode,
-      )
+      !Object.values(AiProviderErrorCode).includes(value as AiProviderErrorCode)
     ) {
       throw new BadRequestException(
-        `Unsupported AI provider error code: ${String(value)}.`,
+        `Unsupported AI provider error code: "${value}".`,
       );
     }
   }

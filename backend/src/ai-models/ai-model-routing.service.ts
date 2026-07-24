@@ -4,13 +4,32 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
+import { ConfigService } from '@nestjs/config';
+
 import { AiRoutingStrategy } from '@prisma/client';
 
 import type { AiModel } from '@prisma/client';
 
+import { PrismaService } from '../prisma/prisma.service';
+
 import { AiModelsService } from './ai-models.service';
 
 import type { AiRoutingCostContext } from './types/ai-model-routing.type';
+
+const DEFAULT_PROVIDER_QUOTA_COOLDOWN_MINUTES = 15;
+const MIN_PROVIDER_QUOTA_COOLDOWN_MINUTES = 1;
+const MAX_PROVIDER_QUOTA_COOLDOWN_MINUTES = 24 * 60;
+
+const DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES = 3;
+const MIN_MODEL_TRANSIENT_COOLDOWN_MINUTES = 1;
+const MAX_MODEL_TRANSIENT_COOLDOWN_MINUTES = 60;
+
+const MODEL_TRANSIENT_ERROR_CODES = new Set([
+  'RATE_LIMIT',
+  'PROVIDER_UNAVAILABLE',
+  'TIMEOUT',
+  'NETWORK',
+]);
 
 /**
  * Service responsible for resolving the order in which routable
@@ -27,8 +46,9 @@ import type { AiRoutingCostContext } from './types/ai-model-routing.type';
  *   counts and places the least expensive model first.
  *
  * - BALANCED:
- *   Produces a weighted-random execution order using each model's
- *   configured routing weight.
+ *   Alternates providers whenever possible, then applies persisted routing
+ *   weights inside each provider. Provider probability is based on average
+ *   model weight so providers with more database rows receive no unfair bias.
  *
  * Only active, supported, and operationally routable models are returned
  * by AiModelsService and considered by this service.
@@ -37,7 +57,51 @@ import type { AiRoutingCostContext } from './types/ai-model-routing.type';
  */
 @Injectable()
 export class AiModelRoutingService {
-  constructor(private readonly aiModelsService: AiModelsService) {}
+  /**
+   * In-memory cursor used to rotate the first provider of balanced operations.
+   *
+   * The cursor guarantees that consecutive operations handled by one backend
+   * instance do not always begin with the same provider when alternatives are
+   * healthy and routable. Fallback ordering still alternates providers inside
+   * each individual operation.
+   */
+  private balancedProviderCursor = 0;
+
+  /** Duration for which an account-level provider quota failure is cached. */
+  private readonly providerQuotaCooldownMs: number;
+
+  /** Duration for which one temporarily overloaded model is skipped. */
+  private readonly modelTransientCooldownMs: number;
+
+  constructor(
+    private readonly aiModelsService: AiModelsService,
+    private readonly prisma: PrismaService,
+    configService: ConfigService,
+  ) {
+    const configuredMinutes = Number(
+      configService.get<string>('AI_PROVIDER_QUOTA_COOLDOWN_MINUTES'),
+    );
+    const cooldownMinutes =
+      Number.isInteger(configuredMinutes) &&
+      configuredMinutes >= MIN_PROVIDER_QUOTA_COOLDOWN_MINUTES &&
+      configuredMinutes <= MAX_PROVIDER_QUOTA_COOLDOWN_MINUTES
+        ? configuredMinutes
+        : DEFAULT_PROVIDER_QUOTA_COOLDOWN_MINUTES;
+
+    this.providerQuotaCooldownMs = cooldownMinutes * 60 * 1_000;
+
+    const configuredModelCooldownMinutes = Number(
+      configService.get<string>('AI_MODEL_TRANSIENT_COOLDOWN_MINUTES'),
+    );
+    const modelCooldownMinutes =
+      Number.isInteger(configuredModelCooldownMinutes) &&
+      configuredModelCooldownMinutes >= MIN_MODEL_TRANSIENT_COOLDOWN_MINUTES &&
+      configuredModelCooldownMinutes <= MAX_MODEL_TRANSIENT_COOLDOWN_MINUTES
+        ? configuredModelCooldownMinutes
+        : DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES;
+
+    this.modelTransientCooldownMs = modelCooldownMinutes * 60 * 1_000;
+  }
 
   /**
    * Resolves the ordered list of AI models that should be attempted for
@@ -62,7 +126,9 @@ export class AiModelRoutingService {
   ): Promise<AiModel[]> {
     this.validateCostContext(costContext);
 
-    const models = await this.aiModelsService.getRoutableModels();
+    const routableModels = await this.aiModelsService.getRoutableModels();
+    const models =
+      await this.filterTemporarilyUnavailableProviders(routableModels);
 
     if (models.length === 0) {
       throw new ServiceUnavailableException(
@@ -104,18 +170,143 @@ export class AiModelRoutingService {
       throw new BadRequestException('AI model identifier is required.');
     }
 
-    const models = await this.aiModelsService.getRoutableModels();
+    const routableModels = await this.aiModelsService.getRoutableModels();
+    const configuredModel = routableModels.find(
+      (candidate) => candidate.id === normalizedModelId,
+    );
+
+    if (!configuredModel) {
+      throw new ServiceUnavailableException(
+        `AI model "${normalizedModelId}" is not active or routable.`,
+      );
+    }
+
+    const models =
+      await this.filterTemporarilyUnavailableProviders(routableModels);
     const model = models.find(
       (candidate) => candidate.id === normalizedModelId,
     );
 
     if (!model) {
       throw new ServiceUnavailableException(
-        `AI model "${normalizedModelId}" is not active or routable.`,
+        `AI model "${configuredModel.displayName ?? configuredModel.modelName}" is temporarily unavailable because of a recent provider quota, rate-limit, or availability failure.`,
       );
     }
 
     return model;
+  }
+
+  /**
+   * Removes account-level quota failures and temporarily overloaded models.
+   *
+   * Provider-wide blocking is reserved for INSUFFICIENT_QUOTA because a
+   * generic OpenRouter 429 may affect only one free model or upstream host.
+   * RATE_LIMIT and PROVIDER_UNAVAILABLE therefore create a short model-level
+   * cooldown while other models from the same provider remain eligible.
+   * A later successful request immediately clears either cooldown.
+   */
+  async filterTemporarilyUnavailableProviders(
+    models: readonly AiModel[],
+  ): Promise<AiModel[]> {
+    if (models.length === 0) {
+      return [];
+    }
+
+    const providerKeys = [...new Set(models.map((model) => model.providerKey))];
+    const modelIds = models.map((model) => model.id);
+    const providerCutoff = new Date(Date.now() - this.providerQuotaCooldownMs);
+    const modelCutoff = new Date(Date.now() - this.modelTransientCooldownMs);
+    const earliestCutoff =
+      providerCutoff.getTime() < modelCutoff.getTime()
+        ? providerCutoff
+        : modelCutoff;
+
+    const recentLogs = await this.prisma.externalApiLog.findMany({
+      where: {
+        providerKey: { in: providerKeys },
+        createdAt: { gte: earliestCutoff },
+        OR: [{ aiModelId: { in: modelIds } }, { aiModelId: null }],
+      },
+      select: {
+        providerKey: true,
+        aiModelId: true,
+        isSuccess: true,
+        errorCode: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const latestLogByProvider = new Map<
+      string,
+      {
+        readonly isSuccess: boolean;
+        readonly errorCode: string | null;
+        readonly createdAt: Date;
+      }
+    >();
+    const latestLogByModel = new Map<
+      string,
+      {
+        readonly isSuccess: boolean;
+        readonly errorCode: string | null;
+        readonly createdAt: Date;
+      }
+    >();
+
+    for (const log of recentLogs) {
+      if (
+        log.createdAt >= providerCutoff &&
+        (log.isSuccess || log.errorCode === 'INSUFFICIENT_QUOTA') &&
+        !latestLogByProvider.has(log.providerKey)
+      ) {
+        latestLogByProvider.set(log.providerKey, {
+          isSuccess: log.isSuccess,
+          errorCode: log.errorCode,
+          createdAt: log.createdAt,
+        });
+      }
+
+      if (
+        log.aiModelId &&
+        log.createdAt >= modelCutoff &&
+        !latestLogByModel.has(log.aiModelId)
+      ) {
+        latestLogByModel.set(log.aiModelId, {
+          isSuccess: log.isSuccess,
+          errorCode: log.errorCode,
+          createdAt: log.createdAt,
+        });
+      }
+    }
+
+    const blockedProviders = new Set<string>();
+    const blockedModels = new Set<string>();
+
+    for (const [providerKey, latestLog] of latestLogByProvider) {
+      if (
+        !latestLog.isSuccess &&
+        latestLog.errorCode === 'INSUFFICIENT_QUOTA'
+      ) {
+        blockedProviders.add(providerKey);
+      }
+    }
+
+    for (const [modelId, latestLog] of latestLogByModel) {
+      if (
+        !latestLog.isSuccess &&
+        latestLog.errorCode !== null &&
+        MODEL_TRANSIENT_ERROR_CODES.has(latestLog.errorCode)
+      ) {
+        blockedModels.add(modelId);
+      }
+    }
+
+    return models.filter(
+      (model) =>
+        !blockedProviders.has(model.providerKey) &&
+        !blockedModels.has(model.id),
+    );
   }
 
   /**
@@ -223,55 +414,161 @@ export class AiModelRoutingService {
   }
 
   /**
-   * Produces a weighted-random model execution order.
+   * Produces a provider-aware weighted execution order.
    *
-   * Models with greater weight have a higher probability of being
-   * selected earlier. Each selected model is removed from the candidate
-   * pool, producing a complete weighted permutation without duplicates.
-   *
-   * A minimum effective weight of one is used defensively so that an
-   * invalid zero or negative persisted value cannot break selection.
+   * Consecutive selections use different providers whenever possible. Within
+   * each provider, models with greater persisted weight have a higher chance
+   * of being selected earlier. Provider selection uses average model weight,
+   * preventing a provider from winning merely because it has more model rows.
+   * A minimum effective weight of one is applied defensively.
    *
    * The input array is not mutated.
    *
    * @param models Routable AI models.
-   * @returns Weighted-random ordering of the supplied models.
+   * @returns Provider-rotated weighted ordering of the supplied models.
    */
   private orderBalanced(models: readonly AiModel[]): AiModel[] {
-    const remaining = [...models];
+    const providerPools = new Map<string, AiModel[]>();
+
+    for (const model of models) {
+      const providerModels = providerPools.get(model.providerKey) ?? [];
+      providerModels.push(model);
+      providerPools.set(model.providerKey, providerModels);
+    }
 
     const ordered: AiModel[] = [];
+    let previousProvider: string | null = null;
+    const rotatingInitialProvider = this.selectRotatingInitialProvider(
+      [...providerPools.keys()].sort(),
+    );
 
-    while (remaining.length > 0) {
-      const totalWeight = remaining.reduce(
+    while (providerPools.size > 0) {
+      const availableProviders = [...providerPools.keys()];
+      const alternativeProviders = previousProvider
+        ? availableProviders.filter((provider) => provider !== previousProvider)
+        : availableProviders;
+      const providerCandidates =
+        alternativeProviders.length > 0
+          ? alternativeProviders
+          : availableProviders;
+      const selectedProvider: string =
+        previousProvider === null && providerPools.has(rotatingInitialProvider)
+          ? rotatingInitialProvider
+          : this.selectWeightedProvider(providerCandidates, providerPools);
+      const providerModels: AiModel[] | undefined =
+        providerPools.get(selectedProvider);
+
+      if (!providerModels || providerModels.length === 0) {
+        providerPools.delete(selectedProvider);
+        continue;
+      }
+
+      const selectedIndex = this.selectWeightedModelIndex(providerModels);
+      const [selectedModel] = providerModels.splice(selectedIndex, 1);
+
+      if (!selectedModel) {
+        providerPools.delete(selectedProvider);
+        continue;
+      }
+
+      ordered.push(selectedModel);
+      previousProvider = selectedProvider;
+
+      if (providerModels.length === 0) {
+        providerPools.delete(selectedProvider);
+      }
+    }
+
+    return ordered;
+  }
+
+  /**
+   * Rotates the first provider used by consecutive balanced operations.
+   *
+   * @param providers Sorted provider keys available for the operation.
+   * @returns Provider that should receive the first attempt.
+   */
+  private selectRotatingInitialProvider(providers: readonly string[]): string {
+    const provider =
+      providers[this.balancedProviderCursor % Math.max(providers.length, 1)];
+
+    if (!provider) {
+      throw new ServiceUnavailableException(
+        'No provider is available for balanced AI routing.',
+      );
+    }
+
+    this.balancedProviderCursor =
+      (this.balancedProviderCursor + 1) % providers.length;
+
+    return provider;
+  }
+
+  /**
+   * Selects a provider using its average model weight.
+   *
+   * Average weight prevents a provider from becoming more likely merely
+   * because it has more configured model rows than another provider.
+   */
+  private selectWeightedProvider(
+    providers: readonly string[],
+    pools: ReadonlyMap<string, readonly AiModel[]>,
+  ): string {
+    const weightedProviders = providers.map((provider) => {
+      const models = pools.get(provider) ?? [];
+      const combinedWeight = models.reduce(
         (sum, model) => sum + this.resolveEffectiveWeight(model),
         0,
       );
 
-      let cursor = Math.random() * totalWeight;
+      return {
+        provider,
+        weight: models.length > 0 ? combinedWeight / models.length : 1,
+      };
+    });
+    const totalWeight = weightedProviders.reduce(
+      (sum, item) => sum + Math.max(item.weight, 1),
+      0,
+    );
+    let cursor = Math.random() * totalWeight;
 
-      /*
-       * The final model is used as a defensive fallback against
-       * floating-point boundary behavior.
-       */
-      let selectedIndex = remaining.length - 1;
+    for (const item of weightedProviders) {
+      cursor -= Math.max(item.weight, 1);
 
-      for (let index = 0; index < remaining.length; index += 1) {
-        cursor -= this.resolveEffectiveWeight(remaining[index]);
-
-        if (cursor <= 0) {
-          selectedIndex = index;
-
-          break;
-        }
+      if (cursor <= 0) {
+        return item.provider;
       }
-
-      const [selectedModel] = remaining.splice(selectedIndex, 1);
-
-      ordered.push(selectedModel);
     }
 
-    return ordered;
+    const fallbackProvider =
+      weightedProviders[weightedProviders.length - 1]?.provider ?? providers[0];
+
+    if (!fallbackProvider) {
+      throw new ServiceUnavailableException(
+        'No provider is available for balanced AI routing.',
+      );
+    }
+
+    return fallbackProvider;
+  }
+
+  /** Selects one model inside a provider according to persisted model weight. */
+  private selectWeightedModelIndex(models: readonly AiModel[]): number {
+    const totalWeight = models.reduce(
+      (sum, model) => sum + this.resolveEffectiveWeight(model),
+      0,
+    );
+    let cursor = Math.random() * totalWeight;
+
+    for (const [index, model] of models.entries()) {
+      cursor -= this.resolveEffectiveWeight(model);
+
+      if (cursor <= 0) {
+        return index;
+      }
+    }
+
+    return Math.max(models.length - 1, 0);
   }
 
   /**

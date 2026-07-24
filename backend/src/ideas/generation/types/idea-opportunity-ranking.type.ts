@@ -55,5 +55,12 @@ export type IdeaOpportunityRanking = {
   readonly alternatives: readonly RankedIdeaOpportunity[];
   readonly evaluatedCount: number;
   readonly evidenceCoverage: number;
+
+  /**
+   * Human-readable explanation of why the selected candidate outranked the
+   * alternatives. Intended for monitoring and administrator diagnostics.
+   */
+  readonly selectionReason: string;
+
   readonly qualityWarnings: readonly string[];
 };

@@ -79,6 +79,8 @@ export class IdeaCandidateJudgePromptService {
       evaluationCriteriaWeights: IDEA_JUDGE_CRITERIA_WEIGHTS,
       scoringInstructions: {
         scoreRange: '0-100',
+        confidence:
+          'Return confidence as a percentage from 0 to 100, not as a fraction from 0 to 1. Example: return 75 for seventy-five percent confidence.',
         overallScore:
           'Calculate overallScore using exactly the supplied criterion weights. The application may combine this score with an independent deterministic quality score after your evaluation.',
         localRelevance:
@@ -117,7 +119,7 @@ export class IdeaCandidateJudgePromptService {
       },
       requiredResponseTemplate: {
         winnerCandidateId: candidates[0]?.candidateId ?? '',
-        confidence: 0,
+        confidence: 75,
         reason: 'Explain why the selected existing candidate is strongest.',
         requiresLegalVerification: false,
         scores: candidates.map((candidate) => ({

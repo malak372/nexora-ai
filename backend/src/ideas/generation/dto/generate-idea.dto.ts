@@ -159,7 +159,6 @@ export class GenerateIdeaDto {
   })
   dataSourceKeys?: string[];
 
-
   /**
    * Forces the generation pipeline to ignore compatible historical
    * collection jobs and collect fresh community data.

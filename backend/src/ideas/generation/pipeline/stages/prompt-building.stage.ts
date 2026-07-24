@@ -213,8 +213,7 @@ export class PromptBuildingStage implements IdeaGenerationStage {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.PROMPT_BUILD_FAILED,
 
-        message:
-          'Opportunity ranking must complete before prompt building.',
+        message: 'Opportunity ranking must complete before prompt building.',
       });
     }
 

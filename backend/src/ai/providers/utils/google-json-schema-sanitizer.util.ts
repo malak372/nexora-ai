@@ -1,33 +1,31 @@
 import type { AiJsonSchema } from '../../types/ai-json-schema.type';
 
 /**
- * JSON-compatible primitive values accepted inside schema enums.
- */
-type JsonPrimitive = string | number | boolean | null;
-
-/**
- * Mutable internal representation used while translating a provider-neutral
- * JSON Schema into the smaller schema subset accepted by Google Gemini.
+ * Mutable internal schema representation used while producing a detached
+ * Google-compatible JSON Schema object.
  */
 type MutableSchema = Record<string, unknown>;
 
 /**
- * Maximum schema depth accepted by the sanitizer.
+ * Maximum recursive schema depth accepted by the sanitizer.
  *
- * The bound protects the provider adapter from malformed cyclic or excessively
- * nested objects supplied through unsafe runtime calls.
+ * The bound protects the provider boundary from malformed or excessively
+ * nested runtime objects supplied through unsafe JavaScript callers.
  */
 const MAX_SCHEMA_DEPTH = 64;
 
 /**
- * Schema keywords intentionally forwarded to Google Gemini.
+ * JSON Schema keywords supported by Google `responseJsonSchema`.
  *
- * Application-only validation keywords such as minLength, maxLength, pattern,
- * uniqueItems, additionalProperties, $schema, $defs, and $ref are deliberately
- * omitted. The original unsanitized schema remains the source of truth for the
- * central AJV validation performed after the provider returns its response.
+ * Keywords such as `$schema`, `minLength`, `maxLength`, `pattern`, and
+ * `uniqueItems` are intentionally omitted from the provider copy. The original
+ * application schema remains unchanged and is still enforced centrally by AJV
+ * after the provider returns its response.
  */
-const DIRECT_SCHEMA_KEYS = new Set([
+const SUPPORTED_SCALAR_KEYS = new Set([
+  '$id',
+  '$anchor',
+  '$ref',
   'title',
   'description',
   'format',
@@ -35,29 +33,20 @@ const DIRECT_SCHEMA_KEYS = new Set([
   'maximum',
   'minItems',
   'maxItems',
-  'nullable',
 ]);
 
 /**
- * Produces a Google-compatible structured-output schema without weakening the
- * application's final validation rules.
- *
- * Google Gemini accepts only a subset of JSON Schema. Passing the complete
- * application schema can cause a 400 INVALID_ARGUMENT response when it contains
- * unsupported keywords. This function therefore creates a provider-specific
- * copy while preserving the original schema for AJV validation.
+ * Produces a detached JSON Schema containing only features accepted by the
+ * Google Gemini `responseJsonSchema` boundary.
  *
  * Important behavior:
- * - Removes unsupported application-only keywords.
- * - Converts nullable union types such as ['string', 'null'] into
- *   { type: 'string', nullable: true }.
- * - Converts const into a single-value enum.
- * - Converts oneOf into anyOf because Google supports the less restrictive
- *   union form more consistently; AJV still enforces the original oneOf later.
- * - Recursively sanitizes object properties, array items, and union branches.
+ * - Preserves standard nullable unions such as `type: ['string', 'null']`.
+ * - Preserves `additionalProperties`, `$defs`, `$ref`, `anyOf`, and `oneOf`.
+ * - Removes unsupported validation-only keywords from the provider copy.
+ * - Keeps the caller's original schema untouched for strict AJV validation.
  *
- * @param schema Provider-neutral JSON Schema.
- * @returns A detached Google-compatible schema object.
+ * @param schema Provider-neutral application JSON Schema.
+ * @returns Detached Google-compatible JSON Schema.
  *
  * @author Malak
  */
@@ -75,138 +64,129 @@ export function sanitizeJsonSchemaForGoogle(
  * Sanitizes one schema node recursively.
  */
 function sanitizeSchemaNode(
-  schema: Readonly<Record<string, unknown>>,
+  source: Readonly<Record<string, unknown>>,
   depth: number,
 ): AiJsonSchema {
   if (depth > MAX_SCHEMA_DEPTH) {
     return {};
   }
 
-  const sanitized: MutableSchema = {};
+  const target: MutableSchema = {};
 
-  copyDirectKeywords(schema, sanitized);
-  copyTypeKeyword(schema, sanitized);
-  copyEnumOrConst(schema, sanitized);
-  copyProperties(schema, sanitized, depth);
-  copyRequired(schema, sanitized);
-  copyItems(schema, sanitized, depth);
-  copyUnionKeywords(schema, sanitized, depth);
-  copyPropertyOrdering(schema, sanitized);
+  copyScalarKeywords(source, target);
+  copyTypeKeyword(source, target);
+  copyEnumKeyword(source, target);
+  copyProperties(source, target, depth);
+  copyRequiredKeyword(source, target);
+  copyItemsKeywords(source, target, depth);
+  copyUnionKeywords(source, target, depth);
+  copyAdditionalProperties(source, target, depth);
+  copyDefinitions(source, target, depth);
+  copyPropertyOrdering(source, target);
 
-  return sanitized;
+  return target;
 }
 
 /**
- * Copies scalar keywords known to be accepted by the Google schema boundary.
+ * Copies supported scalar keywords after validating their runtime type.
  */
-function copyDirectKeywords(
+function copyScalarKeywords(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
 ): void {
-  for (const key of DIRECT_SCHEMA_KEYS) {
+  for (const key of SUPPORTED_SCALAR_KEYS) {
     const value = source[key];
 
     if (value === undefined) {
       continue;
     }
 
-    switch (key) {
-      case 'title':
-      case 'description':
-      case 'format':
-        if (typeof value === 'string' && value.trim()) {
-          target[key] = value.trim();
-        }
-        break;
+    if (
+      ['$id', '$anchor', '$ref', 'title', 'description', 'format'].includes(key)
+    ) {
+      if (typeof value === 'string' && value.trim()) {
+        target[key] = value.trim();
+      }
 
-      case 'minimum':
-      case 'maximum':
-        if (typeof value === 'number' && Number.isFinite(value)) {
-          target[key] = value;
-        }
-        break;
+      continue;
+    }
 
-      case 'minItems':
-      case 'maxItems':
-        if (Number.isSafeInteger(value) && (value as number) >= 0) {
-          target[key] = value;
-        }
-        break;
+    if (['minimum', 'maximum'].includes(key)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        target[key] = value;
+      }
 
-      case 'nullable':
-        if (typeof value === 'boolean') {
-          target[key] = value;
-        }
-        break;
+      continue;
+    }
 
-      default:
-        break;
+    if (
+      ['minItems', 'maxItems'].includes(key) &&
+      Number.isSafeInteger(value) &&
+      (value as number) >= 0
+    ) {
+      target[key] = value;
     }
   }
 }
 
 /**
- * Copies or normalizes the JSON Schema type keyword.
+ * Copies a supported primitive type or primitive-type union.
+ *
+ * Google `responseJsonSchema` follows JSON Schema semantics for nullable
+ * values, so `['string', 'null']` must remain a type array rather than being
+ * converted to the OpenAPI-only `nullable` keyword.
  */
 function copyTypeKeyword(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
 ): void {
-  const typeValue = source.type;
+  if (typeof source.type === 'string') {
+    const normalizedType = source.type.trim();
 
-  if (typeof typeValue === 'string' && typeValue.trim()) {
-    target.type = typeValue.trim();
+    if (normalizedType) {
+      target.type = normalizedType;
+    }
+
     return;
   }
 
-  if (!Array.isArray(typeValue)) {
+  if (!Array.isArray(source.type)) {
     return;
   }
 
   const normalizedTypes = Array.from(
     new Set(
-      typeValue
+      source.type
         .filter((value): value is string => typeof value === 'string')
         .map((value) => value.trim())
         .filter(Boolean),
     ),
   );
 
-  const includesNull = normalizedTypes.includes('null');
-  const nonNullTypes = normalizedTypes.filter((value) => value !== 'null');
-
-  if (includesNull) {
-    target.nullable = true;
-  }
-
-  if (nonNullTypes.length === 1) {
-    target.type = nonNullTypes[0];
-    return;
-  }
-
-  if (nonNullTypes.length > 1) {
-    target.anyOf = nonNullTypes.map((value) => ({ type: value }));
+  if (normalizedTypes.length > 0) {
+    target.type = normalizedTypes;
   }
 }
 
 /**
- * Copies enum values or translates const into a one-value enum.
+ * Copies string and numeric enum values.
  */
-function copyEnumOrConst(
+function copyEnumKeyword(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
 ): void {
-  if (Array.isArray(source.enum)) {
-    const enumValues = source.enum.filter(isJsonPrimitive);
-
-    if (enumValues.length > 0) {
-      target.enum = enumValues;
-      return;
-    }
+  if (!Array.isArray(source.enum)) {
+    return;
   }
 
-  if (isJsonPrimitive(source.const)) {
-    target.enum = [source.const];
+  const values = source.enum.filter(
+    (value): value is string | number =>
+      typeof value === 'string' ||
+      (typeof value === 'number' && Number.isFinite(value)),
+  );
+
+  if (values.length > 0) {
+    target.enum = values;
   }
 }
 
@@ -224,14 +204,12 @@ function copyProperties(
 
   const properties: Record<string, AiJsonSchema> = {};
 
-  for (const [propertyName, propertySchema] of Object.entries(
-    source.properties,
-  )) {
-    if (!propertyName.trim() || !isPlainRecord(propertySchema)) {
+  for (const [name, value] of Object.entries(source.properties)) {
+    if (!name.trim() || !isPlainRecord(value)) {
       continue;
     }
 
-    properties[propertyName] = sanitizeSchemaNode(propertySchema, depth + 1);
+    properties[name] = sanitizeSchemaNode(value, depth + 1);
   }
 
   if (Object.keys(properties).length > 0) {
@@ -242,7 +220,7 @@ function copyProperties(
 /**
  * Copies the required-property list after removing invalid entries.
  */
-function copyRequired(
+function copyRequiredKeyword(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
 ): void {
@@ -265,65 +243,98 @@ function copyRequired(
 }
 
 /**
- * Recursively sanitizes an array item schema or tuple-like item list.
+ * Recursively sanitizes homogeneous and tuple-style array item schemas.
  */
-function copyItems(
+function copyItemsKeywords(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
   depth: number,
 ): void {
   if (isPlainRecord(source.items)) {
     target.items = sanitizeSchemaNode(source.items, depth + 1);
-    return;
   }
 
-  if (Array.isArray(source.items)) {
-    const tupleItems = source.items
+  if (Array.isArray(source.prefixItems)) {
+    const prefixItems = source.prefixItems
       .filter(isPlainRecord)
       .map((item) => sanitizeSchemaNode(item, depth + 1));
 
-    if (tupleItems.length === 1) {
-      target.items = tupleItems[0];
-    } else if (tupleItems.length > 1) {
-      target.items = { anyOf: tupleItems };
+    if (prefixItems.length > 0) {
+      target.prefixItems = prefixItems;
     }
   }
 }
 
 /**
- * Copies supported union branches and safely weakens oneOf to anyOf.
+ * Copies supported union branches.
  */
 function copyUnionKeywords(
   source: Readonly<Record<string, unknown>>,
   target: MutableSchema,
   depth: number,
 ): void {
-  const existingAnyOf = sanitizeSchemaArray(source.anyOf, depth);
-  const oneOfAsAnyOf = sanitizeSchemaArray(source.oneOf, depth);
-
-  const existingTargetAnyOf = Array.isArray(target.anyOf)
-    ? target.anyOf.filter(isPlainRecord)
-    : [];
-
-  const anyOf = [
-    ...existingTargetAnyOf,
-    ...existingAnyOf,
-    ...oneOfAsAnyOf,
-  ];
+  const anyOf = sanitizeSchemaArray(source.anyOf, depth);
+  const oneOf = sanitizeSchemaArray(source.oneOf, depth);
 
   if (anyOf.length > 0) {
     target.anyOf = anyOf;
   }
 
-  const allOf = sanitizeSchemaArray(source.allOf, depth);
-
-  if (allOf.length === 1) {
-    mergeMissingSchemaKeys(target, allOf[0]);
+  if (oneOf.length > 0) {
+    target.oneOf = oneOf;
   }
 }
 
 /**
- * Preserves an explicitly supplied Google property ordering when valid.
+ * Copies `additionalProperties` when it is a boolean or nested schema.
+ */
+function copyAdditionalProperties(
+  source: Readonly<Record<string, unknown>>,
+  target: MutableSchema,
+  depth: number,
+): void {
+  if (typeof source.additionalProperties === 'boolean') {
+    target.additionalProperties = source.additionalProperties;
+    return;
+  }
+
+  if (isPlainRecord(source.additionalProperties)) {
+    target.additionalProperties = sanitizeSchemaNode(
+      source.additionalProperties,
+      depth + 1,
+    );
+  }
+}
+
+/**
+ * Recursively sanitizes reusable `$defs` definitions.
+ */
+function copyDefinitions(
+  source: Readonly<Record<string, unknown>>,
+  target: MutableSchema,
+  depth: number,
+): void {
+  if (!isPlainRecord(source.$defs)) {
+    return;
+  }
+
+  const definitions: Record<string, AiJsonSchema> = {};
+
+  for (const [name, value] of Object.entries(source.$defs)) {
+    if (!name.trim() || !isPlainRecord(value)) {
+      continue;
+    }
+
+    definitions[name] = sanitizeSchemaNode(value, depth + 1);
+  }
+
+  if (Object.keys(definitions).length > 0) {
+    target.$defs = definitions;
+  }
+}
+
+/**
+ * Preserves Google's optional property-ordering extension.
  */
 function copyPropertyOrdering(
   source: Readonly<Record<string, unknown>>,
@@ -333,12 +344,17 @@ function copyPropertyOrdering(
     return;
   }
 
-  const ordering = source.propertyOrdering.filter(
-    (value): value is string => typeof value === 'string' && Boolean(value),
+  const ordering = Array.from(
+    new Set(
+      source.propertyOrdering
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
   );
 
   if (ordering.length > 0) {
-    target.propertyOrdering = Array.from(new Set(ordering));
+    target.propertyOrdering = ordering;
   }
 }
 
@@ -353,32 +369,6 @@ function sanitizeSchemaArray(value: unknown, depth: number): AiJsonSchema[] {
   return value
     .filter(isPlainRecord)
     .map((item) => sanitizeSchemaNode(item, depth + 1));
-}
-
-/**
- * Merges schema keys without overwriting values already defined by the parent.
- */
-function mergeMissingSchemaKeys(
-  target: MutableSchema,
-  source: AiJsonSchema,
-): void {
-  for (const [key, value] of Object.entries(source)) {
-    if (target[key] === undefined) {
-      target[key] = value;
-    }
-  }
-}
-
-/**
- * Determines whether a value is a JSON-compatible primitive.
- */
-function isJsonPrimitive(value: unknown): value is JsonPrimitive {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  );
 }
 
 /**

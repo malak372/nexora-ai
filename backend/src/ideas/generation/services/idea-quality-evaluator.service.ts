@@ -13,8 +13,11 @@ export type IdeaQualityIssue = {
     | 'WEAK_PROBLEM'
     | 'GENERIC_OBJECTIVES'
     | 'WEAK_TARGET_USERS'
+    | 'UNSUPPORTED_LOCAL_CLAIM'
     | 'LOW_DIFFERENTIATION'
-    | 'LOW_ACTIONABILITY';
+    | 'LOW_ACTIONABILITY'
+    | 'WEAK_BUDGET_ESTIMATION'
+    | 'INACCURATE_NLP_SUMMARY';
   readonly message: string;
   readonly penalty: number;
 };
@@ -46,6 +49,18 @@ export type IdeaQualityEvaluation = {
   readonly issues: readonly IdeaQualityIssue[];
 };
 
+/** Trusted metrics used to validate generated premium summaries. */
+export type IdeaQualityEvaluationContext = {
+  readonly totalTextsAnalyzed?: number;
+  readonly totalPostsAnalyzed?: number;
+  readonly totalCommentsAnalyzed?: number;
+  readonly requireAdvancedOutputs?: boolean;
+  readonly targetCountry?: string | null;
+  readonly targetCity?: string | null;
+  readonly targetRegion?: string | null;
+  readonly localEvidenceVerified?: boolean;
+};
+
 /**
  * Performs deterministic, provider-independent quality evaluation.
  *
@@ -57,7 +72,7 @@ export type IdeaQualityEvaluation = {
  */
 @Injectable()
 export class IdeaQualityEvaluatorService {
-  private readonly MIN_ACCEPTED_SCORE = 72;
+  private readonly MIN_ACCEPTED_SCORE = 70;
 
   private readonly GENERIC_TITLE_PATTERNS = [
     /\bmanagement system\b/i,
@@ -107,7 +122,10 @@ export class IdeaQualityEvaluatorService {
     'support',
   ] as const;
 
-  evaluate(output: ParsedIdeaAiOutput): IdeaQualityEvaluation {
+  evaluate(
+    output: ParsedIdeaAiOutput,
+    context: IdeaQualityEvaluationContext = {},
+  ): IdeaQualityEvaluation {
     const issues: IdeaQualityIssue[] = [];
     const idea = output.coreIdea;
 
@@ -124,6 +142,9 @@ export class IdeaQualityEvaluatorService {
         idea.limitedAbstract ?? '',
         idea.partialAbstract ?? '',
         idea.fullAbstract ?? '',
+        ...output.advancedOutputs.map(
+          (advancedOutput) => advancedOutput.content,
+        ),
       ].join(' '),
     );
 
@@ -195,6 +216,15 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
+    if (this.hasUnsupportedLocalClaim(output, context)) {
+      issues.push({
+        code: 'UNSUPPORTED_LOCAL_CLAIM',
+        message:
+          'Do not claim that users or institutions in the target location currently face the discovered problem unless the supplied evidence is locally verified. Describe the evidence-backed problem generally and state that the product is designed or proposed for deployment in the target location.',
+        penalty: 24,
+      });
+    }
+
     if (differentiatorHits === 0) {
       issues.push({
         code: 'LOW_DIFFERENTIATION',
@@ -211,6 +241,32 @@ export class IdeaQualityEvaluatorService {
           'Explain what the product actively changes, detects, prevents, recommends, enables, or optimizes.',
         penalty: 14,
       });
+    }
+
+    if (context.requireAdvancedOutputs) {
+      const budget = this.findAdvancedOutput(output, 'budget-estimation');
+      const nlpSummary = this.findAdvancedOutput(
+        output,
+        'nlp-executive-summary',
+      );
+
+      if (!budget || !this.hasUsefulBudgetEstimate(budget)) {
+        issues.push({
+          code: 'WEAK_BUDGET_ESTIMATION',
+          message:
+            'Provide an explicitly labeled preliminary budget with a currency, numeric range, major cost categories, and assumptions instead of vague cost wording.',
+          penalty: 12,
+        });
+      }
+
+      if (!nlpSummary || !this.hasAccurateNlpCounts(nlpSummary, context)) {
+        issues.push({
+          code: 'INACCURATE_NLP_SUMMARY',
+          message:
+            'State the exact trusted NLP totals: total analyzed texts, analyzed posts, and analyzed comments. Do not merge comments and posts into one incorrect count.',
+          penalty: 12,
+        });
+      }
     }
 
     const dimensions: IdeaQualityDimensions = {
@@ -242,10 +298,13 @@ export class IdeaQualityEvaluatorService {
 
     const issuePenalty = issues.reduce((sum, issue) => sum + issue.penalty, 0);
     const score = this.clamp(weightedScore - issuePenalty * 0.35);
+    const hasBlockingIssue = issues.some(
+      (issue) => issue.code === 'UNSUPPORTED_LOCAL_CLAIM',
+    );
 
     return {
       score,
-      accepted: score >= this.MIN_ACCEPTED_SCORE,
+      accepted: score >= this.MIN_ACCEPTED_SCORE && !hasBlockingIssue,
       dimensions,
       issues,
     };
@@ -259,6 +318,150 @@ export class IdeaQualityEvaluatorService {
     return evaluation.issues
       .map((issue, index) => `${index + 1}. ${issue.message}`)
       .join('\n');
+  }
+
+  /**
+   * Detects definitive target-location claims that are not backed by local
+   * source metadata.
+   *
+   * The requested city, region, and country are deployment constraints. They
+   * cannot be converted into proof that a local population currently suffers
+   * from a problem discovered in globally collected store or community data.
+   */
+  private hasUnsupportedLocalClaim(
+    output: ParsedIdeaAiOutput,
+    context: IdeaQualityEvaluationContext,
+  ): boolean {
+    if (context.localEvidenceVerified) {
+      return false;
+    }
+
+    const locations = [
+      context.targetCity,
+      context.targetRegion,
+      context.targetCountry,
+    ]
+      .map((value) => this.normalize(value ?? ''))
+      .filter((value) => value.length >= 3);
+
+    if (locations.length === 0) {
+      return false;
+    }
+
+    const idea = output.coreIdea;
+    const claimText = this.normalize(
+      [
+        idea.problemStatement,
+        idea.limitedAbstract ?? '',
+        idea.partialAbstract ?? '',
+        idea.fullAbstract ?? '',
+      ].join(' '),
+    );
+
+    return locations.some((location) => {
+      const escapedLocation = this.escapeRegExp(location);
+      const affectedActor =
+        '(?:students?|faculty|teachers?|learners?|users?|institutions?|universities|colleges|schools|administrators?|businesses|residents|organizations?)';
+      const definitiveProblemVerb =
+        "(?:face|faces|facing|encounter|encounters|experience|experiences|suffer|suffers|struggle|struggles|lack|lacks|report|reports|cannot|can't|are unable to|is unable to)";
+      const actorThenLocation = new RegExp(
+        `\\b${affectedActor}\\b[^.!?]{0,100}\\b(?:in|within|across|from)\\s+${escapedLocation}\\b[^.!?]{0,100}\\b${definitiveProblemVerb}\\b`,
+        'iu',
+      );
+      const locationThenActor = new RegExp(
+        `\\b${escapedLocation}\\b[^.!?]{0,100}\\b${affectedActor}\\b[^.!?]{0,100}\\b${definitiveProblemVerb}\\b`,
+        'iu',
+      );
+      const inLocationClaim = new RegExp(
+        `\\b(?:in|within|across)\\s+${escapedLocation}\\b[^.!?]{0,140}\\b${definitiveProblemVerb}\\b`,
+        'iu',
+      );
+
+      return (
+        actorThenLocation.test(claimText) ||
+        locationThenActor.test(claimText) ||
+        inLocationClaim.test(claimText)
+      );
+    });
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private findAdvancedOutput(
+    output: ParsedIdeaAiOutput,
+    outputKey: ParsedIdeaAiOutput['advancedOutputs'][number]['outputKey'],
+  ): string | null {
+    return (
+      output.advancedOutputs.find((item) => item.outputKey === outputKey)
+        ?.content ?? null
+    );
+  }
+
+  private hasUsefulBudgetEstimate(value: string): boolean {
+    const normalized = this.normalize(value);
+    const hasCurrency = /(?:\$|€|£|₪|\busd\b|\beur\b|\bils\b|\bnis\b)/iu.test(
+      value,
+    );
+    const hasNumericRange =
+      /\b\d[\d,]*(?:\.\d+)?\s*(?:-|–|to)\s*\d[\d,]*(?:\.\d+)?\b/iu.test(value);
+    const hasAssumptionLanguage =
+      /\b(?:estimate|estimated|preliminary|assumption|assumes|range|excluding|includes)\b/iu.test(
+        normalized,
+      );
+    const hasCostCategories =
+      /\b(?:development|infrastructure|hosting|testing|deployment|maintenance|integration|contingency)\b/iu.test(
+        normalized,
+      );
+
+    return (
+      hasCurrency &&
+      hasNumericRange &&
+      hasAssumptionLanguage &&
+      hasCostCategories
+    );
+  }
+
+  private hasAccurateNlpCounts(
+    value: string,
+    context: IdeaQualityEvaluationContext,
+  ): boolean {
+    const totalTexts = context.totalTextsAnalyzed;
+    const totalPosts = context.totalPostsAnalyzed;
+    const totalComments = context.totalCommentsAnalyzed;
+
+    if (
+      totalTexts === undefined ||
+      totalPosts === undefined ||
+      totalComments === undefined
+    ) {
+      return true;
+    }
+
+    return (
+      this.containsLabeledCount(value, totalTexts, 'texts?') &&
+      this.containsLabeledCount(value, totalPosts, 'posts?') &&
+      this.containsLabeledCount(value, totalComments, 'comments?')
+    );
+  }
+
+  /** Verifies that one trusted count is attached to its correct metric label. */
+  private containsLabeledCount(
+    value: string,
+    number: number,
+    labelPattern: string,
+  ): boolean {
+    const numberThenLabel = new RegExp(
+      `\\b${number}\\b\\s+(?:analyzed\\s+)?${labelPattern}\\b`,
+      'iu',
+    );
+    const labelThenNumber = new RegExp(
+      `\\b${labelPattern}\\b\\s*[:=-]?\\s*${number}\\b`,
+      'iu',
+    );
+
+    return numberThenLabel.test(value) || labelThenNumber.test(value);
   }
 
   private countTerms(value: string, terms: readonly string[]): number {

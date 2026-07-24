@@ -12,6 +12,7 @@ import type {
 } from '../../interfaces/idea-generation-stage.interface';
 import { IdeaOpportunityRankingService } from '../../services/idea-opportunity-ranking.service';
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import type { IdeaOpportunityRanking } from '../../types/idea-opportunity-ranking.type';
 
 /**
  * Ranks evidence-backed product opportunities before prompt construction.
@@ -37,17 +38,19 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     return true;
   }
 
-  async execute(
+  execute(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationStageExecutionResult> {
     if (!context.nlp) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
-        message: 'NLP analysis is required before opportunity ranking.',
-      });
+      return Promise.reject(
+        new BadRequestException({
+          code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
+          message: 'NLP analysis is required before opportunity ranking.',
+        }),
+      );
     }
 
-    let ranking;
+    let ranking: IdeaOpportunityRanking;
 
     try {
       ranking = this.opportunityRankingService.rank(context.nlp, [
@@ -56,29 +59,34 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         context.location.region ?? '',
       ]);
     } catch (error: unknown) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
-        message:
-          error instanceof Error
-            ? error.message
-            : 'Unable to rank the discovered product opportunities.',
-      });
+      return Promise.reject(
+        new BadRequestException({
+          code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Unable to rank the discovered product opportunities.',
+        }),
+      );
     }
 
-    return {
+    const result: IdeaGenerationStageExecutionResult = {
       context: {
         ...context,
         opportunityRanking: ranking,
       },
-      resultPreview: `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}.`,
+      resultPreview: `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`,
       metadata: {
         selectedTitle: ranking.selected.title,
         selectedScore: ranking.selected.finalScore,
+        selectionReason: ranking.selectionReason,
         evidenceCoverage: ranking.evidenceCoverage,
         evaluatedCount: ranking.evaluatedCount,
-        qualityWarnings: ranking.qualityWarnings,
+        qualityWarnings: [...ranking.qualityWarnings],
       },
     };
+
+    return Promise.resolve(result);
   }
 
   private resolveDefinition(): IdeaGenerationStageDefinition {

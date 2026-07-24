@@ -9,26 +9,30 @@ import {
 } from '../types/idea-opportunity-ranking.type';
 import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.type';
 
-/** Maximum evidence samples retained for one ranked opportunity. */
 const MAX_EVIDENCE_SAMPLES = 5;
-
-/** Maximum ranked alternatives exposed to the prompt-building stage. */
+const MAX_EVIDENCE_SAMPLE_LENGTH = 700;
 const MAX_RANKED_OPPORTUNITIES = 8;
 
-/** Generic labels that must not dominate opportunity selection. */
+/** Labels that are too generic to be selected without concrete evidence. */
 const GENERIC_LABELS = new Set([
   'app',
   'application',
+  'available',
+  'challenge',
+  'difficulty',
+  'feature',
+  'features',
+  'information',
   'issue',
   'need',
   'platform',
   'problem',
+  'see',
   'service',
   'solution',
   'system',
 ]);
 
-/** Severity values mapped to a zero-to-one score. */
 const SEVERITY_SCORES: Readonly<Record<string, number>> = {
   CRITICAL: 1,
   HIGH: 0.85,
@@ -36,29 +40,69 @@ const SEVERITY_SCORES: Readonly<Record<string, number>> = {
   LOW: 0.35,
 };
 
+const EVIDENCE_TYPE_SCORES: Readonly<
+  Record<IdeaOpportunityEvidenceType, number>
+> = {
+  [IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM]: 1,
+  [IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED]: 0.9,
+  [IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST]: 0.82,
+  [IDEA_OPPORTUNITY_EVIDENCE_TYPES.OPPORTUNITY]: 0.72,
+};
+
+/** Direct complaint patterns used to validate evidence quality. */
+const DIRECT_COMPLAINT_PATTERNS: readonly RegExp[] = [
+  /\bnot useful\b/iu,
+  /\bnot helpful\b/iu,
+  /\bdoes(?:n['’]?t| not) work\b/iu,
+  /\b(?:can(?:not|['’]?t)|can\s+not)\b/iu,
+  /\bcannot\b/iu,
+  /\bunable to\b/iu,
+  /\bnever (?:receive|received|get|got|arrive|arrived)\b/iu,
+  /\b(?:lost|missing|deleted|gone)\b/iu,
+  /\b(?:crash|crashes|crashed|freeze|broken|bug|error|failure)\b/iu,
+  /\b(?:hard|difficult|confusing) to (?:use|navigate|access|find|download|install|login|log in)\b/iu,
+  /\b(?:terrible|disappointing|frustrating|major problem|big problem)\b/iu,
+  /(?:غير مفيد|لا يعمل|ما بشتغل|لا أستطيع|لا يمكن|لم يصل|فقدت|اختفت|تعطل|خطأ|صعب التنقل|واجهة مربكة)/iu,
+];
+
+/** Promotional descriptions that should not be accepted as problem evidence. */
+const PROMOTIONAL_PATTERNS: readonly RegExp[] = [
+  /\b(?:why choose|join millions|trusted by|privacy policy|membership details|download .* today|proven results|full curriculum)\b/iu,
+  /\b(?:available on|personalized learning|detailed features|official app)\b/iu,
+];
+
+type NormalizedCandidate = {
+  title: string;
+  problem: string | null;
+  need: string | null;
+  solutionArea: string | null;
+  evidenceType: IdeaOpportunityEvidenceType;
+  sourceIndex: number;
+  frequency: number;
+  severity: string | null;
+  evidenceSamples: string[];
+  raw: Prisma.JsonValue;
+};
+
 /**
- * Converts persisted NLP output into a deterministic, evidence-aware ranking.
+ * Converts persisted NLP output into deterministic evidence-aware opportunity
+ * ranking.
  *
- * The service deliberately avoids an additional AI request. It ranks existing
- * evidence using stable rules so generation remains reproducible, inexpensive,
- * and available even when one provider is rate-limited.
+ * The ranking rejects generic labels and promotional-only evidence, derives a
+ * concrete workflow title from direct complaints when possible, and prevents a
+ * low-frequency product-description word such as "Difficulty" from becoming
+ * the selected opportunity.
  *
  * @author Malak
  */
 @Injectable()
 export class IdeaOpportunityRankingService {
-  /**
-   * Ranks problems, needs, feature requests, and NLP opportunities.
-   *
-   * @param nlp Validated NLP context.
-   * @param locationTerms Normalized country, city, and region values.
-   * @returns Ranked opportunity selection for prompt grounding.
-   */
+  /** Ranks problems, needs, feature requests, and NLP opportunities. */
   rank(
     nlp: IdeaGenerationNlpContext,
     locationTerms: readonly string[],
   ): IdeaOpportunityRanking {
-    const candidates = [
+    const extractedCandidates = [
       ...this.extractCandidates(
         nlp.recurringProblems,
         IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM,
@@ -77,28 +121,42 @@ export class IdeaOpportunityRankingService {
       ),
     ];
 
-    const ranked = candidates
+    const normalizedCandidates = extractedCandidates
+      .map((candidate) => this.normalizeCandidate(candidate))
+      .filter((candidate): candidate is NormalizedCandidate =>
+        Boolean(candidate),
+      );
+
+    const consolidatedCandidates =
+      this.consolidateEquivalentCandidates(normalizedCandidates);
+
+    const ranked = consolidatedCandidates
       .map((candidate) => this.scoreCandidate(candidate, locationTerms))
-      .filter((candidate) => candidate.title.length > 0)
       .sort((first, second) => {
         const scoreDifference = second.finalScore - first.finalScore;
-        return scoreDifference !== 0
-          ? scoreDifference
-          : second.evidenceSamples.length - first.evidenceSamples.length;
+
+        if (scoreDifference !== 0) {
+          return scoreDifference;
+        }
+
+        return (
+          second.evidenceSamples.length - first.evidenceSamples.length ||
+          second.frequency - first.frequency ||
+          first.title.localeCompare(second.title)
+        );
       })
       .slice(0, MAX_RANKED_OPPORTUNITIES)
       .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
 
     if (ranked.length === 0) {
       throw new Error(
-        'NLP analysis did not contain a usable problem, need, feature request, or opportunity.',
+        'NLP analysis did not contain a concrete evidence-backed opportunity.',
       );
     }
 
     const evidenceBacked = ranked.filter(
       (candidate) => candidate.evidenceSamples.length > 0,
     ).length;
-
     const evidenceCoverage = this.round(
       evidenceBacked / Math.max(ranked.length, 1),
     );
@@ -106,28 +164,48 @@ export class IdeaOpportunityRankingService {
     return {
       selected: ranked[0],
       alternatives: ranked.slice(1),
-      evaluatedCount: candidates.length,
+      evaluatedCount: extractedCandidates.length,
       evidenceCoverage,
+      selectionReason: this.buildSelectionReason(ranked[0], ranked[1]),
       qualityWarnings: this.buildQualityWarnings(nlp, ranked, evidenceCoverage),
     };
   }
 
-  /** Extracts array-shaped NLP values into normalized candidates. */
+  /**
+   * Explains the selected opportunity using only deterministic score inputs.
+   */
+  private buildSelectionReason(
+    selected: RankedIdeaOpportunity,
+    runnerUp: RankedIdeaOpportunity | undefined,
+  ): string {
+    const selectedScore = (selected.finalScore * 100).toFixed(1);
+    const evidenceCount = selected.evidenceSamples.length;
+    const runnerUpText = runnerUp
+      ? ` It outranked "${runnerUp.title}" by ${(
+          (selected.finalScore - runnerUp.finalScore) *
+          100
+        ).toFixed(1)} point(s).`
+      : '';
+
+    return [
+      `"${selected.title}" was selected with ${selectedScore}/100.`,
+      `The decision used ${evidenceCount} direct evidence sample(s), frequency ${selected.frequency},`,
+      `severity ${selected.severity ?? 'UNSPECIFIED'},`,
+      `specificity ${(selected.specificityScore * 100).toFixed(1)}/100,`,
+      `feasibility ${(selected.feasibilityScore * 100).toFixed(1)}/100,`,
+      `and evidence quality ${(selected.evidenceScore * 100).toFixed(1)}/100.`,
+      runnerUpText,
+    ]
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+  }
+
+  /** Extracts array-shaped NLP values into candidates. */
   private extractCandidates(
     value: Prisma.JsonValue | null,
     evidenceType: IdeaOpportunityEvidenceType,
-  ): Array<{
-    title: string;
-    problem: string | null;
-    need: string | null;
-    solutionArea: string | null;
-    evidenceType: IdeaOpportunityEvidenceType;
-    sourceIndex: number;
-    frequency: number;
-    severity: string | null;
-    evidenceSamples: string[];
-    raw: Prisma.JsonValue;
-  }> {
+  ): NormalizedCandidate[] {
     if (!Array.isArray(value)) {
       return [];
     }
@@ -137,11 +215,13 @@ export class IdeaOpportunityRankingService {
         return [];
       }
 
-      const problem = this.readString(entry.problem) ??
+      const problem =
+        this.readString(entry.problem) ??
         (evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM
           ? this.readString(entry.title)
           : null);
-      const need = this.readString(entry.need) ??
+      const need =
+        this.readString(entry.need) ??
         (evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED
           ? this.readString(entry.title)
           : null);
@@ -173,12 +253,167 @@ export class IdeaOpportunityRankingService {
     });
   }
 
-  /** Applies deterministic weighted scoring to one normalized candidate. */
+  /** Normalizes a candidate and rejects unsupported evidence. */
+  private normalizeCandidate(
+    candidate: NormalizedCandidate,
+  ): NormalizedCandidate | null {
+    const normalizedEvidence = candidate.evidenceSamples
+      .map((sample) => this.normalizeEvidenceSample(sample))
+      .filter(Boolean)
+      .filter((sample) => !this.isPromotionalOnlyEvidence(sample));
+
+    const directEvidence = normalizedEvidence.filter((sample) =>
+      this.hasDirectComplaintSignal(sample),
+    );
+    const originalTitle = candidate.title.replace(/\s+/gu, ' ').trim();
+    const normalizedTitle = originalTitle.toLowerCase();
+    const derivedTitle = this.deriveConcreteTitle(directEvidence);
+    const tentativeTitle =
+      GENERIC_LABELS.has(normalizedTitle) ||
+      originalTitle.split(/\s+/u).length < 2
+        ? derivedTitle
+        : originalTitle;
+    const finalTitle = tentativeTitle
+      ? this.canonicalizeOpportunityTitle(tentativeTitle)
+      : null;
+
+    if (!finalTitle) {
+      return null;
+    }
+
+    const relevantEvidence = normalizedEvidence.filter((sample) =>
+      this.isEvidenceRelevantToTitle(finalTitle, sample),
+    );
+    const evidenceSamples =
+      relevantEvidence.length > 0 ? relevantEvidence : directEvidence;
+
+    const requiresDirectEvidence =
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM ||
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED;
+
+    if (requiresDirectEvidence && directEvidence.length === 0) {
+      return null;
+    }
+
+    if (
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM &&
+      candidate.severity === 'LOW' &&
+      candidate.frequency < 2 &&
+      directEvidence.length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      ...candidate,
+      title: finalTitle,
+      problem:
+        candidate.problem &&
+        !GENERIC_LABELS.has(candidate.problem.toLowerCase())
+          ? candidate.problem
+          : finalTitle,
+      need:
+        candidate.need && !GENERIC_LABELS.has(candidate.need.toLowerCase())
+          ? candidate.need
+          : null,
+      evidenceSamples: evidenceSamples.slice(0, MAX_EVIDENCE_SAMPLES),
+    };
+  }
+
+  /**
+   * Merges duplicate problem/need/opportunity records describing the same
+   * workflow so one issue cannot occupy multiple ranking positions.
+   */
+  private consolidateEquivalentCandidates(
+    candidates: readonly NormalizedCandidate[],
+  ): NormalizedCandidate[] {
+    const groups = new Map<string, NormalizedCandidate>();
+
+    for (const candidate of candidates) {
+      const key = this.canonicalizeOpportunityTitle(candidate.title)
+        .toLocaleLowerCase()
+        .replace(/\s+/gu, ' ')
+        .trim();
+      const current = groups.get(key);
+
+      if (!current) {
+        groups.set(key, candidate);
+        continue;
+      }
+
+      const preferred = this.selectStrongerCandidate(current, candidate);
+      const secondary = preferred === current ? candidate : current;
+      const evidenceSamples = Array.from(
+        new Set([...preferred.evidenceSamples, ...secondary.evidenceSamples]),
+      ).slice(0, MAX_EVIDENCE_SAMPLES);
+
+      groups.set(key, {
+        ...preferred,
+        problem: preferred.problem ?? secondary.problem,
+        need: preferred.need ?? secondary.need,
+        solutionArea: preferred.solutionArea ?? secondary.solutionArea,
+        frequency: Math.max(preferred.frequency, secondary.frequency),
+        severity: this.selectHigherSeverity(
+          preferred.severity,
+          secondary.severity,
+        ),
+        evidenceSamples,
+        sourceIndex: Math.min(preferred.sourceIndex, secondary.sourceIndex),
+      });
+    }
+
+    return [...groups.values()];
+  }
+
+  /** Selects the more authoritative evidence record for a merged title. */
+  private selectStrongerCandidate(
+    first: NormalizedCandidate,
+    second: NormalizedCandidate,
+  ): NormalizedCandidate {
+    const typeDifference =
+      EVIDENCE_TYPE_SCORES[second.evidenceType] -
+      EVIDENCE_TYPE_SCORES[first.evidenceType];
+
+    if (typeDifference !== 0) {
+      return typeDifference > 0 ? second : first;
+    }
+
+    if (second.evidenceSamples.length !== first.evidenceSamples.length) {
+      return second.evidenceSamples.length > first.evidenceSamples.length
+        ? second
+        : first;
+    }
+
+    return second.frequency > first.frequency ? second : first;
+  }
+
+  /** Returns the highest available severity without inventing a value. */
+  private selectHigherSeverity(
+    first: string | null,
+    second: string | null,
+  ): string | null {
+    if (!first) {
+      return second;
+    }
+
+    if (!second) {
+      return first;
+    }
+
+    return (SEVERITY_SCORES[second] ?? 0) > (SEVERITY_SCORES[first] ?? 0)
+      ? second
+      : first;
+  }
+
+  /** Applies deterministic weighted scoring. */
   private scoreCandidate(
-    candidate: ReturnType<IdeaOpportunityRankingService['extractCandidates']>[number],
+    candidate: NormalizedCandidate,
     locationTerms: readonly string[],
   ): Omit<RankedIdeaOpportunity, 'rank'> {
-    const frequencyScore = Math.min(Math.log2(candidate.frequency + 1) / 4, 1);
+    const frequencyScore = Math.min(
+      Math.log2(Math.max(candidate.frequency, 1) + 1) / 4,
+      1,
+    );
     const severityScore = candidate.severity
       ? (SEVERITY_SCORES[candidate.severity] ?? 0.45)
       : 0.45;
@@ -186,25 +421,28 @@ export class IdeaOpportunityRankingService {
       candidate.evidenceSamples.length / MAX_EVIDENCE_SAMPLES,
       1,
     );
+    const directEvidenceRatio = this.calculateDirectEvidenceRatio(candidate);
     const specificityScore = this.calculateSpecificity(candidate);
     const feasibilityScore = this.calculateFeasibility(candidate);
     const localRelevanceScore = this.calculateLocalRelevance(
       candidate,
       locationTerms,
     );
+    const evidenceTypeScore = EVIDENCE_TYPE_SCORES[candidate.evidenceType];
 
     const finalScore = this.round(
-      frequencyScore * 0.2 +
-        severityScore * 0.18 +
-        evidenceScore * 0.24 +
-        specificityScore * 0.18 +
-        feasibilityScore * 0.12 +
-        localRelevanceScore * 0.08,
+      frequencyScore * 0.14 +
+        severityScore * 0.12 +
+        evidenceScore * 0.18 +
+        directEvidenceRatio * 0.2 +
+        specificityScore * 0.16 +
+        feasibilityScore * 0.1 +
+        localRelevanceScore * 0.04 +
+        evidenceTypeScore * 0.06,
     );
 
     return {
       ...candidate,
-      evidenceSamples: candidate.evidenceSamples.slice(0, MAX_EVIDENCE_SAMPLES),
       frequencyScore: this.round(frequencyScore),
       severityScore: this.round(severityScore),
       evidenceScore: this.round(evidenceScore),
@@ -215,40 +453,217 @@ export class IdeaOpportunityRankingService {
     };
   }
 
-  /** Penalizes generic one-word labels and rewards concrete workflows. */
-  private calculateSpecificity(
-    candidate: ReturnType<IdeaOpportunityRankingService['extractCandidates']>[number],
-  ): number {
-    const combined = [
-      candidate.title,
-      candidate.problem,
-      candidate.need,
-      candidate.solutionArea,
-      ...candidate.evidenceSamples,
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join(' ')
-      .toLowerCase();
+  /** Maps equivalent NLP and AI labels to one stable opportunity title. */
+  private canonicalizeOpportunityTitle(value: string): string {
+    const normalized = value.toLocaleLowerCase().replace(/\s+/gu, ' ').trim();
 
-    const normalizedTitle = candidate.title.trim().toLowerCase();
-    const wordCount = combined.split(/\s+/u).filter(Boolean).length;
-    const genericPenalty = GENERIC_LABELS.has(normalizedTitle) ? 0.45 : 0;
-    const workflowBonus = /download|upload|navigation|login|access|assignment|grade|document|syllabus|scroll|search|payment|booking|delivery|notification/iu.test(
-      combined,
-    )
-      ? 0.25
-      : 0;
+    // Match concrete workflows before generic terms such as "failure".
+    if (
+      /document|download|syllabus|file access|broken link/iu.test(normalized)
+    ) {
+      return 'Document Access and Download Failures';
+    }
 
-    return Math.max(
-      0,
-      Math.min(1, 0.25 + Math.min(wordCount / 80, 0.55) + workflowBonus - genericPenalty),
+    if (
+      /data loss|synchronization|sync|recovery|missing history/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Data Loss and Synchronization Failures';
+    }
+
+    if (
+      /cross-device|cross device|desktop|laptop|computer|mobile only/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Cross-Device Access Barriers';
+    }
+
+    if (
+      /activation|verification|authentication|login|sign in|account/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Account Activation and Login Failures';
+    }
+
+    if (
+      /navigation|interface|usability|back button|scroll|popup/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Navigation and Interface Failures';
+    }
+
+    if (/cost|paywall|paid|price|subscription/iu.test(normalized)) {
+      return 'High Cost or Paywall Restrictions';
+    }
+
+    if (
+      /crash|instability|reliability|freeze|generic error|glitch/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Application Reliability and Crash Failures';
+    }
+
+    return value.replace(/\s+/gu, ' ').trim();
+  }
+
+  /** Keeps only evidence sentences that support the candidate category. */
+  private isEvidenceRelevantToTitle(title: string, evidence: string): boolean {
+    const normalizedTitle = title.toLocaleLowerCase();
+
+    if (/document|download/iu.test(normalizedTitle)) {
+      return /\b(?:document|download|syllabus|file|attachment|link|null error)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/data loss|synchronization/iu.test(normalizedTitle)) {
+      return /\b(?:data|history|classes|progress|sync|lost|missing|gone|deleted)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/cross-device/iu.test(normalizedTitle)) {
+      return /\b(?:desktop|laptop|computer|pc|mobile only|ios|android)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/activation|login|account/iu.test(normalizedTitle)) {
+      return /\b(?:activation|verification|email|code|otp|login|sign in|account)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/navigation|interface/iu.test(normalizedTitle)) {
+      return /\b(?:navigate|navigation|interface|back button|scroll|popup|tabs?|course selection)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/cost|paywall/iu.test(normalizedTitle)) {
+      return /\b(?:cost|price|paywall|paid|pay|subscription|limited tasks|limited features)\b/iu.test(
+        evidence,
+      );
+    }
+
+    if (/reliability|crash/iu.test(normalizedTitle)) {
+      return /\b(?:crash|freeze|error|bug|glitch|looping|doesn['’]?t work|won['’]?t open)\b/iu.test(
+        evidence,
+      );
+    }
+
+    return this.hasDirectComplaintSignal(evidence);
+  }
+
+  /** Derives a concrete opportunity title from complaint evidence. */
+  private deriveConcreteTitle(
+    evidenceSamples: readonly string[],
+  ): string | null {
+    const text = evidenceSamples.join(' ').toLowerCase();
+
+    if (this.hasCrossDeviceAccessFailure(text)) {
+      return 'Cross-Device Learning Access';
+    }
+
+    if (
+      /(?:activation|verification|email|code|otp).{0,100}(?:never|not|fail)/iu.test(
+        text,
+      )
+    ) {
+      return 'Reliable Account Activation';
+    }
+
+    if (
+      /(?:data|history|classes|progress).{0,80}(?:gone|lost|missing|deleted|sync)/iu.test(
+        text,
+      )
+    ) {
+      return 'Learning Data Recovery and Sync';
+    }
+
+    if (
+      /(?:confusing|hard|difficult).{0,40}(?:navigate|interface|use)/iu.test(
+        text,
+      )
+    ) {
+      return 'Accessible Learning Navigation';
+    }
+
+    if (/(?:crash|freeze|broken|bug|error)/iu.test(text)) {
+      return 'Learning Platform Reliability';
+    }
+
+    if (
+      /(?:paywall|have to pay|gotta pay|limited).{0,40}(?:task|feature|access)?/iu.test(
+        text,
+      )
+    ) {
+      return 'Fair Access to Core Learning Features';
+    }
+
+    if (
+      /(?:لا يمكن|ما بقدر).{0,60}(?:كمبيوتر|لابتوب)|(?:الهاتف فقط)/iu.test(text)
+    ) {
+      return 'الوصول إلى التعلم عبر الأجهزة';
+    }
+
+    if (
+      /(?:رسالة|رمز).{0,40}(?:تفعيل|تحقق).{0,40}(?:لم يصل|ما وصل)/iu.test(text)
+    ) {
+      return 'تفعيل حسابات موثوق';
+    }
+
+    return null;
+  }
+
+  /** Detects cross-device access complaints regardless of word order. */
+  private hasCrossDeviceAccessFailure(value: string): boolean {
+    const hasTargetDevice = /\b(?:computer|desktop|laptop|pc)\b/iu.test(value);
+    const hasAccessAction =
+      /\b(?:download(?:ed|ing)?|install(?:ed|ing)?|access(?:ed|ing)?|use|using|run|open)\b/iu.test(
+        value,
+      );
+    const hasFailureSignal =
+      /\b(?:(?:can(?:not|['’]?t)|can\s+not)|cannot|could(?:n['’]?t| not)|unable to|not available|does(?:n['’]?t| not) work|won['’]?t work|fails? to)\b/iu.test(
+        value,
+      );
+
+    return (
+      /\bmobile[- ]only\b/iu.test(value) ||
+      (hasTargetDevice && hasAccessAction && hasFailureSignal)
     );
   }
 
-  /** Rewards software-solvable opportunities and penalizes vague labels. */
-  private calculateFeasibility(
-    candidate: ReturnType<IdeaOpportunityRankingService['extractCandidates']>[number],
-  ): number {
+  private calculateDirectEvidenceRatio(candidate: NormalizedCandidate): number {
+    if (candidate.evidenceSamples.length === 0) {
+      return 0;
+    }
+
+    const direct = candidate.evidenceSamples.filter((sample) =>
+      this.hasDirectComplaintSignal(sample),
+    ).length;
+
+    return direct / candidate.evidenceSamples.length;
+  }
+
+  private calculateSpecificity(candidate: NormalizedCandidate): number {
+    const titleWords = candidate.title.split(/\s+/u).filter(Boolean).length;
+    const workflowBonus =
+      /download|upload|navigation|login|activation|access|assignment|grade|document|sync|data|notification|recovery|payment/iu.test(
+        [candidate.title, ...candidate.evidenceSamples].join(' '),
+      )
+        ? 0.3
+        : 0;
+
+    return Math.min(1, 0.35 + Math.min(titleWords / 8, 0.35) + workflowBonus);
+  }
+
+  private calculateFeasibility(candidate: NormalizedCandidate): number {
     const text = [
       candidate.title,
       candidate.problem,
@@ -259,20 +674,15 @@ export class IdeaOpportunityRankingService {
       .join(' ')
       .toLowerCase();
 
-    if (GENERIC_LABELS.has(candidate.title.trim().toLowerCase())) {
-      return 0.35;
-    }
-
-    return /app|api|document|workflow|platform|mobile|web|data|analytics|automation|integration|notification|access|search|system/iu.test(
+    return /app|api|document|workflow|platform|mobile|web|data|analytics|automation|integration|notification|access|search|sync|authentication|recovery/iu.test(
       text,
     )
-      ? 0.85
+      ? 0.88
       : 0.65;
   }
 
-  /** Detects direct, evidence-backed location references without inventing them. */
   private calculateLocalRelevance(
-    candidate: ReturnType<IdeaOpportunityRankingService['extractCandidates']>[number],
+    candidate: NormalizedCandidate,
     locationTerms: readonly string[],
   ): number {
     const searchableText = [candidate.title, ...candidate.evidenceSamples]
@@ -288,10 +698,9 @@ export class IdeaOpportunityRankingService {
 
     return normalizedTerms.some((term) => searchableText.includes(term))
       ? 1
-      : 0.4;
+      : 0.25;
   }
 
-  /** Produces warnings used for traceability and prompt cautioning. */
   private buildQualityWarnings(
     nlp: IdeaGenerationNlpContext,
     ranked: readonly RankedIdeaOpportunity[],
@@ -301,7 +710,7 @@ export class IdeaOpportunityRankingService {
 
     if (nlp.totalTextsAnalyzed < 80) {
       warnings.push(
-        `Only ${nlp.totalTextsAnalyzed} texts were analyzed; treat market-wide conclusions as preliminary.`,
+        `Only ${nlp.totalTextsAnalyzed} texts were analyzed; market-wide conclusions remain preliminary.`,
       );
     }
 
@@ -311,13 +720,41 @@ export class IdeaOpportunityRankingService {
       );
     }
 
-    if (GENERIC_LABELS.has(ranked[0].title.trim().toLowerCase())) {
+    if (ranked[0].localRelevanceScore < 1) {
       warnings.push(
-        'The highest-ranked NLP label is generic; generation must derive a concrete workflow from its evidence samples.',
+        'The selected location is a deployment target, not a location proven directly by the collected evidence.',
       );
     }
 
     return warnings;
+  }
+
+  private hasDirectComplaintSignal(value: string): boolean {
+    return DIRECT_COMPLAINT_PATTERNS.some((pattern) => pattern.test(value));
+  }
+
+  private isPromotionalOnlyEvidence(value: string): boolean {
+    const promotionalSignals = PROMOTIONAL_PATTERNS.filter((pattern) =>
+      pattern.test(value),
+    ).length;
+
+    return (
+      value.length >= 900 &&
+      promotionalSignals >= 2 &&
+      !this.hasDirectComplaintSignal(value)
+    );
+  }
+
+  private normalizeEvidenceSample(value: string): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+
+    if (!normalized) {
+      return '';
+    }
+
+    return normalized.length <= MAX_EVIDENCE_SAMPLE_LENGTH
+      ? normalized
+      : `${normalized.slice(0, MAX_EVIDENCE_SAMPLE_LENGTH - 1).trimEnd()}…`;
   }
 
   private isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {

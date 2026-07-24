@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../audit-logs/audit-logs.module';
+import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 import { AdminCreditsController } from './controllers/admin-credits.controller';
 import { UserCreditsController } from './controllers/user-credits.controller';
 
 import { AdminCreditsService } from './services/admin-credits.service';
+import { CreditBalanceNotificationService } from './services/credit-balance-notification.service';
 import { CreditBalanceService } from './services/credit-balance.service';
 import { CreditCacheService } from './services/credit-cache.service';
 import { UserCreditsService } from './services/user-credits.service';
@@ -22,17 +24,19 @@ import { UserCreditsService } from './services/user-credits.service';
  * - Centralized credit-balance mutations.
  * - Credit transaction persistence.
  * - Credit-related cache invalidation.
+ * - Low and exhausted credit-balance email notifications.
  *
  * Exported services:
  * - CreditBalanceService is used by IdeasModule and PaymentsModule
  *   to add or deduct credits safely.
+ * - CreditBalanceNotificationService sends post-commit balance emails.
  * - CreditCacheService is used after successful credit-related
  *   transactions to invalidate affected user caches.
  *
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [PrismaModule, AuditModule, MailModule],
 
   controllers: [UserCreditsController, AdminCreditsController],
 
@@ -40,9 +44,14 @@ import { UserCreditsService } from './services/user-credits.service';
     UserCreditsService,
     AdminCreditsService,
     CreditBalanceService,
+    CreditBalanceNotificationService,
     CreditCacheService,
   ],
 
-  exports: [CreditBalanceService, CreditCacheService],
+  exports: [
+    CreditBalanceService,
+    CreditBalanceNotificationService,
+    CreditCacheService,
+  ],
 })
 export class CreditsModule {}
