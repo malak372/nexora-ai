@@ -5,6 +5,7 @@ import { Transform, type TransformFnParams, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsInt,
@@ -157,6 +158,30 @@ export class GenerateIdeaDto {
     ];
   })
   dataSourceKeys?: string[];
+
+
+  /**
+   * Forces the generation pipeline to ignore compatible historical
+   * collection jobs and collect fresh community data.
+   *
+   * When omitted or false, the resolver may reuse a recent compatible
+   * collection job that satisfies the configured freshness and quality
+   * requirements.
+   */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }: TransformFnParams): unknown => {
+    if (value === 'true') {
+      return true;
+    }
+
+    if (value === 'false') {
+      return false;
+    }
+
+    return value;
+  })
+  forceRefresh?: boolean;
 
   /**
    * Optional user-provided keywords that supplement domain

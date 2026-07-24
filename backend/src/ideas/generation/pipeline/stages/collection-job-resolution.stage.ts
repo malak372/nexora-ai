@@ -110,6 +110,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       ),
 
       keywords: context.keywords.length > 0 ? context.keywords : undefined,
+
+      forceRefresh: context.forceRefresh,
     });
 
     const nlpContext = this.mapNlpContext(
@@ -148,6 +150,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         collectionJobId: result.job.id,
 
         reused: result.reused,
+
+        forceRefresh: context.forceRefresh,
 
         selectedPlatformId: result.selectedPlatformId ?? null,
 

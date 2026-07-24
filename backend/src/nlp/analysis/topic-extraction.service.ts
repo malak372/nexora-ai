@@ -13,6 +13,29 @@ import { TopicRule, TopicRuleService } from '../topic-rules/topic-rule.service';
 const MAX_EXTRACTED_TOPICS = 15;
 
 /**
+ * Generic standalone labels that provide no actionable product insight.
+ *
+ * Multi-word phrases containing these words may still be meaningful; only
+ * exact standalone matches are removed.
+ */
+const GENERIC_STANDALONE_TOPICS = new Set([
+  'all',
+  'any',
+  'app',
+  'can',
+  'get',
+  'issue',
+  'just',
+  'like',
+  'need',
+  'problem',
+  'thing',
+  'time',
+  'use',
+  'work',
+]);
+
+/**
  * Extracts high-level discussion topics from weighted keywords.
  *
  * This service converts frequent keywords into broader topic groups using
@@ -58,11 +81,19 @@ export class TopicExtractionService {
     for (const keyword of keywords) {
       const normalizedKeyword = this.normalizeTerm(keyword.keyword);
 
-      if (!normalizedKeyword || keyword.frequency <= 0) {
+      if (
+        !normalizedKeyword ||
+        keyword.frequency <= 0 ||
+        this.isGenericStandaloneTerm(normalizedKeyword)
+      ) {
         continue;
       }
 
       const topic = this.findMatchingTopic(normalizedKeyword, topicRules);
+
+      if (this.isGenericStandaloneTerm(this.normalizeTerm(topic))) {
+        continue;
+      }
       const currentFrequency = topicFrequencyMap.get(topic) ?? 0;
 
       topicFrequencyMap.set(topic, currentFrequency + keyword.frequency);
@@ -82,6 +113,13 @@ export class TopicExtractionService {
         return first.topic.localeCompare(second.topic);
       })
       .slice(0, MAX_EXTRACTED_TOPICS);
+  }
+
+  /**
+   * Rejects generic one-word topic labels while preserving meaningful phrases.
+   */
+  private isGenericStandaloneTerm(value: string): boolean {
+    return !value.includes(' ') && GENERIC_STANDALONE_TOPICS.has(value);
   }
 
   /**

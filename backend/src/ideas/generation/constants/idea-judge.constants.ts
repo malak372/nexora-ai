@@ -14,7 +14,7 @@ export const IDEA_JUDGE_RESPONSE_SCHEMA_NAME = 'idea_candidate_evaluation';
  *
  * @author Malak
  */
-export const IDEA_JUDGE_MAX_OUTPUT_TOKENS = 8_192;
+export const IDEA_JUDGE_MAX_OUTPUT_TOKENS = 4_096;
 
 /**
  * Low temperature used to keep comparative decisions stable and repeatable.
@@ -40,3 +40,19 @@ export const IDEA_JUDGE_CRITERIA_WEIGHTS = {
   marketPotential: 12,
   implementationClarity: 8,
 } as const;
+
+
+/**
+ * Relative contribution of the comparative AI judge to the final winner score.
+ *
+ * @author Malak
+ */
+export const IDEA_JUDGE_FINAL_SCORE_WEIGHT = 0.7;
+
+/**
+ * Relative contribution of the deterministic quality evaluator to the final
+ * winner score. Both final-score weights must add up to exactly 1.
+ *
+ * @author Malak
+ */
+export const IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT = 0.3;

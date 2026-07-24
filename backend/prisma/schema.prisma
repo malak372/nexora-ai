@@ -885,25 +885,35 @@ model ExternalApiLog {
 
   serviceCategory ExternalServiceCategory @map("service_category")
 
-  /**
-   * Examples: openrouter, google, stripe, youtube.
-   */
+
   providerKey String @map("provider_key")
 
   endpoint    String?
   requestId   String?        @map("request_id")
   requestType ApiRequestType @map("request_type")
 
-  operationId   String? @map("operation_id")
-  attemptNumber Int     @default(1) @map("attempt_number")
-  fallbackUsed  Boolean @default(false) @map("fallback_used")
+
+  operationId String? @map("operation_id")
+
+
+  attemptNumber Int @default(1) @map("attempt_number")
+
+
+  fallbackUsed Boolean @default(false) @map("fallback_used")
 
   statusCode Int?    @map("status_code")
   isSuccess  Boolean @default(false) @map("is_success")
 
-  responseTimeMs Int?     @map("response_time_ms")
-  errorMessage   String?  @map("error_message")
-  costEstimate   Decimal? @map("cost_estimate") @db.Decimal(12, 6)
+  responseTimeMs Int?    @map("response_time_ms")
+  errorMessage   String? @map("error_message")
+
+
+  errorCode String? @map("error_code")
+
+
+  isRetryable Boolean? @map("is_retryable")
+
+  costEstimate Decimal? @map("cost_estimate") @db.Decimal(12, 6)
 
   apiModelId   String? @map("api_model_id")
   inputTokens  Int?    @map("input_tokens")
@@ -913,7 +923,10 @@ model ExternalApiLog {
 
   @@index([aiModelId, createdAt])
   @@index([operationId])
+  @@index([operationId, attemptNumber])
   @@index([providerKey, createdAt])
+  @@index([errorCode, createdAt])
+  @@index([isRetryable, createdAt])
   @@index([serviceCategory, createdAt])
   @@index([requestType, createdAt])
   @@index([isSuccess, createdAt])

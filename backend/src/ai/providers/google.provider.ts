@@ -20,6 +20,7 @@ import {
 } from '../types/ai-provider.type';
 
 import type { AiProvider } from './ai-provider.interface';
+import { sanitizeJsonSchemaForGoogle } from './utils/google-json-schema-sanitizer.util';
 
 /**
  * Minimal object structure used when inspecting unknown SDK errors.
@@ -245,7 +246,9 @@ export class GoogleProvider implements AiProvider {
                    * application services do not depend on Google SDK
                    * schema types.
                    */
-                  responseJsonSchema: input.responseSchema,
+                  responseJsonSchema: sanitizeJsonSchemaForGoogle(
+                    input.responseSchema,
+                  ),
                 }
               : {}),
           }
@@ -794,41 +797,123 @@ export class GoogleProvider implements AiProvider {
    * @returns Normalized provider message.
    */
   private readMessage(error: unknown, fallback: string): string {
+    const candidates: unknown[] = [];
+
     if (error instanceof Error) {
-      const normalizedMessage = error.message.replace(/\s+/g, ' ').trim();
-
-      if (normalizedMessage) {
-        return normalizedMessage;
-      }
+      candidates.push(error.message);
     }
 
-    if (typeof error === 'string') {
-      const normalizedMessage = error.replace(/\s+/g, ' ').trim();
-
-      if (normalizedMessage) {
-        return normalizedMessage;
-      }
-    }
+    candidates.push(error);
 
     if (this.isRecord(error)) {
-      const directMessage = this.normalizeOptionalText(error.message);
+      candidates.push(error.message);
+      candidates.push(error.error);
 
-      if (directMessage) {
-        return directMessage;
+      if (this.isRecord(error.response)) {
+        candidates.push(error.response.message);
+        candidates.push(error.response.error);
+
+        if (this.isRecord(error.response.data)) {
+          candidates.push(error.response.data.message);
+          candidates.push(error.response.data.error);
+        } else {
+          candidates.push(error.response.data);
+        }
       }
 
-      if (this.isRecord(error.response) && this.isRecord(error.response.data)) {
-        const responseMessage =
-          this.normalizeOptionalText(error.response.data.message) ??
-          this.normalizeOptionalText(error.response.data.error);
+      if (this.isRecord(error.cause)) {
+        candidates.push(error.cause.message);
+        candidates.push(error.cause.error);
+      }
+    }
 
-        if (responseMessage) {
-          return responseMessage;
-        }
+    for (const candidate of candidates) {
+      const message = this.extractProviderMessage(candidate);
+
+      if (message) {
+        return message;
       }
     }
 
     return fallback;
+  }
+
+  /**
+   * Extracts one safe human-readable message from a provider error value.
+   *
+   * Google SDK errors may expose the provider payload as a JSON string inside
+   * Error.message. Parsing that bounded value allows administrator logs to show
+   * the actual provider reason instead of an opaque serialized object.
+   *
+   * @param value Candidate provider error value.
+   * @returns Normalized provider message or undefined.
+   */
+  private extractProviderMessage(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+      const normalized = value.replace(/\s+/g, ' ').trim();
+
+      if (!normalized) {
+        return undefined;
+      }
+
+      const parsed = this.tryParseJsonRecord(normalized);
+
+      if (parsed) {
+        const nestedMessage = this.extractProviderMessage(parsed);
+
+        if (nestedMessage) {
+          return nestedMessage;
+        }
+      }
+
+      return normalized;
+    }
+
+    if (!this.isRecord(value)) {
+      return undefined;
+    }
+
+    const nestedCandidates: unknown[] = [
+      value.message,
+      value.error,
+      value.status,
+    ];
+
+    if (this.isRecord(value.error)) {
+      nestedCandidates.unshift(value.error.message);
+    }
+
+    for (const candidate of nestedCandidates) {
+      const nestedMessage = this.extractProviderMessage(candidate);
+
+      if (nestedMessage) {
+        return nestedMessage;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Attempts to parse a serialized provider error object.
+   *
+   * Only object-shaped JSON strings are accepted. Invalid JSON and primitive
+   * values are ignored so the original normalized message can still be used.
+   */
+  private tryParseJsonRecord(
+    value: string,
+  ): Readonly<Record<string, unknown>> | undefined {
+    if (!value.startsWith('{') || !value.endsWith('}')) {
+      return undefined;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+
+      return this.isRecord(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

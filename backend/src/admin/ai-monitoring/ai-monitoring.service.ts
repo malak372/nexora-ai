@@ -1,14 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
-import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
-
-import {
-  buildDateFilter,
-  buildExactFilter,
-  buildOrderBy,
-  buildPagination,
-} from '../../utilities/base-query/builder';
 
 import {
   buildCsv,
@@ -16,17 +7,88 @@ import {
   calculateTotalPages,
   toNumber,
 } from '../../utilities/analytics/analytics.helper';
+import {
+  buildDateFilter,
+  buildExactFilter,
+  buildOrderBy,
+  buildPagination,
+} from '../../utilities/base-query/builder';
+import { PrismaService } from '../../prisma/prisma.service';
+import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
 
 /**
- * Service responsible for monitoring AI and external API logs.
+ * Shared relation projection used by AI-monitoring log endpoints.
+ */
+const AI_LOG_RELATION_SELECT = {
+  aiModel: {
+    select: {
+      id: true,
+      providerKey: true,
+      apiModelId: true,
+      modelName: true,
+      displayName: true,
+      healthStatus: true,
+      consecutiveFailures: true,
+    },
+  },
+  user: {
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+    },
+  },
+  idea: {
+    select: {
+      id: true,
+      title: true,
+    },
+  },
+} as const satisfies Prisma.ExternalApiLogSelect;
+
+/**
+ * Shared scalar and relation projection for administrator diagnostics.
+ */
+const AI_LOG_SELECT = {
+  id: true,
+  serviceCategory: true,
+  providerKey: true,
+  aiModelId: true,
+  apiModelId: true,
+  endpoint: true,
+  requestId: true,
+  requestType: true,
+  operationId: true,
+  attemptNumber: true,
+  fallbackUsed: true,
+  statusCode: true,
+  isSuccess: true,
+  responseTimeMs: true,
+  inputTokens: true,
+  outputTokens: true,
+  errorCode: true,
+  errorMessage: true,
+  isRetryable: true,
+  costEstimate: true,
+  createdAt: true,
+  ...AI_LOG_RELATION_SELECT,
+} as const satisfies Prisma.ExternalApiLogSelect;
+
+/**
+ * Service responsible for administrator AI-provider monitoring.
  *
- * Provides admin-only functionality for:
- * - Viewing paginated API logs.
- * - Filtering logs by provider, request type, success status, and date range.
- * - Searching logs by endpoint, request ID, and error message.
- * - Sorting logs safely using whitelisted fields.
- * - Generating summary reports.
- * - Generating chart-ready analytics.
+ * The service exposes both individual request attempts and complete operation
+ * timelines. One logical AI operation may contain retries, structured-output
+ * repair, model fallback, and provider fallback, so inspecting only the final
+ * request is insufficient for troubleshooting.
+ *
+ * Administrators can determine:
+ * - Which provider and exact provider model were called.
+ * - Which configured database model was selected.
+ * - Whether the attempt was original, retry, or fallback.
+ * - The normalized error category and safe provider message.
+ * - The HTTP status, provider request ID, and retry eligibility.
+ * - Whether a later model/provider successfully completed the operation.
  *
  * @author Malak
  */
@@ -35,12 +97,7 @@ export class AiMonitoringService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Builds a shared Prisma where filter for AI monitoring endpoints.
-   *
-   * This keeps logs, summary, and charts consistent when filters are applied.
-   *
-   * @param query - AI monitoring filters.
-   * @returns Prisma ExternalApiLog where input.
+   * Builds a shared Prisma filter for all AI-monitoring endpoints.
    */
   private buildAiLogsWhere(
     query: GetAiLogsQueryDto,
@@ -61,9 +118,43 @@ export class AiMonitoringService {
               },
             },
             {
+              operationId: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              apiModelId: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              errorCode: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
               errorMessage: {
                 contains: query.search,
                 mode: 'insensitive',
+              },
+            },
+            {
+              aiModel: {
+                modelName: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            },
+            {
+              aiModel: {
+                displayName: {
+                  contains: query.search,
+                  mode: 'insensitive',
+                },
               },
             },
             {
@@ -98,25 +189,21 @@ export class AiMonitoringService {
       ...buildDateFilter(query),
       ...searchFilter,
       ...buildExactFilter('providerKey', query.providerKey),
+      ...buildExactFilter('aiModelId', query.aiModelId),
+      ...buildExactFilter('apiModelId', query.apiModelId),
+      ...buildExactFilter('operationId', query.operationId),
       ...buildExactFilter('requestType', query.requestType),
+      ...buildExactFilter('errorCode', query.errorCode),
       ...buildExactFilter('isSuccess', query.isSuccess),
+      ...buildExactFilter('isRetryable', query.isRetryable),
+      ...buildExactFilter('fallbackUsed', query.fallbackUsed),
     };
   }
 
   /**
-   * Retrieves paginated external API logs.
+   * Retrieves paginated external AI request attempts.
    *
-   * Supports:
-   * - Pagination.
-   * - Filtering.
-   * - Searching.
-   * - Safe sorting.
-   *
-   * Endpoint:
-   * GET /admin/ai-monitoring/logs
-   *
-   * @param query - Query filters and pagination options.
-   * @returns Paginated API logs with metadata.
+   * Endpoint: GET /admin/ai-monitoring/logs
    */
   async getAiLogs(query: GetAiLogsQueryDto) {
     const { page, limit, skip } = buildPagination(query);
@@ -126,8 +213,14 @@ export class AiMonitoringService {
       query,
       [
         'providerKey',
+        'apiModelId',
         'requestType',
+        'operationId',
+        'attemptNumber',
+        'fallbackUsed',
         'isSuccess',
+        'errorCode',
+        'isRetryable',
         'statusCode',
         'responseTimeMs',
         'costEstimate',
@@ -142,36 +235,8 @@ export class AiMonitoringService {
         skip,
         take: limit,
         orderBy,
-        select: {
-          id: true,
-          providerKey: true,
-          endpoint: true,
-          requestId: true,
-          requestType: true,
-          statusCode: true,
-          isSuccess: true,
-          responseTimeMs: true,
-          errorMessage: true,
-          costEstimate: true,
-          createdAt: true,
-
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-            },
-          },
-
-          idea: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
+        select: AI_LOG_SELECT,
       }),
-
       this.prisma.externalApiLog.count({ where }),
     ]);
 
@@ -187,13 +252,65 @@ export class AiMonitoringService {
   }
 
   /**
-   * Exports filtered external API logs as CSV.
+   * Retrieves one detailed external AI request attempt.
    *
-   * Uses the same filters and sorting rules
-   * as the logs list endpoint.
+   * Endpoint: GET /admin/ai-monitoring/logs/:id
+   */
+  async getAiLogById(id: string) {
+    const log = await this.prisma.externalApiLog.findUnique({
+      where: { id },
+      select: AI_LOG_SELECT,
+    });
+
+    if (!log) {
+      throw new NotFoundException(`AI monitoring log "${id}" was not found.`);
+    }
+
+    return log;
+  }
+
+  /**
+   * Retrieves every request attempt belonging to one logical AI operation.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/logs/export/csv
+   * The timeline shows retries and fallbacks in execution order, which allows
+   * administrators to see the failed provider and the provider/model that
+   * eventually succeeded.
+   *
+   * Endpoint: GET /admin/ai-monitoring/operations/:operationId
+   */
+  async getAiOperationTimeline(operationId: string) {
+    const attempts = await this.prisma.externalApiLog.findMany({
+      where: { operationId },
+      orderBy: [{ attemptNumber: 'asc' }, { createdAt: 'asc' }],
+      select: AI_LOG_SELECT,
+    });
+
+    if (attempts.length === 0) {
+      throw new NotFoundException(
+        `AI operation "${operationId}" was not found.`,
+      );
+    }
+
+    const successfulAttempt = attempts.find((attempt) => attempt.isSuccess);
+    const finalAttempt = attempts[attempts.length - 1];
+
+    return {
+      operationId,
+      succeeded: Boolean(successfulAttempt),
+      totalAttempts: attempts.length,
+      failedAttempts: attempts.filter((attempt) => !attempt.isSuccess).length,
+      fallbackAttempts: attempts.filter((attempt) => attempt.fallbackUsed)
+        .length,
+      successfulAttempt: successfulAttempt ?? null,
+      finalAttempt,
+      attempts,
+    };
+  }
+
+  /**
+   * Exports filtered external AI logs as CSV.
+   *
+   * Endpoint: GET /admin/ai-monitoring/logs/export/csv
    */
   async exportAiLogsCsv(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
@@ -202,8 +319,14 @@ export class AiMonitoringService {
       query,
       [
         'providerKey',
+        'apiModelId',
         'requestType',
+        'operationId',
+        'attemptNumber',
+        'fallbackUsed',
         'isSuccess',
+        'errorCode',
+        'isRetryable',
         'statusCode',
         'responseTimeMs',
         'costEstimate',
@@ -215,46 +338,30 @@ export class AiMonitoringService {
     const logs = await this.prisma.externalApiLog.findMany({
       where,
       orderBy,
-      select: {
-        id: true,
-        providerKey: true,
-        endpoint: true,
-        requestId: true,
-        requestType: true,
-        statusCode: true,
-        isSuccess: true,
-        responseTimeMs: true,
-        errorMessage: true,
-        costEstimate: true,
-        createdAt: true,
-
-        user: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-
-        idea: {
-          select: {
-            id: true,
-            title: true,
-          },
-        },
-      },
+      select: AI_LOG_SELECT,
     });
 
     const headers = [
       'Log ID',
+      'Operation ID',
+      'Attempt Number',
+      'Fallback Used',
       'Provider',
+      'AI Model ID',
+      'Configured Model Name',
+      'Configured Display Name',
+      'Provider API Model ID',
       'Endpoint',
-      'Request ID',
+      'Provider Request ID',
       'Request Type',
       'Status Code',
       'Is Success',
-      'Response Time Ms',
+      'Error Code',
+      'Is Retryable',
       'Error Message',
+      'Response Time Ms',
+      'Input Tokens',
+      'Output Tokens',
       'Cost Estimate',
       'User ID',
       'User Name',
@@ -266,14 +373,25 @@ export class AiMonitoringService {
 
     const rows = logs.map((log) => [
       log.id,
+      log.operationId ?? '',
+      log.attemptNumber,
+      log.fallbackUsed,
       log.providerKey,
-      log.endpoint,
+      log.aiModelId ?? '',
+      log.aiModel?.modelName ?? '',
+      log.aiModel?.displayName ?? '',
+      log.apiModelId ?? '',
+      log.endpoint ?? '',
       log.requestId ?? '',
       log.requestType,
       log.statusCode ?? '',
       log.isSuccess,
-      log.responseTimeMs ?? '',
+      log.errorCode ?? '',
+      log.isRetryable ?? '',
       log.errorMessage ?? '',
+      log.responseTimeMs ?? '',
+      log.inputTokens ?? '',
+      log.outputTokens ?? '',
       toNumber(log.costEstimate),
       log.user?.id ?? '',
       log.user?.fullName ?? '',
@@ -287,141 +405,184 @@ export class AiMonitoringService {
   }
 
   /**
-   * Retrieves a summary report for external API usage.
+   * Retrieves an AI-provider usage and failure summary.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/summary
-   *
-   * @param query - Optional filters used to scope the summary.
-   * @returns Summary statistics.
+   * Endpoint: GET /admin/ai-monitoring/summary
    */
   async getAiSummary(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
+
+    const canIncludeSuccess = query.isSuccess !== false;
+    const canIncludeFailure = query.isSuccess !== true;
 
     const [
       totalRequests,
       successfulRequests,
       failedRequests,
+      retryableFailures,
+      fallbackAttempts,
       responseTimeAggregate,
       costAggregate,
+      failuresByProvider,
+      failuresByErrorCode,
     ] = await Promise.all([
       this.prisma.externalApiLog.count({ where }),
-
+      canIncludeSuccess
+        ? this.prisma.externalApiLog.count({
+            where: { ...where, isSuccess: true },
+          })
+        : Promise.resolve(0),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.count({
+            where: { ...where, isSuccess: false },
+          })
+        : Promise.resolve(0),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.count({
+            where: {
+              ...where,
+              isSuccess: false,
+              isRetryable: true,
+            },
+          })
+        : Promise.resolve(0),
       this.prisma.externalApiLog.count({
-        where: {
-          ...where,
-          isSuccess: true,
-        },
+        where: { ...where, fallbackUsed: true },
       }),
-
-      this.prisma.externalApiLog.count({
-        where: {
-          ...where,
-          isSuccess: false,
-        },
-      }),
-
       this.prisma.externalApiLog.aggregate({
         where,
-        _avg: {
-          responseTimeMs: true,
-        },
+        _avg: { responseTimeMs: true },
       }),
-
       this.prisma.externalApiLog.aggregate({
         where,
-        _sum: {
-          costEstimate: true,
-        },
+        _sum: { costEstimate: true },
       }),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.groupBy({
+            by: ['providerKey'],
+            where: { ...where, isSuccess: false },
+            _count: { providerKey: true },
+            orderBy: { _count: { providerKey: 'desc' } },
+          })
+        : Promise.resolve([]),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.groupBy({
+            by: ['errorCode'],
+            where: {
+              ...where,
+              isSuccess: false,
+              errorCode: { not: null },
+            },
+            _count: { errorCode: true },
+            orderBy: { _count: { errorCode: 'desc' } },
+          })
+        : Promise.resolve([]),
     ]);
 
     return {
       totalRequests,
       successfulRequests,
       failedRequests,
+      retryableFailures,
+      nonRetryableFailures: Math.max(failedRequests - retryableFailures, 0),
+      fallbackAttempts,
       successRate: calculateSuccessRate(successfulRequests, totalRequests),
       errorRate: calculateSuccessRate(failedRequests, totalRequests),
       averageResponseTime: toNumber(responseTimeAggregate._avg.responseTimeMs),
       totalCost: toNumber(costAggregate._sum.costEstimate),
+      failuresByProvider: failuresByProvider.map((item) => ({
+        providerKey: item.providerKey,
+        count: item._count.providerKey,
+      })),
+      failuresByErrorCode: failuresByErrorCode.map((item) => ({
+        errorCode: item.errorCode,
+        count: item._count.errorCode,
+      })),
     };
   }
 
   /**
-   * Retrieves chart-ready external API monitoring analytics.
+   * Retrieves chart-ready AI-provider analytics.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/charts
-   *
-   * @param query - Optional filters used to scope the charts.
-   * @returns Chart-ready analytics data.
+   * Endpoint: GET /admin/ai-monitoring/charts
    */
   async getAiCharts(query: GetAiLogsQueryDto) {
     const where = this.buildAiLogsWhere(query);
+    const canIncludeSuccess = query.isSuccess !== false;
+    const canIncludeFailure = query.isSuccess !== true;
 
-    const [requestsByProvider, requestsByType, successCount, failedCount] =
-      await Promise.all([
-        this.prisma.externalApiLog.groupBy({
-          by: ['providerKey'],
-          where,
-          _count: {
-            providerKey: true,
-          },
-          orderBy: {
-            _count: {
-              providerKey: 'desc',
+    const [
+      requestsByProvider,
+      requestsByType,
+      successCount,
+      failedCount,
+      failuresByProvider,
+      failuresByErrorCode,
+    ] = await Promise.all([
+      this.prisma.externalApiLog.groupBy({
+        by: ['providerKey'],
+        where,
+        _count: { providerKey: true },
+        orderBy: { _count: { providerKey: 'desc' } },
+      }),
+      this.prisma.externalApiLog.groupBy({
+        by: ['requestType'],
+        where,
+        _count: { requestType: true },
+        orderBy: { _count: { requestType: 'desc' } },
+      }),
+      canIncludeSuccess
+        ? this.prisma.externalApiLog.count({
+            where: { ...where, isSuccess: true },
+          })
+        : Promise.resolve(0),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.count({
+            where: { ...where, isSuccess: false },
+          })
+        : Promise.resolve(0),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.groupBy({
+            by: ['providerKey'],
+            where: { ...where, isSuccess: false },
+            _count: { providerKey: true },
+            orderBy: { _count: { providerKey: 'desc' } },
+          })
+        : Promise.resolve([]),
+      canIncludeFailure
+        ? this.prisma.externalApiLog.groupBy({
+            by: ['errorCode'],
+            where: {
+              ...where,
+              isSuccess: false,
+              errorCode: { not: null },
             },
-          },
-        }),
-
-        this.prisma.externalApiLog.groupBy({
-          by: ['requestType'],
-          where,
-          _count: {
-            requestType: true,
-          },
-          orderBy: {
-            _count: {
-              requestType: 'desc',
-            },
-          },
-        }),
-
-        this.prisma.externalApiLog.count({
-          where: {
-            ...where,
-            isSuccess: true,
-          },
-        }),
-
-        this.prisma.externalApiLog.count({
-          where: {
-            ...where,
-            isSuccess: false,
-          },
-        }),
-      ]);
+            _count: { errorCode: true },
+            orderBy: { _count: { errorCode: 'desc' } },
+          })
+        : Promise.resolve([]),
+    ]);
 
     return {
       requestsByProvider: requestsByProvider.map((item) => ({
         label: item.providerKey,
         count: item._count.providerKey,
       })),
-
       requestsByType: requestsByType.map((item) => ({
         label: item.requestType,
         count: item._count.requestType,
       })),
-
+      failuresByProvider: failuresByProvider.map((item) => ({
+        label: item.providerKey,
+        count: item._count.providerKey,
+      })),
+      failuresByErrorCode: failuresByErrorCode.map((item) => ({
+        label: item.errorCode,
+        count: item._count.errorCode,
+      })),
       successFailureChart: [
-        {
-          label: 'SUCCESSFUL',
-          count: successCount,
-        },
-        {
-          label: 'FAILED',
-          count: failedCount,
-        },
+        { label: 'SUCCESSFUL', count: successCount },
+        { label: 'FAILED', count: failedCount },
       ],
     };
   }

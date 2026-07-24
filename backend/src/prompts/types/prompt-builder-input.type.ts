@@ -1,5 +1,7 @@
 import { IdeaGenerationType } from '@prisma/client';
 
+import type { IdeaOpportunityRanking } from '../../ideas/generation/types/idea-opportunity-ranking.type';
+
 /**
  * Input required to generate a new idea prompt.
  *
@@ -27,9 +29,15 @@ export type IdeaGenerationPromptInput = {
   readonly existingIdeaId?: never;
 
   /**
-   * Requester ownership validation is not required here.
+   * Optional registered-user identifier used to load recent ideas and
+   * require semantic diversity from the new generation.
    */
-  readonly requesterUserId?: never;
+  readonly requesterUserId?: string;
+
+  /**
+   * Deterministic opportunity ranking resolved before prompt construction.
+   */
+  readonly opportunityRanking?: IdeaOpportunityRanking;
 };
 
 /**

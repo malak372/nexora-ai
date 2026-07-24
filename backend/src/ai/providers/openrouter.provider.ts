@@ -192,11 +192,21 @@ export class OpenRouterProvider implements AiProvider {
         },
       );
 
-      const firstChoice = completion.choices[0];
+      const firstChoice = completion.choices?.[0];
 
-      const finishReason = this.mapFinishReason(firstChoice?.finish_reason);
+      if (!firstChoice) {
+        throw new AiProviderError(
+          'OpenRouter returned a response without any completion choices.',
+          AiProviderErrorCode.EMPTY_RESPONSE,
+          true,
+          502,
+          this.normalizeOptionalText(completion.id),
+        );
+      }
 
-      const text = firstChoice?.message?.content?.trim();
+      const finishReason = this.mapFinishReason(firstChoice.finish_reason);
+
+      const text = firstChoice.message?.content?.trim();
 
       if (!text) {
         if (finishReason === AiFinishReason.CONTENT_FILTER) {

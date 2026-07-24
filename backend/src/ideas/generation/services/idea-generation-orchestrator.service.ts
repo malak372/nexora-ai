@@ -121,6 +121,11 @@ type ExecuteOwnedIdeaGenerationInput = {
    * Collection location and language information.
    */
   location: IdeaGenerationLocation;
+
+  /**
+   * Whether the resolver must bypass compatible historical collection jobs.
+   */
+  forceRefresh: boolean;
 };
 
 /**
@@ -209,6 +214,8 @@ export class IdeaGenerationOrchestratorService {
         input.dto.dataSourceKeys,
       ),
 
+      forceRefresh: input.dto.forceRefresh ?? false,
+
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
 
@@ -268,6 +275,8 @@ export class IdeaGenerationOrchestratorService {
         input.dto.dataSourceKeys,
       ),
 
+      forceRefresh: input.dto.forceRefresh ?? false,
+
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
 
@@ -300,6 +309,7 @@ export class IdeaGenerationOrchestratorService {
       requestedDataSourceKeys: this.normalizeSourceKeys(
         input.dto.dataSourceKeys,
       ),
+      forceRefresh: input.dto.forceRefresh ?? false,
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
         city: this.normalizeOptionalValue(input.dto.city),
@@ -329,6 +339,7 @@ export class IdeaGenerationOrchestratorService {
       requestedDataSourceKeys: this.normalizeSourceKeys(
         input.dto.dataSourceKeys,
       ),
+      forceRefresh: input.dto.forceRefresh ?? false,
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
         city: this.normalizeOptionalValue(input.dto.city),
@@ -471,6 +482,8 @@ export class IdeaGenerationOrchestratorService {
       requestedDataSourceKeys: input.requestedDataSourceKeys,
 
       location: input.location,
+
+      forceRefresh: input.forceRefresh,
     });
   }
 

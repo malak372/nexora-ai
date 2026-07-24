@@ -5,6 +5,7 @@ import { Transform, type TransformFnParams, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -109,6 +110,27 @@ export class GenerateGuestIdeaDto {
     ];
   })
   dataSourceKeys?: string[];
+
+  /**
+   * Forces the pipeline to ignore compatible historical collection jobs
+   * and collect fresh community data for this request.
+   *
+   * When omitted or false, a recent compatible collection job may be reused.
+   */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }: TransformFnParams): unknown => {
+    if (value === 'true') {
+      return true;
+    }
+
+    if (value === 'false') {
+      return false;
+    }
+
+    return value;
+  })
+  forceRefresh?: boolean;
 
   /**
    * Optional guest-provided keywords.

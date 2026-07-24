@@ -225,6 +225,11 @@ export class PromptBuilderService {
     const normalizedCity = this.normalizeLocation(collectionJob.city);
     const normalizedRegion = this.normalizeLocation(collectionJob.region);
 
+    const recentIdeas = await this.getRecentIdeasForDiversity(
+      input,
+      collectionJob,
+    );
+
     const renderedTemplate = this.promptTemplateService.renderTemplate(
       template,
       {
@@ -360,6 +365,8 @@ export class PromptBuilderService {
      */
     const renderedPrompt = [
       this.buildEvidenceGroundingDirective(),
+      this.buildOpportunitySelectionDirective(input),
+      this.buildDiversityDirective(recentIdeas),
       this.buildLocalGroundingDirective({
         domain: collectionJob.domain.name,
         country: normalizedCountry,
@@ -386,6 +393,179 @@ export class PromptBuilderService {
 
       responseSchema: outputContract.schema,
     };
+  }
+
+
+
+  /**
+   * Builds the application-controlled directive that anchors generation to the
+   * deterministic opportunity-ranking result.
+   *
+   * Keeping this directive outside the configurable template prevents an old
+   * administrator-defined template from silently discarding the ranking stage.
+   */
+  private buildOpportunitySelectionDirective(
+    input: PromptBuilderInput,
+  ): string {
+    if (
+      input.purpose !== 'IDEA_GENERATION' ||
+      !input.opportunityRanking
+    ) {
+      return [
+        'OPPORTUNITY SELECTION:',
+        '- No pre-ranked generation opportunity is available for this request.',
+        '- Use the strongest evidence-backed problem while preserving the existing idea during direct unlock.',
+      ].join('\n');
+    }
+
+    const ranking = input.opportunityRanking;
+    const selected = ranking.selected;
+    const alternatives = ranking.alternatives.slice(0, 5).map((item) => ({
+      rank: item.rank,
+      title: item.title,
+      problem: item.problem,
+      need: item.need,
+      solutionArea: item.solutionArea,
+      score: item.finalScore,
+      evidenceSamples: item.evidenceSamples.slice(0, 2),
+    }));
+
+    const selectedContext = {
+      rank: selected.rank,
+      title: selected.title,
+      problem: selected.problem,
+      need: selected.need,
+      solutionArea: selected.solutionArea,
+      evidenceType: selected.evidenceType,
+      frequency: selected.frequency,
+      severity: selected.severity,
+      score: selected.finalScore,
+      evidenceSamples: selected.evidenceSamples,
+    };
+
+    return [
+      'AUTHORITATIVE OPPORTUNITY SELECTION:',
+      '- Build the idea around the selected opportunity below.',
+      '- Derive a concrete user workflow and root cause from the evidence samples; never use a generic NLP label as the product concept.',
+      '- Cover the selected primary problem completely before adding secondary capabilities.',
+      '- Alternatives may be used only as supporting capabilities when they are compatible with the same user workflow.',
+      '- Do not switch to a lower-ranked opportunity merely because it is easier to describe.',
+      '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
+      '- Prefer a defensible end-to-end product capability that measurably improves the affected workflow.',
+      `- Evidence coverage: ${(ranking.evidenceCoverage * 100).toFixed(1)}%.`,
+      ...ranking.qualityWarnings.map((warning) => `- Quality warning: ${warning}`),
+      '<untrusted_selected_opportunity>',
+      this.stringifyPromptData(selectedContext),
+      '</untrusted_selected_opportunity>',
+      '<untrusted_ranked_alternatives>',
+      this.stringifyPromptData(alternatives),
+      '</untrusted_ranked_alternatives>',
+    ].join('\n');
+  }
+
+  /** Safely serializes application-controlled ranking data for the prompt. */
+  private stringifyPromptData(value: unknown): string {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return 'null';
+    }
+  }
+
+  /** Loads a bounded list of the requester's recent ideas in the same domain. */
+  private async getRecentIdeasForDiversity(
+    input: PromptBuilderInput,
+    collectionJob: CollectionJobPromptContext,
+  ): Promise<Array<{ title: string; problemStatement: string }>> {
+    if (input.purpose !== 'IDEA_GENERATION') {
+      return [];
+    }
+
+    const normalizedCountry = collectionJob.country?.trim();
+
+    if (!normalizedCountry) {
+      return [];
+    }
+
+    const normalizedCity = this.normalizeNullableLocationForQuery(
+      collectionJob.city,
+    );
+    const normalizedRegion = this.normalizeNullableLocationForQuery(
+      collectionJob.region,
+    );
+
+    const ideas = await this.prisma.idea.findMany({
+      where: {
+        domainId: collectionJob.domain.id,
+        deletedAt: null,
+        collectionJob: {
+          is: {
+            country: {
+              equals: normalizedCountry,
+              mode: 'insensitive',
+            },
+            city: normalizedCity
+              ? { equals: normalizedCity, mode: 'insensitive' }
+              : null,
+            region: normalizedRegion
+              ? { equals: normalizedRegion, mode: 'insensitive' }
+              : null,
+          },
+        },
+      },
+      select: {
+        title: true,
+        problemStatement: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    return ideas.map((idea) => ({
+      title: idea.title.trim(),
+      problemStatement: idea.problemStatement?.trim() ?? '',
+    }));
+  }
+
+  /**
+   * Normalizes optional collection locations before using them in an exact
+   * regional Prisma filter.
+   */
+  private normalizeNullableLocationForQuery(
+    value: string | null,
+  ): string | null {
+    const normalized = value?.trim();
+    return normalized ? normalized : null;
+  }
+
+  /** Builds an application-controlled diversity directive. */
+  private buildDiversityDirective(
+    recentIdeas: Array<{ title: string; problemStatement: string }>,
+  ): string {
+    if (recentIdeas.length === 0) {
+      return [
+        'DIVERSITY REQUIREMENT:',
+        '- Generate a distinctive product concept, not a generic variation of a common application.',
+      ].join('\n');
+    }
+
+    const summaries = recentIdeas.map((idea, index) => {
+      const problem = idea.problemStatement.replace(/\s+/gu, ' ').trim().slice(0, 280);
+      return `${index + 1}. ${idea.title.trim().slice(0, 160)} — ${problem}`;
+    });
+
+    return [
+      'DIVERSITY REQUIREMENT:',
+      '- The new idea must differ materially from every previous idea generated for the same domain and geographic area below.',
+      '- Changing only the title, branding, platform, or adding one feature is not sufficient.',
+      '- Choose a different primary problem, root cause, core workflow, value proposition, target-user job, and capability combination.',
+      '- A new name, platform wrapper, mobile version, dashboard, grade calculator, tracker, notification feature, or minor integration does not make an idea materially different.',
+      '- Do not reuse the same central solution category or dominant capability combination from a previous idea.',
+      '- Reusing the same collection evidence is allowed only when deriving a genuinely different product opportunity from another supported pain point or user workflow.',
+      '<untrusted_regional_previous_ideas>',
+      ...summaries,
+      '</untrusted_regional_previous_ideas>',
+    ].join('\n');
   }
 
   /**
@@ -882,6 +1062,18 @@ Mandatory writing rules:
    evidence-strength signals. Never expose or invent numeric claims unless the
    requested output format explicitly permits them and the supplied data
    directly contains them.
+10. Never convert one user's wording into a population statistic. For example,
+    a comment saying an app works "50% of the time" is anecdotal evidence, not a
+    verified 50% failure rate.
+11. Market size, institution count, adoption rate, budget, implementation time,
+    API availability, regulatory status, and feasibility claims must be framed
+    as estimates or assumptions unless directly supplied and verified.
+12. Do not claim an external platform exposes a required API or permits a
+    proposed integration unless the supplied evidence establishes it. When
+    uncertain, describe the integration as conditional and identify the need
+    for provider/institution approval.
+13. Regulatory text must use preliminary language and explicitly recommend
+    local legal verification when relevant.
 10. If evidence is weak, mixed, indirect, or non-local:
     - describe a general problem discovered in the source data;
     - position the solution as suitable for deployment in the requested

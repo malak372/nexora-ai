@@ -623,35 +623,50 @@ export class IdeaGenerationRunService {
       'Generation error message',
     );
 
+    const run = await this.findRunOrThrow(runId, db);
+
+    if (run.status === IdeaGenerationRunStatus.FAILED) {
+      return run;
+    }
+
+    if (
+      run.status !== IdeaGenerationRunStatus.QUEUED &&
+      run.status !== IdeaGenerationRunStatus.RUNNING
+    ) {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_RUN_CANNOT_FAIL',
+        message: `The generation run cannot be marked as failed from status ${run.status}.`,
+      });
+    }
+
     const now = new Date();
 
     const result = await db.ideaGenerationRun.updateMany({
       where: {
         id: runId,
-        status: {
-          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
-        },
+        status: run.status,
       },
       data: {
         status: IdeaGenerationRunStatus.FAILED,
         currentStageKey: null,
         errorCode,
         errorMessage,
+        startedAt: run.startedAt ?? now,
         completedAt: now,
         lastHeartbeatAt: now,
       },
     });
 
     if (result.count !== 1) {
-      const run = await this.findRunOrThrow(runId, db);
+      const latestRun = await this.findRunOrThrow(runId, db);
 
-      if (run.status === IdeaGenerationRunStatus.FAILED) {
-        return run;
+      if (latestRun.status === IdeaGenerationRunStatus.FAILED) {
+        return latestRun;
       }
 
       throw new ConflictException({
         code: 'IDEA_GENERATION_RUN_CANNOT_FAIL',
-        message: `The generation run cannot be marked as failed from status ${run.status}.`,
+        message: `The generation run changed status while being marked as failed. Current status: ${latestRun.status}.`,
       });
     }
 
@@ -677,19 +692,34 @@ export class IdeaGenerationRunService {
       'Generation-run ID',
     );
 
+    const run = await this.findRunOrThrow(normalizedRunId, db);
+
+    if (run.status === IdeaGenerationRunStatus.CANCELLED) {
+      return run;
+    }
+
+    if (
+      run.status !== IdeaGenerationRunStatus.QUEUED &&
+      run.status !== IdeaGenerationRunStatus.RUNNING
+    ) {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_RUN_CANNOT_CANCEL',
+        message: `The generation run cannot be cancelled from status ${run.status}.`,
+      });
+    }
+
     const now = new Date();
 
     const result = await db.ideaGenerationRun.updateMany({
       where: {
         id: normalizedRunId,
-        status: {
-          in: [IdeaGenerationRunStatus.QUEUED, IdeaGenerationRunStatus.RUNNING],
-        },
+        status: run.status,
       },
       data: {
         status: IdeaGenerationRunStatus.CANCELLED,
         currentStageKey: null,
-        cancelRequestedAt: now,
+        cancelRequestedAt: run.cancelRequestedAt ?? now,
+        startedAt: run.startedAt ?? now,
         completedAt: now,
         lastHeartbeatAt: now,
         errorCode: null,
@@ -698,15 +728,15 @@ export class IdeaGenerationRunService {
     });
 
     if (result.count !== 1) {
-      const run = await this.findRunOrThrow(normalizedRunId, db);
+      const latestRun = await this.findRunOrThrow(normalizedRunId, db);
 
-      if (run.status === IdeaGenerationRunStatus.CANCELLED) {
-        return run;
+      if (latestRun.status === IdeaGenerationRunStatus.CANCELLED) {
+        return latestRun;
       }
 
       throw new ConflictException({
         code: 'IDEA_GENERATION_RUN_CANNOT_CANCEL',
-        message: `The generation run cannot be cancelled from status ${run.status}.`,
+        message: `The generation run changed status while being cancelled. Current status: ${latestRun.status}.`,
       });
     }
 

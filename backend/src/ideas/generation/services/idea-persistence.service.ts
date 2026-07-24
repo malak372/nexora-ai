@@ -268,9 +268,9 @@ export class IdeaPersistenceService {
             await this.validateCollectionJob(transaction, input);
 
             await this.duplicateDetectionService.assertNotDuplicate(
-              input.userId,
               input.domainId,
-              input.parsedOutput.coreIdea.title,
+              input.collectionJobId,
+              input.parsedOutput.coreIdea,
               transaction,
             );
 
@@ -986,6 +986,20 @@ export class IdeaPersistenceService {
 
     const now = new Date();
 
+    const collectionMetrics = await transaction.collectionJob.findUnique({
+      where: { id: input.collectionJobId },
+      select: {
+        nlpAnalysis: {
+          select: {
+            totalCommentsAnalyzed: true,
+          },
+        },
+      },
+    });
+
+    const commentsCount =
+      collectionMetrics?.nlpAnalysis?.totalCommentsAnalyzed ?? 0;
+
     return transaction.idea.create({
       data: {
         userId: input.userId ?? null,
@@ -995,6 +1009,8 @@ export class IdeaPersistenceService {
         domainId: input.domainId,
 
         collectionJobId: input.collectionJobId,
+
+        commentsCount,
 
         selectedRegion: input.selectedRegion,
 

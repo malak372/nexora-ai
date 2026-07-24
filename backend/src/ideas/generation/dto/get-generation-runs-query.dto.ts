@@ -1,44 +1,59 @@
-import { IdeaGenerationRunStatus, IdeaGenerationType } from '@prisma/client';
+import {
+  IdeaGenerationRunStatus,
+  IdeaGenerationType,
+} from '@prisma/client';
 
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
-
-import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
+import { Type } from 'class-transformer';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 /**
- * Query parameters used to retrieve idea-generation runs.
+ * Query parameters used to list generation runs owned by the
+ * authenticated user.
  *
- * This DTO may be used by user-facing or administrative
- * run-listing endpoints.
- *
- * Ownership constraints must always be applied by the service.
+ * All filters are optional and pagination defaults are applied by the
+ * query service when a value is omitted.
  *
  * @author Malak
  */
-export class GetGenerationRunsQueryDto extends ListQueryDto {
-  /**
-   * Filters runs by pipeline status.
-   */
+export class GetGenerationRunsQueryDto {
+  /** Page number, starting from one. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  /** Maximum number of runs returned per page. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+
+  /** Optional generation-run status filter. */
   @IsOptional()
   @IsEnum(IdeaGenerationRunStatus)
   status?: IdeaGenerationRunStatus;
 
-  /**
-   * Filters runs by generation entitlement.
-   */
+  /** Optional entitlement/generation type filter. */
   @IsOptional()
   @IsEnum(IdeaGenerationType)
   generationType?: IdeaGenerationType;
 
-  /**
-   * Filters runs associated with one generated idea.
-   */
+  /** Optional generated-idea identifier filter. */
   @IsOptional()
   @IsUUID('4')
   ideaId?: string;
 
-  /**
-   * Filters runs associated with one software domain.
-   */
+  /** Optional software-domain identifier filter. */
   @IsOptional()
   @IsUUID('4')
   domainId?: string;

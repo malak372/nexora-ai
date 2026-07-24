@@ -26,6 +26,7 @@ import { EntitlementCheckStage } from './pipeline/stages/entitlement-check.stage
 import { FinalizationStage } from './pipeline/stages/finalization.stage';
 import { IdeaPersistenceStage } from './pipeline/stages/idea-persistence.stage';
 import { NlpAnalysisStage } from './pipeline/stages/nlp-analysis.stage';
+import { OpportunityRankingStage } from './pipeline/stages/opportunity-ranking.stage';
 import { PromptBuildingStage } from './pipeline/stages/prompt-building.stage';
 import { RequestValidationStage } from './pipeline/stages/request-validation.stage';
 import {
@@ -39,6 +40,7 @@ import { IdeaCandidateJudgePromptService } from './services/idea-candidate-judge
 import { IdeaCandidateJudgeService } from './services/idea-candidate-judge.service';
 import { IdeaDuplicateDetectionService } from './services/idea-duplicate-detection.service';
 import { IdeaGenerationBenchmarkService } from './services/idea-generation-benchmark.service';
+import { IdeaGenerationModelSelectorService } from './services/idea-generation-model-selector.service';
 import { IdeaGenerationLockService } from './services/idea-generation-lock.service';
 import {
   IDEA_GENERATION_STAGES,
@@ -50,6 +52,7 @@ import { IdeaGenerationRunService } from './services/idea-generation-run.service
 import { IdeaGenerationSelectionService } from './services/idea-generation-selection.service';
 import { IdeaPersistenceService } from './services/idea-persistence.service';
 import { IdeaQualityEvaluatorService } from './services/idea-quality-evaluator.service';
+import { IdeaOpportunityRankingService } from './services/idea-opportunity-ranking.service';
 import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-parser.service';
 
 /**
@@ -95,9 +98,11 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
+    IdeaOpportunityRankingService,
     IdeaCandidateJudgePromptService,
     IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
+    IdeaGenerationModelSelectorService,
 
     RequestValidationStage,
     EntitlementCheckStage,
@@ -105,6 +110,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     CollectionJobResolutionStage,
     DataCollectionStage,
     NlpAnalysisStage,
+    OpportunityRankingStage,
     PromptBuildingStage,
     CoreIdeaGenerationStage,
     AiOutputValidationStage,
@@ -123,6 +129,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         CollectionJobResolutionStage,
         DataCollectionStage,
         NlpAnalysisStage,
+        OpportunityRankingStage,
         PromptBuildingStage,
         CoreIdeaGenerationStage,
         AiOutputValidationStage,
@@ -138,6 +145,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         collectionJobResolutionStage: CollectionJobResolutionStage,
         dataCollectionStage: DataCollectionStage,
         nlpAnalysisStage: NlpAnalysisStage,
+        opportunityRankingStage: OpportunityRankingStage,
         promptBuildingStage: PromptBuildingStage,
         coreIdeaGenerationStage: CoreIdeaGenerationStage,
         aiOutputValidationStage: AiOutputValidationStage,
@@ -168,6 +176,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
           collectionJobResolutionStage,
           dataCollectionStage,
           nlpAnalysisStage,
+          opportunityRankingStage,
           promptBuildingStage,
           coreIdeaGenerationStage,
           aiOutputValidationStage,
@@ -189,9 +198,11 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaDuplicateDetectionService,
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
+    IdeaOpportunityRankingService,
     IdeaCandidateJudgePromptService,
     IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
+    IdeaGenerationModelSelectorService,
   ],
 })
 export class IdeaGenerationModule {}

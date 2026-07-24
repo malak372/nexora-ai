@@ -11,6 +11,7 @@ import type {
 } from './idea-ai-output.type';
 
 import type { IdeaGenerationPolicy } from './idea-generation-policy.type';
+import type { IdeaOpportunityRanking } from './idea-opportunity-ranking.type';
 
 /**
  * Data source selected for one generation run.
@@ -331,6 +332,11 @@ export type IdeaGenerationContext = {
   location: IdeaGenerationLocation;
 
   /**
+   * Indicates whether compatible historical collection jobs must be ignored.
+   */
+  forceRefresh: boolean;
+
+  /**
    * Entitlement decision calculated by the policy stage.
    *
    * It remains null before ENTITLEMENT_CHECK completes.
@@ -351,6 +357,11 @@ export type IdeaGenerationContext = {
    * NLP analysis loaded or produced by the pipeline.
    */
   nlp: IdeaGenerationNlpContext | null;
+
+  /**
+   * Deterministic ranking of evidence-backed product opportunities.
+   */
+  opportunityRanking: IdeaOpportunityRanking | null;
 
   /**
    * Prompt built for core idea generation.
@@ -433,6 +444,11 @@ export type CreateIdeaGenerationContextInput = {
    * Collection location and language metadata.
    */
   location: IdeaGenerationLocation;
+
+  /**
+   * Indicates whether compatible historical collection jobs must be ignored.
+   */
+  forceRefresh?: boolean;
 };
 
 /**
@@ -464,11 +480,14 @@ export function createIdeaGenerationContext(
 
     location: input.location,
 
+    forceRefresh: input.forceRefresh ?? false,
+
     policy: null,
     selectedDataSources: [],
 
     collection: null,
     nlp: null,
+    opportunityRanking: null,
     prompt: null,
 
     coreIdea: null,

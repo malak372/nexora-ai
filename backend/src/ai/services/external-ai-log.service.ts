@@ -15,6 +15,8 @@ import {
   MAX_AI_ERROR_MESSAGE_LENGTH,
 } from '../constants';
 
+import { AiProviderErrorCode } from '../errors/ai-provider-error-code.enum';
+
 import {
   isAiProviderKey,
   type AiProviderKey,
@@ -150,6 +152,20 @@ export type CreateExternalAiLogInput = {
    * secrets must never be supplied in this field.
    */
   readonly errorMessage?: string;
+
+  /**
+   * Provider-independent failure category.
+   *
+   * Required for failed attempts and omitted for successful attempts.
+   */
+  readonly errorCode?: AiProviderErrorCode;
+
+  /**
+   * Indicates whether retrying the same model was considered safe.
+   *
+   * Required for failed attempts and omitted for successful attempts.
+   */
+  readonly isRetryable?: boolean;
 };
 
 /**
@@ -257,6 +273,10 @@ export class ExternalAiLogService {
         costEstimate: this.normalizeCostEstimate(input.costEstimate),
 
         errorMessage: this.normalizeErrorMessage(input.errorMessage),
+
+        errorCode: input.errorCode ?? null,
+
+        isRetryable: input.isRetryable ?? null,
       },
     });
   }
@@ -315,6 +335,10 @@ export class ExternalAiLogService {
 
     this.validateOptionalString(input.errorMessage, 'errorMessage', true);
 
+    this.validateOptionalErrorCode(input.errorCode);
+
+    this.validateOptionalBoolean(input.isRetryable, 'isRetryable');
+
     this.validateOptionalNonNegativeSafeInteger(
       input.inputTokens,
       'inputTokens',
@@ -329,9 +353,35 @@ export class ExternalAiLogService {
 
     this.validateOptionalCostEstimate(input.costEstimate);
 
-    if (input.isSuccess && input.errorMessage?.trim()) {
+    if (input.isSuccess) {
+      if (
+        input.errorMessage?.trim() ||
+        input.errorCode !== undefined ||
+        input.isRetryable !== undefined
+      ) {
+        throw new BadRequestException(
+          'Successful AI logs must not include failure diagnostics.',
+        );
+      }
+
+      return;
+    }
+
+    if (!input.errorMessage?.trim()) {
       throw new BadRequestException(
-        'AI log errorMessage must not be provided for a successful request.',
+        'Failed AI logs must include a safe errorMessage.',
+      );
+    }
+
+    if (input.errorCode === undefined) {
+      throw new BadRequestException(
+        'Failed AI logs must include an errorCode.',
+      );
+    }
+
+    if (input.isRetryable === undefined) {
+      throw new BadRequestException(
+        'Failed AI logs must include isRetryable.',
       );
     }
   }
@@ -387,6 +437,41 @@ export class ExternalAiLogService {
   private validateBoolean(value: unknown, fieldName: string): void {
     if (typeof value !== 'boolean') {
       throw new BadRequestException(`AI log ${fieldName} must be a boolean.`);
+    }
+  }
+
+  /**
+   * Validates one optional boolean field.
+   *
+   * @param value Candidate value.
+   * @param fieldName Field name used in validation messages.
+   */
+  private validateOptionalBoolean(value: unknown, fieldName: string): void {
+    if (value === undefined) {
+      return;
+    }
+
+    this.validateBoolean(value, fieldName);
+  }
+
+  /**
+   * Validates an optional provider-independent error category.
+   *
+   * @param value Candidate error code.
+   */
+  private validateOptionalErrorCode(value: unknown): void {
+    if (value === undefined) {
+      return;
+    }
+
+    if (
+      !Object.values(AiProviderErrorCode).includes(
+        value as AiProviderErrorCode,
+      )
+    ) {
+      throw new BadRequestException(
+        `Unsupported AI provider error code: ${String(value)}.`,
+      );
     }
   }
 

@@ -115,6 +115,12 @@ export type ResolveCollectionJobInput = {
    * Optional custom keywords supplied by the requester.
    */
   readonly keywords?: readonly string[];
+
+  /**
+   * When true, compatible historical jobs are ignored and a fresh collection
+   * plus NLP analysis is produced.
+   */
+  readonly forceRefresh?: boolean;
 };
 
 /**
@@ -204,7 +210,9 @@ export class CollectionJobResolverService {
   ): Promise<ResolveCollectionJobResult> {
     const normalizedInput = this.normalizeInput(input);
 
-    const reusableJob = await this.findReusableJob(normalizedInput);
+    const reusableJob = normalizedInput.forceRefresh
+      ? null
+      : await this.findReusableJob(normalizedInput);
 
     if (reusableJob) {
       const nlpOutput = reusableJob.nlpAnalysis
@@ -636,6 +644,8 @@ export class CollectionJobResolverService {
       dataSourceKeys,
 
       keywords: this.normalizeKeywords(input.keywords),
+
+      forceRefresh: input.forceRefresh === true,
     };
   }
 

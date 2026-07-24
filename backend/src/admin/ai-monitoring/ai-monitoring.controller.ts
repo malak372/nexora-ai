@@ -1,19 +1,25 @@
-import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { AiMonitoringService } from './ai-monitoring.service';
-import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
+
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
-import { Roles } from '../../auth/decorators/roles.decorator';
+import { AiMonitoringService } from './ai-monitoring.service';
+import { GetAiLogsQueryDto } from './dto/get-ai-logs-query.dto';
 
 /**
- * Controller responsible for AI and external API monitoring.
+ * Administrator controller for AI-provider monitoring and diagnostics.
  *
- * Base route:
- * /admin/ai-monitoring
- *
- * Access:
- * Admin only.
+ * Base route: /admin/ai-monitoring
+ * Access: ADMIN only.
  *
  * @author Malak
  */
@@ -24,10 +30,9 @@ export class AiMonitoringController {
   constructor(private readonly aiMonitoringService: AiMonitoringService) {}
 
   /**
-   * Retrieves paginated external API logs.
+   * Retrieves paginated individual provider-request attempts.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/logs
+   * Endpoint: GET /admin/ai-monitoring/logs
    */
   @Get('logs')
   getAiLogs(@Query() query: GetAiLogsQueryDto) {
@@ -35,10 +40,9 @@ export class AiMonitoringController {
   }
 
   /**
-   * Exports filtered external API logs as CSV.
+   * Exports filtered provider-request diagnostics as CSV.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/logs/export/csv
+   * Endpoint: GET /admin/ai-monitoring/logs/export/csv
    */
   @Get('logs/export/csv')
   @Header('Content-Type', 'text/csv')
@@ -48,10 +52,31 @@ export class AiMonitoringController {
   }
 
   /**
-   * Retrieves external API usage summary.
+   * Retrieves one detailed provider-request attempt.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/summary
+   * Endpoint: GET /admin/ai-monitoring/logs/:id
+   */
+  @Get('logs/:id')
+  getAiLogById(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.aiMonitoringService.getAiLogById(id);
+  }
+
+  /**
+   * Retrieves retries and fallback attempts for one logical AI operation.
+   *
+   * Endpoint: GET /admin/ai-monitoring/operations/:operationId
+   */
+  @Get('operations/:operationId')
+  getAiOperationTimeline(
+    @Param('operationId', new ParseUUIDPipe()) operationId: string,
+  ) {
+    return this.aiMonitoringService.getAiOperationTimeline(operationId);
+  }
+
+  /**
+   * Retrieves external AI usage and failure summary metrics.
+   *
+   * Endpoint: GET /admin/ai-monitoring/summary
    */
   @Get('summary')
   getAiSummary(@Query() query: GetAiLogsQueryDto) {
@@ -59,10 +84,9 @@ export class AiMonitoringController {
   }
 
   /**
-   * Retrieves chart-ready external API analytics.
+   * Retrieves chart-ready provider and failure analytics.
    *
-   * Endpoint:
-   * GET /admin/ai-monitoring/charts
+   * Endpoint: GET /admin/ai-monitoring/charts
    */
   @Get('charts')
   getAiCharts(@Query() query: GetAiLogsQueryDto) {

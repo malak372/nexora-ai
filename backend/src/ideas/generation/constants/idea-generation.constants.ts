@@ -199,13 +199,19 @@ export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 100;
  * - 0 means completely different.
  * - 1 means identical.
  */
-export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.9;
+export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.82;
+
+/** Semantic similarity threshold across the complete core idea. */
+export const IDEA_SEMANTIC_SIMILARITY_THRESHOLD = 0.68;
 
 /**
  * Maximum length of a normalized idea title used during
  * duplicate detection.
  */
 export const MAX_DUPLICATE_TITLE_LENGTH = 200;
+
+/** Maximum normalized text length used by semantic duplicate detection. */
+export const MAX_DUPLICATE_TEXT_LENGTH = 4_000;
 
 /**
  * Maximum number of characters stored from a raw AI response
@@ -445,3 +451,31 @@ export const COLLECTION_JOB_RESOLUTION_TYPES = {
  */
 export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
+
+/**
+ * Number of models executed immediately for one benchmark run.
+ *
+ * Additional models are retained as fallbacks and are called only when fewer
+ * than the required number of valid candidates succeed.
+ */
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+
+/**
+ * Minimum number of valid candidates preferred before comparative judging.
+ *
+ * A single candidate is still accepted when every fallback is exhausted, so a
+ * temporary provider outage does not unnecessarily fail the generation.
+ */
+export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 2;
+
+/**
+ * Maximum total model executions allowed for one run, including fallbacks.
+ *
+ * This bounds latency and protects free-provider rate limits.
+ */
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 5;
+
+/**
+ * Number of recent generation runs used to rotate model selection.
+ */
+export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;

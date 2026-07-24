@@ -27,6 +27,8 @@ export const IDEA_GENERATION_STAGE_KEYS = {
 
   NLP_ANALYSIS: 'nlp-analysis',
 
+  OPPORTUNITY_RANKING: 'opportunity-ranking',
+
   PROMPT_BUILDING: 'prompt-building',
 
   CORE_IDEA_GENERATION: 'core-idea-generation',
@@ -218,9 +220,25 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       progressStart: 35,
 
-      progressEnd: 48,
+      progressEnd: 46,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
+
+      requiredForPremium: false,
+    },
+
+    {
+      key: IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING,
+
+      displayName: 'Opportunity ranking',
+
+      sequence: 7,
+
+      progressStart: 46,
+
+      progressEnd: 51,
+
+      maxAttempts: 1,
 
       requiredForPremium: false,
     },
@@ -230,11 +248,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Prompt building',
 
-      sequence: 7,
+      sequence: 8,
 
-      progressStart: 48,
+      progressStart: 51,
 
-      progressEnd: 53,
+      progressEnd: 56,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -246,11 +264,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Core idea generation',
 
-      sequence: 8,
+      sequence: 9,
 
-      progressStart: 53,
+      progressStart: 56,
 
-      progressEnd: 65,
+      progressEnd: 67,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -262,11 +280,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'AI output validation',
 
-      sequence: 9,
+      sequence: 10,
 
-      progressStart: 65,
+      progressStart: 67,
 
-      progressEnd: 70,
+      progressEnd: 72,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -278,9 +296,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Duplicate detection',
 
-      sequence: 10,
+      sequence: 11,
 
-      progressStart: 70,
+      progressStart: 72,
 
       progressEnd: 75,
 
@@ -294,7 +312,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Idea persistence',
 
-      sequence: 27,
+      sequence: 28,
 
       progressStart: 98,
 
@@ -325,7 +343,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Full abstract',
 
-      sequence: 11,
+      sequence: 12,
 
       progressStart: 75,
 
@@ -341,7 +359,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Technology stack',
 
-      sequence: 12,
+      sequence: 13,
 
       progressStart: 77,
 
@@ -357,7 +375,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'System architecture',
 
-      sequence: 13,
+      sequence: 14,
 
       progressStart: 79,
 
@@ -373,7 +391,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Database design',
 
-      sequence: 14,
+      sequence: 15,
 
       progressStart: 81,
 
@@ -389,7 +407,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'MVP features',
 
-      sequence: 15,
+      sequence: 16,
 
       progressStart: 83,
 
@@ -405,7 +423,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Business model',
 
-      sequence: 16,
+      sequence: 17,
 
       progressStart: 85,
 
@@ -421,7 +439,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Value proposition',
 
-      sequence: 17,
+      sequence: 18,
 
       progressStart: 87,
 
@@ -437,7 +455,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Revenue model',
 
-      sequence: 18,
+      sequence: 19,
 
       progressStart: 89,
 
@@ -453,7 +471,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Local regulations',
 
-      sequence: 19,
+      sequence: 20,
 
       progressStart: 90,
 
@@ -469,7 +487,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Budget estimation',
 
-      sequence: 20,
+      sequence: 21,
 
       progressStart: 91,
 
@@ -485,7 +503,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Feasibility assessment',
 
-      sequence: 21,
+      sequence: 22,
 
       progressStart: 92,
 
@@ -501,7 +519,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Implementation timeline',
 
-      sequence: 22,
+      sequence: 23,
 
       progressStart: 93,
 
@@ -517,7 +535,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Market potential',
 
-      sequence: 23,
+      sequence: 24,
 
       progressStart: 94,
 
@@ -533,7 +551,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'NLP executive summary',
 
-      sequence: 24,
+      sequence: 25,
 
       progressStart: 95,
 
@@ -549,7 +567,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Community feedback summary',
 
-      sequence: 25,
+      sequence: 26,
 
       progressStart: 97,
 
@@ -570,7 +588,7 @@ export const IDEA_GENERATION_FINALIZATION_STAGE: IdeaGenerationStageDefinition =
 
     displayName: 'Generation finalization',
 
-    sequence: 28,
+    sequence: 29,
 
     progressStart: 99,
 
