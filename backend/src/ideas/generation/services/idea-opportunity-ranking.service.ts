@@ -193,7 +193,11 @@ export class IdeaOpportunityRankingService {
       `severity ${selected.severity ?? 'UNSPECIFIED'},`,
       `specificity ${(selected.specificityScore * 100).toFixed(1)}/100,`,
       `feasibility ${(selected.feasibilityScore * 100).toFixed(1)}/100,`,
-      `and evidence quality ${(selected.evidenceScore * 100).toFixed(1)}/100.`,
+      `evidence quality ${(selected.evidenceScore * 100).toFixed(1)}/100,`,
+      `novelty ${(selected.noveltyScore * 100).toFixed(1)}/100,`,
+      `business value ${(selected.businessValueScore * 100).toFixed(1)}/100,`,
+      `market gap ${(selected.marketGapScore * 100).toFixed(1)}/100,`,
+      `and technical risk ${(selected.technicalRiskScore * 100).toFixed(1)}/100.`,
       runnerUpText,
     ]
       .join(' ')
@@ -429,16 +433,26 @@ export class IdeaOpportunityRankingService {
       locationTerms,
     );
     const evidenceTypeScore = EVIDENCE_TYPE_SCORES[candidate.evidenceType];
+    const noveltyScore = this.calculateNovelty(candidate);
+    const businessValueScore = this.calculateBusinessValue(candidate);
+    const marketGapScore = this.calculateMarketGap(candidate);
+    const competitionScore = this.calculateCompetitionAdvantage(candidate);
+    const technicalRiskScore = this.calculateTechnicalRisk(candidate);
 
     const finalScore = this.round(
-      frequencyScore * 0.14 +
-        severityScore * 0.12 +
-        evidenceScore * 0.18 +
-        directEvidenceRatio * 0.2 +
-        specificityScore * 0.16 +
-        feasibilityScore * 0.1 +
+      frequencyScore * 0.1 +
+        severityScore * 0.1 +
+        evidenceScore * 0.13 +
+        directEvidenceRatio * 0.14 +
+        specificityScore * 0.11 +
+        feasibilityScore * 0.08 +
         localRelevanceScore * 0.04 +
-        evidenceTypeScore * 0.06,
+        evidenceTypeScore * 0.04 +
+        noveltyScore * 0.07 +
+        businessValueScore * 0.08 +
+        marketGapScore * 0.05 +
+        competitionScore * 0.03 +
+        (1 - technicalRiskScore) * 0.03,
     );
 
     return {
@@ -449,8 +463,70 @@ export class IdeaOpportunityRankingService {
       specificityScore: this.round(specificityScore),
       feasibilityScore: this.round(feasibilityScore),
       localRelevanceScore: this.round(localRelevanceScore),
+      noveltyScore: this.round(noveltyScore),
+      businessValueScore: this.round(businessValueScore),
+      marketGapScore: this.round(marketGapScore),
+      competitionScore: this.round(competitionScore),
+      technicalRiskScore: this.round(technicalRiskScore),
       finalScore,
     };
+  }
+
+  /** Estimates useful novelty from specificity and solution direction. */
+  private calculateNovelty(candidate: NormalizedCandidate): number {
+    const text = [candidate.title, candidate.problem, candidate.need, candidate.solutionArea]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase();
+    const genericPenalty = /dashboard|portal|management system|mobile app/iu.test(text)
+      ? 0.2
+      : 0;
+    const workflowBonus = /offline|proactive|predict|resilien|automation|cross-device|recovery/iu.test(text)
+      ? 0.18
+      : 0;
+
+    return Math.max(0, Math.min(1, 0.58 + workflowBonus - genericPenalty));
+  }
+
+  /** Estimates the practical value of solving the observed workflow problem. */
+  private calculateBusinessValue(candidate: NormalizedCandidate): number {
+    const severity = candidate.severity
+      ? (SEVERITY_SCORES[candidate.severity] ?? 0.45)
+      : 0.45;
+    const frequency = Math.min(Math.log2(Math.max(candidate.frequency, 1) + 1) / 4, 1);
+    const evidence = Math.min(candidate.evidenceSamples.length / MAX_EVIDENCE_SAMPLES, 1);
+
+    return Math.min(1, severity * 0.4 + frequency * 0.35 + evidence * 0.25);
+  }
+
+  /** Uses unmet-need language as a transparent proxy for market gap. */
+  private calculateMarketGap(candidate: NormalizedCandidate): number {
+    const text = [candidate.need, candidate.solutionArea, ...candidate.evidenceSamples]
+      .filter(Boolean)
+      .join(' ');
+    const unmetNeedSignals = (text.match(/(?:need|wish|missing|lack|without|cannot|unable|no way)/giu) ?? []).length;
+
+    return Math.min(1, 0.42 + Math.min(unmetNeedSignals, 5) * 0.1);
+  }
+
+  /** Scores differentiation against obvious commodity solution patterns. */
+  private calculateCompetitionAdvantage(candidate: NormalizedCandidate): number {
+    const text = [candidate.title, candidate.solutionArea].filter(Boolean).join(' ');
+    const commodity = /dashboard|tracker|portal|directory|marketplace|chatbot/iu.test(text);
+    const differentiated = /offline|resilien|cross-device|recovery|proactive|verification|automation/iu.test(text);
+
+    return Math.max(0, Math.min(1, 0.5 + (differentiated ? 0.22 : 0) - (commodity ? 0.18 : 0)));
+  }
+
+  /** Returns risk, where zero is low risk and one is high risk. */
+  private calculateTechnicalRisk(candidate: NormalizedCandidate): number {
+    const text = [candidate.title, candidate.problem, candidate.solutionArea]
+      .filter(Boolean)
+      .join(' ');
+    const highRisk = /blockchain|biometric|medical diagnosis|autonomous|real-time prediction/iu.test(text);
+    const integrationRisk = /integration|synchronization|cross-device|authentication/iu.test(text);
+
+    return highRisk ? 0.78 : integrationRisk ? 0.58 : 0.38;
   }
 
   /** Maps equivalent NLP and AI labels to one stable opportunity title. */

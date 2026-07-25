@@ -56,6 +56,7 @@ import { IdeaGenerationSelectionService } from './services/idea-generation-selec
 import { IdeaPersistenceService } from './services/idea-persistence.service';
 import { IdeaQualityEvaluatorService } from './services/idea-quality-evaluator.service';
 import { IdeaOpportunityRankingService } from './services/idea-opportunity-ranking.service';
+import { IdeaSemanticDiversityService } from './services/idea-semantic-diversity.service';
 import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-parser.service';
 
 /**
@@ -105,6 +106,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
     IdeaOpportunityRankingService,
+    IdeaSemanticDiversityService,
     IdeaCandidateJudgePromptService,
     IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
@@ -207,6 +209,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
     IdeaOpportunityRankingService,
+    IdeaSemanticDiversityService,
     IdeaCandidateJudgePromptService,
     IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,

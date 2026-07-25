@@ -453,23 +453,74 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /**
- * Number of highest-ranked NLP opportunities expanded into startup concepts.
+ * Number of AI models selected initially for each ranked opportunity.
+ *
+ * The benchmark service may use additional fallback models when one or more
+ * selected providers fail, but it should attempt this many models first for
+ * every opportunity.
+ */
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+
+/**
+ * Number of highest-ranked opportunities forwarded to the multi-model
+ * idea-generation benchmark.
  */
 export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 5;
 
 /**
- * Number of rotating AI models executed for every selected opportunity.
+ * Number of AI models executed for each ranked opportunity.
+ *
+ * This alias keeps the per-opportunity generation policy explicit while
+ * preserving backward compatibility with services that still use
+ * IDEA_BENCHMARK_INITIAL_MODEL_COUNT.
  */
-export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY = 3;
+export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
+  IDEA_BENCHMARK_INITIAL_MODEL_COUNT;
 
 /**
- * Maximum candidate executions per run: five opportunities by three models.
+ * Maximum number of startup candidates that one benchmark run may produce.
+ *
+ * Current configuration:
+ * - Five ranked opportunities.
+ * - Three AI models per opportunity.
+ * - Up to fifteen generated candidates in total.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
+export const IDEA_BENCHMARK_MAX_CANDIDATES =
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT *
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
 
 /**
- * Number of recent generation runs used to rotate model selection.
+ * Maximum total candidate-generation attempts allowed for one benchmark run.
+ *
+ * Keeping this value derived from IDEA_BENCHMARK_MAX_CANDIDATES prevents the
+ * attempt limit from becoming inconsistent with the configured opportunity
+ * and model counts.
+ */
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
+  IDEA_BENCHMARK_MAX_CANDIDATES;
+
+/**
+ * Preferred minimum number of valid candidates before comparative judging.
+ *
+ * A single valid candidate may still be accepted after all configured model
+ * attempts are exhausted so a temporary provider outage does not fail an
+ * otherwise usable generation run.
+ */
+export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 2;
+
+/**
+ * Number of recent generation runs inspected when rotating AI model
+ * selection.
  */
 export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;
+
+/**
+ * Model API identifiers excluded from the normal core-generation rotation.
+ *
+ * Small fallback models may remain active for other AI workloads, but they are
+ * intentionally excluded here when repeated benchmark evidence shows poor
+ * quality, unstable availability, or excessive latency.
+ */
+export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
+  'nvidia/nemotron-nano-9b-v2:free',
+]);

@@ -70,3 +70,22 @@ export const IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT = 0.3;
  * @author Malak
  */
 export const IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION = 65;
+
+/** Maximum number of candidates included in one comparative judge request. */
+export const IDEA_JUDGE_MAX_CANDIDATES = 5;
+
+/** Maximum number of bounded comparative-judge execution attempts. */
+export const IDEA_JUDGE_MAX_ATTEMPTS = 2;
+
+/** Maximum characters retained from each long advanced-output summary. */
+export const IDEA_JUDGE_ADVANCED_OUTPUT_SUMMARY_MAX_CHARS = 500;
+
+/** Advanced outputs that provide the highest comparative decision value. */
+export const IDEA_JUDGE_RELEVANT_ADVANCED_OUTPUT_KEYS = new Set<string>([
+  'business-model',
+  'value-proposition',
+  'market-potential',
+  'feasibility-assessment',
+  'implementation-timeline',
+  'local-regulations',
+]);

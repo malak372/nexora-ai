@@ -41,6 +41,11 @@ export type RankedIdeaOpportunity = {
   readonly specificityScore: number;
   readonly feasibilityScore: number;
   readonly localRelevanceScore: number;
+  readonly noveltyScore: number;
+  readonly businessValueScore: number;
+  readonly marketGapScore: number;
+  readonly competitionScore: number;
+  readonly technicalRiskScore: number;
   readonly finalScore: number;
   readonly raw: Prisma.JsonValue;
 };

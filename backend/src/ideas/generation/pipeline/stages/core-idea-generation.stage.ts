@@ -25,7 +25,7 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  * sufficient. Final selection uses the persisted hybrid score, while a low-
  * confidence or unavailable judge falls back to deterministic quality.
  *
- * @author Eman
+ * @author Malak
  */
 @Injectable()
 export class CoreIdeaGenerationStage implements IdeaGenerationStage {
@@ -88,6 +88,11 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
         aiJudgeUsed: benchmark.judgeEvaluation !== null,
         judgeConfidence: benchmark.judgeEvaluation?.confidence ?? null,
         judgeReason: benchmark.judgeEvaluation?.reason ?? null,
+        judgeExecutiveSummary:
+          benchmark.judgeEvaluation?.executiveSummary ?? null,
+        judgeWinnerWhy: benchmark.judgeEvaluation?.winnerWhy ?? [],
+        judgeComparisonReport:
+          benchmark.judgeEvaluation?.comparisonReport ?? [],
         requiresLegalVerification:
           benchmark.judgeEvaluation?.requiresLegalVerification ?? null,
         candidates: benchmark.candidates.map((candidate, index) => ({
@@ -117,6 +122,18 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           responseTimeMs: candidate.aiResult.responseTimeMs,
           validationScore: candidate.quality.score,
           validationIssues: candidate.quality.issues.map((issue) => issue.code),
+          semanticDiversityScore:
+            candidate.semanticDiversity?.diversityScore ?? null,
+          maximumSimilarity:
+            candidate.semanticDiversity?.maxSimilarity ?? null,
+          mostSimilarCandidateId:
+            candidate.semanticDiversity?.mostSimilarCandidateId ?? null,
+          semanticDuplicateRisk:
+            candidate.semanticDiversity?.duplicateRisk ?? null,
+          comparisonReport:
+            benchmark.judgeEvaluation?.comparisonReport.find(
+              (report) => report.candidateId === candidate.candidateId,
+            ) ?? null,
         })),
       },
     };

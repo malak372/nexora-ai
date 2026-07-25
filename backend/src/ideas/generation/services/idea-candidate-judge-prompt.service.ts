@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
-import { IDEA_JUDGE_CRITERIA_WEIGHTS } from '../constants/idea-judge.constants';
+import {
+  IDEA_JUDGE_ADVANCED_OUTPUT_SUMMARY_MAX_CHARS,
+  IDEA_JUDGE_CRITERIA_WEIGHTS,
+  IDEA_JUDGE_RELEVANT_ADVANCED_OUTPUT_KEYS,
+} from '../constants/idea-judge.constants';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import type {
   IdeaJudgeCandidateInput,
@@ -58,6 +62,7 @@ export class IdeaCandidateJudgePromptService {
       'Reward a clear buyer, adoption trigger, repeatable deployment path, measurable organizational value, and multiple coherent value pillars that address one problem.',
       'Prefer the strongest startup opportunity, not automatically the candidate attached to the highest-ranked NLP label. Balance evidence strength with product scope, adoption feasibility, and sustainable standalone value.',
       'Provider and model identities are intentionally omitted and must not influence the evaluation.',
+      'Produce a complete comparison report: explain why the winner won, why every other candidate ranked lower, and how each weaker candidate could improve without rewriting it.',
       'Return valid JSON matching the supplied response schema and no additional text.',
     ].join(' ');
   }
@@ -105,6 +110,8 @@ export class IdeaCandidateJudgePromptService {
       mandatoryRules: {
         evaluateEveryCandidate: true,
         returnExactlyOneScorePerCandidate: true,
+        returnExactlyOneComparisonReportPerCandidate: true,
+        explainWinnerAndAllRejectedCandidates: true,
         scoresMustBeAnArray: true,
         scoreArrayLengthMustEqualCandidateCount: true,
         chooseExistingCandidateOnly: true,
@@ -149,13 +156,18 @@ export class IdeaCandidateJudgePromptService {
         candidateId: candidate.candidateId,
         idea: {
           coreIdea: candidate.parsedOutput.coreIdea,
-          advancedOutputSummaries: candidate.parsedOutput.advancedOutputs.map(
-            (output) => ({
+          advancedOutputSummaries: candidate.parsedOutput.advancedOutputs
+            .filter((output) =>
+              IDEA_JUDGE_RELEVANT_ADVANCED_OUTPUT_KEYS.has(output.outputKey),
+            )
+            .map((output) => ({
               outputKey: output.outputKey,
               title: output.title,
-              content: output.content.slice(0, 1_500),
-            }),
-          ),
+              content: output.content.slice(
+                0,
+                IDEA_JUDGE_ADVANCED_OUTPUT_SUMMARY_MAX_CHARS,
+              ),
+            })),
         },
       })),
     };

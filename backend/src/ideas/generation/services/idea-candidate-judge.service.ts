@@ -9,6 +9,7 @@ import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
+  IDEA_JUDGE_MAX_ATTEMPTS,
   IDEA_JUDGE_MAX_OUTPUT_TOKENS,
   IDEA_JUDGE_RESPONSE_SCHEMA_NAME,
   IDEA_JUDGE_TEMPERATURE,
@@ -59,50 +60,66 @@ export class IdeaCandidateJudgeService {
       );
     }
 
-    try {
-      const prompt = this.promptService.build(context, candidates);
+    const prompt = this.promptService.build(context, candidates);
+    let lastFailureMessage = 'Unknown comparative judge failure.';
 
-      const aiResult = await this.aiExecutionService.execute({
-        userPrompt: prompt.userPrompt,
-        systemInstruction: prompt.systemInstruction,
-        requestType: ApiRequestType.IDEA_GENERATION,
-        promptType: PromptType.IDEA_EVALUATION,
-        generationType: context.generationType,
-        userId:
-          context.owner.type === IDEA_OWNER_TYPES.USER
-            ? context.owner.userId
-            : undefined,
-        guestSessionId:
-          context.owner.type === IDEA_OWNER_TYPES.GUEST
-            ? context.owner.guestSessionId
-            : undefined,
-        responseFormat: AiResponseFormat.JSON,
-        responseSchema: buildIdeaJudgeResponseSchema(candidates.length),
-        responseSchemaName: IDEA_JUDGE_RESPONSE_SCHEMA_NAME,
-        estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
-        maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
-        temperature: IDEA_JUDGE_TEMPERATURE,
-        strategy: AiRoutingStrategy.BALANCED,
-        allowProviderFallbackOnInvalidPrompt: true,
-      });
+    for (let attempt = 1; attempt <= IDEA_JUDGE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const aiResult = await this.aiExecutionService.execute({
+          userPrompt: prompt.userPrompt,
+          systemInstruction: prompt.systemInstruction,
+          requestType: ApiRequestType.IDEA_GENERATION,
+          promptType: PromptType.IDEA_EVALUATION,
+          generationType: context.generationType,
+          userId:
+            context.owner.type === IDEA_OWNER_TYPES.USER
+              ? context.owner.userId
+              : undefined,
+          guestSessionId:
+            context.owner.type === IDEA_OWNER_TYPES.GUEST
+              ? context.owner.guestSessionId
+              : undefined,
+          responseFormat: AiResponseFormat.JSON,
+          responseSchema: buildIdeaJudgeResponseSchema(candidates.length),
+          responseSchemaName: IDEA_JUDGE_RESPONSE_SCHEMA_NAME,
+          estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
+          maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
+          temperature: IDEA_JUDGE_TEMPERATURE,
+          strategy:
+            attempt === 1
+              ? AiRoutingStrategy.BALANCED
+              : AiRoutingStrategy.DEFAULT,
+          allowProviderFallbackOnInvalidPrompt: true,
+        });
 
-      const evaluation = this.parseEvaluation(aiResult.text);
-      this.validateEvaluation(evaluation);
-      this.validateCandidateReferences(evaluation, candidates);
+        const evaluation = this.parseEvaluation(aiResult.text);
+        this.validateEvaluation(evaluation);
+        this.validateCandidateReferences(evaluation, candidates);
 
-      return evaluation;
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Unknown comparative judge failure.';
+        if (attempt > 1) {
+          this.logger.log(
+            `AI candidate judge succeeded on bounded retry ${attempt}.`,
+          );
+        }
 
-      this.logger.warn(
-        `AI candidate judge was unavailable; deterministic ranking will be used. Reason: ${message}`,
-      );
+        return evaluation;
+      } catch (error: unknown) {
+        lastFailureMessage =
+          error instanceof Error
+            ? error.message
+            : 'Unknown comparative judge failure.';
 
-      return null;
+        this.logger.warn(
+          `AI candidate judge attempt ${attempt}/${IDEA_JUDGE_MAX_ATTEMPTS} failed: ${lastFailureMessage}`,
+        );
+      }
     }
+
+    this.logger.warn(
+      `AI candidate judge was unavailable after ${IDEA_JUDGE_MAX_ATTEMPTS} attempt(s); deterministic ranking will be used. Reason: ${lastFailureMessage}`,
+    );
+
+    return null;
   }
 
   private parseEvaluation(text: string): IdeaJudgeEvaluation {
@@ -154,6 +171,16 @@ export class IdeaCandidateJudgeService {
       throw new Error('The AI judge returned an invalid decision reason.');
     }
 
+    if (
+      typeof evaluation.executiveSummary !== 'string' ||
+      !evaluation.executiveSummary.trim() ||
+      !Array.isArray(evaluation.winnerWhy) ||
+      evaluation.winnerWhy.length < 2 ||
+      !Array.isArray(evaluation.comparisonReport)
+    ) {
+      throw new Error('The AI judge returned an incomplete comparison report.');
+    }
+
     if (typeof evaluation.requiresLegalVerification !== 'boolean') {
       throw new Error(
         'The AI judge returned an invalid legal-verification flag.',
@@ -189,6 +216,31 @@ export class IdeaCandidateJudgeService {
 
     if (returnedIds.size !== candidates.length) {
       throw new Error('The AI judge did not score every submitted candidate.');
+    }
+
+    const reportIds = new Set<string>();
+    for (const report of evaluation.comparisonReport) {
+      if (!allowedIds.has(report.candidateId)) {
+        throw new Error('The AI judge reported on an unknown candidate.');
+      }
+      if (reportIds.has(report.candidateId)) {
+        throw new Error('The AI judge returned a duplicate comparison report.');
+      }
+      reportIds.add(report.candidateId);
+    }
+
+    if (reportIds.size !== candidates.length) {
+      throw new Error('The AI judge did not report on every submitted candidate.');
+    }
+
+    const winnerReports = evaluation.comparisonReport.filter(
+      (report) => report.verdict === 'WINNER',
+    );
+    if (
+      winnerReports.length !== 1 ||
+      winnerReports[0]?.candidateId !== evaluation.winnerCandidateId
+    ) {
+      throw new Error('The AI judge comparison report has an invalid winner.');
     }
   }
 

@@ -25,6 +25,9 @@ export function buildIdeaJudgeResponseSchema(
       'winnerCandidateId',
       'confidence',
       'reason',
+      'executiveSummary',
+      'winnerWhy',
+      'comparisonReport',
       'requiresLegalVerification',
       'scores',
     ],
@@ -32,6 +35,25 @@ export function buildIdeaJudgeResponseSchema(
       winnerCandidateId: { type: 'string', minLength: 1 },
       confidence: { type: 'number', minimum: 0, maximum: 100 },
       reason: { type: 'string', minLength: 1, maxLength: 1_200 },
+      executiveSummary: { type: 'string', minLength: 1, maxLength: 1_500 },
+      winnerWhy: {
+        type: 'array', minItems: 2, maxItems: 6,
+        items: { type: 'string', minLength: 1, maxLength: 350 },
+      },
+      comparisonReport: {
+        type: 'array', minItems: candidateCount, maxItems: candidateCount,
+        items: {
+          type: 'object', additionalProperties: false,
+          required: ['candidateId', 'verdict', 'whyItRankedHere', 'rejectionReasons', 'improvementSuggestions'],
+          properties: {
+            candidateId: { type: 'string', minLength: 1 },
+            verdict: { type: 'string', enum: ['WINNER', 'RUNNER_UP', 'REJECTED'] },
+            whyItRankedHere: { type: 'string', minLength: 1, maxLength: 700 },
+            rejectionReasons: { type: 'array', maxItems: 5, items: { type: 'string', minLength: 1, maxLength: 300 } },
+            improvementSuggestions: { type: 'array', maxItems: 5, items: { type: 'string', minLength: 1, maxLength: 300 } },
+          },
+        },
+      },
       requiresLegalVerification: { type: 'boolean' },
       scores: {
         type: 'array',
