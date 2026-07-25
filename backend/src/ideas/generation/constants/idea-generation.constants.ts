@@ -453,27 +453,21 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /**
- * Number of models executed immediately for one benchmark run.
- *
- * Additional models are retained as fallbacks and are called only when fewer
- * than the required number of valid candidates succeed.
+ * Number of highest-ranked NLP opportunities expanded into startup concepts.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 5;
 
 /**
- * Minimum number of valid candidates preferred before comparative judging.
- *
- * A single candidate is still accepted when every fallback is exhausted, so a
- * temporary provider outage does not unnecessarily fail the generation.
+ * Number of rotating AI models executed for every selected opportunity.
  */
-export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 2;
+export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY = 3;
 
 /**
- * Maximum total model executions allowed for one run, including fallbacks.
- *
- * This bounds latency and protects free-provider rate limits.
+ * Maximum candidate executions per run: five opportunities by three models.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 5;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
+  IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT *
+  IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
 
 /**
  * Number of recent generation runs used to rotate model selection.

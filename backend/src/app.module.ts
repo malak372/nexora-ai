@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
@@ -90,6 +91,7 @@ import { UsersModule } from './users/users.module';
     ContactMessagesModule,
     PaymentsModule,
     IdeasModule,
+    EventEmitterModule,
   ],
 
   controllers: [AppController],

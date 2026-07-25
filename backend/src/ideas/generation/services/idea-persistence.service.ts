@@ -221,8 +221,7 @@ export class IdeaPersistenceService {
 
     private readonly creditBalanceService: CreditBalanceService,
 
-    private readonly creditBalanceNotificationService:
-      CreditBalanceNotificationService,
+    private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
 
     private readonly creditCacheService: CreditCacheService,
   ) {}

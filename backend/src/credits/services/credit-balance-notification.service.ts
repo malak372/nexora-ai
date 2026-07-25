@@ -33,9 +33,7 @@ export type CreditBalanceNotificationInput = {
  */
 @Injectable()
 export class CreditBalanceNotificationService {
-  private readonly logger = new Logger(
-    CreditBalanceNotificationService.name,
-  );
+  private readonly logger = new Logger(CreditBalanceNotificationService.name);
 
   constructor(
     private readonly prisma: PrismaService,

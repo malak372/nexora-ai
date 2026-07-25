@@ -476,11 +476,12 @@ export class PromptBuilderService {
 
     return [
       'AUTHORITATIVE OPPORTUNITY SELECTION:',
-      '- Build the idea around the selected opportunity below.',
+      '- The benchmark will generate distinct candidates from the highest-ranked opportunities below.',
+      '- The selected opportunity remains the default direction when no candidate-specific assignment is appended.',
       '- Derive a concrete user workflow and root cause from the evidence samples; never use a generic NLP label as the product concept.',
       '- Cover the selected primary problem completely before adding secondary capabilities.',
       '- Alternatives may be used only as supporting capabilities when they are compatible with the same user workflow.',
-      '- Do not switch to a lower-ranked opportunity merely because it is easier to describe.',
+      '- A candidate-specific benchmark assignment may intentionally select a lower-ranked shortlisted opportunity to create concept diversity.',
       '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
       '- Prefer a defensible end-to-end product capability that measurably improves the affected workflow.',
       `- Evidence coverage: ${(ranking.evidenceCoverage * 100).toFixed(1)}%.`,
@@ -490,9 +491,9 @@ export class PromptBuilderService {
       '<untrusted_selected_opportunity>',
       this.stringifyPromptData(selectedContext),
       '</untrusted_selected_opportunity>',
-      '<untrusted_ranked_alternatives>',
+      '<untrusted_shortlisted_opportunities>',
       this.stringifyPromptData(alternatives),
-      '</untrusted_ranked_alternatives>',
+      '</untrusted_shortlisted_opportunities>',
     ].join('\n');
   }
 

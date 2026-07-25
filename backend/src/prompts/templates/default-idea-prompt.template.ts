@@ -124,6 +124,18 @@ Strict generation rules:
 
 10. Avoid generic CRUD systems, ordinary dashboards, basic reporting portals, simple trackers, and unfocused all-in-one platforms unless the evidence clearly requires them and the product adds meaningful differentiated value.
 
+10.1 Define the product around the broader user or organizational outcome, not around one technical symptom. For example, recurring login, session, synchronization, or connectivity complaints should normally lead to a learning-continuity, workflow-resilience, recovery, or operational-support product in which authentication handling is only one supporting capability.
+
+10.2 A gateway, proxy, wrapper, connector, middleware layer, or plugin must not be the primary product identity unless the evidence proves that organizations would independently buy, deploy, and operate that exact category. When that proof is absent, redesign the concept as a standalone workflow product with at least three coherent value pillars.
+
+10.3 The selected product direction should normally include:
+    - one core end-user workflow,
+    - one proactive or recovery capability,
+    - one operational or organizational capability,
+    - and a clear reason an institution, team, business, or sponsor would adopt it.
+
+10.4 Do not use a broader platform label to hide unrelated features. Every value pillar must address the same evidence-supported problem and contribute to one coherent product outcome.
+
 11. Prefer proactive capabilities such as automation, prioritization, recommendations, optimization, prediction, anomaly detection, personalization, recovery orchestration, workflow coordination, or early warning only when technically feasible and supported by the discovered problem.
 
 12. Do not add AI or advanced capabilities merely to make the product appear innovative.
@@ -245,7 +257,10 @@ Final product quality gate:
 
 Before returning the JSON object, internally verify that:
 
-- The idea is a coherent software product rather than merely a feature, bug fix, or vague platform.
+- The idea is a coherent software product rather than merely a feature, bug fix, technical wrapper, gateway, proxy, connector, middleware layer, or vague platform.
+- The product identity is based on a valuable user or organizational outcome rather than one technical symptom.
+- Authentication, synchronization, monitoring, reporting, and integration remain supporting capabilities unless the evidence proves they are independently valuable products.
+- The product contains multiple coherent value pillars without becoming an unfocused all-in-one platform.
 - The primary problem is clear and supported by evidence.
 - The solution addresses the root workflow or failure pattern rather than one visible symptom.
 - The likely end user and adopter or buyer are identifiable when permitted by the output fields.

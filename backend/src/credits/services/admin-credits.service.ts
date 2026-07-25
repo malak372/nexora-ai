@@ -55,8 +55,7 @@ export class AdminCreditsService {
 
     private readonly creditCacheService: CreditCacheService,
 
-    private readonly creditBalanceNotificationService:
-      CreditBalanceNotificationService,
+    private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
 
     private readonly auditService: AuditService,
   ) {}

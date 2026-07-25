@@ -143,7 +143,10 @@ export class IdeaCandidateJudgeService {
 
   /** Validates core scalar fields before candidate-reference validation. */
   private validateEvaluation(evaluation: IdeaJudgeEvaluation): void {
-    if (typeof evaluation.winnerCandidateId !== 'string' || !evaluation.winnerCandidateId.trim()) {
+    if (
+      typeof evaluation.winnerCandidateId !== 'string' ||
+      !evaluation.winnerCandidateId.trim()
+    ) {
       throw new Error('The AI judge returned an invalid winner candidate ID.');
     }
 
@@ -152,7 +155,9 @@ export class IdeaCandidateJudgeService {
     }
 
     if (typeof evaluation.requiresLegalVerification !== 'boolean') {
-      throw new Error('The AI judge returned an invalid legal-verification flag.');
+      throw new Error(
+        'The AI judge returned an invalid legal-verification flag.',
+      );
     }
   }
 
