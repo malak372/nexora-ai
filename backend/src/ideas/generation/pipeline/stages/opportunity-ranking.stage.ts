@@ -79,6 +79,14 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       metadata: {
         selectedTitle: ranking.selected.title,
         selectedScore: ranking.selected.finalScore,
+        shortlistedOpportunities: [
+          ranking.selected,
+          ...ranking.alternatives.slice(0, 4),
+        ].map((opportunity) => ({
+          rank: opportunity.rank,
+          title: opportunity.title,
+          score: opportunity.finalScore,
+        })),
         selectionReason: ranking.selectionReason,
         evidenceCoverage: ranking.evidenceCoverage,
         evaluatedCount: ranking.evaluatedCount,

@@ -10,6 +10,7 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 import type { IdeaGenerationStageKey } from '../constants/idea-generation-stages.constants';
 
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
+import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 
 /**
  * Input required to execute one idea-generation pipeline stage.
@@ -160,6 +161,7 @@ export class IdeaGenerationStageService {
 
   constructor(
     private readonly generationRunService: IdeaGenerationRunService,
+    private readonly realtime: IdeaGenerationRealtimeService,
   ) {}
 
   /**
@@ -218,11 +220,12 @@ export class IdeaGenerationStageService {
         };
       }
 
-      await this.generationRunService.updateProgress({
+      const startedRun = await this.generationRunService.updateProgress({
         runId: context.runId,
         currentStageKey: stage.key,
         progressPercent: startProgressPercent,
       });
+      this.realtime.publishRunUpdated(startedRun);
 
       this.logger.debug(
         `Started idea-generation stage "${stage.key}" for run "${context.runId}".`,
@@ -234,11 +237,12 @@ export class IdeaGenerationStageService {
 
       await this.throwIfCancellationRequested(executionResult.context, stage);
 
-      await this.generationRunService.updateProgress({
+      const progressedRun = await this.generationRunService.updateProgress({
         runId: executionResult.context.runId,
         currentStageKey: stage.key,
         progressPercent: completedProgressPercent,
       });
+      this.realtime.publishRunUpdated(progressedRun);
 
       this.logger.debug(
         `Completed idea-generation stage "${stage.key}" for run "${executionResult.context.runId}".`,

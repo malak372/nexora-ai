@@ -23,10 +23,12 @@ import {
 } from '../constants/idea-judge.constants';
 import {
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
-  IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
+  IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
+  IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
 } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
+import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
 import type {
   IdeaJudgeCandidateScore,
   IdeaJudgeEvaluation,
@@ -57,6 +59,8 @@ export type IdeaBenchmarkCandidate = {
   readonly aiJudge: IdeaJudgeCandidateScore | null;
   readonly finalScore: number;
   readonly selected: boolean;
+  readonly opportunityRank: number;
+  readonly opportunityTitle: string;
 };
 
 /**
@@ -74,6 +78,12 @@ export type IdeaBenchmarkResult = {
 };
 
 /** Result of one accepted model attempt before database persistence. */
+type CandidateConceptDirection = {
+  readonly opportunity: RankedIdeaOpportunity;
+  readonly promptText: string;
+};
+
+/** Result of one accepted model attempt before database persistence. */
 type AcceptedModelAttempt = {
   readonly aiResult: AiExecutionResult;
   readonly parsedOutput: ParsedIdeaAiOutput;
@@ -81,7 +91,7 @@ type AcceptedModelAttempt = {
 };
 
 /**
- * Executes the same persisted generation prompt against a provider-diverse
+ * Executes diversified evidence-grounded concept prompts against a provider-diverse
  * selection of active, routable models supporting structured JSON output.
  *
  * Important guarantees:
@@ -151,34 +161,40 @@ export class IdeaGenerationBenchmarkService {
     });
 
     const successfulCandidates: IdeaBenchmarkCandidate[] = [];
-    let attemptedModelCount = 0;
+    const conceptDirections = this.buildConceptDirections(context);
+    const selectedModels = orderedModels.slice(
+      0,
+      Math.min(IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY, orderedModels.length),
+    );
+    let attemptedCandidateCount = 0;
 
     /*
-     * Execute the provider-interleaved order sequentially.
+     * Generate one candidate from every selected model for every top-ranked
+     * opportunity. With five opportunities and three models this produces up
+     * to fifteen genuinely different startup candidates before judging.
      *
-     * Sequential execution is deliberate: free OpenRouter models frequently
-     * apply provider-side concurrency limits. Running Google and OpenRouter in
-     * one strict alternating sequence avoids bursts such as Gemma -> Nemotron
-     * while still allowing another provider to recover the benchmark between
-     * OpenRouter attempts.
+     * Execution stays sequential to protect free-provider rate limits and to
+     * avoid provider-side concurrency bursts.
      */
-    for (const model of orderedModels) {
-      if (
-        successfulCandidates.length >=
-          IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES ||
-        attemptedModelCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS
-      ) {
-        break;
+    for (const direction of conceptDirections) {
+      for (const model of selectedModels) {
+        if (attemptedCandidateCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS) {
+          break;
+        }
+
+        attemptedCandidateCount += 1;
+
+        try {
+          successfulCandidates.push(
+            await this.executeModelCandidate(context, model, direction),
+          );
+        } catch {
+          // Failure is already persisted and logged by executeModelCandidate.
+        }
       }
 
-      attemptedModelCount += 1;
-
-      try {
-        successfulCandidates.push(
-          await this.executeModelCandidate(context, model),
-        );
-      } catch {
-        // Failure is already persisted and logged by executeModelCandidate.
+      if (attemptedCandidateCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS) {
+        break;
       }
     }
 
@@ -300,6 +316,7 @@ export class IdeaGenerationBenchmarkService {
   private async executeModelCandidate(
     context: IdeaGenerationContext,
     model: AiModel,
+    direction: CandidateConceptDirection,
   ): Promise<IdeaBenchmarkCandidate> {
     const prompt = context.prompt;
 
@@ -317,7 +334,7 @@ export class IdeaGenerationBenchmarkService {
       const initialAttempt = await this.generateAndEvaluate(
         context,
         model,
-        prompt.promptText,
+        direction.promptText,
         qualityContext,
       );
       const acceptedAttempt = initialAttempt.quality.accepted
@@ -327,6 +344,7 @@ export class IdeaGenerationBenchmarkService {
             model,
             initialAttempt,
             qualityContext,
+            direction.promptText,
           );
 
       if (!acceptedAttempt.quality.accepted) {
@@ -339,6 +357,7 @@ export class IdeaGenerationBenchmarkService {
           model,
           attempt: acceptedAttempt,
           errorMessage,
+          direction,
         });
         failurePersisted = true;
 
@@ -351,6 +370,7 @@ export class IdeaGenerationBenchmarkService {
         aiResult: acceptedAttempt.aiResult,
         parsedOutput: acceptedAttempt.parsedOutput,
         quality: acceptedAttempt.quality,
+        direction,
       });
 
       return {
@@ -361,6 +381,8 @@ export class IdeaGenerationBenchmarkService {
         aiJudge: null,
         finalScore: acceptedAttempt.quality.score,
         selected: false,
+        opportunityRank: direction.opportunity.rank,
+        opportunityTitle: direction.opportunity.title,
       };
     } catch (error: unknown) {
       const errorMessage =
@@ -374,6 +396,7 @@ export class IdeaGenerationBenchmarkService {
           model,
           responseTimeMs: Date.now() - startedAt,
           errorMessage,
+          direction,
         });
       }
 
@@ -444,6 +467,7 @@ export class IdeaGenerationBenchmarkService {
     model: AiModel,
     initialAttempt: AcceptedModelAttempt,
     qualityContext: IdeaQualityEvaluationContext,
+    assignedPromptText: string,
   ): Promise<AcceptedModelAttempt> {
     const prompt = context.prompt;
 
@@ -452,7 +476,7 @@ export class IdeaGenerationBenchmarkService {
     }
 
     const revisionPrompt = [
-      prompt.promptText,
+      assignedPromptText,
       'QUALITY-GATE REVISION:',
       '- The previous response was valid JSON but did not meet the required quality threshold.',
       '- Rewrite the complete response, not only the listed fields.',
@@ -488,6 +512,56 @@ export class IdeaGenerationBenchmarkService {
 
       return initialAttempt;
     }
+  }
+
+  /**
+   * Builds up to five evidence-grounded concept directions from the highest
+   * ranked NLP opportunities. Every selected model receives every direction,
+   * allowing the judge to compare both opportunity quality and model output
+   * quality across as many as fifteen startup candidates.
+   */
+  private buildConceptDirections(
+    context: IdeaGenerationContext,
+  ): readonly CandidateConceptDirection[] {
+    const prompt = context.prompt;
+    const ranking = context.opportunityRanking;
+
+    if (!prompt || !ranking) {
+      throw new ServiceUnavailableException(
+        'A persisted prompt and ranked opportunities are required before benchmarking.',
+      );
+    }
+
+    const opportunities = [ranking.selected, ...ranking.alternatives]
+      .slice(0, IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT);
+
+    return opportunities.map((opportunity, index) => ({
+      opportunity,
+      promptText: [
+        prompt.promptText,
+        'BENCHMARK CONCEPT ASSIGNMENT:',
+        `- This is candidate concept ${index + 1} of ${opportunities.length}.`,
+        `- Build this candidate around ranked opportunity #${opportunity.rank}: "${opportunity.title}".`,
+        '- This assignment overrides the default selected opportunity only for this benchmark candidate.',
+        '- Produce one coherent standalone startup concept, not a feature list or a minor fix.',
+        '- Use compatible lower-ranked needs only as supporting capabilities when they strengthen the same workflow.',
+        '- Include a clear buyer or sponsor, an adoption trigger, repeatable deployment, and measurable organizational value whenever the schema permits.',
+        '- Do not copy another candidate direction or merge unrelated opportunities.',
+        '<untrusted_assigned_opportunity>',
+        JSON.stringify({
+          rank: opportunity.rank,
+          title: opportunity.title,
+          problem: opportunity.problem,
+          need: opportunity.need,
+          solutionArea: opportunity.solutionArea,
+          frequency: opportunity.frequency,
+          severity: opportunity.severity,
+          score: opportunity.finalScore,
+          evidenceSamples: opportunity.evidenceSamples,
+        }),
+        '</untrusted_assigned_opportunity>',
+      ].join('\n'),
+    }));
   }
 
   /** Builds trusted metrics used by premium-output quality validation. */
@@ -622,6 +696,7 @@ export class IdeaGenerationBenchmarkService {
     readonly aiResult: AiExecutionResult;
     readonly parsedOutput: ParsedIdeaAiOutput;
     readonly quality: IdeaQualityEvaluation;
+    readonly direction: CandidateConceptDirection;
   }): Promise<string> {
     const candidate = await this.prisma.ideaGenerationCandidate.create({
       data: {
@@ -631,6 +706,8 @@ export class IdeaGenerationBenchmarkService {
         apiModelId: input.model.apiModelId,
         modelName: input.model.modelName,
         displayName: input.model.displayName,
+        opportunityRank: input.direction.opportunity.rank,
+        opportunityTitle: input.direction.opportunity.title,
         rawResponse: input.aiResult.text,
         parsedResponse: this.toPrismaJson(input.parsedOutput),
         overallScore: input.quality.score,
@@ -663,6 +740,7 @@ export class IdeaGenerationBenchmarkService {
     >;
     readonly attempt: AcceptedModelAttempt;
     readonly errorMessage: string;
+    readonly direction: CandidateConceptDirection;
   }): Promise<void> {
     await this.prisma.ideaGenerationCandidate.create({
       data: {
@@ -672,6 +750,8 @@ export class IdeaGenerationBenchmarkService {
         apiModelId: input.model.apiModelId,
         modelName: input.model.modelName,
         displayName: input.model.displayName,
+        opportunityRank: input.direction.opportunity.rank,
+        opportunityTitle: input.direction.opportunity.title,
         rawResponse: input.attempt.aiResult.text,
         parsedResponse: this.toPrismaJson(input.attempt.parsedOutput),
         overallScore: input.attempt.quality.score,
@@ -702,6 +782,7 @@ export class IdeaGenerationBenchmarkService {
     >;
     readonly responseTimeMs: number;
     readonly errorMessage: string;
+    readonly direction: CandidateConceptDirection;
   }): Promise<void> {
     await this.prisma.ideaGenerationCandidate.create({
       data: {
@@ -711,6 +792,8 @@ export class IdeaGenerationBenchmarkService {
         apiModelId: input.model.apiModelId,
         modelName: input.model.modelName,
         displayName: input.model.displayName,
+        opportunityRank: input.direction.opportunity.rank,
+        opportunityTitle: input.direction.opportunity.title,
         responseTimeMs: input.responseTimeMs,
         selected: false,
         errorCode: 'MODEL_EXECUTION_FAILED',

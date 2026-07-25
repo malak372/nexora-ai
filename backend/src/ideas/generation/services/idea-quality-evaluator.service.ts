@@ -16,6 +16,8 @@ export type IdeaQualityIssue = {
     | 'UNSUPPORTED_LOCAL_CLAIM'
     | 'LOW_DIFFERENTIATION'
     | 'LOW_ACTIONABILITY'
+    | 'NARROW_INTERMEDIARY_PRODUCT'
+    | 'UNCLEAR_ADOPTION_PATH'
     | 'WEAK_BUDGET_ESTIMATION'
     | 'INACCURATE_NLP_SUMMARY';
   readonly message: string;
@@ -103,6 +105,51 @@ export class IdeaQualityEvaluatorService {
     'low-bandwidth',
   ] as const;
 
+  private readonly INTERMEDIARY_PRODUCT_TERMS = [
+    'gateway',
+    'proxy',
+    'wrapper',
+    'middleware',
+    'connector',
+    'plugin',
+    'integration layer',
+    'authentication layer',
+  ] as const;
+
+  private readonly STANDALONE_VALUE_TERMS = [
+    'workspace',
+    'continuity',
+    'recovery',
+    'orchestration',
+    'workflow',
+    'collaboration',
+    'case management',
+    'decision support',
+    'resource planning',
+    'operational analytics',
+    'service management',
+    'learning progress',
+  ] as const;
+
+  private readonly ADOPTION_TERMS = [
+    'buyer',
+    'customer',
+    'subscription',
+    'license',
+    'institution',
+    'university',
+    'school',
+    'organization',
+    'department',
+    'administrator',
+    'it team',
+    'operations team',
+    'enterprise',
+    'procurement',
+    'deploy',
+    'adopt',
+  ] as const;
+
   private readonly ACTIONABILITY_TERMS = [
     'reduce',
     'increase',
@@ -165,6 +212,24 @@ export class IdeaQualityEvaluatorService {
     const concreteTargets = targetUsers.filter(
       (targetUser) => targetUser.split(' ').length >= 3,
     ).length;
+    const intermediaryHits = this.countTerms(
+      this.normalize(
+        [
+          idea.title,
+          idea.fullAbstract ?? '',
+          idea.partialAbstract ?? '',
+          idea.limitedAbstract ?? '',
+        ].join(' '),
+      ),
+      this.INTERMEDIARY_PRODUCT_TERMS,
+    );
+    const standaloneValueHits = this.countTerms(
+      completeText,
+      this.STANDALONE_VALUE_TERMS,
+    );
+    const adoptionHits = this.countTerms(completeText, this.ADOPTION_TERMS);
+    const isNarrowIntermediaryProduct =
+      intermediaryHits > 0 && standaloneValueHits < 2;
 
     if (genericTitle) {
       issues.push({
@@ -243,6 +308,24 @@ export class IdeaQualityEvaluatorService {
       });
     }
 
+    if (isNarrowIntermediaryProduct) {
+      issues.push({
+        code: 'NARROW_INTERMEDIARY_PRODUCT',
+        message:
+          'Redesign the idea around a durable user or organizational outcome. A gateway, proxy, wrapper, connector, plugin, or middleware layer should be a supporting capability unless it has clear standalone customer value.',
+        penalty: 18,
+      });
+    }
+
+    if (context.requireAdvancedOutputs && adoptionHits < 2) {
+      issues.push({
+        code: 'UNCLEAR_ADOPTION_PATH',
+        message:
+          'Identify a credible buyer or sponsor, adoption trigger, repeatable deployment path, and measurable organizational reason to purchase or adopt the product.',
+        penalty: 14,
+      });
+    }
+
     if (context.requireAdvancedOutputs) {
       const budget = this.findAdvancedOutput(output, 'budget-estimation');
       const nlpSummary = this.findAdvancedOutput(
@@ -274,7 +357,11 @@ export class IdeaQualityEvaluatorService {
         45 + differentiatorHits * 9 + (genericTitle ? -12 : 8),
       ),
       marketFit: this.clamp(
-        35 + Math.min(problem.length / 8, 30) + concreteTargets * 8,
+        35 +
+          Math.min(problem.length / 8, 30) +
+          concreteTargets * 8 +
+          Math.min(adoptionHits, 4) * 3 +
+          (isNarrowIntermediaryProduct ? -12 : 0),
       ),
       technicalQuality: this.clamp(
         40 + actionableObjectives * 9 + Math.min(actionabilityHits, 5) * 4,
@@ -285,7 +372,11 @@ export class IdeaQualityEvaluatorService {
           Math.min(targetUsers.length, 4) * 6,
       ),
       originality: this.clamp(
-        45 + differentiatorHits * 8 + (genericTitle ? -15 : 10),
+        45 +
+          differentiatorHits * 8 +
+          Math.min(standaloneValueHits, 4) * 3 +
+          (genericTitle ? -15 : 10) +
+          (isNarrowIntermediaryProduct ? -10 : 0),
       ),
     };
 
