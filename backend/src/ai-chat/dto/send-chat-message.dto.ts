@@ -1,17 +1,13 @@
 /**
- * Defines the payload accepted when an authenticated user sends a message
- * to an existing AI chat session.
- *
- * The target session identifier is supplied through the route parameter or
- * WebSocket event payload and is therefore intentionally excluded from this
- * DTO.
+ * Defines the Socket.IO payload accepted when an authenticated user sends a
+ * message to an existing AI chat session.
  *
  * @author Eman
  */
 
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, type TransformFnParams } from 'class-transformer';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 import {
   AI_CHAT_MAX_MESSAGE_LENGTH,
@@ -19,9 +15,34 @@ import {
 } from '../constants/ai-chat.constants';
 
 /**
- * Request payload used when sending a new chat message.
+ * WebSocket payload used when sending one message to an AI chat session.
  */
 export class SendChatMessageDto {
+  /**
+   * Target chat-session identifier.
+   */
+  @ApiProperty({
+    description: 'Target AI chat-session identifier.',
+    format: 'uuid',
+  })
+  @IsUUID()
+  sessionId!: string;
+
+  /**
+   * Client-generated identifier used to make message submission idempotent.
+   *
+   * The frontend must reuse the same identifier when retrying the same
+   * message after a timeout or connection interruption.
+   */
+  @ApiProperty({
+    description:
+      'Client-generated UUID used to prevent duplicate message submissions.',
+    format: 'uuid',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID('4')
+  clientRequestId!: string;
+
   /**
    * User message delivered to the AI assistant.
    */
@@ -32,13 +53,7 @@ export class SendChatMessageDto {
     maxLength: AI_CHAT_MAX_MESSAGE_LENGTH,
   })
   @Transform(({ value }: TransformFnParams): unknown => {
-    if (typeof value !== 'string') {
-      return value;
-    }
-
-    const trimmed = value.trim();
-
-    return trimmed;
+    return typeof value === 'string' ? value.trim() : value;
   })
   @IsString()
   @MinLength(AI_CHAT_MIN_MESSAGE_LENGTH)

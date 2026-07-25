@@ -26,6 +26,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNoContentResponse,
@@ -72,7 +73,7 @@ export class AiChatController {
   constructor(
     private readonly aiChatService: AiChatService,
     private readonly aiChatMessageReaderService: AiChatMessageReaderService,
-  ) {}
+  ) { }
 
   /**
    * Creates a new AI chat session for an unlocked idea accessible to the
@@ -279,6 +280,10 @@ export class AiChatController {
   })
   @ApiBadRequestResponse({
     description: 'The chat-session identifier is invalid.',
+  })
+  @ApiConflictResponse({
+    description:
+      'The chat session has an active AI response that must finish or be cancelled first.',
   })
   @ApiForbiddenResponse({
     description:

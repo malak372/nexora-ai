@@ -1,11 +1,12 @@
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AdminModule } from './admin/admin.module';
+import { AiChatModule } from './ai-chat/ai-chat.module';
 import { AiModule } from './ai/ai.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AppController } from './app.controller';
@@ -17,8 +18,8 @@ import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
 import { DataCollectionModule } from './data-collection/data-collection.module';
 import { DataSourcesModule } from './data-sources/data-sources.module';
-import { IdeasModule } from './ideas/ideas.module';
 import { DomainsModule } from './domains/domains.module';
+import { IdeasModule } from './ideas/ideas.module';
 import { MailModule } from './mail/mail.module';
 import { NlpModule } from './nlp/nlp.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
  * - Global configuration.
  * - Global application cache.
  * - Global request throttling.
+ * - Global application events.
  * - Core infrastructure modules.
  * - Application feature modules.
  */
@@ -71,6 +73,11 @@ import { UsersModule } from './users/users.module';
     ]),
 
     /**
+     * Registers the application event emitter.
+     */
+    EventEmitterModule.forRoot(),
+
+    /**
      * Infrastructure and application feature modules.
      */
     PrismaModule,
@@ -83,6 +90,7 @@ import { UsersModule } from './users/users.module';
     CollectorsModule,
     DataSourcesModule,
     AiModule,
+    AiChatModule,
     NlpModule,
     PromptsModule,
     AlertsModule,
@@ -91,7 +99,6 @@ import { UsersModule } from './users/users.module';
     ContactMessagesModule,
     PaymentsModule,
     IdeasModule,
-    EventEmitterModule,
   ],
 
   controllers: [AppController],
@@ -111,4 +118,4 @@ import { UsersModule } from './users/users.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

@@ -16,13 +16,18 @@
 
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ChatMessageStatus, ChatSender, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
+import {
+  AI_CHAT_DEFAULT_SESSION_TITLE,
+  AI_CHAT_MAX_SESSIONS_PER_IDEA,
+} from '../constants/ai-chat.constants';
 import { AI_CHAT_SESSION_SELECT } from '../constants/ai-chat-selects.constants';
 import { CreateChatSessionDto } from '../dto/create-chat-session.dto';
 import {
@@ -38,6 +43,11 @@ import type {
 import { AiChatAccessService } from './ai-chat-access.service';
 
 /**
+ * Maximum retries for a serializable chat-session creation transaction.
+ */
+const AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES = 3;
+
+/**
  * Service responsible for the lifecycle of authenticated users' AI chat
  * sessions.
  */
@@ -46,7 +56,7 @@ export class AiChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiChatAccessService: AiChatAccessService,
-  ) {}
+  ) { }
 
   /**
    * Creates a new chat session for an unlocked idea accessible to the
@@ -64,14 +74,62 @@ export class AiChatService {
   ): Promise<AiChatSessionRecord> {
     await this.aiChatAccessService.ensureIdeaChatAccess(userId, ideaId);
 
-    return this.prisma.chatSession.create({
-      data: {
-        userId,
-        ideaId,
-        title: dto.title,
-      },
-      select: AI_CHAT_SESSION_SELECT,
-    });
+    for (
+      let attempt = 1;
+      attempt <= AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES;
+      attempt += 1
+    ) {
+      try {
+        return await this.prisma.$transaction(
+          async (transaction) => {
+            const currentSessionCount = await transaction.chatSession.count({
+              where: {
+                userId,
+                ideaId,
+                deletedAt: null,
+              },
+            });
+
+            if (currentSessionCount >= AI_CHAT_MAX_SESSIONS_PER_IDEA) {
+              throw new BadRequestException(
+                `A maximum of ${AI_CHAT_MAX_SESSIONS_PER_IDEA} AI chat sessions is allowed for one idea.`,
+              );
+            }
+
+            return transaction.chatSession.create({
+              data: {
+                userId,
+                ideaId,
+                title: dto.title ?? AI_CHAT_DEFAULT_SESSION_TITLE,
+              },
+              select: AI_CHAT_SESSION_SELECT,
+            });
+          },
+          {
+            isolationLevel:
+              Prisma.TransactionIsolationLevel.Serializable,
+          },
+        );
+      } catch (error: unknown) {
+        const isSerializableConflict =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034';
+
+        if (!isSerializableConflict) {
+          throw error;
+        }
+
+        if (attempt >= AI_CHAT_SESSION_CREATION_TRANSACTION_RETRIES) {
+          throw new ConflictException(
+            'The AI chat session could not be created because of concurrent requests.',
+          );
+        }
+      }
+    }
+
+    throw new ConflictException(
+      'The AI chat session could not be created because of concurrent requests.',
+    );
   }
 
   /**
@@ -98,11 +156,11 @@ export class AiChatService {
       deletedAt: null,
       ...(query.search
         ? {
-            title: {
-              contains: query.search,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
+          title: {
+            contains: query.search,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
         : {}),
     };
 
@@ -241,29 +299,62 @@ export class AiChatService {
    * physically removed. All public chat operations must exclude soft-deleted
    * sessions.
    *
-   * The ownership and deletion-state conditions are included directly in the
-   * update operation to avoid a separate read-before-write race condition.
+   * The active-response condition is enforced directly in the update. The
+   * preliminary read is used only to distinguish a missing session from a
+   * session that currently has an active AI response.
    *
    * @param userId Authenticated user identifier.
    * @param sessionId Chat-session identifier.
    * @throws NotFoundException When the session does not exist, is already
    * deleted, or does not belong to the authenticated user.
+   * @throws ConflictException When the session has an active AI response.
    */
   async deleteSession(userId: string, sessionId: string): Promise<void> {
-    const deleteResult = await this.prisma.chatSession.updateMany({
-      where: {
-        id: sessionId,
-        userId,
-        deletedAt: null,
-      },
-      data: {
-        deletedAt: new Date(),
-      },
-    });
+    await this.prisma.$transaction(async (transaction) => {
+      const session = await transaction.chatSession.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+        },
+      });
 
-    if (deleteResult.count === 0) {
-      throw new NotFoundException('AI chat session was not found.');
-    }
+      if (!session) {
+        throw new NotFoundException('AI chat session was not found.');
+      }
+
+      const deleteResult = await transaction.chatSession.updateMany({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+          messages: {
+            none: {
+              sender: ChatSender.AI,
+              status: {
+                in: [
+                  ChatMessageStatus.PENDING,
+                  ChatMessageStatus.STREAMING,
+                ],
+              },
+              deletedAt: null,
+            },
+          },
+        },
+        data: {
+          deletedAt: new Date(),
+        },
+      });
+
+      if (deleteResult.count === 0) {
+        throw new ConflictException(
+          'Cancel or complete the active AI response before deleting this chat session.',
+        );
+      }
+    });
   }
 
   /**

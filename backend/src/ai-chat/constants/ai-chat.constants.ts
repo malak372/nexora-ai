@@ -103,6 +103,16 @@ export const AI_CHAT_STREAM_CHUNK_DELAY_MS = 20;
 export const AI_CHAT_RESPONSE_TIMEOUT_MS = 60_000;
 
 /**
+ * Maximum number of output tokens requested for one AI chat response.
+ */
+export const AI_CHAT_MAX_OUTPUT_TOKENS = 2_000;
+
+/**
+ * Stable low-variance temperature used for project-specific assistance.
+ */
+export const AI_CHAT_RESPONSE_TEMPERATURE = 0.35;
+
+/**
  * Maximum number of simultaneous AI responses allowed in one chat session.
  *
  * Restricting the session to one active response preserves message ordering
