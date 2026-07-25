@@ -44,10 +44,21 @@ export type IdeaJudgeCandidateScore = {
  *
  * @author Malak
  */
+export type IdeaJudgeCandidateComparison = {
+  readonly candidateId: string;
+  readonly verdict: 'WINNER' | 'RUNNER_UP' | 'REJECTED';
+  readonly whyItRankedHere: string;
+  readonly rejectionReasons: readonly string[];
+  readonly improvementSuggestions: readonly string[];
+};
+
 export type IdeaJudgeEvaluation = {
   readonly winnerCandidateId: string;
   readonly confidence: number;
   readonly reason: string;
+  readonly executiveSummary: string;
+  readonly winnerWhy: readonly string[];
+  readonly comparisonReport: readonly IdeaJudgeCandidateComparison[];
   readonly requiresLegalVerification: boolean;
   readonly scores: readonly IdeaJudgeCandidateScore[];
 };

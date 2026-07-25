@@ -19,9 +19,11 @@ import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
   IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT,
   IDEA_JUDGE_FINAL_SCORE_WEIGHT,
+  IDEA_JUDGE_MAX_CANDIDATES,
   IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION,
 } from '../constants/idea-judge.constants';
 import {
+  IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
@@ -36,6 +38,10 @@ import type {
 import { IdeaAiOutputParserService } from './idea-ai-output-parser.service';
 import { IdeaCandidateJudgeService } from './idea-candidate-judge.service';
 import { IdeaGenerationModelSelectorService } from './idea-generation-model-selector.service';
+import {
+  IdeaSemanticDiversityService,
+  type IdeaSemanticDiversityScore,
+} from './idea-semantic-diversity.service';
 import {
   IdeaQualityEvaluatorService,
   type IdeaQualityEvaluation,
@@ -61,6 +67,7 @@ export type IdeaBenchmarkCandidate = {
   readonly selected: boolean;
   readonly opportunityRank: number;
   readonly opportunityTitle: string;
+  readonly semanticDiversity: IdeaSemanticDiversityScore | null;
 };
 
 /**
@@ -121,6 +128,7 @@ export class IdeaGenerationBenchmarkService {
     private readonly qualityEvaluatorService: IdeaQualityEvaluatorService,
     private readonly candidateJudgeService: IdeaCandidateJudgeService,
     private readonly modelSelectorService: IdeaGenerationModelSelectorService,
+    private readonly semanticDiversityService: IdeaSemanticDiversityService,
   ) {}
 
   /**
@@ -142,7 +150,11 @@ export class IdeaGenerationBenchmarkService {
 
     const eligibleModels = (
       await this.aiModelsService.getRoutableModels()
-    ).filter((model) => model.supportsJsonOutput);
+    ).filter(
+      (model) =>
+        model.supportsJsonOutput &&
+        !IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS.has(model.apiModelId),
+    );
 
     if (eligibleModels.length === 0) {
       throw new ServiceUnavailableException(
@@ -169,32 +181,35 @@ export class IdeaGenerationBenchmarkService {
     let attemptedCandidateCount = 0;
 
     /*
-     * Generate one candidate from every selected model for every top-ranked
-     * opportunity. With five opportunities and three models this produces up
-     * to fifteen genuinely different startup candidates before judging.
+     * Execute the selected models concurrently for one opportunity, then move
+     * to the next opportunity. This bounded shape reduces total latency without
+     * launching every candidate request in one provider-heavy burst.
      *
-     * Execution stays sequential to protect free-provider rate limits and to
-     * avoid provider-side concurrency bursts.
+     * Promise.allSettled is required because one timeout or provider failure
+     * must not discard successful results returned by the other models.
      */
     for (const direction of conceptDirections) {
-      for (const model of selectedModels) {
-        if (attemptedCandidateCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS) {
-          break;
-        }
+      const remainingAttempts =
+        IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS - attemptedCandidateCount;
 
-        attemptedCandidateCount += 1;
-
-        try {
-          successfulCandidates.push(
-            await this.executeModelCandidate(context, model, direction),
-          );
-        } catch {
-          // Failure is already persisted and logged by executeModelCandidate.
-        }
+      if (remainingAttempts <= 0) {
+        break;
       }
 
-      if (attemptedCandidateCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS) {
-        break;
+      const modelsForDirection = selectedModels.slice(0, remainingAttempts);
+      attemptedCandidateCount += modelsForDirection.length;
+
+      const settledAttempts = await Promise.allSettled(
+        modelsForDirection.map((model) =>
+          this.executeModelCandidate(context, model, direction),
+        ),
+      );
+
+      for (const attempt of settledAttempts) {
+        if (attempt.status === 'fulfilled') {
+          successfulCandidates.push(attempt.value);
+        }
+        // Rejected promises were already persisted and logged by the executor.
       }
     }
 
@@ -214,6 +229,13 @@ export class IdeaGenerationBenchmarkService {
 
       const selectedCandidate: IdeaBenchmarkCandidate = {
         ...onlyCandidate,
+        semanticDiversity: {
+          candidateId: onlyCandidate.candidateId,
+          diversityScore: 100,
+          maxSimilarity: 0,
+          mostSimilarCandidateId: null,
+          duplicateRisk: 'LOW',
+        },
         selected: true,
       };
 
@@ -224,9 +246,31 @@ export class IdeaGenerationBenchmarkService {
       };
     }
 
+    const diversityScores = this.semanticDiversityService.evaluate(
+      successfulCandidates.map((candidate) => ({
+        candidateId: candidate.candidateId,
+        parsedOutput: candidate.parsedOutput,
+        opportunityTitle: candidate.opportunityTitle,
+      })),
+    );
+
+    /*
+     * Judge only the strongest opportunity-diverse shortlist. Sending every
+     * accepted premium candidate in one request creates oversized prompts and
+     * response schemas, which significantly increases timeout and malformed
+     * JSON risk. Non-shortlisted candidates remain persisted for diagnostics.
+     */
+    const judgeCandidates = this.buildJudgeShortlist(
+      successfulCandidates,
+      IDEA_JUDGE_MAX_CANDIDATES,
+    );
+    const judgeCandidateIds = new Set(
+      judgeCandidates.map((candidate) => candidate.candidateId),
+    );
+
     const judgeEvaluation = await this.candidateJudgeService.evaluate(
       context,
-      successfulCandidates.map((candidate) => ({
+      judgeCandidates.map((candidate) => ({
         candidateId: candidate.candidateId,
         parsedOutput: candidate.parsedOutput,
       })),
@@ -237,28 +281,45 @@ export class IdeaGenerationBenchmarkService {
       judgeEvaluation.confidence >=
         IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION;
 
+    const diversityScoresForScoring = diversityScores;
+
     const scoredCandidates = successfulCandidates.map((candidate) => {
       const aiJudge =
         judgeEvaluation?.scores.find(
           (score) => score.candidateId === candidate.candidateId,
         ) ?? null;
+      const semanticDiversity =
+        diversityScoresForScoring.get(candidate.candidateId) ?? null;
 
       return {
         ...candidate,
         aiJudge,
+        semanticDiversity,
         finalScore: this.calculateFinalScore(
           candidate.quality.score,
-          useJudgeScores ? (aiJudge?.overallScore ?? null) : null,
+          useJudgeScores && judgeCandidateIds.has(candidate.candidateId)
+            ? (aiJudge?.overallScore ?? null)
+            : null,
+          semanticDiversity?.diversityScore ?? 100,
         ),
         selected: false,
       };
     });
 
+    /* Only shortlisted candidates are eligible to win comparative selection. */
     const rankedCandidates = [...scoredCandidates].sort(
-      (first, second) =>
-        second.finalScore - first.finalScore ||
-        second.quality.score - first.quality.score ||
-        first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+      (first, second) => {
+        const shortlistDifference =
+          Number(judgeCandidateIds.has(second.candidateId)) -
+          Number(judgeCandidateIds.has(first.candidateId));
+
+        return (
+          shortlistDifference ||
+          second.finalScore - first.finalScore ||
+          second.quality.score - first.quality.score ||
+          first.aiResult.responseTimeMs - second.aiResult.responseTimeMs
+        );
+      },
     );
 
     const topCandidate = rankedCandidates[0];
@@ -289,6 +350,13 @@ export class IdeaGenerationBenchmarkService {
             judgeEvaluation,
             useJudgeScores,
           ),
+          comparisonReport: judgeEvaluation.comparisonReport.map((report) => ({
+            ...report,
+            verdict:
+              report.candidateId === winner.candidateId
+                ? ('WINNER' as const)
+                : ('REJECTED' as const),
+          })),
         }
       : null;
 
@@ -304,6 +372,54 @@ export class IdeaGenerationBenchmarkService {
       candidates,
       judgeEvaluation: finalJudgeEvaluation,
     };
+  }
+
+  /**
+   * Builds a deterministic, opportunity-diverse shortlist for the AI judge.
+   *
+   * The highest-quality candidate from each opportunity is selected first,
+   * then remaining slots are filled by deterministic quality. This prevents a
+   * single opportunity from occupying the complete comparative request.
+   */
+  private buildJudgeShortlist(
+    candidates: readonly IdeaBenchmarkCandidate[],
+    maximumCandidates: number,
+  ): IdeaBenchmarkCandidate[] {
+    const ordered = [...candidates].sort(
+      (first, second) =>
+        second.quality.score - first.quality.score ||
+        first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+    );
+    const selected: IdeaBenchmarkCandidate[] = [];
+    const selectedIds = new Set<string>();
+    const usedOpportunities = new Set<string>();
+
+    for (const candidate of ordered) {
+      if (selected.length >= maximumCandidates) {
+        break;
+      }
+      if (usedOpportunities.has(candidate.opportunityTitle)) {
+        continue;
+      }
+
+      selected.push(candidate);
+      selectedIds.add(candidate.candidateId);
+      usedOpportunities.add(candidate.opportunityTitle);
+    }
+
+    for (const candidate of ordered) {
+      if (selected.length >= maximumCandidates) {
+        break;
+      }
+      if (selectedIds.has(candidate.candidateId)) {
+        continue;
+      }
+
+      selected.push(candidate);
+      selectedIds.add(candidate.candidateId);
+    }
+
+    return selected;
   }
 
   /**
@@ -383,6 +499,7 @@ export class IdeaGenerationBenchmarkService {
         selected: false,
         opportunityRank: direction.opportunity.rank,
         opportunityTitle: direction.opportunity.title,
+        semanticDiversity: null,
       };
     } catch (error: unknown) {
       const errorMessage =
@@ -868,7 +985,9 @@ export class IdeaGenerationBenchmarkService {
           judgeReason: isWinner
             ? (evaluation?.reason ??
               'Selected by deterministic fallback ranking because the comparative AI judge was unavailable.')
-            : null,
+            : (evaluation?.comparisonReport.find(
+                (report) => report.candidateId === candidate.candidateId,
+              )?.whyItRankedHere ?? null),
           judgeConfidence: isWinner ? (evaluation?.confidence ?? 0) : null,
           requiresLegalVerification: isWinner
             ? (evaluation?.requiresLegalVerification ?? null)
@@ -927,16 +1046,20 @@ export class IdeaGenerationBenchmarkService {
   private calculateFinalScore(
     deterministicScore: number,
     aiJudgeScore: number | null,
+    diversityScore: number,
   ): number {
-    if (aiJudgeScore === null) {
-      return deterministicScore;
-    }
+    const baseScore =
+      aiJudgeScore === null
+        ? deterministicScore
+        : aiJudgeScore * IDEA_JUDGE_FINAL_SCORE_WEIGHT +
+          deterministicScore * IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT;
 
-    const score =
-      aiJudgeScore * IDEA_JUDGE_FINAL_SCORE_WEIGHT +
-      deterministicScore * IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT;
-
-    return Math.round(score * 100) / 100;
+    // Diversity acts as a bounded penalty, not as a substitute for quality.
+    // A concept with 100 diversity keeps its full score; a near duplicate can
+    // lose at most 12 points, preventing repeated ideas from winning only due
+    // to polished wording.
+    const diversityPenalty = Math.max(0, (100 - diversityScore) * 0.12);
+    return Math.round(Math.max(0, baseScore - diversityPenalty) * 100) / 100;
   }
 
   /** Converts a validated idea output into Prisma-compatible JSON. */
