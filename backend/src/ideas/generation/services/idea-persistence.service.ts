@@ -20,9 +20,10 @@ import {
   UnlockMethod,
 } from '@prisma/client';
 
+import { CreditBalanceNotificationService } from '../../../credits/services/credit-balance-notification.service';
 import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
-
 import { CreditCacheService } from '../../../credits/services/credit-cache.service';
+import type { CreditBalanceResult } from '../../../credits/types/credit-balance-result.type';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -70,6 +71,14 @@ const SERIALIZABLE_TRANSACTION_TIMEOUT_MS = 30_000;
  * operations.
  */
 export type IdeaPersistenceDatabaseClient = Prisma.TransactionClient;
+
+/**
+ * Values returned by the committed persistence transaction.
+ */
+type IdeaPersistenceTransactionResult = {
+  readonly ideaId: string;
+  readonly creditAdjustment: CreditBalanceResult | null;
+};
 
 /**
  * Input required to persist one successfully generated idea.
@@ -178,6 +187,7 @@ export type PersistedGeneratedIdea = Prisma.IdeaGetPayload<{
  * - Link the generation run to the created idea.
  * - Retry retryable serializable transaction conflicts.
  * - Invalidate credit caches after a committed premium deduction.
+ * - Trigger low or exhausted credit emails after commit.
  *
  * Transaction guarantees:
  * - A guest session is consumed only when persistence succeeds.
@@ -211,6 +221,8 @@ export class IdeaPersistenceService {
 
     private readonly creditBalanceService: CreditBalanceService,
 
+    private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
+
     private readonly creditCacheService: CreditCacheService,
   ) {}
 
@@ -232,11 +244,17 @@ export class IdeaPersistenceService {
   ): Promise<PersistedGeneratedIdea> {
     const normalizedInput = this.normalizeInput(input);
 
-    const ideaId = await this.executeSerializableTransaction(normalizedInput);
+    const transactionResult =
+      await this.executeSerializableTransaction(normalizedInput);
 
     await this.invalidatePremiumCreditCaches(normalizedInput);
 
-    return this.loadPersistedIdea(ideaId);
+    await this.notifyPremiumCreditBalance(
+      normalizedInput,
+      transactionResult.creditAdjustment,
+    );
+
+    return this.loadPersistedIdea(transactionResult.ideaId);
   }
 
   /**
@@ -248,11 +266,11 @@ export class IdeaPersistenceService {
    * a rolled-back attempt.
    *
    * @param input Normalized persistence input.
-   * @returns Identifier of the committed generated idea.
+   * @returns Committed idea identifier and optional credit adjustment.
    */
   private async executeSerializableTransaction(
     input: PersistGeneratedIdeaInput,
-  ): Promise<string> {
+  ): Promise<IdeaPersistenceTransactionResult> {
     for (
       let attempt = 1;
       attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
@@ -260,7 +278,7 @@ export class IdeaPersistenceService {
     ) {
       try {
         return await this.prisma.$transaction(
-          async (transaction): Promise<string> => {
+          async (transaction): Promise<IdeaPersistenceTransactionResult> => {
             const run = await this.validateGenerationRun(transaction, input);
 
             await this.validatePromptHistory(transaction, input);
@@ -282,7 +300,11 @@ export class IdeaPersistenceService {
               idea.id,
             );
 
-            await this.consumeEntitlement(transaction, input, idea.id);
+            const creditAdjustment = await this.consumeEntitlement(
+              transaction,
+              input,
+              idea.id,
+            );
 
             await this.createGeneratedOutputs(
               transaction,
@@ -297,7 +319,10 @@ export class IdeaPersistenceService {
               input.collectionJobId,
             );
 
-            return idea.id;
+            return {
+              ideaId: idea.id,
+              creditAdjustment,
+            };
           },
           {
             isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -770,19 +795,18 @@ export class IdeaPersistenceService {
     transaction: IdeaPersistenceDatabaseClient,
     input: PersistGeneratedIdeaInput,
     ideaId: string,
-  ): Promise<void> {
+  ): Promise<CreditBalanceResult | null> {
     switch (input.generationType) {
       case IdeaGenerationType.GUEST_FREE:
         await this.consumeGuestGeneration(transaction, input);
-        return;
+        return null;
 
       case IdeaGenerationType.NORMAL_FREE:
         await this.consumeFreeGeneration(transaction, input);
-        return;
+        return null;
 
       case IdeaGenerationType.PREMIUM_CREDIT:
-        await this.consumePremiumCredit(transaction, input, ideaId);
-        return;
+        return this.consumePremiumCredit(transaction, input, ideaId);
 
       default:
         this.assertNeverGenerationType(input.generationType);
@@ -946,7 +970,7 @@ export class IdeaPersistenceService {
     transaction: IdeaPersistenceDatabaseClient,
     input: PersistGeneratedIdeaInput,
     ideaId: string,
-  ): Promise<void> {
+  ): Promise<CreditBalanceResult> {
     const userId = input.userId;
 
     if (!userId) {
@@ -955,7 +979,7 @@ export class IdeaPersistenceService {
       );
     }
 
-    await this.creditBalanceService.consumeForIdeaGeneration(
+    return this.creditBalanceService.consumeForIdeaGeneration(
       userId,
       ideaId,
       PREMIUM_IDEA_CREDIT_COST,
@@ -1203,6 +1227,34 @@ export class IdeaPersistenceService {
         },
       },
     });
+  }
+
+  /**
+   * Sends a low or exhausted credit-balance email after the premium
+   * persistence transaction has committed successfully.
+   *
+   * Email failures are contained by CreditBalanceNotificationService and
+   * therefore never change the result of the already committed idea.
+   */
+  private async notifyPremiumCreditBalance(
+    input: PersistGeneratedIdeaInput,
+    creditAdjustment: CreditBalanceResult | null,
+  ): Promise<void> {
+    if (
+      input.generationType !== IdeaGenerationType.PREMIUM_CREDIT ||
+      !input.userId ||
+      !creditAdjustment
+    ) {
+      return;
+    }
+
+    await this.creditBalanceNotificationService.notifyAfterCommittedBalanceChange(
+      {
+        userId: input.userId,
+        previousBalance: creditAdjustment.previousBalance,
+        balanceAfter: creditAdjustment.balanceAfter,
+      },
+    );
   }
 
   /**

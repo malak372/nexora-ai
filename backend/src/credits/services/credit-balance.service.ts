@@ -16,6 +16,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { AdjustCreditBalanceInput } from '../types/adjust-credit-balance-input.type';
 import type { CreditBalanceResult } from '../types/credit-balance-result.type';
 
+import { CreditBalanceNotificationService } from './credit-balance-notification.service';
+
 /**
  * Central service responsible for credit-balance mutations.
  *
@@ -31,6 +33,8 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  * - Update account status.
  * - Create CreditTransaction records.
  * - Participate in existing Prisma transactions.
+ * - Trigger post-commit balance notification checks for self-managed
+ *   transactions.
  *
  * This service does not:
  * - Expose HTTP endpoints.
@@ -42,7 +46,10 @@ import type { CreditBalanceResult } from '../types/credit-balance-result.type';
  */
 @Injectable()
 export class CreditBalanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: CreditBalanceNotificationService,
+  ) {}
 
   /**
    * Changes one user's credit balance.
@@ -190,7 +197,15 @@ export class CreditBalanceService {
       return execute(input.tx);
     }
 
-    return this.prisma.$transaction(execute);
+    const result = await this.prisma.$transaction(execute);
+
+    await this.notificationService.notifyAfterCommittedBalanceChange({
+      userId: input.userId,
+      previousBalance: result.previousBalance,
+      balanceAfter: result.balanceAfter,
+    });
+
+    return result;
   }
 
   /**

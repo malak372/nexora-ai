@@ -184,6 +184,7 @@ export class AiChatGateway
         const turn = await this.aiChatStreamService.startResponse({
             userId: user.id,
             sessionId: dto.sessionId,
+            clientRequestId: dto.clientRequestId,
             message: dto.message,
             observer,
         });

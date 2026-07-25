@@ -2,6 +2,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AdminModule } from './admin/admin.module';
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
  * - Global configuration.
  * - Global application cache.
  * - Global request throttling.
+ * - Global application events.
  * - Core infrastructure modules.
  * - Application feature modules.
  */
@@ -69,6 +71,11 @@ import { UsersModule } from './users/users.module';
         limit: 10,
       },
     ]),
+
+    /**
+     * Registers the application event emitter.
+     */
+    EventEmitterModule.forRoot(),
 
     /**
      * Infrastructure and application feature modules.

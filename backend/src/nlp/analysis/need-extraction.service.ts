@@ -1,6 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
+import {
+  buildCommunityEvidenceExcerpt,
+  hasDirectCommunityComplaint,
+  isLikelyProductDescription,
+} from '../common/utils/community-evidence.util';
 import { toTitleCase } from '../common/utils/text-formatting.util';
 
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
@@ -9,101 +14,54 @@ import type {
   PriorityLevel,
 } from '../pipeline/types/intelligent-analysis.types';
 
-/**
- * Maximum number of representative evidence samples retained
- * for each extracted need.
- */
 const MAX_NEED_EVIDENCE_SAMPLES = 3;
-
-/**
- * Minimum supporting-text frequency required for medium priority.
- */
+const MAX_EVIDENCE_SAMPLE_LENGTH = 650;
 const MEDIUM_PRIORITY_FREQUENCY_THRESHOLD = 3;
-
-/**
- * Minimum supporting-text frequency required for high priority.
- */
 const HIGH_PRIORITY_FREQUENCY_THRESHOLD = 5;
 
-/**
- * Numeric weights used to sort extracted needs by priority.
- */
 const PRIORITY_WEIGHTS: Readonly<Record<PriorityLevel, number>> = {
   LOW: 1,
   MEDIUM: 2,
   HIGH: 3,
 };
 
+const GENERIC_NEED_TERMS = new Set([
+  'need',
+  'needs',
+  'needed',
+  'require',
+  'required',
+  'want',
+  'wanted',
+  'حاجة',
+  'احتاج',
+  'نحتاج',
+  'مطلوب',
+]);
+
 type ExtractedNeed = IntelligentAnalysisOutput['extractedNeeds'][number];
 
-/**
- * Internal aggregation state for one normalized need.
- */
 type NeedAccumulator = {
-  /**
-   * Human-readable need statement.
-   */
   readonly need: string;
-
-  /**
-   * Number of distinct analyzed texts supporting the need.
-   */
   frequency: number;
-
-  /**
-   * Indicates whether the need was detected as an explicit
-   * feature-request signal.
-   */
   hasFeatureRequestSignal: boolean;
-
-  /**
-   * Representative evidence samples supporting the need.
-   */
   readonly evidenceSamples: string[];
-
-  /**
-   * Optional related problem associated with the need.
-   */
   relatedProblem?: string;
 };
 
 /**
- * Extracts user needs and unmet requirements from analyzed community texts.
+ * Extracts concrete user needs from community evidence.
  *
- * This service transforms explicit need signals and feature-request signals
- * into structured needs that help Nexora AI understand what users expect from
- * a potential software solution.
- *
- * Responsibilities:
- * - Detect explicit need-related lexicon matches.
- * - Detect feature-request signals from analyzed texts.
- * - Group repeated needs into stable need statements.
- * - Count each need once per analyzed text.
- * - Attach representative evidence samples.
- * - Calculate need priority.
- * - Produce structured needs for opportunity analysis and prompt building.
- *
- * This service does not:
- * - Persist extracted results.
- * - Call external AI providers.
- * - Modify the supplied analysis records.
+ * Generic lexicon triggers such as "Need" are used only as indicators. They
+ * are never emitted as final need labels. Concrete needs are derived from
+ * feature-request phrases and direct workflow complaints, while promotional
+ * product descriptions are excluded unless they contain direct user failures.
  *
  * @author Eman
  */
 @Injectable()
 export class NeedExtractionService {
-  /**
-   * Extracts user needs from lexicon-enriched text-analysis results.
-   *
-   * When a limit is supplied, only the highest-ranked needs are returned.
-   * Without a limit, all extracted needs are returned.
-   *
-   * @param analyzedTexts Lexicon-enriched analyzed texts.
-   * @param limit Optional maximum number of needs to return.
-   * @returns Extracted needs sorted by priority, frequency, and name.
-   *
-   * @throws BadRequestException when the supplied limit is invalid.
-   */
+  /** Extracts user needs sorted by priority and supporting frequency. */
   extract(
     analyzedTexts: readonly LexiconTextAnalysisResult[],
     limit?: number,
@@ -113,6 +71,10 @@ export class NeedExtractionService {
     const needMap = new Map<string, NeedAccumulator>();
 
     for (const text of analyzedTexts) {
+      if (this.shouldSkipText(text)) {
+        continue;
+      }
+
       const uniqueNeedsForText = this.extractUniqueNeedTerms(text);
       const featureRequestKeys = this.extractFeatureRequestKeys(text);
 
@@ -124,7 +86,10 @@ export class NeedExtractionService {
         current.hasFeatureRequestSignal =
           current.hasFeatureRequestSignal || featureRequestKeys.has(needKey);
 
-        this.addEvidenceSample(current.evidenceSamples, text.originalText);
+        this.addEvidenceSample(
+          current.evidenceSamples,
+          this.buildEvidenceExcerpt(text.originalText, normalizedNeed),
+        );
 
         needMap.set(needKey, current);
       }
@@ -153,29 +118,21 @@ export class NeedExtractionService {
     }));
   }
 
-  /**
-   * Extracts normalized and unique need-related terms from one analyzed text.
-   *
-   * Explicit needs and feature requests are combined, then counted at most
-   * once per text using a normalized case-insensitive key.
-   *
-   * @param text Lexicon-enriched text-analysis result.
-   * @returns Map of normalized keys to readable need statements.
-   */
+  /** Extracts normalized concrete needs from one text. */
   private extractUniqueNeedTerms(
     text: LexiconTextAnalysisResult,
   ): ReadonlyMap<string, string> {
     const uniqueNeeds = new Map<string, string>();
-
     const matchedTerms = [
       ...(text.matchedLexicons[NlpLexiconType.NEED] ?? []),
       ...(text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []),
+      ...this.inferConcreteNeeds(text.originalText),
     ];
 
     for (const term of matchedTerms) {
       const normalizedTerm = this.normalizeTerm(term);
 
-      if (!normalizedTerm) {
+      if (!normalizedTerm || GENERIC_NEED_TERMS.has(normalizedTerm)) {
         continue;
       }
 
@@ -189,58 +146,144 @@ export class NeedExtractionService {
     return uniqueNeeds;
   }
 
-  /**
-   * Extracts normalized aggregation keys for feature-request signals
-   * detected in one analyzed text.
-   *
-   * @param text Lexicon-enriched text-analysis result.
-   * @returns Set of normalized feature-request keys.
-   */
+  /** Derives actionable requirements from direct complaint language. */
+  private inferConcreteNeeds(value: string): string[] {
+    const text = value.normalize('NFKC').toLocaleLowerCase();
+    const needs: string[] = [];
+
+    if (this.hasCrossDeviceAccessFailure(text)) {
+      needs.push('desktop and laptop access');
+    }
+
+    if (
+      /(?:activation|verification|account).{0,80}(?:email|code|otp).{0,80}(?:never|not|fail)|(?:never|not).{0,40}(?:receive|get).{0,80}(?:email|code)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('reliable account verification');
+    }
+
+    if (
+      /(?:data|history|classes|progress).{0,80}(?:gone|lost|missing|deleted|sync)|(?:sync|synchronization).{0,40}(?:fail|broken|not work)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('reliable data synchronization and recovery');
+    }
+
+    if (
+      /(?:hard|difficult|confusing).{0,40}(?:navigate|interface|use)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('clear and stable navigation');
+    }
+
+    if (
+      /(?:download|document|syllabus|file|link).{0,80}(?:error|fail|broken|null|(?:can(?:not|['’]?t)|can\s+not)|won['’]?t|does(?:n['’]?t| not) open)|(?:error|null).{0,60}(?:download|document|file|syllabus)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('reliable document access and downloads');
+    }
+
+    const hasOperationalReliabilityFailure =
+      /(?:crash|freeze|bug|glitch)/iu.test(text);
+    const hasGenericOperationalError =
+      /(?:broken|error)/iu.test(text) &&
+      !/(?:download|document|syllabus|file|link|login|log in|sign in|activation|verification|email|code|otp)/iu.test(
+        text,
+      );
+
+    if (hasOperationalReliabilityFailure || hasGenericOperationalError) {
+      needs.push('stable crash-resistant operation');
+    }
+
+    if (/(?:offline|no internet|without internet)/iu.test(text)) {
+      needs.push('offline learning access');
+    }
+
+    if (
+      /(?:لا يمكن|ما بقدر).{0,60}(?:كمبيوتر|لابتوب)|(?:الهاتف فقط)/iu.test(text)
+    ) {
+      needs.push('الوصول من الكمبيوتر واللابتوب');
+    }
+
+    if (
+      /(?:رسالة|رمز).{0,40}(?:تفعيل|تحقق).{0,40}(?:لم يصل|ما وصل)/iu.test(text)
+    ) {
+      needs.push('تفعيل حساب موثوق');
+    }
+
+    if (/(?:بيانات|تقدم|سجل).{0,40}(?:اختفت|ضاعت|فقدت)/iu.test(text)) {
+      needs.push('مزامنة واسترجاع البيانات');
+    }
+
+    return needs;
+  }
+
+  /** Detects device-access complaints even when written in passive form. */
+  private hasCrossDeviceAccessFailure(value: string): boolean {
+    const hasTargetDevice = /\b(?:computer|desktop|laptop|pc)\b/iu.test(value);
+    const hasAccessAction =
+      /\b(?:download(?:ed|ing)?|install(?:ed|ing)?|access(?:ed|ing)?|use|using|run|open)\b/iu.test(
+        value,
+      );
+    const hasFailureSignal =
+      /\b(?:(?:can(?:not|['’]?t)|can\s+not)|cannot|could(?:n['’]?t| not)|unable to|not available|does(?:n['’]?t| not) work|won['’]?t work|fails? to)\b/iu.test(
+        value,
+      );
+
+    return (
+      /\bmobile[- ]only\b/iu.test(value) ||
+      (hasTargetDevice && hasAccessAction && hasFailureSignal)
+    );
+  }
+
   private extractFeatureRequestKeys(
     text: LexiconTextAnalysisResult,
   ): ReadonlySet<string> {
-    const featureRequestTerms =
-      text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
+    const terms = text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
 
-    const keys = featureRequestTerms
-      .map((term) => this.normalizeTerm(term))
-      .filter(Boolean)
-      .map((term) => this.createAggregationKey(term));
-
-    return new Set(keys);
+    return new Set(
+      terms
+        .map((term) => this.normalizeTerm(term))
+        .filter((term) => Boolean(term) && !GENERIC_NEED_TERMS.has(term))
+        .map((term) => this.createAggregationKey(term)),
+    );
   }
 
-  /**
-   * Normalizes a raw need term for stable grouping.
-   *
-   * @param term Raw need-related term.
-   * @returns Normalized need term.
-   */
+  private shouldSkipText(text: LexiconTextAnalysisResult): boolean {
+    if (isLikelyProductDescription(text.originalText, text.sourceType)) {
+      return true;
+    }
+
+    if (text.sourceType === 'COMMENT') {
+      return false;
+    }
+
+    const hasFeatureRequest =
+      (text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? []).length > 0;
+
+    return (
+      !hasFeatureRequest && !hasDirectCommunityComplaint(text.originalText)
+    );
+  }
+
   private normalizeTerm(term: string): string {
-    return term
-      .toLocaleLowerCase()
-      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
-      .replace(/\s+/gu, ' ')
-      .trim();
+    return typeof term === 'string'
+      ? term
+          .toLocaleLowerCase()
+          .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+          .replace(/\s+/gu, ' ')
+          .trim()
+      : '';
   }
 
-  /**
-   * Creates a case-insensitive key used to aggregate equivalent needs.
-   *
-   * @param normalizedTerm Normalized need term.
-   * @returns Stable aggregation key.
-   */
   private createAggregationKey(normalizedTerm: string): string {
     return normalizedTerm.toLocaleLowerCase();
   }
 
-  /**
-   * Calculates need priority using total supporting-text frequency and
-   * explicit feature-request strength.
-   *
-   * @param accumulator Aggregated need information.
-   * @returns Calculated need priority.
-   */
   private calculatePriority(accumulator: NeedAccumulator): PriorityLevel {
     if (
       accumulator.hasFeatureRequestSignal ||
@@ -256,27 +299,105 @@ export class NeedExtractionService {
     return 'LOW';
   }
 
-  /**
-   * Creates an empty accumulator for one extracted need.
-   *
-   * @param need Human-readable need statement.
-   * @returns Initial need aggregation state.
-   */
   private createAccumulator(need: string): NeedAccumulator {
     return {
       need,
       frequency: 0,
       hasFeatureRequestSignal: false,
       evidenceSamples: [],
+      relatedProblem: this.inferRelatedProblem(need),
     };
   }
 
-  /**
-   * Adds a meaningful and unique representative evidence sample.
-   *
-   * @param samples Existing evidence samples.
-   * @param sample New evidence candidate.
-   */
+  /** Builds evidence that is relevant to the concrete need being stored. */
+  private buildEvidenceExcerpt(value: string, need: string): string {
+    return buildCommunityEvidenceExcerpt(
+      value,
+      MAX_EVIDENCE_SAMPLE_LENGTH,
+      this.getNeedEvidencePatterns(need),
+    );
+  }
+
+  private getNeedEvidencePatterns(need: string): readonly RegExp[] {
+    const normalizedNeed = this.normalizeTerm(need);
+
+    if (
+      /desktop|laptop|computer|cross-platform|cross device/iu.test(
+        normalizedNeed,
+      )
+    ) {
+      return [/\b(?:desktop|laptop|computer|pc|mobile only)\b/iu];
+    }
+
+    if (/verification|activation|account/iu.test(normalizedNeed)) {
+      return [/\b(?:verification|activation|email|code|otp|login|sign in)\b/iu];
+    }
+
+    if (/synchronization|recovery|data/iu.test(normalizedNeed)) {
+      return [/\b(?:data|history|classes|progress|sync|lost|missing|gone)\b/iu];
+    }
+
+    if (/navigation|interface/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:navigate|navigation|interface|back button|scroll|popup|tabs?)\b/iu,
+      ];
+    }
+
+    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:document|download|syllabus|file|link|null error|cannot open)\b/iu,
+      ];
+    }
+
+    if (/crash|stable|reliable/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:crash|freeze|error|bug|glitch|looping|doesn['’]?t work)\b/iu,
+      ];
+    }
+
+    if (/offline|internet/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:offline|without internet|no internet|download for offline)\b/iu,
+      ];
+    }
+
+    return [];
+  }
+
+  private inferRelatedProblem(need: string): string | undefined {
+    const normalizedNeed = this.normalizeTerm(need);
+
+    if (
+      /desktop|laptop|computer|cross-platform|cross device/iu.test(
+        normalizedNeed,
+      )
+    ) {
+      return 'Cross-Device Access Barriers';
+    }
+
+    if (/verification|activation|account/iu.test(normalizedNeed)) {
+      return 'Account Activation and Login Failures';
+    }
+
+    if (/synchronization|recovery|data/iu.test(normalizedNeed)) {
+      return 'Data Loss and Synchronization Failures';
+    }
+
+    if (/navigation|interface/iu.test(normalizedNeed)) {
+      return 'Navigation and Interface Failures';
+    }
+
+    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
+      return 'Document Access and Download Failures';
+    }
+
+    if (/crash|stable|reliable/iu.test(normalizedNeed)) {
+      return 'Application Reliability and Crash Failures';
+    }
+
+    return undefined;
+  }
+
   private addEvidenceSample(samples: string[], sample: string): void {
     const normalizedSample = sample.trim();
 
@@ -284,33 +405,21 @@ export class NeedExtractionService {
       return;
     }
 
-    const sampleAlreadyExists = samples.some(
-      (existingSample) =>
-        existingSample.toLocaleLowerCase() ===
-        normalizedSample.toLocaleLowerCase(),
-    );
-
-    if (!sampleAlreadyExists) {
+    if (
+      !samples.some(
+        (existingSample) =>
+          existingSample.toLocaleLowerCase() ===
+          normalizedSample.toLocaleLowerCase(),
+      )
+    ) {
       samples.push(normalizedSample);
     }
   }
 
-  /**
-   * Converts a priority level into a sortable numeric weight.
-   *
-   * @param priority Priority level.
-   * @returns Numeric priority weight.
-   */
   private priorityWeight(priority: PriorityLevel): number {
     return PRIORITY_WEIGHTS[priority];
   }
 
-  /**
-   * Validates the optional result limit.
-   *
-   * @param limit Optional maximum number of returned needs.
-   * @throws BadRequestException when the limit is not a positive integer.
-   */
   private validateLimit(limit?: number): void {
     if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
       throw new BadRequestException(

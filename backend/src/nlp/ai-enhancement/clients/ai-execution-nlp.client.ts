@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ApiRequestType, PromptType } from '@prisma/client';
+import { AiRoutingStrategy, ApiRequestType, PromptType } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseParserService } from '../../../ai/services/ai-response-parser.service';
@@ -82,12 +82,26 @@ export class AiExecutionNlpClient implements NlpAiClient {
   async enhance(request: NlpAiClientRequest): Promise<NlpAiClientResponse> {
     const result = await this.aiExecutionService.execute({
       userPrompt: request.prompt,
+      systemInstruction: [
+        'Analyze only the supplied evidence records.',
+        'Return one JSON object and no Markdown or explanatory text.',
+        'Do not invent evidence identifiers, statistics, locations, or facts.',
+        'Use null only where the response schema explicitly allows it.',
+      ].join(' '),
       requestType: ApiRequestType.NLP_ENHANCEMENT,
       promptType: PromptType.NLP_ANALYSIS,
       responseFormat: AiResponseFormat.JSON,
       responseSchema: AI_ENHANCEMENT_OUTPUT_SCHEMA,
       responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
       temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
+      strategy: AiRoutingStrategy.BALANCED,
+
+      /**
+       * NLP prompts are application-controlled. One provider may reject its
+       * native schema representation while another provider can execute the
+       * same evidence-grounded request safely.
+       */
+      allowProviderFallbackOnInvalidPrompt: true,
     });
 
     const data: unknown = this.aiResponseParserService.parseJson(result.text);

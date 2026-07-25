@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 
 import { AiModelsModule } from '../../ai-models/ai-models.module';
 import { AiModule } from '../../ai/ai.module';
@@ -9,6 +10,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PromptsModule } from '../../prompts/prompts.module';
 
 import { GuestIdeaGenerationController } from './controllers/guest-idea-generation.controller';
+import { IdeaGenerationGateway } from './gateways/idea-generation.gateway';
 import { IdeaGenerationRunsController } from './controllers/idea-generation-runs.controller';
 import { UserIdeaGenerationController } from './controllers/user-idea-generation.controller';
 import type { IdeaGenerationStage } from './interfaces/idea-generation-stage.interface';
@@ -49,6 +51,7 @@ import {
 import { IdeaGenerationPolicyService } from './services/idea-generation-policy.service';
 import { IdeaGenerationQueryService } from './services/idea-generation-query.service';
 import { IdeaGenerationRunService } from './services/idea-generation-run.service';
+import { IdeaGenerationRealtimeService } from './services/idea-generation-realtime.service';
 import { IdeaGenerationSelectionService } from './services/idea-generation-selection.service';
 import { IdeaPersistenceService } from './services/idea-persistence.service';
 import { IdeaQualityEvaluatorService } from './services/idea-quality-evaluator.service';
@@ -66,6 +69,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
  */
 @Module({
   imports: [
+    JwtModule.register({}),
     PrismaModule,
     AiModelsModule,
     AiModule,
@@ -81,6 +85,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
   ],
   providers: [
     IdeaGenerationRunService,
+    IdeaGenerationRealtimeService,
+    IdeaGenerationGateway,
     IdeaGenerationQueryService,
     IdeaGenerationProgressService,
     IdeaGenerationCancellationService,
@@ -191,6 +197,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
   exports: [
     IdeaGenerationOrchestratorService,
     IdeaGenerationRunService,
+    IdeaGenerationRealtimeService,
+    IdeaGenerationGateway,
     IdeaGenerationQueryService,
     IdeaGenerationCancellationService,
     IdeaAiOutputParserService,

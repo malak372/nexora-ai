@@ -365,6 +365,7 @@ export class PromptBuilderService {
      */
     const renderedPrompt = [
       this.buildEvidenceGroundingDirective(),
+      this.buildOutputQualityDirective(collectionJob),
       this.buildOpportunitySelectionDirective(input),
       this.buildDiversityDirective(recentIdeas),
       this.buildLocalGroundingDirective({
@@ -395,7 +396,40 @@ export class PromptBuilderService {
     };
   }
 
+  /**
+   * Builds immutable output-quality requirements from trusted persisted NLP
+   * totals.
+   *
+   * The directive is injected outside the administrator-editable template so
+   * older templates cannot accidentally produce incorrect summary counts or a
+   * vague premium budget. Product descriptions are also explicitly separated
+   * from complaint evidence before the model writes its final idea.
+   */
+  private buildOutputQualityDirective(
+    collectionJob: CollectionJobPromptContext,
+  ): string {
+    const analysis = collectionJob.nlpAnalysis;
 
+    if (!analysis) {
+      return [
+        'APPLICATION-ENFORCED OUTPUT QUALITY:',
+        '- No trusted NLP totals are available for this request.',
+        '- Do not invent analyzed-text counts.',
+      ].join('\n');
+    }
+
+    return [
+      'APPLICATION-ENFORCED OUTPUT QUALITY:',
+      `- Trusted analyzed totals: ${analysis.totalTextsAnalyzed} texts, ${analysis.totalPostsAnalyzed} posts, and ${analysis.totalCommentsAnalyzed} comments.`,
+      '- Whenever the NLP executive summary mentions dataset size, it must state all three exact totals above.',
+      '- Never describe the comment count as the total number of comments and posts.',
+      '- Store listings, feature catalogues, promotional copy, and product descriptions are contextual market material, not direct proof of a complaint or unmet need.',
+      '- Ground recurring problems and user needs in complaint-bearing posts or comments. Product descriptions may only show an existing capability or market baseline.',
+      '- Merge semantically equivalent problem labels instead of presenting duplicate variants.',
+      '- For premium output, budgetEstimation must be explicitly labeled as a preliminary estimate and include: one currency, a numeric minimum-to-maximum range, major cost categories, assumptions, and exclusions.',
+      '- Do not invent a precise market price. Use a defensible planning range and identify every assumption.',
+    ].join('\n');
+  }
 
   /**
    * Builds the application-controlled directive that anchors generation to the
@@ -407,10 +441,7 @@ export class PromptBuilderService {
   private buildOpportunitySelectionDirective(
     input: PromptBuilderInput,
   ): string {
-    if (
-      input.purpose !== 'IDEA_GENERATION' ||
-      !input.opportunityRanking
-    ) {
+    if (input.purpose !== 'IDEA_GENERATION' || !input.opportunityRanking) {
       return [
         'OPPORTUNITY SELECTION:',
         '- No pre-ranked generation opportunity is available for this request.',
@@ -445,21 +476,24 @@ export class PromptBuilderService {
 
     return [
       'AUTHORITATIVE OPPORTUNITY SELECTION:',
-      '- Build the idea around the selected opportunity below.',
+      '- The benchmark will generate distinct candidates from the highest-ranked opportunities below.',
+      '- The selected opportunity remains the default direction when no candidate-specific assignment is appended.',
       '- Derive a concrete user workflow and root cause from the evidence samples; never use a generic NLP label as the product concept.',
       '- Cover the selected primary problem completely before adding secondary capabilities.',
       '- Alternatives may be used only as supporting capabilities when they are compatible with the same user workflow.',
-      '- Do not switch to a lower-ranked opportunity merely because it is easier to describe.',
+      '- A candidate-specific benchmark assignment may intentionally select a lower-ranked shortlisted opportunity to create concept diversity.',
       '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
       '- Prefer a defensible end-to-end product capability that measurably improves the affected workflow.',
       `- Evidence coverage: ${(ranking.evidenceCoverage * 100).toFixed(1)}%.`,
-      ...ranking.qualityWarnings.map((warning) => `- Quality warning: ${warning}`),
+      ...ranking.qualityWarnings.map(
+        (warning) => `- Quality warning: ${warning}`,
+      ),
       '<untrusted_selected_opportunity>',
       this.stringifyPromptData(selectedContext),
       '</untrusted_selected_opportunity>',
-      '<untrusted_ranked_alternatives>',
+      '<untrusted_shortlisted_opportunities>',
       this.stringifyPromptData(alternatives),
-      '</untrusted_ranked_alternatives>',
+      '</untrusted_shortlisted_opportunities>',
     ].join('\n');
   }
 
@@ -550,7 +584,10 @@ export class PromptBuilderService {
     }
 
     const summaries = recentIdeas.map((idea, index) => {
-      const problem = idea.problemStatement.replace(/\s+/gu, ' ').trim().slice(0, 280);
+      const problem = idea.problemStatement
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 280);
       return `${index + 1}. ${idea.title.trim().slice(0, 160)} — ${problem}`;
     });
 
@@ -1074,13 +1111,20 @@ Mandatory writing rules:
     for provider/institution approval.
 13. Regulatory text must use preliminary language and explicitly recommend
     local legal verification when relevant.
-10. If evidence is weak, mixed, indirect, or non-local:
+14. If evidence is weak, mixed, indirect, or non-local:
     - describe a general problem discovered in the source data;
     - position the solution as suitable for deployment in the requested
       location;
     - avoid claiming that the problem is unique to or proven within that
       location.
-11. Internally review every sentence before returning JSON:
+15. When source records are not explicitly geo-verified for the requested
+    location, the problemStatement and abstracts must not begin with or imply
+    claims such as "students in <city> face", "institutions in <region>
+    encounter", or "local users report". Use wording such as:
+    - "Collected feedback from educational applications indicates..."
+    - "The proposed product is designed for deployment in <city>."
+    - "For a pilot deployment in <region>, the product would..."
+16. Internally review every sentence before returning JSON:
     - Is this statement directly supported?
     - Is it a cautious inference?
     - Is it an unsupported local assumption?
@@ -1110,6 +1154,11 @@ Mandatory writing rules:
     const hasCity = this.isSpecifiedLocation(context.city);
     const hasRegion = this.isSpecifiedLocation(context.region);
     const hasAnyLocation = hasCountry || hasCity || hasRegion;
+    const targetLocationLabel = hasCity
+      ? context.city
+      : hasRegion
+        ? context.region
+        : context.country;
 
     if (!hasAnyLocation) {
       return `
@@ -1148,18 +1197,24 @@ Mandatory behavior:
    a truly location-specific cause, generate a locally deployable version
    of the solution and clearly avoid claiming that the problem is unique
    to the target location.
-6. Never invent local laws, statistics, institutions, integrations,
+6. Unless source metadata explicitly verifies the target location, write the
+   problem as a general evidence-backed finding and reserve the location for
+   deployment framing. Prefer "designed for deployment in ${targetLocationLabel}"
+   or "proposed for a pilot in ${targetLocationLabel}". Do not write that students,
+   faculty, institutions, or residents in the target location currently face,
+   encounter, report, or suffer the problem.
+7. Never invent local laws, statistics, institutions, integrations,
    economic conditions, cultural practices, government requirements, or
    infrastructure limitations.
-7. Regulatory or legal content may only be preliminary high-level
+8. Regulatory or legal content may only be preliminary high-level
    guidance and must never be presented as verified legal advice.
-8. Keep the core problem coherent. Security, localization, analytics, and
+9. Keep the core problem coherent. Security, localization, analytics, and
    administration should remain supporting requirements unless the
    supplied evidence identifies them as primary recurring problems.
-9. Ensure the title communicates the product's distinctive capability.
+10. Ensure the title communicates the product's distinctive capability.
    The location may appear in the title only when it improves clarity and
    is genuinely central to the product positioning.
-10. Before returning the JSON, internally verify that removing the
+11. Before returning the JSON, internally verify that removing the
     location from the proposal would materially change at least one of:
     the problem framing, target users, product behavior, deployment
     constraints, accessibility requirements, or implementation priorities.

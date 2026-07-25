@@ -2,46 +2,191 @@ import { Injectable } from '@nestjs/common';
 import { NlpLexiconType } from '@prisma/client';
 
 import { STOP_WORDS } from '../common/constants/stop-words.constant';
-
+import {
+  hasDirectCommunityComplaint,
+  isLikelyProductDescription,
+} from '../common/utils/community-evidence.util';
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 import type { WeightedKeyword } from '../pipeline/types/intelligent-analysis.types';
 
-/**
- * Minimum number of characters required for a token to qualify
- * as a meaningful keyword.
- */
-const MINIMUM_KEYWORD_TOKEN_LENGTH = 3;
-
-/**
- * Maximum number of weighted keywords returned by the extraction service.
- */
 const MAX_EXTRACTED_KEYWORDS = 30;
+const POST_TERM_WEIGHT = 1;
+const COMMENT_TERM_WEIGHT = 2;
+const MINIMUM_KEYWORD_FREQUENCY = 2;
 
 /**
- * Weight assigned to a normal single-word token.
- */
-const SINGLE_TOKEN_WEIGHT = 1;
-
-/**
- * Additional importance assigned to meaningful two-word phrases.
- */
-const PHRASE_WEIGHT = 2;
-
-/**
- * Importance assigned to terms matched by high-value NLP lexicons.
- */
-const PRIORITY_LEXICON_TERM_WEIGHT = 2;
-
-/**
- * Lexicon categories that directly contribute to software-project
- * opportunity and requirement discovery.
+ * Canonical workflow and failure-mode keywords exposed by the NLP API.
  *
- * These terms receive a higher keyword score because they represent
- * stronger problem, need, risk, or opportunity signals.
+ * Raw adjacent-token bigrams are intentionally not returned. They previously
+ * produced fragments such as "back main", "plus data", and
+ * "computer downloading" that were frequent but not useful product signals.
  */
+const CANONICAL_KEYWORD_DEFINITIONS: ReadonlyArray<{
+  readonly keyword: string;
+  readonly patterns: readonly RegExp[];
+}> = [
+  {
+    keyword: 'login loop',
+    patterns: [
+      /\b(?:login|log in|sign in)\b[^.!?\n]{0,60}\b(?:loop|loops|looping|back to (?:the )?(?:main|start) screen|returns? to (?:the )?(?:main|start) screen)\b/iu,
+      /\b(?:loop|loops|looping)\b[^.!?\n]{0,50}\b(?:login|log in|sign in)\b/iu,
+    ],
+  },
+  {
+    keyword: 'account activation',
+    patterns: [
+      /\b(?:account activation|activate (?:my |the )?account|activation code|create an account|account creation)\b/iu,
+    ],
+  },
+  {
+    keyword: 'email verification',
+    patterns: [
+      /\b(?:verification email|activation email|email verification|receive (?:an? )?email|never (?:get|receive)(?:s|d)? (?:an? )?email)\b/iu,
+    ],
+  },
+  {
+    keyword: 'authentication',
+    patterns: [
+      /\b(?:authentication|authenticate|login|log in|sign in|account access|identity verification)\b/iu,
+    ],
+  },
+  {
+    keyword: 'session recovery',
+    patterns: [
+      /\b(?:session recovery|stale token|invalid token|token reset|stay logged in|logged out|session expires?|session reset)\b/iu,
+    ],
+  },
+  {
+    keyword: 'data loss',
+    patterns: [
+      /\b(?:data loss|lost data|data (?:is|was|are|were) gone|all (?:of )?my data[^.!?\n]{0,90}gone|missing historical data|history disappeared|data[^.!?\n]{0,90}(?:is|are|was|were)?\s*(?:all )?gone)\b/iu,
+    ],
+  },
+  {
+    keyword: 'data recovery',
+    patterns: [
+      /\b(?:data recovery|recover (?:lost |missing )?data|restore (?:lost |missing )?data|restore history|backup recovery)\b/iu,
+      /\b(?:data loss|lost data|data (?:is|was|are|were) gone|missing history|data[^.!?\n]{0,90}(?:is|are|was|were)?\s*(?:all )?gone)\b/iu,
+    ],
+  },
+  {
+    keyword: 'data synchronization',
+    patterns: [
+      /\b(?:data synchronization|synchronization|sync data|data sync|syncing|transferr?ing data|cross-device sync)\b/iu,
+    ],
+  },
+  {
+    keyword: 'offline cache',
+    patterns: [
+      /\b(?:offline cache|local cache|cached offline|offline access|access offline|without internet|no internet)\b/iu,
+    ],
+  },
+  {
+    keyword: 'download pdf',
+    patterns: [
+      /\b(?:download (?:a |the )?pdf|pdf download|download pdf book|print (?:a |the )?pdf)\b/iu,
+    ],
+  },
+  {
+    keyword: 'document download',
+    patterns: [
+      /\b(?:download (?:a |the )?(?:document|file|syllabus|material)|document download|file download|download error|null error[^.!?\n]{0,30}download)\b/iu,
+    ],
+  },
+  {
+    keyword: 'course material',
+    patterns: [
+      /\b(?:course material|course materials|learning material|learning materials|lecture material|lecture materials|syllabus|ebook|e-book|reading material|reading materials)\b/iu,
+    ],
+  },
+  {
+    keyword: 'assignment access',
+    patterns: [
+      /\b(?:assignment access|access (?:an? )?assignment|open (?:an? )?assignment|submit (?:an? )?assignment|complete (?:an? )?assignment)\b/iu,
+    ],
+  },
+  {
+    keyword: 'cross-device access',
+    patterns: [
+      /\b(?:cross-device|cross device|mobile and desktop|phone and computer|android and (?:desktop|laptop|computer)|ios and (?:desktop|laptop|computer))\b/iu,
+    ],
+  },
+  {
+    keyword: 'desktop access',
+    patterns: [
+      /\b(?:desktop access|laptop access|computer access|download(?:ed)? (?:from|on|to) (?:a |the )?(?:computer|desktop|laptop)|works? on (?:a |the )?(?:computer|desktop|laptop))\b/iu,
+    ],
+  },
+  {
+    keyword: 'application crash',
+    patterns: [
+      /\b(?:app|application|platform)\b[^.!?\n]{0,40}\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b/iu,
+      /\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b/iu,
+    ],
+  },
+  {
+    keyword: 'application reliability',
+    patterns: [
+      /\b(?:reliability|unstable|dysfunctional|rarely works|doesn'?t work|does not work|not working|slow|glitch|glitches|error every time)\b/iu,
+    ],
+  },
+  {
+    keyword: 'navigation',
+    patterns: [
+      /\b(?:navigation|navigate|back button|tabs?|breadcrumb|scrolling|popup|course selection page)\b/iu,
+    ],
+  },
+  {
+    keyword: 'user interface',
+    patterns: [
+      /\b(?:user interface|interface|ui|layout|confusing update|hard to navigate)\b/iu,
+    ],
+  },
+  {
+    keyword: 'paywall',
+    patterns: [
+      /\b(?:paywall|subscription|paid feature|limited tasks|limited features|pay money|requires? payment)\b/iu,
+    ],
+  },
+  {
+    keyword: 'grade analytics',
+    patterns: [
+      /\b(?:grade analytics|grade percentages?|grade tracker|track grades?|academic analytics|progress analytics)\b/iu,
+    ],
+  },
+];
+
+/**
+ * Curated standalone aliases accepted from administrator-managed lexicons.
+ * Values are normalized to the same canonical vocabulary used above.
+ */
+const LEXICON_TERM_ALIASES = new Map<string, string>([
+  ['activation', 'account activation'],
+  ['account activation', 'account activation'],
+  ['authentication', 'authentication'],
+  ['login', 'authentication'],
+  ['sign in', 'authentication'],
+  ['session', 'session recovery'],
+  ['sync', 'data synchronization'],
+  ['synchronization', 'data synchronization'],
+  ['data loss', 'data loss'],
+  ['recovery', 'data recovery'],
+  ['offline', 'offline cache'],
+  ['download', 'document download'],
+  ['document', 'document download'],
+  ['syllabus', 'course material'],
+  ['crash', 'application crash'],
+  ['crashes', 'application crash'],
+  ['freeze', 'application crash'],
+  ['reliability', 'application reliability'],
+  ['navigation', 'navigation'],
+  ['interface', 'user interface'],
+  ['paywall', 'paywall'],
+  ['grades', 'grade analytics'],
+]);
+
+/** High-value lexicon categories. Generic PROBLEM and NEED are omitted. */
 const PRIORITY_LEXICON_TYPES = [
-  NlpLexiconType.PROBLEM,
-  NlpLexiconType.NEED,
   NlpLexiconType.COMPLAINT,
   NlpLexiconType.URGENCY,
   NlpLexiconType.COST,
@@ -54,67 +199,45 @@ const PRIORITY_LEXICON_TYPES = [
 ] as const satisfies readonly NlpLexiconType[];
 
 /**
- * Extracts weighted keywords from lexicon-analyzed community texts.
+ * Extracts canonical, evidence-backed keywords.
  *
- * This service identifies meaningful terms and short phrases from cleaned
- * social posts and comments after preprocessing and lexicon analysis.
- *
- * Responsibilities:
- * - Tokenize cleaned community texts.
- * - Remove language-specific stop words.
- * - Extract meaningful single-word keywords.
- * - Extract important two-word phrases.
- * - Count each term once per text for each extraction category.
- * - Give higher weight to important lexicon terms.
- * - Return deterministically sorted weighted keywords.
- *
- * This service does not:
- * - Persist extracted keywords.
- * - Call external AI providers.
- * - Modify the supplied analysis records.
+ * Comments receive greater weight because they are normally direct user
+ * feedback. Product descriptions and long non-complaint posts are excluded.
+ * Every exposed keyword belongs to a stable workflow vocabulary, preventing
+ * accidental adjacent-word fragments from becoming API keywords or topics.
  *
  * @author Eman
  */
 @Injectable()
 export class KeywordExtractionService {
-  /**
-   * Extracts the most relevant weighted keywords from analyzed texts.
-   *
-   * Each term is counted at most once per analyzed text within each
-   * extraction category. A term may receive combined weight when it is
-   * detected as both a normal token and an important lexicon signal.
-   *
-   * @param analyzedTexts Lexicon-enriched text-analysis results.
-   * @returns Weighted keywords sorted by descending score and then alphabetically.
-   */
   extract(
     analyzedTexts: readonly LexiconTextAnalysisResult[],
   ): WeightedKeyword[] {
     const weightedFrequencyMap = new Map<string, number>();
 
     for (const text of analyzedTexts) {
-      const stopWords = STOP_WORDS[text.language] ?? [];
+      if (this.shouldSkipText(text)) {
+        continue;
+      }
 
-      const tokens = this.extractTokens(text.cleanedText, stopWords);
-      const phrases = this.extractPhrases(tokens);
-      const priorityLexiconTerms = this.extractPriorityLexiconTerms(text);
-
-      this.addUniqueTerms(weightedFrequencyMap, tokens, SINGLE_TOKEN_WEIGHT);
-
-      this.addUniqueTerms(weightedFrequencyMap, phrases, PHRASE_WEIGHT);
+      const normalizedText = this.normalizeText(
+        `${text.originalText} ${text.cleanedText}`,
+      );
+      const canonicalTerms = this.extractCanonicalTerms(normalizedText);
+      const lexiconTerms = this.extractPriorityLexiconTerms(text);
+      const baseWeight =
+        text.sourceType === 'COMMENT' ? COMMENT_TERM_WEIGHT : POST_TERM_WEIGHT;
 
       this.addUniqueTerms(
         weightedFrequencyMap,
-        priorityLexiconTerms,
-        PRIORITY_LEXICON_TERM_WEIGHT,
+        [...canonicalTerms, ...lexiconTerms],
+        baseWeight,
       );
     }
 
     return [...weightedFrequencyMap.entries()]
-      .map(([keyword, frequency]) => ({
-        keyword,
-        frequency,
-      }))
+      .filter(([, frequency]) => frequency >= MINIMUM_KEYWORD_FREQUENCY)
+      .map(([keyword, frequency]) => ({ keyword, frequency }))
       .sort(
         (first, second) =>
           second.frequency - first.frequency ||
@@ -123,85 +246,28 @@ export class KeywordExtractionService {
       .slice(0, MAX_EXTRACTED_KEYWORDS);
   }
 
-  /**
-   * Extracts normalized meaningful tokens from cleaned text.
-   *
-   * @param cleanedText Cleaned text produced by preprocessing.
-   * @param stopWords Language-specific stop words.
-   * @returns Meaningful normalized single-word tokens.
-   */
-  private extractTokens(
-    cleanedText: string,
-    stopWords: readonly string[],
-  ): string[] {
-    const normalizedStopWords = new Set(
-      stopWords.map((word) => this.normalizeTerm(word)).filter(Boolean),
-    );
-
-    return cleanedText
-      .split(/\s+/u)
-      .map((token) => this.normalizeTerm(token))
-      .filter((token) => this.isValidToken(token, normalizedStopWords));
+  private extractCanonicalTerms(value: string): string[] {
+    return CANONICAL_KEYWORD_DEFINITIONS.filter((definition) =>
+      definition.patterns.some((pattern) => pattern.test(value)),
+    ).map((definition) => definition.keyword);
   }
 
-  /**
-   * Extracts consecutive two-word phrases from valid tokens.
-   *
-   * Phrases such as:
-   * - "waiting time"
-   * - "online appointment"
-   * - "customer service"
-   *
-   * often provide more useful semantic context than isolated words.
-   *
-   * @param tokens Valid normalized tokens.
-   * @returns Consecutive two-word phrase candidates.
-   */
-  private extractPhrases(tokens: readonly string[]): string[] {
-    const phrases: string[] = [];
-
-    for (let index = 0; index < tokens.length - 1; index += 1) {
-      const currentToken = tokens[index];
-      const nextToken = tokens[index + 1];
-
-      if (!currentToken || !nextToken) {
-        continue;
-      }
-
-      phrases.push(`${currentToken} ${nextToken}`);
-    }
-
-    return phrases;
-  }
-
-  /**
-   * Extracts lexicon terms that represent high-value problem,
-   * requirement, risk, and opportunity signals.
-   *
-   * @param text Lexicon-enriched text-analysis result.
-   * @returns Normalized priority lexicon terms.
-   */
   private extractPriorityLexiconTerms(
     text: LexiconTextAnalysisResult,
   ): string[] {
+    const stopWords = new Set(
+      (STOP_WORDS[text.language] ?? []).map((word) => this.normalizeTerm(word)),
+    );
+
     return PRIORITY_LEXICON_TYPES.flatMap(
       (type) => text.matchedLexicons[type] ?? [],
     )
       .map((term) => this.normalizeTerm(term))
-      .filter(Boolean);
+      .filter((term) => Boolean(term) && !stopWords.has(term))
+      .map((term) => LEXICON_TERM_ALIASES.get(term) ?? null)
+      .filter((term): term is string => term !== null);
   }
 
-  /**
-   * Adds each normalized term once to the global weighted-frequency map
-   * for the current analyzed text and extraction category.
-   *
-   * This prevents repeated occurrences inside one text from dominating
-   * the dataset-level keyword ranking.
-   *
-   * @param frequencyMap Global weighted keyword-frequency map.
-   * @param terms Terms extracted from one analyzed text.
-   * @param weight Score assigned to each unique term.
-   */
   private addUniqueTerms(
     frequencyMap: Map<string, number>,
     terms: readonly string[],
@@ -211,59 +277,43 @@ export class KeywordExtractionService {
       throw new Error('Keyword weight must be a finite positive number.');
     }
 
-    const uniqueTerms = new Set(
-      terms.map((term) => this.normalizeTerm(term)).filter(Boolean),
-    );
-
-    for (const term of uniqueTerms) {
+    for (const term of new Set(
+      terms.map((value) => value.trim()).filter(Boolean),
+    )) {
       frequencyMap.set(term, (frequencyMap.get(term) ?? 0) + weight);
     }
   }
 
-  /**
-   * Determines whether a token qualifies as a meaningful keyword.
-   *
-   * @param token Normalized token.
-   * @param stopWords Normalized language-specific stop words.
-   * @returns True when the token is meaningful.
-   */
-  private isValidToken(token: string, stopWords: ReadonlySet<string>): boolean {
-    if (!token) {
-      return false;
+  private shouldSkipText(text: LexiconTextAnalysisResult): boolean {
+    if (isLikelyProductDescription(text.originalText, text.sourceType)) {
+      return true;
     }
 
-    if (token.length < MINIMUM_KEYWORD_TOKEN_LENGTH) {
-      return false;
-    }
-
-    if (stopWords.has(token)) {
-      return false;
-    }
-
-    if (/^\p{N}+$/u.test(token)) {
-      return false;
-    }
-
-    return true;
+    return (
+      text.sourceType === 'POST' &&
+      text.originalText.length >= 1_200 &&
+      !hasDirectCommunityComplaint(text.originalText)
+    );
   }
 
-  /**
-   * Normalizes a keyword or phrase for consistent aggregation.
-   *
-   * The normalization:
-   * - Converts text to lowercase.
-   * - Removes leading and trailing punctuation.
-   * - Replaces repeated whitespace with one space.
-   * - Removes surrounding whitespace.
-   *
-   * @param value Raw term or phrase.
-   * @returns Normalized term.
-   */
-  private normalizeTerm(value: string): string {
+  private normalizeText(value: string): string {
     return value
+      .normalize('NFKC')
       .toLocaleLowerCase()
-      .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+      .replace(/[’‘`]/gu, "'")
+      .replace(/[^\p{L}\p{N}\s'-.!?]/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+  }
+
+  private normalizeTerm(value: string): string {
+    return typeof value === 'string'
+      ? value
+          .normalize('NFKC')
+          .toLocaleLowerCase()
+          .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim()
+      : '';
   }
 }

@@ -24,6 +24,7 @@ import {
 } from './idea-generation-stage.service';
 
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
+import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 
 /**
  * Input required to execute an idea-generation pipeline.
@@ -145,6 +146,7 @@ export class IdeaGenerationPipelineService {
     private readonly prisma: PrismaService,
     private readonly stageService: IdeaGenerationStageService,
     private readonly runService: IdeaGenerationRunService,
+    private readonly realtime: IdeaGenerationRealtimeService,
   ) {}
 
   /**
@@ -181,7 +183,8 @@ export class IdeaGenerationPipelineService {
       resolvedStages.map(({ definition }) => definition),
     );
 
-    await this.runService.startRun(input.context.runId);
+    const startedRun = await this.runService.startRun(input.context.runId);
+    this.realtime.publishRunUpdated(startedRun);
 
     let currentContext = input.context;
 
@@ -199,7 +202,10 @@ export class IdeaGenerationPipelineService {
         processedStages.push(stageResult.summary);
       }
 
-      await this.runService.completeRun(currentContext.runId);
+      const completedRun = await this.runService.completeRun(
+        currentContext.runId,
+      );
+      this.realtime.publishRunUpdated(completedRun);
 
       this.logger.log(
         `Idea-generation pipeline completed successfully for run "${currentContext.runId}".`,
@@ -552,7 +558,7 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -568,6 +574,8 @@ export class IdeaGenerationPipelineService {
         errorMessage: null,
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -584,7 +592,7 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     resultPreview?: string,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -601,6 +609,8 @@ export class IdeaGenerationPipelineService {
         completedAt: new Date(),
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -618,7 +628,7 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -634,6 +644,8 @@ export class IdeaGenerationPipelineService {
         completedAt: new Date(),
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -657,7 +669,7 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -673,6 +685,8 @@ export class IdeaGenerationPipelineService {
         completedAt: new Date(),
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -690,7 +704,7 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     error: Error,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -715,6 +729,8 @@ export class IdeaGenerationPipelineService {
         completedAt: null,
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -732,7 +748,7 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     error: Error,
   ): Promise<void> {
-    await this.prisma.ideaGenerationStage.update({
+    const stage = await this.prisma.ideaGenerationStage.update({
       where: {
         runId_stageKey: {
           runId,
@@ -746,6 +762,8 @@ export class IdeaGenerationPipelineService {
         completedAt: new Date(),
       },
     });
+
+    this.realtime.publishStageUpdated(stage);
   }
 
   /**
@@ -771,7 +789,8 @@ export class IdeaGenerationPipelineService {
    */
   private async cancelRunSafely(runId: string): Promise<void> {
     try {
-      await this.runService.cancelRun(runId);
+      const cancelledRun = await this.runService.cancelRun(runId);
+      this.realtime.publishRunUpdated(cancelledRun);
     } catch (error: unknown) {
       const cancellationError = this.normalizeError(error);
 
@@ -791,11 +810,12 @@ export class IdeaGenerationPipelineService {
    */
   private async failRunSafely(runId: string, error: Error): Promise<void> {
     try {
-      await this.runService.failRun({
+      const failedRun = await this.runService.failRun({
         runId,
         errorCode: 'IDEA_GENERATION_PIPELINE_FAILED',
         errorMessage: this.toSafeErrorMessage(error),
       });
+      this.realtime.publishRunUpdated(failedRun);
     } catch (persistenceError: unknown) {
       const normalizedPersistenceError = this.normalizeError(persistenceError);
 

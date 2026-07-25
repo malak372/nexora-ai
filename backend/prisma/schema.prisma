@@ -892,19 +892,15 @@ model ExternalApiLog {
 
   serviceCategory ExternalServiceCategory @map("service_category")
 
-
   providerKey String @map("provider_key")
 
   endpoint    String?
   requestId   String?        @map("request_id")
   requestType ApiRequestType @map("request_type")
 
-
   operationId String? @map("operation_id")
 
-
   attemptNumber Int @default(1) @map("attempt_number")
-
 
   fallbackUsed Boolean @default(false) @map("fallback_used")
 
@@ -914,9 +910,7 @@ model ExternalApiLog {
   responseTimeMs Int?    @map("response_time_ms")
   errorMessage   String? @map("error_message")
 
-
   errorCode String? @map("error_code")
-
 
   isRetryable Boolean? @map("is_retryable")
 
@@ -1357,46 +1351,26 @@ model AiModel {
 model IdeaGenerationCandidate {
   id String @id @default(uuid())
 
-  /**
-   * Generation run for which this candidate was produced.
-   * Deleting the run also removes all associated benchmark candidates.
-   */
   runId String            @map("run_id")
   run   IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
-  /**
-   * Configured AI-model record used during execution.
-   * Nullable so historical benchmark results remain available if an
-   * administrator later removes the model from the ai_models table.
-   */
   aiModelId String?  @map("ai_model_id")
   aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
 
-  /**
-   * Immutable provider and model snapshots.
-   * These values must be copied from AiModel when execution begins.
-   * They remain available even when aiModelId becomes null.
-   */
   providerKey String  @map("provider_key")
   apiModelId  String  @map("api_model_id")
   modelName   String  @map("model_name")
   displayName String? @map("display_name")
 
-  /**
-   * Raw provider response retained for debugging and audit purposes.
-   * This field must never be returned directly to normal users.
-   */
-  rawResponse String? @map("raw_response")
+  rawResponse    String? @map("raw_response")
+  parsedResponse Json?   @map("parsed_response")
 
-  /**
-   * Validated and parsed idea-generation output.
-   */
-  parsedResponse Json? @map("parsed_response")
+  opportunityRank  Int?    @map("opportunity_rank")
+  opportunityTitle String? @map("opportunity_title")
 
-  /**
-   * Deterministic quality scores from 0 to 100.
-   */
-  overallScore          Decimal? @map("overall_score") @db.Decimal(5, 2)
+  overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
+  finalScore   Decimal? @map("final_score") @db.Decimal(5, 2)
+
   innovationScore       Decimal? @map("innovation_score") @db.Decimal(5, 2)
   marketFitScore        Decimal? @map("market_fit_score") @db.Decimal(5, 2)
   technicalQualityScore Decimal? @map("technical_quality_score") @db.Decimal(5, 2)
@@ -1406,16 +1380,15 @@ model IdeaGenerationCandidate {
   aiJudgeScore               Decimal? @map("ai_judge_score") @db.Decimal(5, 2)
   localRelevanceScore        Decimal? @map("local_relevance_score") @db.Decimal(5, 2)
   problemImportanceScore     Decimal? @map("problem_importance_score") @db.Decimal(5, 2)
+  aiJudgeInnovationScore     Decimal? @map("ai_judge_innovation_score") @db.Decimal(5, 2)
   regulatoryFeasibilityScore Decimal? @map("regulatory_feasibility_score") @db.Decimal(5, 2)
   technicalFeasibilityScore  Decimal? @map("technical_feasibility_score") @db.Decimal(5, 2)
   marketPotentialScore       Decimal? @map("market_potential_score") @db.Decimal(5, 2)
   implementationClarityScore Decimal? @map("implementation_clarity_score") @db.Decimal(5, 2)
-  aiJudgeInnovationScore Decimal? @map("ai_judge_innovation_score") @db.Decimal(5, 2)
 
   judgeStrengths Json?   @map("judge_strengths")
   judgeRisks     Json?   @map("judge_risks")
   judgeReason    String? @map("judge_reason")
-
 
   judgeConfidence Decimal? @map("judge_confidence") @db.Decimal(5, 2)
 
@@ -1435,14 +1408,16 @@ model IdeaGenerationCandidate {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@unique([runId, providerKey, apiModelId])
+  @@unique([runId, providerKey, apiModelId, opportunityRank], map: "idea_generation_candidates_run_model_opportunity_key")
   @@index([runId, selected])
+  @@index([runId, opportunityRank])
+  @@index([opportunityTitle])
   @@index([aiModelId])
   @@index([providerKey, apiModelId])
   @@index([overallScore])
+  @@index([finalScore])
   @@index([aiJudgeScore])
   @@index([createdAt])
-
   @@map("idea_generation_candidates")
 }
 

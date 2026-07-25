@@ -13,15 +13,15 @@ import { Prisma } from '@prisma/client';
  * Publicly safe fields returned for one AI chat message.
  */
 export const AI_CHAT_MESSAGE_SELECT =
-    Prisma.validator<Prisma.ChatMessageSelect>()({
-        id: true,
-        sessionId: true,
-        sender: true,
-        status: true,
-        message: true,
-        errorCode: true,
-        errorMessage: true,
-        completedAt: true,
-        createdAt: true,
-        updatedAt: true,
-    });
+  Prisma.validator<Prisma.ChatMessageSelect>()({
+    id: true,
+    sessionId: true,
+    sender: true,
+    status: true,
+    message: true,
+    errorCode: true,
+    errorMessage: true,
+    completedAt: true,
+    createdAt: true,
+    updatedAt: true,
+  });

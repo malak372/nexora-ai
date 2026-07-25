@@ -3,7 +3,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ApiRequestType, PromptType } from '@prisma/client';
+import { AiRoutingStrategy, ApiRequestType, PromptType } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
@@ -82,9 +82,12 @@ export class IdeaCandidateJudgeService {
         estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
         maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
         temperature: IDEA_JUDGE_TEMPERATURE,
+        strategy: AiRoutingStrategy.BALANCED,
+        allowProviderFallbackOnInvalidPrompt: true,
       });
 
       const evaluation = this.parseEvaluation(aiResult.text);
+      this.validateEvaluation(evaluation);
       this.validateCandidateReferences(evaluation, candidates);
 
       return evaluation;
@@ -109,7 +112,53 @@ export class IdeaCandidateJudgeService {
       throw new Error('The AI judge returned an invalid root structure.');
     }
 
-    return parsed as IdeaJudgeEvaluation;
+    const confidence = this.normalizeConfidence(parsed.confidence);
+
+    return {
+      ...(parsed as Omit<IdeaJudgeEvaluation, 'confidence'>),
+      confidence,
+    };
+  }
+
+  /**
+   * Normalizes provider confidence to the canonical 0-100 percentage range.
+   *
+   * Some models return confidence as a fraction such as 0.6 even when the
+   * schema requests a percentage. Values from 0 through 1 are therefore
+   * converted to percentages, while values above 1 remain unchanged.
+   */
+  private normalizeConfidence(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error('The AI judge returned an invalid confidence value.');
+    }
+
+    const normalized = value <= 1 ? value * 100 : value;
+
+    if (normalized < 0 || normalized > 100) {
+      throw new Error('AI judge confidence must be between 0 and 100.');
+    }
+
+    return Math.round(normalized * 100) / 100;
+  }
+
+  /** Validates core scalar fields before candidate-reference validation. */
+  private validateEvaluation(evaluation: IdeaJudgeEvaluation): void {
+    if (
+      typeof evaluation.winnerCandidateId !== 'string' ||
+      !evaluation.winnerCandidateId.trim()
+    ) {
+      throw new Error('The AI judge returned an invalid winner candidate ID.');
+    }
+
+    if (typeof evaluation.reason !== 'string' || !evaluation.reason.trim()) {
+      throw new Error('The AI judge returned an invalid decision reason.');
+    }
+
+    if (typeof evaluation.requiresLegalVerification !== 'boolean') {
+      throw new Error(
+        'The AI judge returned an invalid legal-verification flag.',
+      );
+    }
   }
 
   private validateCandidateReferences(

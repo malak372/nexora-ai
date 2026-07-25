@@ -18,6 +18,11 @@ import {
 
 import { calculateTotalPages } from '../../../../utilities/analytics/analytics.helper';
 
+import {
+  buildIdeaBenchmarkSummary,
+  IDEA_BENCHMARK_CANDIDATE_SELECT,
+  mapIdeaBenchmarkCandidate,
+} from '../../../generation/mappers/idea-benchmark-response.mapper';
 import { GetIdeaCommentsQueryDto } from '../dto/get-idea-comments-query.dto';
 import { GetUserIdeasQueryDto } from '../dto/get-user-ideas-query.dto';
 
@@ -312,6 +317,16 @@ export class UserIdeasService {
                 completedAt: true,
               },
             },
+
+            benchmarkCandidates: {
+              orderBy: [
+                { selected: 'desc' },
+                { finalScore: 'desc' },
+                { overallScore: 'desc' },
+                { responseTimeMs: 'asc' },
+              ],
+              select: IDEA_BENCHMARK_CANDIDATE_SELECT,
+            },
           },
         },
 
@@ -475,6 +490,17 @@ export class UserIdeasService {
     }
 
     const advancedAccess = idea.isUnlocked;
+    const benchmarkCandidates =
+      advancedAccess && idea.generationRun
+        ? idea.generationRun.benchmarkCandidates.map(mapIdeaBenchmarkCandidate)
+        : [];
+    const generationRun = idea.generationRun
+      ? {
+          ...idea.generationRun,
+          benchmarkCandidates,
+          benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+        }
+      : null;
 
     return {
       id: idea.id,
@@ -509,7 +535,7 @@ export class UserIdeasService {
 
       commentsCount: advancedAccess ? idea.commentsCount : undefined,
 
-      generationRun: idea.generationRun,
+      generationRun,
 
       /**
        * Collection metadata may be shown in a limited form

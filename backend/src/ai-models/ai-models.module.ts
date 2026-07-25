@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
 import { AuditModule } from '../audit-logs/audit-logs.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -52,7 +53,7 @@ import { AiModelsService } from './ai-models.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [ConfigModule, PrismaModule, AuditModule],
 
   controllers: [AiModelsController],
 

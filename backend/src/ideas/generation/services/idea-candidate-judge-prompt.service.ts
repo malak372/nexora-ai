@@ -42,7 +42,7 @@ export class IdeaCandidateJudgePromptService {
   private buildSystemInstruction(): string {
     return [
       'You are Nexora AI comparative software-project evaluator.',
-      'Evaluate every supplied candidate fairly and choose exactly one existing winner.',
+      'Evaluate every supplied candidate fairly and choose exactly one existing winner. Candidates may intentionally target different high-ranked NLP opportunities.',
       'Do not create, merge, rewrite, expand, repair, or improve any candidate.',
       'Return winnerCandidateId exactly as supplied.',
       'Use only the supplied local context and candidate content as evidence.',
@@ -53,6 +53,10 @@ export class IdeaCandidateJudgePromptService {
       'Prefer candidates that distinguish evidence-supported findings from cautious product inferences.',
       'Penalize definitive claims about residents, institutions, authorities, service reliability, rates, regulations, language preferences, connectivity, or infrastructure when candidate content provides no support for them.',
       'Reward meaningful differentiation, evidence-grounded problems, practical implementation, clear users, and realistic sustainable value.',
+      'Prefer standalone products organized around a durable user or organizational outcome over narrow gateways, proxies, wrappers, connectors, plugins, dashboards, or middleware layers.',
+      'Treat authentication, synchronization, monitoring, reporting, and integration as supporting capabilities unless the candidate demonstrates that customers would independently adopt and pay for that exact product category.',
+      'Reward a clear buyer, adoption trigger, repeatable deployment path, measurable organizational value, and multiple coherent value pillars that address one problem.',
+      'Prefer the strongest startup opportunity, not automatically the candidate attached to the highest-ranked NLP label. Balance evidence strength with product scope, adoption feasibility, and sustainable standalone value.',
       'Provider and model identities are intentionally omitted and must not influence the evaluation.',
       'Return valid JSON matching the supplied response schema and no additional text.',
     ].join(' ');
@@ -79,6 +83,8 @@ export class IdeaCandidateJudgePromptService {
       evaluationCriteriaWeights: IDEA_JUDGE_CRITERIA_WEIGHTS,
       scoringInstructions: {
         scoreRange: '0-100',
+        confidence:
+          'Return confidence as a percentage from 0 to 100, not as a fraction from 0 to 1. Example: return 75 for seventy-five percent confidence.',
         overallScore:
           'Calculate overallScore using exactly the supplied criterion weights. The application may combine this score with an independent deterministic quality score after your evaluation.',
         localRelevance:
@@ -86,13 +92,13 @@ export class IdeaCandidateJudgePromptService {
         problemImportance:
           'Assess severity, frequency, evidence support, affected users, and practical value. Lower the score when the candidate states a local failure, shortage, rate, behavior, or institutional condition as fact without supplied support.',
         innovation:
-          'Assess meaningful and useful differentiation from common solutions. Do not reward novelty without practical value.',
+          'Assess meaningful and useful differentiation from common solutions. Do not reward novelty without practical value. Penalize candidates whose main identity is only a gateway, proxy, wrapper, connector, plugin, dashboard, or middleware layer unless that category has clear standalone customer value.',
         regulatoryFeasibility:
           'Assess likely regulatory complexity and risk only. Lower the score when important requirements are unknown or unsupported.',
         technicalFeasibility:
           'Assess realistic implementation using available technologies, data, integrations, skills, and infrastructure.',
         marketPotential:
-          'Assess realistic demand, adoption value, target-user willingness, scalability, and sustainable value.',
+          'Assess realistic demand, adoption value, target-user willingness, scalability, and sustainable value. Require an identifiable buyer or sponsor, a credible adoption trigger, repeatable deployment, measurable organizational value, and a reason to purchase this product instead of requesting a minor fix from an existing platform.',
         implementationClarity:
           'Assess clarity of scope, objectives, target users, solution direction, and deliverability.',
       },
@@ -111,13 +117,18 @@ export class IdeaCandidateJudgePromptService {
         requestedFeaturesDoNotProveRootCauses: true,
         penalizeUnsupportedDefinitiveClaims: true,
         rewardCautiousEvidenceGroundedWording: true,
+        preferStandaloneOutcomeDrivenProducts: true,
+        penalizeNarrowIntermediaryProductsWithoutIndependentBuyerValue: true,
+        requireCredibleBuyerAndAdoptionPath: true,
+        compareDistinctOpportunityDirectionsFairly: true,
+        selectStrongestStartupNotHighestRankedLabelAutomatically: true,
         legalAssessmentIsPreliminary: true,
         requiresLegalVerification:
           'Return true when the selected idea depends on laws, licenses, regulated data, public-sector approval, finance, health, education, transport, identity, privacy, or uncertain local requirements.',
       },
       requiredResponseTemplate: {
         winnerCandidateId: candidates[0]?.candidateId ?? '',
-        confidence: 0,
+        confidence: 75,
         reason: 'Explain why the selected existing candidate is strongest.',
         requiresLegalVerification: false,
         scores: candidates.map((candidate) => ({

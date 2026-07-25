@@ -3,12 +3,19 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { GetGenerationRunsQueryDto } from '../dto/get-generation-runs-query.dto';
+import {
+  buildIdeaBenchmarkSummary,
+  IDEA_BENCHMARK_CANDIDATE_SELECT,
+  mapIdeaBenchmarkCandidate,
+} from '../mappers/idea-benchmark-response.mapper';
 
 /**
  * Read-only application service for idea-generation monitoring endpoints.
  *
  * Persisted stage sequence values remain the canonical internal pipeline
  * order. A contiguous displaySequence is added only to API responses.
+ * Benchmark Decimal values are converted into JSON-safe numbers through one
+ * shared mapper used by user and administrator idea-detail endpoints.
  *
  * @author Malak
  */
@@ -16,9 +23,7 @@ import type { GetGenerationRunsQueryDto } from '../dto/get-generation-runs-query
 export class IdeaGenerationQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Returns paginated generation runs owned by one authenticated user.
-   */
+  /** Returns paginated generation runs owned by one authenticated user. */
   async findUserRuns(userId: string, query: GetGenerationRunsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -80,10 +85,7 @@ export class IdeaGenerationQueryService {
     };
   }
 
-  /**
-   * Returns one generation run when it belongs to the authenticated user.
-   * Benchmark Decimal values are converted to JSON-safe numbers.
-   */
+  /** Returns one generation run when it belongs to the authenticated user. */
   async findOwnedUserRun(userId: string, runId: string) {
     const run = await this.prisma.ideaGenerationRun.findFirst({
       where: { id: runId, userId },
@@ -116,37 +118,11 @@ export class IdeaGenerationQueryService {
         benchmarkCandidates: {
           orderBy: [
             { selected: 'desc' },
+            { finalScore: 'desc' },
             { overallScore: 'desc' },
             { responseTimeMs: 'asc' },
           ],
-          select: {
-            id: true,
-            aiModelId: true,
-            providerKey: true,
-            apiModelId: true,
-            modelName: true,
-            displayName: true,
-            overallScore: true,
-            innovationScore: true,
-            marketFitScore: true,
-            technicalQualityScore: true,
-            completenessScore: true,
-            originalityScore: true,
-            inputTokens: true,
-            outputTokens: true,
-            costEstimate: true,
-            responseTimeMs: true,
-            selected: true,
-            errorCode: true,
-            errorMessage: true,
-            createdAt: true,
-            aiModel: {
-              select: {
-                modelName: true,
-                displayName: true,
-              },
-            },
-          },
+          select: IDEA_BENCHMARK_CANDIDATE_SELECT,
         },
       },
     });
@@ -155,23 +131,18 @@ export class IdeaGenerationQueryService {
       throw new NotFoundException('The generation run was not found.');
     }
 
+    const benchmarkCandidates = run.benchmarkCandidates.map(
+      mapIdeaBenchmarkCandidate,
+    );
+
     return {
       ...run,
       stages: run.stages.map((stage, index) => ({
         ...stage,
         displaySequence: index + 1,
       })),
-      benchmarkCandidates: run.benchmarkCandidates.map((candidate) => ({
-        ...candidate,
-        overallScore: candidate.overallScore?.toNumber() ?? null,
-        innovationScore: candidate.innovationScore?.toNumber() ?? null,
-        marketFitScore: candidate.marketFitScore?.toNumber() ?? null,
-        technicalQualityScore:
-          candidate.technicalQualityScore?.toNumber() ?? null,
-        completenessScore: candidate.completenessScore?.toNumber() ?? null,
-        originalityScore: candidate.originalityScore?.toNumber() ?? null,
-        costEstimate: candidate.costEstimate?.toNumber() ?? null,
-      })),
+      benchmarkCandidates,
+      benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
     };
   }
 }

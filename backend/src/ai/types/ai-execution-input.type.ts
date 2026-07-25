@@ -113,8 +113,9 @@ type AiExecutionBaseInput = {
   /**
    * Optional AI-model routing strategy.
    *
-   * When omitted, AiExecutionService uses the configured default routing
-   * strategy.
+   * When omitted, AiExecutionService uses provider-balanced routing. Pass
+   * DEFAULT explicitly only for operations that must prefer the configured
+   * default model.
    */
   readonly strategy?: AiRoutingStrategy;
 
@@ -144,6 +145,17 @@ type AiExecutionBaseInput = {
    * It does not limit the actual provider response.
    */
   readonly estimatedOutputTokens?: number;
+
+  /**
+   * Allows a trusted system-generated operation to continue with another
+   * routed model when one provider reports INVALID_PROMPT.
+   *
+   * This flag must remain false for user-authored prompts. It exists for
+   * application-controlled structured workflows, such as NLP enhancement,
+   * where one provider may classify an unsupported schema representation as
+   * an invalid prompt even though another provider can execute it safely.
+   */
+  readonly allowProviderFallbackOnInvalidPrompt?: boolean;
 };
 
 /**

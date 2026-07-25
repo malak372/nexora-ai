@@ -4,7 +4,7 @@
  * Responsibilities:
  * - Persist one user/AI conversation turn atomically.
  * - Build bounded project context.
- * - Execute the central AI runtime with caller cancellation.
+ * - Execute the central AI runtime.
  * - Emit transport-neutral stream callbacks.
  * - Persist completed, failed, timed-out, and cancelled states.
  * - Prevent overlapping responses in one session.
@@ -62,6 +62,7 @@ type ActiveAiChatResponse = {
 type StartAiChatResponseInput = {
     readonly userId: string;
     readonly sessionId: string;
+    readonly clientRequestId: string;
     readonly message: string;
     readonly observer: ChatResponseStreamObserver;
 };
@@ -106,6 +107,7 @@ export class AiChatStreamService {
         const turn = await this.messageWriterService.createConversationTurn(
             input.userId,
             input.sessionId,
+            input.clientRequestId,
             input.message,
         );
 
@@ -222,11 +224,7 @@ export class AiChatStreamService {
                 return;
             }
 
-            await this.emitResponseChunks(
-                activeResponse,
-                result.text,
-                observer,
-            );
+            await this.emitResponseChunks(activeResponse, result.text, observer);
 
             if (activeResponse.controller.signal.aborted) {
                 await this.handleAbortedResponse(activeResponse, observer);
@@ -248,11 +246,7 @@ export class AiChatStreamService {
                 return;
             }
 
-            await this.handleGenerationFailure(
-                activeResponse,
-                error,
-                observer,
-            );
+            await this.handleGenerationFailure(activeResponse, error, observer);
         } finally {
             clearTimeout(timeoutHandle);
             this.releaseActiveResponse(activeResponse);

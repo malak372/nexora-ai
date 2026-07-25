@@ -15,20 +15,20 @@ import { Prisma } from '@prisma/client';
  * The message count includes only non-deleted messages.
  */
 export const AI_CHAT_SESSION_SELECT =
-    Prisma.validator<Prisma.ChatSessionSelect>()({
-        id: true,
-        ideaId: true,
-        title: true,
-        lastMessageAt: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-            select: {
-                messages: {
-                    where: {
-                        deletedAt: null,
-                    },
-                },
-            },
+  Prisma.validator<Prisma.ChatSessionSelect>()({
+    id: true,
+    ideaId: true,
+    title: true,
+    lastMessageAt: true,
+    createdAt: true,
+    updatedAt: true,
+    _count: {
+      select: {
+        messages: {
+          where: {
+            deletedAt: null,
+          },
         },
-    });
+      },
+    },
+  });

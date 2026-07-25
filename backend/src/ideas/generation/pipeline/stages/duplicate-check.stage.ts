@@ -25,7 +25,6 @@ import { IdeaDuplicateDetectionService } from '../../services/idea-duplicate-det
 
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 
-
 /**
  * Checks whether the generated idea title is highly similar to an
  * existing idea in the same domain and geographic area.
