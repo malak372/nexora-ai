@@ -2,8 +2,7 @@
  * Manages write operations and state transitions for AI chat messages.
  *
  * Responsibilities:
- * - Persist authenticated-user messages.
- * - Create pending AI response records.
+ * - Persist user messages and pending AI responses atomically.
  * - Transition AI messages into the streaming state.
  * - Complete AI responses.
  * - Persist AI generation failures.
@@ -31,8 +30,13 @@ import {
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
+import {
+    AI_CHAT_ERROR_CODES,
+    AI_CHAT_RESPONSE_TIMEOUT_MS,
+} from '../../constants/ai-chat.constants';
 import { AI_CHAT_MESSAGE_SELECT } from '../../constants/ai-chat-message-selects.constants';
 import type {
+    AiChatConversationTurn,
     AiChatMessageRecord,
     FailAiChatMessageCommand,
 } from '../../types/ai-chat-message.types';
@@ -58,80 +62,135 @@ export class AiChatMessageWriterService {
     ) { }
 
     /**
-     * Persists a message submitted by the authenticated user.
+     * Creates one complete conversation turn atomically.
      *
-     * User messages are immediately completed because they do not require
-     * asynchronous processing.
+     * The user message and pending AI response are written in one transaction
+     * so the conversation cannot contain an accepted user message without its
+     * corresponding AI placeholder.
      *
-     * Message creation and parent-session activity updates are performed in one
-     * transaction.
+     * A PostgreSQL transaction-level advisory lock serializes concurrent
+     * submissions for the same session across application instances without
+     * requiring an additional database table or migration.
      *
      * @param userId Authenticated user identifier.
      * @param sessionId Chat-session identifier.
      * @param message Validated and normalized user message.
-     * @returns Persisted user message.
+     * @returns Persisted user message and pending AI response.
      */
-    async createUserMessage(
+    async createConversationTurn(
         userId: string,
         sessionId: string,
         message: string,
-    ): Promise<AiChatMessageRecord> {
+    ): Promise<AiChatConversationTurn> {
         await this.aiChatAccessService.ensureSessionChatAccess(userId, sessionId);
 
-        const completedAt = new Date();
+        const normalizedMessage = message.trim();
 
-        return this.prisma.$transaction(async (transaction) => {
-            const createdMessage = await transaction.chatMessage.create({
-                data: {
+        if (!normalizedMessage) {
+            throw new BadRequestException('The user message cannot be empty.');
+        }
+
+        const activityAt = new Date();
+
+        try {
+            return await this.prisma.$transaction(async (transaction) => {
+                await transaction.$queryRaw`
+                    SELECT pg_advisory_xact_lock(
+                        hashtextextended(${sessionId}, 0)
+                    )
+                `;
+
+                const staleBefore = new Date(
+                    Date.now() - AI_CHAT_RESPONSE_TIMEOUT_MS * 2,
+                );
+
+                await transaction.chatMessage.updateMany({
+                    where: {
+                        sessionId,
+                        sender: ChatSender.AI,
+                        status: {
+                            in: ACTIVE_AI_MESSAGE_STATUSES,
+                        },
+                        deletedAt: null,
+                        updatedAt: {
+                            lt: staleBefore,
+                        },
+                    },
+                    data: {
+                        status: ChatMessageStatus.FAILED,
+                        errorCode:
+                            AI_CHAT_ERROR_CODES.MESSAGE_GENERATION_TIMEOUT,
+                        errorMessage:
+                            'The previous AI response expired before completion.',
+                        completedAt: activityAt,
+                    },
+                });
+
+                const activeResponse = await transaction.chatMessage.findFirst({
+                    where: {
+                        sessionId,
+                        sender: ChatSender.AI,
+                        status: {
+                            in: ACTIVE_AI_MESSAGE_STATUSES,
+                        },
+                        deletedAt: null,
+                    },
+                    select: {
+                        id: true,
+                    },
+                });
+
+                if (activeResponse) {
+                    throw new ConflictException(
+                        'An AI response is already being generated for this chat session.',
+                    );
+                }
+
+                const userMessage = await transaction.chatMessage.create({
+                    data: {
+                        sessionId,
+                        sender: ChatSender.USER,
+                        status: ChatMessageStatus.COMPLETED,
+                        message: normalizedMessage,
+                        completedAt: activityAt,
+                    },
+                    select: AI_CHAT_MESSAGE_SELECT,
+                });
+
+                const aiMessage = await transaction.chatMessage.create({
+                    data: {
+                        sessionId,
+                        sender: ChatSender.AI,
+                        status: ChatMessageStatus.PENDING,
+                        message: 'Generating response…',
+                    },
+                    select: AI_CHAT_MESSAGE_SELECT,
+                });
+
+                await this.updateSessionActivityOrThrow(
+                    transaction,
+                    userId,
                     sessionId,
-                    sender: ChatSender.USER,
-                    status: ChatMessageStatus.COMPLETED,
-                    message,
-                    completedAt,
-                },
-                select: AI_CHAT_MESSAGE_SELECT,
+                    activityAt,
+                );
+
+                return {
+                    userMessage,
+                    aiMessage,
+                };
             });
+        } catch (error: unknown) {
+            if (
+                error instanceof Prisma.PrismaClientKnownRequestError &&
+                error.code === 'P2002'
+            ) {
+                throw new ConflictException(
+                    'An AI response is already being generated for this chat session.',
+                );
+            }
 
-            await this.updateSessionActivityOrThrow(
-                transaction,
-                userId,
-                sessionId,
-                completedAt,
-            );
-
-            return createdMessage;
-        });
-    }
-
-    /**
-     * Creates an empty pending AI message before response generation begins.
-     *
-     * The pending record provides a stable message identifier that can be used
-     * for streaming, cancellation, failure reporting, and client-side
-     * reconciliation.
-     *
-     * Concurrent AI response prevention belongs to the dedicated orchestration
-     * or locking service.
-     *
-     * @param userId Authenticated user identifier.
-     * @param sessionId Chat-session identifier.
-     * @returns Newly created pending AI message.
-     */
-    async createPendingAiMessage(
-        userId: string,
-        sessionId: string,
-    ): Promise<AiChatMessageRecord> {
-        await this.aiChatAccessService.ensureSessionChatAccess(userId, sessionId);
-
-        return this.prisma.chatMessage.create({
-            data: {
-                sessionId,
-                sender: ChatSender.AI,
-                status: ChatMessageStatus.PENDING,
-                message: '',
-            },
-            select: AI_CHAT_MESSAGE_SELECT,
-        });
+            throw error;
+        }
     }
 
     /**

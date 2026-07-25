@@ -26,6 +26,7 @@ import {
 import {
     ApiBadRequestResponse,
     ApiBearerAuth,
+    ApiConflictResponse,
     ApiCreatedResponse,
     ApiForbiddenResponse,
     ApiNoContentResponse,
@@ -280,6 +281,10 @@ export class AiChatController {
     })
     @ApiBadRequestResponse({
         description: 'The chat-session identifier is invalid.',
+    })
+    @ApiConflictResponse({
+        description:
+            'The chat session has an active AI response that must finish or be cancelled first.',
     })
     @ApiForbiddenResponse({
         description:
