@@ -452,6 +452,7 @@ model User {
   preference              UserPreference?
   savedGenerationSearches SavedGenerationSearch[]
   contactMessages         ContactMessage[]
+  devices                 UserDevice[]
   deletedAt               DateTime?                @map("deleted_at")
 
   /**
@@ -473,6 +474,34 @@ model User {
   @@index([lockedUntil])
   @@index([loginLockLevel])
   @@map("users")
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+model UserDevice {
+  id String @id @default(uuid())
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fcmToken String @unique @map("fcm_token")
+
+  platform DevicePlatform
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  @@index([userId])
+  @@index([platform])
+  @@index([userId, revokedAt])
+  @@map("user_devices")
 }
 
 /**
@@ -1370,24 +1399,19 @@ model IdeaGenerationCandidate {
   opportunityRank  Int?    @map("opportunity_rank")
   opportunityTitle String? @map("opportunity_title")
 
-
   overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
-
 
   finalScore Decimal? @map("final_score") @db.Decimal(5, 2)
 
-
   semanticDiversityAdjustedScore Decimal? @map("semantic_diversity_adjusted_score") @db.Decimal(5, 2)
-
 
   hybridFinalScore Decimal? @map("hybrid_final_score") @db.Decimal(5, 2)
 
   semanticDiversityScore Decimal? @map("semantic_diversity_score") @db.Decimal(5, 2)
 
+  maximumSimilarity Decimal? @map("maximum_similarity") @db.Decimal(5, 2)
 
-  maximumSimilarity Decimal? @map("maximum_similarity")@db.Decimal(5, 2)
-
-  mostSimilarCandidateId String?@map("most_similar_candidate_id")
+  mostSimilarCandidateId String? @map("most_similar_candidate_id")
 
   semanticDuplicateRisk String? @map("semantic_duplicate_risk")
 
@@ -1767,9 +1791,9 @@ model IdeaGenerationRun {
   currentStageKey String? @map("current_stage_key")
   progressPercent Int     @default(0) @map("progress_percent")
 
-  errorCode    String? @map("error_code")
-  errorMessage String? @map("error_message")
-  contextSnapshot Json? @map("context_snapshot")
+  errorCode       String? @map("error_code")
+  errorMessage    String? @map("error_message")
+  contextSnapshot Json?   @map("context_snapshot")
 
   retryCount Int @default(0) @map("retry_count")
 
