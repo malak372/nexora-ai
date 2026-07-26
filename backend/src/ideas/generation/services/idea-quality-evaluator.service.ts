@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { IDEA_MIN_ACCEPTED_QUALITY_SCORE } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 
 /**
@@ -74,8 +75,6 @@ export type IdeaQualityEvaluationContext = {
  */
 @Injectable()
 export class IdeaQualityEvaluatorService {
-  private readonly MIN_ACCEPTED_SCORE = 70;
-
   private readonly GENERIC_TITLE_PATTERNS = [
     /\bmanagement system\b/i,
     /\bmonitoring system\b/i,
@@ -395,7 +394,7 @@ export class IdeaQualityEvaluatorService {
 
     return {
       score,
-      accepted: score >= this.MIN_ACCEPTED_SCORE && !hasBlockingIssue,
+      accepted: score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE && !hasBlockingIssue,
       dimensions,
       issues,
     };

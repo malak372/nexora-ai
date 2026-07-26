@@ -18,7 +18,13 @@ export const IDEA_BENCHMARK_CANDIDATE_SELECT =
     opportunityRank: true,
     opportunityTitle: true,
     overallScore: true,
+    semanticDiversityAdjustedScore: true,
+    hybridFinalScore: true,
     finalScore: true,
+    semanticDiversityScore: true,
+    maximumSimilarity: true,
+    mostSimilarCandidateId: true,
+    semanticDuplicateRisk: true,
     innovationScore: true,
     marketFitScore: true,
     technicalQualityScore: true,
@@ -64,10 +70,22 @@ export function mapIdeaBenchmarkCandidate(
 ) {
   const aiJudgeScore = candidate.aiJudgeScore?.toNumber() ?? null;
 
+  const deterministicScore = candidate.overallScore?.toNumber() ?? null;
+  const semanticDiversityAdjustedScore =
+    candidate.semanticDiversityAdjustedScore?.toNumber() ?? null;
+  const hybridFinalScore = candidate.hybridFinalScore?.toNumber() ?? null;
+
   return {
     ...candidate,
-    overallScore: candidate.overallScore?.toNumber() ?? null,
-    finalScore: candidate.finalScore?.toNumber() ?? null,
+    deterministicScore,
+    overallScore: deterministicScore,
+    semanticDiversityAdjustedScore,
+    hybridFinalScore,
+    // Backward-compatible alias with unambiguous hybrid semantics.
+    finalScore: hybridFinalScore,
+    semanticDiversityScore:
+      candidate.semanticDiversityScore?.toNumber() ?? null,
+    maximumSimilarity: candidate.maximumSimilarity?.toNumber() ?? null,
     innovationScore: candidate.innovationScore?.toNumber() ?? null,
     marketFitScore: candidate.marketFitScore?.toNumber() ?? null,
     technicalQualityScore: candidate.technicalQualityScore?.toNumber() ?? null,
@@ -121,9 +139,13 @@ export function buildIdeaBenchmarkSummary(
           displayName: selectedCandidate.displayName,
           opportunityRank: selectedCandidate.opportunityRank,
           opportunityTitle: selectedCandidate.opportunityTitle,
+          deterministicScore: selectedCandidate.deterministicScore,
           overallScore: selectedCandidate.overallScore,
+          semanticDiversityAdjustedScore:
+            selectedCandidate.semanticDiversityAdjustedScore,
           judgeScore: selectedCandidate.judgeScore,
-          finalScore: selectedCandidate.finalScore,
+          hybridFinalScore: selectedCandidate.hybridFinalScore,
+          finalScore: selectedCandidate.hybridFinalScore,
           judgeReason: selectedCandidate.judgeReason,
           judgeConfidence: selectedCandidate.judgeConfidence,
           requiresLegalVerification:

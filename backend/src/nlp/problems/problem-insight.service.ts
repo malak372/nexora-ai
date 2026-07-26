@@ -6,6 +6,8 @@ import {
   buildCommunityEvidenceExcerpt,
   hasDirectCommunityComplaint,
   isLikelyProductDescription,
+  isWeakCommunityEvidence,
+  scoreCommunityEvidenceQuality,
 } from '../common/utils/community-evidence.util';
 import type { LexiconTextAnalysisResult } from '../lexicon/lexicon-analysis.service';
 import type { IntelligentAnalysisOutput } from '../pipeline/types/intelligent-analysis.types';
@@ -18,11 +20,20 @@ const MAX_EVIDENCE_SAMPLE_LENGTH = 650;
 
 type RecurringProblem = IntelligentAnalysisOutput['recurringProblems'][number];
 
+type ScoredEvidenceSample = {
+  readonly text: string;
+  readonly quality: number;
+};
+
 type ProblemAccumulator = {
   frequency: number;
   negativeSignals: number;
   urgencySignals: number;
-  evidenceSamples: string[];
+  blockingSignals: number;
+  criticalOperationalSignals: number;
+  evidenceQualityTotal: number;
+  evidenceQualityCount: number;
+  evidenceSamples: ScoredEvidenceSample[];
 };
 
 /**
@@ -70,19 +81,34 @@ export class ProblemInsightService {
       for (const title of normalizedProblems) {
         const current = problemMap.get(title) ?? this.createAccumulator();
 
-        current.frequency += 1;
+        const evidenceQuality = scoreCommunityEvidenceQuality(
+          text.originalText,
+        );
 
-        if (text.sentiment === Sentiment.NEGATIVE) {
+        current.frequency += 1;
+        current.evidenceQualityTotal += evidenceQuality;
+        current.evidenceQualityCount += 1;
+
+        if (text.sentiment === Sentiment.NEGATIVE && evidenceQuality >= 0.45) {
           current.negativeSignals += 1;
         }
 
-        if (this.hasUrgencySignal(text)) {
+        if (this.hasUrgencySignal(text) && evidenceQuality >= 0.45) {
           current.urgencySignals += 1;
+        }
+
+        if (this.hasBlockingFailureSignal(text.originalText)) {
+          current.blockingSignals += 1;
+        }
+
+        if (this.hasCriticalOperationalSignal(text.originalText)) {
+          current.criticalOperationalSignals += 1;
         }
 
         this.addEvidenceSample(
           current.evidenceSamples,
           this.buildEvidenceExcerpt(text.originalText, title),
+          evidenceQuality,
         );
 
         problemMap.set(title, current);
@@ -97,8 +123,17 @@ export class ProblemInsightService {
           frequency: accumulator.frequency,
           negativeSignals: accumulator.negativeSignals,
           urgencySignals: accumulator.urgencySignals,
+          blockingSignals: accumulator.blockingSignals,
+          criticalOperationalSignals: accumulator.criticalOperationalSignals,
+          averageEvidenceQuality:
+            accumulator.evidenceQualityCount > 0
+              ? accumulator.evidenceQualityTotal /
+                accumulator.evidenceQualityCount
+              : 0,
         }),
-        evidenceSamples: accumulator.evidenceSamples,
+        evidenceSamples: accumulator.evidenceSamples.map(
+          (sample) => sample.text,
+        ),
       }))
       .sort((first, second) => {
         if (second.frequency !== first.frequency) {
@@ -122,7 +157,10 @@ export class ProblemInsightService {
 
   /** Determines whether one text is reliable problem evidence. */
   private shouldAnalyzeText(text: LexiconTextAnalysisResult): boolean {
-    if (isLikelyProductDescription(text.originalText, text.sourceType)) {
+    if (
+      isLikelyProductDescription(text.originalText, text.sourceType) ||
+      isWeakCommunityEvidence(text.originalText)
+    ) {
       return false;
     }
 
@@ -154,9 +192,48 @@ export class ProblemInsightService {
     ];
 
     return relevantTypes
-      .flatMap((type) => text.matchedLexicons[type] ?? [])
-      .map((term) => term.trim())
+      .flatMap((type) =>
+        (text.matchedLexicons[type] ?? []).map((term) => ({ type, term })),
+      )
+      .filter(({ type, term }) =>
+        this.isLexiconProblemSupported(type, term, text.originalText),
+      )
+      .map(({ term }) => term.trim())
       .filter(Boolean);
+  }
+
+  /**
+   * Prevents a broad lexicon match from creating an unsupported problem label.
+   * In particular, ACCESS must not be interpreted as COST, and a generic
+   * reliability word must not become a crash problem without a failure signal.
+   */
+  private isLexiconProblemSupported(
+    type: NlpLexiconType,
+    term: string,
+    evidence: string,
+  ): boolean {
+    const normalizedEvidence = this.normalizeText(evidence);
+    const normalizedTerm = this.normalizeText(term);
+
+    if (type === NlpLexiconType.COST) {
+      return /(?:paywall|subscription|price|pricing|cost|expensive|paid feature|requires? payment|have to pay|gotta pay|limited tasks?|limited features?)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (type === NlpLexiconType.RELIABILITY) {
+      return /(?:crash|freeze|frozen|bug|glitch|unstable|unreliable|broken|error|doesn['’]?t work|not working|fails? to)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (type === NlpLexiconType.ACCESSIBILITY) {
+      return /(?:cannot access|can['’]?t access|unable to access|not accessible|screen reader|keyboard navigation|contrast|caption|desktop|laptop|computer|mobile[- ]only)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    return Boolean(normalizedTerm);
   }
 
   /** Derives concrete software-problem categories from direct complaint text. */
@@ -340,22 +417,66 @@ export class ProblemInsightService {
       frequency: 0,
       negativeSignals: 0,
       urgencySignals: 0,
+      blockingSignals: 0,
+      criticalOperationalSignals: 0,
+      evidenceQualityTotal: 0,
+      evidenceQualityCount: 0,
       evidenceSamples: [],
     };
   }
 
-  private addEvidenceSample(samples: string[], sample: string): void {
+  private addEvidenceSample(
+    samples: ScoredEvidenceSample[],
+    sample: string,
+    quality: number,
+  ): void {
     const normalizedSample = sample.trim();
 
-    if (
-      !normalizedSample ||
-      samples.length >= MAX_PROBLEM_EVIDENCE_SAMPLES ||
-      samples.includes(normalizedSample)
-    ) {
+    if (!normalizedSample || quality < 0.45) {
       return;
     }
 
-    samples.push(normalizedSample);
+    const existingIndex = samples.findIndex(
+      (current) => current.text === normalizedSample,
+    );
+
+    if (existingIndex >= 0) {
+      if (quality > samples[existingIndex].quality) {
+        samples[existingIndex] = { text: normalizedSample, quality };
+      }
+      return;
+    }
+
+    samples.push({ text: normalizedSample, quality });
+    samples.sort((first, second) => second.quality - first.quality);
+
+    if (samples.length > MAX_PROBLEM_EVIDENCE_SAMPLES) {
+      samples.length = MAX_PROBLEM_EVIDENCE_SAMPLES;
+    }
+  }
+
+  /** Detects a failure that prevents the user from completing a core action. */
+  private hasBlockingFailureSignal(value: string): boolean {
+    const normalized = this.normalizeText(value);
+
+    return /(?:can(?:not|['’]?t)|unable to|won['’]?t|failed to|does(?:n['’]?t| not)).{0,50}(?:do anything|login|log in|connect|sync|open|delete|save|start|stop|turn|control|access|pay|send|receive)|(?:crash|crashes|crashed|crashing|unresponsive|disconnects? without warning)/iu.test(
+      normalized,
+    );
+  }
+
+  /** Detects operational impact that can interrupt physical or time-critical work. */
+  private hasCriticalOperationalSignal(value: string): boolean {
+    const normalized = this.normalizeText(value);
+    const hasOperationalAsset =
+      /(?:irrigation|water|controller|device|equipment|bluetooth|schedule|field|pump|ري|مضخة|جهاز|متحكم)/iu.test(
+        normalized,
+      );
+    const hasControlFailure =
+      /(?:can(?:not|['’]?t)|unable to|won['’]?t|failed to|unresponsive|disconnect(?:s|ed|ing)?|crash(?:es|ed|ing)?).{0,80}(?:turn|switch|shut|control|connect|stop|start|off|on)|(?:turn|switch|shut|control|stop|start).{0,80}(?:can(?:not|['’]?t)|unable|failed|unresponsive|disconnect)/iu.test(
+        normalized,
+      );
+
+    return hasOperationalAsset && hasControlFailure;
   }
 
   private normalizeLimit(limit?: number): number | undefined {

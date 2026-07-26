@@ -110,9 +110,9 @@ export class AppStoreCollector
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchQuery = this.buildSearchQuery(input);
+      const searchQueries = this.buildSearchQueries(input);
 
-      if (!searchQuery) {
+      if (searchQueries.length === 0) {
         this.logger.warn(
           'App Store collection skipped because no search keywords exist.',
         );
@@ -120,10 +120,14 @@ export class AppStoreCollector
         return [];
       }
 
-      const apps = await this.searchApps(searchQuery, input);
+      const searchResults = await Promise.all(
+        searchQueries.map((query) => this.searchApps(query, input)),
+      );
+      const apps = this.deduplicateApps(searchResults.flat());
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
+        .filter((app) => this.isRelevantApp(app, input))
         .map((app) => ({
           app,
           score: this.calculateAppRelevanceScore(app, input),
@@ -132,9 +136,15 @@ export class AppStoreCollector
         .sort((first, second) => second.score - first.score)
         .slice(0, this.maxSavedPosts);
 
-      const posts = await Promise.all(
-        rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
-      );
+      const posts: CollectorPost[] = [];
+
+      // Review endpoints are more sensitive to bursts than search endpoints.
+      // Collect sequentially so one throttled request does not cause all apps
+      // to lose their review evidence at the same time.
+      for (const item of rankedApps) {
+        posts.push(await this.mapAppToCollectorPost(item.app, input));
+        await this.delay(250);
+      }
 
       this.logger.log(`App Store collection completed. Apps: ${posts.length}`);
 
@@ -162,42 +172,85 @@ export class AppStoreCollector
       input.language,
     ]);
 
+    const requestedCountry = this.resolveCountry(input.country);
+    const requestedResults = await CollectorExternalCacheUtil.remember<
+      AppStoreApp[]
+    >(cacheKey, this.cacheTtlMs, () =>
+      appStoreClient.search({
+        term: searchQuery,
+        country: requestedCountry,
+        num: Math.min(this.maxFetchedPosts, 25),
+      }),
+    );
+
+    if (requestedResults.length > 0 || requestedCountry === 'us') {
+      return requestedResults;
+    }
+
+    const fallbackCacheKey = CollectorCacheUtil.build(
+      this.sourceKey,
+      'search-fallback',
+      [searchQuery, 'us', input.language],
+    );
+
+    this.logger.warn(
+      `App Store returned no apps for country "${requestedCountry}"; retrying discovery with the US catalogue.`,
+    );
+
     return CollectorExternalCacheUtil.remember<AppStoreApp[]>(
-      cacheKey,
+      fallbackCacheKey,
       this.cacheTtlMs,
       () =>
         appStoreClient.search({
           term: searchQuery,
-          country: this.resolveCountry(input.country),
-          num: this.maxFetchedPosts,
+          country: 'us',
+          num: Math.min(this.maxFetchedPosts, 25),
         }),
     );
   }
 
-  /**
-   * Builds the primary App Store search query.
-   *
-   * Priority:
-   * 1. First user keyword.
-   * 2. Domain name.
-   * 3. First domain keyword.
-   */
-  private buildSearchQuery(input: CollectorInput): string {
-    const userKeyword = input.keywords?.[0]
-      ? this.cleanNormalizedText(input.keywords[0])
-      : '';
-
-    if (userKeyword) {
-      return userKeyword;
-    }
-
+  /** Builds focused queries instead of relying on one broad domain term. */
+  private buildSearchQueries(input: CollectorInput): string[] {
+    const userKeywords = (input.keywords ?? [])
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
+    const domainKeywords = this.getDomainKeywords(input)
+      .map((keyword) => this.cleanNormalizedText(keyword))
+      .filter(Boolean);
     const domainName = this.cleanNormalizedText(input.domainName);
+    const terms = this.unique([
+      ...userKeywords,
+      ...domainKeywords,
+      ...(domainName ? [domainName] : []),
+    ])
+      .map((term) => term.trim())
+      .filter(Boolean)
+      .slice(0, 8);
 
-    if (domainName) {
-      return domainName;
+    const focused = terms.slice(0, 5);
+    const intentQueries = [
+      terms.find((term) =>
+        /irrigat|schedule|controller|offline|farm management/iu.test(term),
+      ),
+      terms.slice(0, 2).join(' '),
+    ].filter((term): term is string => Boolean(term));
+
+    return this.unique([...intentQueries, ...focused]).slice(0, 6);
+  }
+
+  /** Deduplicates applications returned by multiple focused searches. */
+  private deduplicateApps(apps: readonly AppStoreApp[]): AppStoreApp[] {
+    const uniqueApps = new Map<string, AppStoreApp>();
+
+    for (const app of apps) {
+      const appId = this.getAppId(app);
+
+      if (appId && !uniqueApps.has(String(appId))) {
+        uniqueApps.set(String(appId), app);
+      }
     }
 
-    return this.getDomainKeywords(input)[0] ?? '';
+    return [...uniqueApps.values()];
   }
 
   /**
@@ -221,6 +274,59 @@ export class AppStoreCollector
     return !blockedWords.some((word) =>
       content.includes(this.cleanNormalizedText(word)),
     );
+  }
+
+  /**
+   * Requires a direct domain or user-keyword match and rejects entertainment
+   * apps that appear because they use broad words such as farming or driving.
+   */
+  private isRelevantApp(app: AppStoreApp, input: CollectorInput): boolean {
+    const title = this.cleanNormalizedText(app.title);
+    const description = this.cleanNormalizedText(
+      app.description ?? app.summary,
+    );
+    const searchableText = `${title} ${description}`;
+
+    if (
+      !this.isGamingDomain(input) &&
+      this.isLikelyEntertainmentContent(searchableText)
+    ) {
+      return false;
+    }
+
+    const directTerms = this.unique([
+      ...(input.keywords ?? []),
+      ...this.getDomainKeywords(input),
+      input.domainName ?? '',
+    ])
+      .map((term) => this.cleanNormalizedText(term))
+      .filter((term) => term.length >= 3);
+
+    return directTerms.some((term) => searchableText.includes(term));
+  }
+
+  /** Detects whether the requested domain intentionally targets games. */
+  private isGamingDomain(input: CollectorInput): boolean {
+    const domainText = this.cleanNormalizedText(
+      `${input.domainName ?? ''} ${(input.keywords ?? []).join(' ')}`,
+    );
+
+    return /\b(?:gaming|game development|video games?|mobile games?)\b/iu.test(
+      domainText,
+    );
+  }
+
+  /** Rejects gameplay products and reviews from non-gaming domains. */
+  private isLikelyEntertainmentContent(value: string): boolean {
+    const content = this.cleanNormalizedText(value);
+    const patterns = [
+      /\b(?:farming|farm|tractor|village)\s+(?:simulator|simulation|game)\b/iu,
+      /\b(?:simulator|simulation)\s+(?:3d|game)\b/iu,
+      /\b(?:video\s+game|mobile\s+game|gameplay|multiplayer|save\s+games?|restart\s+game|walking\s+controls?|loader\s+controls?|levels?|quests?|characters?|bug\s+village|farm\s+valley|tractor\s+driving)\b/iu,
+      /\b(?:play|played|playing)\s+(?:this|the)\s+game\b/iu,
+    ];
+
+    return patterns.some((pattern) => pattern.test(content));
   }
 
   /**
@@ -306,17 +412,45 @@ export class AppStoreCollector
         input.language,
       ]);
 
-      const reviews = await CollectorExternalCacheUtil.remember<
-        AppStoreReview[]
-      >(cacheKey, this.cacheTtlMs, () =>
-        appStoreClient.reviews({
-          id: appId,
-          country: this.resolveCountry(input.country),
-        }),
-      );
+      const requestedCountry = this.resolveCountry(input.country);
+      let reviews: AppStoreReview[];
+
+      try {
+        reviews = await CollectorExternalCacheUtil.remember<AppStoreReview[]>(
+          cacheKey,
+          this.cacheTtlMs,
+          () =>
+            appStoreClient.reviews({
+              id: appId,
+              country: requestedCountry,
+            }),
+        );
+      } catch (error: unknown) {
+        if (requestedCountry === 'us') {
+          throw error;
+        }
+
+        const fallbackCacheKey = CollectorCacheUtil.build(
+          this.sourceKey,
+          'reviews-fallback',
+          [appId, 'us', input.language],
+        );
+
+        this.logger.warn(
+          `App Store reviews failed for country "${requestedCountry}" and app ${String(
+            appId,
+          )}; retrying with the US storefront.`,
+        );
+
+        reviews = await CollectorExternalCacheUtil.remember<AppStoreReview[]>(
+          fallbackCacheKey,
+          this.cacheTtlMs,
+          () => appStoreClient.reviews({ id: appId, country: 'us' }),
+        );
+      }
 
       return reviews
-        .filter((review) => this.isUsefulReview(review, input.language))
+        .filter((review) => this.isUsefulReview(review, input))
         .slice(0, this.maxSavedComments)
         .map(
           (review): CollectorComment => ({
@@ -374,7 +508,10 @@ export class AppStoreCollector
    * Filters short, low-value, blocked, or
    * language-mismatched reviews.
    */
-  private isUsefulReview(review: AppStoreReview, language?: string): boolean {
+  private isUsefulReview(
+    review: AppStoreReview,
+    input: CollectorInput,
+  ): boolean {
     const rawContent = this.cleanPlainText(review.text);
 
     const content = this.cleanNormalizedText(rawContent);
@@ -383,7 +520,12 @@ export class AppStoreCollector
       return false;
     }
 
-    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
+    if (
+      !CollectorLanguageUtil.matchesRequestedLanguage(
+        rawContent,
+        input.language,
+      )
+    ) {
       return false;
     }
 
@@ -410,6 +552,13 @@ export class AppStoreCollector
     ]);
 
     if (lowValueReviews.has(content)) {
+      return false;
+    }
+
+    if (
+      !this.isGamingDomain(input) &&
+      this.isLikelyEntertainmentContent(content)
+    ) {
       return false;
     }
 
@@ -460,6 +609,13 @@ export class AppStoreCollector
    */
   private getAppStoreBlockedWords(): string[] {
     return super.getBlockedWords('APP_STORE_BLOCKED_WORDS');
+  }
+
+  /** Adds a small delay between review requests. */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   /**

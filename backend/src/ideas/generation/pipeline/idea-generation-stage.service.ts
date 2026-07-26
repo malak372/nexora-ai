@@ -9,6 +9,7 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 
 import type { IdeaGenerationStageKey } from '../constants/idea-generation-stages.constants';
 
+import { IdeaGenerationDatabaseRetryService } from '../services/idea-generation-database-retry.service';
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
 import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 
@@ -161,6 +162,7 @@ export class IdeaGenerationStageService {
 
   constructor(
     private readonly generationRunService: IdeaGenerationRunService,
+    private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
     private readonly realtime: IdeaGenerationRealtimeService,
   ) {}
 
@@ -220,11 +222,12 @@ export class IdeaGenerationStageService {
         };
       }
 
-      const startedRun = await this.generationRunService.updateProgress({
-        runId: context.runId,
-        currentStageKey: stage.key,
-        progressPercent: startProgressPercent,
-      });
+      const startedRun = await this.updateProgressWithRetry(
+        context.runId,
+        stage.key,
+        startProgressPercent,
+        'record stage start progress',
+      );
       this.realtime.publishRunUpdated(startedRun);
 
       this.logger.debug(
@@ -237,11 +240,12 @@ export class IdeaGenerationStageService {
 
       await this.throwIfCancellationRequested(executionResult.context, stage);
 
-      const progressedRun = await this.generationRunService.updateProgress({
-        runId: executionResult.context.runId,
-        currentStageKey: stage.key,
-        progressPercent: completedProgressPercent,
-      });
+      const progressedRun = await this.updateProgressWithRetry(
+        executionResult.context.runId,
+        stage.key,
+        completedProgressPercent,
+        'record stage completion progress',
+      );
       this.realtime.publishRunUpdated(progressedRun);
 
       this.logger.debug(
@@ -276,6 +280,34 @@ export class IdeaGenerationStageService {
 
       throw normalizedError;
     }
+  }
+
+  /**
+   * Persists stage progress through the shared bounded database retry policy.
+   *
+   * Supabase/PostgreSQL poolers may occasionally close an idle or recycled
+   * connection. Progress updates are idempotent conditional writes, so retrying
+   * them is safe and prevents a temporary connection reset from failing the
+   * whole generation pipeline before the stage itself starts.
+   */
+  private updateProgressWithRetry(
+    runId: string,
+    currentStageKey: IdeaGenerationStageKey,
+    progressPercent: number,
+    operationName: string,
+  ) {
+    return this.databaseRetry.execute(
+      () =>
+        this.generationRunService.updateProgress({
+          runId,
+          currentStageKey,
+          progressPercent,
+        }),
+      {
+        operationName,
+        runId,
+      },
+    );
   }
 
   /**

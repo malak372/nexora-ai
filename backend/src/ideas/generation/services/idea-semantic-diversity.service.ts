@@ -18,9 +18,35 @@ type DiversityCandidate = {
 };
 
 const STOP_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'in', 'is',
-  'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'with', 'using',
-  'system', 'platform', 'application', 'app', 'solution', 'software',
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'for',
+  'from',
+  'in',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'that',
+  'the',
+  'their',
+  'this',
+  'to',
+  'with',
+  'using',
+  'system',
+  'platform',
+  'application',
+  'app',
+  'solution',
+  'software',
 ]);
 
 /**

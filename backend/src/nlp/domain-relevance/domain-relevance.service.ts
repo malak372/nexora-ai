@@ -78,6 +78,21 @@ export class DomainRelevanceService {
    */
   private static readonly PHRASE_CONFIDENCE_BOOST = 0.2;
 
+  /** Minimum useful text length when relevance depends on one weak keyword. */
+  private static readonly MINIMUM_CONTEXTUAL_TEXT_LENGTH = 24;
+
+  /** Generic domain words that cannot establish relevance on their own. */
+  private static readonly GENERIC_SINGLE_MATCHES = new Set([
+    'app',
+    'application',
+    'platform',
+    'software',
+    'system',
+    'service',
+    'technology',
+    'ai',
+  ]);
+
   /**
    * Checks whether a cleaned text is relevant to the selected domain.
    *
@@ -129,9 +144,22 @@ export class DomainRelevanceService {
     }
 
     const totalMatches = matchedKeywords.length + matchedPhrases.length;
+    const hasSpecificPhrase = matchedPhrases.length > 0;
+    const hasMultipleMatches = totalMatches >= 2;
+    const hasSpecificSingleKeyword =
+      matchedKeywords.length === 1 &&
+      !DomainRelevanceService.GENERIC_SINGLE_MATCHES.has(matchedKeywords[0]);
+    const hasEnoughContext =
+      normalizedText.length >=
+      DomainRelevanceService.MINIMUM_CONTEXTUAL_TEXT_LENGTH;
+    const isRelevant =
+      totalMatches >= DomainRelevanceService.MINIMUM_MATCHED_TERMS &&
+      (hasSpecificPhrase ||
+        hasMultipleMatches ||
+        (hasSpecificSingleKeyword && hasEnoughContext));
 
     return this.buildResult({
-      isRelevant: totalMatches >= DomainRelevanceService.MINIMUM_MATCHED_TERMS,
+      isRelevant,
       score: this.calculateScore(totalMatches, normalizedKeywords.length),
       confidence: this.calculateConfidence(totalMatches, matchedPhrases.length),
       matchedKeywords,

@@ -12,6 +12,9 @@ import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.
 const MAX_EVIDENCE_SAMPLES = 5;
 const MAX_EVIDENCE_SAMPLE_LENGTH = 700;
 const MAX_RANKED_OPPORTUNITIES = 8;
+const LOW_NLP_CONFIDENCE_THRESHOLD = 0.5;
+const MIN_SELECTION_RELIABILITY = 0.42;
+const MIN_LOW_CONFIDENCE_RELIABILITY = 0.52;
 
 /** Labels that are too generic to be selected without concrete evidence. */
 const GENERIC_LABELS = new Set([
@@ -21,9 +24,11 @@ const GENERIC_LABELS = new Set([
   'challenge',
   'difficulty',
   'feature',
+  'feature request',
   'features',
   'information',
   'issue',
+  'looking for',
   'need',
   'platform',
   'problem',
@@ -62,6 +67,14 @@ const DIRECT_COMPLAINT_PATTERNS: readonly RegExp[] = [
   /\b(?:crash|crashes|crashed|freeze|broken|bug|error|failure)\b/iu,
   /\b(?:hard|difficult|confusing) to (?:use|navigate|access|find|download|install|login|log in)\b/iu,
   /\b(?:terrible|disappointing|frustrating|major problem|big problem)\b/iu,
+  /\b(?:very limited|too limited|only works? in the simplest cases?|not useful results?|did not generate useful results?)\b/iu,
+  /\b(?:stops?|cuts? off|ends?) (?:mid[- ]sentence|before (?:finishing|completing|providing))\b/iu,
+  /\b(?:only getting part of it|incomplete (?:answer|response|output|information)|missing the rest)\b/iu,
+  /\brelies? on the user to (?:determine|decide|verify|check)\b/iu,
+  /\b(?:feature request|requested feature|requesting support for)\b/iu,
+  /\b(?:would like|i(?:'d| would) like|wish|need|needs|needed|should|must)\b.{0,100}\b(?:add|support|allow|provide|improve|fix|enable|include)\b/iu,
+  /\b(?:fails? to|failed to|unable to|cannot|can['’]?t)\b.{0,120}\b(?:generate|process|open|load|save|sync|access|complete|finish)\b/iu,
+  /\b(?:slow|unreliable|unstable|inaccurate|incorrect|incomplete|limited|missing|unavailable)\b/iu,
   /(?:غير مفيد|لا يعمل|ما بشتغل|لا أستطيع|لا يمكن|لم يصل|فقدت|اختفت|تعطل|خطأ|صعب التنقل|واجهة مربكة)/iu,
 ];
 
@@ -69,6 +82,29 @@ const DIRECT_COMPLAINT_PATTERNS: readonly RegExp[] = [
 const PROMOTIONAL_PATTERNS: readonly RegExp[] = [
   /\b(?:why choose|join millions|trusted by|privacy policy|membership details|download .* today|proven results|full curriculum)\b/iu,
   /\b(?:available on|personalized learning|detailed features|official app)\b/iu,
+  /\b(?:continuous updates?(?:\s*&\s*support)?|we(?:'re| are) constantly improving|new features?,? bug fixes?|enhanced analytics|free to start|perfect for)\b/iu,
+];
+
+const VAGUE_EVIDENCE_PATTERNS: readonly RegExp[] = [
+  /^(?:very\s+)?(?:bad|terrible|awful|horrible|useless)(?:\s+(?:app|application|service|system))?[.!…]*$/iu,
+  /^(?:what\s+a\s+)?terrible\s+logic[.!…]*$/iu,
+  /^(?:doesn['’]?t\s+work|not\s+working)[.!…]*$/iu,
+  /^(?:سيئ|سيء|فظيع|تطبيق\s+سيئ|لا\s+يعمل)[.!…]*$/iu,
+];
+
+/** Texts that are conversational or emotional but do not describe a product problem. */
+const NON_DIAGNOSTIC_EVIDENCE_PATTERNS: readonly RegExp[] = [
+  /\b(?:lost hope|found hope|didn['’]?t think it would come back|feel(?:ing)? hopeless)\b/iu,
+  /\b(?:love this|great app|amazing app|thank you|good job|best app)\b/iu,
+  /^(?:please\s+)?(?:fix|correct)\s+(?:this|it|the error)[.!…]*$/iu,
+  /^(?:help|please help|any update|same here|me too)[.!…]*$/iu,
+  /(?:فقدت الأمل|رجع الأمل|تطبيق رائع|شكراً|ساعدوني|نفس المشكلة فقط)[.!…]*$/iu,
+];
+
+const CONCRETE_EVIDENCE_PATTERNS: readonly RegExp[] = [
+  /\b(?:connect|disconnect|sync|crash|freeze|glitch|error|delete|save|load|login|schedule|irrigat|controller|notification|payment|upload|download|offline|network|bluetooth|firmware|privacy|consent|browser|on-device|local processing|external server|algorithm|encode|decode|recipe|orchestration|routing|registration|discovery)\w*\b/iu,
+  /\b(?:cannot|can['’]?t|unable|fails?\s+to|failed\s+to|without\s+warning)\b/iu,
+  /(?:اتصال|ينفصل|مزامنة|تعطل|خطأ|حذف|حفظ|تحميل|دخول|جدولة|ري|متحكم|إشعار|دفع|بدون\s+تحذير)/iu,
 ];
 
 type NormalizedCandidate = {
@@ -85,15 +121,20 @@ type NormalizedCandidate = {
 };
 
 /**
+ * Signals that NLP completed successfully but produced no candidate that can
+ * be ranked. The pipeline treats this as insufficient evidence, not as an NLP
+ * execution failure, and may run bounded evidence recovery.
+ */
+export class NoRankedIdeaOpportunityError extends Error {
+  constructor() {
+    super('NLP analysis did not contain a concrete evidence-backed opportunity.');
+    this.name = 'NoRankedIdeaOpportunityError';
+  }
+}
+
+/**
  * Converts persisted NLP output into deterministic evidence-aware opportunity
  * ranking.
- *
- * The ranking rejects generic labels and promotional-only evidence, derives a
- * concrete workflow title from direct complaints when possible, and prevents a
- * low-frequency product-description word such as "Difficulty" from becoming
- * the selected opportunity.
- *
- * @author Malak
  */
 @Injectable()
 export class IdeaOpportunityRankingService {
@@ -101,6 +142,7 @@ export class IdeaOpportunityRankingService {
   rank(
     nlp: IdeaGenerationNlpContext,
     locationTerms: readonly string[],
+    previousIdeaTexts: readonly string[] = [],
   ): IdeaOpportunityRanking {
     const extractedCandidates = [
       ...this.extractCandidates(
@@ -131,8 +173,34 @@ export class IdeaOpportunityRankingService {
       this.consolidateEquivalentCandidates(normalizedCandidates);
 
     const ranked = consolidatedCandidates
-      .map((candidate) => this.scoreCandidate(candidate, locationTerms))
+      .map((candidate) =>
+        this.scoreCandidate(
+          candidate,
+          locationTerms,
+          previousIdeaTexts,
+          nlp.confidence ?? 0,
+        ),
+      )
       .sort((first, second) => {
+        // Selection eligibility is a hard gate. A candidate with sparse or
+        // unreliable support cannot win merely because novelty is high.
+        if (first.selectionEligible !== second.selectionEligible) {
+          return first.selectionEligible ? -1 : 1;
+        }
+
+        const supportDifference = second.supportScore - first.supportScore;
+
+        if (Math.abs(supportDifference) >= 0.12) {
+          return supportDifference;
+        }
+
+        const reliabilityDifference =
+          second.evidenceReliabilityScore - first.evidenceReliabilityScore;
+
+        if (Math.abs(reliabilityDifference) >= 0.12) {
+          return reliabilityDifference;
+        }
+
         const scoreDifference = second.finalScore - first.finalScore;
 
         if (scoreDifference !== 0) {
@@ -149,9 +217,7 @@ export class IdeaOpportunityRankingService {
       .map((candidate, index) => ({ ...candidate, rank: index + 1 }));
 
     if (ranked.length === 0) {
-      throw new Error(
-        'NLP analysis did not contain a concrete evidence-backed opportunity.',
-      );
+      throw new NoRankedIdeaOpportunityError();
     }
 
     const evidenceBacked = ranked.filter(
@@ -171,9 +237,6 @@ export class IdeaOpportunityRankingService {
     };
   }
 
-  /**
-   * Explains the selected opportunity using only deterministic score inputs.
-   */
   private buildSelectionReason(
     selected: RankedIdeaOpportunity,
     runnerUp: RankedIdeaOpportunity | undefined,
@@ -194,6 +257,11 @@ export class IdeaOpportunityRankingService {
       `specificity ${(selected.specificityScore * 100).toFixed(1)}/100,`,
       `feasibility ${(selected.feasibilityScore * 100).toFixed(1)}/100,`,
       `evidence quality ${(selected.evidenceScore * 100).toFixed(1)}/100,`,
+      `evidence reliability ${(selected.evidenceReliabilityScore * 100).toFixed(1)}/100,`,
+      `support ${(selected.supportScore * 100).toFixed(1)}/100,`,
+      `NLP confidence ${(selected.nlpConfidenceScore * 100).toFixed(1)}/100,`,
+      `confidence penalty ${(selected.confidencePenalty * 100).toFixed(1)} point(s),`,
+      `weak-evidence penalty ${(selected.weakEvidencePenalty * 100).toFixed(1)} point(s),`,
       `novelty ${(selected.noveltyScore * 100).toFixed(1)}/100,`,
       `business value ${(selected.businessValueScore * 100).toFixed(1)}/100,`,
       `market gap ${(selected.marketGapScore * 100).toFixed(1)}/100,`,
@@ -205,7 +273,6 @@ export class IdeaOpportunityRankingService {
       .trim();
   }
 
-  /** Extracts array-shaped NLP values into candidates. */
   private extractCandidates(
     value: Prisma.JsonValue | null,
     evidenceType: IdeaOpportunityEvidenceType,
@@ -230,14 +297,19 @@ export class IdeaOpportunityRankingService {
           ? this.readString(entry.title)
           : null);
       const solutionArea = this.readString(entry.solutionArea);
+      const feature = this.readString(entry.feature);
+      const request = this.readString(entry.request);
       const title =
+        (evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+          ? feature ?? request
+          : null) ??
         this.readString(entry.title) ??
         problem ??
         need ??
         solutionArea ??
+        feature ??
+        request ??
         this.readString(entry.topic) ??
-        this.readString(entry.feature) ??
-        this.readString(entry.request) ??
         '';
 
       return [
@@ -257,25 +329,54 @@ export class IdeaOpportunityRankingService {
     });
   }
 
-  /** Normalizes a candidate and rejects unsupported evidence. */
   private normalizeCandidate(
     candidate: NormalizedCandidate,
   ): NormalizedCandidate | null {
     const normalizedEvidence = candidate.evidenceSamples
       .map((sample) => this.normalizeEvidenceSample(sample))
       .filter(Boolean)
-      .filter((sample) => !this.isPromotionalOnlyEvidence(sample));
+      .filter((sample) => !this.isPromotionalOnlyEvidence(sample))
+      .filter((sample) => !this.isNonDiagnosticEvidence(sample));
 
-    const directEvidence = normalizedEvidence.filter((sample) =>
-      this.hasDirectComplaintSignal(sample),
-    );
+    const directEvidence = normalizedEvidence
+      .filter(
+        (sample) =>
+          this.hasDirectComplaintSignal(sample) &&
+          this.isEvidenceRelevantToCandidate(candidate, sample),
+      )
+      .map((sample) => ({
+        sample,
+        quality: this.calculateEvidenceQuality(sample),
+      }))
+      .filter((item) => item.quality >= 0.45)
+      .sort(
+        (first, second) =>
+          second.quality - first.quality ||
+          second.sample.length - first.sample.length,
+      )
+      .map((item) => item.sample);
     const originalTitle = candidate.title.replace(/\s+/gu, ' ').trim();
     const normalizedTitle = originalTitle.toLowerCase();
-    const derivedTitle = this.deriveConcreteTitle(directEvidence);
+    const titleDerivationEvidence =
+      directEvidence.length > 0 ? directEvidence : normalizedEvidence;
+    const evidenceDerivedTitle = this.deriveConcreteTitle(
+      titleDerivationEvidence,
+    );
+    const structuredFeatureTitle =
+      candidate.evidenceType ===
+      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+        ? this.deriveFeatureRequestTitle(candidate, titleDerivationEvidence)
+        : null;
+    const derivedTitle = structuredFeatureTitle ?? evidenceDerivedTitle;
+    const structuredFallbackTitle =
+      candidate.evidenceType ===
+      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+        ? candidate.title ?? candidate.solutionArea ?? candidate.need
+        : candidate.problem ?? candidate.need ?? candidate.solutionArea ?? null;
     const tentativeTitle =
       GENERIC_LABELS.has(normalizedTitle) ||
       originalTitle.split(/\s+/u).length < 2
-        ? derivedTitle
+        ? (derivedTitle ?? structuredFallbackTitle)
         : originalTitle;
     const finalTitle = tentativeTitle
       ? this.canonicalizeOpportunityTitle(tentativeTitle)
@@ -286,24 +387,33 @@ export class IdeaOpportunityRankingService {
     }
 
     const relevantEvidence = normalizedEvidence.filter((sample) =>
-      this.isEvidenceRelevantToTitle(finalTitle, sample),
+      this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
     );
-    const evidenceSamples =
-      relevantEvidence.length > 0 ? relevantEvidence : directEvidence;
+
+    /**
+     * Keep only evidence that has a defensible connection to the opportunity.
+     * A sample may qualify through a known problem family, strong semantic
+     * overlap, or a structured direct complaint/feature-request signal. This
+     * avoids both extremes: reintroducing unrelated text and rejecting valid
+     * paraphrases merely because they do not share the exact title wording.
+     */
+    const evidenceSamples = this.deduplicateEvidenceSamples([
+      ...relevantEvidence,
+      ...directEvidence.filter((sample) =>
+        this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
+      ),
+    ]).slice(0, MAX_EVIDENCE_SAMPLES);
 
     const requiresDirectEvidence =
       candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM ||
       candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED;
-
-    if (requiresDirectEvidence && directEvidence.length === 0) {
-      return null;
-    }
+    const hasAcceptedDirectEvidence = directEvidence.some((sample) =>
+      this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
+    );
 
     if (
-      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM &&
-      candidate.severity === 'LOW' &&
-      candidate.frequency < 2 &&
-      directEvidence.length === 0
+      requiresDirectEvidence &&
+      (!hasAcceptedDirectEvidence || evidenceSamples.length === 0)
     ) {
       return null;
     }
@@ -325,51 +435,100 @@ export class IdeaOpportunityRankingService {
   }
 
   /**
-   * Merges duplicate problem/need/opportunity records describing the same
-   * workflow so one issue cannot occupy multiple ranking positions.
+   * Consolidates candidates that express the same underlying opportunity even
+   * when NLP returned different surface titles. Consolidation uses canonical
+   * problem families, semantic similarity, and shared evidence fingerprints.
    */
   private consolidateEquivalentCandidates(
     candidates: readonly NormalizedCandidate[],
   ): NormalizedCandidate[] {
-    const groups = new Map<string, NormalizedCandidate>();
+    const groups: NormalizedCandidate[] = [];
 
     for (const candidate of candidates) {
-      const key = this.canonicalizeOpportunityTitle(candidate.title)
-        .toLocaleLowerCase()
-        .replace(/\s+/gu, ' ')
-        .trim();
-      const current = groups.get(key);
+      const existingIndex = groups.findIndex((current) =>
+        this.areEquivalentCandidates(current, candidate),
+      );
 
-      if (!current) {
-        groups.set(key, candidate);
+      if (existingIndex < 0) {
+        groups.push(candidate);
         continue;
       }
 
+      const current = groups[existingIndex];
       const preferred = this.selectStrongerCandidate(current, candidate);
       const secondary = preferred === current ? candidate : current;
-      const evidenceSamples = Array.from(
-        new Set([...preferred.evidenceSamples, ...secondary.evidenceSamples]),
-      ).slice(0, MAX_EVIDENCE_SAMPLES);
+      const evidenceSamples = this.deduplicateEvidenceSamples([
+        ...preferred.evidenceSamples,
+        ...secondary.evidenceSamples,
+      ]).slice(0, MAX_EVIDENCE_SAMPLES);
 
-      groups.set(key, {
+      groups[existingIndex] = {
         ...preferred,
         problem: preferred.problem ?? secondary.problem,
         need: preferred.need ?? secondary.need,
         solutionArea: preferred.solutionArea ?? secondary.solutionArea,
-        frequency: Math.max(preferred.frequency, secondary.frequency),
+        // Frequencies represent support from separate NLP candidates. Summing
+        // them preserves repeated demand instead of discarding it with max().
+        frequency: Math.max(1, preferred.frequency) + Math.max(1, secondary.frequency),
         severity: this.selectHigherSeverity(
           preferred.severity,
           secondary.severity,
         ),
         evidenceSamples,
         sourceIndex: Math.min(preferred.sourceIndex, secondary.sourceIndex),
-      });
+      };
     }
 
-    return [...groups.values()];
+    return groups;
   }
 
-  /** Selects the more authoritative evidence record for a merged title. */
+  /** Returns true when two candidates describe the same concrete opportunity. */
+  private areEquivalentCandidates(
+    first: NormalizedCandidate,
+    second: NormalizedCandidate,
+  ): boolean {
+    const firstTitle = this.canonicalizeOpportunityTitle(first.title);
+    const secondTitle = this.canonicalizeOpportunityTitle(second.title);
+
+    if (firstTitle.toLocaleLowerCase() === secondTitle.toLocaleLowerCase()) {
+      return true;
+    }
+
+    const firstContext = [
+      firstTitle,
+      first.problem,
+      first.need,
+      first.solutionArea,
+      ...first.evidenceSamples,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const secondContext = [
+      secondTitle,
+      second.problem,
+      second.need,
+      second.solutionArea,
+      ...second.evidenceSamples,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (this.hasSharedEvidenceFamily(firstContext, secondContext)) {
+      return true;
+    }
+
+    const titleSimilarity = this.jaccardSimilarity(
+      this.toSemanticTokenSet(firstTitle),
+      this.toSemanticTokenSet(secondTitle),
+    );
+    const evidenceSimilarity = this.jaccardSimilarity(
+      this.toSemanticTokenSet(first.evidenceSamples.join(' ')),
+      this.toSemanticTokenSet(second.evidenceSamples.join(' ')),
+    );
+
+    return titleSimilarity >= 0.5 || evidenceSimilarity >= 0.58;
+  }
+
   private selectStrongerCandidate(
     first: NormalizedCandidate,
     second: NormalizedCandidate,
@@ -391,7 +550,6 @@ export class IdeaOpportunityRankingService {
     return second.frequency > first.frequency ? second : first;
   }
 
-  /** Returns the highest available severity without inventing a value. */
   private selectHigherSeverity(
     first: string | null,
     second: string | null,
@@ -409,10 +567,11 @@ export class IdeaOpportunityRankingService {
       : first;
   }
 
-  /** Applies deterministic weighted scoring. */
   private scoreCandidate(
     candidate: NormalizedCandidate,
     locationTerms: readonly string[],
+    previousIdeaTexts: readonly string[],
+    nlpConfidence: number,
   ): Omit<RankedIdeaOpportunity, 'rank'> {
     const frequencyScore = Math.min(
       Math.log2(Math.max(candidate.frequency, 1) + 1) / 4,
@@ -426,6 +585,18 @@ export class IdeaOpportunityRankingService {
       1,
     );
     const directEvidenceRatio = this.calculateDirectEvidenceRatio(candidate);
+    const evidenceQualityScore =
+      this.calculateAverageEvidenceQuality(candidate);
+    const evidenceReliabilityScore = this.calculateEvidenceReliability(
+      candidate,
+      evidenceScore,
+      directEvidenceRatio,
+      evidenceQualityScore,
+    );
+    const weakEvidencePenalty = this.calculateWeakEvidencePenalty(
+      candidate,
+      evidenceReliabilityScore,
+    );
     const specificityScore = this.calculateSpecificity(candidate);
     const feasibilityScore = this.calculateFeasibility(candidate);
     const localRelevanceScore = this.calculateLocalRelevance(
@@ -433,33 +604,77 @@ export class IdeaOpportunityRankingService {
       locationTerms,
     );
     const evidenceTypeScore = EVIDENCE_TYPE_SCORES[candidate.evidenceType];
-    const noveltyScore = this.calculateNovelty(candidate);
+    const noveltyScore = this.calculateNovelty(candidate, previousIdeaTexts);
     const businessValueScore = this.calculateBusinessValue(candidate);
     const marketGapScore = this.calculateMarketGap(candidate);
     const competitionScore = this.calculateCompetitionAdvantage(candidate);
     const technicalRiskScore = this.calculateTechnicalRisk(candidate);
 
-    const finalScore = this.round(
-      frequencyScore * 0.1 +
-        severityScore * 0.1 +
-        evidenceScore * 0.13 +
-        directEvidenceRatio * 0.14 +
-        specificityScore * 0.11 +
-        feasibilityScore * 0.08 +
-        localRelevanceScore * 0.04 +
-        evidenceTypeScore * 0.04 +
-        noveltyScore * 0.07 +
-        businessValueScore * 0.08 +
-        marketGapScore * 0.05 +
-        competitionScore * 0.03 +
-        (1 - technicalRiskScore) * 0.03,
+    const weightedScore =
+      frequencyScore * 0.07 +
+      severityScore * 0.09 +
+      evidenceScore * 0.08 +
+      directEvidenceRatio * 0.1 +
+      evidenceQualityScore * 0.17 +
+      evidenceReliabilityScore * 0.15 +
+      specificityScore * 0.06 +
+      feasibilityScore * 0.06 +
+      localRelevanceScore * 0.03 +
+      evidenceTypeScore * 0.04 +
+      noveltyScore * 0.06 +
+      businessValueScore * 0.05 +
+      marketGapScore * 0.02 +
+      competitionScore * 0.01 +
+      (1 - technicalRiskScore) * 0.01;
+
+    // A historically repeated direction must not win merely because it has
+    // high frequency or severity. The multiplier turns novelty into a real
+    // gate while keeping evidence-backed alternatives comparable.
+    const historicalDiversityMultiplier =
+      previousIdeaTexts.length === 0
+        ? 1
+        : noveltyScore < 0.2
+          ? 0.55
+          : noveltyScore < 0.35
+            ? 0.72
+            : noveltyScore < 0.5
+              ? 0.88
+              : 1;
+
+    const baseScore = Math.max(
+      0,
+      weightedScore * historicalDiversityMultiplier - weakEvidencePenalty,
     );
+    const normalizedNlpConfidence = Math.max(0, Math.min(1, nlpConfidence));
+    const supportScore = this.calculateSupportScore(
+      candidate,
+      evidenceScore,
+      directEvidenceRatio,
+      evidenceReliabilityScore,
+      evidenceQualityScore,
+    );
+    const confidencePenalty = this.calculateConfidencePenalty(
+      normalizedNlpConfidence,
+      supportScore,
+      evidenceReliabilityScore,
+    );
+    const disqualificationReasons = this.getDisqualificationReasons(
+      candidate,
+      normalizedNlpConfidence,
+      evidenceReliabilityScore,
+      supportScore,
+      directEvidenceRatio,
+      evidenceQualityScore,
+    );
+    const finalScore = this.round(Math.max(0, baseScore - confidencePenalty));
 
     return {
       ...candidate,
       frequencyScore: this.round(frequencyScore),
       severityScore: this.round(severityScore),
       evidenceScore: this.round(evidenceScore),
+      evidenceReliabilityScore: this.round(evidenceReliabilityScore),
+      weakEvidencePenalty: this.round(weakEvidencePenalty),
       specificityScore: this.round(specificityScore),
       feasibilityScore: this.round(feasibilityScore),
       localRelevanceScore: this.round(localRelevanceScore),
@@ -468,72 +683,384 @@ export class IdeaOpportunityRankingService {
       marketGapScore: this.round(marketGapScore),
       competitionScore: this.round(competitionScore),
       technicalRiskScore: this.round(technicalRiskScore),
+      supportScore: this.round(supportScore),
+      nlpConfidenceScore: this.round(normalizedNlpConfidence),
+      baseScore: this.round(baseScore),
+      confidencePenalty: this.round(confidencePenalty),
       finalScore,
+      selectionEligible: disqualificationReasons.length === 0,
+      disqualificationReasons,
     };
   }
 
-  /** Estimates useful novelty from specificity and solution direction. */
-  private calculateNovelty(candidate: NormalizedCandidate): number {
-    const text = [candidate.title, candidate.problem, candidate.need, candidate.solutionArea]
+  private calculateSupportScore(
+    candidate: NormalizedCandidate,
+    evidenceScore: number,
+    directEvidenceRatio: number,
+    evidenceReliabilityScore: number,
+    evidenceQualityScore: number,
+  ): number {
+    const frequencySupport = Math.min(candidate.frequency / 4, 1);
+    const sampleSupport = Math.min(candidate.evidenceSamples.length / 3, 1);
+
+    return Math.min(
+      1,
+      evidenceReliabilityScore * 0.32 +
+        evidenceQualityScore * 0.28 +
+        directEvidenceRatio * 0.18 +
+        sampleSupport * 0.12 +
+        frequencySupport * 0.1,
+    );
+  }
+
+  private calculateConfidencePenalty(
+    nlpConfidence: number,
+    supportScore: number,
+    evidenceReliabilityScore: number,
+  ): number {
+    const confidenceGap = 1 - nlpConfidence;
+    const supportGap = 1 - supportScore;
+    const reliabilityGap = 1 - evidenceReliabilityScore;
+
+    return Math.min(
+      0.24,
+      confidenceGap * (supportGap * 0.13 + reliabilityGap * 0.09),
+    );
+  }
+
+  private getDisqualificationReasons(
+    candidate: NormalizedCandidate,
+    nlpConfidence: number,
+    evidenceReliabilityScore: number,
+    supportScore: number,
+    directEvidenceRatio: number,
+    evidenceQualityScore: number,
+  ): string[] {
+    const reasons: string[] = [];
+
+    if (candidate.evidenceSamples.length === 0) {
+      reasons.push('NO_DIRECT_EVIDENCE');
+    }
+
+    /**
+     * A candidate with no observed occurrences is not supported by the
+     * analyzed corpus, even when an NLP/AI enrichment step produced a
+     * plausible title and one contextual sample. Keeping it as an
+     * alternative is useful for diagnostics, but it must not be eligible
+     * for final selection.
+     */
+    if (candidate.frequency <= 0) {
+      reasons.push('NO_SUPPORTED_FREQUENCY');
+    }
+
+    if (evidenceReliabilityScore < MIN_SELECTION_RELIABILITY) {
+      reasons.push('LOW_EVIDENCE_RELIABILITY');
+    }
+
+    const hasConcreteMultiSampleEvidence =
+      candidate.evidenceSamples.length >= 2 &&
+      directEvidenceRatio >= 0.6 &&
+      evidenceQualityScore >= 0.5;
+    const singleSampleQualityThreshold =
+      candidate.evidenceType ===
+      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+        ? 0.5
+        : 0.55;
+    const singleSampleDirectRatioThreshold =
+      candidate.evidenceType ===
+      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+        ? 0.75
+        : 0.85;
+    const hasStrongSingleSampleEvidence =
+      candidate.evidenceSamples.length === 1 &&
+      candidate.evidenceSamples[0].length >= 140 &&
+      directEvidenceRatio >= singleSampleDirectRatioThreshold &&
+      evidenceQualityScore >= singleSampleQualityThreshold;
+
+    if (
+      supportScore < 0.36 &&
+      !hasConcreteMultiSampleEvidence &&
+      !hasStrongSingleSampleEvidence
+    ) {
+      reasons.push('INSUFFICIENT_SUPPORT');
+    }
+
+    if (
+      nlpConfidence < LOW_NLP_CONFIDENCE_THRESHOLD &&
+      evidenceReliabilityScore < MIN_LOW_CONFIDENCE_RELIABILITY &&
+      !hasConcreteMultiSampleEvidence &&
+      !hasStrongSingleSampleEvidence
+    ) {
+      reasons.push('LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE');
+    }
+
+    if (
+      nlpConfidence < LOW_NLP_CONFIDENCE_THRESHOLD &&
+      candidate.evidenceSamples.length < 2 &&
+      candidate.frequency < 3 &&
+      !hasStrongSingleSampleEvidence
+    ) {
+      reasons.push('SPARSE_EVIDENCE_UNDER_LOW_CONFIDENCE');
+    }
+
+    return reasons;
+  }
+
+  private calculateEvidenceReliability(
+    candidate: NormalizedCandidate,
+    evidenceScore: number,
+    directEvidenceRatio: number,
+    evidenceQualityScore: number,
+  ): number {
+    const frequencySupport = Math.min(candidate.frequency / 3, 1);
+    const severitySupport = candidate.severity
+      ? (SEVERITY_SCORES[candidate.severity] ?? 0.45)
+      : 0.2;
+    const sourceTrust =
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM
+        ? 1
+        : candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED
+          ? 0.9
+          : candidate.evidenceType ===
+              IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+            ? 0.78
+            : 0.58;
+
+    return Math.min(
+      1,
+      evidenceQualityScore * 0.38 +
+        evidenceScore * 0.12 +
+        directEvidenceRatio * 0.24 +
+        frequencySupport * 0.1 +
+        severitySupport * 0.06 +
+        sourceTrust * 0.1,
+    );
+  }
+
+  private calculateWeakEvidencePenalty(
+    candidate: NormalizedCandidate,
+    evidenceReliabilityScore: number,
+  ): number {
+    let penalty = 0;
+
+    if (candidate.evidenceSamples.length <= 1) {
+      penalty += 0.08;
+    }
+    if (candidate.frequency <= 0) {
+      penalty += 0.08;
+    }
+    if (!candidate.severity) {
+      penalty += 0.06;
+    }
+    if (
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.OPPORTUNITY
+    ) {
+      penalty += 0.04;
+    }
+    if (evidenceReliabilityScore < 0.35) {
+      penalty += 0.06;
+    }
+
+    return Math.min(0.28, penalty);
+  }
+
+  private calculateNovelty(
+    candidate: NormalizedCandidate,
+    previousIdeaTexts: readonly string[],
+  ): number {
+    const text = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+    ]
       .filter(Boolean)
       .join(' ')
       .toLocaleLowerCase();
-    const genericPenalty = /dashboard|portal|management system|mobile app/iu.test(text)
-      ? 0.2
-      : 0;
-    const workflowBonus = /offline|proactive|predict|resilien|automation|cross-device|recovery/iu.test(text)
-      ? 0.18
-      : 0;
 
-    return Math.max(0, Math.min(1, 0.58 + workflowBonus - genericPenalty));
+    const genericPenalty =
+      /dashboard|portal|management system|mobile app/iu.test(text) ? 0.2 : 0;
+    const workflowBonus =
+      /offline|proactive|predict|resilien|automation|cross-device|recovery/iu.test(
+        text,
+      )
+        ? 0.12
+        : 0;
+
+    const candidateTokens = this.toSemanticTokenSet(text);
+    let maxHistoricalSimilarity = 0;
+
+    for (const previousIdeaText of previousIdeaTexts) {
+      const similarity = this.jaccardSimilarity(
+        candidateTokens,
+        this.toSemanticTokenSet(previousIdeaText),
+      );
+      maxHistoricalSimilarity = Math.max(maxHistoricalSimilarity, similarity);
+    }
+
+    const familyRepeated = previousIdeaTexts.some((previousIdeaText) =>
+      this.belongsToSameProblemFamily(text, previousIdeaText),
+    );
+    const historicalPenalty = Math.min(0.65, maxHistoricalSimilarity * 0.9);
+    const familyPenalty = familyRepeated ? 0.42 : 0;
+
+    return Math.max(
+      0,
+      Math.min(
+        1,
+        0.62 +
+          workflowBonus -
+          genericPenalty -
+          historicalPenalty -
+          familyPenalty,
+      ),
+    );
   }
 
-  /** Estimates the practical value of solving the observed workflow problem. */
+  private belongsToSameProblemFamily(first: string, second: string): boolean {
+    const families: readonly RegExp[] = [
+      /authentication|account activation|login|sign in|verification|credential/iu,
+      /data loss|synchroni[sz]|backup|recovery|missing history/iu,
+      /navigation|interface|usability|back button|scroll|popup/iu,
+      /cross-device|desktop|laptop|mobile-only|computer access/iu,
+      /paywall|pricing|subscription|cost restriction|paid access/iu,
+    ];
+
+    return families.some((family) => family.test(first) && family.test(second));
+  }
+
+  private toSemanticTokenSet(value: string): ReadonlySet<string> {
+    const stopWords = new Set([
+      'the',
+      'and',
+      'for',
+      'with',
+      'from',
+      'that',
+      'this',
+      'platform',
+      'system',
+      'application',
+      'software',
+      'users',
+      'user',
+      'academic',
+      'education',
+      'educational',
+      'add',
+      'advanced',
+      'improve',
+      'support',
+      'feature',
+      'request',
+      'processing',
+      'capabilities',
+      'provide',
+      'using',
+      'nablus',
+      'palestine',
+    ]);
+
+    return new Set(
+      value
+        .toLocaleLowerCase()
+        .normalize('NFKD')
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/u)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 3 && !stopWords.has(token)),
+    );
+  }
+
+  private jaccardSimilarity(
+    first: ReadonlySet<string>,
+    second: ReadonlySet<string>,
+  ): number {
+    if (first.size === 0 || second.size === 0) {
+      return 0;
+    }
+
+    let intersection = 0;
+
+    for (const token of first) {
+      if (second.has(token)) {
+        intersection += 1;
+      }
+    }
+
+    const union = first.size + second.size - intersection;
+    return union === 0 ? 0 : intersection / union;
+  }
+
   private calculateBusinessValue(candidate: NormalizedCandidate): number {
     const severity = candidate.severity
       ? (SEVERITY_SCORES[candidate.severity] ?? 0.45)
       : 0.45;
-    const frequency = Math.min(Math.log2(Math.max(candidate.frequency, 1) + 1) / 4, 1);
-    const evidence = Math.min(candidate.evidenceSamples.length / MAX_EVIDENCE_SAMPLES, 1);
+    const frequency = Math.min(
+      Math.log2(Math.max(candidate.frequency, 1) + 1) / 4,
+      1,
+    );
+    const evidence = Math.min(
+      candidate.evidenceSamples.length / MAX_EVIDENCE_SAMPLES,
+      1,
+    );
 
     return Math.min(1, severity * 0.4 + frequency * 0.35 + evidence * 0.25);
   }
 
-  /** Uses unmet-need language as a transparent proxy for market gap. */
   private calculateMarketGap(candidate: NormalizedCandidate): number {
-    const text = [candidate.need, candidate.solutionArea, ...candidate.evidenceSamples]
+    const text = [
+      candidate.need,
+      candidate.solutionArea,
+      ...candidate.evidenceSamples,
+    ]
       .filter(Boolean)
       .join(' ');
-    const unmetNeedSignals = (text.match(/(?:need|wish|missing|lack|without|cannot|unable|no way)/giu) ?? []).length;
+    const unmetNeedSignals = (
+      text.match(
+        /\b(?:need|wish|missing|lack|without|cannot|unable|no way)\b/giu,
+      ) ?? []
+    ).length;
 
     return Math.min(1, 0.42 + Math.min(unmetNeedSignals, 5) * 0.1);
   }
 
-  /** Scores differentiation against obvious commodity solution patterns. */
-  private calculateCompetitionAdvantage(candidate: NormalizedCandidate): number {
-    const text = [candidate.title, candidate.solutionArea].filter(Boolean).join(' ');
-    const commodity = /dashboard|tracker|portal|directory|marketplace|chatbot/iu.test(text);
-    const differentiated = /offline|resilien|cross-device|recovery|proactive|verification|automation/iu.test(text);
+  private calculateCompetitionAdvantage(
+    candidate: NormalizedCandidate,
+  ): number {
+    const text = [candidate.title, candidate.solutionArea]
+      .filter(Boolean)
+      .join(' ');
+    const commodity =
+      /dashboard|tracker|portal|directory|marketplace|chatbot/iu.test(text);
+    const differentiated =
+      /offline|resilien|cross-device|recovery|proactive|verification|automation/iu.test(
+        text,
+      );
 
-    return Math.max(0, Math.min(1, 0.5 + (differentiated ? 0.22 : 0) - (commodity ? 0.18 : 0)));
+    return Math.max(
+      0,
+      Math.min(1, 0.5 + (differentiated ? 0.22 : 0) - (commodity ? 0.18 : 0)),
+    );
   }
 
-  /** Returns risk, where zero is low risk and one is high risk. */
   private calculateTechnicalRisk(candidate: NormalizedCandidate): number {
     const text = [candidate.title, candidate.problem, candidate.solutionArea]
       .filter(Boolean)
       .join(' ');
-    const highRisk = /blockchain|biometric|medical diagnosis|autonomous|real-time prediction/iu.test(text);
-    const integrationRisk = /integration|synchronization|cross-device|authentication/iu.test(text);
+    const highRisk =
+      /blockchain|biometric|medical diagnosis|autonomous|real-time prediction/iu.test(
+        text,
+      );
+    const integrationRisk =
+      /integration|synchronization|cross-device|authentication/iu.test(text);
 
     return highRisk ? 0.78 : integrationRisk ? 0.58 : 0.38;
   }
 
-  /** Maps equivalent NLP and AI labels to one stable opportunity title. */
   private canonicalizeOpportunityTitle(value: string): string {
     const normalized = value.toLocaleLowerCase().replace(/\s+/gu, ' ').trim();
 
-    // Match concrete workflows before generic terms such as "failure".
     if (
       /document|download|syllabus|file access|broken link/iu.test(normalized)
     ) {
@@ -584,10 +1111,25 @@ export class IdeaOpportunityRankingService {
       return 'Application Reliability and Crash Failures';
     }
 
+    if (
+      /cyberchef|magic search|algorithm discovery|algorithm guessing|recipe generation|transformation recipe|processing support/iu.test(
+        normalized,
+      )
+    ) {
+      return 'AI-Assisted Algorithm Discovery and Recipe Generation';
+    }
+
+    if (
+      /agent orchestration|agent registration|auto-discovery|routing requests|multi-agent/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Interoperable AI Agent Orchestration';
+    }
+
     return value.replace(/\s+/gu, ' ').trim();
   }
 
-  /** Keeps only evidence sentences that support the candidate category. */
   private isEvidenceRelevantToTitle(title: string, evidence: string): boolean {
     const normalizedTitle = title.toLocaleLowerCase();
 
@@ -633,17 +1175,240 @@ export class IdeaOpportunityRankingService {
       );
     }
 
-    return this.hasDirectComplaintSignal(evidence);
+    return this.hasMeaningfulSemanticOverlap(title, evidence);
   }
 
-  /** Derives a concrete opportunity title from complaint evidence. */
+  private deriveFeatureRequestTitle(
+    candidate: NormalizedCandidate,
+    evidenceSamples: readonly string[],
+  ): string | null {
+    const text = [
+      candidate.title,
+      candidate.solutionArea,
+      candidate.need,
+      ...evidenceSamples,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(' ')
+      .toLowerCase();
+
+    if (
+      /(?:ai|artificial intelligence|llm).{0,160}(?:local|browser|on-device|privacy|external server|consent)|(?:sensitive data|user-provided data).{0,140}(?:local|browser|external service|consent)/iu.test(
+        text,
+      )
+    ) {
+      return 'Privacy-Preserving Local AI Processing';
+    }
+
+    if (
+      /(?:algorithm guessing|recipe generation|magic feature|decode|encoding|cyberchef)/iu.test(
+        text,
+      )
+    ) {
+      return 'AI-Assisted Algorithm Discovery and Recipe Generation';
+    }
+
+    const explicitTitle = candidate.title.replace(/\s+/gu, ' ').trim();
+
+    if (
+      explicitTitle &&
+      !GENERIC_LABELS.has(explicitTitle.toLowerCase()) &&
+      explicitTitle.split(/\s+/u).length >= 3
+    ) {
+      return explicitTitle;
+    }
+
+    return null;
+  }
+
+  /**
+   * Determines whether an evidence sample is safe to attach to an opportunity.
+   *
+   * Acceptance paths:
+   * - The title and evidence share a known concrete problem family.
+   * - The structured candidate context and evidence share a known family.
+   * - The evidence has strong semantic overlap with both title and context.
+   * - A direct complaint or feature-request signal has strong overlap with at
+   *   least one structured context, allowing valid paraphrases to survive.
+   */
+  private isEvidenceAcceptableForOpportunity(
+    candidate: NormalizedCandidate,
+    title: string,
+    evidence: string,
+  ): boolean {
+    const candidateContext = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(' ');
+
+    const titleFamilyMatch = this.hasSharedEvidenceFamily(title, evidence);
+    const candidateFamilyMatch = this.hasSharedEvidenceFamily(
+      candidateContext,
+      evidence,
+    );
+    const titleSemanticMatch = this.isEvidenceRelevantToTitle(title, evidence);
+    const candidateSemanticMatch = this.isEvidenceRelevantToCandidate(
+      candidate,
+      evidence,
+    );
+    const structuredDirectSignal =
+      this.hasDirectComplaintSignal(evidence) &&
+      (titleSemanticMatch || candidateSemanticMatch);
+
+    return (
+      titleFamilyMatch ||
+      candidateFamilyMatch ||
+      (titleSemanticMatch && candidateSemanticMatch) ||
+      structuredDirectSignal
+    );
+  }
+
+  private isEvidenceRelevantToCandidate(
+    candidate: NormalizedCandidate,
+    evidence: string,
+  ): boolean {
+    const contextTokens = this.toSemanticTokenSet(
+      [candidate.title, candidate.problem, candidate.need, candidate.solutionArea]
+        .filter((value): value is string => Boolean(value))
+        .join(' '),
+    );
+    const evidenceTokens = this.toSemanticTokenSet(evidence);
+
+    if (contextTokens.size === 0) {
+      return this.hasDirectComplaintSignal(evidence);
+    }
+
+    const candidateContext = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const hasKnownProblemFamily = this.hasSharedEvidenceFamily(
+      candidateContext,
+      evidence,
+    );
+
+    if (hasKnownProblemFamily) {
+      return true;
+    }
+
+    let sharedTokens = 0;
+
+    for (const token of contextTokens) {
+      if (evidenceTokens.has(token)) {
+        sharedTokens += 1;
+      }
+    }
+
+    const minimumSharedTokens = contextTokens.size <= 3 ? 1 : 2;
+    const overlapRatio = sharedTokens / Math.max(contextTokens.size, 1);
+
+    return sharedTokens >= minimumSharedTokens && overlapRatio >= 0.2;
+  }
+
+  /**
+   * Checks whether two texts refer to the same concrete problem or feature
+   * family. Family matching prevents a generic shared word such as "support"
+   * or "application" from making unrelated evidence appear relevant.
+   */
+  private hasSharedEvidenceFamily(first: string, second: string): boolean {
+    const families: readonly RegExp[] = [
+      /crash|freeze|error|bug|failure|instability|reliability|glitch/iu,
+      /sync|data loss|missing history|restore|recovery|deleted|backup/iu,
+      /paywall|price|subscription|purchase|payment|advert|money/iu,
+      /privacy|local processing|browser execution|on-device|external server|external service|consent|data sovereignty/iu,
+      /algorithm|decode|encode|recipe|magic feature|cyberchef|transformation/iu,
+      /login|account|activation|verification|authentication|otp/iu,
+      /navigation|interface|directions|usability|scroll|button/iu,
+      /agent orchestration|agent registration|auto-discovery|routing requests|multi-agent/iu,
+    ];
+
+    return families.some((family) => family.test(first) && family.test(second));
+  }
+
+  /**
+   * Requires meaningful lexical overlap when no known problem family applies.
+   * This is intentionally stricter than a single-token match because generic
+   * words frequently occur across unrelated technical discussions.
+   */
+  private hasMeaningfulSemanticOverlap(
+    context: string,
+    evidence: string,
+  ): boolean {
+    const contextTokens = this.toSemanticTokenSet(context);
+    const evidenceTokens = this.toSemanticTokenSet(evidence);
+
+    if (contextTokens.size === 0 || evidenceTokens.size === 0) {
+      return false;
+    }
+
+    let sharedTokens = 0;
+
+    for (const token of contextTokens) {
+      if (evidenceTokens.has(token)) {
+        sharedTokens += 1;
+      }
+    }
+
+    const requiredSharedTokens = contextTokens.size <= 3 ? 1 : 2;
+    const overlapRatio = sharedTokens / contextTokens.size;
+
+    return sharedTokens >= requiredSharedTokens && overlapRatio >= 0.2;
+  }
+
+  /**
+   * Removes exact and quote-prefixed duplicates while preserving the highest
+   * quality representative of each evidence statement.
+   */
+  private deduplicateEvidenceSamples(samples: readonly string[]): string[] {
+    const strongestByIdentity = new Map<string, string>();
+
+    for (const sample of samples) {
+      const identity = sample
+        .toLocaleLowerCase()
+        .replace(/^(?:>\s*)+/u, '')
+        .replace(/@[\p{L}\p{N}_-]+/gu, '')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+      if (!identity) {
+        continue;
+      }
+
+      const current = strongestByIdentity.get(identity);
+
+      if (
+        !current ||
+        this.calculateEvidenceQuality(sample) >
+          this.calculateEvidenceQuality(current)
+      ) {
+        strongestByIdentity.set(identity, sample);
+      }
+    }
+
+    return [...strongestByIdentity.values()].sort(
+      (first, second) =>
+        this.calculateEvidenceQuality(second) -
+          this.calculateEvidenceQuality(first) ||
+        second.length - first.length,
+    );
+  }
+
   private deriveConcreteTitle(
     evidenceSamples: readonly string[],
   ): string | null {
     const text = evidenceSamples.join(' ').toLowerCase();
 
     if (this.hasCrossDeviceAccessFailure(text)) {
-      return 'Cross-Device Learning Access';
+      return 'Cross-Device Access Barriers';
     }
 
     if (
@@ -659,7 +1424,7 @@ export class IdeaOpportunityRankingService {
         text,
       )
     ) {
-      return 'Learning Data Recovery and Sync';
+      return 'Data Loss and Synchronization Failures';
     }
 
     if (
@@ -667,19 +1432,43 @@ export class IdeaOpportunityRankingService {
         text,
       )
     ) {
-      return 'Accessible Learning Navigation';
+      return 'Navigation and Interface Failures';
     }
 
     if (/(?:crash|freeze|broken|bug|error)/iu.test(text)) {
-      return 'Learning Platform Reliability';
+      return 'Application Reliability and Crash Failures';
     }
 
     if (
-      /(?:paywall|have to pay|gotta pay|limited).{0,40}(?:task|feature|access)?/iu.test(
+      /(?:paywall|subscription|requires? payment|have to pay|gotta pay|paid feature|limited tasks?|limited features?)/iu.test(
         text,
       )
     ) {
-      return 'Fair Access to Core Learning Features';
+      return 'High Cost or Paywall Restrictions';
+    }
+
+    if (
+      /(?:stops?|cuts? off|ends?).{0,40}(?:mid[- ]sentence|before (?:finishing|completing|providing))|(?:only getting part|incomplete (?:answer|response|output|information)|missing the rest)/iu.test(
+        text,
+      )
+    ) {
+      return 'Complete and Uninterrupted AI Responses';
+    }
+
+    if (
+      /(?:ai|artificial intelligence).{0,120}(?:local|on-device|without external servers|explicit user consent)|(?:data|sensitive data).{0,100}(?:external servers|user consent|local processing)/iu.test(
+        text,
+      )
+    ) {
+      return 'Privacy-Preserving Local AI Processing';
+    }
+
+    if (
+      /(?:protocol interoperability|agent orchestration|distributed ai agents?|cloud-native ai agents?)/iu.test(
+        text,
+      )
+    ) {
+      return 'Interoperable AI Agent Orchestration';
     }
 
     if (
@@ -697,7 +1486,6 @@ export class IdeaOpportunityRankingService {
     return null;
   }
 
-  /** Detects cross-device access complaints regardless of word order. */
   private hasCrossDeviceAccessFailure(value: string): boolean {
     const hasTargetDevice = /\b(?:computer|desktop|laptop|pc)\b/iu.test(value);
     const hasAccessAction =
@@ -725,6 +1513,66 @@ export class IdeaOpportunityRankingService {
     ).length;
 
     return direct / candidate.evidenceSamples.length;
+  }
+
+  private calculateAverageEvidenceQuality(
+    candidate: NormalizedCandidate,
+  ): number {
+    if (candidate.evidenceSamples.length === 0) {
+      return 0;
+    }
+
+    const scores = candidate.evidenceSamples.map((sample) =>
+      this.calculateEvidenceQuality(sample),
+    );
+
+    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  }
+
+  /** Scores diagnostic specificity so vague sentiment cannot outrank concrete failures. */
+  private calculateEvidenceQuality(value: string): number {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+
+    if (
+      !normalized ||
+      VAGUE_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+    ) {
+      return 0.15;
+    }
+
+    let score = 0.3;
+
+    if (
+      CONCRETE_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+    ) {
+      score += 0.45;
+    }
+    if (
+      /\b(?:when|while|after|before|because|during|every\s+time)\b/iu.test(
+        normalized,
+      )
+    ) {
+      score += 0.1;
+    }
+    if (
+      /\b(?:data|plan|field|crop|water|device|account|screen|button|record|command|privacy|consent|algorithm|recipe|browser|server)\b/iu.test(
+        normalized,
+      )
+    ) {
+      score += 0.08;
+    }
+    if (
+      /\b(?:without explicit consent|does not transmit|never be sent|runs? locally|entirely within the browser|unable to determine|limited to the simplest cases)\b/iu.test(
+        normalized,
+      )
+    ) {
+      score += 0.12;
+    }
+    if (normalized.split(/\s+/u).length >= 8) {
+      score += 0.07;
+    }
+
+    return Math.min(1, score);
   }
 
   private calculateSpecificity(candidate: NormalizedCandidate): number {
@@ -784,6 +1632,14 @@ export class IdeaOpportunityRankingService {
   ): string[] {
     const warnings: string[] = [];
 
+    const confidence = nlp.confidence ?? 0;
+
+    if (confidence < 0.65) {
+      warnings.push(
+        `NLP confidence is ${(confidence * 100).toFixed(1)}%; opportunity claims must remain evidence-qualified and should not be presented as market-wide facts.`,
+      );
+    }
+
     if (nlp.totalTextsAnalyzed < 80) {
       warnings.push(
         `Only ${nlp.totalTextsAnalyzed} texts were analyzed; market-wide conclusions remain preliminary.`,
@@ -793,6 +1649,24 @@ export class IdeaOpportunityRankingService {
     if (evidenceCoverage < 0.6) {
       warnings.push(
         'Several ranked opportunities lack representative evidence samples.',
+      );
+    }
+
+    if (ranked[0].evidenceReliabilityScore < 0.5) {
+      warnings.push(
+        `The selected opportunity has limited evidence reliability (${(ranked[0].evidenceReliabilityScore * 100).toFixed(1)}/100).`,
+      );
+    }
+
+    if (!ranked[0].selectionEligible) {
+      warnings.push(
+        `No opportunity passed the strict selection gate; the best available fallback was used (${ranked[0].disqualificationReasons.join(', ')}).`,
+      );
+    }
+
+    if (ranked[0].supportScore < 0.6) {
+      warnings.push(
+        `The selected opportunity has moderate support (${(ranked[0].supportScore * 100).toFixed(1)}/100); additional evidence collection is recommended.`,
       );
     }
 
@@ -806,7 +1680,53 @@ export class IdeaOpportunityRankingService {
   }
 
   private hasDirectComplaintSignal(value: string): boolean {
-    return DIRECT_COMPLAINT_PATTERNS.some((pattern) => pattern.test(value));
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+
+    if (!normalized || this.isNegatedComplaint(normalized)) {
+      return false;
+    }
+
+    return DIRECT_COMPLAINT_PATTERNS.some((pattern) =>
+      pattern.test(normalized),
+    );
+  }
+
+  /**
+   * Rejects statements that merely contain a complaint keyword while explicitly
+   * denying the problem, for example: "education is not broken".
+   */
+  private isNegatedComplaint(value: string): boolean {
+    return [
+      /\b(?:is|are|was|were)\s+not\s+(?:broken|failing|faulty|bad|unstable)\b/iu,
+      /\b(?:not|never)\s+(?:a|an|the)?\s*(?:problem|issue|failure|bug|error)\b/iu,
+      /\b(?:works?|working)\s+(?:fine|well|properly)\b/iu,
+      /(?:ليس|ليست|مش|مو)\s+(?:معطل|مشكلة|خطأ|سيئ)/iu,
+    ].some((pattern) => pattern.test(value));
+  }
+
+  private isNonDiagnosticEvidence(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+
+    if (!normalized) {
+      return true;
+    }
+
+    if (
+      NON_DIAGNOSTIC_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+    ) {
+      return true;
+    }
+
+    const wordCount = normalized.split(/\s+/u).length;
+    const hasConcreteSignal = CONCRETE_EVIDENCE_PATTERNS.some((pattern) =>
+      pattern.test(normalized),
+    );
+    const hasFeatureRequestDetail =
+      /(?:feature request|describe the solution|would like|should add|needs? support|allow users? to)/iu.test(
+        normalized,
+      );
+
+    return wordCount < 5 && !hasConcreteSignal && !hasFeatureRequestDetail;
   }
 
   private isPromotionalOnlyEvidence(value: string): boolean {

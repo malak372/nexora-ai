@@ -254,36 +254,36 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     runId: string,
   ): Promise<IdeaGenerationRealtimeSnapshot | null> {
     const run = await this.prisma.ideaGenerationRun.findFirst({
-        where: { id: runId, userId },
-        select: {
-          id: true,
-          status: true,
-          progressPercent: true,
-          currentStageKey: true,
-          ideaId: true,
-          errorCode: true,
-          errorMessage: true,
-          completedAt: true,
-          stages: {
-            orderBy: { sequence: 'asc' },
-            select: {
-              runId: true,
-              stageKey: true,
-              displayName: true,
-              sequence: true,
-              status: true,
-              progressPercent: true,
-              attemptCount: true,
-              maxAttempts: true,
-              resultPreview: true,
-              errorMessage: true,
-              startedAt: true,
-              completedAt: true,
-              updatedAt: true,
-            },
+      where: { id: runId, userId },
+      select: {
+        id: true,
+        status: true,
+        progressPercent: true,
+        currentStageKey: true,
+        ideaId: true,
+        errorCode: true,
+        errorMessage: true,
+        completedAt: true,
+        stages: {
+          orderBy: { sequence: 'asc' },
+          select: {
+            runId: true,
+            stageKey: true,
+            displayName: true,
+            sequence: true,
+            status: true,
+            progressPercent: true,
+            attemptCount: true,
+            maxAttempts: true,
+            resultPreview: true,
+            errorMessage: true,
+            startedAt: true,
+            completedAt: true,
+            updatedAt: true,
           },
         },
-      });
+      },
+    });
 
     if (!run) {
       return null;
@@ -333,7 +333,7 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     try {
       return JSON.stringify(value);
     } catch {
-      return String(value);
+      return '[Unserializable result preview]';
     }
   }
 

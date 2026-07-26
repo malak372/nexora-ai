@@ -181,6 +181,53 @@ export class IdeaGenerationOrchestratorService {
   ) {}
 
   /**
+   * Restarts an interrupted run from its latest durable context checkpoint.
+   * Completed/skipped stage rows are preserved and ignored by the pipeline.
+   */
+  async resumeRunFromCheckpoint(
+    runId: string,
+  ): Promise<IdeaGenerationPipelineResult> {
+    const run = await this.runService.findRunOrThrow(runId);
+
+    if (
+      run.status !== IdeaGenerationRunStatus.RETRYING &&
+      run.status !== IdeaGenerationRunStatus.PAUSED
+    ) {
+      throw new Error(
+        `Generation run "${runId}" cannot be resumed from status ${run.status}.`,
+      );
+    }
+
+    if (!run.contextSnapshot || Array.isArray(run.contextSnapshot)) {
+      throw new Error(
+        `Generation run "${runId}" does not contain a valid context checkpoint.`,
+      );
+    }
+
+    const checkpoint = run.contextSnapshot as unknown as IdeaGenerationContext;
+    const context: IdeaGenerationContext = {
+      ...checkpoint,
+      runId: run.id,
+      evidenceRecoveryAttempts: checkpoint.evidenceRecoveryAttempts ?? 0,
+      evidenceRecoveryCollectionJobIds:
+        checkpoint.evidenceRecoveryCollectionJobIds ?? [],
+      createdAt: new Date(checkpoint.createdAt),
+    };
+
+    const input: ExecuteOwnedIdeaGenerationInput = {
+      owner: context.owner,
+      generationType: context.generationType,
+      domainId: context.domainId,
+      keywords: context.keywords,
+      requestedDataSourceKeys: context.requestedDataSourceKeys,
+      location: context.location,
+      forceRefresh: context.forceRefresh,
+    };
+
+    return this.executePreparedRun(run.id, input, context);
+  }
+
+  /**
    * Starts idea generation for an authenticated registered user.
    *
    * Entitlement is not trusted merely because the caller selected
@@ -416,6 +463,7 @@ export class IdeaGenerationOrchestratorService {
   private async executePreparedRun(
     runId: string,
     input: ExecuteOwnedIdeaGenerationInput,
+    checkpointContext?: IdeaGenerationContext,
   ): Promise<IdeaGenerationPipelineResult> {
     let lockAcquired = false;
 
@@ -423,7 +471,8 @@ export class IdeaGenerationOrchestratorService {
       await this.lockService.acquire({ owner: input.owner, runId });
       lockAcquired = true;
 
-      const context = this.buildInitialContext(runId, input);
+      const context =
+        checkpointContext ?? this.buildInitialContext(runId, input);
       this.logger.log(`Starting idea-generation pipeline for run "${runId}".`);
 
       const result = await this.pipelineService.executePipeline({

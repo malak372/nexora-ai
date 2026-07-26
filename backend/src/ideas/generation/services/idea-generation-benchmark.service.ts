@@ -24,9 +24,14 @@ import {
 } from '../constants/idea-judge.constants';
 import {
   IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS,
+  IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
+  IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
+  IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
+  IDEA_MIN_ACCEPTED_QUALITY_SCORE,
+  IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
 } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
@@ -37,6 +42,10 @@ import type {
 } from '../types/idea-judge.type';
 import { IdeaAiOutputParserService } from './idea-ai-output-parser.service';
 import { IdeaCandidateJudgeService } from './idea-candidate-judge.service';
+import {
+  IdeaDuplicateDetectionService,
+  type IdeaDuplicateCheckResult,
+} from './idea-duplicate-detection.service';
 import { IdeaGenerationModelSelectorService } from './idea-generation-model-selector.service';
 import {
   IdeaSemanticDiversityService,
@@ -63,7 +72,12 @@ export type IdeaBenchmarkCandidate = {
   readonly parsedOutput: ParsedIdeaAiOutput;
   readonly quality: IdeaQualityEvaluation;
   readonly aiJudge: IdeaJudgeCandidateScore | null;
+  /** Internal comparable score used for winner selection. */
   readonly finalScore: number;
+  /** Deterministic quality after semantic-diversity penalty. */
+  readonly semanticDiversityAdjustedScore: number;
+  /** True hybrid score; null when the candidate was not judged. */
+  readonly hybridFinalScore: number | null;
   readonly selected: boolean;
   readonly opportunityRank: number;
   readonly opportunityTitle: string;
@@ -129,6 +143,7 @@ export class IdeaGenerationBenchmarkService {
     private readonly candidateJudgeService: IdeaCandidateJudgeService,
     private readonly modelSelectorService: IdeaGenerationModelSelectorService,
     private readonly semanticDiversityService: IdeaSemanticDiversityService,
+    private readonly duplicateDetectionService: IdeaDuplicateDetectionService,
   ) {}
 
   /**
@@ -174,58 +189,112 @@ export class IdeaGenerationBenchmarkService {
 
     const successfulCandidates: IdeaBenchmarkCandidate[] = [];
     const conceptDirections = this.buildConceptDirections(context);
-    const selectedModels = orderedModels.slice(
-      0,
-      Math.min(IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY, orderedModels.length),
-    );
     let attemptedCandidateCount = 0;
+    const blockedModelIds = new Set<string>();
 
     /*
-     * Execute the selected models concurrently for one opportunity, then move
-     * to the next opportunity. This bounded shape reduces total latency without
-     * launching every candidate request in one provider-heavy burst.
-     *
-     * Promise.allSettled is required because one timeout or provider failure
-     * must not discard successful results returned by the other models.
+     * Execute a bounded model batch for one opportunity at a time. When a
+     * selected model fails or produces a rejected candidate, the next healthy
+     * model in the ordered rotation is attempted immediately for the same
+     * opportunity. This preserves comparative judging even during a temporary
+     * provider outage without launching every routable model at once.
      */
-    for (const direction of conceptDirections) {
-      const remainingAttempts =
-        IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS - attemptedCandidateCount;
+    for (const [directionIndex, direction] of conceptDirections.entries()) {
+      const isFallbackOpportunity =
+        directionIndex >= IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT;
 
-      if (remainingAttempts <= 0) {
+      if (
+        isFallbackOpportunity &&
+        successfulCandidates.length >= IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES
+      ) {
+        this.logger.log(
+          `Initial ${IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT} opportunities produced ${successfulCandidates.length} accepted candidates; fallback opportunities were skipped.`,
+        );
         break;
       }
 
-      const modelsForDirection = selectedModels.slice(0, remainingAttempts);
-      attemptedCandidateCount += modelsForDirection.length;
+      const attemptedModelIdsForDirection = new Set<string>();
+      const acceptedCandidatesForDirection: IdeaBenchmarkCandidate[] = [];
 
-      const settledAttempts = await Promise.allSettled(
-        modelsForDirection.map((model) =>
-          this.executeModelCandidate(context, model, direction),
-        ),
-      );
+      while (
+        acceptedCandidatesForDirection.length <
+          IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY &&
+        attemptedCandidateCount < IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS
+      ) {
+        const missingCandidateCount =
+          IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY -
+          acceptedCandidatesForDirection.length;
+        const remainingAttemptCount =
+          IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS - attemptedCandidateCount;
 
-      for (const attempt of settledAttempts) {
-        if (attempt.status === 'fulfilled') {
-          successfulCandidates.push(attempt.value);
+        const modelsForDirection = orderedModels
+          .filter(
+            (model) =>
+              !blockedModelIds.has(model.id) &&
+              !attemptedModelIdsForDirection.has(model.id),
+          )
+          .slice(0, Math.min(missingCandidateCount, remainingAttemptCount));
+
+        if (modelsForDirection.length === 0) {
+          break;
         }
-        // Rejected promises were already persisted and logged by the executor.
+
+        for (const model of modelsForDirection) {
+          attemptedModelIdsForDirection.add(model.id);
+        }
+        attemptedCandidateCount += modelsForDirection.length;
+
+        const settledAttempts = await Promise.all(
+          modelsForDirection.map(async (model) => {
+            try {
+              return await this.executeModelCandidate(
+                context,
+                model,
+                direction,
+              );
+            } catch (error: unknown) {
+              if (this.isTransientModelFailure(error)) {
+                blockedModelIds.add(model.id);
+                this.logger.warn(
+                  `Model "${model.displayName ?? model.modelName}" was removed from the remaining benchmark assignments after a transient provider failure.`,
+                );
+              }
+
+              return null;
+            }
+          }),
+        );
+
+        for (const candidate of settledAttempts) {
+          if (!candidate) {
+            continue;
+          }
+
+          acceptedCandidatesForDirection.push(candidate);
+          successfulCandidates.push(candidate);
+        }
+      }
+
+      if (
+        acceptedCandidatesForDirection.length <
+        IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY
+      ) {
+        this.logger.warn(
+          `Opportunity "${direction.opportunity.title}" produced ${acceptedCandidatesForDirection.length}/${IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY} accepted candidate(s) after exhausting its healthy model fallbacks.`,
+        );
       }
     }
 
     if (successfulCandidates.length === 0) {
       throw new ServiceUnavailableException(
-        'Every configured AI model failed or produced an idea below the required quality threshold.',
+        'No sufficiently distinct quality-approved idea could be generated after trying the configured models, bounded duplicate redesign attempts, and ranked fallback opportunities.',
       );
     }
 
     if (successfulCandidates.length === 1) {
       const onlyCandidate = successfulCandidates[0];
 
-      await this.selectSingleCandidate(
-        context.runId,
-        onlyCandidate.candidateId,
-      );
+      await this.selectSingleCandidate(context.runId, onlyCandidate);
 
       const selectedCandidate: IdeaBenchmarkCandidate = {
         ...onlyCandidate,
@@ -236,6 +305,8 @@ export class IdeaGenerationBenchmarkService {
           mostSimilarCandidateId: null,
           duplicateRisk: 'LOW',
         },
+        semanticDiversityAdjustedScore: onlyCandidate.quality.score,
+        hybridFinalScore: null,
         selected: true,
       };
 
@@ -291,36 +362,48 @@ export class IdeaGenerationBenchmarkService {
       const semanticDiversity =
         diversityScoresForScoring.get(candidate.candidateId) ?? null;
 
+      const diversityScore = semanticDiversity?.diversityScore ?? 100;
+      const semanticDiversityAdjustedScore = this.calculateFinalScore(
+        candidate.quality.score,
+        null,
+        diversityScore,
+      );
+      const hybridFinalScore =
+        useJudgeScores &&
+        judgeCandidateIds.has(candidate.candidateId) &&
+        aiJudge !== null
+          ? this.calculateFinalScore(
+              candidate.quality.score,
+              aiJudge.overallScore,
+              diversityScore,
+            )
+          : null;
+
       return {
         ...candidate,
         aiJudge,
         semanticDiversity,
-        finalScore: this.calculateFinalScore(
-          candidate.quality.score,
-          useJudgeScores && judgeCandidateIds.has(candidate.candidateId)
-            ? (aiJudge?.overallScore ?? null)
-            : null,
-          semanticDiversity?.diversityScore ?? 100,
-        ),
+        semanticDiversityAdjustedScore,
+        hybridFinalScore,
+        finalScore: hybridFinalScore ?? semanticDiversityAdjustedScore,
         selected: false,
       };
     });
 
     /* Only shortlisted candidates are eligible to win comparative selection. */
-    const rankedCandidates = [...scoredCandidates].sort(
-      (first, second) => {
-        const shortlistDifference =
-          Number(judgeCandidateIds.has(second.candidateId)) -
-          Number(judgeCandidateIds.has(first.candidateId));
+    const rankedCandidates = [...scoredCandidates].sort((first, second) => {
+      const shortlistDifference = useJudgeScores
+        ? Number(judgeCandidateIds.has(second.candidateId)) -
+          Number(judgeCandidateIds.has(first.candidateId))
+        : 0;
 
-        return (
-          shortlistDifference ||
-          second.finalScore - first.finalScore ||
-          second.quality.score - first.quality.score ||
-          first.aiResult.responseTimeMs - second.aiResult.responseTimeMs
-        );
-      },
-    );
+      return (
+        shortlistDifference ||
+        second.finalScore - first.finalScore ||
+        second.quality.score - first.quality.score ||
+        first.aiResult.responseTimeMs - second.aiResult.responseTimeMs
+      );
+    });
 
     const topCandidate = rankedCandidates[0];
 
@@ -453,7 +536,7 @@ export class IdeaGenerationBenchmarkService {
         direction.promptText,
         qualityContext,
       );
-      const acceptedAttempt = initialAttempt.quality.accepted
+      const qualityApprovedAttempt = initialAttempt.quality.accepted
         ? initialAttempt
         : await this.reviseWeakCandidate(
             context,
@@ -463,15 +546,15 @@ export class IdeaGenerationBenchmarkService {
             direction.promptText,
           );
 
-      if (!acceptedAttempt.quality.accepted) {
+      if (!qualityApprovedAttempt.quality.accepted) {
         const errorMessage = this.buildQualityRejectionMessage(
-          acceptedAttempt.quality,
+          qualityApprovedAttempt.quality,
         );
 
         await this.persistRejectedCandidate({
           runId: context.runId,
           model,
-          attempt: acceptedAttempt,
+          attempt: qualityApprovedAttempt,
           errorMessage,
           direction,
         });
@@ -479,6 +562,14 @@ export class IdeaGenerationBenchmarkService {
 
         throw new ServiceUnavailableException(errorMessage);
       }
+
+      const acceptedAttempt = await this.resolveDistinctAttempt(
+        context,
+        model,
+        direction,
+        qualityApprovedAttempt,
+        qualityContext,
+      );
 
       const candidateId = await this.persistSuccessfulCandidate({
         runId: context.runId,
@@ -496,6 +587,8 @@ export class IdeaGenerationBenchmarkService {
         quality: acceptedAttempt.quality,
         aiJudge: null,
         finalScore: acceptedAttempt.quality.score,
+        semanticDiversityAdjustedScore: acceptedAttempt.quality.score,
+        hybridFinalScore: null,
         selected: false,
         opportunityRank: direction.opportunity.rank,
         opportunityTitle: direction.opportunity.title,
@@ -507,7 +600,11 @@ export class IdeaGenerationBenchmarkService {
           ? error.message
           : 'Unknown model execution failure.';
 
-      if (!failurePersisted) {
+      const duplicateRejectionPersisted = errorMessage.startsWith(
+        'SEMANTIC_DUPLICATE_REJECTED:',
+      );
+
+      if (!failurePersisted && !duplicateRejectionPersisted) {
         await this.persistFailedCandidate({
           runId: context.runId,
           model,
@@ -523,6 +620,292 @@ export class IdeaGenerationBenchmarkService {
 
       throw error;
     }
+  }
+
+  /**
+   * Rejects persisted semantic duplicates before candidate selection and gives
+   * the same model a bounded redesign opportunity. When all redesign attempts
+   * remain duplicates, the caller advances to the next model or ranked
+   * opportunity instead of failing the complete pipeline immediately.
+   */
+  private async resolveDistinctAttempt(
+    context: IdeaGenerationContext,
+    model: AiModel,
+    direction: CandidateConceptDirection,
+    initialAttempt: AcceptedModelAttempt,
+    qualityContext: IdeaQualityEvaluationContext,
+  ): Promise<AcceptedModelAttempt> {
+    let currentAttempt = initialAttempt;
+    let duplicateResult = await this.checkAttemptDuplicate(
+      context,
+      currentAttempt,
+    );
+
+    if (!duplicateResult.isDuplicate) {
+      return currentAttempt;
+    }
+
+    this.logDuplicateRejection(model, direction, 0, duplicateResult);
+
+    for (
+      let attemptNumber = 1;
+      attemptNumber <= IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS;
+      attemptNumber += 1
+    ) {
+      const redesignPrompt = this.buildDuplicateRedesignPrompt(
+        direction.promptText,
+        currentAttempt,
+        duplicateResult,
+        attemptNumber,
+      );
+
+      try {
+        const generatedAttempt = await this.generateAndEvaluate(
+          context,
+          model,
+          redesignPrompt,
+          qualityContext,
+        );
+        currentAttempt = generatedAttempt.quality.accepted
+          ? generatedAttempt
+          : await this.reviseWeakCandidate(
+              context,
+              model,
+              generatedAttempt,
+              qualityContext,
+              redesignPrompt,
+            );
+
+        if (!currentAttempt.quality.accepted) {
+          continue;
+        }
+
+        duplicateResult = await this.checkAttemptDuplicate(
+          context,
+          currentAttempt,
+        );
+
+        if (!duplicateResult.isDuplicate) {
+          this.logger.log(
+            `Model "${model.displayName ?? model.modelName}" produced a distinct candidate after duplicate redesign attempt ${attemptNumber}.`,
+          );
+
+          return currentAttempt;
+        }
+
+        this.logDuplicateRejection(
+          model,
+          direction,
+          attemptNumber,
+          duplicateResult,
+        );
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unknown duplicate redesign failure.';
+
+        this.logger.warn(
+          `Duplicate redesign attempt ${attemptNumber} for model "${model.displayName ?? model.modelName}" failed: ${message}`,
+        );
+      }
+    }
+
+    const errorMessage = this.buildDuplicateRejectionMessage(duplicateResult);
+
+    await this.persistRejectedCandidate({
+      runId: context.runId,
+      model,
+      attempt: currentAttempt,
+      errorCode: 'SEMANTIC_DUPLICATE_REJECTED',
+      errorMessage,
+      direction,
+    });
+
+    throw new ServiceUnavailableException(errorMessage);
+  }
+
+  private async checkAttemptDuplicate(
+    context: IdeaGenerationContext,
+    attempt: AcceptedModelAttempt,
+  ): Promise<IdeaDuplicateCheckResult> {
+    const collectionJobId = context.collection?.collectionJobId;
+
+    if (!collectionJobId) {
+      throw new ServiceUnavailableException(
+        'A resolved collection job is required before semantic duplicate detection.',
+      );
+    }
+
+    return this.duplicateDetectionService.check(
+      context.domainId,
+      collectionJobId,
+      attempt.parsedOutput.coreIdea,
+    );
+  }
+
+  private buildDuplicateRedesignPrompt(
+    assignedPromptText: string,
+    previousAttempt: AcceptedModelAttempt,
+    duplicateResult: IdeaDuplicateCheckResult,
+    attemptNumber: number,
+  ): string {
+    const previousArchetype = this.detectSolutionArchetype(
+      previousAttempt.parsedOutput.coreIdea,
+    );
+    const alternativeArchetypes = this.getAlternativeArchetypes(
+      previousArchetype,
+      attemptNumber,
+    );
+
+    const attemptInstructions =
+      attemptNumber === 1
+        ? [
+            '- Change the core workflow and primary value proposition.',
+            '- Replace the main user journey, not only the title, wording, or feature names.',
+          ]
+        : [
+            '- Use a fundamentally different solution archetype from the rejected candidate.',
+            `- Previous solution archetype: ${previousArchetype}.`,
+            `- Choose one of these different directions: ${alternativeArchetypes.join(', ')}.`,
+            '- The new concept must have a different primary actor action, system response, and measurable outcome.',
+          ];
+
+    return [
+      assignedPromptText,
+      'SEMANTIC-DUPLICATE REDESIGN:',
+      `- Redesign attempt ${attemptNumber} of ${IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS}.`,
+      '- The previous candidate was rejected because it was materially similar to an existing persisted idea.',
+      '- Keep the evidence-backed need, but redesign the product mechanism, core workflow, value proposition, and dominant capabilities.',
+      ...attemptInstructions,
+      '- A renamed version, dashboard wrapper, minor feature variation, or identical workflow is not acceptable.',
+      '- Do not copy the matched idea or expose it verbatim in the response.',
+      `- Duplicate reasons: ${duplicateResult.duplicateReasons.join(', ') || 'semantic overlap'}.`,
+      `- Semantic similarity: ${duplicateResult.semanticSimilarity}.`,
+      `- Workflow similarity: ${duplicateResult.workflowSimilarity}.`,
+      duplicateResult.matchedIdea
+        ? `- Avoid recreating the product direction represented by existing idea "${duplicateResult.matchedIdea.title}".`
+        : '',
+      '<previous_rejected_candidate_json>',
+      JSON.stringify(previousAttempt.parsedOutput),
+      '</previous_rejected_candidate_json>',
+      '- Before returning, compare the redesigned concept with the rejected candidate and verify that its workflow and value delivery are materially different.',
+      '- Return exactly one complete JSON object matching the required schema.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private logDuplicateRejection(
+    model: AiModel,
+    direction: CandidateConceptDirection,
+    attemptNumber: number,
+    result: IdeaDuplicateCheckResult,
+  ): void {
+    this.logger.warn(
+      [
+        'Duplicate candidate rejected:',
+        `model=${model.displayName ?? model.modelName}`,
+        `attempt=${attemptNumber}`,
+        `opportunity=${direction.opportunity.title}`,
+        `matchedIdeaId=${result.matchedIdea?.id ?? 'none'}`,
+        `matchedIdeaTitle=${result.matchedIdea?.title ?? 'none'}`,
+        `titleSimilarity=${result.titleSimilarity}`,
+        `semanticSimilarity=${result.semanticSimilarity}`,
+        `workflowSimilarity=${result.workflowSimilarity}`,
+        `sameProblemFamily=${result.sameProblemFamily}`,
+        `familyPenalty=${result.familyPenalty}`,
+        `finalSimilarity=${result.highestSimilarity}`,
+        `reasons=${result.duplicateReasons.join(',') || 'none'}`,
+      ].join(' '),
+    );
+  }
+
+  private detectSolutionArchetype(
+    idea: ParsedIdeaAiOutput['coreIdea'],
+  ): string {
+    const text = [
+      idea.title,
+      idea.problemStatement,
+      ...idea.objectives,
+      idea.fullAbstract ?? idea.partialAbstract ?? idea.limitedAbstract ?? '',
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    const archetypes: readonly [string, RegExp][] = [
+      [
+        'offline-first cache or synchronization product',
+        /offline|cache|sync|download|local storage/u,
+      ],
+      [
+        'analytics and early-warning system',
+        /analytics|dashboard|insight|warning|prediction|monitor/u,
+      ],
+      [
+        'verification or identity service',
+        /verify|verification|identity|authentication|credential|login/u,
+      ],
+      [
+        'administrative workflow automation',
+        /workflow|approval|administrative|automation|request processing/u,
+      ],
+      [
+        'peer coordination platform',
+        /peer|community|collaboration|mentor|matching|coordination/u,
+      ],
+      [
+        'institutional integration layer',
+        /integration|connector|api|institution|lms|sis|erp/u,
+      ],
+      [
+        'guided assistant or support tool',
+        /assistant|chatbot|guide|support|helpdesk/u,
+      ],
+    ];
+
+    return (
+      archetypes.find(([, pattern]) => pattern.test(text))?.[0] ??
+      'general self-service application'
+    );
+  }
+
+  private getAlternativeArchetypes(
+    previousArchetype: string,
+    attemptNumber: number,
+  ): readonly string[] {
+    const allArchetypes = [
+      'administrative workflow automation',
+      'verification service',
+      'analytics and early-warning system',
+      'peer coordination platform',
+      'institutional integration layer',
+      'guided support and case-resolution tool',
+      'resource allocation and scheduling system',
+    ].filter((archetype) => archetype !== previousArchetype);
+
+    const rotationOffset =
+      ((attemptNumber - 1) * 3) % Math.max(allArchetypes.length, 1);
+
+    return [
+      ...allArchetypes.slice(rotationOffset),
+      ...allArchetypes.slice(0, rotationOffset),
+    ].slice(0, 4);
+  }
+
+  private buildDuplicateRejectionMessage(
+    result: IdeaDuplicateCheckResult,
+  ): string {
+    return [
+      'SEMANTIC_DUPLICATE_REJECTED:',
+      `candidate remained similar after ${IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS} redesign attempts.`,
+      `Similarity=${result.highestSimilarity}.`,
+      `Semantic=${result.semanticSimilarity}.`,
+      `Workflow=${result.workflowSimilarity}.`,
+      `MatchedIdea=${result.matchedIdea?.id ?? 'none'}.`,
+      `Reasons=${result.duplicateReasons.join(', ') || 'semantic overlap'}.`,
+      'The benchmark will continue with another model or ranked opportunity.',
+    ].join(' ');
   }
 
   /** Executes one exact model and evaluates its normalized response. */
@@ -559,9 +942,15 @@ export class IdeaGenerationBenchmarkService {
       responseSchema: prompt.responseSchema,
       responseSchemaName: prompt.responseSchemaName,
       estimatedOutputTokens: context.policy?.includePremiumOutputs
-        ? 4_096
+        ? 6_144
         : 2_048,
+      maxOutputTokens: context.policy?.includePremiumOutputs ? 8_192 : 2_048,
       temperature: 0.55,
+      // Benchmark requests use a bounded timeout and no provider-level retry.
+      // The benchmark already has model/opportunity fallback, so repeating the
+      // same slow request only increases total latency without adding diversity.
+      timeoutMs: 90_000,
+      maxRetriesPerModel: 0,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
     const quality = this.qualityEvaluatorService.evaluate(
@@ -586,49 +975,82 @@ export class IdeaGenerationBenchmarkService {
     qualityContext: IdeaQualityEvaluationContext,
     assignedPromptText: string,
   ): Promise<AcceptedModelAttempt> {
-    const prompt = context.prompt;
-
-    if (!prompt) {
+    if (!context.prompt || initialAttempt.quality.accepted) {
       return initialAttempt;
     }
 
-    const revisionPrompt = [
+    let bestAttempt = initialAttempt;
+
+    for (
+      let revisionNumber = 1;
+      revisionNumber <= IDEA_QUALITY_REVISION_MAX_ATTEMPTS;
+      revisionNumber += 1
+    ) {
+      const revisionPrompt = this.buildQualityRevisionPrompt(
+        assignedPromptText,
+        bestAttempt,
+        revisionNumber,
+      );
+
+      try {
+        const revisedAttempt = await this.generateAndEvaluate(
+          context,
+          model,
+          revisionPrompt,
+          qualityContext,
+        );
+
+        if (revisedAttempt.quality.score > bestAttempt.quality.score) {
+          bestAttempt = revisedAttempt;
+        }
+
+        this.logger.log(
+          `Quality revision ${revisionNumber}/${IDEA_QUALITY_REVISION_MAX_ATTEMPTS} for model "${model.displayName ?? model.modelName}" scored ${revisedAttempt.quality.score}; best score is ${bestAttempt.quality.score}; threshold is ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}.`,
+        );
+
+        if (bestAttempt.quality.accepted) {
+          return bestAttempt;
+        }
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown revision failure.';
+
+        this.logger.warn(
+          `Quality revision ${revisionNumber}/${IDEA_QUALITY_REVISION_MAX_ATTEMPTS} for model "${model.displayName ?? model.modelName}" failed; retaining the best candidate: ${message}`,
+        );
+      }
+    }
+
+    return bestAttempt;
+  }
+
+  /** Builds a grounded self-improvement request for the same generating model. */
+  private buildQualityRevisionPrompt(
+    assignedPromptText: string,
+    previousAttempt: AcceptedModelAttempt,
+    revisionNumber: number,
+  ): string {
+    return [
       assignedPromptText,
       'QUALITY-GATE REVISION:',
-      '- The previous response was valid JSON but did not meet the required quality threshold.',
+      `- Revision attempt ${revisionNumber} of ${IDEA_QUALITY_REVISION_MAX_ATTEMPTS}.`,
+      `- Previous deterministic score: ${previousAttempt.quality.score}/100.`,
+      `- Required deterministic threshold: ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}/100.`,
+      '- Improve the same candidate using the evaluation feedback below.',
       '- Rewrite the complete response, not only the listed fields.',
       '- Preserve every evidence-grounding, location, schema, and entitlement rule from the original prompt.',
-      '- Do not invent facts, APIs, regulations, statistics, or local evidence.',
+      '- Keep valid strengths from the previous candidate while fixing every listed weakness.',
+      '- Do not invent facts, APIs, regulations, statistics, local evidence, user complaints, or market claims.',
+      '<deterministic_quality_feedback>',
       this.qualityEvaluatorService.buildImprovementInstructions(
-        initialAttempt.quality,
+        previousAttempt.quality,
       ),
+      '</deterministic_quality_feedback>',
       '<previous_candidate_json>',
-      JSON.stringify(initialAttempt.parsedOutput),
+      JSON.stringify(previousAttempt.parsedOutput),
       '</previous_candidate_json>',
       '- Return exactly one complete JSON object matching the required schema.',
     ].join('\n');
-
-    try {
-      const revisedAttempt = await this.generateAndEvaluate(
-        context,
-        model,
-        revisionPrompt,
-        qualityContext,
-      );
-
-      return revisedAttempt.quality.score > initialAttempt.quality.score
-        ? revisedAttempt
-        : initialAttempt;
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown revision failure.';
-
-      this.logger.warn(
-        `Quality revision for model "${model.displayName ?? model.modelName}" failed; retaining the initial candidate: ${message}`,
-      );
-
-      return initialAttempt;
-    }
   }
 
   /**
@@ -649,8 +1071,21 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    const opportunities = [ranking.selected, ...ranking.alternatives]
-      .slice(0, IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT);
+    const eligibleOpportunities = [
+      ranking.selected,
+      ...ranking.alternatives,
+    ].filter((opportunity) => opportunity.selectionEligible);
+
+    if (eligibleOpportunities.length === 0) {
+      throw new ServiceUnavailableException(
+        'No selection-eligible opportunity is available for AI benchmarking.',
+      );
+    }
+
+    const opportunities = this.selectProblemFamilyDiverseOpportunities(
+      eligibleOpportunities,
+      IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
+    );
 
     return opportunities.map((opportunity, index) => ({
       opportunity,
@@ -679,6 +1114,98 @@ export class IdeaGenerationBenchmarkService {
         '</untrusted_assigned_opportunity>',
       ].join('\n'),
     }));
+  }
+
+  /**
+   * Prioritizes opportunities from different problem families before filling
+   * any remaining slots. This prevents fallback attempts from repeatedly
+   * cycling through login, activation, and credential-recovery variants.
+   */
+  private selectProblemFamilyDiverseOpportunities(
+    opportunities: readonly RankedIdeaOpportunity[],
+    maximumCount: number,
+  ): readonly RankedIdeaOpportunity[] {
+    const selected: RankedIdeaOpportunity[] = [];
+    const deferred: RankedIdeaOpportunity[] = [];
+    const usedFamilies = new Set<string>();
+
+    for (const opportunity of opportunities) {
+      const family = this.normalizeOpportunityFamily(opportunity);
+
+      if (!usedFamilies.has(family)) {
+        selected.push(opportunity);
+        usedFamilies.add(family);
+      } else {
+        deferred.push(opportunity);
+      }
+
+      if (selected.length >= maximumCount) {
+        return selected;
+      }
+    }
+
+    for (const opportunity of deferred) {
+      if (selected.length >= maximumCount) {
+        break;
+      }
+
+      selected.push(opportunity);
+    }
+
+    return selected;
+  }
+
+  private normalizeOpportunityFamily(
+    opportunity: RankedIdeaOpportunity,
+  ): string {
+    const text = [
+      opportunity.title,
+      opportunity.problem ?? '',
+      opportunity.need ?? '',
+      opportunity.solutionArea ?? '',
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    const families: readonly [string, RegExp][] = [
+      [
+        'authentication',
+        /authentication|account activation|login|sign in|verification|credential|password recovery/u,
+      ],
+      [
+        'data-sync',
+        /data loss|synchroni[sz]|backup|restore|recovery|missing history/u,
+      ],
+      [
+        'navigation-usability',
+        /navigation|interface|usability|back button|scroll|popup/u,
+      ],
+      [
+        'cross-device',
+        /cross-device|desktop|laptop|mobile-only|computer access/u,
+      ],
+      [
+        'pricing-access',
+        /paywall|pricing|subscription|cost restriction|paid access/u,
+      ],
+    ];
+
+    const knownFamily = families.find(([, pattern]) => pattern.test(text));
+
+    if (knownFamily) {
+      return knownFamily[0];
+    }
+
+    return (
+      text
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/u)
+        .filter((token) => token.length >= 4)
+        .slice(0, 5)
+        .sort()
+        .join('|') || `rank-${opportunity.rank}`
+    );
   }
 
   /** Builds trusted metrics used by premium-output quality validation. */
@@ -828,7 +1355,9 @@ export class IdeaGenerationBenchmarkService {
         rawResponse: input.aiResult.text,
         parsedResponse: this.toPrismaJson(input.parsedOutput),
         overallScore: input.quality.score,
-        finalScore: input.quality.score,
+        semanticDiversityAdjustedScore: null,
+        hybridFinalScore: null,
+        finalScore: null,
         innovationScore: input.quality.dimensions.innovation,
         marketFitScore: input.quality.dimensions.marketFit,
         technicalQualityScore: input.quality.dimensions.technicalQuality,
@@ -856,6 +1385,7 @@ export class IdeaGenerationBenchmarkService {
       'id' | 'providerKey' | 'apiModelId' | 'modelName' | 'displayName'
     >;
     readonly attempt: AcceptedModelAttempt;
+    readonly errorCode?: string;
     readonly errorMessage: string;
     readonly direction: CandidateConceptDirection;
   }): Promise<void> {
@@ -872,7 +1402,9 @@ export class IdeaGenerationBenchmarkService {
         rawResponse: input.attempt.aiResult.text,
         parsedResponse: this.toPrismaJson(input.attempt.parsedOutput),
         overallScore: input.attempt.quality.score,
-        finalScore: input.attempt.quality.score,
+        semanticDiversityAdjustedScore: null,
+        hybridFinalScore: null,
+        finalScore: null,
         innovationScore: input.attempt.quality.dimensions.innovation,
         marketFitScore: input.attempt.quality.dimensions.marketFit,
         technicalQualityScore:
@@ -884,7 +1416,7 @@ export class IdeaGenerationBenchmarkService {
         costEstimate: input.attempt.aiResult.costEstimate,
         responseTimeMs: input.attempt.aiResult.responseTimeMs,
         selected: false,
-        errorCode: 'QUALITY_GATE_REJECTED',
+        errorCode: input.errorCode ?? 'QUALITY_GATE_REJECTED',
         errorMessage: input.errorMessage,
       },
     });
@@ -922,7 +1454,7 @@ export class IdeaGenerationBenchmarkService {
   /** Selects the only quality-approved candidate atomically. */
   private async selectSingleCandidate(
     runId: string,
-    candidateId: string,
+    candidate: IdeaBenchmarkCandidate,
   ): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.ideaGenerationCandidate.updateMany({
@@ -930,9 +1462,16 @@ export class IdeaGenerationBenchmarkService {
         data: { selected: false },
       }),
       this.prisma.ideaGenerationCandidate.update({
-        where: { id: candidateId },
+        where: { id: candidate.candidateId },
         data: {
           selected: true,
+          semanticDiversityAdjustedScore: candidate.quality.score,
+          hybridFinalScore: null,
+          finalScore: null,
+          semanticDiversityScore: 100,
+          maximumSimilarity: 0,
+          mostSimilarCandidateId: null,
+          semanticDuplicateRisk: 'LOW',
           judgeReason:
             'Selected because it was the only quality-approved candidate available for this benchmark run.',
           judgeConfidence: 0,
@@ -968,7 +1507,18 @@ export class IdeaGenerationBenchmarkService {
         where: { id: candidate.candidateId },
         data: {
           aiJudgeScore: score?.overallScore ?? null,
-          finalScore: candidate.finalScore,
+          semanticDiversityAdjustedScore:
+            candidate.semanticDiversityAdjustedScore,
+          hybridFinalScore: candidate.hybridFinalScore,
+          // Keep the legacy field aligned with the true hybrid score only.
+          finalScore: candidate.hybridFinalScore,
+          semanticDiversityScore:
+            candidate.semanticDiversity?.diversityScore ?? null,
+          maximumSimilarity: candidate.semanticDiversity?.maxSimilarity ?? null,
+          mostSimilarCandidateId:
+            candidate.semanticDiversity?.mostSimilarCandidateId ?? null,
+          semanticDuplicateRisk:
+            candidate.semanticDiversity?.duplicateRisk ?? null,
           localRelevanceScore: score?.localRelevance ?? null,
           problemImportanceScore: score?.problemImportance ?? null,
           aiJudgeInnovationScore: score?.innovation ?? null,
@@ -1070,5 +1620,16 @@ export class IdeaGenerationBenchmarkService {
   /** Converts immutable JSON-compatible values into Prisma input JSON. */
   private toPrismaJsonValue(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+  /** Stops assigning one model again after quota, rate-limit, or outage errors. */
+  private isTransientModelFailure(error: unknown): boolean {
+    const message =
+      error instanceof Error
+        ? error.message.toLocaleLowerCase()
+        : String(error).toLocaleLowerCase();
+
+    return /429|rate limit|quota|temporarily unavailable|provider unavailable|timeout|network/iu.test(
+      message,
+    );
   }
 }

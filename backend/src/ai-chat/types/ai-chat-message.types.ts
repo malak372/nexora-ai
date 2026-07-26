@@ -35,14 +35,13 @@ export type PaginatedAiChatMessages = {
   pagination: AiChatMessagesPagination;
 };
 
-
 /**
  * Persisted user message and pending AI response created atomically for one
  * conversation turn.
  */
 export type AiChatConversationTurn = {
-    readonly userMessage: AiChatMessageRecord;
-    readonly aiMessage: AiChatMessageRecord;
+  readonly userMessage: AiChatMessageRecord;
+  readonly aiMessage: AiChatMessageRecord;
 };
 
 /**

@@ -3,6 +3,8 @@ import { Injectable } from '@nestjs/common';
 import { AnalysisQualityMetrics } from '../decision/types/analysis-quality-metrics.type';
 import {
   ANALYSIS_CONFIDENCE_WEIGHTS,
+  MAXIMUM_TARGET_RESULTS,
+  MINIMUM_TARGET_RESULTS,
   TARGET_RESULTS_PER_TEXT,
 } from './constants/analysis-metrics.constants';
 import { AnalysisMetricsInput } from './types/analysis-metrics-input.type';
@@ -239,8 +241,12 @@ export class AnalysisMetricsService {
   }
 
   /**
-   * Measures the number of extracted results relative to the configured
-   * expected number of results per analyzed text.
+   * Measures corpus-level aggregate findings against a bounded target.
+   *
+   * NLP outputs such as topics and opportunities summarize the whole corpus;
+   * they are not expected once or twice for every input text. The bounded
+   * proportional target prevents both small and large datasets from receiving
+   * misleading density scores.
    *
    * @param extractedResultsCount Total number of extracted results.
    * @param totalAnalyzedTexts Total number of analyzed texts.
@@ -255,7 +261,11 @@ export class AnalysisMetricsService {
       return 0;
     }
 
-    const targetResultsCount = totalAnalyzedTexts * TARGET_RESULTS_PER_TEXT;
+    const proportionalTarget = totalAnalyzedTexts * TARGET_RESULTS_PER_TEXT;
+    const targetResultsCount = Math.min(
+      MAXIMUM_TARGET_RESULTS,
+      Math.max(MINIMUM_TARGET_RESULTS, proportionalTarget),
+    );
 
     return this.round(this.clamp(extractedResultsCount / targetResultsCount));
   }

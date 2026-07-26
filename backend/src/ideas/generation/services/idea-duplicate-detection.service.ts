@@ -25,11 +25,20 @@ export type DuplicateIdeaCandidate = {
   readonly createdAt: Date;
 };
 
+export type IdeaDuplicateReason =
+  | 'EXACT_OR_NEAR_TITLE'
+  | 'SEMANTIC_OVERLAP'
+  | 'SAME_PROBLEM_FAMILY';
+
 export type IdeaDuplicateCheckResult = {
   readonly isDuplicate: boolean;
   readonly highestSimilarity: number;
   readonly titleSimilarity: number;
   readonly semanticSimilarity: number;
+  readonly workflowSimilarity: number;
+  readonly sameProblemFamily: boolean;
+  readonly familyPenalty: number;
+  readonly duplicateReasons: readonly IdeaDuplicateReason[];
   readonly matchedIdea: DuplicateIdeaCandidate | null;
 };
 
@@ -113,6 +122,8 @@ export class IdeaDuplicateDetectionService {
     let highestSimilarity = 0;
     let highestTitleSimilarity = 0;
     let highestSemanticSimilarity = 0;
+    let highestWorkflowSimilarity = 0;
+    let highestSameProblemFamily = false;
 
     const newFingerprint = this.buildFingerprint(idea);
 
@@ -124,17 +135,49 @@ export class IdeaDuplicateDetectionService {
         ),
       );
 
+      const candidateFingerprint = this.buildCandidateFingerprint(candidate);
       const semanticSimilarity = this.calculateWeightedSemanticSimilarity(
         newFingerprint,
-        this.buildCandidateFingerprint(candidate),
+        candidateFingerprint,
+      );
+      const workflowSimilarity = this.calculateWorkflowSimilarity(
+        newFingerprint,
+        candidateFingerprint,
+      );
+      const sameProblemFamily = this.belongsToSameProblemFamily(
+        idea,
+        candidate,
       );
 
-      const combinedSimilarity = Math.max(titleSimilarity, semanticSimilarity);
+      /*
+       * Problem-family equality is diagnostic context, not an automatic
+       * duplicate score. A generation is expected to address the assigned
+       * opportunity family, so it is rejected only when the family also shares
+       * a strongly similar problem representation and workflow.
+       */
+      const familyCompoundDuplicate =
+        sameProblemFamily &&
+        semanticSimilarity >= 0.68 &&
+        workflowSimilarity >= 0.7;
+      const candidateIsDuplicate =
+        titleSimilarity >= 0.9 ||
+        semanticSimilarity >= 0.82 ||
+        familyCompoundDuplicate;
+      const combinedSimilarity = Math.max(
+        titleSimilarity,
+        semanticSimilarity,
+        familyCompoundDuplicate ? workflowSimilarity : 0,
+      );
 
-      if (combinedSimilarity > highestSimilarity) {
+      if (
+        combinedSimilarity > highestSimilarity ||
+        (candidateIsDuplicate && matchedIdea === null)
+      ) {
         highestSimilarity = combinedSimilarity;
         highestTitleSimilarity = titleSimilarity;
         highestSemanticSimilarity = semanticSimilarity;
+        highestWorkflowSimilarity = workflowSimilarity;
+        highestSameProblemFamily = sameProblemFamily;
         matchedIdea = candidate;
       }
 
@@ -143,13 +186,37 @@ export class IdeaDuplicateDetectionService {
       }
     }
 
+    const nearTitleDuplicate = highestTitleSimilarity >= 0.9;
+    const directSemanticDuplicate = highestSemanticSimilarity >= 0.82;
+    const familyCompoundDuplicate =
+      highestSameProblemFamily &&
+      highestSemanticSimilarity >= 0.68 &&
+      highestWorkflowSimilarity >= 0.7;
+    const isDuplicate =
+      nearTitleDuplicate || directSemanticDuplicate || familyCompoundDuplicate;
+    const duplicateReasons: IdeaDuplicateReason[] = [];
+
+    if (nearTitleDuplicate) {
+      duplicateReasons.push('EXACT_OR_NEAR_TITLE');
+    }
+
+    if (directSemanticDuplicate || familyCompoundDuplicate) {
+      duplicateReasons.push('SEMANTIC_OVERLAP');
+    }
+
+    if (familyCompoundDuplicate) {
+      duplicateReasons.push('SAME_PROBLEM_FAMILY');
+    }
+
     return {
-      isDuplicate:
-        highestTitleSimilarity >= IDEA_TITLE_SIMILARITY_THRESHOLD ||
-        highestSemanticSimilarity >= IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
+      isDuplicate,
       highestSimilarity: this.round(highestSimilarity),
       titleSimilarity: this.round(highestTitleSimilarity),
       semanticSimilarity: this.round(highestSemanticSimilarity),
+      workflowSimilarity: this.round(highestWorkflowSimilarity),
+      sameProblemFamily: highestSameProblemFamily,
+      familyPenalty: 0,
+      duplicateReasons,
       matchedIdea,
     };
   }
@@ -176,6 +243,10 @@ export class IdeaDuplicateDetectionService {
         highestSimilarity: result.highestSimilarity,
         titleSimilarity: result.titleSimilarity,
         semanticSimilarity: result.semanticSimilarity,
+        workflowSimilarity: result.workflowSimilarity,
+        sameProblemFamily: result.sameProblemFamily,
+        familyPenalty: result.familyPenalty,
+        duplicateReasons: result.duplicateReasons,
         titleThreshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
         semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
@@ -286,6 +357,59 @@ export class IdeaDuplicateDetectionService {
       users: this.tokenize(this.jsonText(idea.targetUsers)),
       abstract: this.tokenize(idea.fullAbstract ?? idea.partialAbstract ?? ''),
     };
+  }
+
+  /**
+   * Detects repeated product directions even when branding and wording change.
+   * The family comparison intentionally focuses on the primary problem and
+   * workflow rather than generic terms such as platform or dashboard.
+   */
+  private belongsToSameProblemFamily(
+    idea: CoreIdeaAiOutput,
+    candidate: DuplicateIdeaCandidate,
+  ): boolean {
+    const first = [
+      idea.title,
+      idea.problemStatement,
+      ...idea.objectives,
+      ...idea.targetUsers,
+      idea.fullAbstract ?? idea.partialAbstract ?? idea.limitedAbstract ?? '',
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+    const second = [
+      candidate.title,
+      candidate.problemStatement,
+      this.jsonText(candidate.objectives),
+      this.jsonText(candidate.targetUsers),
+      candidate.fullAbstract ?? candidate.partialAbstract ?? '',
+    ]
+      .join(' ')
+      .toLocaleLowerCase();
+
+    const families: readonly RegExp[] = [
+      /authentication|account activation|login|sign in|verification|credential|password recovery/iu,
+      /data loss|synchroni[sz]|backup|restore|recovery|missing history/iu,
+      /navigation|interface|usability|back button|scroll|popup/iu,
+      /cross-device|desktop|laptop|mobile-only|computer access/iu,
+      /paywall|pricing|subscription|cost restriction|paid access/iu,
+    ];
+
+    return families.some((family) => family.test(first) && family.test(second));
+  }
+  /**
+   * Measures similarity of the candidate's operational flow separately from
+   * broad topic similarity. Objectives and abstracts carry most of the weight
+   * because they describe what users do and how the product delivers value.
+   */
+  private calculateWorkflowSimilarity(
+    first: Record<string, Set<string>>,
+    second: Record<string, Set<string>>,
+  ): number {
+    return (
+      this.calculateDiceSimilarity(first.objectives, second.objectives) * 0.6 +
+      this.calculateDiceSimilarity(first.abstract, second.abstract) * 0.4
+    );
   }
 
   private calculateWeightedSemanticSimilarity(

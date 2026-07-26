@@ -306,14 +306,21 @@ export class IdeaGenerationRunService {
     const result = await this.prisma.ideaGenerationRun.updateMany({
       where: {
         id: normalizedRunId,
-        status: IdeaGenerationRunStatus.QUEUED,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
         cancelRequestedAt: null,
       },
       data: {
         status: IdeaGenerationRunStatus.RUNNING,
         startedAt: now,
         lastHeartbeatAt: now,
-        progressPercent: 0,
+        nextRetryAt: null,
+        pausedAt: null,
         errorCode: null,
         errorMessage: null,
       },
@@ -575,7 +582,12 @@ export class IdeaGenerationRunService {
     const result = await db.ideaGenerationRun.updateMany({
       where: {
         id: normalizedRunId,
-        status: IdeaGenerationRunStatus.RUNNING,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+          ],
+        },
         cancelRequestedAt: null,
       },
       data: {
@@ -631,7 +643,9 @@ export class IdeaGenerationRunService {
 
     if (
       run.status !== IdeaGenerationRunStatus.QUEUED &&
-      run.status !== IdeaGenerationRunStatus.RUNNING
+      run.status !== IdeaGenerationRunStatus.RUNNING &&
+      run.status !== IdeaGenerationRunStatus.RETRYING &&
+      run.status !== IdeaGenerationRunStatus.PAUSED
     ) {
       throw new ConflictException({
         code: 'IDEA_GENERATION_RUN_CANNOT_FAIL',
@@ -673,6 +687,136 @@ export class IdeaGenerationRunService {
     return this.findRunOrThrow(runId, db);
   }
 
+  /** Persists the latest complete pipeline context as a durable checkpoint. */
+  async saveContextCheckpoint(
+    runId: string,
+    context: Prisma.InputJsonValue,
+    db: IdeaGenerationRunDatabaseClient = this.prisma,
+  ): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    return db.ideaGenerationRun.update({
+      where: { id: normalizedRunId },
+      data: {
+        contextSnapshot: context,
+        lastHeartbeatAt: new Date(),
+      },
+    });
+  }
+
+  /** Moves an active run into RETRYING after a transient infrastructure error. */
+  async markRetrying(
+    runId: string,
+    errorMessage: string,
+    nextRetryAt: Date,
+  ): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    const now = new Date();
+
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        completedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.RETRYING,
+        startedAt: now,
+        completedAt: null,
+        errorCode: 'TRANSIENT_DATABASE_FAILURE',
+        errorMessage,
+        nextRetryAt,
+        pausedAt: null,
+        retryCount: { increment: 1 },
+        lastHeartbeatAt: now,
+      },
+    });
+
+    if (result.count !== 1) {
+      await this.throwRunningUpdateFailure(normalizedRunId);
+    }
+
+    return this.findRunOrThrow(normalizedRunId);
+  }
+
+  /** Pauses a run after automatic retries have been exhausted. */
+  async pauseRun(
+    runId: string,
+    errorMessage: string,
+    nextRetryAt: Date,
+  ): Promise<IdeaGenerationRun> {
+    const normalizedRunId = this.normalizeRequiredValue(
+      runId,
+      'Generation-run ID',
+    );
+
+    const now = new Date();
+
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: normalizedRunId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        completedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.PAUSED,
+        startedAt: now,
+        completedAt: null,
+        errorCode: 'GENERATION_PAUSED_TRANSIENT_FAILURE',
+        errorMessage,
+        nextRetryAt,
+        pausedAt: now,
+        lastHeartbeatAt: now,
+      },
+    });
+
+    if (result.count !== 1) {
+      await this.throwRunningUpdateFailure(normalizedRunId);
+    }
+
+    return this.findRunOrThrow(normalizedRunId);
+  }
+
+  /** Returns paused/retrying runs that are ready for recovery. */
+  async findRecoverableRuns(limit = 20): Promise<IdeaGenerationRun[]> {
+    const now = new Date();
+
+    return this.prisma.ideaGenerationRun.findMany({
+      where: {
+        status: {
+          in: [
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+        cancelRequestedAt: null,
+        contextSnapshot: { not: Prisma.JsonNull },
+        OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: Math.max(1, Math.min(limit, 100)),
+    });
+  }
+
   /**
    * Marks a queued or running run as cancelled.
    *
@@ -700,7 +844,9 @@ export class IdeaGenerationRunService {
 
     if (
       run.status !== IdeaGenerationRunStatus.QUEUED &&
-      run.status !== IdeaGenerationRunStatus.RUNNING
+      run.status !== IdeaGenerationRunStatus.RUNNING &&
+      run.status !== IdeaGenerationRunStatus.RETRYING &&
+      run.status !== IdeaGenerationRunStatus.PAUSED
     ) {
       throw new ConflictException({
         code: 'IDEA_GENERATION_RUN_CANNOT_CANCEL',

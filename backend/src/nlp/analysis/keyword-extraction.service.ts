@@ -12,7 +12,7 @@ import type { WeightedKeyword } from '../pipeline/types/intelligent-analysis.typ
 const MAX_EXTRACTED_KEYWORDS = 30;
 const POST_TERM_WEIGHT = 1;
 const COMMENT_TERM_WEIGHT = 2;
-const MINIMUM_KEYWORD_FREQUENCY = 2;
+const MINIMUM_KEYWORD_FREQUENCY = 1;
 
 /**
  * Canonical workflow and failure-mode keywords exposed by the NLP API.
@@ -25,6 +25,54 @@ const CANONICAL_KEYWORD_DEFINITIONS: ReadonlyArray<{
   readonly keyword: string;
   readonly patterns: readonly RegExp[];
 }> = [
+  {
+    keyword: 'ai-assisted algorithm discovery',
+    patterns: [
+      /\b(?:algorithm discovery|algorithm guessing|identify (?:the )?(?:correct )?(?:algorithm|operation)|infer (?:the )?(?:algorithm|operation)|magic feature|cyberchef magic)\b/iu,
+    ],
+  },
+  {
+    keyword: 'transformation recipe generation',
+    patterns: [
+      /\b(?:recipe generation|transformation recipes?|operation(?:al)? order|sequence of algorithms?|algorithm chains?|data transformation)\b/iu,
+    ],
+  },
+  {
+    keyword: 'local ai processing',
+    patterns: [
+      /\b(?:local-first ai|local ai|locally running ai|on-device ai|without external servers?|never be sent to external servers?)\b/iu,
+    ],
+  },
+  {
+    keyword: 'data privacy and consent',
+    patterns: [
+      /\b(?:explicit user consent|data privacy|sensitive data|external servers?|privacy-preserving)\b/iu,
+    ],
+  },
+  {
+    keyword: 'agent orchestration',
+    patterns: [
+      /\b(?:agent orchestration|agent registration|agent auto[- ]?discovery|routing requests to different agents|multi-agent orchestration)\b/iu,
+    ],
+  },
+  {
+    keyword: 'explainable ai recommendations',
+    patterns: [
+      /\b(?:explainable ai|human-readable explanations?|plain-language explanations?|explainability|auditability|why (?:the )?(?:algorithm|operation|step) (?:was|is) chosen|confidence scores?|uncertainty estimates?)\b/iu,
+    ],
+  },
+  {
+    keyword: 'cyberchef integration',
+    patterns: [
+      /\b(?:cyberchef-compatible|cyberchef integration|export(?:able)? recipes?[^.!?\n]{0,40}cyberchef|use in (?:platforms? such as )?cyberchef)\b/iu,
+    ],
+  },
+  {
+    keyword: 'collaborative recipe repository',
+    patterns: [
+      /\b(?:collaborative recipe repository|shared recipe repository|share[^.!?\n]{0,40}(?:algorithm|transformation) recipes?|version[^.!?\n]{0,30}recipes?|review[^.!?\n]{0,30}recipes?)\b/iu,
+    ],
+  },
   {
     keyword: 'login loop',
     patterns: [
@@ -161,6 +209,16 @@ const CANONICAL_KEYWORD_DEFINITIONS: ReadonlyArray<{
  * Values are normalized to the same canonical vocabulary used above.
  */
 const LEXICON_TERM_ALIASES = new Map<string, string>([
+  ['algorithm discovery', 'ai-assisted algorithm discovery'],
+  ['data transformation', 'transformation recipe generation'],
+  ['local ai', 'local ai processing'],
+  ['privacy', 'data privacy and consent'],
+  ['orchestration', 'agent orchestration'],
+  ['explainability', 'explainable ai recommendations'],
+  ['auditability', 'explainable ai recommendations'],
+  ['confidence score', 'explainable ai recommendations'],
+  ['cyberchef', 'cyberchef integration'],
+  ['recipe repository', 'collaborative recipe repository'],
   ['activation', 'account activation'],
   ['account activation', 'account activation'],
   ['authentication', 'authentication'],

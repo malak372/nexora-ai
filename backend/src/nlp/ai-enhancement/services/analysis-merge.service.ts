@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  buildCommunityEvidenceExcerpt,
   hasDirectCommunityComplaint,
+  isLikelyGamingEvidence,
   isLikelyProductDescription,
+  isLikelyPromotionalEvidence,
 } from '../../common/utils/community-evidence.util';
 
 import {
@@ -52,6 +55,21 @@ const HIGH_PRIORITY_THRESHOLD = 0.67;
 const MEDIUM_PRIORITY_THRESHOLD = 0.34;
 
 type EvidenceRecord = Pick<AiEnhancementEvidence, 'text' | 'sourceType'>;
+
+/** Complaint samples that express sentiment without identifying a concrete failure. */
+const VAGUE_COMPLAINT_PATTERNS: readonly RegExp[] = [
+  /^(?:very\s+)?(?:bad|terrible|awful|horrible|useless)(?:\s+(?:app|application|service|system))?[.!…]*$/iu,
+  /^(?:what\s+a\s+)?terrible\s+logic[.!…]*$/iu,
+  /^(?:doesn['’]?t\s+work|not\s+working)[.!…]*$/iu,
+  /^(?:سيئ|سيء|فظيع|تطبيق\s+سيئ|لا\s+يعمل)[.!…]*$/iu,
+];
+
+/** Signals that make a complaint useful for opportunity discovery. */
+const CONCRETE_FAILURE_PATTERNS: readonly RegExp[] = [
+  /\b(?:connect|disconnect|sync|crash|freeze|glitch|error|delete|save|load|login|schedule|irrigat|controller|notification|payment|upload|download|offline|network|bluetooth|firmware)\w*\b/iu,
+  /\b(?:cannot|can['’]?t|unable|fails?\s+to|failed\s+to|without\s+warning|keeps?\s+\w+ing)\b/iu,
+  /(?:اتصال|ينفصل|مزامنة|تعطل|خطأ|حذف|حفظ|تحميل|دخول|جدولة|ري|متحكم|إشعار|دفع|بدون\s+تحذير)/iu,
+];
 
 /**
  * Merges validated AI-enhancement output with the authoritative
@@ -489,21 +507,111 @@ export class AnalysisMergeService {
         continue;
       }
 
-      if (isLikelyProductDescription(evidence.text, evidence.sourceType)) {
+      if (isLikelyGamingEvidence(evidence.text)) {
+        continue;
+      }
+
+      const hasComplaint = hasDirectCommunityComplaint(evidence.text);
+
+      if (requireDirectEvidence && !hasComplaint) {
         continue;
       }
 
       if (
-        requireDirectEvidence &&
-        !hasDirectCommunityComplaint(evidence.text)
+        !hasComplaint &&
+        (isLikelyPromotionalEvidence(evidence.text) ||
+          isLikelyProductDescription(evidence.text, evidence.sourceType))
       ) {
         continue;
       }
 
-      samples.push(evidence.text);
+      const sample = hasComplaint
+        ? buildCommunityEvidenceExcerpt(evidence.text, 500)
+        : evidence.text.trim();
+
+      if (
+        sample &&
+        !isLikelyGamingEvidence(sample) &&
+        !isLikelyPromotionalEvidence(sample) &&
+        !isLikelyProductDescription(sample, evidence.sourceType)
+      ) {
+        samples.push(sample);
+      }
     }
 
-    return this.mergeUniqueStrings([], samples);
+    return this.rankEvidenceSamples(samples, requireDirectEvidence);
+  }
+
+  /**
+   * Orders evidence by diagnostic value and prevents generic sentiment-only
+   * comments from becoming the primary support for a problem or need.
+   */
+  private rankEvidenceSamples(
+    samples: ReadonlyArray<string>,
+    requireConcreteEvidence: boolean,
+  ): string[] {
+    const uniqueSamples = this.mergeUniqueStrings([], samples);
+    const scored = uniqueSamples.map((sample) => ({
+      sample,
+      score: this.calculateEvidenceSpecificityScore(sample),
+    }));
+    const concrete = scored.filter((item) => item.score >= 0.55);
+
+    if (requireConcreteEvidence && concrete.length === 0) {
+      return [];
+    }
+
+    const selected = concrete.length > 0 ? concrete : scored;
+
+    return selected
+      .sort(
+        (first, second) =>
+          second.score - first.score ||
+          second.sample.length - first.sample.length ||
+          first.sample.localeCompare(second.sample),
+      )
+      .map((item) => item.sample);
+  }
+
+  /** Returns a deterministic 0..1 diagnostic-value score for one sample. */
+  private calculateEvidenceSpecificityScore(sample: string): number {
+    const normalized = sample.replace(/\s+/gu, ' ').trim();
+
+    if (isLikelyGamingEvidence(normalized)) {
+      return 0;
+    }
+
+    if (
+      !normalized ||
+      VAGUE_COMPLAINT_PATTERNS.some((pattern) => pattern.test(normalized))
+    ) {
+      return 0.15;
+    }
+
+    let score = 0.25;
+
+    if (CONCRETE_FAILURE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+      score += 0.45;
+    }
+    if (
+      /\b(?:when|while|after|before|because|during|every\s+time)\b/iu.test(
+        normalized,
+      )
+    ) {
+      score += 0.12;
+    }
+    if (
+      /\b(?:data|plan|field|crop|water|device|account|screen|button|record|command)\b/iu.test(
+        normalized,
+      )
+    ) {
+      score += 0.1;
+    }
+    if (normalized.split(/\s+/u).length >= 8) {
+      score += 0.08;
+    }
+
+    return Math.min(1, score);
   }
 
   /**
@@ -519,8 +627,18 @@ export class AnalysisMergeService {
     >();
 
     for (const problem of problems) {
-      const directEvidence = problem.evidenceSamples.filter((sample) =>
-        hasDirectCommunityComplaint(sample),
+      const directEvidence = this.rankEvidenceSamples(
+        problem.evidenceSamples
+          .filter(
+            (sample) =>
+              hasDirectCommunityComplaint(sample) &&
+              !isLikelyGamingEvidence(sample),
+          )
+          .map((sample) => buildCommunityEvidenceExcerpt(sample, 500))
+          .filter(
+            (sample) => Boolean(sample) && !isLikelyPromotionalEvidence(sample),
+          ),
+        true,
       );
 
       if (directEvidence.length === 0) {
@@ -573,11 +691,24 @@ export class AnalysisMergeService {
     >();
 
     for (const need of needs) {
-      const canonicalNeed = this.canonicalizeNeedTitle(need.need);
-      const key = this.normalizeKey(canonicalNeed);
-      const directEvidence = need.evidenceSamples.filter((sample) =>
-        hasDirectCommunityComplaint(sample),
+      const directEvidence = this.rankEvidenceSamples(
+        need.evidenceSamples
+          .filter(
+            (sample) =>
+              hasDirectCommunityComplaint(sample) &&
+              !isLikelyGamingEvidence(sample),
+          )
+          .map((sample) => buildCommunityEvidenceExcerpt(sample, 500))
+          .filter(
+            (sample) => Boolean(sample) && !isLikelyPromotionalEvidence(sample),
+          ),
+        true,
       );
+      const canonicalNeed = this.canonicalizeNeedTitle(
+        need.need,
+        directEvidence,
+      );
+      const key = this.normalizeKey(canonicalNeed);
 
       if (directEvidence.length === 0) {
         continue;
@@ -615,12 +746,34 @@ export class AnalysisMergeService {
   }
 
   /** Maps semantically equivalent need phrases to one stable label. */
-  private canonicalizeNeedTitle(value: string): string {
+  private canonicalizeNeedTitle(
+    value: string,
+    evidenceSamples: readonly string[] = [],
+  ): string {
     const normalized = this.normalizeKey(value);
+    const evidenceText = this.normalizeKey(evidenceSamples.join(' '));
+
+    if (
+      /connect|disconnect|network|device|controller|bluetooth|firmware|signal/iu.test(
+        evidenceText,
+      ) &&
+      /fail|failed|failing|problem|issue|never|unable|cannot|can't|disconnect/iu.test(
+        evidenceText,
+      )
+    ) {
+      return 'Reliable Connectivity and Device Communication';
+    }
 
     // Match concrete workflows before generic words such as "reliable".
     if (/offline|without internet|no internet/iu.test(normalized)) {
-      return 'Offline Access to Learning Materials';
+      const isLearningContext =
+        /learn|lesson|course|education|student|teacher|material|content|curriculum/iu.test(
+          `${normalized} ${evidenceText}`,
+        );
+
+      return isLearningContext
+        ? 'Offline Access to Learning Materials'
+        : 'Offline Access to Operational Data and Controls';
     }
 
     if (
@@ -659,6 +812,14 @@ export class AnalysisMergeService {
   /** Infers the canonical problem related to one normalized need. */
   private inferRelatedProblemForNeed(value: string): string | undefined {
     const normalized = this.normalizeKey(value);
+
+    if (
+      /connectivity|device communication|controller communication/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Connectivity and Device Communication Failures';
+    }
 
     if (/crash|stable|reliable application|performance/iu.test(normalized)) {
       return 'Application Reliability and Crash Failures';

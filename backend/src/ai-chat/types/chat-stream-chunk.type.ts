@@ -8,23 +8,23 @@
  * One ordered AI response chunk.
  */
 export type AiChatStreamChunk = {
-    /**
-     * Parent chat-session identifier.
-     */
-    readonly sessionId: string;
+  /**
+   * Parent chat-session identifier.
+   */
+  readonly sessionId: string;
 
-    /**
-     * Persisted AI-message identifier.
-     */
-    readonly messageId: string;
+  /**
+   * Persisted AI-message identifier.
+   */
+  readonly messageId: string;
 
-    /**
-     * Zero-based chunk index.
-     */
-    readonly index: number;
+  /**
+   * Zero-based chunk index.
+   */
+  readonly index: number;
 
-    /**
-     * Newly emitted response fragment.
-     */
-    readonly content: string;
+  /**
+   * Newly emitted response fragment.
+   */
+  readonly content: string;
 };

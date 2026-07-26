@@ -41,7 +41,10 @@ import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.serv
 import { IdeaCandidateJudgePromptService } from './services/idea-candidate-judge-prompt.service';
 import { IdeaCandidateJudgeService } from './services/idea-candidate-judge.service';
 import { IdeaDuplicateDetectionService } from './services/idea-duplicate-detection.service';
+import { IdeaEvidenceRecoveryService } from './services/idea-evidence-recovery.service';
 import { IdeaGenerationBenchmarkService } from './services/idea-generation-benchmark.service';
+import { IdeaGenerationDatabaseRetryService } from './services/idea-generation-database-retry.service';
+import { IdeaGenerationRecoveryService } from './services/idea-generation-recovery.service';
 import { IdeaGenerationModelSelectorService } from './services/idea-generation-model-selector.service';
 import { IdeaGenerationLockService } from './services/idea-generation-lock.service';
 import {
@@ -92,7 +95,9 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaGenerationProgressService,
     IdeaGenerationCancellationService,
     IdeaGenerationStageService,
+    IdeaGenerationDatabaseRetryService,
     IdeaGenerationPipelineService,
+    IdeaGenerationRecoveryService,
     IdeaGenerationLockService,
     IdeaGenerationOrchestratorService,
 
@@ -103,6 +108,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaAiOutputParserService,
     IdeaUnlockOutputParserService,
     IdeaDuplicateDetectionService,
+    IdeaEvidenceRecoveryService,
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
     IdeaOpportunityRankingService,

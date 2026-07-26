@@ -26,31 +26,31 @@ import { AiChatMessageWriterService } from './services/messages/ai-chat-message-
  * AI chat feature module.
  */
 @Module({
-    imports: [
-        ConfigModule,
-        PrismaModule,
-        AiModule,
-        PromptsModule,
-        JwtModule.registerAsync({
-            imports: [ConfigModule],
-            inject: [ConfigService],
-            useFactory: (configService: ConfigService) => ({
-                secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
-            }),
-        }),
-    ],
-    controllers: [AiChatController],
-    providers: [
-        AiChatGateway,
-        WsJwtAuthGuard,
-        WsExceptionFilter,
-        AiChatAccessService,
-        AiChatContextService,
-        AiChatStreamService,
-        AiChatService,
-        AiChatMessageReaderService,
-        AiChatMessageWriterService,
-    ],
-    exports: [AiChatService, AiChatAccessService],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    AiModule,
+    PromptsModule,
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      }),
+    }),
+  ],
+  controllers: [AiChatController],
+  providers: [
+    AiChatGateway,
+    WsJwtAuthGuard,
+    WsExceptionFilter,
+    AiChatAccessService,
+    AiChatContextService,
+    AiChatStreamService,
+    AiChatService,
+    AiChatMessageReaderService,
+    AiChatMessageWriterService,
+  ],
+  exports: [AiChatService, AiChatAccessService],
 })
-export class AiChatModule { }
+export class AiChatModule {}

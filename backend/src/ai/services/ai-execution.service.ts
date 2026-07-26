@@ -71,6 +71,29 @@ const NON_FALLBACK_PROVIDER_ERROR_CODES: ReadonlySet<AiProviderErrorCode> =
   ]);
 
 /**
+ * Failures that indicate a real operational or availability problem with
+ * the selected model/provider and therefore must affect persisted model
+ * health.
+ *
+ * Application-level output failures such as invalid structured JSON,
+ * content filtering, empty output, invalid prompts, and cancellations are
+ * intentionally excluded. Those failures can occur after a successful HTTP
+ * request and must not incorrectly mark an otherwise available model as
+ * DEGRADED or UNAVAILABLE.
+ */
+const MODEL_HEALTH_FAILURE_CODES: ReadonlySet<AiProviderErrorCode> = new Set([
+  AiProviderErrorCode.TIMEOUT,
+  AiProviderErrorCode.NETWORK,
+  AiProviderErrorCode.RATE_LIMIT,
+  AiProviderErrorCode.INSUFFICIENT_QUOTA,
+  AiProviderErrorCode.PROVIDER_UNAVAILABLE,
+  AiProviderErrorCode.INVALID_CREDENTIALS,
+  AiProviderErrorCode.FORBIDDEN,
+  AiProviderErrorCode.MODEL_NOT_FOUND,
+  AiProviderErrorCode.INVALID_MODEL_CONFIGURATION,
+]);
+
+/**
  * Validated response text together with the metadata returned by the
  * provider request that produced it.
  */
@@ -419,7 +442,7 @@ export class AiExecutionService {
     } catch (error: unknown) {
       const normalizedError = this.normalizeError(error);
 
-      await this.recordModelFailure(model.id);
+      await this.recordModelFailureWhenApplicable(model.id, normalizedError);
 
       return {
         success: false,
@@ -427,7 +450,8 @@ export class AiExecutionService {
       };
     }
 
-    const totalAttemptsForModel = this.maxRetriesPerModel + 1;
+    const totalAttemptsForModel =
+      (input.maxRetriesPerModel ?? this.maxRetriesPerModel) + 1;
 
     let finalModelError: AiProviderError | undefined;
 
@@ -459,17 +483,19 @@ export class AiExecutionService {
       await this.delay(this.calculateRetryDelay(modelAttemptNumber));
     }
 
-    await this.recordModelFailure(model.id);
+    const resolvedError =
+      finalModelError ??
+      new AiProviderError(
+        'The AI model failed without returning a normalized error.',
+        AiProviderErrorCode.UNKNOWN,
+        true,
+      );
+
+    await this.recordModelFailureWhenApplicable(model.id, resolvedError);
 
     return {
       success: false,
-      error:
-        finalModelError ??
-        new AiProviderError(
-          'The AI model failed without returning a normalized error.',
-          AiProviderErrorCode.UNKNOWN,
-          true,
-        ),
+      error: resolvedError,
     };
   }
 
@@ -509,6 +535,7 @@ export class AiExecutionService {
           model,
           useNativeResponseSchema,
         ),
+        this.resolveRequestTimeoutMs(input.timeoutMs),
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
@@ -725,6 +752,7 @@ export class AiExecutionService {
     provider: AiProvider,
     model: AiModel,
     request: ExecuteProviderRequestInput,
+    timeoutMs: number,
   ): Promise<AiProviderGenerateResult> {
     return this.timeoutService.execute(
       (signal) =>
@@ -747,7 +775,7 @@ export class AiExecutionService {
 
           signal,
         }),
-      this.timeoutMs,
+      timeoutMs,
     );
   }
 
@@ -1010,6 +1038,7 @@ export class AiExecutionService {
 
           responseSchemaName: input.responseSchemaName,
         },
+        this.resolveRequestTimeoutMs(input.timeoutMs),
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
@@ -1276,10 +1305,22 @@ export class AiExecutionService {
   }
 
   /**
-   * Records one failed completed model flow without replacing the
-   * provider error returned by that model.
+   * Records one failed model flow only when the normalized error represents
+   * a real provider/model availability problem.
+   *
+   * Invalid structured output, content filtering, empty responses, invalid
+   * prompts, cancellation, and unclassified application errors remain in
+   * execution logs but do not increase the model's consecutive-failure
+   * counter.
    */
-  private async recordModelFailure(modelId: string): Promise<void> {
+  private async recordModelFailureWhenApplicable(
+    modelId: string,
+    error: AiProviderError,
+  ): Promise<void> {
+    if (!MODEL_HEALTH_FAILURE_CODES.has(error.code)) {
+      return;
+    }
+
     await this.ignoreMaintenanceFailure(
       this.modelHealthService.recordFailure(modelId),
     );
@@ -1377,6 +1418,10 @@ export class AiExecutionService {
    * Validates the complete logical execution contract before routing any
    * model or sending an external request.
    */
+  private resolveRequestTimeoutMs(timeoutMs: number | undefined): number {
+    return timeoutMs ?? this.timeoutMs;
+  }
+
   private validateExecutionInput(input: AiExecutionInput): void {
     this.validatePromptFields(input);
 
@@ -1416,6 +1461,29 @@ export class AiExecutionService {
       input.estimatedOutputTokens,
       'estimatedOutputTokens',
     );
+
+    if (input.timeoutMs !== undefined) {
+      this.validateOptionalPositiveInteger(input.timeoutMs, 'timeoutMs');
+      if (
+        input.timeoutMs < MIN_AI_REQUEST_TIMEOUT_MS ||
+        input.timeoutMs > MAX_AI_REQUEST_TIMEOUT_MS
+      ) {
+        throw new BadRequestException(
+          `timeoutMs must be between ${MIN_AI_REQUEST_TIMEOUT_MS} and ${MAX_AI_REQUEST_TIMEOUT_MS}.`,
+        );
+      }
+    }
+
+    if (
+      input.maxRetriesPerModel !== undefined &&
+      (!Number.isInteger(input.maxRetriesPerModel) ||
+        input.maxRetriesPerModel < 0 ||
+        input.maxRetriesPerModel > 3)
+    ) {
+      throw new BadRequestException(
+        'maxRetriesPerModel must be an integer between 0 and 3.',
+      );
+    }
 
     if (
       input.allowProviderFallbackOnInvalidPrompt !== undefined &&

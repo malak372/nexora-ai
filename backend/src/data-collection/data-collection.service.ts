@@ -548,6 +548,14 @@ export class DataCollectionService {
         : 0;
 
       const finalScore = baseScore + sourceTagBonus;
+      const passesGenericTitleGuard = this.passesGenericTitleGuard(
+        post,
+        normalizedTerms,
+        normalizedTags,
+        hasExactSourceTagMatch,
+      );
+      const accepted =
+        finalScore >= this.MIN_RELEVANCE_SCORE && passesGenericTitleGuard;
 
       this.logger.debug(
         [
@@ -557,12 +565,95 @@ export class DataCollectionService {
           `sourceTagBonus=${sourceTagBonus}`,
           `finalScore=${finalScore}`,
           `minimum=${this.MIN_RELEVANCE_SCORE}`,
-          `accepted=${finalScore >= this.MIN_RELEVANCE_SCORE}`,
+          `genericTitleGuard=${passesGenericTitleGuard}`,
+          `accepted=${accepted}`,
         ].join(' | '),
       );
 
-      return finalScore >= this.MIN_RELEVANCE_SCORE;
+      return accepted;
     });
+  }
+
+  /**
+   * Prevents generic marketplace listings from passing relevance checks only
+   * because their title repeats a broad domain label such as "AI" or
+   * "Artificial Intelligence".
+   *
+   * Generic titles remain acceptable when at least one stronger signal exists:
+   * - A trusted exact source tag match.
+   * - The post body contains two distinct relevance terms.
+   * - The body contains a concrete problem, need, or feature-request signal.
+   */
+  private passesGenericTitleGuard(
+    post: CollectorPost,
+    normalizedTerms: readonly string[],
+    normalizedTags: readonly string[],
+    hasExactSourceTagMatch: boolean,
+  ): boolean {
+    const title = (post.title ?? '').trim().toLowerCase().replace(/\s+/gu, ' ');
+
+    if (!this.isGenericDomainTitle(title, normalizedTerms)) {
+      return true;
+    }
+
+    if (hasExactSourceTagMatch || normalizedTags.length > 0) {
+      return true;
+    }
+
+    const body = (post.content ?? '').toLowerCase();
+    const matchedBodyTerms = normalizedTerms.filter(
+      (term) => term.length >= 3 && body.includes(term),
+    );
+    const hasMultipleBodyMatches = new Set(matchedBodyTerms).size >= 2;
+    const hasConcreteCommunitySignal =
+      /\b(?:cannot|can't|doesn't work|failed|failure|error|bug|crash|freeze|missing|limited|need|wish|request|should add|privacy|consent|paywall|subscription|slow|confusing|difficult)\b/iu.test(
+        body,
+      );
+
+    return hasMultipleBodyMatches || hasConcreteCommunitySignal;
+  }
+
+  /**
+   * Detects titles composed mainly of broad domain terms and marketplace filler.
+   */
+  private isGenericDomainTitle(
+    title: string,
+    normalizedTerms: readonly string[],
+  ): boolean {
+    const genericMarketplaceWords = new Set([
+      'app',
+      'application',
+      'assistant',
+      'bot',
+      'chat',
+      'chatbot',
+      'platform',
+      'software',
+      'system',
+      'tool',
+      'writer',
+      'ask',
+      'anything',
+      'smart',
+    ]);
+    const normalizedDomainTerms = new Set(
+      normalizedTerms.flatMap((term) => term.split(/\s+/u)),
+    );
+    const meaningfulTokens = title
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/u)
+      .filter(Boolean)
+      .filter(
+        (token) =>
+          !genericMarketplaceWords.has(token) &&
+          !normalizedDomainTerms.has(token),
+      );
+
+    const containsDomainTerm = normalizedTerms.some(
+      (term) => term.length >= 2 && title.includes(term),
+    );
+
+    return containsDomainTerm && meaningfulTokens.length <= 1;
   }
 
   /**
