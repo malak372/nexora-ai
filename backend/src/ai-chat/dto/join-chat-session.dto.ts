@@ -10,9 +10,9 @@ import { IsUUID } from 'class-validator';
  * Socket.IO payload used when joining a chat-session room.
  */
 export class JoinChatSessionDto {
-    /**
-     * Chat-session identifier to join.
-     */
-    @IsUUID()
-    sessionId!: string;
+  /**
+   * Chat-session identifier to join.
+   */
+  @IsUUID()
+  sessionId!: string;
 }

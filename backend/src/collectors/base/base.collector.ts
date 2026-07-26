@@ -36,22 +36,22 @@ export abstract class BaseCollector {
 
     this.maxFetchedPosts = this.getPositiveNumber(
       'COLLECTOR_MAX_FETCHED_POSTS',
-      50,
+      80,
     );
 
     this.maxSavedPosts = this.getPositiveNumber(
       'COLLECTOR_MAX_SAVED_POSTS',
-      30,
+      40,
     );
 
     this.maxFetchedComments = this.getPositiveNumber(
       'COLLECTOR_MAX_FETCHED_COMMENTS',
-      20,
+      40,
     );
 
     this.maxSavedComments = this.getPositiveNumber(
       'COLLECTOR_MAX_SAVED_COMMENTS',
-      30,
+      40,
     );
 
     this.retryAttempts = this.getPositiveNumber('COLLECTOR_RETRY_ATTEMPTS', 3);

@@ -93,6 +93,20 @@ export const DEFAULT_STAGE_MAX_ATTEMPTS = 2;
  * Current value: one second.
  */
 export const DEFAULT_STAGE_RETRY_DELAY_MS = 1_000;
+/** Maximum number of database reconnect attempts before a run is paused. */
+export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 8;
+
+/** Initial delay used by exponential database retry backoff. */
+export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 1_000;
+
+/** Maximum delay between database retry attempts. */
+export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 30_000;
+
+/** Delay before a paused generation run becomes eligible for recovery. */
+export const GENERATION_PAUSED_RETRY_DELAY_MS = 60_000;
+
+/** Maximum automatic recovery attempts for one generation run. */
+export const GENERATION_RUN_MAX_RECOVERY_ATTEMPTS = 5;
 
 /**
  * Minimum valid progress percentage for a generation run
@@ -199,10 +213,10 @@ export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 100;
  * - 0 means completely different.
  * - 1 means identical.
  */
-export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.82;
+export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.9;
 
 /** Semantic similarity threshold across the complete core idea. */
-export const IDEA_SEMANTIC_SIMILARITY_THRESHOLD = 0.68;
+export const IDEA_SEMANTIC_SIMILARITY_THRESHOLD = 0.82;
 
 /**
  * Maximum length of a normalized idea title used during
@@ -360,6 +374,13 @@ export const IDEA_GENERATION_ERROR_CODES = {
   NLP_ANALYSIS_FAILED: 'NLP_ANALYSIS_FAILED',
 
   /**
+   * No evidence-backed opportunity passed the strict selection gate even
+   * after the bounded targeted evidence-recovery attempt.
+   */
+  INSUFFICIENT_EVIDENCE_FOR_IDEA_GENERATION:
+    'INSUFFICIENT_EVIDENCE_FOR_IDEA_GENERATION',
+
+  /**
    * The idea-generation prompt could not be constructed.
    */
   PROMPT_BUILD_FAILED: 'PROMPT_BUILD_FAILED',
@@ -452,6 +473,18 @@ export const COLLECTION_JOB_RESOLUTION_TYPES = {
 export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
+/** Maximum targeted evidence-recovery attempts per generation run. */
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
+
+/** Minimum deterministic quality score required for an AI idea candidate. */
+export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
+
+/**
+ * Maximum number of bounded quality-improvement attempts sent to the same
+ * model after its initial candidate scores below the accepted threshold.
+ */
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 2;
+
 /**
  * Number of AI models selected initially for each ranked opportunity.
  *
@@ -459,13 +492,19 @@ export type CollectionJobResolutionType =
  * selected providers fail, but it should attempt this many models first for
  * every opportunity.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
  * idea-generation benchmark.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 5;
+export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 2;
+
+/**
+ * Maximum ranked opportunities available to the benchmark after the initial
+ * fast path is exhausted. Opportunities four and five are fallback-only.
+ */
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 4;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -480,14 +519,15 @@ export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
 /**
  * Maximum number of startup candidates that one benchmark run may produce.
  *
- * Current configuration:
- * - Five ranked opportunities.
+ * Worst-case fallback configuration:
+ * - Three opportunities are attempted first.
+ * - Up to two more opportunities are attempted only when the initial batch
+ *   does not produce the minimum number of accepted candidates.
  * - Three AI models per opportunity.
- * - Up to fifteen generated candidates in total.
+ * - Up to fifteen generated candidates in the worst case.
  */
 export const IDEA_BENCHMARK_MAX_CANDIDATES =
-  IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT *
-  IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
+  IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT * IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
 
 /**
  * Maximum total candidate-generation attempts allowed for one benchmark run.
@@ -497,7 +537,17 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * and model counts.
  */
 export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
-  IDEA_BENCHMARK_MAX_CANDIDATES;
+  IDEA_BENCHMARK_MAX_CANDIDATES + IDEA_BENCHMARK_INITIAL_MODEL_COUNT;
+
+/**
+ * Maximum number of bounded regeneration attempts for a quality-approved
+ * candidate rejected by persisted semantic duplicate detection.
+ *
+ * The original candidate is checked first, then the same model receives this
+ * many redesign attempts before the benchmark advances to the next model or
+ * ranked opportunity.
+ */
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 2;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.
@@ -523,4 +573,5 @@ export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;
  */
 export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
   'nvidia/nemotron-nano-9b-v2:free',
+  'cohere/north-mini-code:free',
 ]);

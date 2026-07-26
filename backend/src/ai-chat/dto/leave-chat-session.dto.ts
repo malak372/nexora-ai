@@ -10,9 +10,9 @@ import { IsUUID } from 'class-validator';
  * Socket.IO payload used when leaving a chat-session room.
  */
 export class LeaveChatSessionDto {
-    /**
-     * Chat-session identifier to leave.
-     */
-    @IsUUID()
-    sessionId!: string;
+  /**
+   * Chat-session identifier to leave.
+   */
+  @IsUUID()
+  sessionId!: string;
 }

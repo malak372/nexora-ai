@@ -19,8 +19,9 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 /**
  * Generates the core idea through a dynamic multi-model benchmark.
  *
- * The top five ranked NLP opportunities are each evaluated by three rotating
- * JSON-capable models, producing up to fifteen distinct startup candidates.
+ * The top three ranked NLP opportunities are evaluated first by three rotating
+ * JSON-capable models. Opportunities four and five are fallback-only when the
+ * initial batch does not produce enough accepted candidates.
  * Quality-approved candidates are compared using the AI judge when its confidence is
  * sufficient. Final selection uses the persisted hybrid score, while a low-
  * confidence or unavailable judge falls back to deterministic quality.
@@ -65,8 +66,10 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           providerKey: winner.aiResult.providerKey,
           apiModelId: winner.aiResult.apiModelId,
           deterministicScore: winner.quality.score,
+          semanticDiversityAdjustedScore: winner.semanticDiversityAdjustedScore,
           aiJudgeScore: winner.aiJudge?.overallScore ?? null,
-          finalScore: winner.finalScore,
+          hybridFinalScore: winner.hybridFinalScore,
+          selectionScore: winner.finalScore,
           opportunityRank: winner.opportunityRank,
           opportunityTitle: winner.opportunityTitle,
           localRelevance: winner.aiJudge?.localRelevance ?? null,
@@ -105,8 +108,11 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           opportunityRank: candidate.opportunityRank,
           opportunityTitle: candidate.opportunityTitle,
           deterministicScore: candidate.quality.score,
+          semanticDiversityAdjustedScore:
+            candidate.semanticDiversityAdjustedScore,
           aiJudgeScore: candidate.aiJudge?.overallScore ?? null,
-          finalScore: candidate.finalScore,
+          hybridFinalScore: candidate.hybridFinalScore,
+          selectionScore: candidate.finalScore,
           localRelevance: candidate.aiJudge?.localRelevance ?? null,
           problemImportance: candidate.aiJudge?.problemImportance ?? null,
           innovation: candidate.aiJudge?.innovation ?? null,
@@ -124,8 +130,7 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           validationIssues: candidate.quality.issues.map((issue) => issue.code),
           semanticDiversityScore:
             candidate.semanticDiversity?.diversityScore ?? null,
-          maximumSimilarity:
-            candidate.semanticDiversity?.maxSimilarity ?? null,
+          maximumSimilarity: candidate.semanticDiversity?.maxSimilarity ?? null,
           mostSimilarCandidateId:
             candidate.semanticDiversity?.mostSimilarCandidateId ?? null,
           semanticDuplicateRisk:

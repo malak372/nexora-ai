@@ -146,6 +146,12 @@ type AiExecutionBaseInput = {
    */
   readonly estimatedOutputTokens?: number;
 
+  /** Optional per-operation provider timeout override in milliseconds. */
+  readonly timeoutMs?: number;
+
+  /** Optional per-operation retry count override for the selected model. */
+  readonly maxRetriesPerModel?: number;
+
   /**
    * Allows a trusted system-generated operation to continue with another
    * routed model when one provider reports INVALID_PROMPT.

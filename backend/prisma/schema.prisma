@@ -18,6 +18,8 @@ datasource db {
 enum IdeaGenerationRunStatus {
   QUEUED
   RUNNING
+  RETRYING
+  PAUSED
   COMPLETED
   FAILED
   CANCELLED
@@ -1368,8 +1370,26 @@ model IdeaGenerationCandidate {
   opportunityRank  Int?    @map("opportunity_rank")
   opportunityTitle String? @map("opportunity_title")
 
+
   overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
-  finalScore   Decimal? @map("final_score") @db.Decimal(5, 2)
+
+
+  finalScore Decimal? @map("final_score") @db.Decimal(5, 2)
+
+
+  semanticDiversityAdjustedScore Decimal? @map("semantic_diversity_adjusted_score") @db.Decimal(5, 2)
+
+
+  hybridFinalScore Decimal? @map("hybrid_final_score") @db.Decimal(5, 2)
+
+  semanticDiversityScore Decimal? @map("semantic_diversity_score") @db.Decimal(5, 2)
+
+
+  maximumSimilarity Decimal? @map("maximum_similarity")@db.Decimal(5, 2)
+
+  mostSimilarCandidateId String?@map("most_similar_candidate_id")
+
+  semanticDuplicateRisk String? @map("semantic_duplicate_risk")
 
   innovationScore       Decimal? @map("innovation_score") @db.Decimal(5, 2)
   marketFitScore        Decimal? @map("market_fit_score") @db.Decimal(5, 2)
@@ -1418,6 +1438,12 @@ model IdeaGenerationCandidate {
   @@index([finalScore])
   @@index([aiJudgeScore])
   @@index([createdAt])
+  @@index([semanticDiversityAdjustedScore])
+  @@index([hybridFinalScore])
+  @@index([semanticDiversityScore])
+  @@index([maximumSimilarity])
+  @@index([mostSimilarCandidateId])
+  @@index([semanticDuplicateRisk])
   @@map("idea_generation_candidates")
 }
 
@@ -1743,6 +1769,13 @@ model IdeaGenerationRun {
 
   errorCode    String? @map("error_code")
   errorMessage String? @map("error_message")
+  contextSnapshot Json? @map("context_snapshot")
+
+  retryCount Int @default(0) @map("retry_count")
+
+  nextRetryAt DateTime? @map("next_retry_at")
+
+  pausedAt DateTime? @map("paused_at")
 
   startedAt   DateTime? @map("started_at")
   completedAt DateTime? @map("completed_at")
@@ -1756,6 +1789,7 @@ model IdeaGenerationRun {
 
   @@index([userId, createdAt])
   @@index([status])
+  @@index([status, nextRetryAt])
   @@index([collectionJobId])
   @@map("idea_generation_runs")
 }

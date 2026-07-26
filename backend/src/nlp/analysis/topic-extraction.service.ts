@@ -9,13 +9,43 @@ import type { TopicRule } from '../topic-rules/topic-rule.service';
 import { TopicRuleService } from '../topic-rules/topic-rule.service';
 
 const MAX_EXTRACTED_TOPICS = 12;
-const MINIMUM_TOPIC_FREQUENCY = 2;
+const MINIMUM_TOPIC_FREQUENCY = 1;
 
 /** Stable high-level topics used by idea discovery and API responses. */
 const CANONICAL_TOPIC_DEFINITIONS: ReadonlyArray<{
   readonly topic: string;
   readonly patterns: readonly RegExp[];
 }> = [
+  {
+    topic: 'AI-Assisted Data Transformation',
+    patterns: [
+      /\b(?:ai-assisted algorithm discovery|transformation recipe generation|data transformation|algorithm discovery|cyberchef)\b/iu,
+    ],
+  },
+  {
+    topic: 'Privacy-Preserving AI',
+    patterns: [
+      /\b(?:local ai processing|data privacy and consent|on-device ai|privacy-preserving ai)\b/iu,
+    ],
+  },
+  {
+    topic: 'Multi-Agent Orchestration',
+    patterns: [
+      /\b(?:agent orchestration|multi-agent orchestration|agent auto-discovery|agent routing)\b/iu,
+    ],
+  },
+  {
+    topic: 'Explainable AI',
+    patterns: [
+      /\b(?:explainable ai recommendations|explainable ai|explainability|auditability|confidence score|uncertainty estimate)\b/iu,
+    ],
+  },
+  {
+    topic: 'Collaborative Transformation Workflows',
+    patterns: [
+      /\b(?:collaborative recipe repository|shared recipe repository|cyberchef integration|recipe sharing|recipe versioning)\b/iu,
+    ],
+  },
   {
     topic: 'Authentication',
     patterns: [

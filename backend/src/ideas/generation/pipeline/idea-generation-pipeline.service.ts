@@ -25,6 +25,9 @@ import {
 
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
 import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
+import { IdeaGenerationDatabaseRetryService } from '../services/idea-generation-database-retry.service';
+import { GENERATION_PAUSED_RETRY_DELAY_MS } from '../constants/idea-generation.constants';
+import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 
 /**
  * Input required to execute an idea-generation pipeline.
@@ -147,6 +150,7 @@ export class IdeaGenerationPipelineService {
     private readonly stageService: IdeaGenerationStageService,
     private readonly runService: IdeaGenerationRunService,
     private readonly realtime: IdeaGenerationRealtimeService,
+    private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
   ) {}
 
   /**
@@ -183,8 +187,16 @@ export class IdeaGenerationPipelineService {
       resolvedStages.map(({ definition }) => definition),
     );
 
-    const startedRun = await this.runService.startRun(input.context.runId);
+    const startedRun = await this.databaseRetry.execute(
+      () => this.runService.startRun(input.context.runId),
+      {
+        operationName: 'start generation run',
+        runId: input.context.runId,
+      },
+    );
     this.realtime.publishRunUpdated(startedRun);
+
+    await this.saveContextCheckpoint(input.context);
 
     let currentContext = input.context;
 
@@ -192,12 +204,41 @@ export class IdeaGenerationPipelineService {
 
     try {
       for (const resolvedStage of resolvedStages) {
+        const persistedStage = await this.databaseRetry.execute(
+          () =>
+            this.prisma.ideaGenerationStage.findUnique({
+              where: {
+                runId_stageKey: {
+                  runId: currentContext.runId,
+                  stageKey: resolvedStage.definition.key,
+                },
+              },
+            }),
+          {
+            operationName: 'read pipeline checkpoint',
+            runId: currentContext.runId,
+          },
+        );
+
+        if (
+          persistedStage?.status === IdeaGenerationStageStatus.COMPLETED ||
+          persistedStage?.status === IdeaGenerationStageStatus.SKIPPED
+        ) {
+          processedStages.push({
+            stageKey: resolvedStage.definition.key,
+            status: persistedStage.status,
+            attemptCount: persistedStage.attemptCount,
+          });
+          continue;
+        }
+
         const stageResult = await this.executeResolvedStage(
           currentContext,
           resolvedStage,
         );
 
         currentContext = stageResult.context;
+        await this.saveContextCheckpoint(currentContext);
 
         processedStages.push(stageResult.summary);
       }
@@ -227,6 +268,16 @@ export class IdeaGenerationPipelineService {
       }
 
       const normalizedError = this.normalizeError(error);
+
+      if (isTransientDatabaseError(error)) {
+        await this.markRunRetryingSafely(currentContext.runId, normalizedError);
+
+        this.logger.warn(
+          `Idea-generation pipeline paused for transient infrastructure recovery for run "${currentContext.runId}": ${normalizedError.message}`,
+        );
+
+        throw normalizedError;
+      }
 
       await this.failRunSafely(currentContext.runId, normalizedError);
 
@@ -409,15 +460,10 @@ export class IdeaGenerationPipelineService {
             maxAttempts: definition.maxAttempts,
           },
           update: {
+            // Preserve completed checkpoints during recovery. Only static
+            // metadata is synchronized here.
             displayName: definition.displayName,
             sequence: definition.sequence,
-            status: IdeaGenerationStageStatus.PENDING,
-            progressPercent: definition.progressStart,
-            resultPreview: Prisma.JsonNull,
-            errorMessage: null,
-            startedAt: null,
-            completedAt: null,
-            attemptCount: 0,
             maxAttempts: definition.maxAttempts,
           },
         }),
@@ -858,6 +904,88 @@ export class IdeaGenerationPipelineService {
    * @param error Unknown thrown value.
    * @returns Normalized Error instance.
    */
+  /** Persists a JSON-safe copy of the current pipeline context. */
+  private async saveContextCheckpoint(
+    context: IdeaGenerationContext,
+  ): Promise<void> {
+    const compactContext: IdeaGenerationContext = {
+      ...context,
+      nlp: context.nlp
+        ? {
+            ...context.nlp,
+            // Representative samples already exist in persisted collection and
+            // NLP tables. Keeping them in every run checkpoint duplicates large
+            // text payloads without improving recovery.
+            samplePosts: null,
+            sampleComments: null,
+          }
+        : null,
+      prompt: context.prompt
+        ? {
+            ...context.prompt,
+            // After core generation succeeds the persisted candidate/output is
+            // the recovery source of truth, so the rendered prompt no longer
+            // needs to remain inside the run row.
+            promptText: context.coreIdea ? '' : context.prompt.promptText,
+            responseSchema: context.coreIdea
+              ? { type: 'object' }
+              : context.prompt.responseSchema,
+          }
+        : null,
+      // Persisted output rows are referenced by generatedOutputIdsByKey. Keeping
+      // their full content in the checkpoint would duplicate every premium
+      // result in idea_generation_runs.context_snapshot.
+      advancedOutputs: context.ideaId ? [] : context.advancedOutputs,
+    };
+
+    const snapshot = JSON.parse(
+      JSON.stringify(compactContext),
+    ) as Prisma.InputJsonValue;
+
+    const run = await this.databaseRetry.execute(
+      () => this.runService.saveContextCheckpoint(context.runId, snapshot),
+      {
+        operationName: 'save generation checkpoint',
+        runId: context.runId,
+      },
+    );
+
+    this.realtime.publishRunUpdated(run);
+  }
+
+  /** Records a recoverable infrastructure interruption without failing the run. */
+  private async markRunRetryingSafely(
+    runId: string,
+    error: Error,
+  ): Promise<void> {
+    try {
+      const nextRetryAt = new Date(
+        Date.now() + GENERATION_PAUSED_RETRY_DELAY_MS,
+      );
+
+      const run = await this.databaseRetry.execute(
+        () =>
+          this.runService.markRetrying(
+            runId,
+            error.message.slice(0, 2_000),
+            nextRetryAt,
+          ),
+        {
+          operationName: 'mark generation run retrying',
+          runId,
+        },
+      );
+
+      this.realtime.publishRunUpdated(run);
+    } catch (persistenceError: unknown) {
+      const normalized = this.normalizeError(persistenceError);
+      this.logger.error(
+        `Failed to persist RETRYING state for run "${runId}": ${normalized.message}`,
+        normalized.stack,
+      );
+    }
+  }
+
   private normalizeError(error: unknown): Error {
     if (error instanceof Error) {
       return error;

@@ -363,6 +363,12 @@ export type IdeaGenerationContext = {
    */
   opportunityRanking: IdeaOpportunityRanking | null;
 
+  /** Number of targeted evidence-recovery attempts used by this run. */
+  evidenceRecoveryAttempts: number;
+
+  /** Collection-job identifiers created by targeted evidence recovery. */
+  evidenceRecoveryCollectionJobIds: string[];
+
   /**
    * Prompt built for core idea generation.
    */
@@ -488,6 +494,8 @@ export function createIdeaGenerationContext(
     collection: null,
     nlp: null,
     opportunityRanking: null,
+    evidenceRecoveryAttempts: 0,
+    evidenceRecoveryCollectionJobIds: [],
     prompt: null,
 
     coreIdea: null,

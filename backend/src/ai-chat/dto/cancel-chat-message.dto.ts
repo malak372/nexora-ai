@@ -10,15 +10,15 @@ import { IsUUID } from 'class-validator';
  * Socket.IO payload used when cancelling an active AI response.
  */
 export class CancelChatMessageDto {
-    /**
-     * Parent chat-session identifier.
-     */
-    @IsUUID()
-    sessionId!: string;
+  /**
+   * Parent chat-session identifier.
+   */
+  @IsUUID()
+  sessionId!: string;
 
-    /**
-     * Pending or streaming AI-message identifier.
-     */
-    @IsUUID()
-    messageId!: string;
+  /**
+   * Pending or streaming AI-message identifier.
+   */
+  @IsUUID()
+  messageId!: string;
 }

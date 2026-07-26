@@ -230,7 +230,9 @@ export class IdeaCandidateJudgeService {
     }
 
     if (reportIds.size !== candidates.length) {
-      throw new Error('The AI judge did not report on every submitted candidate.');
+      throw new Error(
+        'The AI judge did not report on every submitted candidate.',
+      );
     }
 
     const winnerReports = evaluation.comparisonReport.filter(

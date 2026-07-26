@@ -16,29 +16,29 @@ import type { AiChatStreamChunk } from './chat-stream-chunk.type';
  * Error payload emitted by the gateway.
  */
 export type AiChatSocketError = {
-    readonly code: AiChatErrorCode;
-    readonly message: string;
-    readonly event?: string;
+  readonly code: AiChatErrorCode;
+  readonly message: string;
+  readonly event?: string;
 };
 
 /**
  * Acknowledgement returned to a Socket.IO client callback.
  */
 export type AiChatSocketAcknowledgement<TData> =
-    | {
-        readonly success: true;
-        readonly data: TData;
+  | {
+      readonly success: true;
+      readonly data: TData;
     }
-    | {
-        readonly success: false;
-        readonly error: AiChatSocketError;
+  | {
+      readonly success: false;
+      readonly error: AiChatSocketError;
     };
 
 /**
  * Payload returned after joining or leaving a session room.
  */
 export type AiChatSessionMembershipPayload = {
-    readonly sessionId: string;
+  readonly sessionId: string;
 };
 
 /**
@@ -46,74 +46,72 @@ export type AiChatSessionMembershipPayload = {
  * response placeholder are persisted.
  */
 export type AiChatMessageAcceptedPayload = {
-    readonly sessionId: string;
-    readonly userMessage: AiChatMessageRecord;
-    readonly aiMessage: AiChatMessageRecord;
+  readonly sessionId: string;
+  readonly userMessage: AiChatMessageRecord;
+  readonly aiMessage: AiChatMessageRecord;
 };
 
 /**
  * Payload emitted when an AI response starts streaming.
  */
 export type AiChatMessageStartedPayload = {
-    readonly sessionId: string;
-    readonly message: AiChatMessageRecord;
+  readonly sessionId: string;
+  readonly message: AiChatMessageRecord;
 };
 
 /**
  * Payload emitted for terminal message states.
  */
 export type AiChatMessageTerminalPayload = {
-    readonly sessionId: string;
-    readonly message: AiChatMessageRecord;
+  readonly sessionId: string;
+  readonly message: AiChatMessageRecord;
 };
 
 /**
  * Optional Socket.IO acknowledgement callback.
  */
 export type AiChatAck<TData> = (
-    response: AiChatSocketAcknowledgement<TData>,
+  response: AiChatSocketAcknowledgement<TData>,
 ) => void;
 
 /**
  * Events accepted from connected clients.
  */
 export interface AiChatClientToServerEvents {
-    'chat:join-session': (
-        payload: JoinChatSessionDto,
-        acknowledgement?: AiChatAck<AiChatSessionMembershipPayload>,
-    ) => void;
+  'chat:join-session': (
+    payload: JoinChatSessionDto,
+    acknowledgement?: AiChatAck<AiChatSessionMembershipPayload>,
+  ) => void;
 
-    'chat:leave-session': (
-        payload: LeaveChatSessionDto,
-        acknowledgement?: AiChatAck<AiChatSessionMembershipPayload>,
-    ) => void;
+  'chat:leave-session': (
+    payload: LeaveChatSessionDto,
+    acknowledgement?: AiChatAck<AiChatSessionMembershipPayload>,
+  ) => void;
 
-    'chat:send-message': (
-        payload: SendChatMessageDto,
-        acknowledgement?: AiChatAck<AiChatMessageAcceptedPayload>,
-    ) => void;
+  'chat:send-message': (
+    payload: SendChatMessageDto,
+    acknowledgement?: AiChatAck<AiChatMessageAcceptedPayload>,
+  ) => void;
 
-    'chat:cancel-message': (
-        payload: CancelChatMessageDto,
-        acknowledgement?: AiChatAck<AiChatMessageTerminalPayload>,
-    ) => void;
+  'chat:cancel-message': (
+    payload: CancelChatMessageDto,
+    acknowledgement?: AiChatAck<AiChatMessageTerminalPayload>,
+  ) => void;
 }
 
 /**
  * Events emitted by the backend.
  */
 export interface AiChatServerToClientEvents {
-    'chat:session-joined': (payload: AiChatSessionMembershipPayload) => void;
-    'chat:session-left': (payload: AiChatSessionMembershipPayload) => void;
-    'chat:message-accepted': (payload: AiChatMessageAcceptedPayload) => void;
-    'chat:message-stream-started': (
-        payload: AiChatMessageStartedPayload,
-    ) => void;
-    'chat:message-chunk': (payload: AiChatStreamChunk) => void;
-    'chat:message-completed': (payload: AiChatMessageTerminalPayload) => void;
-    'chat:message-failed': (payload: AiChatMessageTerminalPayload) => void;
-    'chat:message-cancelled': (payload: AiChatMessageTerminalPayload) => void;
-    'chat:error': (payload: AiChatSocketError) => void;
+  'chat:session-joined': (payload: AiChatSessionMembershipPayload) => void;
+  'chat:session-left': (payload: AiChatSessionMembershipPayload) => void;
+  'chat:message-accepted': (payload: AiChatMessageAcceptedPayload) => void;
+  'chat:message-stream-started': (payload: AiChatMessageStartedPayload) => void;
+  'chat:message-chunk': (payload: AiChatStreamChunk) => void;
+  'chat:message-completed': (payload: AiChatMessageTerminalPayload) => void;
+  'chat:message-failed': (payload: AiChatMessageTerminalPayload) => void;
+  'chat:message-cancelled': (payload: AiChatMessageTerminalPayload) => void;
+  'chat:error': (payload: AiChatSocketError) => void;
 }
 
 /**

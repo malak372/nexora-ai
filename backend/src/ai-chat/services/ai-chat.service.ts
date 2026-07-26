@@ -56,7 +56,7 @@ export class AiChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiChatAccessService: AiChatAccessService,
-  ) { }
+  ) {}
 
   /**
    * Creates a new chat session for an unlocked idea accessible to the
@@ -106,8 +106,7 @@ export class AiChatService {
             });
           },
           {
-            isolationLevel:
-              Prisma.TransactionIsolationLevel.Serializable,
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
           },
         );
       } catch (error: unknown) {
@@ -156,11 +155,11 @@ export class AiChatService {
       deletedAt: null,
       ...(query.search
         ? {
-          title: {
-            contains: query.search,
-            mode: Prisma.QueryMode.insensitive,
-          },
-        }
+            title: {
+              contains: query.search,
+              mode: Prisma.QueryMode.insensitive,
+            },
+          }
         : {}),
     };
 
@@ -335,10 +334,7 @@ export class AiChatService {
             none: {
               sender: ChatSender.AI,
               status: {
-                in: [
-                  ChatMessageStatus.PENDING,
-                  ChatMessageStatus.STREAMING,
-                ],
+                in: [ChatMessageStatus.PENDING, ChatMessageStatus.STREAMING],
               },
               deletedAt: null,
             },

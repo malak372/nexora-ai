@@ -55,7 +55,7 @@ export class AiChatMessageWriterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiChatAccessService: AiChatAccessService,
-  ) { }
+  ) {}
 
   /**
    * Creates one complete conversation turn atomically.
@@ -116,8 +116,7 @@ export class AiChatMessageWriterService {
           data: {
             status: ChatMessageStatus.FAILED,
             errorCode: AI_CHAT_ERROR_CODES.MESSAGE_GENERATION_TIMEOUT,
-            errorMessage:
-              'The previous AI response expired before completion.',
+            errorMessage: 'The previous AI response expired before completion.',
             completedAt: activityAt,
           },
         });

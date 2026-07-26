@@ -110,7 +110,7 @@ export class GooglePlayCollector
       const apps = this.deduplicateApps(searchResults.flat());
 
       const rankedApps = apps
-        .filter((app) => this.isValidApp(app))
+        .filter((app) => this.isValidApp(app, input))
         .map((app) => ({
           app,
           score: this.calculateAppRelevanceScore(app, input),
@@ -245,7 +245,7 @@ export class GooglePlayCollector
   /**
    * Validates a Google Play application.
    */
-  private isValidApp(app: GooglePlayApp): boolean {
+  private isValidApp(app: GooglePlayApp, input: CollectorInput): boolean {
     const title = this.cleanPlainText(app.title);
     const summary = this.cleanPlainText(app.summary);
 
@@ -255,7 +255,7 @@ export class GooglePlayCollector
 
     const content = this.cleanNormalizedText(`${title} ${summary}`);
 
-    if (this.isLikelyGameApp(content)) {
+    if (!this.isGamingDomain(input) && this.isLikelyGameContent(content)) {
       return false;
     }
 
@@ -266,28 +266,28 @@ export class GooglePlayCollector
     );
   }
 
-  /**
-   * Detects game-like applications.
-   */
-  private isLikelyGameApp(content: string): boolean {
-    const gameTerms = [
-      'game',
-      'games',
-      'simulator',
-      'simulation',
-      'school simulator',
-      'teacher simulator',
-      'teacher game',
-      'student game',
-      'classroom play',
-      'rpg',
-      'mini game',
-      'minigame',
-      'offline game',
-      'puzzle game',
+  /** Detects whether the requested domain intentionally targets games. */
+  private isGamingDomain(input: CollectorInput): boolean {
+    const domainText = this.cleanNormalizedText(
+      `${input.domainName ?? ''} ${(input.keywords ?? []).join(' ')}`,
+    );
+
+    return /\b(?:gaming|game development|video games?|mobile games?)\b/iu.test(
+      domainText,
+    );
+  }
+
+  /** Rejects gameplay products and reviews from non-gaming domains. */
+  private isLikelyGameContent(value: string): boolean {
+    const content = this.cleanNormalizedText(value);
+    const patterns = [
+      /\b(?:farming|farm|tractor|village)\s+(?:simulator|simulation|game)\b/iu,
+      /\b(?:simulator|simulation)\s+(?:3d|game)\b/iu,
+      /\b(?:video\s+game|mobile\s+game|gameplay|gamer|multiplayer|save\s+games?|restart\s+game|walking\s+controls?|loader\s+controls?|levels?|quests?|characters?|bug\s+village|farm\s+valley|tractor\s+driving)\b/iu,
+      /\b(?:play|played|playing)\s+(?:this|the)\s+game\b/iu,
     ];
 
-    return gameTerms.some((term) => content.includes(term));
+    return patterns.some((pattern) => pattern.test(content));
   }
 
   /**
@@ -373,7 +373,7 @@ export class GooglePlayCollector
         );
 
       return (response.data ?? [])
-        .filter((review) => this.isUsefulReview(review, input.language))
+        .filter((review) => this.isUsefulReview(review, input))
         .slice(0, this.maxSavedComments)
         .map(
           (review): CollectorComment => ({
@@ -433,7 +433,10 @@ export class GooglePlayCollector
   /**
    * Filters low-value reviews.
    */
-  private isUsefulReview(review: GooglePlayReview, language?: string): boolean {
+  private isUsefulReview(
+    review: GooglePlayReview,
+    input: CollectorInput,
+  ): boolean {
     const rawContent = this.cleanPlainText(review.text);
     const content = this.cleanNormalizedText(rawContent);
 
@@ -441,7 +444,12 @@ export class GooglePlayCollector
       return false;
     }
 
-    if (!CollectorLanguageUtil.matchesRequestedLanguage(rawContent, language)) {
+    if (
+      !CollectorLanguageUtil.matchesRequestedLanguage(
+        rawContent,
+        input.language,
+      )
+    ) {
       return false;
     }
 
@@ -468,6 +476,10 @@ export class GooglePlayCollector
     ]);
 
     if (lowValueReviews.has(content)) {
+      return false;
+    }
+
+    if (!this.isGamingDomain(input) && this.isLikelyGameContent(content)) {
       return false;
     }
 

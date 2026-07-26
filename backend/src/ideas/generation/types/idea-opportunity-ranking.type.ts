@@ -38,6 +38,8 @@ export type RankedIdeaOpportunity = {
   readonly frequencyScore: number;
   readonly severityScore: number;
   readonly evidenceScore: number;
+  readonly evidenceReliabilityScore: number;
+  readonly weakEvidencePenalty: number;
   readonly specificityScore: number;
   readonly feasibilityScore: number;
   readonly localRelevanceScore: number;
@@ -46,7 +48,13 @@ export type RankedIdeaOpportunity = {
   readonly marketGapScore: number;
   readonly competitionScore: number;
   readonly technicalRiskScore: number;
+  readonly supportScore: number;
+  readonly nlpConfidenceScore: number;
+  readonly baseScore: number;
+  readonly confidencePenalty: number;
   readonly finalScore: number;
+  readonly selectionEligible: boolean;
+  readonly disqualificationReasons: readonly string[];
   readonly raw: Prisma.JsonValue;
 };
 
