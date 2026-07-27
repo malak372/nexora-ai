@@ -21,6 +21,7 @@
 export const AI_PROVIDER_KEYS = {
   GOOGLE: 'google',
   OPENROUTER: 'openrouter',
+  OLLAMA: 'ollama',
 } as const;
 
 /**
@@ -38,6 +39,7 @@ export type AiProviderKey =
 export const SUPPORTED_AI_PROVIDER_KEYS = [
   AI_PROVIDER_KEYS.GOOGLE,
   AI_PROVIDER_KEYS.OPENROUTER,
+  AI_PROVIDER_KEYS.OLLAMA,
 ] as const satisfies readonly AiProviderKey[];
 
 /**
@@ -59,6 +61,11 @@ export const SUPPORTED_AI_PROVIDERS = [
     key: AI_PROVIDER_KEYS.OPENROUTER,
     displayName: 'OpenRouter',
     description: 'AI models accessed through the OpenRouter unified API.',
+  },
+  {
+    key: AI_PROVIDER_KEYS.OLLAMA,
+    displayName: 'Ollama (Local)',
+    description: 'Local fallback models served by Ollama on the backend host.',
   },
 ] as const satisfies readonly {
   readonly key: AiProviderKey;

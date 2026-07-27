@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -68,6 +69,8 @@ export type PromptTemplateResponse = {
  */
 @Injectable()
 export class PromptTemplateService {
+  private readonly logger = new Logger(PromptTemplateService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
@@ -198,13 +201,22 @@ export class PromptTemplateService {
       },
     });
 
-    const template = (
-      settings?.ideaPromptTemplate ?? DEFAULT_IDEA_PROMPT_TEMPLATE
-    ).trim();
+    const configuredTemplate = settings?.ideaPromptTemplate?.trim();
 
-    this.validateTemplate(template);
+    if (configuredTemplate) {
+      try {
+        this.validateTemplate(configuredTemplate);
+        return configuredTemplate;
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Configured idea prompt template is invalid; the application default will be used. error=${this.getErrorMessage(error)}`,
+        );
+      }
+    }
 
-    return template;
+    const defaultTemplate = DEFAULT_IDEA_PROMPT_TEMPLATE.trim();
+    this.validateTemplate(defaultTemplate);
+    return defaultTemplate;
   }
 
   /**
@@ -373,5 +385,9 @@ export class PromptTemplateService {
    */
   private toAuditJson(value: unknown): Prisma.InputJsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : 'Unknown template error';
   }
 }

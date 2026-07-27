@@ -476,6 +476,15 @@ export type CollectionJobResolutionType =
 /** Maximum targeted evidence-recovery attempts per generation run. */
 export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
 
+/** Minimum direct-evidence coverage required before skipping recovery. */
+export const MIN_EVIDENCE_COVERAGE_BEFORE_RECOVERY = 0.5;
+
+/** Minimum evidence-quality score required for the selected opportunity. */
+export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.4;
+
+/** Minimum number of representative samples required before skipping recovery. */
+export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 2;
+
 /** Minimum deterministic quality score required for an AI idea candidate. */
 export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
 
@@ -483,7 +492,7 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */
-export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 2;
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -504,7 +513,7 @@ export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 2;
  * Maximum ranked opportunities available to the benchmark after the initial
  * fast path is exhausted. Opportunities four and five are fallback-only.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 4;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 3;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -520,11 +529,11 @@ export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
  * Maximum number of startup candidates that one benchmark run may produce.
  *
  * Worst-case fallback configuration:
- * - Three opportunities are attempted first.
- * - Up to two more opportunities are attempted only when the initial batch
- *   does not produce the minimum number of accepted candidates.
- * - Three AI models per opportunity.
- * - Up to fifteen generated candidates in the worst case.
+ * - Two opportunities are attempted on the fast path.
+ * - One additional opportunity is attempted only when the initial batch
+ *   does not produce enough accepted candidates.
+ * - Two AI models are executed per opportunity.
+ * - Up to six generated candidates are created before bounded fallbacks.
  */
 export const IDEA_BENCHMARK_MAX_CANDIDATES =
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT * IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
@@ -547,7 +556,7 @@ export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
  * many redesign attempts before the benchmark advances to the next model or
  * ranked opportunity.
  */
-export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 2;
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.
@@ -557,6 +566,17 @@ export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 2;
  * otherwise usable generation run.
  */
 export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 2;
+
+/**
+ * Number of same-model retries used for transient benchmark failures.
+ *
+ * The initial provider request is not included in this value. A value of one
+ * means every benchmark model may receive one additional request after a
+ * temporary network, timeout, rate-limit, or provider-availability failure.
+ * After the retry is exhausted, IdeaGenerationBenchmarkService continues with
+ * the next healthy model from the ordered fallback rotation.
+ */
+export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 1;
 
 /**
  * Number of recent generation runs inspected when rotating AI model

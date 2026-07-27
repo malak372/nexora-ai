@@ -123,6 +123,7 @@ export class IdeaDuplicateDetectionService {
     let highestTitleSimilarity = 0;
     let highestSemanticSimilarity = 0;
     let highestWorkflowSimilarity = 0;
+    let highestCapabilitySimilarity = 0;
     let highestSameProblemFamily = false;
 
     const newFingerprint = this.buildFingerprint(idea);
@@ -144,6 +145,10 @@ export class IdeaDuplicateDetectionService {
         newFingerprint,
         candidateFingerprint,
       );
+      const capabilitySimilarity = this.calculateCapabilitySimilarity(
+        idea,
+        candidate,
+      );
       const sameProblemFamily = this.belongsToSameProblemFamily(
         idea,
         candidate,
@@ -159,14 +164,19 @@ export class IdeaDuplicateDetectionService {
         sameProblemFamily &&
         semanticSimilarity >= 0.68 &&
         workflowSimilarity >= 0.7;
+      const capabilityWorkflowDuplicate =
+        capabilitySimilarity >= 0.72 && workflowSimilarity >= 0.58;
       const candidateIsDuplicate =
         titleSimilarity >= 0.9 ||
         semanticSimilarity >= 0.82 ||
-        familyCompoundDuplicate;
+        familyCompoundDuplicate ||
+        capabilityWorkflowDuplicate;
       const combinedSimilarity = Math.max(
         titleSimilarity,
         semanticSimilarity,
-        familyCompoundDuplicate ? workflowSimilarity : 0,
+        familyCompoundDuplicate || capabilityWorkflowDuplicate
+          ? Math.max(workflowSimilarity, capabilitySimilarity)
+          : 0,
       );
 
       if (
@@ -177,6 +187,7 @@ export class IdeaDuplicateDetectionService {
         highestTitleSimilarity = titleSimilarity;
         highestSemanticSimilarity = semanticSimilarity;
         highestWorkflowSimilarity = workflowSimilarity;
+        highestCapabilitySimilarity = capabilitySimilarity;
         highestSameProblemFamily = sameProblemFamily;
         matchedIdea = candidate;
       }
@@ -192,15 +203,24 @@ export class IdeaDuplicateDetectionService {
       highestSameProblemFamily &&
       highestSemanticSimilarity >= 0.68 &&
       highestWorkflowSimilarity >= 0.7;
+    const capabilityWorkflowDuplicate =
+      highestCapabilitySimilarity >= 0.72 && highestWorkflowSimilarity >= 0.58;
     const isDuplicate =
-      nearTitleDuplicate || directSemanticDuplicate || familyCompoundDuplicate;
+      nearTitleDuplicate ||
+      directSemanticDuplicate ||
+      familyCompoundDuplicate ||
+      capabilityWorkflowDuplicate;
     const duplicateReasons: IdeaDuplicateReason[] = [];
 
     if (nearTitleDuplicate) {
       duplicateReasons.push('EXACT_OR_NEAR_TITLE');
     }
 
-    if (directSemanticDuplicate || familyCompoundDuplicate) {
+    if (
+      directSemanticDuplicate ||
+      familyCompoundDuplicate ||
+      capabilityWorkflowDuplicate
+    ) {
       duplicateReasons.push('SEMANTIC_OVERLAP');
     }
 
@@ -397,6 +417,85 @@ export class IdeaDuplicateDetectionService {
 
     return families.some((family) => family.test(first) && family.test(second));
   }
+  /**
+   * Detects repeated capability combinations even when the model changes the
+   * product name and rewrites the problem statement. This closes the gap where
+   * two ideas share the same workbench, recommendation, local-processing, and
+   * export workflow but remain below the token-similarity threshold.
+   */
+  private calculateCapabilitySimilarity(
+    idea: CoreIdeaAiOutput,
+    candidate: DuplicateIdeaCandidate,
+  ): number {
+    const first = this.extractCapabilities(
+      [
+        idea.title,
+        idea.problemStatement,
+        ...idea.objectives,
+        ...idea.targetUsers,
+        idea.fullAbstract ?? idea.partialAbstract ?? idea.limitedAbstract ?? '',
+      ].join(' '),
+    );
+    const second = this.extractCapabilities(
+      [
+        candidate.title,
+        candidate.problemStatement,
+        this.jsonText(candidate.objectives),
+        this.jsonText(candidate.targetUsers),
+        candidate.fullAbstract ?? candidate.partialAbstract ?? '',
+      ].join(' '),
+    );
+
+    return this.calculateDiceSimilarity(first, second);
+  }
+
+  private extractCapabilities(value: string): Set<string> {
+    const normalized = this.normalizeText(value, MAX_DUPLICATE_TEXT_LENGTH);
+    const capabilities: Array<readonly [string, RegExp]> = [
+      [
+        'ai-recommendation',
+        /recommend|suggest|discover|algorithm chain|recipe generation/iu,
+      ],
+      [
+        'transformation-workbench',
+        /transformation|encoding|hashing|compression|cryptographic|workbench/iu,
+      ],
+      [
+        'sandbox-testing',
+        /sandbox|test|validate|reorder|interactive workbench/iu,
+      ],
+      [
+        'local-first',
+        /local[- ]first|on-device|offline|client-side|webassembly/iu,
+      ],
+      [
+        'privacy-isolation',
+        /privacy|data isolation|never leaves|external server/iu,
+      ],
+      ['recipe-export', /recipe|workflow export|exportable|reproducible/iu],
+      ['audit-trace', /audit log|step-by-step|history|trace/iu],
+      ['sdk-backend', /sdk|vendor backend|host-integrated/iu],
+      [
+        'subscription-recovery',
+        /subscription|receipt|entitlement|restore purchase/iu,
+      ],
+      [
+        'productivity-context',
+        /productivity|tab management|page content|user intent/iu,
+      ],
+      [
+        'streaming-middleware',
+        /streaming|tcp|udp|raspberry pi|real-time transmission/iu,
+      ],
+    ];
+
+    return new Set(
+      capabilities
+        .filter(([, pattern]) => pattern.test(normalized))
+        .map(([name]) => name),
+    );
+  }
+
   /**
    * Measures similarity of the candidate's operational flow separately from
    * broad topic similarity. Objectives and abstracts carry most of the weight

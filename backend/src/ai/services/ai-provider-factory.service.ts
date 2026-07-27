@@ -15,6 +15,7 @@ import type { AiProvider } from '../providers/ai-provider.interface';
 
 import { GoogleProvider } from '../providers/google.provider';
 import { OpenRouterProvider } from '../providers/openrouter.provider';
+import { OllamaProvider } from '../providers/ollama.provider';
 
 /**
  * Resolves registered AI-provider adapters using AiModel.providerKey.
@@ -56,10 +57,12 @@ export class AiProviderFactoryService {
   constructor(
     googleProvider: GoogleProvider,
     openRouterProvider: OpenRouterProvider,
+    ollamaProvider: OllamaProvider,
   ) {
     this.providerRegistry = this.createProviderRegistry(
       googleProvider,
       openRouterProvider,
+      ollamaProvider,
     );
 
     /**
@@ -148,10 +151,12 @@ export class AiProviderFactoryService {
   private createProviderRegistry(
     googleProvider: GoogleProvider,
     openRouterProvider: OpenRouterProvider,
+    ollamaProvider: OllamaProvider,
   ): ReadonlyMap<AiProviderKey, AiProvider> {
     return new Map<AiProviderKey, AiProvider>([
       [AI_PROVIDER_KEYS.GOOGLE, googleProvider],
       [AI_PROVIDER_KEYS.OPENROUTER, openRouterProvider],
+      [AI_PROVIDER_KEYS.OLLAMA, ollamaProvider],
     ]);
   }
 

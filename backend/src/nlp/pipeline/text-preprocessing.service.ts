@@ -245,13 +245,25 @@ export class TextPreprocessingService {
     );
 
     /*
-     * Collection already performs the authoritative relevance decision before
-     * persistence. NLP therefore analyzes every stored, non-empty, unique text
-     * instead of silently applying a second destructive relevance filter.
-     * Relevance scores are still preserved as analytical metadata.
+     * Collection relevance is the first gate, while this NLP-side check is a
+     * defensive second gate. Collectors can still persist short replies,
+     * emotional text, or generic error messages that contain no domain signal.
+     * Fail open only when no domain keywords are configured.
      */
-    const relevantTexts = evaluatedTexts.map((item) => item.text);
-    const irrelevantTextsRemoved = 0;
+    const shouldApplyRelevanceFilter = domainKeywords.some(
+      (keyword) => keyword.trim().length > 0,
+    );
+    const relevantItems = shouldApplyRelevanceFilter
+      ? this.applyBoundedRelevanceFilter(evaluatedTexts)
+      : evaluatedTexts;
+    const relevantTexts = relevantItems.map((item) => item.text);
+    const irrelevantTextsRemoved = evaluatedTexts.length - relevantItems.length;
+
+    if (irrelevantTextsRemoved > 0) {
+      this.logger.debug(
+        `Removed ${irrelevantTextsRemoved} low-relevance text(s) using the bounded domain filter (maximum 25% per preprocessing pass).`,
+      );
+    }
 
     if (unresolvedLanguageTextsRemoved > 0) {
       this.logger.debug(
@@ -267,6 +279,55 @@ export class TextPreprocessingService {
       irrelevantTextsRemoved,
       initialAnalysisResults: this.buildInitialAnalysisResults(relevantTexts),
     };
+  }
+
+  /**
+   * Removes the weakest irrelevant texts without allowing one noisy relevance
+   * pass to eliminate most of the evidence corpus. At most 25% of the resolved
+   * texts are removed; borderline texts with the highest relevance score are
+   * retained for downstream ranking, where they still receive lower support.
+   */
+  private applyBoundedRelevanceFilter(
+    evaluatedTexts: readonly RelevanceEvaluatedText[],
+  ): RelevanceEvaluatedText[] {
+    const rejected = evaluatedTexts.filter((item) => !item.isRelevant);
+
+    if (rejected.length === 0) {
+      return [...evaluatedTexts];
+    }
+
+    const maximumRemovalCount = Math.floor(evaluatedTexts.length * 0.25);
+    const removalCount = Math.min(rejected.length, maximumRemovalCount);
+
+    if (removalCount <= 0) {
+      return [...evaluatedTexts];
+    }
+
+    const rejectedIndexes = rejected
+      .map((item) => ({
+        item,
+        index: evaluatedTexts.indexOf(item),
+      }))
+      .sort((first, second) => {
+        const scoreDifference =
+          first.item.text.relevanceScore - second.item.text.relevanceScore;
+
+        if (scoreDifference !== 0) {
+          return scoreDifference;
+        }
+
+        const confidenceDifference =
+          first.item.text.relevanceConfidence -
+          second.item.text.relevanceConfidence;
+
+        return confidenceDifference || first.index - second.index;
+      })
+      .slice(0, removalCount)
+      .map(({ index }) => index);
+
+    const indexesToRemove = new Set(rejectedIndexes);
+
+    return evaluatedTexts.filter((_, index) => !indexesToRemove.has(index));
   }
 
   /**

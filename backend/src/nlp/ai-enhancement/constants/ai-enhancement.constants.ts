@@ -63,3 +63,12 @@ export const RULE_BASED_CONFIDENCE_WEIGHT = 0.65;
  * the final merged confidence.
  */
 export const AI_CONFIDENCE_WEIGHT = 0.35;
+
+/**
+ * Maximum number of independent NLP AI-enhancement operations.
+ *
+ * Each operation excludes models that already returned a domain-invalid
+ * response, so recovery rotates across different routable models whenever
+ * alternatives are available.
+ */
+export const MAX_NLP_AI_ENHANCEMENT_ATTEMPTS = 3;

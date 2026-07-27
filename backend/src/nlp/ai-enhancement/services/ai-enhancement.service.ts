@@ -22,6 +22,7 @@ import { IntelligentAnalysisOutput } from '../../pipeline/types/intelligent-anal
 import { AiAnalysisPromptBuilderService } from './ai-analysis-prompt-builder.service';
 import { AiAnalysisOutputValidatorService } from './ai-analysis-output-validator.service';
 import { AnalysisMergeService } from './analysis-merge.service';
+import { MAX_NLP_AI_ENHANCEMENT_ATTEMPTS } from '../constants/ai-enhancement.constants';
 
 /**
  * Stable failure codes returned by the NLP AI-enhancement
@@ -178,63 +179,93 @@ export class AiEnhancementService {
   async enhance(
     input: AiEnhancementInput,
   ): Promise<AiEnhancementExecutionResult> {
-    let operationId: string | null = null;
+    const excludedAiModelIds = new Set<string>();
+    let lastOperationId: string | null = null;
+    let lastError: unknown = null;
 
-    try {
-      const prompt = this.promptBuilder.build(input);
+    for (
+      let attempt = 1;
+      attempt <= MAX_NLP_AI_ENHANCEMENT_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        const prompt = this.promptBuilder.build(input);
 
-      const response = await this.aiClient.enhance({
-        prompt: prompt.promptText,
-      });
+        const response = await this.aiClient.enhance({
+          prompt: prompt.promptText,
+          excludedAiModelIds: [...excludedAiModelIds],
+        });
 
-      operationId = response.operationId;
+        lastOperationId = response.operationId;
 
-      const validatedOutput = this.outputValidator.validate(
-        response.data,
-        input.evidence,
-      );
+        try {
+          const repairedData = this.outputValidator.repairEvidenceReferences(
+            response.data,
+            input.evidence,
+          );
 
-      const mergedAnalysis = this.analysisMergeService.merge(
-        input.ruleBasedOutput,
-        validatedOutput,
-        input.evidence,
-      );
+          const validatedOutput = this.outputValidator.validate(
+            repairedData,
+            input.evidence,
+          );
 
-      return {
-        analysis: mergedAnalysis,
+          const mergedAnalysis = this.analysisMergeService.merge(
+            input.ruleBasedOutput,
+            validatedOutput,
+            input.evidence,
+          );
 
-        enhancement: {
-          requested: true,
-          applied: true,
-          output: validatedOutput,
-          failureReason: null,
-        },
+          this.logger.log(
+            `NLP AI enhancement applied successfully. operationId=${response.operationId}, modelId=${response.aiModelId}, provider=${response.providerKey}, attempt=${attempt}/${MAX_NLP_AI_ENHANCEMENT_ATTEMPTS}.`,
+          );
 
-        operationId,
-      };
-    } catch (error: unknown) {
-      operationId = this.resolveOperationId(error, operationId);
-      const failureReason = this.resolveFailureReason(error);
+          return {
+            analysis: mergedAnalysis,
+            enhancement: {
+              requested: true,
+              applied: true,
+              output: validatedOutput,
+              failureReason: null,
+            },
+            operationId: response.operationId,
+          };
+        } catch (validationError: unknown) {
+          lastError = validationError;
+          excludedAiModelIds.add(response.aiModelId);
 
-      this.logger.warn(
-        `NLP AI enhancement was not applied. operationId=${
-          operationId ?? 'unavailable'
-        }, reason=${failureReason}, error=${this.getErrorMessage(error)}`,
-      );
+          this.logger.warn(
+            `NLP AI enhancement response was rejected. operationId=${response.operationId}, modelId=${response.aiModelId}, provider=${response.providerKey}, attempt=${attempt}/${MAX_NLP_AI_ENHANCEMENT_ATTEMPTS}, nextAttemptUsesDifferentModel=${attempt < MAX_NLP_AI_ENHANCEMENT_ATTEMPTS}, error=${this.getErrorMessage(validationError)}`,
+          );
+        }
+      } catch (executionError: unknown) {
+        lastError = executionError;
+        lastOperationId = this.resolveOperationId(
+          executionError,
+          lastOperationId,
+        );
 
-      return {
-        analysis: input.ruleBasedOutput,
-
-        enhancement: {
-          requested: true,
-          applied: false,
-          output: null,
-          failureReason,
-        },
-
-        operationId,
-      };
+        this.logger.warn(
+          `NLP AI enhancement execution failed. operationId=${lastOperationId ?? 'unavailable'}, attempt=${attempt}/${MAX_NLP_AI_ENHANCEMENT_ATTEMPTS}, error=${this.getErrorMessage(executionError)}`,
+        );
+      }
     }
+
+    const failureReason = this.resolveFailureReason(lastError);
+
+    this.logger.warn(
+      `NLP AI enhancement was not applied after ${MAX_NLP_AI_ENHANCEMENT_ATTEMPTS} attempt(s). operationId=${lastOperationId ?? 'unavailable'}, reason=${failureReason}, excludedModelCount=${excludedAiModelIds.size}, error=${this.getErrorMessage(lastError)}`,
+    );
+
+    return {
+      analysis: input.ruleBasedOutput,
+      enhancement: {
+        requested: true,
+        applied: false,
+        output: null,
+        failureReason,
+      },
+      operationId: lastOperationId,
+    };
   }
 
   /**

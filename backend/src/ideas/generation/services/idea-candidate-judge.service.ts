@@ -3,8 +3,18 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { AiRoutingStrategy, ApiRequestType, PromptType } from '@prisma/client';
+import {
+  AiRoutingStrategy,
+  ApiRequestType,
+  PromptType,
+  type AiModel,
+} from '@prisma/client';
 
+import { AiModelsService } from '../../../ai-models/ai-models.service';
+import {
+  AI_PROVIDER_KEYS,
+  normalizeAiProviderKey,
+} from '../../../ai/constants/ai-provider.constants';
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
@@ -38,6 +48,7 @@ export class IdeaCandidateJudgeService {
   private readonly logger = new Logger(IdeaCandidateJudgeService.name);
 
   constructor(
+    private readonly aiModelsService: AiModelsService,
     private readonly aiExecutionService: AiExecutionService,
     private readonly promptService: IdeaCandidateJudgePromptService,
   ) {}
@@ -61,8 +72,19 @@ export class IdeaCandidateJudgeService {
     }
 
     const prompt = this.promptService.build(context, candidates);
+    const localFallbackModel = await this.findLocalFallbackModel();
+    const onlineExcludedModelIds = localFallbackModel
+      ? [localFallbackModel.id]
+      : [];
     let lastFailureMessage = 'Unknown comparative judge failure.';
 
+    /*
+     * Online attempts explicitly exclude Ollama. This ensures that the local
+     * model is a visible, auditable final tier rather than being consumed
+     * somewhere inside an online retry. If an online provider fails or returns
+     * a schema-valid but business-invalid decision, Ollama receives one final
+     * request using the exact same validation rules.
+     */
     for (let attempt = 1; attempt <= IDEA_JUDGE_MAX_ATTEMPTS; attempt += 1) {
       try {
         const aiResult = await this.aiExecutionService.execute({
@@ -89,16 +111,18 @@ export class IdeaCandidateJudgeService {
             attempt === 1
               ? AiRoutingStrategy.BALANCED
               : AiRoutingStrategy.DEFAULT,
+          excludedAiModelIds: onlineExcludedModelIds,
           allowProviderFallbackOnInvalidPrompt: true,
         });
 
-        const evaluation = this.parseEvaluation(aiResult.text);
-        this.validateEvaluation(evaluation);
-        this.validateCandidateReferences(evaluation, candidates);
+        const evaluation = this.parseAndValidateEvaluation(
+          aiResult.text,
+          candidates,
+        );
 
         if (attempt > 1) {
           this.logger.log(
-            `AI candidate judge succeeded on bounded retry ${attempt}.`,
+            `AI candidate judge succeeded on bounded online retry ${attempt}.`,
           );
         }
 
@@ -110,16 +134,98 @@ export class IdeaCandidateJudgeService {
             : 'Unknown comparative judge failure.';
 
         this.logger.warn(
-          `AI candidate judge attempt ${attempt}/${IDEA_JUDGE_MAX_ATTEMPTS} failed: ${lastFailureMessage}`,
+          `Online AI candidate judge attempt ${attempt}/${IDEA_JUDGE_MAX_ATTEMPTS} failed: ${lastFailureMessage}`,
+        );
+      }
+    }
+
+    if (localFallbackModel) {
+      try {
+        this.logger.warn(
+          `Online AI judge attempts were exhausted. Executing local Ollama judge "${localFallbackModel.displayName ?? localFallbackModel.modelName}" once.`,
+        );
+
+        const localResult = await this.aiExecutionService.execute({
+          aiModelId: localFallbackModel.id,
+          userPrompt: prompt.userPrompt,
+          systemInstruction: prompt.systemInstruction,
+          requestType: ApiRequestType.IDEA_GENERATION,
+          promptType: PromptType.IDEA_EVALUATION,
+          generationType: context.generationType,
+          userId:
+            context.owner.type === IDEA_OWNER_TYPES.USER
+              ? context.owner.userId
+              : undefined,
+          guestSessionId:
+            context.owner.type === IDEA_OWNER_TYPES.GUEST
+              ? context.owner.guestSessionId
+              : undefined,
+          responseFormat: AiResponseFormat.JSON,
+          responseSchema: buildIdeaJudgeResponseSchema(candidates.length),
+          responseSchemaName: IDEA_JUDGE_RESPONSE_SCHEMA_NAME,
+          estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
+          maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
+          temperature: IDEA_JUDGE_TEMPERATURE,
+          allowProviderFallbackOnInvalidPrompt: true,
+        });
+
+        const localEvaluation = this.parseAndValidateEvaluation(
+          localResult.text,
+          candidates,
+        );
+
+        this.logger.log(
+          `AI candidate judge succeeded using local Ollama fallback. modelId=${localResult.aiModelId}, apiModelId=${localResult.apiModelId}.`,
+        );
+
+        return localEvaluation;
+      } catch (localError: unknown) {
+        lastFailureMessage =
+          localError instanceof Error
+            ? localError.message
+            : 'Unknown local Ollama judge failure.';
+
+        this.logger.warn(
+          `Local Ollama AI judge failed or returned an invalid comparison: ${lastFailureMessage}`,
         );
       }
     }
 
     this.logger.warn(
-      `AI candidate judge was unavailable after ${IDEA_JUDGE_MAX_ATTEMPTS} attempt(s); deterministic ranking will be used. Reason: ${lastFailureMessage}`,
+      `AI candidate judge was unavailable after exhausting online attempts${localFallbackModel ? ' and the local Ollama fallback' : ''}; deterministic ranking will be used. Reason: ${lastFailureMessage}`,
     );
 
     return null;
+  }
+
+  /**
+   * Parses and validates one comparative response from either execution tier.
+   */
+  private parseAndValidateEvaluation(
+    text: string,
+    candidates: readonly IdeaJudgeCandidateInput[],
+  ): IdeaJudgeEvaluation {
+    const evaluation = this.parseEvaluation(text);
+
+    this.validateEvaluation(evaluation);
+    this.validateCandidateReferences(evaluation, candidates);
+
+    return evaluation;
+  }
+
+  /**
+   * Finds one active, routable local model that can return structured JSON.
+   */
+  private async findLocalFallbackModel(): Promise<AiModel | null> {
+    const models = await this.aiModelsService.getRoutableModels();
+
+    return (
+      models.find(
+        (model) =>
+          normalizeAiProviderKey(model.providerKey) ===
+            AI_PROVIDER_KEYS.OLLAMA && model.supportsJsonOutput,
+      ) ?? null
+    );
   }
 
   private parseEvaluation(text: string): IdeaJudgeEvaluation {

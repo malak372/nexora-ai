@@ -75,7 +75,10 @@ export class ProblemInsightService {
           .map((term) =>
             this.problemNormalizerService.normalize(term, text.language),
           )
-          .filter(Boolean),
+          .filter(Boolean)
+          .filter((title) =>
+            this.isEvidenceAlignedWithProblemTitle(text.originalText, title),
+          ),
       );
 
       for (const title of normalizedProblems) {
@@ -222,8 +225,32 @@ export class ProblemInsightService {
     }
 
     if (type === NlpLexiconType.RELIABILITY) {
-      return /(?:crash|freeze|frozen|bug|glitch|unstable|unreliable|broken|error|doesn['’]?t work|not working|fails? to)/iu.test(
-        normalizedEvidence,
+      if (this.isScientificOrAlgorithmicErrorContext(normalizedEvidence)) {
+        return false;
+      }
+
+      const hasExplicitCrashOrFreeze =
+        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+          normalizedEvidence,
+        );
+      const hasStrongRuntimeFailure =
+        /(?:bug|glitch|unstable|unreliable|doesn['’]?t work|not working|fails? to submit|submission failed)/iu.test(
+          normalizedEvidence,
+        ) &&
+        !/(?:login|log in|sign in|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          normalizedEvidence,
+        );
+      const hasGenericFailureTerm =
+        /(?:broken|error)/iu.test(normalizedEvidence) &&
+        this.hasSoftwareProductFailureContext(normalizedEvidence) &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|phone|otp|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          normalizedEvidence,
+        );
+
+      return (
+        hasExplicitCrashOrFreeze ||
+        hasStrongRuntimeFailure ||
+        hasGenericFailureTerm
       );
     }
 
@@ -318,17 +345,31 @@ export class ProblemInsightService {
       terms.push('login failure');
     }
 
+    const hasExplicitCrashOrFreeze =
+      /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+        text,
+      );
     const hasOperationalReliabilityFailure =
-      /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|bug|glitch)/iu.test(
+      /(?:bug|glitch)/iu.test(text) &&
+      /(?:app|application|software|screen|submission|upload|save|work)/iu.test(
+        text,
+      ) &&
+      !/(?:login|log in|sign in|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
         text,
       );
     const hasGenericError =
       /(?:broken|error|looping)/iu.test(text) &&
-      !/(?:download|document|syllabus|file|link|login|log in|sign in|activation|verification|email|code|otp)/iu.test(
+      this.hasSoftwareProductFailureContext(text) &&
+      !this.isScientificOrAlgorithmicErrorContext(text) &&
+      !/(?:download|document|syllabus|file|link|login|log in|sign in|activation|verification|email|code|otp|server|network|website|connection)/iu.test(
         text,
       );
 
-    if (hasOperationalReliabilityFailure || hasGenericError) {
+    if (
+      hasExplicitCrashOrFreeze ||
+      hasOperationalReliabilityFailure ||
+      hasGenericError
+    ) {
       terms.push('crash');
     }
 
@@ -341,6 +382,65 @@ export class ProblemInsightService {
     }
 
     return terms;
+  }
+
+  /**
+   * Keeps a normalized problem only when the source text describes the same
+   * user workflow. This final category gate applies equally to lexicon-derived
+   * and rule-inferred terms, preventing broad words such as "error" or
+   * "computer" from attaching authentication evidence to crash, document, or
+   * cross-device categories.
+   */
+  private isEvidenceAlignedWithProblemTitle(
+    evidence: string,
+    title: string,
+  ): boolean {
+    const text = this.normalizeText(evidence);
+    const normalizedTitle = this.normalizeText(title);
+    const hasAuthenticationContext =
+      /(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp|verification code)/iu.test(
+        text,
+      );
+
+    if (/document|download|syllabus|file/iu.test(normalizedTitle)) {
+      return (
+        /(?:document|download|syllabus|pdf|attachment|file|link)/iu.test(
+          text,
+        ) &&
+        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
+          text,
+        ) &&
+        !hasAuthenticationContext
+      );
+    }
+
+    if (/cross-device|desktop|laptop|computer/iu.test(normalizedTitle)) {
+      return (
+        this.hasCrossDeviceAccessFailure(text) && !hasAuthenticationContext
+      );
+    }
+
+    if (/activation|login|account|authentication/iu.test(normalizedTitle)) {
+      return hasAuthenticationContext;
+    }
+
+    if (/reliability|crash|تعطل/iu.test(normalizedTitle)) {
+      const hasExplicitRuntimeFailure =
+        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+          text,
+        );
+      const hasNonAuthOperationalFailure =
+        /(?:bug|glitch|submission failed|fails? to submit|upload failed|doesn['’]?t work|not working)/iu.test(
+          text,
+        ) &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          text,
+        );
+
+      return hasExplicitRuntimeFailure || hasNonAuthOperationalFailure;
+    }
+
+    return true;
   }
 
   /** Builds category-specific evidence for one normalized problem title. */
@@ -453,6 +553,20 @@ export class ProblemInsightService {
     if (samples.length > MAX_PROBLEM_EVIDENCE_SAMPLES) {
       samples.length = MAX_PROBLEM_EVIDENCE_SAMPLES;
     }
+  }
+
+  /** Rejects scientific uses of "error" that do not describe product failure. */
+  private isScientificOrAlgorithmicErrorContext(value: string): boolean {
+    return /(?:quantum error correction|error[- ]correcting code|error correction algorithm|statistical error|measurement error|prediction error|training error|encoding error rate)/iu.test(
+      value,
+    );
+  }
+
+  /** Requires a concrete software surface when only a generic failure word matched. */
+  private hasSoftwareProductFailureContext(value: string): boolean {
+    return /(?:app|application|software|website|platform|system|screen|page|feature|button|submission|session|account|mobile|ios|android|server|network|interface|workflow|process)/iu.test(
+      value,
+    );
   }
 
   /** Detects a failure that prevents the user from completing a core action. */

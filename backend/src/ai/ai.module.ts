@@ -9,6 +9,7 @@ import { AiUsageAnalyticsService } from './analytics/ai-usage-analytics.service'
 
 import { GoogleProvider } from './providers/google.provider';
 import { OpenRouterProvider } from './providers/openrouter.provider';
+import { OllamaProvider } from './providers/ollama.provider';
 
 import { AiExecutionService } from './services/ai-execution.service';
 import { AiProviderCredentialsService } from './services/ai-provider-credentials.service';
@@ -25,6 +26,7 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
  * Registered providers:
  * - Google AI.
  * - OpenRouter.
+ * - Ollama local fallback.
  *
  * Responsibilities:
  * - Register provider adapters.
@@ -48,6 +50,7 @@ import { ExternalAiLogService } from './services/external-ai-log.service';
      */
     GoogleProvider,
     OpenRouterProvider,
+    OllamaProvider,
 
     /**
      * Provider registry and credentials.

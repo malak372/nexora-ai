@@ -102,6 +102,77 @@ export class AiAnalysisOutputValidatorService {
    * @throws {BadGatewayException} When the AI response violates the
    * expected contract or references unsupported evidence.
    */
+  /**
+   * Removes unsupported and duplicate evidence identifiers before strict
+   * validation. No analytical text, score, or category is invented or changed.
+   *
+   * Items left without any supported evidence remain invalid and therefore
+   * trigger a retry with another model.
+   */
+  repairEvidenceReferences(
+    value: unknown,
+    evidence: ReadonlyArray<AiEnhancementEvidence>,
+  ): unknown {
+    if (!this.isRecord(value)) {
+      return value;
+    }
+
+    const validEvidenceIds = this.buildEvidenceIdSet(evidence);
+    const collectionKeys = [
+      'recurringProblems',
+      'extractedNeeds',
+      'featureRequests',
+      'opportunities',
+      'insights',
+    ] as const;
+
+    const repaired: Record<string, unknown> = { ...value };
+
+    for (const key of collectionKeys) {
+      const collectionValue = value[key];
+
+      if (!Array.isArray(collectionValue)) {
+        continue;
+      }
+
+      const collection: unknown[] = collectionValue;
+
+      repaired[key] = collection.map((item): unknown => {
+        if (
+          !this.isRecord(item) ||
+          !Array.isArray(item.supportingEvidenceIds)
+        ) {
+          return item;
+        }
+
+        const seen = new Set<string>();
+        const supportingEvidenceIds = item.supportingEvidenceIds.filter(
+          (candidate): candidate is string => {
+            if (typeof candidate !== 'string') {
+              return false;
+            }
+
+            const normalizedId = candidate.trim();
+            if (
+              !normalizedId ||
+              !validEvidenceIds.has(normalizedId) ||
+              seen.has(normalizedId)
+            ) {
+              return false;
+            }
+
+            seen.add(normalizedId);
+            return true;
+          },
+        );
+
+        return { ...item, supportingEvidenceIds };
+      });
+    }
+
+    return repaired;
+  }
+
   validate(
     value: unknown,
     evidence: ReadonlyArray<AiEnhancementEvidence>,
@@ -347,6 +418,10 @@ export class AiAnalysisOutputValidatorService {
     }
 
     return ids;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private requireObject(value: unknown, path: string): Record<string, unknown> {

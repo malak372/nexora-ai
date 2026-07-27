@@ -8,6 +8,7 @@ import type {
   IdeaGenerationNlpContext,
   SelectedIdeaDataSource,
 } from '../types/idea-generation-context.type';
+import type { RankedIdeaOpportunity } from '../types/idea-opportunity-ranking.type';
 
 /** Result of one bounded targeted evidence-recovery attempt. */
 export type IdeaEvidenceRecoveryResult = {
@@ -51,11 +52,15 @@ export class IdeaEvidenceRecoveryService {
 
   async recover(
     context: IdeaGenerationContext,
+    selectedOpportunity: RankedIdeaOpportunity | null = null,
   ): Promise<IdeaEvidenceRecoveryResult> {
     const recoverySources = this.selectRecoverySources(
       context.selectedDataSources,
     );
-    const recoveryKeywords = this.buildRecoveryKeywords(context);
+    const recoveryKeywords = this.buildRecoveryKeywords(
+      context,
+      selectedOpportunity,
+    );
 
     const result = await this.collectionJobResolver.resolve({
       userId:
@@ -111,18 +116,30 @@ export class IdeaEvidenceRecoveryService {
     return selectedSources.slice(0, this.maximumRecoverySources);
   }
 
-  private buildRecoveryKeywords(context: IdeaGenerationContext): string[] {
+  /**
+   * Builds issue-specific recovery queries before generic domain keywords.
+   *
+   * Previously, the full domain keyword list was appended first and then
+   * truncated, which could remove every targeted complaint query. The selected
+   * opportunity now receives priority so recovery searches for additional
+   * evidence about the exact observed failure rather than recollecting broad
+   * domain content.
+   */
+  private buildRecoveryKeywords(
+    context: IdeaGenerationContext,
+    selectedOpportunity: RankedIdeaOpportunity | null,
+  ): string[] {
     const domain = (context.domainName ?? '').trim();
     const country = context.location.country.trim();
     const city = context.location.city?.trim() ?? '';
-    const baseTerms = [domain, ...context.keywords]
-      .map((value) => value.trim())
-      .filter(Boolean);
-
-    const domainTerm = domain || baseTerms[0] || 'software';
+    const domainTerm = domain || context.keywords[0]?.trim() || 'software';
     const locationTerms = [city, country].filter(Boolean).join(' ');
 
-    const targeted = [
+    const opportunityTerms = this.buildOpportunityTerms(
+      domainTerm,
+      selectedOpportunity,
+    );
+    const genericTargeted = [
       `${domainTerm} app problems`,
       `${domainTerm} software complaints`,
       `${domainTerm} app reviews`,
@@ -136,11 +153,93 @@ export class IdeaEvidenceRecoveryService {
       locationTerms ? `${domainTerm} problems ${locationTerms}` : '',
       locationTerms ? `${domainTerm} user complaints ${locationTerms}` : '',
     ];
+    const boundedBaseTerms = [domain, ...context.keywords]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 4);
 
-    return [...new Set([...baseTerms, ...targeted])]
+    return [
+      ...new Set([
+        ...opportunityTerms,
+        ...genericTargeted,
+        ...boundedBaseTerms,
+      ]),
+    ]
       .map((value) => value.replace(/\s+/gu, ' ').trim())
       .filter(Boolean)
       .slice(0, this.maximumRecoveryKeywords);
+  }
+
+  /**
+   * Derives bounded search phrases from the current ranking winner.
+   *
+   * Only normalized opportunity descriptors are used; raw evidence quotes are
+   * intentionally excluded so user-generated text is not treated as a search
+   * instruction.
+   */
+  private buildOpportunityTerms(
+    domainTerm: string,
+    selectedOpportunity: RankedIdeaOpportunity | null,
+  ): string[] {
+    if (!selectedOpportunity) {
+      return [];
+    }
+
+    const descriptors = [
+      selectedOpportunity.title,
+      selectedOpportunity.problem,
+      selectedOpportunity.need,
+      selectedOpportunity.solutionArea,
+    ]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .map((value) => value.replace(/[^\p{L}\p{N}\s-]/gu, ' ').trim())
+      .filter((value) => value.length >= 5)
+      .slice(0, 4);
+
+    const descriptorQueries = descriptors.flatMap((descriptor) => [
+      `${domainTerm} ${descriptor}`,
+      `${descriptor} user complaint`,
+    ]);
+    const normalizedDescriptorText = descriptors.join(' ').toLowerCase();
+    const workflowQueries: string[] = [];
+
+    if (
+      /\b(?:subscription|purchase|billing|paywall|upgrade|entitlement|pro)\b/iu.test(
+        normalizedDescriptorText,
+      )
+    ) {
+      workflowQueries.push(
+        `${domainTerm} paid subscription not recognized`,
+        `${domainTerm} restore purchase failed`,
+        `${domainTerm} pro upgrade not activated`,
+        `${domainTerm} purchased features inaccessible`,
+      );
+    }
+
+    if (
+      /\b(?:account|activation|login|credential|access)\b/iu.test(
+        normalizedDescriptorText,
+      )
+    ) {
+      workflowQueries.push(
+        `${domainTerm} account activation failed`,
+        `${domainTerm} login no response`,
+        `${domainTerm} cannot access paid account`,
+      );
+    }
+
+    if (
+      /\b(?:crash|reliability|unstable|failure|data loss)\b/iu.test(
+        normalizedDescriptorText,
+      )
+    ) {
+      workflowQueries.push(
+        `${domainTerm} app keeps crashing`,
+        `${domainTerm} reliability failure review`,
+      );
+    }
+
+    return [...descriptorQueries, ...workflowQueries];
   }
 
   private mapNlpContext(

@@ -7,6 +7,7 @@ import {
   type IdeaOpportunityRanking,
   type RankedIdeaOpportunity,
 } from '../types/idea-opportunity-ranking.type';
+import type { CommunityAiAnalysis } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.type';
 
 const MAX_EVIDENCE_SAMPLES = 5;
@@ -15,6 +16,10 @@ const MAX_RANKED_OPPORTUNITIES = 8;
 const LOW_NLP_CONFIDENCE_THRESHOLD = 0.5;
 const MIN_SELECTION_RELIABILITY = 0.42;
 const MIN_LOW_CONFIDENCE_RELIABILITY = 0.52;
+const MIN_EVIDENCE_RELEVANCE_SCORE = 0.34;
+const MIN_GENERIC_RELIABILITY_RELEVANCE_SCORE = 0.46;
+const INELIGIBLE_SELECTION_PENALTY = 0.12;
+const MIN_STANDARD_SELECTION_EVIDENCE_SAMPLES = 2;
 
 /** Labels that are too generic to be selected without concrete evidence. */
 const GENERIC_LABELS = new Set([
@@ -32,6 +37,9 @@ const GENERIC_LABELS = new Set([
   'need',
   'platform',
   'problem',
+  'please add',
+  'request',
+  'suggestion',
   'see',
   'service',
   'solution',
@@ -97,6 +105,8 @@ const NON_DIAGNOSTIC_EVIDENCE_PATTERNS: readonly RegExp[] = [
   /\b(?:lost hope|found hope|didn['’]?t think it would come back|feel(?:ing)? hopeless)\b/iu,
   /\b(?:love this|great app|amazing app|thank you|good job|best app)\b/iu,
   /^(?:please\s+)?(?:fix|correct)\s+(?:this|it|the error)[.!…]*$/iu,
+  /^(?:please\s+)?(?:correct|fix)\s+(?:this\s+)?(?:error|bug|issue)[.!…]*$/iu,
+  /^(?:something|anything)\s+(?:went|goes)\s+wrong[.!…]*$/iu,
   /^(?:help|please help|any update|same here|me too)[.!…]*$/iu,
   /(?:فقدت الأمل|رجع الأمل|تطبيق رائع|شكراً|ساعدوني|نفس المشكلة فقط)[.!…]*$/iu,
 ];
@@ -127,7 +137,9 @@ type NormalizedCandidate = {
  */
 export class NoRankedIdeaOpportunityError extends Error {
   constructor() {
-    super('NLP analysis did not contain a concrete evidence-backed opportunity.');
+    super(
+      'NLP analysis did not contain a concrete evidence-backed opportunity.',
+    );
     this.name = 'NoRankedIdeaOpportunityError';
   }
 }
@@ -143,8 +155,10 @@ export class IdeaOpportunityRankingService {
     nlp: IdeaGenerationNlpContext,
     locationTerms: readonly string[],
     previousIdeaTexts: readonly string[] = [],
+    communityAiAnalysis: CommunityAiAnalysis | null = null,
   ): IdeaOpportunityRanking {
     const extractedCandidates = [
+      ...this.extractCommunityAiCandidates(communityAiAnalysis),
       ...this.extractCandidates(
         nlp.recurringProblems,
         IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM,
@@ -172,22 +186,38 @@ export class IdeaOpportunityRankingService {
     const consolidatedCandidates =
       this.consolidateEquivalentCandidates(normalizedCandidates);
 
-    const ranked = consolidatedCandidates
-      .map((candidate) =>
-        this.scoreCandidate(
-          candidate,
-          locationTerms,
-          previousIdeaTexts,
-          nlp.confidence ?? 0,
-        ),
-      )
-      .sort((first, second) => {
-        // Selection eligibility is a hard gate. A candidate with sparse or
-        // unreliable support cannot win merely because novelty is high.
-        if (first.selectionEligible !== second.selectionEligible) {
-          return first.selectionEligible ? -1 : 1;
-        }
+    const scoredCandidates = consolidatedCandidates.map((candidate) =>
+      this.scoreCandidate(
+        candidate,
+        locationTerms,
+        previousIdeaTexts,
+        nlp.confidence ?? 0,
+      ),
+    );
 
+    /*
+     * Prefer a ranking set composed only of candidates that retain direct,
+     * validated evidence. Unsupported semantic summaries remain useful for
+     * diagnostics, but including them as normal alternatives artificially
+     * lowers evidence coverage and can distract downstream generation.
+     *
+     * When no candidate retains evidence, keep the complete scored set so the
+     * existing bounded recovery/fallback path can still explain and handle the
+     * insufficient-evidence condition instead of failing silently.
+     */
+    const evidenceBackedCandidates = scoredCandidates.filter(
+      (candidate) => candidate.evidenceSamples.length > 0,
+    );
+    const candidatesToRank =
+      evidenceBackedCandidates.length > 0
+        ? evidenceBackedCandidates
+        : scoredCandidates;
+
+    const ranked = candidatesToRank
+      .sort((first, second) => {
+        // Eligibility is reflected through a deterministic score penalty.
+        // It is not used as a hard ordering gate so the strongest available
+        // fallback remains selectable when evidence recovery is exhausted.
         const supportDifference = second.supportScore - first.supportScore;
 
         if (Math.abs(supportDifference) >= 0.12) {
@@ -227,13 +257,32 @@ export class IdeaOpportunityRankingService {
       evidenceBacked / Math.max(ranked.length, 1),
     );
 
+    // Prefer the highest-ranked candidate that passed the exact eligibility
+    // gate used by downstream generation. Previously ranked[0] could be an
+    // intentionally penalized fallback with selectionEligible=false, while
+    // the benchmark rejected that same candidate and aborted the run.
+    const eligibleWinner = ranked.find(
+      (candidate) => candidate.selectionEligible,
+    );
+    const selectedCandidate = eligibleWinner ?? ranked[0];
+    const orderedCandidates = [
+      selectedCandidate,
+      ...ranked.filter((candidate) => candidate !== selectedCandidate),
+    ].map((candidate, index) => ({ ...candidate, rank: index + 1 }));
+    const selected = orderedCandidates[0];
+    const alternatives = orderedCandidates.slice(1);
+
     return {
-      selected: ranked[0],
-      alternatives: ranked.slice(1),
+      selected,
+      alternatives,
       evaluatedCount: extractedCandidates.length,
       evidenceCoverage,
-      selectionReason: this.buildSelectionReason(ranked[0], ranked[1]),
-      qualityWarnings: this.buildQualityWarnings(nlp, ranked, evidenceCoverage),
+      selectionReason: this.buildSelectionReason(selected, alternatives[0]),
+      qualityWarnings: this.buildQualityWarnings(
+        nlp,
+        orderedCandidates,
+        evidenceCoverage,
+      ),
     };
   }
 
@@ -273,6 +322,37 @@ export class IdeaOpportunityRankingService {
       .trim();
   }
 
+  /**
+   * Converts validated LLM opportunities into ranking candidates. They are
+   * still evaluated by the deterministic evidence gate, while NLP-derived
+   * candidates remain available as a fallback when AI analysis is unavailable.
+   */
+  private extractCommunityAiCandidates(
+    analysis: CommunityAiAnalysis | null,
+  ): NormalizedCandidate[] {
+    if (!analysis) {
+      return [];
+    }
+
+    return analysis.opportunities.map((opportunity, sourceIndex) => ({
+      title: opportunity.title,
+      problem: opportunity.problem,
+      need: opportunity.unmetNeed,
+      solutionArea: opportunity.solutionArea,
+      evidenceType: IDEA_OPPORTUNITY_EVIDENCE_TYPES.OPPORTUNITY,
+      sourceIndex,
+      frequency: opportunity.frequency,
+      severity: opportunity.severity,
+      evidenceSamples: [...opportunity.evidenceSamples],
+      raw: {
+        ...opportunity,
+        source: 'COMMUNITY_AI_ANALYSIS',
+        groundingScore: opportunity.groundingScore,
+        localEvidenceAvailable: opportunity.localEvidenceAvailable,
+      } as unknown as Prisma.JsonValue,
+    }));
+  }
+
   private extractCandidates(
     value: Prisma.JsonValue | null,
     evidenceType: IdeaOpportunityEvidenceType,
@@ -301,7 +381,7 @@ export class IdeaOpportunityRankingService {
       const request = this.readString(entry.request);
       const title =
         (evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
-          ? feature ?? request
+          ? (feature ?? request)
           : null) ??
         this.readString(entry.title) ??
         problem ??
@@ -329,10 +409,123 @@ export class IdeaOpportunityRankingService {
     });
   }
 
+  /** Returns true when the candidate came from validated community AI analysis. */
+  private isCommunityAiCandidate(candidate: NormalizedCandidate): boolean {
+    return (
+      this.isJsonObject(candidate.raw) &&
+      ['COMMUNITY_AI_ANALYSIS', 'COMMUNITY_LLM_ANALYSIS'].includes(
+        this.readString(candidate.raw.source) ?? '',
+      )
+    );
+  }
+
+  /**
+   * Accepts evidence only when it is the same corpus-backed sample returned by
+   * the validated Community AI stage and that stage assigned an acceptable
+   * deterministic grounding score.
+   *
+   * This source-aware path is intentionally separate from complaint-pattern
+   * detection because Community AI evidence may be a developer workflow
+   * description or feature request rather than a negative review.
+   */
+  private isAcceptedCommunityAiEvidence(
+    candidate: NormalizedCandidate,
+    sample: string,
+  ): boolean {
+    if (
+      !this.isCommunityAiCandidate(candidate) ||
+      !this.isJsonObject(candidate.raw)
+    ) {
+      return false;
+    }
+
+    const source = this.readString(candidate.raw.source) ?? '';
+    const groundingScore = this.readNumber(candidate.raw.groundingScore);
+    const confidence = Math.max(
+      this.readNumber(candidate.raw.confidence),
+      this.readNumber(candidate.raw.aiConfidence),
+    );
+
+    /*
+     * COMMUNITY_AI_ANALYSIS records expose a deterministic groundingScore.
+     * COMMUNITY_LLM_ANALYSIS records are the validated copy merged into NLP
+     * sections and may no longer carry groundingScore. In that case, require
+     * high model confidence and an exact corpus sample match instead of
+     * dropping otherwise valid evidence.
+     */
+    const hasAcceptedGrounding =
+      source === 'COMMUNITY_AI_ANALYSIS'
+        ? groundingScore >= 50
+        : source === 'COMMUNITY_LLM_ANALYSIS' && confidence >= 70;
+
+    if (!hasAcceptedGrounding) {
+      return false;
+    }
+
+    const normalizedSample = this.normalizeEvidenceSample(sample);
+    const rawSamples = this.readStringArray(candidate.raw.evidenceSamples).map(
+      (rawSample) => this.normalizeEvidenceSample(rawSample),
+    );
+
+    return rawSamples.some(
+      (rawSample) =>
+        rawSample === normalizedSample ||
+        rawSample.startsWith(normalizedSample) ||
+        normalizedSample.startsWith(rawSample),
+    );
+  }
+
   private normalizeCandidate(
     candidate: NormalizedCandidate,
   ): NormalizedCandidate | null {
-    const normalizedEvidence = candidate.evidenceSamples
+    const isCommunityAiCandidate = this.isCommunityAiCandidate(candidate);
+    const rawCandidate =
+      isCommunityAiCandidate && this.isJsonObject(candidate.raw)
+        ? candidate.raw
+        : null;
+
+    /*
+     * Community-AI opportunities are already schema-validated before ranking.
+     * Read their structured fields from raw as a defensive fallback so a
+     * mapper or serialization change cannot silently drop solutionArea or
+     * evidenceSamples before deterministic scoring.
+     */
+    const workingCandidate: NormalizedCandidate = {
+      ...candidate,
+      problem:
+        candidate.problem ??
+        (rawCandidate ? this.readString(rawCandidate.problem) : null),
+      need:
+        candidate.need ??
+        (rawCandidate ? this.readString(rawCandidate.unmetNeed) : null),
+      solutionArea:
+        candidate.solutionArea ??
+        (rawCandidate ? this.readString(rawCandidate.solutionArea) : null),
+      evidenceSamples:
+        candidate.evidenceSamples.length > 0
+          ? candidate.evidenceSamples
+          : rawCandidate
+            ? this.readStringArray(rawCandidate.evidenceSamples)
+            : [],
+    };
+
+    /*
+     * Reject structurally incomplete NLP opportunities. A solution area alone
+     * is not a user need or problem and must not enter deterministic ranking.
+     * Validated community-AI candidates provide both problem and unmet need,
+     * and the defensive raw-field fallback above preserves those descriptors.
+     */
+    if (
+      workingCandidate.evidenceType ===
+        IDEA_OPPORTUNITY_EVIDENCE_TYPES.OPPORTUNITY &&
+      !isCommunityAiCandidate &&
+      !workingCandidate.problem &&
+      !workingCandidate.need
+    ) {
+      return null;
+    }
+
+    const normalizedEvidence = workingCandidate.evidenceSamples
       .map((sample) => this.normalizeEvidenceSample(sample))
       .filter(Boolean)
       .filter((sample) => !this.isPromotionalOnlyEvidence(sample))
@@ -342,7 +535,7 @@ export class IdeaOpportunityRankingService {
       .filter(
         (sample) =>
           this.hasDirectComplaintSignal(sample) &&
-          this.isEvidenceRelevantToCandidate(candidate, sample),
+          this.isEvidenceRelevantToCandidate(workingCandidate, sample),
       )
       .map((sample) => ({
         sample,
@@ -355,24 +548,49 @@ export class IdeaOpportunityRankingService {
           second.sample.length - first.sample.length,
       )
       .map((item) => item.sample);
-    const originalTitle = candidate.title.replace(/\s+/gu, ' ').trim();
+
+    /*
+     * Community-AI evidence is not required to use complaint wording. A
+     * feature request, workflow explanation, or developer report can be direct
+     * evidence when it was included in the validated Community AI result and
+     * the deterministic grounding score passed the accepted threshold.
+     */
+    const groundedCommunityEvidence = isCommunityAiCandidate
+      ? normalizedEvidence.filter((sample) =>
+          this.isAcceptedCommunityAiEvidence(workingCandidate, sample),
+        )
+      : [];
+
+    const originalTitle = workingCandidate.title.replace(/\s+/gu, ' ').trim();
     const normalizedTitle = originalTitle.toLowerCase();
     const titleDerivationEvidence =
-      directEvidence.length > 0 ? directEvidence : normalizedEvidence;
+      directEvidence.length > 0
+        ? directEvidence
+        : groundedCommunityEvidence.length > 0
+          ? groundedCommunityEvidence
+          : normalizedEvidence;
     const evidenceDerivedTitle = this.deriveConcreteTitle(
       titleDerivationEvidence,
     );
     const structuredFeatureTitle =
-      candidate.evidenceType ===
+      workingCandidate.evidenceType ===
       IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
-        ? this.deriveFeatureRequestTitle(candidate, titleDerivationEvidence)
+        ? this.deriveFeatureRequestTitle(
+            workingCandidate,
+            titleDerivationEvidence,
+          )
         : null;
     const derivedTitle = structuredFeatureTitle ?? evidenceDerivedTitle;
     const structuredFallbackTitle =
-      candidate.evidenceType ===
+      workingCandidate.evidenceType ===
       IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
-        ? candidate.title ?? candidate.solutionArea ?? candidate.need
-        : candidate.problem ?? candidate.need ?? candidate.solutionArea ?? null;
+        ? (workingCandidate.title ??
+          workingCandidate.solutionArea ??
+          workingCandidate.need)
+        : (workingCandidate.problem ??
+          workingCandidate.need ??
+          workingCandidate.solutionArea ??
+          null);
     const tentativeTitle =
       GENERIC_LABELS.has(normalizedTitle) ||
       originalTitle.split(/\s+/u).length < 2
@@ -386,29 +604,66 @@ export class IdeaOpportunityRankingService {
       return null;
     }
 
-    const relevantEvidence = normalizedEvidence.filter((sample) =>
-      this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
-    );
+    const relevantEvidence = normalizedEvidence
+      .map((sample) => ({
+        sample,
+        relevanceScore: this.calculateEvidenceRelevanceScore(
+          workingCandidate,
+          finalTitle,
+          sample,
+        ),
+      }))
+      .filter(({ sample, relevanceScore }) => {
+        if (this.meetsEvidenceRelevanceThreshold(finalTitle, relevanceScore)) {
+          return true;
+        }
+
+        /*
+         * Preserve evidence that the validated Community AI stage already
+         * grounded against the original corpus. The exact-evidence and
+         * grounding checks prevent unrelated text from bypassing ranking.
+         */
+        return (
+          isCommunityAiCandidate &&
+          this.isAcceptedCommunityAiEvidence(workingCandidate, sample)
+        );
+      })
+      .sort(
+        (first, second) =>
+          second.relevanceScore - first.relevanceScore ||
+          this.calculateEvidenceQuality(second.sample) -
+            this.calculateEvidenceQuality(first.sample),
+      )
+      .map(({ sample }) => sample);
 
     /**
      * Keep only evidence that has a defensible connection to the opportunity.
-     * A sample may qualify through a known problem family, strong semantic
-     * overlap, or a structured direct complaint/feature-request signal. This
-     * avoids both extremes: reintroducing unrelated text and rejecting valid
-     * paraphrases merely because they do not share the exact title wording.
+     * Community-AI evidence may qualify through its validated corpus-grounding
+     * record even when it is phrased as a feature request rather than a direct
+     * complaint.
      */
     const evidenceSamples = this.deduplicateEvidenceSamples([
+      ...groundedCommunityEvidence,
       ...relevantEvidence,
       ...directEvidence.filter((sample) =>
-        this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
+        this.isEvidenceAcceptableForOpportunity(
+          workingCandidate,
+          finalTitle,
+          sample,
+        ),
       ),
     ]).slice(0, MAX_EVIDENCE_SAMPLES);
 
     const requiresDirectEvidence =
-      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM ||
-      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED;
+      workingCandidate.evidenceType ===
+        IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM ||
+      workingCandidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.NEED;
     const hasAcceptedDirectEvidence = directEvidence.some((sample) =>
-      this.isEvidenceAcceptableForOpportunity(candidate, finalTitle, sample),
+      this.isEvidenceAcceptableForOpportunity(
+        workingCandidate,
+        finalTitle,
+        sample,
+      ),
     );
 
     if (
@@ -418,20 +673,124 @@ export class IdeaOpportunityRankingService {
       return null;
     }
 
+    const alignedDescriptors = this.deriveAlignedDescriptors(
+      finalTitle,
+      workingCandidate.problem,
+      workingCandidate.need,
+      workingCandidate.solutionArea,
+      isCommunityAiCandidate,
+    );
+
     return {
-      ...candidate,
+      ...workingCandidate,
       title: finalTitle,
-      problem:
-        candidate.problem &&
-        !GENERIC_LABELS.has(candidate.problem.toLowerCase())
-          ? candidate.problem
-          : finalTitle,
-      need:
-        candidate.need && !GENERIC_LABELS.has(candidate.need.toLowerCase())
-          ? candidate.need
-          : null,
+      problem: alignedDescriptors.problem,
+      need: alignedDescriptors.need,
+      solutionArea: alignedDescriptors.solutionArea,
       evidenceSamples: evidenceSamples.slice(0, MAX_EVIDENCE_SAMPLES),
     };
+  }
+
+  /**
+   * Keeps problem descriptors aligned with the selected canonical title.
+   * NLP arrays may contain partially overlapping records, so descriptors from
+   * an unrelated candidate must not leak into the stronger merged candidate.
+   */
+  private deriveAlignedDescriptors(
+    title: string,
+    problem: string | null,
+    need: string | null,
+    solutionArea: string | null,
+    preserveStructuredDescriptors = false,
+  ): {
+    problem: string;
+    need: string | null;
+    solutionArea: string | null;
+  } {
+    if (preserveStructuredDescriptors) {
+      return {
+        problem:
+          problem && !GENERIC_LABELS.has(problem.toLowerCase())
+            ? problem
+            : title,
+        need: need && !GENERIC_LABELS.has(need.toLowerCase()) ? need : null,
+        solutionArea:
+          solutionArea && !GENERIC_LABELS.has(solutionArea.toLowerCase())
+            ? solutionArea
+            : null,
+      };
+    }
+
+    const context = [title, problem].filter(Boolean).join(' ').toLowerCase();
+
+    // Authentication and subscription recovery are separate workflows.
+    // Check authentication first so titles such as "Account Activation and
+    // Login Failures" cannot be mislabeled as subscription restoration.
+    if (
+      /\b(?:login|log in|sign in|authentication|activation|identity|verification|session|token|handshake|account activation|account recovery)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: title,
+        need: 'Reliable Login and Session Recovery',
+        solutionArea: 'Authentication and Session Recovery',
+      };
+    }
+
+    if (
+      /\b(?:subscription|purchase|payment|billing|renewal|receipt|restore purchase|purchase restoration|subscription restoration)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: title,
+        need: 'Reliable Subscription Restoration and Account Access',
+        solutionArea: 'Subscription Verification and Purchase Recovery',
+      };
+    }
+
+    if (
+      /\b(?:crash|freeze|stuck|unresponsive|runtime|state loss|lost progress|recovery)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem: title,
+        need: 'Stable Crash-resistant Operation',
+        solutionArea: 'Application Reliability and Performance Recovery',
+      };
+    }
+
+    const normalizedProblem =
+      problem && !GENERIC_LABELS.has(problem.toLowerCase()) ? problem : title;
+    const normalizedNeed =
+      need && !GENERIC_LABELS.has(need.toLowerCase()) ? need : null;
+    const normalizedSolutionArea =
+      solutionArea &&
+      this.descriptorMatchesCandidate(title, problem, solutionArea)
+        ? solutionArea
+        : null;
+
+    return {
+      problem: normalizedProblem,
+      need: normalizedNeed,
+      solutionArea: normalizedSolutionArea,
+    };
+  }
+
+  /** Prevents a descriptor from being inherited only because of generic words. */
+  private descriptorMatchesCandidate(
+    title: string,
+    problem: string | null,
+    descriptor: string,
+  ): boolean {
+    const candidateTokens = this.toSemanticTokenSet(
+      [title, problem].filter(Boolean).join(' '),
+    );
+    const descriptorTokens = this.toSemanticTokenSet(descriptor);
+
+    return this.jaccardSimilarity(candidateTokens, descriptorTokens) >= 0.2;
   }
 
   /**
@@ -457,19 +816,73 @@ export class IdeaOpportunityRankingService {
       const current = groups[existingIndex];
       const preferred = this.selectStrongerCandidate(current, candidate);
       const secondary = preferred === current ? candidate : current;
+      /*
+       * Re-filter merged evidence against the preferred canonical candidate.
+       * This prevents evidence from a loosely similar opportunity (for
+       * example chat-history loss or TCP failures) from inflating subscription
+       * access evidence and its downstream score.
+       */
       const evidenceSamples = this.deduplicateEvidenceSamples([
         ...preferred.evidenceSamples,
         ...secondary.evidenceSamples,
-      ]).slice(0, MAX_EVIDENCE_SAMPLES);
+      ])
+        .filter((sample) => {
+          if (
+            this.isEvidenceAcceptableForOpportunity(
+              preferred,
+              preferred.title,
+              sample,
+            )
+          ) {
+            return true;
+          }
+
+          /*
+           * Preserve corpus-grounded Community AI evidence while merging it
+           * into a stronger deterministic candidate. Without this secondary
+           * check, the merge could choose a PROBLEM record as the preferred
+           * candidate and then discard the Community AI quote merely because
+           * it describes concrete bugs rather than an explicit crash. That
+           * left two independent reports as a single-sample candidate and
+           * incorrectly triggered INSUFFICIENT_EVIDENCE_COUNT.
+           */
+          return (
+            this.isCommunityAiCandidate(secondary) &&
+            this.isAcceptedCommunityAiEvidence(secondary, sample) &&
+            this.hasSharedEvidenceFamily(
+              [
+                preferred.title,
+                preferred.problem,
+                preferred.need,
+                preferred.solutionArea,
+              ]
+                .filter((value): value is string => Boolean(value))
+                .join(' '),
+              sample,
+            )
+          );
+        })
+        .slice(0, MAX_EVIDENCE_SAMPLES);
+
+      const alignedDescriptors = this.deriveAlignedDescriptors(
+        preferred.title,
+        preferred.problem ?? secondary.problem,
+        preferred.need ?? secondary.need,
+        preferred.solutionArea ?? secondary.solutionArea,
+        this.isCommunityAiCandidate(preferred),
+      );
 
       groups[existingIndex] = {
         ...preferred,
-        problem: preferred.problem ?? secondary.problem,
-        need: preferred.need ?? secondary.need,
-        solutionArea: preferred.solutionArea ?? secondary.solutionArea,
-        // Frequencies represent support from separate NLP candidates. Summing
-        // them preserves repeated demand instead of discarding it with max().
-        frequency: Math.max(1, preferred.frequency) + Math.max(1, secondary.frequency),
+        problem: alignedDescriptors.problem,
+        need: alignedDescriptors.need,
+        solutionArea: alignedDescriptors.solutionArea,
+        /*
+         * Sum frequency only for strongly equivalent records. Otherwise keep
+         * the strongest observed count so generic semantic overlap cannot
+         * manufacture demand.
+         */
+        frequency: this.mergeCandidateFrequency(preferred, secondary),
         severity: this.selectHigherSeverity(
           preferred.severity,
           secondary.severity,
@@ -527,6 +940,68 @@ export class IdeaOpportunityRankingService {
     );
 
     return titleSimilarity >= 0.5 || evidenceSimilarity >= 0.58;
+  }
+
+  /**
+   * Combines observed demand without counting the same evidence more than once.
+   *
+   * Community AI opportunities are persisted in multiple NLP sections for
+   * downstream compatibility. Those records can carry the same source count
+   * and the same evidence quote, so summing their frequency would manufacture
+   * demand (for example 3 + 3 + 3 = 9). Repeated evidence therefore keeps the
+   * strongest observed count. Counts are added only when both candidates have
+   * independent evidence sets that support the same concrete opportunity.
+   */
+  private mergeCandidateFrequency(
+    first: NormalizedCandidate,
+    second: NormalizedCandidate,
+  ): number {
+    const firstFrequency = Math.max(0, first.frequency);
+    const secondFrequency = Math.max(0, second.frequency);
+
+    if (!this.shouldAggregateFrequency(first, second)) {
+      return Math.max(firstFrequency, secondFrequency);
+    }
+
+    return firstFrequency + secondFrequency;
+  }
+
+  /** Returns true only when equivalent candidates add independent support. */
+  private shouldAggregateFrequency(
+    first: NormalizedCandidate,
+    second: NormalizedCandidate,
+  ): boolean {
+    const firstEvidence = new Set(
+      first.evidenceSamples.map((sample) =>
+        this.normalizeEvidenceSample(sample),
+      ),
+    );
+    const secondEvidence = new Set(
+      second.evidenceSamples.map((sample) =>
+        this.normalizeEvidenceSample(sample),
+      ),
+    );
+    const hasSharedEvidence = [...firstEvidence].some((sample) =>
+      secondEvidence.has(sample),
+    );
+
+    if (hasSharedEvidence) {
+      return false;
+    }
+
+    const firstTitle = this.canonicalizeOpportunityTitle(first.title);
+    const secondTitle = this.canonicalizeOpportunityTitle(second.title);
+    const titleSimilarity = this.jaccardSimilarity(
+      this.toSemanticTokenSet(firstTitle),
+      this.toSemanticTokenSet(secondTitle),
+    );
+
+    return (
+      firstEvidence.size > 0 &&
+      secondEvidence.size > 0 &&
+      (firstTitle.toLowerCase() === secondTitle.toLowerCase() ||
+        titleSimilarity >= 0.72)
+    );
   }
 
   private selectStrongerCandidate(
@@ -666,7 +1141,11 @@ export class IdeaOpportunityRankingService {
       directEvidenceRatio,
       evidenceQualityScore,
     );
-    const finalScore = this.round(Math.max(0, baseScore - confidencePenalty));
+    const eligibilityPenalty =
+      disqualificationReasons.length > 0 ? INELIGIBLE_SELECTION_PENALTY : 0;
+    const finalScore = this.round(
+      Math.max(0, baseScore - confidencePenalty - eligibilityPenalty),
+    );
 
     return {
       ...candidate,
@@ -762,13 +1241,11 @@ export class IdeaOpportunityRankingService {
       directEvidenceRatio >= 0.6 &&
       evidenceQualityScore >= 0.5;
     const singleSampleQualityThreshold =
-      candidate.evidenceType ===
-      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
         ? 0.5
         : 0.55;
     const singleSampleDirectRatioThreshold =
-      candidate.evidenceType ===
-      IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
+      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
         ? 0.75
         : 0.85;
     const hasStrongSingleSampleEvidence =
@@ -783,6 +1260,14 @@ export class IdeaOpportunityRankingService {
       !hasStrongSingleSampleEvidence
     ) {
       reasons.push('INSUFFICIENT_SUPPORT');
+    }
+
+    if (
+      candidate.evidenceSamples.length <
+        MIN_STANDARD_SELECTION_EVIDENCE_SAMPLES &&
+      !hasStrongSingleSampleEvidence
+    ) {
+      reasons.push('INSUFFICIENT_EVIDENCE_COUNT');
     }
 
     if (
@@ -1170,9 +1655,7 @@ export class IdeaOpportunityRankingService {
     }
 
     if (/reliability|crash/iu.test(normalizedTitle)) {
-      return /\b(?:crash|freeze|error|bug|glitch|looping|doesn['’]?t work|won['’]?t open)\b/iu.test(
-        evidence,
-      );
+      return this.hasConcreteRuntimeFailureSignal(evidence);
     }
 
     return this.hasMeaningfulSemanticOverlap(title, evidence);
@@ -1258,45 +1741,155 @@ export class IdeaOpportunityRankingService {
     const structuredDirectSignal =
       this.hasDirectComplaintSignal(evidence) &&
       (titleSemanticMatch || candidateSemanticMatch);
+    const relevanceScore = this.calculateEvidenceRelevanceScore(
+      candidate,
+      title,
+      evidence,
+    );
+
+    const requiresConcreteReliabilitySignal =
+      /application reliability|crash failures/iu.test(title);
+
+    if (
+      requiresConcreteReliabilitySignal &&
+      !this.hasConcreteRuntimeFailureSignal(evidence)
+    ) {
+      return false;
+    }
 
     return (
-      titleFamilyMatch ||
-      candidateFamilyMatch ||
-      (titleSemanticMatch && candidateSemanticMatch) ||
-      structuredDirectSignal
+      this.meetsEvidenceRelevanceThreshold(title, relevanceScore) &&
+      (titleFamilyMatch ||
+        candidateFamilyMatch ||
+        (titleSemanticMatch && candidateSemanticMatch) ||
+        structuredDirectSignal)
     );
   }
 
-  private isEvidenceRelevantToCandidate(
+  /**
+   * Scores the semantic connection between one evidence sample and the exact
+   * opportunity. This prevents broad families such as "application errors"
+   * from accepting unrelated programming questions merely because both texts
+   * contain generic words such as error, bug, or application.
+   */
+  private calculateEvidenceRelevanceScore(
+    candidate: NormalizedCandidate,
+    title: string,
+    evidence: string,
+  ): number {
+    const candidateContext = [
+      title,
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(' ');
+    const contextTokens = this.toSemanticTokenSet(candidateContext);
+    const evidenceTokens = this.toSemanticTokenSet(evidence);
+    const lexicalSimilarity = this.jaccardSimilarity(
+      contextTokens,
+      evidenceTokens,
+    );
+    const titleMatch = this.isEvidenceRelevantToTitle(title, evidence) ? 1 : 0;
+    const candidateMatch = this.isEvidenceRelevantToCandidateTokens(
+      candidate,
+      evidence,
+    )
+      ? 1
+      : 0;
+    const familyMatch = this.hasSharedEvidenceFamily(candidateContext, evidence)
+      ? 1
+      : 0;
+    const directSignal = this.hasDirectComplaintSignal(evidence) ? 1 : 0;
+    const qualityScore = this.calculateEvidenceQuality(evidence);
+
+    return Math.min(
+      1,
+      lexicalSimilarity * 0.36 +
+        titleMatch * 0.2 +
+        candidateMatch * 0.16 +
+        familyMatch * 0.1 +
+        directSignal * 0.08 +
+        qualityScore * 0.1,
+    );
+  }
+
+  private meetsEvidenceRelevanceThreshold(
+    title: string,
+    relevanceScore: number,
+  ): boolean {
+    const isGenericReliabilityOpportunity =
+      /application reliability|crash failures/iu.test(title);
+
+    return (
+      relevanceScore >=
+      (isGenericReliabilityOpportunity
+        ? MIN_GENERIC_RELIABILITY_RELEVANCE_SCORE
+        : MIN_EVIDENCE_RELEVANCE_SCORE)
+    );
+  }
+
+  /**
+   * Rejects generic programming questions that only contain words such as
+   * "error" or "module". Reliability evidence must describe an observable
+   * runtime failure, state loss, stalled execution, or an application that is
+   * unusable in practice.
+   */
+  private hasConcreteRuntimeFailureSignal(evidence: string): boolean {
+    const normalized = evidence.toLowerCase();
+
+    const explicitRuntimeFailure =
+      /\b(?:crash(?:ed|es|ing)?|freeze(?:s|ing|n)?|hang(?:s|ing)?|stuck|unresponsive|terminated|unexpectedly closes?|won['’]?t open|doesn['’]?t start|keeps? restarting|infinite loop|lost progress|state loss|session (?:lost|expired|stuck)|rollback|restore failed|data (?:lost|missing)|memory spike|out of memory|unhandled exception|runtime failure)\b/iu.test(
+        normalized,
+      );
+
+    /*
+     * A user may report observable application defects as "bugs" or
+     * "errors" without using the word "crash". Accept those reports only
+     * when the text clearly refers to an application in use and contains a
+     * concrete defect/remediation statement. This remains stricter than a
+     * generic programming question containing the word "error".
+     */
+    const concreteApplicationDefect =
+      /\b(?:app|application|software|platform)\b/iu.test(normalized) &&
+      /\b(?:bugs?|errors?|glitches?|unstable|laggy|fails?)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:use|using|user|users|years?|experience|improve|solve|fix|affect|disrupt)\b/iu.test(
+        normalized,
+      );
+
+    const genericProgrammingQuestion =
+      /\b(?:import(?:ing)?|module|parent directory|function|syntax|compile|compiler|package|library|class|variable|type error|stack overflow question)\b/iu.test(
+        normalized,
+      );
+
+    return (
+      (explicitRuntimeFailure || concreteApplicationDefect) &&
+      !genericProgrammingQuestion
+    );
+  }
+
+  private isEvidenceRelevantToCandidateTokens(
     candidate: NormalizedCandidate,
     evidence: string,
   ): boolean {
     const contextTokens = this.toSemanticTokenSet(
-      [candidate.title, candidate.problem, candidate.need, candidate.solutionArea]
+      [
+        candidate.title,
+        candidate.problem,
+        candidate.need,
+        candidate.solutionArea,
+      ]
         .filter((value): value is string => Boolean(value))
         .join(' '),
     );
     const evidenceTokens = this.toSemanticTokenSet(evidence);
 
     if (contextTokens.size === 0) {
-      return this.hasDirectComplaintSignal(evidence);
-    }
-
-    const candidateContext = [
-      candidate.title,
-      candidate.problem,
-      candidate.need,
-      candidate.solutionArea,
-    ]
-      .filter(Boolean)
-      .join(' ');
-    const hasKnownProblemFamily = this.hasSharedEvidenceFamily(
-      candidateContext,
-      evidence,
-    );
-
-    if (hasKnownProblemFamily) {
-      return true;
+      return false;
     }
 
     let sharedTokens = 0;
@@ -1311,6 +1904,25 @@ export class IdeaOpportunityRankingService {
     const overlapRatio = sharedTokens / Math.max(contextTokens.size, 1);
 
     return sharedTokens >= minimumSharedTokens && overlapRatio >= 0.2;
+  }
+
+  private isEvidenceRelevantToCandidate(
+    candidate: NormalizedCandidate,
+    evidence: string,
+  ): boolean {
+    const candidateContext = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return (
+      this.hasSharedEvidenceFamily(candidateContext, evidence) ||
+      this.isEvidenceRelevantToCandidateTokens(candidate, evidence)
+    );
   }
 
   /**
@@ -1397,8 +2009,7 @@ export class IdeaOpportunityRankingService {
     return [...strongestByIdentity.values()].sort(
       (first, second) =>
         this.calculateEvidenceQuality(second) -
-          this.calculateEvidenceQuality(first) ||
-        second.length - first.length,
+          this.calculateEvidenceQuality(first) || second.length - first.length,
     );
   }
 
@@ -1508,8 +2119,10 @@ export class IdeaOpportunityRankingService {
       return 0;
     }
 
-    const direct = candidate.evidenceSamples.filter((sample) =>
-      this.hasDirectComplaintSignal(sample),
+    const direct = candidate.evidenceSamples.filter(
+      (sample) =>
+        this.hasDirectComplaintSignal(sample) ||
+        this.isAcceptedCommunityAiEvidence(candidate, sample),
     ).length;
 
     return direct / candidate.evidenceSamples.length;
@@ -1712,7 +2325,9 @@ export class IdeaOpportunityRankingService {
     }
 
     if (
-      NON_DIAGNOSTIC_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))
+      NON_DIAGNOSTIC_EVIDENCE_PATTERNS.some((pattern) =>
+        pattern.test(normalized),
+      )
     ) {
       return true;
     }
@@ -1721,6 +2336,16 @@ export class IdeaOpportunityRankingService {
     const hasConcreteSignal = CONCRETE_EVIDENCE_PATTERNS.some((pattern) =>
       pattern.test(normalized),
     );
+    const hasOnlyGenericFailureSignal =
+      wordCount < 8 &&
+      /\b(?:error|bug|issue|problem|failure|wrong)\b/iu.test(normalized) &&
+      !/\b(?:app|application|login|account|session|sync|payment|subscription|download|upload|save|load|crash|freeze|glitch|server|network|model|response|history|data)\b/iu.test(
+        normalized,
+      );
+
+    if (hasOnlyGenericFailureSignal) {
+      return true;
+    }
     const hasFeatureRequestDetail =
       /(?:feature request|describe the solution|would like|should add|needs? support|allow users? to)/iu.test(
         normalized,

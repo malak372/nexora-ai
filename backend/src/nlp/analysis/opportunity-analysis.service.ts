@@ -53,7 +53,8 @@ export class OpportunityAnalysisService {
       (problem) => problem.evidenceSamples.length > 0,
     );
     const evidenceBackedNeeds = needs.filter(
-      (need) => need.evidenceSamples.length > 0,
+      (need) =>
+        need.evidenceSamples.length > 0 && this.isConcreteNeedLabel(need.need),
     );
     const opportunities: Opportunity[] = [
       ...this.buildProblemNeedOpportunities(
@@ -87,6 +88,41 @@ export class OpportunityAnalysisService {
       .slice(0, this.maxOpportunities);
   }
 
+  /** Prevents incomplete NLP trigger fragments from becoming opportunities. */
+  private isConcreteNeedLabel(value: string): boolean {
+    const normalized = value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!normalized) {
+      return false;
+    }
+
+    const generic = new Set([
+      'looking',
+      'looking for',
+      'searching',
+      'searching for',
+      'need',
+      'needs',
+      'want',
+      'wanted',
+      'something',
+      'anything',
+      'feature request',
+      'please add',
+      'request',
+      'suggestion',
+      'issue',
+      'problem',
+    ]);
+
+    return !generic.has(normalized) && normalized.split(' ').length >= 2;
+  }
+
   /**
    * Builds opportunities by connecting recurring problems with related needs.
    */
@@ -116,10 +152,10 @@ export class OpportunityAnalysisService {
               this.needScore(need) +
               this.relationshipBoost(problem.title, need.need),
           ),
-          evidenceSamples: this.pickEvidenceSamples([
-            ...problem.evidenceSamples,
-            ...need.evidenceSamples,
-          ]),
+          evidenceSamples: this.pickAlignedEvidenceSamples(
+            [problem.title, need.need].join(' '),
+            [...problem.evidenceSamples, ...need.evidenceSamples],
+          ),
         });
       }
     }
@@ -145,7 +181,10 @@ export class OpportunityAnalysisService {
           keywords,
         ),
         score: this.normalizeScore(this.problemScore(problem)),
-        evidenceSamples: this.pickEvidenceSamples(problem.evidenceSamples),
+        evidenceSamples: this.pickAlignedEvidenceSamples(
+          problem.title,
+          problem.evidenceSamples,
+        ),
       }));
   }
 
@@ -170,7 +209,10 @@ export class OpportunityAnalysisService {
         topic: this.selectBestTopic(topics, need.need),
         solutionArea: this.inferSolutionArea(undefined, need.need, keywords),
         score: this.normalizeScore(this.needScore(need)),
-        evidenceSamples: this.pickEvidenceSamples(need.evidenceSamples),
+        evidenceSamples: this.pickAlignedEvidenceSamples(
+          need.need,
+          need.evidenceSamples,
+        ),
       }));
   }
 
@@ -225,6 +267,19 @@ export class OpportunityAnalysisService {
   private matchSolutionArea(sourceText: string): string | null {
     if (!sourceText) {
       return null;
+    }
+
+    if (
+      this.containsAny(sourceText, [
+        'playback',
+        'video speed',
+        'media player',
+        'seek control',
+        'forward 10 seconds',
+        'skip forward',
+      ])
+    ) {
+      return 'Enhanced Media Player Controls';
     }
 
     if (
@@ -551,6 +606,92 @@ export class OpportunityAnalysisService {
   /**
    * Keeps unique evidence samples within the configured limit.
    */
+  /** Keeps opportunity evidence within the same concrete workflow. */
+  private pickAlignedEvidenceSamples(
+    label: string,
+    samples: string[],
+  ): string[] {
+    const normalizedLabel = label.normalize('NFKC').toLocaleLowerCase();
+
+    return this.pickEvidenceSamples(
+      samples.filter((sample) => {
+        const text = sample.normalize('NFKC').toLocaleLowerCase();
+
+        if (/document|download|syllabus|file/iu.test(normalizedLabel)) {
+          return (
+            /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
+              text,
+            ) &&
+            !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
+              text,
+            )
+          );
+        }
+
+        if (/cross-device|desktop|laptop|computer/iu.test(normalizedLabel)) {
+          return (
+            /(?:desktop|laptop|computer|pc|ios|android|mobile|tablet)/iu.test(
+              text,
+            ) &&
+            /(?:cannot|can['’]?t|unable|not available|doesn['’]?t work|won['’]?t work|fails? to|only works|works just fine)/iu.test(
+              text,
+            ) &&
+            !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
+              text,
+            )
+          );
+        }
+
+        if (
+          /crash|reliability|stable application|performance/iu.test(
+            normalizedLabel,
+          )
+        ) {
+          return (
+            /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+              text,
+            ) ||
+            (/(?:bug|glitch|submission failed|fails? to submit|upload failed)/iu.test(
+              text,
+            ) &&
+              !/(?:login|log in|sign in|authentication|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+                text,
+              ))
+          );
+        }
+
+        if (
+          /playback|video speed|media player|seek control/iu.test(
+            normalizedLabel,
+          )
+        ) {
+          return /(?:playback|video|speed|1x|1\.5x|2x|faster|forward 10 seconds|skip forward|seek control)/iu.test(
+            text,
+          );
+        }
+
+        if (
+          /connectivity|service availability|access and availability/iu.test(
+            normalizedLabel,
+          )
+        ) {
+          const hasConnectivitySubject =
+            /(?:connection|connectivity|network|server|service|website|online|offline|unavailable|inaccessible)/iu.test(
+              text,
+            );
+          const hasConnectivityFailure =
+            /(?:cannot|can['’]?t|unable|fails?|failed|disconnect|disconnected|offline|unavailable|inaccessible|timeout|timed out|not working|doesn['’]?t work|won['’]?t load)/iu.test(
+              text,
+            );
+
+          return hasConnectivitySubject && hasConnectivityFailure;
+        }
+
+        return true;
+      }),
+    );
+  }
+
   private pickEvidenceSamples(samples: string[]): string[] {
     return [
       ...new Set(samples.map((sample) => sample.trim()).filter(Boolean)),

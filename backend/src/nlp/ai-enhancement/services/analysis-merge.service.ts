@@ -202,6 +202,8 @@ export class AnalysisMergeService {
         aiProblem.supportingEvidenceIds,
         evidenceById,
         true,
+      ).filter((sample) =>
+        this.isEvidenceAlignedWithCanonicalLabel(canonicalTitle, sample),
       );
 
       if (aiEvidence.length === 0) {
@@ -265,6 +267,8 @@ export class AnalysisMergeService {
         aiNeed.supportingEvidenceIds,
         evidenceById,
         true,
+      ).filter((sample) =>
+        this.isEvidenceAlignedWithCanonicalLabel(canonicalNeed, sample),
       );
 
       if (aiEvidence.length === 0) {
@@ -313,51 +317,81 @@ export class AnalysisMergeService {
     aiRequests: ReadonlyArray<AiEnhancedFeatureRequest>,
     evidenceById: ReadonlyMap<string, EvidenceRecord>,
   ): IntelligentAnalysisOutput['featureRequests'] {
-    const merged = ruleBasedRequests.map((request) => ({
-      ...request,
-      evidenceSamples: [...request.evidenceSamples],
-    }));
+    const merged: IntelligentAnalysisOutput['featureRequests'] = [];
+    const indexByKey = new Map<string, number>();
 
-    const indexByKey = new Map(
-      merged.map((request, index) => [
-        this.normalizeKey(request.feature),
-        index,
-      ]),
-    );
-
-    for (const aiRequest of aiRequests) {
-      const key = this.normalizeKey(aiRequest.feature);
+    const upsert = (
+      feature: string,
+      frequency: number,
+      evidenceSamples: ReadonlyArray<string>,
+    ): void => {
+      const canonicalFeature = this.canonicalizeFeatureRequestTitle(feature);
+      const key = this.normalizeKey(canonicalFeature);
       const existingIndex = indexByKey.get(key);
-      const aiEvidence = this.resolveEvidenceSamples(
-        aiRequest.supportingEvidenceIds,
-        evidenceById,
-        false,
-      );
 
       if (existingIndex !== undefined) {
         const existing = merged[existingIndex];
 
         merged[existingIndex] = {
           ...existing,
+          frequency: Math.max(existing.frequency, frequency),
           evidenceSamples: this.mergeUniqueStrings(
             existing.evidenceSamples,
-            aiEvidence,
+            evidenceSamples,
           ),
         };
-
-        continue;
+        return;
       }
 
       merged.push({
-        feature: aiRequest.feature,
-        frequency: aiRequest.supportingEvidenceIds.length,
-        evidenceSamples: aiEvidence,
+        feature: canonicalFeature,
+        frequency,
+        evidenceSamples: this.mergeUniqueStrings([], evidenceSamples),
       });
-
       indexByKey.set(key, merged.length - 1);
+    };
+
+    for (const request of ruleBasedRequests) {
+      upsert(request.feature, request.frequency, request.evidenceSamples);
+    }
+
+    for (const aiRequest of aiRequests) {
+      const aiEvidence = this.resolveEvidenceSamples(
+        aiRequest.supportingEvidenceIds,
+        evidenceById,
+        false,
+      );
+
+      if (aiEvidence.length === 0) {
+        continue;
+      }
+
+      upsert(
+        aiRequest.feature,
+        aiRequest.supportingEvidenceIds.length,
+        aiEvidence,
+      );
     }
 
     return merged;
+  }
+
+  /**
+   * Maps semantically equivalent media-player requests to one stable feature.
+   * Other feature labels remain unchanged to avoid broad or unsafe merging.
+   */
+  private canonicalizeFeatureRequestTitle(value: string): string {
+    const normalized = this.normalizeKey(value);
+
+    if (
+      /(?:playback speed|faster playback|video speed|1x|1\.5x|2x|skip forward|forward skip|forward 10 seconds|10 second forward|seek control|media player control)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Enhanced Educational Video Player Controls';
+    }
+
+    return value.trim();
   }
 
   /**
@@ -399,9 +433,15 @@ export class AnalysisMergeService {
 
       if (existingIndex !== undefined) {
         const existing = merged[existingIndex];
+        const enrichedDescriptors =
+          this.buildOpportunityDescriptors(aiOpportunity);
 
         merged[existingIndex] = {
           ...existing,
+          problem: existing.problem ?? enrichedDescriptors.problem,
+          need: existing.need ?? enrichedDescriptors.need,
+          solutionArea:
+            existing.solutionArea ?? enrichedDescriptors.solutionArea,
           score: Math.max(existing.score, aiOpportunity.confidence),
           evidenceSamples: this.mergeUniqueStrings(
             existing.evidenceSamples,
@@ -412,8 +452,12 @@ export class AnalysisMergeService {
         continue;
       }
 
+      const descriptors = this.buildOpportunityDescriptors(aiOpportunity);
+
       merged.push({
-        solutionArea: aiOpportunity.title,
+        problem: descriptors.problem,
+        need: descriptors.need,
+        solutionArea: descriptors.solutionArea,
         score: aiOpportunity.confidence,
         evidenceSamples: aiEvidence,
       });
@@ -421,7 +465,108 @@ export class AnalysisMergeService {
       indexByKey.set(key, merged.length - 1);
     }
 
-    return merged;
+    return merged.filter(
+      (opportunity) =>
+        opportunity.evidenceSamples.length > 0 &&
+        opportunity.evidenceSamples.some((sample) =>
+          this.isEvidenceAlignedWithCanonicalLabel(
+            [
+              opportunity.problem,
+              opportunity.need,
+              opportunity.solutionArea,
+              opportunity.topic,
+            ]
+              .filter((value): value is string => Boolean(value))
+              .join(' '),
+            sample,
+          ),
+        ),
+    );
+  }
+
+  /**
+   * Converts one AI-only opportunity into the same complete descriptor shape
+   * used by rule-based opportunities.
+   *
+   * The AI-enhancement contract exposes a title and optional description, not
+   * separate problem/need fields. Persisting only solutionArea caused later
+   * ranking to receive structurally incomplete records. This deterministic
+   * adapter preserves the AI title as the solution area, uses the supported
+   * description as the problem statement, and derives a cautious user-need
+   * label without inventing frequencies, causes, or local claims.
+   */
+  private buildOpportunityDescriptors(opportunity: AiEnhancedOpportunity): {
+    readonly problem: string;
+    readonly need: string;
+    readonly solutionArea: string;
+  } {
+    const title = opportunity.title.replace(/\s+/gu, ' ').trim();
+    const description = opportunity.description?.replace(/\s+/gu, ' ').trim();
+
+    return {
+      problem: description || title,
+      need: this.deriveOpportunityNeed(title),
+      solutionArea: title,
+    };
+  }
+
+  /**
+   * Produces a stable need label from an evidence-supported opportunity title.
+   * Known workflow families receive precise wording; unknown titles use a
+   * neutral "reliable support for" form rather than an unsupported claim.
+   */
+  private deriveOpportunityNeed(title: string): string {
+    const normalized = title.toLocaleLowerCase();
+
+    if (
+      /\b(?:login|sign[ -]?in|authentication|activation|identity|verification|session|token|handshake)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Reliable Login and Session Recovery';
+    }
+
+    if (
+      /\b(?:subscription|purchase|payment|billing|renewal|restore purchase|account access)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Reliable Subscription Restoration and Account Access';
+    }
+
+    if (
+      /\b(?:crash|reliability|stability|runtime|performance|recovery)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Stable and Recoverable Application Operation';
+    }
+
+    if (
+      /\b(?:productivity|focus|browser|context-aware|context aware)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Context-aware Focus and Browser Workflow Support';
+    }
+
+    if (
+      /\b(?:cross-environment|cross environment|deployment|container|model consistency)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Consistent AI Model Behavior Across Environments';
+    }
+
+    if (
+      /\b(?:data transformation|algorithm|decoding|encoding|recipe)\b/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Guided Data Transformation and Algorithm Discovery';
+    }
+
+    return `Reliable Support for ${title}`;
   }
 
   /**
@@ -646,14 +791,22 @@ export class AnalysisMergeService {
       }
 
       const title = this.canonicalizeProblemTitle(problem.title);
+      const alignedEvidence = directEvidence.filter((sample) =>
+        this.isEvidenceAlignedWithCanonicalLabel(title, sample),
+      );
       const key = this.normalizeKey(title);
+
+      if (alignedEvidence.length === 0) {
+        continue;
+      }
+
       const current = groups.get(key);
 
       if (!current) {
         groups.set(key, {
           ...problem,
           title,
-          evidenceSamples: this.mergeUniqueStrings([], directEvidence),
+          evidenceSamples: this.mergeUniqueStrings([], alignedEvidence),
         });
         continue;
       }
@@ -664,7 +817,7 @@ export class AnalysisMergeService {
         severity: this.maxPriority(current.severity, problem.severity),
         evidenceSamples: this.mergeUniqueStrings(
           current.evidenceSamples,
-          directEvidence,
+          alignedEvidence,
         ),
       });
     }
@@ -708,9 +861,12 @@ export class AnalysisMergeService {
         need.need,
         directEvidence,
       );
+      const alignedEvidence = directEvidence.filter((sample) =>
+        this.isEvidenceAlignedWithCanonicalLabel(canonicalNeed, sample),
+      );
       const key = this.normalizeKey(canonicalNeed);
 
-      if (directEvidence.length === 0) {
+      if (alignedEvidence.length === 0) {
         continue;
       }
 
@@ -723,7 +879,7 @@ export class AnalysisMergeService {
           relatedProblem:
             need.relatedProblem ??
             this.inferRelatedProblemForNeed(canonicalNeed),
-          evidenceSamples: this.mergeUniqueStrings([], directEvidence),
+          evidenceSamples: this.mergeUniqueStrings([], alignedEvidence),
         });
         continue;
       }
@@ -737,12 +893,140 @@ export class AnalysisMergeService {
           this.inferRelatedProblemForNeed(canonicalNeed),
         evidenceSamples: this.mergeUniqueStrings(
           current.evidenceSamples,
-          directEvidence,
+          alignedEvidence,
         ),
       });
     }
 
     return [...groups.values()];
+  }
+
+  /**
+   * Keeps AI evidence attached only to the canonical workflow it actually
+   * describes. This prevents login complaints from becoming document-access
+   * evidence and scientific uses of "error" from becoming crash evidence.
+   */
+  private isEvidenceAlignedWithCanonicalLabel(
+    label: string,
+    evidence: string,
+  ): boolean {
+    const normalizedLabel = this.normalizeKey(label);
+    const normalizedEvidence = this.normalizeKey(evidence);
+
+    if (
+      /account activation|login|verification|authentication|sign in/iu.test(
+        normalizedLabel,
+      )
+    ) {
+      return /(?:account|activation|verification|authentication|login|log in|sign in|phone|email|code|otp)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (/document|download|syllabus|file access/iu.test(normalizedLabel)) {
+      const hasDocumentObject =
+        /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
+          normalizedEvidence,
+        );
+      const hasDocumentFailure =
+        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
+          normalizedEvidence,
+        );
+
+      return (
+        hasDocumentObject &&
+        hasDocumentFailure &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
+          normalizedEvidence,
+        )
+      );
+    }
+
+    if (/data loss|synchronization|sync|recovery/iu.test(normalizedLabel)) {
+      return /(?:data|sync|synchronization|history|progress|work|draft|save|saved|missing|lost|gone|deleted)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (
+      /playback|video speed|media player|seek control|forward 10 seconds/iu.test(
+        normalizedLabel,
+      )
+    ) {
+      return /(?:playback|video|media player|speed|1x|1\.5x|2x|faster|forward 10 seconds|skip forward|seek control)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (/navigation|interface|usability/iu.test(normalizedLabel)) {
+      return /(?:navigate|navigation|interface|back button|scroll|popup|tab|menu|schedule)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (/cross-device|desktop|laptop|computer/iu.test(normalizedLabel)) {
+      const hasTargetDevice =
+        /(?:desktop|laptop|computer|pc|ios|android|mobile|tablet)/iu.test(
+          normalizedEvidence,
+        );
+      const hasAccessFailure =
+        /(?:cannot|can['’]?t|unable|not available|doesn['’]?t work|won['’]?t work|fails? to|only works|works on).{0,80}(?:desktop|laptop|computer|pc|ios|android|mobile|tablet)|(?:desktop|laptop|computer|pc|ios|android|mobile|tablet).{0,80}(?:cannot|can['’]?t|unable|not available|doesn['’]?t work|won['’]?t work|fails? to|only works|works just fine)/iu.test(
+          normalizedEvidence,
+        );
+
+      return (
+        hasTargetDevice &&
+        hasAccessFailure &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
+          normalizedEvidence,
+        )
+      );
+    }
+
+    if (/cost|paywall|price|subscription/iu.test(normalizedLabel)) {
+      return /(?:cost|price|pricing|paywall|paid|pay|subscription|fee|limited unless paid)/iu.test(
+        normalizedEvidence,
+      );
+    }
+
+    if (
+      /reliability|crash|stable application|performance/iu.test(normalizedLabel)
+    ) {
+      if (
+        !/(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+          normalizedEvidence,
+        ) &&
+        /(?:login|log in|sign in|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          normalizedEvidence,
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        /(?:quantum error correction|error[- ]correcting code|error correction algorithm|statistical error|measurement error|prediction error|training error)/iu.test(
+          normalizedEvidence,
+        )
+      ) {
+        return false;
+      }
+
+      const hasExplicitCrash =
+        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+          normalizedEvidence,
+        );
+      const hasOperationalFailure =
+        /(?:bug|glitch|submission failed|fails? to submit|upload failed|not working|doesn['’]?t work)/iu.test(
+          normalizedEvidence,
+        ) &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          normalizedEvidence,
+        );
+
+      return hasExplicitCrash || hasOperationalFailure;
+    }
+
+    return true;
   }
 
   /** Maps semantically equivalent need phrases to one stable label. */
@@ -799,6 +1083,16 @@ export class AnalysisMergeService {
     }
 
     if (
+      /playback|video speed|forward 10 seconds|skip forward/iu.test(normalized)
+    ) {
+      return 'Playback Speed Control for Educational Videos';
+    }
+
+    if (/connectivity|service availability|server|network/iu.test(normalized)) {
+      return 'Reliable Connectivity and Service Availability';
+    }
+
+    if (
       /crash|stable app|stable application|reliability|performance/iu.test(
         normalized,
       )
@@ -843,6 +1137,10 @@ export class AnalysisMergeService {
 
     if (/document|download|syllabus|file/iu.test(normalized)) {
       return 'Document Access and Download Failures';
+    }
+
+    if (/playback|video speed|media player|seek control/iu.test(normalized)) {
+      return 'Missing Video Playback Controls';
     }
 
     return undefined;
@@ -893,6 +1191,20 @@ export class AnalysisMergeService {
 
     if (/cost|paywall|paid|price|subscription/iu.test(normalized)) {
       return 'High Cost or Paywall Restrictions';
+    }
+
+    if (
+      /playback|video speed|forward 10 seconds|skip forward/iu.test(normalized)
+    ) {
+      return 'Missing Video Playback Controls';
+    }
+
+    if (
+      /connectivity|service availability|server|network outage/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Connectivity and Service Availability Failures';
     }
 
     if (
