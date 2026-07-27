@@ -27,6 +27,7 @@ import {
 } from '../constants';
 
 import {
+  AI_PROVIDER_KEYS,
   normalizeAiProviderKey,
   type AiProviderKey,
 } from '../constants/ai-provider.constants';
@@ -71,20 +72,19 @@ const NON_FALLBACK_PROVIDER_ERROR_CODES: ReadonlySet<AiProviderErrorCode> =
   ]);
 
 /**
- * Failures that indicate a real operational or availability problem with
- * the selected model/provider and therefore must affect persisted model
- * health.
+ * Failures that indicate a model-specific operational or availability problem
+ * and therefore must affect persisted model health.
  *
- * Application-level output failures such as invalid structured JSON,
- * content filtering, empty output, invalid prompts, and cancellations are
- * intentionally excluded. Those failures can occur after a successful HTTP
+ * Application-level output failures and provider-wide throttling such as HTTP
+ * 429 are intentionally excluded. A rate limit is recorded in execution logs
+ * and handled through fallback, but it must not make one otherwise healthy
+ * model UNAVAILABLE. Those failures can occur after a successful HTTP
  * request and must not incorrectly mark an otherwise available model as
  * DEGRADED or UNAVAILABLE.
  */
 const MODEL_HEALTH_FAILURE_CODES: ReadonlySet<AiProviderErrorCode> = new Set([
   AiProviderErrorCode.TIMEOUT,
   AiProviderErrorCode.NETWORK,
-  AiProviderErrorCode.RATE_LIMIT,
   AiProviderErrorCode.INSUFFICIENT_QUOTA,
   AiProviderErrorCode.PROVIDER_UNAVAILABLE,
   AiProviderErrorCode.INVALID_CREDENTIALS,
@@ -404,10 +404,20 @@ export class AiExecutionService {
      * to support JSON output. Filtering after routing preserves the
      * selected strategy's relative order among eligible models.
      */
+    const excludedModelIds = new Set(
+      (input.excludedAiModelIds ?? [])
+        .map((modelId) => modelId.trim())
+        .filter((modelId) => modelId.length > 0),
+    );
+
+    const nonExcludedModels = models.filter(
+      (model) => !excludedModelIds.has(model.id),
+    );
+
     const eligibleModels =
       input.responseFormat === AiResponseFormat.JSON
-        ? models.filter((model) => model.supportsJsonOutput)
-        : models;
+        ? nonExcludedModels.filter((model) => model.supportsJsonOutput)
+        : nonExcludedModels;
 
     if (eligibleModels.length === 0) {
       throw new ServiceUnavailableException(
@@ -417,7 +427,79 @@ export class AiExecutionService {
       );
     }
 
-    return eligibleModels;
+    /*
+     * A caller may intentionally bound model fallback for a non-fatal
+     * enrichment operation. The option is ignored for exact-model execution
+     * because that path already returns one model.
+     */
+    const orderedModels = this.placeLocalFallbackLast(eligibleModels);
+
+    return input.maxModelsPerOperation === undefined
+      ? orderedModels
+      : this.applyModelLimitPreservingLocalFallback(
+          orderedModels,
+          input.maxModelsPerOperation,
+        );
+  }
+
+  /**
+   * Keeps every Ollama model after all online models regardless of the
+   * selected routing strategy or numeric priority.
+   *
+   * This guarantees that local inference is used only after the online
+   * execution path has been exhausted.
+   */
+  private placeLocalFallbackLast(models: readonly AiModel[]): AiModel[] {
+    const onlineModels: AiModel[] = [];
+    const localModels: AiModel[] = [];
+
+    for (const model of models) {
+      const providerKey = normalizeAiProviderKey(model.providerKey);
+
+      if (providerKey === AI_PROVIDER_KEYS.OLLAMA) {
+        localModels.push(model);
+      } else {
+        onlineModels.push(model);
+      }
+    }
+
+    return [...onlineModels, ...localModels];
+  }
+
+  /**
+   * Applies the caller's model limit to online models while preserving one
+   * local Ollama model as an out-of-band emergency fallback.
+   *
+   * The limit represents the maximum number of online models that may be
+   * attempted for the logical operation. A configured local fallback does
+   * not consume one of those online slots. Therefore:
+   *
+   * - maxModelsPerOperation = 1 means one online model, then Ollama.
+   * - maxModelsPerOperation = 3 means up to three online models, then Ollama.
+   * - When no online model is available, Ollama can still execute alone.
+   *
+   * Only the first routed Ollama model is retained. This avoids repeatedly
+   * executing multiple local models after the online path is exhausted.
+   */
+  private applyModelLimitPreservingLocalFallback(
+    models: readonly AiModel[],
+    maxModelsPerOperation: number,
+  ): AiModel[] {
+    const onlineModels = models.filter(
+      (model) =>
+        normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA,
+    );
+
+    const localFallback = models.find(
+      (model) =>
+        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA,
+    );
+
+    const limitedOnlineModels = onlineModels.slice(0, maxModelsPerOperation);
+
+    return localFallback
+      ? [...limitedOnlineModels, localFallback]
+      : limitedOnlineModels;
   }
 
   /**
@@ -535,7 +617,7 @@ export class AiExecutionService {
           model,
           useNativeResponseSchema,
         ),
-        this.resolveRequestTimeoutMs(input.timeoutMs),
+        this.resolveModelRequestTimeoutMs(model, input.timeoutMs),
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
@@ -697,10 +779,7 @@ export class AiExecutionService {
 
     if (
       isOpenRouterFreeModel &&
-      [
-        AiProviderErrorCode.RATE_LIMIT,
-        AiProviderErrorCode.PROVIDER_UNAVAILABLE,
-      ].includes(error.code)
+      [AiProviderErrorCode.PROVIDER_UNAVAILABLE].includes(error.code)
     ) {
       return false;
     }
@@ -1038,7 +1117,7 @@ export class AiExecutionService {
 
           responseSchemaName: input.responseSchemaName,
         },
-        this.resolveRequestTimeoutMs(input.timeoutMs),
+        this.resolveModelRequestTimeoutMs(model, input.timeoutMs),
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
@@ -1422,6 +1501,27 @@ export class AiExecutionService {
     return timeoutMs ?? this.timeoutMs;
   }
 
+  /**
+   * Resolves a bounded timeout for one routed model.
+   *
+   * Free OpenRouter endpoints can remain connected for several minutes after
+   * the upstream worker has already stalled. Capping those requests prevents
+   * one free fallback model from dominating the complete benchmark duration.
+   */
+  private resolveModelRequestTimeoutMs(
+    model: AiModel,
+    timeoutMs: number | undefined,
+  ): number {
+    const resolvedTimeoutMs = this.resolveRequestTimeoutMs(timeoutMs);
+    const isOpenRouterFreeModel =
+      model.providerKey === 'openrouter' &&
+      model.apiModelId.toLocaleLowerCase().endsWith(':free');
+
+    return isOpenRouterFreeModel
+      ? Math.min(resolvedTimeoutMs, 90_000)
+      : resolvedTimeoutMs;
+  }
+
   private validateExecutionInput(input: AiExecutionInput): void {
     this.validatePromptFields(input);
 
@@ -1482,6 +1582,17 @@ export class AiExecutionService {
     ) {
       throw new BadRequestException(
         'maxRetriesPerModel must be an integer between 0 and 3.',
+      );
+    }
+
+    if (
+      input.maxModelsPerOperation !== undefined &&
+      (!Number.isInteger(input.maxModelsPerOperation) ||
+        input.maxModelsPerOperation < 1 ||
+        input.maxModelsPerOperation > 10)
+    ) {
+      throw new BadRequestException(
+        'maxModelsPerOperation must be an integer between 1 and 10.',
       );
     }
 

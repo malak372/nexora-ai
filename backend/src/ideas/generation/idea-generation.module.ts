@@ -19,6 +19,7 @@ import { IdeaGenerationPipelineService } from './pipeline/idea-generation-pipeli
 import { IdeaGenerationProgressService } from './pipeline/idea-generation-progress.service';
 import { IdeaGenerationStageService } from './pipeline/idea-generation-stage.service';
 import { AiOutputValidationStage } from './pipeline/stages/ai-output-validation.stage';
+import { CommunityAiAnalysisStage } from './pipeline/stages/community-ai-analysis.stage';
 import { CollectionJobResolutionStage } from './pipeline/stages/collection-job-resolution.stage';
 import { CoreIdeaGenerationStage } from './pipeline/stages/core-idea-generation.stage';
 import { DataCollectionStage } from './pipeline/stages/data-collection.stage';
@@ -35,6 +36,8 @@ import {
   PREMIUM_OUTPUT_STAGE_PROVIDERS,
   PREMIUM_OUTPUT_STAGE_REGISTRATIONS,
 } from './providers/premium-output-stage.providers';
+import { CommunityAiAnalysisPromptService } from './services/community-ai-analysis-prompt.service';
+import { CommunityAiAnalysisService } from './services/community-ai-analysis.service';
 import { CollectionJobResolverService } from './services/collection-job-resolver.service';
 import { GuestIdeaSessionService } from './services/guest-idea-session.service';
 import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.service';
@@ -117,6 +120,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaCandidateJudgeService,
     IdeaGenerationBenchmarkService,
     IdeaGenerationModelSelectorService,
+    CommunityAiAnalysisPromptService,
+    CommunityAiAnalysisService,
 
     RequestValidationStage,
     EntitlementCheckStage,
@@ -124,6 +129,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     CollectionJobResolutionStage,
     DataCollectionStage,
     NlpAnalysisStage,
+    CommunityAiAnalysisStage,
     OpportunityRankingStage,
     PromptBuildingStage,
     CoreIdeaGenerationStage,
@@ -143,6 +149,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         CollectionJobResolutionStage,
         DataCollectionStage,
         NlpAnalysisStage,
+        CommunityAiAnalysisStage,
         OpportunityRankingStage,
         PromptBuildingStage,
         CoreIdeaGenerationStage,
@@ -159,6 +166,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         collectionJobResolutionStage: CollectionJobResolutionStage,
         dataCollectionStage: DataCollectionStage,
         nlpAnalysisStage: NlpAnalysisStage,
+        communityAiAnalysisStage: CommunityAiAnalysisStage,
         opportunityRankingStage: OpportunityRankingStage,
         promptBuildingStage: PromptBuildingStage,
         coreIdeaGenerationStage: CoreIdeaGenerationStage,
@@ -190,6 +198,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
           collectionJobResolutionStage,
           dataCollectionStage,
           nlpAnalysisStage,
+          communityAiAnalysisStage,
           opportunityRankingStage,
           promptBuildingStage,
           coreIdeaGenerationStage,

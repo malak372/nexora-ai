@@ -111,6 +111,15 @@ type AiExecutionBaseInput = {
   readonly aiModelId?: string;
 
   /**
+   * Optional model identifiers excluded from automatic routing.
+   *
+   * This is intended for bounded domain-level recovery flows that must avoid
+   * selecting a model whose previous response was structurally valid but
+   * violated business validation rules. It is ignored when aiModelId is set.
+   */
+  readonly excludedAiModelIds?: ReadonlyArray<string>;
+
+  /**
    * Optional AI-model routing strategy.
    *
    * When omitted, AiExecutionService uses provider-balanced routing. Pass
@@ -151,6 +160,16 @@ type AiExecutionBaseInput = {
 
   /** Optional per-operation retry count override for the selected model. */
   readonly maxRetriesPerModel?: number;
+
+  /**
+   * Optional upper bound on the routed models attempted by one logical
+   * operation, including the primary model.
+   *
+   * This is useful for non-fatal enrichment workflows that already provide
+   * their own bounded domain-level fallback and must not wait for every active
+   * model when providers are slow or unavailable.
+   */
+  readonly maxModelsPerOperation?: number;
 
   /**
    * Allows a trusted system-generated operation to continue with another

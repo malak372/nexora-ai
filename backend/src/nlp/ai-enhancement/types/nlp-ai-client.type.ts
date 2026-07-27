@@ -14,6 +14,9 @@ export type NlpAiClientRequest = {
    * Fully rendered NLP enhancement prompt.
    */
   readonly prompt: string;
+
+  /** Model identifiers that must not be selected for this attempt. */
+  readonly excludedAiModelIds?: ReadonlyArray<string>;
 };
 
 /**

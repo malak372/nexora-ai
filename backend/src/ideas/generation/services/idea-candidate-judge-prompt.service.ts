@@ -52,7 +52,9 @@ export class IdeaCandidateJudgePromptService {
       'Use only the supplied local context and candidate content as evidence.',
       'Do not infer that unsupported claims are true merely because a candidate states them.',
       'Treat regulatory feasibility as a preliminary risk assessment, never as verified legal advice or guaranteed compliance.',
-      'Penalize generic CRUD-only concepts, unsupported factual or local claims, duplicated concepts, decorative localization, unclear users, unrealistic implementation, and invented infrastructure constraints.',
+      'Penalize generic CRUD-only concepts, unsupported factual or local claims, duplicated concepts, decorative localization, unclear users, unrealistic implementation, invented infrastructure constraints, and platform-permission violations.',
+      "Treat cross-application mobile, desktop, browser, and app-store boundaries as hard technical constraints. A standalone or independent app cannot read another app's receipts, secure storage, private logs, internal files, subscription status, or entitlements and cannot restore access inside that host app.",
+      'When a workflow depends on those capabilities, require a host-integrated SDK, vendor-owned backend, StoreKit or Google Play Billing integration, supported API/export, or explicit user-authorized import as the primary architecture. Merely mentioning an optional SDK is not sufficient.',
       'A requested country, city, region, keyword, or feature is not evidence that a corresponding local condition or service failure exists.',
       'Prefer candidates that distinguish evidence-supported findings from cautious product inferences.',
       'Penalize definitive claims about residents, institutions, authorities, service reliability, rates, regulations, language preferences, connectivity, or infrastructure when candidate content provides no support for them.',
@@ -101,7 +103,7 @@ export class IdeaCandidateJudgePromptService {
         regulatoryFeasibility:
           'Assess likely regulatory complexity and risk only. Lower the score when important requirements are unknown or unsupported.',
         technicalFeasibility:
-          'Assess realistic implementation using available technologies, data, integrations, skills, and infrastructure.',
+          "Assess realistic implementation using available technologies, data, integrations, skills, infrastructure, operating-system permissions, browser sandboxing, and app-store ownership boundaries. Give a low score when a standalone product claims it can access or control another app's receipts, secure storage, private logs, subscription state, entitlements, or account recovery. A supported host SDK, vendor backend, StoreKit/Play Billing integration, official API/export, or explicit user-authorized import must be the primary workflow when those capabilities are required.",
         marketPotential:
           'Assess realistic demand, adoption value, target-user willingness, scalability, and sustainable value. Require an identifiable buyer or sponsor, a credible adoption trigger, repeatable deployment, measurable organizational value, and a reason to purchase this product instead of requesting a minor fix from an existing platform.',
         implementationClarity:
@@ -123,6 +125,9 @@ export class IdeaCandidateJudgePromptService {
         keywordsAreSearchIntentNotEvidence: true,
         requestedFeaturesDoNotProveRootCauses: true,
         penalizeUnsupportedDefinitiveClaims: true,
+        enforcePlatformPermissionBoundaries: true,
+        rejectCrossAppReceiptOrEntitlementClaimsWithoutPrimarySupportedIntegration: true,
+        optionalSdkMentionDoesNotRepairUnsupportedArchitecture: true,
         rewardCautiousEvidenceGroundedWording: true,
         preferStandaloneOutcomeDrivenProducts: true,
         penalizeNarrowIntermediaryProductsWithoutIndependentBuyerValue: true,

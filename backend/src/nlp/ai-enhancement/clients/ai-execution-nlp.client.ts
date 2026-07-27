@@ -95,6 +95,7 @@ export class AiExecutionNlpClient implements NlpAiClient {
       responseSchemaName: AI_ENHANCEMENT_RESPONSE_SCHEMA_NAME,
       temperature: NLP_AI_ENHANCEMENT_TEMPERATURE,
       strategy: AiRoutingStrategy.BALANCED,
+      excludedAiModelIds: request.excludedAiModelIds,
 
       /**
        * NLP prompts are application-controlled. One provider may reject its

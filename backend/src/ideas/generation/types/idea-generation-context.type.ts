@@ -10,8 +10,12 @@ import type {
   IdeaAdvancedOutputKey,
 } from './idea-ai-output.type';
 
+import type { CommunityAiAnalysis } from './community-ai-analysis.type';
 import type { IdeaGenerationPolicy } from './idea-generation-policy.type';
-import type { IdeaOpportunityRanking } from './idea-opportunity-ranking.type';
+import type {
+  IdeaOpportunityRanking,
+  RankedIdeaOpportunity,
+} from './idea-opportunity-ranking.type';
 
 /**
  * Data source selected for one generation run.
@@ -358,10 +362,22 @@ export type IdeaGenerationContext = {
    */
   nlp: IdeaGenerationNlpContext | null;
 
+  /** Evidence-grounded LLM analysis over the cleaned NLP context. */
+  communityAiAnalysis: CommunityAiAnalysis | null;
+
   /**
    * Deterministic ranking of evidence-backed product opportunities.
    */
   opportunityRanking: IdeaOpportunityRanking | null;
+
+  /**
+   * Opportunity attached to the final benchmark-winning idea candidate.
+   *
+   * This may differ from opportunityRanking.selected because the benchmark
+   * intentionally compares candidates generated from several eligible ranked
+   * opportunities before the comparative judge selects the strongest idea.
+   */
+  benchmarkWinnerOpportunity: RankedIdeaOpportunity | null;
 
   /** Number of targeted evidence-recovery attempts used by this run. */
   evidenceRecoveryAttempts: number;
@@ -493,7 +509,9 @@ export function createIdeaGenerationContext(
 
     collection: null,
     nlp: null,
+    communityAiAnalysis: null,
     opportunityRanking: null,
+    benchmarkWinnerOpportunity: null,
     evidenceRecoveryAttempts: 0,
     evidenceRecoveryCollectionJobIds: [],
     prompt: null,

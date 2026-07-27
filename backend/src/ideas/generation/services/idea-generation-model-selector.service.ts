@@ -81,6 +81,10 @@ export class IdeaGenerationModelSelectorService {
           return healthDifference;
         }
 
+        if (firstBest.consecutiveFailures !== secondBest.consecutiveFailures) {
+          return firstBest.consecutiveFailures - secondBest.consecutiveFailures;
+        }
+
         if (firstBest.priority !== secondBest.priority) {
           return secondBest.priority - firstBest.priority;
         }
@@ -164,6 +168,10 @@ export class IdeaGenerationModelSelectorService {
 
     if (healthDifference !== 0) {
       return healthDifference;
+    }
+
+    if (first.consecutiveFailures !== second.consecutiveFailures) {
+      return first.consecutiveFailures - second.consecutiveFailures;
     }
 
     if (first.priority !== second.priority) {

@@ -12,6 +12,10 @@ import {
 
 import { AiModelsService } from '../../../ai-models/ai-models.service';
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
+import {
+  AI_PROVIDER_KEYS,
+  normalizeAiProviderKey,
+} from '../../../ai/constants/ai-provider.constants';
 import type { AiExecutionResult } from '../../../ai/types/ai-execution-result.type';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -28,7 +32,7 @@ import {
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
   IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
-  IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
+  IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
   IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
   IDEA_MIN_ACCEPTED_QUALITY_SCORE,
   IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
@@ -177,10 +181,26 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    const orderedModels = await this.modelSelectorService.orderModels(
-      context,
-      eligibleModels,
+    /*
+     * Ollama must not participate in the normal comparative benchmark.
+     * Otherwise several failed online assignments could each be replaced by
+     * the same local model, producing duplicate Qwen candidates and weakening
+     * provider diversity. The local model is retained separately and executed
+     * exactly once only when every online candidate attempt fails.
+     */
+    const onlineModels = eligibleModels.filter(
+      (model) =>
+        normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA,
     );
+    const localFallbackModel = eligibleModels.find(
+      (model) =>
+        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA,
+    );
+
+    const orderedModels =
+      onlineModels.length > 0
+        ? await this.modelSelectorService.orderModels(context, onlineModels)
+        : [];
 
     // A retried run must start with a clean candidate snapshot.
     await this.prisma.ideaGenerationCandidate.deleteMany({
@@ -285,9 +305,23 @@ export class IdeaGenerationBenchmarkService {
       }
     }
 
+    if (successfulCandidates.length === 0 && localFallbackModel) {
+      const localCandidate = await this.executeLocalEmergencyFallback(
+        context,
+        localFallbackModel,
+        conceptDirections,
+      );
+
+      if (localCandidate) {
+        successfulCandidates.push(localCandidate);
+      }
+    }
+
     if (successfulCandidates.length === 0) {
       throw new ServiceUnavailableException(
-        'No sufficiently distinct quality-approved idea could be generated after trying the configured models, bounded duplicate redesign attempts, and ranked fallback opportunities.',
+        localFallbackModel
+          ? 'No sufficiently distinct quality-approved idea could be generated after exhausting all online benchmark models and the local Ollama emergency fallback.'
+          : 'No sufficiently distinct quality-approved idea could be generated after trying the configured online models, bounded duplicate redesign attempts, and ranked fallback opportunities. No local Ollama fallback model was available.',
       );
     }
 
@@ -503,6 +537,56 @@ export class IdeaGenerationBenchmarkService {
     }
 
     return selected;
+  }
+
+  /**
+   * Executes Ollama exactly once after the complete online benchmark produced
+   * no accepted candidate.
+   *
+   * The highest-ranked concept direction is used first because it carries the
+   * strongest evidence and opportunity score. executeModelCandidate keeps the
+   * same parsing, quality, revision, duplicate-detection, persistence, and
+   * diagnostic behavior used by online candidates.
+   *
+   * A local failure is swallowed here so benchmark() can emit one final, clear
+   * service-unavailable error describing exhaustion of both execution tiers.
+   */
+  private async executeLocalEmergencyFallback(
+    context: IdeaGenerationContext,
+    localModel: AiModel,
+    conceptDirections: readonly CandidateConceptDirection[],
+  ): Promise<IdeaBenchmarkCandidate | null> {
+    const primaryDirection = conceptDirections[0];
+
+    if (!primaryDirection) {
+      this.logger.error(
+        'Ollama emergency fallback could not run because no concept direction was available.',
+      );
+      return null;
+    }
+
+    this.logger.warn(
+      `All online core-generation candidates failed. Executing local emergency fallback model "${localModel.displayName ?? localModel.modelName}" once for the highest-ranked opportunity.`,
+    );
+
+    try {
+      return await this.executeModelCandidate(
+        context,
+        localModel,
+        primaryDirection,
+      );
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unknown local Ollama fallback failure.';
+
+      this.logger.error(
+        `Local emergency fallback model "${localModel.displayName ?? localModel.modelName}" failed: ${message}`,
+      );
+
+      return null;
+    }
   }
 
   /**
@@ -946,11 +1030,14 @@ export class IdeaGenerationBenchmarkService {
         : 2_048,
       maxOutputTokens: context.policy?.includePremiumOutputs ? 8_192 : 2_048,
       temperature: 0.55,
-      // Benchmark requests use a bounded timeout and no provider-level retry.
-      // The benchmark already has model/opportunity fallback, so repeating the
-      // same slow request only increases total latency without adding diversity.
+      // Retry the exact assigned model once for transient provider failures.
+      // If that bounded retry is exhausted, the benchmark loop immediately
+      // replaces the failed assignment with the next healthy model in its
+      // provider-diverse fallback rotation. This keeps candidate attribution
+      // correct while preventing one temporary network failure from reducing
+      // the comparative benchmark to a single candidate.
       timeoutMs: 90_000,
-      maxRetriesPerModel: 0,
+      maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
     const quality = this.qualityEvaluatorService.evaluate(
@@ -1054,11 +1141,72 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /**
-   * Builds up to five evidence-grounded concept directions from the highest
-   * ranked NLP opportunities. Every selected model receives every direction,
-   * allowing the judge to compare both opportunity quality and model output
-   * quality across as many as fifteen startup candidates.
+   * Builds one immutable concept direction from the deterministic winner.
+   * Every model receives the exact same opportunity so the AI judge compares
+   * execution quality rather than unrelated problem directions.
    */
+  /**
+   * Resolves evidence from the normalized ranked candidate first, then from
+   * the raw validated community record. This protects benchmarking from a
+   * serialization or normalization gap without accepting unrelated evidence.
+   */
+  private resolveOpportunityEvidenceSamples(
+    opportunity: RankedIdeaOpportunity,
+  ): readonly string[] {
+    if (opportunity.evidenceSamples.length > 0) {
+      return opportunity.evidenceSamples;
+    }
+
+    if (!this.isJsonObject(opportunity.raw)) {
+      return [];
+    }
+
+    const rawSamples = opportunity.raw.evidenceSamples;
+
+    if (!Array.isArray(rawSamples)) {
+      return [];
+    }
+
+    return rawSamples
+      .filter((sample): sample is string => typeof sample === 'string')
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  /**
+   * Accepts raw fallback evidence only for validated community-analysis
+   * records with a sufficiently strong confidence signal.
+   */
+  private hasValidatedCommunityRawEvidence(
+    opportunity: RankedIdeaOpportunity,
+  ): boolean {
+    if (!this.isJsonObject(opportunity.raw)) {
+      return false;
+    }
+
+    const source = opportunity.raw.source;
+    const confidence =
+      typeof opportunity.raw.confidence === 'number'
+        ? opportunity.raw.confidence
+        : typeof opportunity.raw.aiConfidence === 'number'
+          ? opportunity.raw.aiConfidence
+          : 0;
+    const groundingScore =
+      typeof opportunity.raw.groundingScore === 'number'
+        ? opportunity.raw.groundingScore
+        : 0;
+
+    return (
+      (source === 'COMMUNITY_AI_ANALYSIS' && groundingScore >= 50) ||
+      (source === 'COMMUNITY_LLM_ANALYSIS' && confidence >= 70)
+    );
+  }
+
+  private isJsonObject(value: Prisma.JsonValue): value is Prisma.JsonObject {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
   private buildConceptDirections(
     context: IdeaGenerationContext,
   ): readonly CandidateConceptDirection[] {
@@ -1067,39 +1215,83 @@ export class IdeaGenerationBenchmarkService {
 
     if (!prompt || !ranking) {
       throw new ServiceUnavailableException(
-        'A persisted prompt and ranked opportunities are required before benchmarking.',
+        'A persisted prompt and ranked opportunity are required before benchmarking.',
       );
     }
 
-    const eligibleOpportunities = [
-      ranking.selected,
-      ...ranking.alternatives,
-    ].filter((opportunity) => opportunity.selectionEligible);
+    const opportunity = ranking.selected;
+    const effectiveEvidenceSamples =
+      this.resolveOpportunityEvidenceSamples(opportunity);
 
-    if (eligibleOpportunities.length === 0) {
-      throw new ServiceUnavailableException(
-        'No selection-eligible opportunity is available for AI benchmarking.',
+    // The ranking service now selects the best eligible candidate whenever
+    // one exists. This defensive fallback prevents a complete pipeline failure
+    // when all candidates miss one strict gate but the selected opportunity is
+    // still sufficiently grounded for a qualified pilot concept.
+    const hasUsableEvidence = effectiveEvidenceSamples.length > 0;
+    const hasMinimumReliability = opportunity.evidenceReliabilityScore >= 0.45;
+    const hasMinimumSupport = opportunity.supportScore >= 0.35;
+    const hasStrongRawCommunityEvidence =
+      effectiveEvidenceSamples.length > 0 &&
+      this.hasValidatedCommunityRawEvidence(opportunity);
+    const isDefensiveFallbackAllowed =
+      (hasUsableEvidence && hasMinimumReliability && hasMinimumSupport) ||
+      hasStrongRawCommunityEvidence;
+
+    /*
+     * Opportunity ranking may intentionally return the strongest penalized
+     * fallback after bounded evidence recovery. That fallback must not crash
+     * the complete generation pipeline merely because it did not pass the
+     * strict evidence gate. Benchmarking may continue, but every generated
+     * claim is constrained to a preliminary pilot hypothesis.
+     */
+    const isControlledSparseFallback =
+      !opportunity.selectionEligible && !isDefensiveFallbackAllowed;
+
+    if (isControlledSparseFallback) {
+      this.logger.warn(
+        `Benchmarking is continuing with penalized opportunity "${opportunity.title}" because no strictly eligible opportunity remained after bounded evidence recovery. Generated claims will be treated as preliminary pilot hypotheses.`,
       );
     }
 
-    const opportunities = this.selectProblemFamilyDiverseOpportunities(
-      eligibleOpportunities,
-      IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT,
-    );
-
-    return opportunities.map((opportunity, index) => ({
+    const buildDirection = (
+      directionName: string,
+      mechanismRules: readonly string[],
+    ): CandidateConceptDirection => ({
       opportunity,
       promptText: [
         prompt.promptText,
-        'BENCHMARK CONCEPT ASSIGNMENT:',
-        `- This is candidate concept ${index + 1} of ${opportunities.length}.`,
-        `- Build this candidate around ranked opportunity #${opportunity.rank}: "${opportunity.title}".`,
-        '- This assignment overrides the default selected opportunity only for this benchmark candidate.',
-        '- Produce one coherent standalone startup concept, not a feature list or a minor fix.',
-        '- Use compatible lower-ranked needs only as supporting capabilities when they strengthen the same workflow.',
-        '- Include a clear buyer or sponsor, an adoption trigger, repeatable deployment, and measurable organizational value whenever the schema permits.',
-        '- Do not copy another candidate direction or merge unrelated opportunities.',
-        '<untrusted_assigned_opportunity>',
+        'FINAL CONCEPT ASSIGNMENT:',
+        `- Build the complete candidate around the selected ranked opportunity #${opportunity.rank}: "${opportunity.title}".`,
+        '- This opportunity is immutable for this generation run.',
+        `- Assigned concept direction: ${directionName}.`,
+        ...mechanismRules.map((rule) => `- ${rule}`),
+        ...(effectiveEvidenceSamples.length > 0
+          ? [
+              '- Authoritative evidence samples for this opportunity:',
+              ...effectiveEvidenceSamples.map(
+                (sample, index) => `  ${index + 1}. ${sample}`,
+              ),
+            ]
+          : []),
+        ...(!opportunity.selectionEligible
+          ? [
+              isControlledSparseFallback
+                ? '- QUALITY QUALIFIER: this opportunity is a controlled sparse-evidence fallback selected only after bounded recovery. Treat the problem as a hypothesis to validate, make no market-wide or local-prevalence claims, and require evidence collection as an explicit first pilot activity.'
+                : '- QUALITY QUALIFIER: this opportunity is a controlled evidence-backed fallback. Keep claims conservative, explicitly qualify uncertainty, and frame validation as part of the pilot.',
+            ]
+          : []),
+        '- Do not switch to, merge with, or replace it using an alternative opportunity.',
+        '- All candidates must solve the same observed problem, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
+        '- Produce one coherent commercially viable software product, not a feature list or a minor patch. The product may use a host-integrated SDK, vendor backend, or supported companion workflow when platform boundaries require it.',
+        '- Use only the supplied evidence for problem and local claims.',
+        '- Treat the requested location as the initial pilot target unless direct local evidence explicitly proves local prevalence.',
+        '- Any numerical impact goal must state an explicit direction such as increase, improvement, reduction, or decrease. Use one complete grammatical form: "Target at least a X percent increase/reduction during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent increase/reduction during a defined period, measured by ...". Never use the ambiguous phrase "percent change", combine the openings, or write "target an evaluate".',
+        '- Check spelling in the product name and all proper nouns. Never use common misspellings such as "Resiliant"; use "Resilient".',
+        '- Do not present an inferred root cause as observed fact. Use wording such as plausible technical cause, likely failure pattern, or hypothesis to validate unless the evidence explicitly proves causation.',
+        "- Respect operating-system and application sandbox boundaries. A standalone mobile or desktop app cannot read another app's secure receipts, private logs, storage, or identifiers unless a host-integrated SDK, supported API/export, or explicit user-authorized import makes that access possible.",
+        '- Make the supported integration path primary in the title direction, objectives, architecture, and abstract; do not mention an SDK only as an optional afterthought when the core workflow depends on host-app access.',
+        "- For subscription, receipt, entitlement, or account-recovery concepts involving third-party apps, use one of these primary designs: (a) an SDK embedded by the host application plus a vendor-owned verification backend, or (b) a user-authorized diagnostic/import workflow that does not claim to change the host app entitlement. A standalone independent verification bridge that reads or restores another app's subscription is technically invalid.",
+        '<selected_opportunity>',
         JSON.stringify({
           rank: opportunity.rank,
           title: opportunity.title,
@@ -1109,103 +1301,29 @@ export class IdeaGenerationBenchmarkService {
           frequency: opportunity.frequency,
           severity: opportunity.severity,
           score: opportunity.finalScore,
-          evidenceSamples: opportunity.evidenceSamples,
+          evidenceSamples: effectiveEvidenceSamples,
         }),
-        '</untrusted_assigned_opportunity>',
+        '</selected_opportunity>',
       ].join('\n'),
-    }));
-  }
+    });
 
-  /**
-   * Prioritizes opportunities from different problem families before filling
-   * any remaining slots. This prevents fallback attempts from repeatedly
-   * cycling through login, activation, and credential-recovery variants.
-   */
-  private selectProblemFamilyDiverseOpportunities(
-    opportunities: readonly RankedIdeaOpportunity[],
-    maximumCount: number,
-  ): readonly RankedIdeaOpportunity[] {
-    const selected: RankedIdeaOpportunity[] = [];
-    const deferred: RankedIdeaOpportunity[] = [];
-    const usedFamilies = new Set<string>();
-
-    for (const opportunity of opportunities) {
-      const family = this.normalizeOpportunityFamily(opportunity);
-
-      if (!usedFamilies.has(family)) {
-        selected.push(opportunity);
-        usedFamilies.add(family);
-      } else {
-        deferred.push(opportunity);
-      }
-
-      if (selected.length >= maximumCount) {
-        return selected;
-      }
-    }
-
-    for (const opportunity of deferred) {
-      if (selected.length >= maximumCount) {
-        break;
-      }
-
-      selected.push(opportunity);
-    }
-
-    return selected;
-  }
-
-  private normalizeOpportunityFamily(
-    opportunity: RankedIdeaOpportunity,
-  ): string {
-    const text = [
-      opportunity.title,
-      opportunity.problem ?? '',
-      opportunity.need ?? '',
-      opportunity.solutionArea ?? '',
-    ]
-      .join(' ')
-      .toLowerCase();
-
-    const families: readonly [string, RegExp][] = [
-      [
-        'authentication',
-        /authentication|account activation|login|sign in|verification|credential|password recovery/u,
-      ],
-      [
-        'data-sync',
-        /data loss|synchroni[sz]|backup|restore|recovery|missing history/u,
-      ],
-      [
-        'navigation-usability',
-        /navigation|interface|usability|back button|scroll|popup/u,
-      ],
-      [
-        'cross-device',
-        /cross-device|desktop|laptop|mobile-only|computer access/u,
-      ],
-      [
-        'pricing-access',
-        /paywall|pricing|subscription|cost restriction|paid access/u,
-      ],
+    return [
+      buildDirection('Prevention and developer remediation', [
+        'Make the primary buyer and operator a development, QA, or product engineering team.',
+        'Center the product on detecting, reproducing, prioritizing, and preventing the failure before it reaches users.',
+        'The dominant workflow must be engineering remediation, not end-user session restoration.',
+      ]),
+      buildDirection('User continuity and state recovery', [
+        'Make the primary outcome preservation of user work and rapid continuity after interruption.',
+        'Center the product on safe checkpointing, recovery orchestration, and user-visible continuity.',
+        'The dominant workflow must be state preservation and recovery, not merely crash analytics or developer monitoring.',
+      ]),
+      buildDirection('Operational resilience and assisted triage', [
+        'Make the primary buyer and operator an institutional IT, support, or platform-operations team.',
+        'Center the product on evidence capture, incident triage, prioritization, and coordinated remediation across affected deployments.',
+        'The dominant workflow must be operational diagnosis and response coordination, materially distinct from developer prevention and end-user state recovery.',
+      ]),
     ];
-
-    const knownFamily = families.find(([, pattern]) => pattern.test(text));
-
-    if (knownFamily) {
-      return knownFamily[0];
-    }
-
-    return (
-      text
-        .normalize('NFKC')
-        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-        .split(/\s+/u)
-        .filter((token) => token.length >= 4)
-        .slice(0, 5)
-        .sort()
-        .join('|') || `rank-${opportunity.rank}`
-    );
   }
 
   /** Builds trusted metrics used by premium-output quality validation. */
@@ -1233,9 +1351,10 @@ export class IdeaGenerationBenchmarkService {
     return [
       'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
       'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
-      'When evidence is not locally verified, describe the discovered problem generally and use wording such as "designed for deployment in the target location". Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
-      'Mark estimates and assumptions explicitly.',
+      'When evidence is not locally verified, describe the discovered problem generally and say that the initial pilot deployment is planned for the target location. Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
+      'Mark estimates and assumptions explicitly. Any inferred root cause must be described as a plausible hypothesis to validate unless direct evidence proves causation. A percentage objective must use one complete grammatical form with an explicit direction: "Target at least a X percent increase/reduction during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent increase/reduction during a defined period, measured by ...". Never use the ambiguous phrase "percent change", never write "target an evaluate", and never present the percentage as a promise.',
       'Treat store descriptions and promotional product copy as contextual source material, never as direct proof of a user complaint or unmet need.',
+      "Respect operating-system, browser, app-store, and cross-application permission boundaries. When a product depends on another app's receipts, subscription state, entitlements, secure storage, or private logs, the primary architecture must use a host-integrated SDK and vendor-owned backend, a supported platform API/export, or explicit user-authorized import. Do not describe an independent app as able to restore or control another app's entitlement.",
       metrics,
       context.policy?.includePremiumOutputs
         ? 'The NLP executive summary must state those exact three totals. The budget estimation must be explicitly preliminary and include a currency, numeric range, major cost categories, and assumptions.'

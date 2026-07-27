@@ -33,6 +33,15 @@ const GENERIC_NEED_TERMS = new Set([
   'required',
   'want',
   'wanted',
+  'looking',
+  'looking for',
+  'searching',
+  'searching for',
+  'something',
+  'anything',
+  'please add',
+  'please include',
+  'feature request',
   'حاجة',
   'احتاج',
   'نحتاج',
@@ -86,10 +95,12 @@ export class NeedExtractionService {
         current.hasFeatureRequestSignal =
           current.hasFeatureRequestSignal || featureRequestKeys.has(needKey);
 
-        this.addEvidenceSample(
-          current.evidenceSamples,
-          this.buildEvidenceExcerpt(text.originalText, normalizedNeed),
-        );
+        if (this.isEvidenceAlignedWithNeed(text.originalText, normalizedNeed)) {
+          this.addEvidenceSample(
+            current.evidenceSamples,
+            this.buildEvidenceExcerpt(text.originalText, normalizedNeed),
+          );
+        }
 
         needMap.set(needKey, current);
       }
@@ -107,8 +118,13 @@ export class NeedExtractionService {
       );
     });
 
+    const qualityFilteredNeeds = sortedNeeds.filter((accumulator) =>
+      this.isConcreteNeed(accumulator),
+    );
     const selectedNeeds =
-      limit === undefined ? sortedNeeds : sortedNeeds.slice(0, limit);
+      limit === undefined
+        ? qualityFilteredNeeds
+        : qualityFilteredNeeds.slice(0, limit);
 
     return selectedNeeds.map((accumulator) => ({
       need: accumulator.need,
@@ -116,6 +132,33 @@ export class NeedExtractionService {
       relatedProblem: accumulator.relatedProblem,
       evidenceSamples: [...accumulator.evidenceSamples],
     }));
+  }
+
+  /**
+   * Rejects incomplete trigger fragments before they enter persisted NLP output.
+   *
+   * Lexicon matches such as "looking for" are useful detection signals, but
+   * they do not describe an actionable requirement by themselves. A retained
+   * need must contain a concrete noun or workflow phrase and real evidence.
+   */
+  private isConcreteNeed(accumulator: NeedAccumulator): boolean {
+    const normalized = this.normalizeTerm(accumulator.need);
+
+    if (!normalized || GENERIC_NEED_TERMS.has(normalized)) {
+      return false;
+    }
+
+    if (accumulator.evidenceSamples.length === 0) {
+      return false;
+    }
+
+    const words = normalized.split(/\s+/u).filter(Boolean);
+    const isIncompleteTrigger =
+      /^(?:looking|looking for|searching|searching for|want(?:ed)?|need(?:ed)?|require(?:d)?)(?:\s+(?:a|an|the|to|for))?$/iu.test(
+        normalized,
+      );
+
+    return !isIncompleteTrigger && words.length >= 2;
   }
 
   /** Extracts normalized concrete needs from one text. */
@@ -187,15 +230,48 @@ export class NeedExtractionService {
       needs.push('reliable document access and downloads');
     }
 
+    if (
+      /(?:playback|video).{0,80}(?:speed|1x|1\.5x|2x|faster)|(?:speed up|forward 10 seconds|skip forward)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('playback speed control for educational videos');
+    }
+
+    if (
+      /(?:server|network|website|connection|connectivity).{0,80}(?:inaccessible|unavailable|down|fail|issue|problem)|(?:cannot|can['’]?t|unable to).{0,50}(?:connect|reach the server|access the website)/iu.test(
+        text,
+      )
+    ) {
+      needs.push('reliable connectivity and service availability');
+    }
+
+    const hasExplicitCrashOrFreeze =
+      /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+        text,
+      );
     const hasOperationalReliabilityFailure =
-      /(?:crash|freeze|bug|glitch)/iu.test(text);
+      /(?:bug|glitch)/iu.test(text) &&
+      /(?:app|application|software|screen|submission|upload|save|work)/iu.test(
+        text,
+      ) &&
+      !/(?:login|log in|sign in|activation|verification|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+        text,
+      );
     const hasGenericOperationalError =
       /(?:broken|error)/iu.test(text) &&
-      !/(?:download|document|syllabus|file|link|login|log in|sign in|activation|verification|email|code|otp)/iu.test(
+      /(?:app|application|software|screen|submission|upload|save|work)/iu.test(
+        text,
+      ) &&
+      !/(?:download|document|syllabus|file|link|login|log in|sign in|activation|verification|email|code|otp|server|network|website|connection)/iu.test(
         text,
       );
 
-    if (hasOperationalReliabilityFailure || hasGenericOperationalError) {
+    if (
+      hasExplicitCrashOrFreeze ||
+      hasOperationalReliabilityFailure ||
+      hasGenericOperationalError
+    ) {
       needs.push('stable crash-resistant operation');
     }
 
@@ -349,9 +425,23 @@ export class NeedExtractionService {
       ];
     }
 
-    if (/crash|stable|reliable/iu.test(normalizedNeed)) {
+    if (/playback|video speed|forward 10 seconds/iu.test(normalizedNeed)) {
       return [
-        /\b(?:crash|freeze|error|bug|glitch|looping|doesn['’]?t work)\b/iu,
+        /\b(?:playback|video|speed|1x|1.5x|2x|forward 10 seconds|skip forward)\b/iu,
+      ];
+    }
+
+    if (
+      /connectivity|service availability|server|network/iu.test(normalizedNeed)
+    ) {
+      return [
+        /\b(?:server|network|website|connection|connectivity|inaccessible|unavailable|down)\b/iu,
+      ];
+    }
+
+    if (/crash|stable|reliable application/iu.test(normalizedNeed)) {
+      return [
+        /\b(?:crash|freeze|frozen|bug|glitch|white screen|doesn['’]?t work)\b/iu,
       ];
     }
 
@@ -391,11 +481,117 @@ export class NeedExtractionService {
       return 'Document Access and Download Failures';
     }
 
-    if (/crash|stable|reliable/iu.test(normalizedNeed)) {
+    if (
+      /connectivity|service availability|server|network/iu.test(normalizedNeed)
+    ) {
+      return 'Connectivity and Service Availability Failures';
+    }
+
+    if (/playback|video speed|forward 10 seconds/iu.test(normalizedNeed)) {
+      return 'Missing Video Playback Controls';
+    }
+
+    if (/crash|stable|reliable application/iu.test(normalizedNeed)) {
       return 'Application Reliability and Crash Failures';
     }
 
     return undefined;
+  }
+
+  /** Ensures evidence describes the same workflow as the normalized need. */
+  private isEvidenceAlignedWithNeed(value: string, need: string): boolean {
+    const text = this.normalizeTerm(value);
+    const normalizedNeed = this.normalizeTerm(need);
+
+    if (
+      /verification|activation|account|login|sign in/iu.test(normalizedNeed)
+    ) {
+      return /(?:verification|activation|account|login|log in|sign in|phone|email|code|otp)/iu.test(
+        text,
+      );
+    }
+
+    if (/document|download|syllabus|file/iu.test(normalizedNeed)) {
+      const hasDocumentObject =
+        /(?:document|download|syllabus|attachment|pdf|file|broken link)/iu.test(
+          text,
+        );
+      const hasDocumentFailure =
+        /(?:cannot|can['’]?t|unable|won['’]?t|doesn['’]?t|fail|failed|broken|error|null|not open|open)/iu.test(
+          text,
+        );
+      const isAuthenticationOnly =
+        /(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp|verification code)/iu.test(
+          text,
+        ) && !hasDocumentObject;
+
+      return hasDocumentObject && hasDocumentFailure && !isAuthenticationOnly;
+    }
+
+    if (/synchronization|recovery|data|lost progress/iu.test(normalizedNeed)) {
+      return /(?:data|sync|synchronization|history|progress|work|draft|save|saved|missing|lost|gone|deleted)/iu.test(
+        text,
+      );
+    }
+
+    if (/playback|video speed|forward 10 seconds/iu.test(normalizedNeed)) {
+      return /(?:playback|video|speed|1x|1\.5x|2x|forward 10 seconds|skip forward)/iu.test(
+        text,
+      );
+    }
+
+    if (
+      /connectivity|service availability|server|network/iu.test(normalizedNeed)
+    ) {
+      return /(?:server|network|website|connection|connectivity|inaccessible|unavailable|down|cannot connect|can['’]?t connect)/iu.test(
+        text,
+      );
+    }
+
+    if (
+      /crash|stable|reliable application|performance/iu.test(normalizedNeed)
+    ) {
+      const hasExplicitCrash =
+        /(?:crash|crashes|crashed|crashing|freeze|freezes|frozen|white screen)/iu.test(
+          text,
+        );
+      const hasOperationalFailure =
+        /(?:bug|glitch|fails? to submit|submission failed|upload failed|not working|doesn['’]?t work)/iu.test(
+          text,
+        ) &&
+        !/(?:login|log in|sign in|authentication|verification|activation|account|server|network|website|connection|document|download|syllabus|file|link)/iu.test(
+          text,
+        );
+
+      return hasExplicitCrash || hasOperationalFailure;
+    }
+
+    if (/navigation|interface/iu.test(normalizedNeed)) {
+      return /(?:navigate|navigation|interface|back button|scroll|popup|tab|menu|schedule)/iu.test(
+        text,
+      );
+    }
+
+    if (
+      /desktop|laptop|computer|cross-platform|cross device/iu.test(
+        normalizedNeed,
+      )
+    ) {
+      return (
+        this.hasCrossDeviceAccessFailure(text) &&
+        !/(?:login|log in|sign in|authentication|activation|verification|account|phone number|otp)/iu.test(
+          text,
+        )
+      );
+    }
+
+    if (/offline|internet/iu.test(normalizedNeed)) {
+      return /(?:offline|without internet|no internet|low connectivity|slow internet)/iu.test(
+        text,
+      );
+    }
+
+    return true;
   }
 
   private addEvidenceSample(samples: string[], sample: string): void {

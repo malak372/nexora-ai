@@ -203,10 +203,15 @@ export class HackerNewsCollector
 
     const seenStoryIds = new Set<string>();
 
-    const candidateLimit = this.maxFetchedPosts * 8;
+    /*
+     * Fetch only a bounded candidate window before relevance scoring.
+     * The previous multiplier could issue hundreds of item requests for one
+     * generation run even though only a small number of posts can be saved.
+     */
+    const candidateLimit = Math.min(this.maxFetchedPosts * 3, 48);
 
     for (const storyId of storyIds.slice(0, candidateLimit)) {
-      if (stories.length >= this.maxFetchedPosts * 10) {
+      if (stories.length >= this.maxFetchedPosts) {
         break;
       }
 

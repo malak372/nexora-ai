@@ -45,10 +45,19 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
 
     const benchmark = await this.benchmarkService.benchmark(context);
     const winner = benchmark.winner;
+    const winnerOpportunity = context.opportunityRanking?.selected;
+
+    if (!winnerOpportunity) {
+      throw new BadRequestException({
+        code: IDEA_GENERATION_ERROR_CODES.AI_GENERATION_FAILED,
+        message: 'The selected opportunity is required after benchmarking.',
+      });
+    }
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
       coreIdea: winner.parsedOutput.coreIdea,
+      benchmarkWinnerOpportunity: winnerOpportunity,
       advancedOutputs: this.mergeAdvancedOutputs(
         context.advancedOutputs,
         winner.parsedOutput.advancedOutputs,
@@ -57,7 +66,10 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
 
     return {
       context: updatedContext,
-      resultPreview: this.createResponsePreview(winner.aiResult.text),
+      resultPreview: [
+        `Benchmark selected the best model execution for the immutable opportunity #${winner.opportunityRank} "${winner.opportunityTitle}".`,
+        this.createResponsePreview(winner.aiResult.text),
+      ].join(' '),
       metadata: {
         winner: {
           candidateId: winner.candidateId,

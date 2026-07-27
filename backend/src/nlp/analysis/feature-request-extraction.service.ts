@@ -17,6 +17,17 @@ import type { FeatureRequest } from './types/feature-request.type';
  */
 const MAX_FEATURE_REQUEST_EVIDENCE_SAMPLES = 3;
 
+/** Generic request triggers that must never be persisted as final labels. */
+const GENERIC_FEATURE_REQUEST_LABELS = new Set([
+  'add',
+  'feature',
+  'feature request',
+  'please add',
+  'please include',
+  'request',
+  'suggestion',
+]);
+
 /**
  * Internal aggregation state used while grouping feature requests.
  *
@@ -81,8 +92,10 @@ export class FeatureRequestExtractionService {
       const matchedRequests =
         text.matchedLexicons[NlpLexiconType.FEATURE_REQUEST] ?? [];
 
-      const uniqueRequestsForText =
-        this.normalizeUniqueRequests(matchedRequests);
+      const uniqueRequestsForText = this.normalizeUniqueRequests(
+        matchedRequests,
+        text.originalText,
+      );
 
       for (const normalizedRequest of uniqueRequestsForText) {
         const aggregationKey = normalizedRequest.toLocaleLowerCase();
@@ -136,24 +149,75 @@ export class FeatureRequestExtractionService {
    * @param requests Raw matched feature-request lexicon values.
    * @returns Unique normalized request labels.
    */
-  private normalizeUniqueRequests(requests: readonly string[]): string[] {
+  private normalizeUniqueRequests(
+    requests: readonly string[],
+    evidence: string,
+  ): string[] {
     const uniqueRequests = new Map<string, string>();
 
     for (const request of requests) {
-      const normalizedRequest = request.trim();
+      const normalizedRequest = request.trim().replace(/\s+/gu, ' ');
 
       if (!normalizedRequest) {
         continue;
       }
 
-      const aggregationKey = normalizedRequest.toLocaleLowerCase();
+      const normalizedKey = normalizedRequest.toLocaleLowerCase();
+      const concreteRequest = GENERIC_FEATURE_REQUEST_LABELS.has(normalizedKey)
+        ? this.deriveConcreteFeatureRequest(evidence)
+        : normalizedRequest;
+
+      if (!concreteRequest) {
+        continue;
+      }
+
+      const aggregationKey = concreteRequest.toLocaleLowerCase();
 
       if (!uniqueRequests.has(aggregationKey)) {
-        uniqueRequests.set(aggregationKey, normalizedRequest);
+        uniqueRequests.set(aggregationKey, concreteRequest);
       }
     }
 
     return [...uniqueRequests.values()];
+  }
+
+  /**
+   * Derives a stable feature label from the actual requested workflow.
+   * Generic lexicon triggers such as "Please Add" remain detection signals
+   * only and are never exposed as user-facing opportunities.
+   */
+  private deriveConcreteFeatureRequest(evidence: string): string | null {
+    const text = evidence.normalize('NFKC').toLocaleLowerCase();
+
+    if (
+      /(?:playback|video).{0,80}(?:speed|1x|1\.5x|2x|faster|slow(?:er)?)|(?:speed up|forward 10 seconds|skip forward)/iu.test(
+        text,
+      )
+    ) {
+      return 'Playback Speed Control for Educational Videos';
+    }
+
+    if (/dark mode|night mode|dark theme/iu.test(text)) {
+      return 'Dark Mode and Theme Support';
+    }
+
+    if (
+      /offline.{0,50}(?:download|access|course|lesson|video|material)/iu.test(
+        text,
+      )
+    ) {
+      return 'Offline Access to Learning Materials';
+    }
+
+    if (/notification|reminder|deadline alert/iu.test(text)) {
+      return 'Assignment and Deadline Notifications';
+    }
+
+    if (/desktop|laptop|computer|web version|cross[- ]platform/iu.test(text)) {
+      return 'Cross-Platform Feature Parity';
+    }
+
+    return null;
   }
 
   /**

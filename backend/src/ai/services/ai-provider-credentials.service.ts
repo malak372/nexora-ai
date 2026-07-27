@@ -1,5 +1,4 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -37,8 +36,7 @@ type AiProviderEnvironmentKey =
  * - Never be returned through public or administrator APIs.
  * - Never be included in logs or thrown error metadata.
  *
- * This service centralizes provider configuration so individual
- * adapters do not read environment variables directly.
+ * Ollama is a local provider and does not require an API key.
  *
  * @author Malak
  */
@@ -47,12 +45,15 @@ export class AiProviderCredentialsService {
   constructor(private readonly configService: ConfigService) {}
 
   /**
-   * Returns the required API key for one supported AI provider.
+   * Returns the required API key for one remote AI provider.
+   *
+   * Ollama is intentionally rejected because local Ollama requests do
+   * not use API-key authentication.
    *
    * @param providerKey Stable provider-registry key.
    * @returns Trimmed provider API key.
    * @throws ServiceUnavailableException when the provider configuration
-   * is missing or empty.
+   * is missing, empty, or the provider does not use API keys.
    */
   getApiKey(providerKey: AiProviderKey): string {
     switch (providerKey) {
@@ -61,6 +62,11 @@ export class AiProviderCredentialsService {
 
       case AI_PROVIDER_KEYS.OPENROUTER:
         return this.requireValue(AI_PROVIDER_ENV_KEYS.OPENROUTER_API_KEY);
+
+      case AI_PROVIDER_KEYS.OLLAMA:
+        throw new ServiceUnavailableException(
+          'Ollama is a local AI provider and does not require an API key.',
+        );
 
       default:
         return this.assertNever(providerKey);
