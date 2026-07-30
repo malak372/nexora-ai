@@ -287,11 +287,13 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    return this.unique([
-      ...domainKeywords,
-      ...userQueries,
-      ...problemQueries,
-    ]).filter(Boolean);
+    /*
+     * Raw domain-only queries such as "education" mostly return news,
+     * speeches, and generic videos. Prefer explicit user/recovery queries and
+     * problem-focused combinations so collected comments are more likely to
+     * contain recurring user pain points.
+     */
+    return this.unique([...userQueries, ...problemQueries]).filter(Boolean);
   }
 
   /**

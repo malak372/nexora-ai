@@ -123,6 +123,10 @@ export class DataCollectionStage implements IdeaGenerationStage {
       resultPreview: `Collection data verified successfully: ${totalPosts} analyzed post(s) and ${totalComments} analyzed comment(s) are available for idea generation.`,
 
       metadata: {
+        stageRole: 'VALIDATION_CHECKPOINT',
+
+        executesCollectors: false,
+
         collectionJobId: collection.collectionJobId,
 
         reused: collection.reused,

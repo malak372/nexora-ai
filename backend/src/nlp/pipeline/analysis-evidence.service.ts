@@ -45,8 +45,25 @@ export class AnalysisEvidenceService {
     text: string;
     sentiment: Sentiment;
   }> {
-    return this.selectUniqueEvidence(analyzedTexts)
-      .filter((text) => text.sourceType === 'POST')
+    const posts = this.selectUniqueEvidence(analyzedTexts).filter(
+      (text) =>
+        text.sourceType === 'POST' &&
+        this.isUsefulDisplayEvidence(text.originalText) &&
+        !this.isLikelyPromotionalDescription(text.originalText),
+    );
+
+    return posts
+      .sort((first, second) => {
+        const sentimentDifference =
+          this.displayEvidencePriority(second.sentiment) -
+          this.displayEvidencePriority(first.sentiment);
+
+        if (sentimentDifference !== 0) {
+          return sentimentDifference;
+        }
+
+        return second.confidence - first.confidence;
+      })
       .slice(0, MAX_OUTPUT_POST_SAMPLES)
       .map((text) => ({
         id: text.id.trim(),
@@ -82,7 +99,8 @@ export class AnalysisEvidenceService {
         } =>
           text.sourceType === 'COMMENT' &&
           typeof text.postId === 'string' &&
-          text.postId.trim().length > 0,
+          text.postId.trim().length > 0 &&
+          this.isUsefulDisplayEvidence(text.originalText),
       )
       .slice(0, MAX_OUTPUT_COMMENT_SAMPLES)
       .map((text) => ({
@@ -114,6 +132,93 @@ export class AnalysisEvidenceService {
         text: text.originalText.trim(),
         language: text.language,
       }));
+  }
+
+  /**
+   * Assigns display priority without changing the NLP analysis itself.
+   * Negative evidence is most useful on the Evidence tab, followed by
+   * positive evidence and then neutral context.
+   */
+  private displayEvidencePriority(sentiment: Sentiment): number {
+    if (sentiment === Sentiment.NEGATIVE) {
+      return 3;
+    }
+
+    if (sentiment === Sentiment.POSITIVE) {
+      return 2;
+    }
+
+    return 1;
+  }
+
+  /**
+   * Hides store-listing and promotional descriptions from representative
+   * post samples. This affects display samples only; it does not delete source
+   * records, change sentiment counts, or alter ranking evidence.
+   */
+  private isLikelyPromotionalDescription(text: string): boolean {
+    const normalized = text.replace(/\s+/gu, ' ').trim().toLowerCase();
+
+    if (normalized.length < 120) {
+      return false;
+    }
+
+    const complaintSignal =
+      /\b(?:cannot|can't|blocked|missing|error|fails?|failed|broken|problem|issue|does not|doesn't|unavailable|forced to|crash|timeout|slow|bug)\b/iu.test(
+        normalized,
+      );
+
+    if (complaintSignal) {
+      return false;
+    }
+
+    const promotionalSignals = [
+      /\b(?:welcome to|all-in-one|download (?:the app|now)|app features|main features|with .+ you can)\b/iu,
+      /\b(?:award-winning|join our communit|start your learning adventure|make screen time more meaningful)\b/iu,
+      /\b(?:watch video lessons|earn certificates|browse course content|track your progress)\b/iu,
+      /\b(?:our goal is|our mission is|designed to be|helps? students? to|perfect for)\b/iu,
+    ];
+
+    const repositoryBlueprint =
+      normalized.length > 900 &&
+      /\b(?:rfc|proposal|what i'?m proposing|implementation|architecture|roadmap|pilot centered|who drives it|logistics|should we do this)\b/iu.test(
+        normalized,
+      );
+
+    return (
+      repositoryBlueprint ||
+      promotionalSignals.filter((pattern) => pattern.test(normalized)).length >=
+        1
+    );
+  }
+
+  /**
+   * Returns true only for text that can help explain a software problem,
+   * feature request, access barrier, reliability issue, or concrete user need.
+   * Broad social conversation and promotional copy remain stored but are not
+   * surfaced as representative evidence.
+   */
+  private isUsefulDisplayEvidence(text: string): boolean {
+    const normalized = text.replace(/\s+/gu, ' ').trim().toLowerCase();
+
+    if (normalized.length < 20) {
+      return false;
+    }
+
+    const softwareNeedSignal =
+      /\b(?:cannot|can't|unable|blocked|missing|unavailable|error|fails?|failed|broken|bug|crash|timeout|slow|does not|doesn't|should|need|request|feature|paywall|subscription|login|authentication|sync|storage|interface|ui|website|app|document|transcript|subject|category|configuration)\b/iu.test(
+        normalized,
+      );
+
+    const unrelatedConversation =
+      /\b(?:love from|invite you|my country|mam |congratulations|beautiful speech|god bless|thank you for this video)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:app|software|platform|website|login|error|feature|subscription|storage|sync)\b/iu.test(
+        normalized,
+      );
+
+    return softwareNeedSignal && !unrelatedConversation;
   }
 
   /**

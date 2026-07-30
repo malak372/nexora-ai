@@ -39,19 +39,24 @@ export class AiTimeoutService {
    * @template T Result type returned by the provider operation.
    * @param operation Provider operation receiving a cancellation signal.
    * @param timeoutMs Maximum duration of this provider attempt in
-   * milliseconds.
+   * milliseconds, or null to disable the deadline for a trusted local provider.
    * @returns Result produced before the timeout expires.
    *
    * @throws BadRequestException when operation is not callable or
-   * timeoutMs is not a positive finite number.
+   * timeoutMs is not null or a positive finite number.
    * @throws AiProviderError when the configured timeout expires.
    * @throws unknown when the provider operation fails before timeout.
    */
   async execute<T>(
     operation: (signal: AbortSignal) => Promise<T>,
-    timeoutMs: number,
+    timeoutMs: number | null,
   ): Promise<T> {
     this.validateOperation(operation);
+
+    if (timeoutMs === null) {
+      return operation(new AbortController().signal);
+    }
+
     this.validateTimeout(timeoutMs);
 
     const controller = new AbortController();

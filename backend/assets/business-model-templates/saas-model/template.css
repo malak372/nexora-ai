@@ -1,0 +1,147 @@
+:root {
+  --page-background: #eef2ff;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --text: #172033;
+  --muted: #657089;
+  --border: #dce2ee;
+  --accent: #0369a1;
+  --accent-soft: #e0f2fe;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--page-background);
+}
+
+body {
+  margin: 0;
+  padding: 32px;
+  background: var(--page-background);
+  color: var(--text);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  line-height: 1.6;
+}
+
+.business-model-document {
+  width: min(1400px, 100%);
+  margin: 0 auto;
+  padding: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+}
+
+.document-header {
+  padding: 4px 4px 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: 1.1;
+}
+
+.idea-title {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 19px;
+}
+
+.business-model-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px;
+  padding: 28px 0;
+}
+
+.business-model-section {
+  grid-column: span 4;
+  min-height: 190px;
+  padding: 22px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-top: 5px solid var(--accent);
+  border-radius: 18px;
+  break-inside: avoid;
+}
+
+.business-model-section h2 {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.business-model-section p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.document-footer {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 980px) {
+  body {
+    padding: 16px;
+  }
+
+  .business-model-document {
+    padding: 22px;
+  }
+
+  .business-model-section {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 640px) {
+  .business-model-section {
+    grid-column: 1 / -1;
+    min-height: auto;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #ffffff;
+  }
+
+  body {
+    padding: 0;
+  }
+
+  .business-model-document {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

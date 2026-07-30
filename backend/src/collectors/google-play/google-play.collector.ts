@@ -117,7 +117,7 @@ export class GooglePlayCollector
         }))
         .filter((item) => item.score > 0)
         .sort((first, second) => second.score - first.score)
-        .slice(0, this.maxSavedPosts);
+        .slice(0, this.resolveMaxSavedPosts(input));
 
       const posts = await Promise.all(
         rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
@@ -158,7 +158,7 @@ export class GooglePlayCollector
     >(cacheKey, this.cacheTtlMs, () =>
       googlePlayClient.search({
         term: searchQuery,
-        num: Math.min(this.maxFetchedPosts, 20),
+        num: Math.min(this.resolveMaxFetchedPosts(input), 20),
         lang: this.resolveLanguage(input.language),
         country: requestedCountry,
       }),
@@ -184,7 +184,7 @@ export class GooglePlayCollector
       () =>
         googlePlayClient.search({
           term: searchQuery,
-          num: Math.min(this.maxFetchedPosts, 20),
+          num: Math.min(this.resolveMaxFetchedPosts(input), 20),
           lang: this.resolveLanguage(input.language),
           country: 'us',
         }),
@@ -209,11 +209,11 @@ export class GooglePlayCollector
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
 
-    const terms = this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...fallbackDomain,
-    ])
+    const terms = this.unique(
+      input.collectionMode === 'TARGETED_RECOVERY'
+        ? [...domainKeywords, ...fallbackDomain, ...userKeywords]
+        : [...userKeywords, ...domainKeywords, ...fallbackDomain],
+    )
       .map((term) => term.trim())
       .filter(Boolean)
       .slice(0, 6);
@@ -365,7 +365,7 @@ export class GooglePlayCollector
           () =>
             googlePlayClient.reviews({
               appId,
-              num: this.maxSavedComments,
+              num: this.resolveMaxFetchedComments(input),
               sort: this.getNewestSort(),
               lang: this.resolveLanguage(input.language),
               country: this.resolveCountry(input.country),
@@ -374,7 +374,7 @@ export class GooglePlayCollector
 
       return (response.data ?? [])
         .filter((review) => this.isUsefulReview(review, input))
-        .slice(0, this.maxSavedComments)
+        .slice(0, this.resolveMaxSavedComments(input))
         .map(
           (review): CollectorComment => ({
             externalId: this.buildReviewExternalId(appId, review),

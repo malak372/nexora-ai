@@ -5,6 +5,7 @@ import {
   buildCommunityEvidenceExcerpt,
   hasDirectCommunityComplaint,
   isLikelyProductDescription,
+  isRepositoryOperationalRecord,
 } from '../common/utils/community-evidence.util';
 import { toTitleCase } from '../common/utils/text-formatting.util';
 
@@ -330,6 +331,10 @@ export class NeedExtractionService {
   }
 
   private shouldSkipText(text: LexiconTextAnalysisResult): boolean {
+    if (isRepositoryOperationalRecord(text.originalText)) {
+      return true;
+    }
+
     if (isLikelyProductDescription(text.originalText, text.sourceType)) {
       return true;
     }

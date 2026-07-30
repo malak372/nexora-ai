@@ -119,6 +119,15 @@ export type AiProviderGenerateInput = {
   readonly maxOutputTokens: number;
 
   /**
+   * Optional total context window configured for the routed model.
+   *
+   * Hosted providers normally infer this value from the selected model.
+   * Local providers such as Ollama may use it to configure the runtime
+   * context explicitly for the current request.
+   */
+  readonly contextWindow?: number;
+
+  /**
    * Optional model sampling temperature.
    *
    * Lower values generally produce more stable output, while higher

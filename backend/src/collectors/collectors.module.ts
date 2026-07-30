@@ -1,4 +1,6 @@
+import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
 import { CollectorsFactory } from './collectors.factory';
 
@@ -20,14 +22,25 @@ import { CollectorQueueService } from './base/collector-queue.service';
 import { DiscourseForumAdapter } from './forum/adapters/discourse-forum.adapter';
 
 /**
- * Module grouping all collector implementations.
+ * Registers all external data-source collectors.
  *
- * Adding a new collector requires registering its class as a provider.
- * No Prisma enum or centralized source map is required.
+ * HttpModule provides HttpService for collectors that call
+ * remote APIs directly, such as RedditCollector.
+ *
+ * ConfigModule provides environment-based configuration
+ * through ConfigService.
  *
  * @author Malak
  */
 @Module({
+  imports: [
+    ConfigModule,
+    HttpModule.register({
+      timeout: 15_000,
+      maxRedirects: 5,
+    }),
+  ],
+
   providers: [
     CollectorsFactory,
 

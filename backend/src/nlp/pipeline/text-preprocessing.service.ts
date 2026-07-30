@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { Sentiment } from '../common/enums/sentiment.enum';
+import { isRepositoryOperationalRecord } from '../common/utils/community-evidence.util';
 import { DomainRelevanceService } from '../domain-relevance/domain-relevance.service';
 import { LanguageDetectionService } from '../language-detection/language-detection.service';
 import {
@@ -220,7 +221,15 @@ export class TextPreprocessingService {
     const unresolvedLanguageTextsRemoved =
       uniqueItems.length - languageResolvedItems.length;
 
-    const evaluatedTexts: RelevanceEvaluatedText[] = languageResolvedItems.map(
+    const contentFilteredItems = languageResolvedItems.filter(
+      (item) =>
+        !this.isTechnicalNoise(item.cleaning.cleanedText) &&
+        !this.isNonComplaintContext(item.cleaning.cleanedText),
+    );
+    const technicalNoiseTextsRemoved =
+      languageResolvedItems.length - contentFilteredItems.length;
+
+    const evaluatedTexts: RelevanceEvaluatedText[] = contentFilteredItems.map(
       (item) => {
         const relevance = this.domainRelevanceService.analyze(
           item.cleaning.cleanedText,
@@ -253,15 +262,28 @@ export class TextPreprocessingService {
     const shouldApplyRelevanceFilter = domainKeywords.some(
       (keyword) => keyword.trim().length > 0,
     );
+    /*
+     * Use one internal balanced policy for every user. The API intentionally
+     * exposes no STRICT/BALANCED/BROAD option.
+     *
+     * Strongly relevant texts always pass. Borderline texts are retained only
+     * when they contain concrete complaint, need, failure, or feature-request
+     * evidence and still have a minimum domain signal. This improves recall
+     * without forwarding the complete noisy corpus to the AI layer.
+     */
     const relevantItems = shouldApplyRelevanceFilter
-      ? this.applyBoundedRelevanceFilter(evaluatedTexts)
+      ? evaluatedTexts.filter(
+          (item) =>
+            item.isRelevant || this.shouldRetainBorderlineEvidence(item.text),
+        )
       : evaluatedTexts;
     const relevantTexts = relevantItems.map((item) => item.text);
-    const irrelevantTextsRemoved = evaluatedTexts.length - relevantItems.length;
+    const irrelevantTextsRemoved =
+      evaluatedTexts.length - relevantItems.length + technicalNoiseTextsRemoved;
 
     if (irrelevantTextsRemoved > 0) {
       this.logger.debug(
-        `Removed ${irrelevantTextsRemoved} low-relevance text(s) using the bounded domain filter (maximum 25% per preprocessing pass).`,
+        `Removed ${irrelevantTextsRemoved} off-domain or technical-noise text(s) before evidence extraction.`,
       );
     }
 
@@ -282,52 +304,715 @@ export class TextPreprocessingService {
   }
 
   /**
-   * Removes the weakest irrelevant texts without allowing one noisy relevance
-   * pass to eliminate most of the evidence corpus. At most 25% of the resolved
-   * texts are removed; borderline texts with the highest relevance score are
-   * retained for downstream ranking, where they still receive lower support.
+   * Retains useful borderline evidence under the single internal balanced
+   * filtering policy.
+   *
+   * A text must have:
+   * - A minimum domain-relevance score.
+   * - At least one matched domain keyword or phrase.
+   * - A concrete user-problem or requested-improvement signal.
+   *
+   * Promotional descriptions, implementation tickets, and technical noise are
+   * already removed before this method is evaluated.
    */
-  private applyBoundedRelevanceFilter(
-    evaluatedTexts: readonly RelevanceEvaluatedText[],
-  ): RelevanceEvaluatedText[] {
-    const rejected = evaluatedTexts.filter((item) => !item.isRelevant);
+  private shouldRetainBorderlineEvidence(text: PreprocessedTextInput): boolean {
+    const normalized = text.cleaning.cleanedText.toLowerCase();
 
-    if (rejected.length === 0) {
-      return [...evaluatedTexts];
+    const hasDomainSignal =
+      text.matchedKeywords.length > 0 || text.matchedPhrases.length > 0;
+
+    if (!hasDomainSignal || text.relevanceScore < 0.2) {
+      return false;
     }
 
-    const maximumRemovalCount = Math.floor(evaluatedTexts.length * 0.25);
-    const removalCount = Math.min(rejected.length, maximumRemovalCount);
+    const evidenceSignals = [
+      'cannot',
+      "can't",
+      'unable',
+      'not working',
+      'does not work',
+      "doesn't work",
+      'missing',
+      'unavailable',
+      'forced to',
+      'difficult',
+      'hard to',
+      'confusing',
+      'slow',
+      'crash',
+      'error',
+      'fails',
+      'failed',
+      'problem',
+      'issue',
+      'bug',
+      'blocked',
+      'needs ',
+      'need ',
+      'should ',
+      'please add',
+      'please improve',
+      'feature request',
+      'wish ',
+    ];
 
-    if (removalCount <= 0) {
-      return [...evaluatedTexts];
+    return evidenceSignals.some((signal) => normalized.includes(signal));
+  }
+
+  /**
+   * Rejects code-heavy troubleshooting content that happens to contain broad
+   * domain words such as "application", "system", or "student". Such records
+   * are useful to developer forums but are not reliable community evidence for
+   * discovering an end-user problem in the selected domain.
+   */
+  private isTechnicalNoise(text: string): boolean {
+    const normalized = text.toLowerCase();
+
+    if (isRepositoryOperationalRecord(text)) {
+      return true;
     }
 
-    const rejectedIndexes = rejected
-      .map((item) => ({
-        item,
-        index: evaluatedTexts.indexOf(item),
-      }))
-      .sort((first, second) => {
-        const scoreDifference =
-          first.item.text.relevanceScore - second.item.text.relevanceScore;
+    /*
+     * Repository data-contract and implementation investigations can contain
+     * isolated natural-language fragments such as "an address cannot do
+     * that". Those fragments must never become end-user navigation evidence.
+     */
+    const isRepositoryInvestigation =
+      /\b(?:split out of|the mechanism|what would unblock it|not in scope|target architecture|phased build|build skills|depends on)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:stg_|rpt_|safe_offset|pydantic|avro|schema|endpoint|sql|pull request|issue|#\d+)\b/iu.test(
+        normalized,
+      );
 
-        if (scoreDifference !== 0) {
-          return scoreDifference;
-        }
+    const isMachineOperationalReceipt =
+      /\b(?:read-only production api receipts?|expected surfaces?|claimed=|saved modules?|missing modules?|attemptedmodules|persisted\.sheet|http 200|finite evening occurrence|wider freeze holds?)\b/iu.test(
+        normalized,
+      );
 
-        const confidenceDifference =
-          first.item.text.relevanceConfidence -
-          second.item.text.relevanceConfidence;
+    const isRepositoryStatusOrRunbook =
+      /\b(?:upstream contribution status|still open|merged|pull request|fixture|negative contract|sole qb|authorized to proceed|runbook|deployment receipt)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:github|repository|commit|branch|pr|#\d+|api|http|yaml|config|test)\b/iu.test(
+        normalized,
+      );
 
-        return confidenceDifference || first.index - second.index;
-      })
-      .slice(0, removalCount)
-      .map(({ index }) => index);
+    const isAppStoreMarketingDescription =
+      /\b(?:download now|why choose us|key features|welcome to .*your all-in-one|our goal is|with .* you can|we are committed to)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:cannot|can't|unable|blocked|error|fails?|broken|missing|unavailable|does not|doesn't|should|request|problem|issue)\b/iu.test(
+        normalized,
+      );
 
-    const indexesToRemove = new Set(rejectedIndexes);
+    /**
+     * Rejects educational media titles where "Crash Course" is a brand or
+     * lesson-series name, not an application failure. This must happen before
+     * deterministic problem extraction because removing the phrase only from
+     * keyword extraction does not prevent a false reliability problem.
+     */
+    const isCrashCourseEducationalMedia =
+      /\bcrash course\b/iu.test(normalized) &&
+      /\b(?:sociology|history|biology|chemistry|physics|psychology|economics|literature|education|episode|lesson|today we(?:'ll| will) explore)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:app|application|platform|software|website|system)\b[^.!?\n]{0,80}\b(?:crash(?:es|ed|ing)?|freeze|frozen)\b/iu.test(
+        normalized,
+      );
 
-    return evaluatedTexts.filter((_, index) => !indexesToRemove.has(index));
+    /**
+     * Rejects repository authorization/checklist receipts that describe
+     * packages, branches, checksums, tests, or deployment blockers rather than
+     * an independently observed learner problem.
+     */
+    const isRepositoryAuthorizationChecklist =
+      /\b(?:remaining hard blockers?|ratification|exact package\/?model versions?|checksums?|draft pr authorization|current-main|allowlist|non-synthetic use)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:branch|tests?|licenses?|dependency|cpu compatibility|privacy|retention|deletion|incident profile|#\d+)\b/iu.test(
+        normalized,
+      );
+
+    if (
+      isRepositoryInvestigation ||
+      isMachineOperationalReceipt ||
+      isRepositoryStatusOrRunbook ||
+      isAppStoreMarketingDescription ||
+      isCrashCourseEducationalMedia ||
+      isRepositoryAuthorizationChecklist
+    ) {
+      return true;
+    }
+
+    const hardTechnicalSignals = [
+      'connectionstrings',
+      'stacktrace',
+      'nullpointerexception',
+      'dotnet ef',
+      'msbuild',
+      'scaffolding',
+      'package com.',
+      'public class ',
+      'requestmapping',
+      'servlet',
+      'begin;',
+      'insert into ',
+      'delete from ',
+      'select * from ',
+      'residual stream',
+      'parameter-space bottleneck',
+      'layer-sensitivity',
+      'tokens per second',
+      'vram footprint',
+      'calibration dataset',
+      'goal divergence index',
+      'privateexactsha',
+      'expectedbasesha',
+      'expectedchangedfilecount',
+      'validationprofile',
+      'destructive resets',
+      'sql e2e',
+    ];
+    const hardSignalCount = hardTechnicalSignals.filter((signal) =>
+      normalized.includes(signal),
+    ).length;
+
+    const structuralSignalCount =
+      (normalized.match(/[{};<>]/gu)?.length ?? 0) +
+      (normalized.match(/```/gu)?.length ?? 0) * 3 +
+      (normalized.match(/\b(?:class|void|public|private|import|package)\b/gu)
+        ?.length ?? 0);
+
+    const longResearchLikeText =
+      normalized.length > 3_500 &&
+      [
+        'report',
+        'methodology',
+        'ablation',
+        'benchmark',
+        'architecture',
+        'dataset',
+        'hypothesis',
+      ].filter((signal) => normalized.includes(signal)).length >= 3;
+
+    return (
+      hardSignalCount >= 2 ||
+      structuralSignalCount >= 12 ||
+      longResearchLikeText
+    );
+  }
+
+  /**
+   * Rejects domain-adjacent material that is not usable community evidence.
+   *
+   * The rule distinguishes first-person complaints from promotional copy,
+   * political news, repository governance records, research reports, and
+   * third-party developer-program failures that only contain broad words such
+   * as "student" or "education".
+   */
+  private isNonComplaintContext(text: string): boolean {
+    const normalized = text.toLowerCase();
+
+    const firstPersonSignals = [
+      ' i ',
+      " i'm ",
+      " i've ",
+      ' my ',
+      ' me ',
+      ' we ',
+      ' our ',
+      'cannot',
+      "can't",
+      'unable',
+      'stuck',
+      'forced to',
+      'keeps ',
+      'does not ',
+      "doesn't ",
+    ];
+    const hasFirstPersonExperience = firstPersonSignals.some((signal) =>
+      ` ${normalized} `.includes(signal),
+    );
+
+    const actionableFeedbackSignals = [
+      'problem',
+      'issue',
+      'bug',
+      'error message',
+      'fails',
+      'failed',
+      'cannot',
+      "can't",
+      'unable',
+      'difficult',
+      'hard to',
+      'needs to',
+      'please ',
+      'improve',
+      'missing',
+      'blocked',
+      'crash',
+      'slow',
+      'confusing',
+      'not accessible',
+      'forced to',
+    ];
+    const hasActionableFeedback = actionableFeedbackSignals.some((signal) =>
+      normalized.includes(signal),
+    );
+
+    const promotionalSignals = [
+      'download now',
+      'ultimate guide',
+      'key features',
+      'trusted companion',
+      'leading provider',
+      'discover the',
+      'take control of',
+      'perfect for',
+      'feature-rich',
+      'our free ',
+      'disclaimer',
+      'is not affiliated',
+      'provides enhanced functionality',
+      'complete and feature-rich',
+      'manages everything',
+      'built for convenient access',
+      'receive push notifications',
+      'access all of your videos',
+      'end user license agreement',
+      'official resources',
+      'step-by-step application guidance',
+      'join millions of students',
+      'trusted by millions',
+      'why choose',
+      'unlock your potential',
+      'download the student planner',
+      'effortlessly manage',
+      'get better grades',
+      'available everywhere',
+      'top reviews',
+      'detailed features',
+      'designed to simplify',
+      'welcome to ',
+      'all-in-one application',
+      'all-in-one platform',
+      'award-winning',
+      'watch video lessons',
+      'earn certificates',
+      'start your learning adventure',
+      'join our communities',
+      'make screen time more meaningful',
+    ];
+    const promotionalSignalCount = promotionalSignals.filter((signal) =>
+      normalized.includes(signal),
+    ).length;
+
+    const repositorySignals = [
+      'implementation scope',
+      'acceptance criteria',
+      'testing requirements',
+      'emit event',
+      'contracts/',
+      'src/',
+      'expectedchangedfilecount',
+      'private repository',
+      'privatepr:',
+      'exact-head evidence',
+      'runner-local',
+      'artifact upload',
+      'typecheck/build',
+      'upgrade replay',
+      'implement student enrollment',
+      'successful enrollment',
+      'duplicate enrollment',
+      'persisted on-chain',
+      'stellar wallet',
+      'repo maintainers',
+      'review their application',
+      'assign @',
+      'affected modules:',
+      'expected behavior',
+      '## tasks',
+      '- [ ]',
+      'add tests verifying',
+      'implement an ',
+      'function that registers',
+      'function that updates',
+    ];
+    const repositorySignalCount = repositorySignals.filter((signal) =>
+      normalized.includes(signal),
+    ).length;
+
+    const politicalSignals = [
+      'government',
+      'minister',
+      'parliament',
+      'lok sabha',
+      'political party',
+      'representatives',
+      'election',
+      'ruling',
+      'resigns',
+      'protest',
+    ];
+    const productSoftwareSignals = [
+      'app',
+      'application',
+      'platform',
+      'website',
+      'portal',
+      'software',
+      'system',
+      'login',
+      'interface',
+    ];
+
+    const externalDeveloperProgramSignals = [
+      'github student developer pack',
+      'heroku platform credits',
+      'oauth access',
+      'claim my credits',
+      'billing information',
+    ];
+    const educationProductSignals = [
+      'learning app',
+      'education app',
+      'school app',
+      'student portal',
+      'learning platform',
+      'course platform',
+      'classroom',
+      'transcript',
+      'attendance',
+      'grades',
+    ];
+
+    const cybersecurityNewsSignals = [
+      'ransomware attack',
+      'data breach',
+      'breach compromised',
+      'attacker deleted',
+      'cyberattack',
+      'malware incident',
+      'h drive',
+      'j drive',
+      'personal information compromised',
+    ];
+    const newsReportSignals = [
+      'according to',
+      'reported that',
+      'bbc news',
+      'breaking news',
+      'suffered a ransomware attack',
+      'employee and student personal information',
+    ];
+    const isCybersecurityNews =
+      cybersecurityNewsSignals.some((signal) => normalized.includes(signal)) &&
+      (newsReportSignals.some((signal) => normalized.includes(signal)) ||
+        !hasFirstPersonExperience);
+
+    const storeCatalogueSignalCount = [
+      'key features',
+      'built for',
+      'access all of',
+      'download',
+      'privacy policy',
+      'end user license agreement',
+      'requires ios',
+      'please note',
+      'join millions',
+      'trusted by millions',
+      'why choose',
+      'detailed features',
+      'top reviews',
+      'available everywhere',
+      'get better grades',
+      'unlock your potential',
+      'pomodoro timer',
+      'deadline reminders',
+      'award-winning',
+      'all-in-one application',
+      'all-in-one platform',
+      'watch video lessons',
+      'earn certificates',
+      'start your learning adventure',
+      'join our communities',
+    ].filter((signal) => normalized.includes(signal)).length;
+
+    const looksLikeStoreDescription =
+      normalized.length > 420 &&
+      storeCatalogueSignalCount >= 2 &&
+      !(hasFirstPersonExperience && hasActionableFeedback);
+
+    const isPromotionalDescription =
+      promotionalSignalCount >= 2 &&
+      !(hasFirstPersonExperience && hasActionableFeedback);
+    const hasConcreteCurrentWorkflowFailure =
+      /\b(?:currently|at present|today|now)\b[^.!?]{0,220}\b(?:cancelled|canceled|pending|active queue|cannot|unable|misled|wrong status|incorrect status|still appears?|remains?)\b/iu.test(
+        normalized,
+      ) ||
+      /\b(?:user|administrator|institution|ministry|student|teacher|parent)\b[^.!?]{0,180}\b(?:cannot|unable|misled|forced to|sees?|receives?|encounters?)\b/iu.test(
+        normalized,
+      );
+
+    const looksLikeImplementationTask =
+      repositorySignalCount >= 2 &&
+      /\b(?:implementation|requirements?|acceptance criteria|testing requirements|expected behavior|tasks?|affected modules?|contracts\/|src\/|add tests?|emit event|function)\b/iu.test(
+        normalized,
+      );
+
+    /*
+     * A repository issue may contain a genuine user-facing problem and still
+     * be useful evidence. However, a solution-complete engineering ticket
+     * that names source paths, functions, exact code changes, and tests is an
+     * implementation artifact rather than independent community demand.
+     */
+    const codeArtifactSignals = [
+      /\b[a-z_][a-z0-9_]*\(\)/iu,
+      /\bcontracts\/[a-z0-9_./-]+/iu,
+      /\bsrc\/[a-z0-9_./-]+/iu,
+      /\b(?:affected modules?|implementation scope|testing requirements)\b/iu,
+      /\b(?:add|write|update|implement)\s+(?:unit\s+)?tests?\b/iu,
+      /\b(?:event struct|assertion logic|payload structure|ledger sequence)\b/iu,
+      /(?:^|\n)\s*[-*]\s*\[[ x]\]/iu,
+      /\b(?:stellar wave program|claim this issue|repo maintainers|assign @)\b/iu,
+    ];
+    const codeArtifactSignalCount = codeArtifactSignals.filter((pattern) =>
+      pattern.test(normalized),
+    ).length;
+
+    /**
+     * Detects repository tickets that already contain a near-complete product
+     * design. These records may mention a real user pain, but they are not
+     * independent demand evidence because they prescribe routes, components,
+     * files, infrastructure, tests, and rollout details for one repository.
+     */
+    const solutionBlueprintPatterns: readonly RegExp[] = [
+      /\bproposed implementation\b/iu,
+      /\bfiles to modify(?:\/create)?\b/iu,
+      /\bfrontend components?\b/iu,
+      /\bbackend(?: components?| implementation)?\b/iu,
+      /\b(?:phase|step)\s+\d+\b/iu,
+      /\bexpected impact\b/iu,
+      /\bcreate\s+`?(?:app|src|lib|components?|tests?)\//iu,
+      /\b(?:redis|websocket|server-sent events?|webrtc|playwright)\b/iu,
+      /\b(?:api tests?|e2e tests?|unit tests?|test fixtures?)\b/iu,
+      /\b(?:route\.js|manager\.js|service\.js|spec\.js|config\.js)\b/iu,
+    ];
+    const solutionBlueprintSignalCount = solutionBlueprintPatterns.filter(
+      (pattern) => pattern.test(normalized),
+    ).length;
+
+    const isSolutionCompleteRepositoryArtifact =
+      (looksLikeImplementationTask && codeArtifactSignalCount >= 2) ||
+      (normalized.length >= 900 && solutionBlueprintSignalCount >= 3) ||
+      solutionBlueprintSignalCount >= 5;
+
+    const isRepositoryGovernance =
+      (repositorySignalCount >= 2 &&
+        looksLikeImplementationTask &&
+        !hasConcreteCurrentWorkflowFailure) ||
+      isSolutionCompleteRepositoryArtifact;
+    const isPoliticalDiscussion =
+      politicalSignals.some((signal) => normalized.includes(signal)) &&
+      !productSoftwareSignals.some((signal) => normalized.includes(signal));
+    const isExternalDeveloperProgramIssue =
+      externalDeveloperProgramSignals.some((signal) =>
+        normalized.includes(signal),
+      ) &&
+      !educationProductSignals.some((signal) => normalized.includes(signal));
+    const isGenericPositiveDescription =
+      normalized.length > 500 &&
+      promotionalSignalCount >= 1 &&
+      !hasActionableFeedback;
+
+    const isGovernmentGuidePromotion =
+      /\b(?:fafsa|federal student aid guide|official resources|eligibility insights|deadline reminders)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:download|guide app|key features|trusted companion|disclaimer)\b/iu.test(
+        normalized,
+      );
+
+    const isGenericMediaOrPolicyHeadline =
+      /\b(?:global media|education system|education minister|government ruling|future generations)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:app|application|platform|portal|software|login|dashboard|lms)\b/iu.test(
+        normalized,
+      );
+
+    /*
+     * Reject institutional or store-catalogue descriptions that enumerate
+     * product capabilities but contain no concrete user-observed failure.
+     * These records often include domain words and therefore pass a simple
+     * relevance score even though they are marketing material rather than
+     * evidence of an unmet need.
+     */
+    const brochureFeatureSignals = [
+      'under the leadership of',
+      'is developed with the intention',
+      'this application comprises',
+      'on-demand learning',
+      'multimedia resources',
+      'with you can',
+      'app features',
+      'follow and create courses',
+      'designed to facilitate',
+      'empowering e-learning',
+      'our goal is to',
+      'successfully implemented',
+      'providing students with additional learning resources',
+      'learn on their own pace',
+      'communication allowing students and teachers',
+      'assessment providing ways',
+      'share courses fully offline',
+      'welcome to ',
+      'all-in-one application',
+      'all-in-one platform',
+      'watch video lessons',
+      'earn certificates',
+      'start your learning adventure',
+      'join our communities',
+      'award-winning educational app',
+    ];
+    const brochureFeatureSignalCount = brochureFeatureSignals.filter((signal) =>
+      normalized.includes(signal),
+    ).length;
+    const looksLikeInstitutionalProductBrochure =
+      normalized.length > 350 &&
+      brochureFeatureSignalCount >= 2 &&
+      !(hasFirstPersonExperience && hasActionableFeedback);
+
+    /*
+     * Generic opinions about education or AI are not software-failure
+     * evidence unless they describe a reproducible product behavior.
+     */
+    const hasConcreteSoftwareFailure =
+      /\b(?:app|application|platform|portal|software|system|tool|dashboard|lms)\b[^.!?]{0,180}\b(?:cannot|can't|unable|fails?|failed|wrong|incorrect|blocked|missing|crash(?:es|ed)?|slow|confusing|does not|doesn't)\b/iu.test(
+        normalized,
+      ) ||
+      /\b(?:cannot|can't|unable|blocked|forced to|wrong|incorrect)\b[^.!?]{0,180}\b(?:app|application|platform|portal|software|system|tool|dashboard|lms|feature|subscription|paywall)\b/iu.test(
+        normalized,
+      );
+
+    const isGenericEducationOpinion =
+      /\b(?:education differently|future generations|smaller classes|ai tutor|teacher relationships|hype-averse|count me skeptical)\b/iu.test(
+        normalized,
+      ) && !hasConcreteSoftwareFailure;
+
+    const isVaguePositiveReview =
+      /\b(?:great app|excellent|user friendly|best app|works perfectly|top 10)\b/iu.test(
+        normalized,
+      ) &&
+      /\b(?:minor bugs|some errors|hope the developers improve)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:when|after|before|while|screen|page|button|feature|login|upload|download|sync|subscription|country|subject)\b/iu.test(
+        normalized,
+      );
+
+    const isRepositoryClaimOrAssignment =
+      /\b(?:stellar wave program|claim this issue|repo maintainers|review their application|assign @)\b/iu.test(
+        normalized,
+      );
+
+    /**
+     * Rejects repository work items that prescribe implementation rather than
+     * report independent user-observed demand. The detector intentionally uses
+     * several independent signals so short bug reports with a real workflow
+     * symptom remain available to the NLP pipeline.
+     */
+    const repositoryWorkItemPatterns: readonly RegExp[] = [
+      /\bimplementation requirements?\b/iu,
+      /\btechnical specifications?\b/iu,
+      /\bacceptance criteria\b/iu,
+      /\bproposed implementation\b/iu,
+      /\bfiles to modify(?:\/create)?\b/iu,
+      /\b(?:phase|step)\s+\d+\b/iu,
+      /\bexpected impact\b/iu,
+      /\b(?:e2e|end-to-end|unit|integration|performance) tests?\b/iu,
+      /\b(?:playwright|jest|vitest|cypress)\b/iu,
+      /\b(?:next\.js|react|typescript|redis|webrtc|websocket|sse)\b/iu,
+      /\b(?:route|manager|service|controller|component|fixture|config)\.(?:js|ts|jsx|tsx)\b/iu,
+      /(?:^|\n)\s*[-*]\s*\[[ x]\]/iu,
+      /\b(?:timeline|difficulty level|build skills|depends on)\b/iu,
+    ];
+    const repositoryWorkItemSignalCount = repositoryWorkItemPatterns.filter(
+      (pattern) => pattern.test(normalized),
+    ).length;
+    const isPrescriptiveRepositoryWorkItem =
+      repositoryWorkItemSignalCount >= 4 ||
+      (normalized.length >= 700 && repositoryWorkItemSignalCount >= 3);
+
+    /**
+     * Detects full product-requirement documents and implementation plans.
+     *
+     * A PRD can contain convincing first-person user stories, complaint-like
+     * language, and domain terminology. Those phrases must not make the
+     * document count as independent community evidence when the same text also
+     * prescribes routes, services, schema decisions, tests, and out-of-scope
+     * items. Requiring several structural sections keeps short issue reports
+     * and genuine user reviews eligible.
+     */
+    const productSpecificationSectionPatterns: readonly RegExp[] = [
+      /(?:^|\n)\s*#{0,4}\s*problem statement\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*solution\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*user stories\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*implementation decisions?\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*testing decisions?\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*out of scope\b/iu,
+      /(?:^|\n)\s*#{0,4}\s*(?:ui layout|route-level testing|further notes)\b/iu,
+      /\bnew route:\s*`?[^\s`]+/iu,
+      /\btest file:\s*`?[^\s`]+/iu,
+      /\bno schema changes\b/iu,
+      /\bwhat makes a good test\b/iu,
+    ];
+    const productSpecificationSectionCount =
+      productSpecificationSectionPatterns.filter((pattern) =>
+        pattern.test(normalized),
+      ).length;
+
+    const userStoryCount =
+      normalized.match(/\bas an?\s+[a-z][^.!?\n]{0,90}\bi want\b/giu)?.length ??
+      0;
+
+    const implementationArtifactCount = [
+      /\b(?:loader|controller|service|component|route|schema|migration)\b/iu,
+      /\b(?:vitest|jest|playwright|cypress|sqlite|drizzle|prisma)\b/iu,
+      /\b(?:api|database|table|column|query|function)\b/iu,
+      /`[^`]+\.(?:ts|tsx|js|jsx|sql)`/iu,
+      /\b(?:acceptance criteria|implementation decisions?|testing decisions?)\b/iu,
+    ].filter((pattern) => pattern.test(normalized)).length;
+
+    const isProductRequirementsDocument =
+      productSpecificationSectionCount >= 4 ||
+      (normalized.length >= 1_200 &&
+        productSpecificationSectionCount >= 3 &&
+        implementationArtifactCount >= 2) ||
+      (normalized.length >= 1_500 &&
+        userStoryCount >= 4 &&
+        implementationArtifactCount >= 3);
+
+    return (
+      isPromotionalDescription ||
+      isRepositoryGovernance ||
+      isPoliticalDiscussion ||
+      isExternalDeveloperProgramIssue ||
+      isGenericPositiveDescription ||
+      isCybersecurityNews ||
+      looksLikeStoreDescription ||
+      isGovernmentGuidePromotion ||
+      isGenericMediaOrPolicyHeadline ||
+      looksLikeInstitutionalProductBrochure ||
+      isGenericEducationOpinion ||
+      isVaguePositiveReview ||
+      isRepositoryClaimOrAssignment ||
+      isPrescriptiveRepositoryWorkItem ||
+      isProductRequirementsDocument
+    );
   }
 
   /**

@@ -11,7 +11,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
@@ -32,8 +31,21 @@ export class GenerateGuestIdeaDto {
   /**
    * Software domain selected by the guest.
    */
+  @IsOptional()
   @IsUUID('4')
-  domainId!: string;
+  domainId?: string;
+
+  /**
+   * Optional free-text description used to resolve one concrete domain when
+   * domainId is omitted or points to the General domain.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  @Transform(({ value }: TransformFnParams): unknown =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  description?: string;
 
   /**
    * Country associated with the collection request.
@@ -82,34 +94,6 @@ export class GenerateGuestIdeaDto {
    */
   @IsEnum(LanguageCode)
   language!: LanguageCode;
-
-  /**
-   * Optional data-source keys selected by the guest.
-   */
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @IsString({ each: true })
-  @MaxLength(50, { each: true })
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    each: true,
-    message: 'Each data source key must use lowercase kebab-case characters.',
-  })
-  @Transform(({ value }: TransformFnParams): unknown => {
-    if (!Array.isArray(value)) {
-      return value;
-    }
-
-    return [
-      ...new Set(
-        value
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    ];
-  })
-  dataSourceKeys?: string[];
 
   /**
    * Forces the pipeline to ignore compatible historical collection jobs

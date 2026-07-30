@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 
 import { CreditCacheService } from '../../credits/services/credit-cache.service';
+import { IdeaPublicationAcceptanceService } from '../../ideas/publication/services/idea-publication-acceptance.service';
 import { IdeaUnlockService } from '../../ideas/outputs/services/idea-unlock.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -32,6 +33,12 @@ type ProcessablePayment = {
   readonly id: string;
   readonly userId: string;
   readonly ideaId: string | null;
+  readonly publicationId: string | null;
+  readonly acceptanceCountry: string | null;
+  readonly acceptanceCity: string | null;
+  readonly acceptanceRegion: string | null;
+  readonly idempotencyKey: string | null;
+  readonly activatesPremium: boolean;
 
   readonly amount: Prisma.Decimal;
   readonly currency: string;
@@ -58,6 +65,7 @@ type ProcessablePayment = {
  * - Update the internal payment status.
  * - Delegate credit-purchase fulfillment.
  * - Delegate direct-unlock fulfillment.
+ * - Delegate paid publication-acceptance fulfillment.
  * - Invalidate credit-related caches after successful commits.
  * - Dispatch payment email notifications after successful commits.
  *
@@ -82,6 +90,8 @@ export class PaymentProcessingService {
     private readonly directUnlockPaymentService: DirectUnlockPaymentService,
 
     private readonly ideaUnlockService: IdeaUnlockService,
+
+    private readonly publicationAcceptanceService: IdeaPublicationAcceptanceService,
 
     private readonly creditCacheService: CreditCacheService,
 
@@ -411,6 +421,13 @@ export class PaymentProcessingService {
 
         creditsAmount: true,
         bonusCreditsAmount: true,
+        activatesPremium: true,
+
+        publicationId: true,
+        acceptanceCountry: true,
+        acceptanceCity: true,
+        acceptanceRegion: true,
+        idempotencyKey: true,
 
         providerPaymentId: true,
         providerSessionId: true,
@@ -490,6 +507,7 @@ export class PaymentProcessingService {
             creditsAmount: payment.creditsAmount,
 
             bonusCreditsAmount: payment.bonusCreditsAmount,
+            activatesPremium: payment.activatesPremium,
           },
           tx,
         );
@@ -541,6 +559,32 @@ export class PaymentProcessingService {
 
           ideaUnlocked: false,
           unlockCompletedNow: false,
+        };
+      }
+
+      case PaymentPurpose.ACCEPT_PUBLICATION: {
+        await this.publicationAcceptanceService.fulfillNormalAcceptance(
+          {
+            id: payment.id,
+            userId: payment.userId,
+            publicationId: payment.publicationId,
+            acceptanceCountry: payment.acceptanceCountry,
+            acceptanceCity: payment.acceptanceCity,
+            acceptanceRegion: payment.acceptanceRegion,
+            clientRequestId: payment.idempotencyKey,
+          },
+          tx,
+        );
+
+        return {
+          paymentId: payment.id,
+          userId: payment.userId,
+          paymentPurpose: PaymentPurpose.ACCEPT_PUBLICATION,
+          status: PaymentStatus.SUCCEEDED,
+          alreadyProcessed: false,
+          creditBalanceChanged: false,
+          publicationId: payment.publicationId ?? undefined,
+          publicationAccepted: true,
         };
       }
 

@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: npx create-db
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,17 +7,1374 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/**
- * ENUMS
- */
+model DataSource {
+  id                   String                @id @default(uuid())
+  /// *
+  /// * Stable code identifier used by the backend registry.
+  /// * Examples: youtube, github, dev-to, google-play.
+  key                  String                @unique
+  displayName          String                @map("display_name")
+  description          String?
+  isActive             Boolean               @default(true) @map("is_active")
+  /// *
+  /// * Indicates whether the collector implementation is currently
+  /// * available in the deployed backend.
+  isImplemented        Boolean               @default(false) @map("is_implemented")
+  supportsPosts        Boolean               @default(true) @map("supports_posts")
+  supportsComments     Boolean               @default(false) @map("supports_comments")
+  supportsRegion       Boolean               @default(false) @map("supports_region")
+  supportsLanguage     Boolean               @default(false) @map("supports_language")
+  configuration        Json?
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  collectionJobSources CollectionJobSource[]
+  socialPosts          SocialPost[]
+
+  @@index([isActive])
+  @@index([isImplemented])
+  @@map("data_sources")
+}
+
+model CollectionJobSource {
+  id              String              @id @default(uuid())
+  collectionJobId String              @map("collection_job_id")
+  dataSourceId    String              @map("data_source_id")
+  status          CollectionJobStatus @default(PENDING)
+  totalPosts      Int                 @default(0) @map("total_posts")
+  totalComments   Int                 @default(0) @map("total_comments")
+  startedAt       DateTime?           @map("started_at")
+  completedAt     DateTime?           @map("completed_at")
+  failureReason   String?             @map("failure_reason")
+  collectionJob   CollectionJob       @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+  dataSource      DataSource          @relation(fields: [dataSourceId], references: [id])
+
+  @@unique([collectionJobId, dataSourceId])
+  @@index([collectionJobId])
+  @@index([dataSourceId])
+  @@index([status])
+  @@map("collection_job_sources")
+}
+
+model User {
+  id                          String                      @id @default(uuid())
+  fullName                    String                      @map("full_name")
+  email                       String                      @unique
+  passwordHash                String                      @map("password_hash")
+  role                        UserRole                    @default(USER)
+  accountStatus               AccountStatus               @default(NORMAL) @map("account_status")
+  freeGenerationLimit         Int                         @default(3) @map("free_generation_limit")
+  freeGenerationsUsed         Int                         @default(0) @map("free_generations_used")
+  creditBalance               Int                         @default(0) @map("credit_balance")
+  isActive                    Boolean                     @default(true) @map("is_active")
+  isVerified                  Boolean                     @default(false) @map("is_verified")
+  createdAt                   DateTime                    @default(now()) @map("created_at")
+  updatedAt                   DateTime                    @updatedAt @map("updated_at")
+  failedLoginAttempts         Int                         @default(0) @map("failed_login_attempts")
+  lockedUntil                 DateTime?                   @map("locked_until")
+  emailVerifiedAt             DateTime?                   @map("email_verified_at")
+  lastLoginAt                 DateTime?                   @map("last_login_at")
+  passwordChangedAt           DateTime?                   @map("password_changed_at")
+  userType                    UserType
+  failedLoginWindowStartedAt  DateTime?                   @map("failed_login_window_started_at")
+  loginLockLevel              Int                         @default(0) @map("login_lock_level")
+  deletedAt                   DateTime?                   @map("deleted_at")
+  verificationEmailSentAt     DateTime?                   @map("verification_email_sent_at")
+  premiumActivatedAt          DateTime?                   @map("premium_activated_at")
+  alerts                      Alert[]
+  auditLogs                   AuditLog[]                  @relation("AuditLogs")
+  authenticationLogs          AuthenticationLog[]
+  chatSessions                ChatSession[]
+  collectionJobs              CollectionJob[]             @relation("CollectionJobsCreatedBy")
+  complaints                  Complaint[]
+  contactMessages             ContactMessage[]
+  creditTransactions          CreditTransaction[]
+  emailVerificationTokens     EmailVerificationToken[]
+  externalApiLogs             ExternalApiLog[]
+  favoriteIdeas               FavoriteIdea[]
+  generationRuns              IdeaGenerationRun[]
+  publicationAcceptances      IdeaPublicationAcceptance[]
+  publicationFeedback         IdeaPublicationFeedback[]
+  publicationRatings          IdeaPublicationRating[]
+  publicationReportsSubmitted IdeaPublicationReport[]     @relation("PublicationReportsSubmitted")
+  publicationReportsReviewed  IdeaPublicationReport[]     @relation("PublicationReportsReviewed")
+  publicationVotes            IdeaPublicationVote[]
+  publishedIdeas              IdeaPublication[]           @relation("PublishedIdeas")
+  ideas                       Idea[]
+  passwordResetTokens         PasswordResetToken[]
+  payments                    Payment[]
+  promptHistories             PromptHistory[]
+  refreshTokens               RefreshToken[]
+  savedGenerationSearches     SavedGenerationSearch[]
+  updatedSettings             SystemSetting[]             @relation("SettingsUpdatedBy")
+  devices                     UserDevice[]
+  preferenceSelections        UserPreferenceSelection[]
+  preference                  UserPreference?
+
+  @@index([lockedUntil])
+  @@index([loginLockLevel])
+  @@map("users")
+}
+
+model UserDevice {
+  id         String         @id @default(uuid())
+  userId     String         @map("user_id")
+  fcmToken   String         @unique @map("fcm_token")
+  platform   DevicePlatform
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  lastUsedAt DateTime?      @map("last_used_at")
+  revokedAt  DateTime?      @map("revoked_at")
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([platform])
+  @@index([userId, revokedAt])
+  @@map("user_devices")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  ipAddress  String?   @map("ip_address")
+  lastUsedAt DateTime? @map("last_used_at")
+  userAgent  String?   @map("user_agent")
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("refresh_tokens")
+}
+
+/// *
+/// * Password Reset Token
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@map("password_reset_tokens")
+}
+
+model SystemSetting {
+  id                            String   @id @default(uuid())
+  /// *
+  /// * Price of one credit.
+  /// * One credit allows one premium idea generation.
+  creditPrice                   Decimal  @map("credit_price") @db.Decimal(10, 2)
+  /// *
+  /// * Minimum number of purchased credits required
+  /// * to receive bonus credits.
+  bonusThreshold                Int      @default(0) @map("bonus_threshold")
+  /// *
+  /// * Number of bonus credits granted when the
+  /// * configured threshold is reached.
+  bonusCredits                  Int      @default(0) @map("bonus_credits")
+  updatedById                   String?  @map("updated_by")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+  ideaPromptTemplate            String?  @map("idea_prompt_template")
+  /// *
+  /// * Guarantees that only one global system-settings row exists.
+  key                           String   @unique @default("GLOBAL")
+  /// *
+  /// * Price paid directly to unlock advanced features
+  /// * for one previously generated free idea.
+  /// * This payment does not purchase or consume credits.
+  directUnlockPrice             Decimal  @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
+  /// *
+  /// * Activation fee charged when a NORMAL account transitions to Premium.
+  premiumActivationFee          Decimal  @default(5) @map("premium_activation_fee") @db.Decimal(10, 2)
+  /// *
+  /// * Credits consumed when a Premium user unlocks advanced outputs for an accepted publication.
+  publicationAdvancedCreditCost Int      @default(1) @map("publication_advanced_credit_cost")
+  /// *
+  /// * Fixed price paid by a normal registered user to accept a published idea and unlock all details.
+  publishedIdeaPrice            Decimal  @default(15) @map("published_idea_price") @db.Decimal(10, 2)
+  updatedBy                     User?    @relation("SettingsUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("system_settings")
+}
+
+model BusinessModelTemplate {
+  id                 String              @id @default(uuid())
+  /// *
+  /// * Stable backend key used by prompts and frontend selection.
+  key                String              @unique
+  name               String
+  description        String?
+  /// *
+  /// * Ordered canvas sections rendered by the generated business-model output.
+  sections           Json
+  /// *
+  /// * Optional template-specific prompt guidance and validation rules.
+  promptGuidance     Json?               @map("prompt_guidance")
+  /// *
+  /// * Optional UserType names for automatic recommendation.
+  supportedUserTypes Json?               @map("supported_user_types")
+  /// *
+  /// * Optional domain names for automatic recommendation.
+  supportedDomains   Json?               @map("supported_domains")
+  isActive           Boolean             @default(true) @map("is_active")
+  isDefault          Boolean             @default(false) @map("is_default")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  businessModels     IdeaBusinessModel[]
+
+  @@index([isActive, isDefault])
+  @@map("business_model_templates")
+}
+
+model AuditLog {
+  id         String          @id @default(uuid())
+  actorId    String?         @map("actor_id")
+  action     AuditAction
+  targetType AuditTargetType @map("target_type")
+  targetId   String?         @map("target_id")
+  oldValue   Json?           @map("old_value")
+  newValue   Json?           @map("new_value")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  actor      User?           @relation("AuditLogs", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType])
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+model GuestSession {
+  id              String              @id @default(uuid())
+  /// *
+  /// * Public random identifier stored in a secure HTTP-only cookie.
+  sessionToken    String              @unique @map("session_token")
+  hasGenerated    Boolean             @default(false) @map("has_generated")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  expiresAt       DateTime?           @map("expires_at")
+  /// *
+  /// * One-way hash derived from request information.
+  /// * Prevents the same guest client from repeatedly creating
+  /// * new sessions after consuming the free guest generation.
+  fingerprintHash String              @unique @map("fingerprint_hash")
+  generationRuns  IdeaGenerationRun[]
+  ideas           Idea[]
+  promptHistories PromptHistory[]
+
+  @@index([expiresAt])
+  @@map("guest_sessions")
+}
+
+model Idea {
+  id                 String              @id @default(uuid())
+  userId             String?             @map("user_id")
+  guestSessionId     String?             @map("guest_session_id")
+  title              String
+  limitedAbstract    String?             @map("limited_abstract")
+  partialAbstract    String?             @map("partial_abstract")
+  fullAbstract       String?             @map("full_abstract")
+  problemStatement   String?             @map("problem_statement")
+  generationType     IdeaGenerationType  @map("generation_type")
+  isUnlocked         Boolean             @default(false) @map("is_unlocked")
+  unlockMethod       UnlockMethod        @default(NONE) @map("unlock_method")
+  unlockedAt         DateTime?           @map("unlocked_at")
+  commentsCount      Int                 @default(0) @map("comments_count")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  selectedRegion     String?             @map("selected_region")
+  domainId           String              @map("domain_id")
+  collectionJobId    String?             @map("collection_job_id")
+  deletedAt          DateTime?           @map("deleted_at")
+  objectives         Json?
+  targetUsers        Json?               @map("target_users")
+  chatSessions       ChatSession[]
+  complaints         Complaint[]
+  creditTransactions CreditTransaction[]
+  externalApiLogs    ExternalApiLog[]
+  favorites          FavoriteIdea[]
+  generatedOutputs   GeneratedOutput[]
+  businessModels     IdeaBusinessModel[]
+  generationRun      IdeaGenerationRun?
+  publication        IdeaPublication?
+  collectionJob      CollectionJob?      @relation(fields: [collectionJobId], references: [id])
+  domain             Domain              @relation(fields: [domainId], references: [id])
+  guestSession       GuestSession?       @relation(fields: [guestSessionId], references: [id], onDelete: Restrict)
+  user               User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments           Payment[]
+  promptHistories    PromptHistory[]
+
+  @@index([userId, createdAt])
+  @@index([guestSessionId])
+  @@index([generationType])
+  @@index([isUnlocked])
+  @@index([collectionJobId])
+  @@map("ideas")
+}
+
+model Payment {
+  id                             String                     @id @default(uuid())
+  userId                         String                     @map("user_id")
+  ideaId                         String?                    @map("idea_id")
+  amount                         Decimal                    @db.Decimal(10, 2)
+  currency                       String                     @default("USD")
+  status                         PaymentStatus              @default(PENDING)
+  paymentPurpose                 PaymentPurpose             @map("payment_purpose")
+  creditsAmount                  Int                        @default(0) @map("credits_amount")
+  creditPriceAtPurchase          Decimal?                   @map("credit_price_at_purchase") @db.Decimal(10, 2)
+  transactionReference           String?                    @map("transaction_reference")
+  createdAt                      DateTime                   @default(now()) @map("created_at")
+  updatedAt                      DateTime                   @updatedAt @map("updated_at")
+  bonusCreditsAmount             Int                        @default(0) @map("bonus_credits_amount")
+  failedAt                       DateTime?                  @map("failed_at")
+  failureReason                  String?                    @map("failure_reason")
+  paidAt                         DateTime?                  @map("paid_at")
+  providerPaymentId              String?                    @unique @map("provider_payment_id")
+  providerSessionId              String?                    @unique @map("provider_session_id")
+  refundedAt                     DateTime?                  @map("refunded_at")
+  idempotencyKey                 String?                    @unique @map("idempotency_key")
+  /// *
+  /// * User-facing method.
+  /// * Examples: card, paypal.
+  paymentMethodKey               String                     @map("payment_method_key")
+  /// *
+  /// * Backend gateway implementation.
+  /// * Examples: stripe, paypal.
+  providerKey                    String                     @map("provider_key")
+  acceptanceCity                 String?                    @map("acceptance_city")
+  /// *
+  /// * Location snapshot used only when fulfilling a publication acceptance.
+  acceptanceCountry              String?                    @map("acceptance_country")
+  acceptanceRegion               String?                    @map("acceptance_region")
+  activatesPremium               Boolean                    @default(false) @map("activates_premium")
+  premiumActivationFeeAtPurchase Decimal?                   @map("premium_activation_fee_at_purchase") @db.Decimal(10, 2)
+  publicationId                  String?                    @map("publication_id")
+  creditTransactions             CreditTransaction[]
+  publicationAcceptance          IdeaPublicationAcceptance?
+  idea                           Idea?                      @relation(fields: [ideaId], references: [id])
+  publication                    IdeaPublication?           @relation(fields: [publicationId], references: [id])
+  user                           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([ideaId])
+  @@index([publicationId])
+  @@index([status])
+  @@index([providerKey])
+  @@index([paymentMethodKey])
+  @@index([paymentPurpose])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model CreditTransaction {
+  id                      String                     @id @default(uuid())
+  userId                  String                     @map("user_id")
+  paymentId               String?                    @map("payment_id")
+  ideaId                  String?                    @map("idea_id")
+  type                    CreditTransactionType
+  amount                  Int
+  balanceAfter            Int                        @map("balance_after")
+  description             String?
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  publicationAcceptanceId String?                    @map("publication_acceptance_id")
+  idea                    Idea?                      @relation(fields: [ideaId], references: [id])
+  payment                 Payment?                   @relation(fields: [paymentId], references: [id])
+  publicationAcceptance   IdeaPublicationAcceptance? @relation(fields: [publicationAcceptanceId], references: [id])
+  user                    User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, type])
+  @@index([userId])
+  @@index([paymentId])
+  @@index([ideaId])
+  @@index([publicationAcceptanceId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("credit_transactions")
+}
+
+model ChatSession {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  ideaId        String        @map("idea_id")
+  title         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  deletedAt     DateTime?     @map("deleted_at")
+  lastMessageAt DateTime      @default(now()) @map("last_message_at")
+  messages      ChatMessage[]
+  idea          Idea          @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deletedAt, lastMessageAt])
+  @@index([ideaId, deletedAt])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id              String            @id @default(uuid())
+  sessionId       String            @map("session_id")
+  sender          ChatSender
+  message         String
+  createdAt       DateTime          @default(now()) @map("created_at")
+  completedAt     DateTime?         @map("completed_at")
+  deletedAt       DateTime?         @map("deleted_at")
+  errorCode       String?           @map("error_code")
+  errorMessage    String?           @map("error_message")
+  status          ChatMessageStatus @default(COMPLETED)
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  /// *
+  /// * Identifier generated by the frontend for idempotent user-message
+  /// * submission. AI messages do not require this value.
+  clientRequestId String?           @map("client_request_id")
+  session         ChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, clientRequestId])
+  @@index([sessionId, deletedAt, createdAt])
+  @@index([sessionId, status])
+  @@map("chat_messages")
+}
+
+model Alert {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  title     String
+  message   String
+  type      AlertType @default(SYSTEM)
+  isRead    Boolean   @default(false) @map("is_read")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+model Complaint {
+  id         String            @id @default(uuid())
+  userId     String            @map("user_id")
+  ideaId     String?           @map("idea_id")
+  subject    String
+  message    String
+  status     ComplaintStatus   @default(OPEN)
+  priority   ComplaintPriority @default(MEDIUM)
+  adminReply String?           @map("admin_reply")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+  resolvedAt DateTime?         @map("resolved_at")
+  deletedAt  DateTime?         @map("deleted_at")
+  idea       Idea?             @relation(fields: [ideaId], references: [id])
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, deletedAt, createdAt])
+  @@index([ideaId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("complaints")
+}
+
+model ExternalApiLog {
+  id              String                  @id @default(uuid())
+  userId          String?                 @map("user_id")
+  ideaId          String?                 @map("idea_id")
+  endpoint        String?
+  requestType     ApiRequestType          @map("request_type")
+  statusCode      Int?                    @map("status_code")
+  isSuccess       Boolean                 @default(false) @map("is_success")
+  responseTimeMs  Int?                    @map("response_time_ms")
+  errorMessage    String?                 @map("error_message")
+  costEstimate    Decimal?                @map("cost_estimate") @db.Decimal(12, 6)
+  createdAt       DateTime                @default(now()) @map("created_at")
+  requestId       String?                 @map("request_id")
+  aiModelId       String?                 @map("ai_model_id")
+  apiModelId      String?                 @map("api_model_id")
+  inputTokens     Int?                    @map("input_tokens")
+  outputTokens    Int?                    @map("output_tokens")
+  attemptNumber   Int                     @default(1) @map("attempt_number")
+  fallbackUsed    Boolean                 @default(false) @map("fallback_used")
+  operationId     String?                 @map("operation_id")
+  providerKey     String                  @map("provider_key")
+  serviceCategory ExternalServiceCategory @map("service_category")
+  errorCode       String?                 @map("error_code")
+  isRetryable     Boolean?                @map("is_retryable")
+  aiModel         AiModel?                @relation(fields: [aiModelId], references: [id])
+  idea            Idea?                   @relation(fields: [ideaId], references: [id])
+  user            User?                   @relation(fields: [userId], references: [id])
+
+  @@index([aiModelId, createdAt])
+  @@index([operationId])
+  @@index([operationId, attemptNumber])
+  @@index([providerKey, createdAt])
+  @@index([errorCode, createdAt])
+  @@index([isRetryable, createdAt])
+  @@index([serviceCategory, createdAt])
+  @@index([requestType, createdAt])
+  @@index([isSuccess, createdAt])
+  @@index([userId, createdAt])
+  @@index([ideaId, createdAt])
+  @@map("external_api_logs")
+}
+
+model Domain {
+  id                      String                  @id @default(uuid())
+  name                    String                  @unique
+  isActive                Boolean                 @default(true) @map("is_active")
+  createdAt               DateTime                @default(now()) @map("created_at")
+  updatedAt               DateTime                @updatedAt @map("updated_at")
+  collectionJobs          CollectionJob[]
+  domainKeywords          DomainKeyword[]
+  ideas                   Idea[]
+  topicRules              NlpTopicRule[]
+  savedGenerationSearches SavedGenerationSearch[]
+
+  @@map("domains")
+}
+
+model DomainKeyword {
+  id        String       @id @default(uuid())
+  domainId  String       @map("domain_id")
+  keyword   String
+  createdAt DateTime     @default(now()) @map("created_at")
+  language  LanguageCode @default(ANY)
+  domain    Domain       @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([domainId, keyword, language])
+  @@index([domainId])
+  @@index([language])
+  @@map("domain_keywords")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@map("email_verification_tokens")
+}
+
+model AuthenticationLog {
+  id        String     @id @default(uuid())
+  userId    String?    @map("user_id")
+  action    AuthAction
+  email     String?
+  isSuccess Boolean    @default(true) @map("is_success")
+  message   String?
+  createdAt DateTime   @default(now()) @map("created_at")
+  ipAddress String?    @map("ip_address")
+  userAgent String?    @map("user_agent")
+  user      User?      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([email])
+  @@index([createdAt])
+  @@map("authentication_logs")
+}
+
+model CollectionJob {
+  id                         String                 @id @default(uuid())
+  domainId                   String                 @map("domain_id")
+  country                    String?
+  city                       String?
+  region                     String?
+  radiusKm                   Int?                   @map("radius_km")
+  keywords                   Json?
+  status                     CollectionJobStatus    @default(PENDING)
+  totalPosts                 Int                    @default(0) @map("total_posts")
+  totalComments              Int                    @default(0) @map("total_comments")
+  startedAt                  DateTime?              @map("started_at")
+  completedAt                DateTime?              @map("completed_at")
+  failedReason               String?                @map("failed_reason")
+  createdAt                  DateTime               @default(now()) @map("created_at")
+  updatedAt                  DateTime               @updatedAt @map("updated_at")
+  language                   LanguageCode
+  /// *
+  /// * User who started or owns this collection job.
+  /// * Nullable to support guest, internal, and legacy jobs.
+  createdById                String?                @map("created_by_id")
+  domainResolutionConfidence Decimal?               @map("domain_resolution_confidence") @db.Decimal(4, 3)
+  domainResolutionSource     DomainResolutionSource @default(USER_SELECTED) @map("domain_resolution_source")
+  userDescription            String?                @map("user_description")
+  sources                    CollectionJobSource[]
+  createdBy                  User?                  @relation("CollectionJobsCreatedBy", fields: [createdById], references: [id])
+  domain                     Domain                 @relation(fields: [domainId], references: [id])
+  generationRuns             IdeaGenerationRun[]
+  ideas                      Idea[]
+  nlpAnalysis                NlpAnalysis?
+  promptHistories            PromptHistory[]
+  posts                      SocialPost[]
+
+  @@index([createdById])
+  @@index([domainId])
+  @@index([country])
+  @@index([status])
+  @@index([createdAt])
+  @@map("collection_jobs")
+}
+
+model SocialPost {
+  id              String          @id @default(uuid())
+  collectionJobId String          @map("collection_job_id")
+  externalId      String          @map("external_id")
+  title           String?
+  content         String
+  author          String?
+  url             String?
+  country         String?
+  city            String?
+  region          String?
+  likesCount      Int             @default(0) @map("likes_count")
+  repliesCount    Int             @default(0) @map("replies_count")
+  publishedAt     DateTime?       @map("published_at")
+  collectedAt     DateTime        @default(now()) @map("collected_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  dataSourceId    String          @map("data_source_id")
+  languageCode    String?         @map("language_code")
+  comments        SocialComment[]
+  collectionJob   CollectionJob   @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+  dataSource      DataSource      @relation(fields: [dataSourceId], references: [id])
+
+  @@unique([collectionJobId, dataSourceId, externalId])
+  @@index([collectionJobId])
+  @@index([dataSourceId])
+  @@index([country])
+  @@index([region])
+  @@index([languageCode])
+  @@map("social_posts")
+}
+
+model SocialComment {
+  id           String     @id @default(uuid())
+  postId       String     @map("post_id")
+  externalId   String     @map("external_id")
+  content      String
+  author       String?
+  sentiment    String?
+  likesCount   Int        @default(0) @map("likes_count")
+  publishedAt  DateTime?  @map("published_at")
+  collectedAt  DateTime   @default(now()) @map("collected_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  languageCode String?    @map("language_code")
+  post         SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, externalId])
+  @@index([postId])
+  @@index([languageCode])
+  @@index([sentiment])
+  @@map("social_comments")
+}
+
+model NlpAnalysis {
+  id                    String        @id @default(uuid())
+  collectionJobId       String        @unique @map("collection_job_id")
+  totalTextsAnalyzed    Int           @default(0) @map("total_texts_analyzed")
+  sentimentStats        Json          @map("sentiment_stats")
+  keywords              Json
+  topics                Json?
+  recurringProblems     Json          @map("recurring_problems")
+  extractedNeeds        Json?         @map("extracted_needs")
+  featureRequests       Json?         @map("feature_requests")
+  opportunities         Json?
+  insights              Json?
+  dataQuality           Json?         @map("data_quality")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  totalCommentsAnalyzed Int           @default(0) @map("total_comments_analyzed")
+  totalPostsAnalyzed    Int           @default(0) @map("total_posts_analyzed")
+  aiUsed                Boolean       @default(false) @map("ai_used")
+  confidence            Decimal?      @db.Decimal(4, 3)
+  sampleComments        Json?         @map("sample_comments")
+  samplePosts           Json?         @map("sample_posts")
+  aiModelId             String?       @map("ai_model_id")
+  qualityWarnings       Json?         @map("quality_warnings")
+  collectionJob         CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
+
+  @@map("nlp_analyses")
+}
+
+model PromptHistory {
+  id                   String             @id @default(uuid())
+  /// *
+  /// * Collection job supplying the persisted NLP analysis.
+  collectionJobId      String?            @map("collection_job_id")
+  /// *
+  /// * Idea associated with this prompt-history record.
+  ideaId               String?            @map("idea_id")
+  /// *
+  /// * Determines the operation for which the prompt was built.
+  promptType           PromptType         @map("prompt_type")
+  /// *
+  /// * Complete rendered prompt sent to the AI provider.
+  promptText           String             @map("prompt_text")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  /// *
+  /// * Estimated number of input tokens in the rendered prompt.
+  estimatedInputTokens Int?               @map("estimated_input_tokens")
+  /// *
+  /// * SHA-256 hash of the template used to build the prompt.
+  templateHash         String?            @map("template_hash")
+  /// *
+  /// * Guest session that requested the prompt.
+  /// * Null when the prompt was requested by an authenticated user.
+  guestSessionId       String?            @map("guest_session_id")
+  /// *
+  /// * Registered user who requested the prompt.
+  /// * Null when the prompt was requested by a guest session.
+  userId               String?            @map("user_id")
+  generationRunId      String?            @map("generation_run_id")
+  collectionJob        CollectionJob?     @relation(fields: [collectionJobId], references: [id])
+  generationRun        IdeaGenerationRun? @relation(fields: [generationRunId], references: [id])
+  guestSession         GuestSession?      @relation(fields: [guestSessionId], references: [id])
+  idea                 Idea?              @relation(fields: [ideaId], references: [id])
+  user                 User?              @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([guestSessionId])
+  @@index([collectionJobId])
+  @@index([ideaId])
+  @@index([promptType])
+  @@index([generationRunId])
+  @@index([templateHash])
+  @@index([createdAt])
+  @@map("prompt_histories")
+}
+
+model FavoriteIdea {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  ideaId    String   @map("idea_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  idea      Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ideaId])
+  @@index([userId, createdAt])
+  @@index([ideaId])
+  @@map("favorite_ideas")
+}
+
+model UserPreference {
+  id                    String        @id @default(uuid())
+  userId                String        @unique @map("user_id")
+  preferredCountry      String?       @map("preferred_country")
+  preferredCity         String?       @map("preferred_city")
+  preferredRegion       String?       @map("preferred_region")
+  preferredDomains      Json?         @map("preferred_domains")
+  preferredTechnologies Json?         @map("preferred_technologies")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  preferredDataSources  Json?         @map("preferred_data_sources")
+  preferredLanguage     LanguageCode? @map("preferred_language")
+  lastRefreshedAt       DateTime?     @map("last_refreshed_at")
+  onboardingCompleted   Boolean       @default(false) @map("onboarding_completed")
+  onboardingCompletedAt DateTime?     @map("onboarding_completed_at")
+  user                  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model PreferenceOption {
+  id             String                    @id @default(uuid())
+  key            String                    @unique
+  name           String
+  description    String?
+  category       PreferenceCategory
+  imageUrl       String?                   @map("image_url")
+  iconKey        String?                   @map("icon_key")
+  displayOrder   Int                       @default(0) @map("display_order")
+  isActive       Boolean                   @default(true) @map("is_active")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  userSelections UserPreferenceSelection[]
+
+  @@index([category, isActive, displayOrder])
+  @@map("preference_options")
+}
+
+model UserPreferenceSelection {
+  id                 String           @id @default(uuid())
+  userId             String           @map("user_id")
+  preferenceOptionId String           @map("preference_option_id")
+  selectedAt         DateTime         @default(now()) @map("selected_at")
+  preferenceOption   PreferenceOption @relation(fields: [preferenceOptionId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, preferenceOptionId])
+  @@index([userId])
+  @@index([preferenceOptionId])
+  @@map("user_preference_selections")
+}
+
+model SavedGenerationSearch {
+  id             String        @id @default(uuid())
+  userId         String        @map("user_id")
+  name           String?
+  domainId       String?       @map("domain_id")
+  country        String?
+  city           String?
+  region         String?
+  keywords       Json?
+  lastUsedAt     DateTime?     @map("last_used_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  language       LanguageCode?
+  dataSourceKeys Json?         @map("data_source_keys")
+  domain         Domain?       @relation(fields: [domainId], references: [id])
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([domainId])
+  @@map("saved_generation_searches")
+}
+
+model AiModel {
+  id                   String                    @id @default(uuid())
+  modelName            String                    @map("model_name")
+  apiModelId           String                    @map("api_model_id")
+  displayName          String?                   @map("display_name")
+  description          String?
+  priority             Int                       @default(0)
+  isActive             Boolean                   @default(true) @map("is_active")
+  isDefault            Boolean                   @default(false) @map("is_default")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  consecutiveFailures  Int                       @default(0) @map("consecutive_failures")
+  healthStatus         AiModelHealthStatus       @default(UNKNOWN) @map("health_status")
+  inputCostPerMillion  Decimal                   @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
+  lastFailureAt        DateTime?                 @map("last_failure_at")
+  lastHealthCheckAt    DateTime?                 @map("last_health_check_at")
+  maxOutputTokens      Int                       @default(2048) @map("max_output_tokens")
+  outputCostPerMillion Decimal                   @default(0) @map("output_cost_per_million") @db.Decimal(12, 6)
+  weight               Int                       @default(1)
+  contextWindow        Int?                      @map("context_window")
+  /// *
+  /// * Backend provider-registry key.
+  /// * Examples: openrouter, google.
+  providerKey          String                    @map("provider_key")
+  supportsJsonOutput   Boolean                   @default(false) @map("supports_json_output")
+  supportsTools        Boolean                   @default(false) @map("supports_tools")
+  supportsVision       Boolean                   @default(false) @map("supports_vision")
+  externalApiLogs      ExternalApiLog[]
+  generationCandidates IdeaGenerationCandidate[]
+
+  @@unique([providerKey, apiModelId])
+  @@index([providerKey, isActive])
+  @@index([isActive, healthStatus, priority])
+  @@index([priority])
+  @@map("ai_models")
+}
+
+model IdeaGenerationCandidate {
+  id                             String            @id @default(uuid())
+  runId                          String            @map("run_id")
+  aiModelId                      String?           @map("ai_model_id")
+  providerKey                    String            @map("provider_key")
+  apiModelId                     String            @map("api_model_id")
+  modelName                      String            @map("model_name")
+  displayName                    String?           @map("display_name")
+  rawResponse                    String?           @map("raw_response")
+  parsedResponse                 Json?             @map("parsed_response")
+  overallScore                   Decimal?          @map("overall_score") @db.Decimal(5, 2)
+  innovationScore                Decimal?          @map("innovation_score") @db.Decimal(5, 2)
+  marketFitScore                 Decimal?          @map("market_fit_score") @db.Decimal(5, 2)
+  technicalQualityScore          Decimal?          @map("technical_quality_score") @db.Decimal(5, 2)
+  completenessScore              Decimal?          @map("completeness_score") @db.Decimal(5, 2)
+  originalityScore               Decimal?          @map("originality_score") @db.Decimal(5, 2)
+  inputTokens                    Int?              @map("input_tokens")
+  outputTokens                   Int?              @map("output_tokens")
+  responseTimeMs                 Int?              @map("response_time_ms")
+  costEstimate                   Decimal?          @map("cost_estimate") @db.Decimal(12, 6)
+  selected                       Boolean           @default(false)
+  errorCode                      String?           @map("error_code")
+  errorMessage                   String?           @map("error_message")
+  createdAt                      DateTime          @default(now()) @map("created_at")
+  updatedAt                      DateTime          @updatedAt @map("updated_at")
+  aiJudgeScore                   Decimal?          @map("ai_judge_score") @db.Decimal(5, 2)
+  implementationClarityScore     Decimal?          @map("implementation_clarity_score") @db.Decimal(5, 2)
+  judgeConfidence                Decimal?          @map("judge_confidence") @db.Decimal(5, 2)
+  judgeReason                    String?           @map("judge_reason")
+  judgeRisks                     Json?             @map("judge_risks")
+  judgeStrengths                 Json?             @map("judge_strengths")
+  localRelevanceScore            Decimal?          @map("local_relevance_score") @db.Decimal(5, 2)
+  marketPotentialScore           Decimal?          @map("market_potential_score") @db.Decimal(5, 2)
+  problemImportanceScore         Decimal?          @map("problem_importance_score") @db.Decimal(5, 2)
+  regulatoryFeasibilityScore     Decimal?          @map("regulatory_feasibility_score") @db.Decimal(5, 2)
+  requiresLegalVerification      Boolean?          @map("requires_legal_verification")
+  technicalFeasibilityScore      Decimal?          @map("technical_feasibility_score") @db.Decimal(5, 2)
+  aiJudgeInnovationScore         Decimal?          @map("ai_judge_innovation_score") @db.Decimal(5, 2)
+  finalScore                     Decimal?          @map("final_score") @db.Decimal(5, 2)
+  opportunityRank                Int?              @map("opportunity_rank")
+  opportunityTitle               String?           @map("opportunity_title")
+  hybridFinalScore               Decimal?          @map("hybrid_final_score") @db.Decimal(5, 2)
+  maximumSimilarity              Decimal?          @map("maximum_similarity") @db.Decimal(5, 2)
+  mostSimilarCandidateId         String?           @map("most_similar_candidate_id")
+  semanticDiversityAdjustedScore Decimal?          @map("semantic_diversity_adjusted_score") @db.Decimal(5, 2)
+  semanticDiversityScore         Decimal?          @map("semantic_diversity_score") @db.Decimal(5, 2)
+  semanticDuplicateRisk          String?           @map("semantic_duplicate_risk")
+  aiModel                        AiModel?          @relation(fields: [aiModelId], references: [id])
+  run                            IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, providerKey, apiModelId, opportunityRank], map: "idea_generation_candidates_run_model_opportunity_key")
+  @@index([runId, selected])
+  @@index([runId, opportunityRank])
+  @@index([opportunityTitle])
+  @@index([aiModelId])
+  @@index([providerKey, apiModelId])
+  @@index([overallScore])
+  @@index([finalScore])
+  @@index([aiJudgeScore])
+  @@index([createdAt])
+  @@index([semanticDiversityAdjustedScore])
+  @@index([hybridFinalScore])
+  @@index([semanticDiversityScore])
+  @@index([maximumSimilarity])
+  @@index([mostSimilarCandidateId])
+  @@index([semanticDuplicateRisk])
+  @@map("idea_generation_candidates")
+}
+
+model ContactMessage {
+  id         String               @id @default(uuid())
+  fullName   String
+  email      String
+  subject    String
+  message    String
+  status     ContactMessageStatus @default(NEW)
+  adminReply String?              @map("admin_reply")
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+  userId     String?              @map("user_id")
+  deletedAt  DateTime?            @map("deleted_at")
+  user       User?                @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([userId, deletedAt, createdAt])
+  @@index([email])
+  @@index([status])
+  @@index([deletedAt, status, createdAt])
+  @@index([createdAt])
+  @@map("contact_messages")
+}
+
+model NlpLexicon {
+  id        String         @id @default(uuid())
+  word      String
+  type      NlpLexiconType
+  language  LanguageCode   @default(ANY)
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  @@unique([word, type, language])
+  @@index([language])
+  @@index([type, language])
+  @@index([isActive])
+  @@map("nlp_lexicons")
+}
+
+model NlpTopicRule {
+  id        String       @id @default(uuid())
+  topic     String
+  terms     Json
+  domainId  String?      @map("domain_id")
+  language  LanguageCode @default(ANY)
+  isActive  Boolean      @default(true) @map("is_active")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  domain    Domain?      @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@index([language])
+  @@index([isActive])
+  @@map("nlp_topic_rules")
+}
+
+/// *
+/// * Distributed lock for expensive idea-generation workflows.
+/// * Prevents concurrent requests from:
+/// * - Calling AI more than once for the same entitlement.
+/// * - Consuming the same final free attempt.
+/// * - Consuming the same premium credit.
+/// * The lock is stored in PostgreSQL and therefore works across
+/// * multiple backend instances.
+model IdeaGenerationLock {
+  id         String   @id @default(uuid())
+  /// *
+  /// * Examples:
+  /// * - user:<userId>
+  /// * - guest:<guestSessionId>
+  lockKey    String   @unique @map("lock_key")
+  ownerToken String   @map("owner_token")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("idea_generation_locks")
+}
+
+model IdeaPublication {
+  id                String                      @id @default(uuid())
+  ideaId            String                      @unique @map("idea_id")
+  publisherId       String                      @map("publisher_id")
+  status            IdeaPublicationStatus       @default(DRAFT)
+  visibility        IdeaPublicationVisibility
+  /// *
+  /// * Safe public snapshot.
+  /// * These fields are copied from Idea when publishing.
+  /// * Internal paid details are never exposed directly.
+  publicTitle       String                      @map("public_title")
+  publicAbstract    String?                     @map("public_abstract")
+  publicProblem     String?                     @map("public_problem")
+  publicObjectives  String?                     @map("public_objectives")
+  publicTargetUsers String?                     @map("public_target_users")
+  allowRatings      Boolean                     @default(true) @map("allow_ratings")
+  allowFeedback     Boolean                     @default(true) @map("allow_feedback")
+  allowVoting       Boolean                     @default(true) @map("allow_voting")
+  averageRating     Decimal                     @default(0) @map("average_rating") @db.Decimal(3, 2)
+  ratingsCount      Int                         @default(0) @map("ratings_count")
+  upvotesCount      Int                         @default(0) @map("upvotes_count")
+  downvotesCount    Int                         @default(0) @map("downvotes_count")
+  feedbackCount     Int                         @default(0) @map("feedback_count")
+  publishedAt       DateTime?                   @map("published_at")
+  archivedAt        DateTime?                   @map("archived_at")
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+  hiddenAt          DateTime?                   @map("hidden_at")
+  hiddenReason      String?                     @map("hidden_reason")
+  isHidden          Boolean                     @default(false) @map("is_hidden")
+  adoptionMode      IdeaAdoptionMode            @default(NON_EXCLUSIVE) @map("adoption_mode")
+  allowAdoption     Boolean                     @default(true) @map("allow_adoption")
+  maximumAdoptions  Int?                        @map("maximum_adoptions")
+  acceptances       IdeaPublicationAcceptance[]
+  audiences         IdeaPublicationAudience[]
+  feedback          IdeaPublicationFeedback[]
+  ratings           IdeaPublicationRating[]
+  reports           IdeaPublicationReport[]
+  revisions         IdeaPublicationRevision[]
+  votes             IdeaPublicationVote[]
+  idea              Idea                        @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  publisher         User                        @relation("PublishedIdeas", fields: [publisherId], references: [id], onDelete: Cascade)
+  payments          Payment[]
+
+  @@index([status, visibility, publishedAt])
+  @@index([publisherId, status, createdAt])
+  @@index([status, publishedAt])
+  @@index([publisherId])
+  @@index([isHidden, status, publishedAt])
+  @@index([averageRating])
+  @@index([upvotesCount])
+  @@map("idea_publications")
+}
+
+model IdeaPublicationAcceptance {
+  id                   String                          @id @default(uuid())
+  publicationId        String                          @map("publication_id")
+  userId               String                          @map("user_id")
+  /// *
+  /// * Present only for a normal-user $15 acceptance payment.
+  paymentId            String?                         @unique @map("payment_id")
+  /// *
+  /// * Snapshot of the adopter location at acceptance time.
+  country              String?
+  city                 String?
+  region               String?
+  acceptedAt           DateTime                        @default(now()) @map("accepted_at")
+  /// *
+  /// * Premium users accept basic details for free and unlock this separately with credits.
+  advancedUnlockedAt   DateTime?                       @map("advanced_unlocked_at")
+  advancedUnlockMethod PublicationAdvancedUnlockMethod @default(NONE) @map("advanced_unlock_method")
+  createdAt            DateTime                        @default(now()) @map("created_at")
+  updatedAt            DateTime                        @updatedAt @map("updated_at")
+  clientRequestId      String                          @map("client_request_id")
+  creditTransactions   CreditTransaction[]
+  payment              Payment?                        @relation(fields: [paymentId], references: [id])
+  publication          IdeaPublication                 @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  user                 User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, userId])
+  @@unique([userId, clientRequestId])
+  @@index([publicationId, acceptedAt])
+  @@index([userId, acceptedAt])
+  @@index([country, city, region])
+  @@map("idea_publication_acceptances")
+}
+
+model IdeaPublicationReport {
+  id            String                  @id @default(uuid())
+  publicationId String                  @map("publication_id")
+  reporterId    String                  @map("reporter_id")
+  reason        PublicationReportReason
+  details       String?
+  status        ModerationReportStatus  @default(PENDING)
+  reviewedById  String?                 @map("reviewed_by_id")
+  reviewedAt    DateTime?               @map("reviewed_at")
+  adminNote     String?                 @map("admin_note")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+  publication   IdeaPublication         @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  reporter      User                    @relation("PublicationReportsSubmitted", fields: [reporterId], references: [id], onDelete: Cascade)
+  reviewedBy    User?                   @relation("PublicationReportsReviewed", fields: [reviewedById], references: [id])
+
+  @@unique([publicationId, reporterId])
+  @@index([publicationId, status])
+  @@index([reporterId, createdAt])
+  @@index([status, createdAt])
+  @@map("idea_publication_reports")
+}
+
+model IdeaPublicationAudience {
+  id            String          @id @default(uuid())
+  publicationId String          @map("publication_id")
+  /// *
+  /// * Examples:
+  /// * user-type
+  /// * domain-interest
+  /// * specific-user
+  audienceType  String          @map("audience_type")
+  /// *
+  /// * Examples:
+  /// * STUDENT
+  /// * DEVELOPER
+  /// * <userId>
+  audienceValue String          @map("audience_value")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, audienceType, audienceValue])
+  @@index([audienceType, audienceValue])
+  @@map("idea_publication_audiences")
+}
+
+model IdeaPublicationVote {
+  id            String          @id @default(uuid())
+  publicationId String          @map("publication_id")
+  userId        String          @map("user_id")
+  value         IdeaVoteValue
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, userId])
+  @@index([userId])
+  @@map("idea_publication_votes")
+}
+
+model IdeaPublicationRating {
+  id            String          @id @default(uuid())
+  publicationId String          @map("publication_id")
+  userId        String          @map("user_id")
+  value         Int
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, userId])
+  @@index([publicationId])
+  @@index([userId])
+  @@map("idea_publication_ratings")
+}
+
+model IdeaPublicationFeedback {
+  id            String                    @id @default(uuid())
+  publicationId String                    @map("publication_id")
+  userId        String                    @map("user_id")
+  comment       String
+  status        PublicationFeedbackStatus @default(VISIBLE)
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  publication   IdeaPublication           @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, userId])
+  @@index([publicationId, status])
+  @@index([userId])
+  @@map("idea_publication_feedback")
+}
+
+model IdeaGenerationRun {
+  id                  String                    @id @default(uuid())
+  userId              String?                   @map("user_id")
+  guestSessionId      String?                   @map("guest_session_id")
+  lastHeartbeatAt     DateTime?                 @map("last_heartbeat_at")
+  cancelRequestedAt   DateTime?                 @map("cancel_requested_at")
+  ideaId              String?                   @unique @map("idea_id")
+  collectionJobId     String?                   @map("collection_job_id")
+  generationType      IdeaGenerationType        @map("generation_type")
+  status              IdeaGenerationRunStatus   @default(QUEUED)
+  currentStageKey     String?                   @map("current_stage_key")
+  progressPercent     Int                       @default(0) @map("progress_percent")
+  errorCode           String?                   @map("error_code")
+  errorMessage        String?                   @map("error_message")
+  startedAt           DateTime?                 @map("started_at")
+  completedAt         DateTime?                 @map("completed_at")
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  contextSnapshot     Json?                     @map("context_snapshot")
+  nextRetryAt         DateTime?                 @map("next_retry_at")
+  pausedAt            DateTime?                 @map("paused_at")
+  retryCount          Int                       @default(0) @map("retry_count")
+  benchmarkCandidates IdeaGenerationCandidate[]
+  collectionJob       CollectionJob?            @relation(fields: [collectionJobId], references: [id])
+  guestSession        GuestSession?             @relation(fields: [guestSessionId], references: [id])
+  idea                Idea?                     @relation(fields: [ideaId], references: [id])
+  user                User?                     @relation(fields: [userId], references: [id])
+  stages              IdeaGenerationStage[]
+  promptHistories     PromptHistory[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([status, nextRetryAt])
+  @@index([collectionJobId])
+  @@map("idea_generation_runs")
+}
+
+model IdeaGenerationStage {
+  id              String                    @id @default(uuid())
+  runId           String                    @map("run_id")
+  /// *
+  /// * Extensible stage identifier.
+  /// * Examples:
+  /// * request-validation
+  /// * data-source-selection
+  /// * data-collection
+  /// * nlp-analysis
+  /// * idea-generation
+  /// * abstract-generation
+  /// * business-model
+  /// * technology-stack
+  /// * feasibility
+  stageKey        String                    @map("stage_key")
+  displayName     String                    @map("display_name")
+  sequence        Int
+  status          IdeaGenerationStageStatus @default(PENDING)
+  progressPercent Int                       @default(0) @map("progress_percent")
+  /// *
+  /// * Safe summary displayed to the user.
+  resultPreview   Json?                     @map("result_preview")
+  errorMessage    String?                   @map("error_message")
+  startedAt       DateTime?                 @map("started_at")
+  completedAt     DateTime?                 @map("completed_at")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+  attemptCount    Int                       @default(0) @map("attempt_count")
+  maxAttempts     Int                       @default(1) @map("max_attempts")
+  run             IdeaGenerationRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stageKey])
+  @@index([runId, sequence])
+  @@index([status])
+  @@map("idea_generation_stages")
+}
+
+model GeneratedOutput {
+  id                String                @id @default(uuid())
+  ideaId            String                @map("idea_id")
+  content           String?
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  errorMessage      String?               @map("error_message")
+  generatedAt       DateTime?             @map("generated_at")
+  /// *
+  /// * Examples:
+  /// * full-abstract
+  /// * technology-stack
+  /// * system-architecture
+  /// * database-design
+  /// * business-model
+  outputKey         String                @map("output_key")
+  sequence          Int                   @default(0)
+  status            GeneratedOutputStatus @default(PENDING)
+  structuredContent Json?                 @map("structured_content")
+  title             String
+  idea              Idea                  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, outputKey])
+  @@index([ideaId, sequence])
+  @@index([status])
+  @@map("generated_outputs")
+}
+
+model IdeaPublicationRevision {
+  id                String          @id @default(uuid())
+  publicationId     String          @map("publication_id")
+  version           Int
+  publicTitle       String          @map("public_title")
+  publicAbstract    String          @map("public_abstract")
+  publicProblem     String?         @map("public_problem")
+  publicObjectives  String?         @map("public_objectives")
+  publicTargetUsers String?         @map("public_target_users")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  publication       IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, version])
+  @@index([publicationId, createdAt])
+  @@map("idea_publication_revisions")
+}
+
+/// *
+/// * Stores generated business-model versions for a completed idea.
+/// *
+/// * A user may generate multiple versions using different templates.
+/// * Only one version should be marked as current for each idea.
+model IdeaBusinessModel {
+  id                      String                @id @default(uuid())
+  /// *
+  /// * Idea for which this business model was generated.
+  ideaId                  String                @map("idea_id")
+  /// *
+  /// * Template selected by the user after idea generation.
+  businessModelTemplateId String                @map("business_model_template_id")
+  /// *
+  /// * Structured AI-generated content keyed by the selected
+  /// * template section identifiers.
+  content                 Json
+  /// *
+  /// * Sequential version number within the same idea.
+  version                 Int                   @default(1)
+  /// *
+  /// * Indicates the version currently selected for display,
+  /// * preview, and download.
+  isCurrent               Boolean               @default(true) @map("is_current")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
+  businessModelTemplate   BusinessModelTemplate @relation(fields: [businessModelTemplateId], references: [id])
+  idea                    Idea                  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+
+  @@unique([ideaId, version])
+  @@index([ideaId, isCurrent])
+  @@index([businessModelTemplateId])
+  @@map("idea_business_models")
+}
+
+/// *
+/// * ENUMS
 enum IdeaGenerationRunStatus {
   QUEUED
   RUNNING
-  RETRYING
-  PAUSED
   COMPLETED
   FAILED
   CANCELLED
+  RETRYING
+  PAUSED
 }
 
 enum IdeaGenerationStageStatus {
@@ -60,6 +1412,7 @@ enum PaymentStatus {
 enum PaymentPurpose {
   BUY_CREDITS
   DIRECT_UNLOCK
+  ACCEPT_PUBLICATION
 }
 
 enum CreditTransactionType {
@@ -68,6 +1421,7 @@ enum CreditTransactionType {
   DEDUCTION_GENERATION
   REFUND
   ADMIN_ADJUSTMENT
+  DEDUCTION_PUBLICATION_ADVANCED
 }
 
 enum IdeaGenerationType {
@@ -80,6 +1434,20 @@ enum UnlockMethod {
   NONE
   DIRECT_PAYMENT
   CREDIT_GENERATION
+}
+
+enum PublicationAdvancedUnlockMethod {
+  NONE
+  DIRECT_PAYMENT
+  PREMIUM_CREDIT
+}
+
+enum DomainResolutionSource {
+  USER_SELECTED
+  USER_PREFERENCE
+  KEYWORD_MATCH
+  USER_HISTORY
+  SYSTEM_DEFAULT
 }
 
 enum ChatSender {
@@ -143,6 +1511,12 @@ enum IdeaPublicationStatus {
   ARCHIVED
 }
 
+enum IdeaAdoptionMode {
+  NON_EXCLUSIVE
+  LIMITED
+  EXCLUSIVE
+}
+
 enum PublicationReportReason {
   SPAM
   OFFENSIVE
@@ -159,6 +1533,15 @@ enum ModerationReportStatus {
   DISMISSED
 }
 
+enum PreferenceCategory {
+  DOMAIN
+  PROJECT_TYPE
+  TARGET_AUDIENCE
+  USER_GOAL
+  TECHNOLOGY
+  DATA_SOURCE
+}
+
 enum LanguageCode {
   ANY
   EN
@@ -173,57 +1556,40 @@ enum ApiRequestType {
   DATA_COLLECTION
   COMMENT_ANALYSIS
   IDEA_GENERATION
-  NLP_ENHANCEMENT
   AI_CHAT
   PAYMENT
   OTHER
+  NLP_ENHANCEMENT
 }
 
 enum AuditAction {
-  // User administration
   ADMIN_UPDATE_USER_STATUS
   ADMIN_SOFT_DELETE_USER
   ADMIN_ADJUST_USER_CREDITS
   ADMIN_SEND_PASSWORD_RESET_EMAIL
-
-  // System settings and prompts
   ADMIN_UPDATE_SETTINGS
   ADMIN_UPDATE_PROMPT
-
-  // Alerts
   ADMIN_CREATE_ALERT
-
-  // Platforms
   ADMIN_CREATE_DATA_SOURCE
   ADMIN_UPDATE_DATA_SOURCE
   ADMIN_ACTIVATE_DATA_SOURCE
   ADMIN_DEACTIVATE_DATA_SOURCE
-
-  // Domains
   ADMIN_CREATE_DOMAIN
   ADMIN_UPDATE_DOMAIN
   ADMIN_DEACTIVATE_DOMAIN
-
-  // Complaints and contact messages
   ADMIN_UPDATE_COMPLAINT
   ADMIN_UPDATE_CONTACT_MESSAGE
-
-  // AI model management
   ADMIN_CREATE_AI_MODEL
   ADMIN_UPDATE_AI_MODEL
   ADMIN_ACTIVATE_AI_MODEL
   ADMIN_DEACTIVATE_AI_MODEL
   ADMIN_SET_DEFAULT_AI_MODEL
-
-  // Data collection
   RUN_DATA_COLLECTION
   COMPLETE_DATA_COLLECTION
   FAIL_DATA_COLLECTION
   STOP_DATA_COLLECTION
   ADMIN_START_DATA_COLLECTION
   ADMIN_STOP_DATA_COLLECTION
-
-  // User operations
   USER_GENERATE_IDEA
   USER_UNLOCK_IDEA
   USER_CREATE_COMPLAINT
@@ -232,24 +1598,20 @@ enum AuditAction {
   USER_UPDATE_PROFILE
   USER_MARK_NOTIFICATION_READ
   USER_MARK_ALL_NOTIFICATIONS_READ
-
-  // Pipeline operations
   NLP_ANALYSIS_RUN
   ABSTRACT_GENERATION_RUN
   PROMPT_HISTORY_CREATED
-
   USER_CREATE_PUBLICATION
   USER_PUBLISH_IDEA
   USER_UPDATE_PUBLICATION
   USER_ARCHIVE_PUBLICATION
-
   USER_REPORT_PUBLICATION
-
   ADMIN_HIDE_PUBLICATION
   ADMIN_RESTORE_PUBLICATION
   ADMIN_ARCHIVE_PUBLICATION
-
   ADMIN_REVIEW_PUBLICATION_REPORT
+  USER_ACCEPT_PUBLICATION
+  USER_UNLOCK_PUBLICATION_ADVANCED
 }
 
 enum AiModelHealthStatus {
@@ -276,14 +1638,14 @@ enum AuditTargetType {
   COMPLAINT
   AI_MODEL
   IDEA_PUBLICATION
-  IDEA_PUBLICATION_FEEDBACK
-  IDEA_PUBLICATION_REPORT
-
   CONTACT_MESSAGE
   ALERT
   CREDIT_TRANSACTION
   DATA_COLLECTION
   NLP_ANALYSIS
+  IDEA_PUBLICATION_FEEDBACK
+  IDEA_PUBLICATION_REPORT
+  IDEA_PUBLICATION_ACCEPTANCE
 }
 
 enum AuthAction {
@@ -314,76 +1676,13 @@ enum CollectionJobStatus {
   STOPPED
 }
 
-model DataSource {
-  id String @id @default(uuid())
-
-  /**
-   * Stable code identifier used by the backend registry.
-   * Examples: youtube, github, dev-to, google-play.
-   */
-  key String @unique
-
-  displayName String  @map("display_name")
-  description String?
-
-  isActive Boolean @default(true) @map("is_active")
-
-  /**
-   * Indicates whether the collector implementation is currently
-   * available in the deployed backend.
-   */
-  isImplemented Boolean @default(false) @map("is_implemented")
-
-  supportsPosts    Boolean @default(true) @map("supports_posts")
-  supportsComments Boolean @default(false) @map("supports_comments")
-  supportsRegion   Boolean @default(false) @map("supports_region")
-  supportsLanguage Boolean @default(false) @map("supports_language")
-
-  configuration Json?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  collectionJobSources CollectionJobSource[]
-  socialPosts          SocialPost[]
-
-  @@index([isActive])
-  @@index([isImplemented])
-  @@map("data_sources")
-}
-
-model CollectionJobSource {
-  id String @id @default(uuid())
-
-  collectionJobId String        @map("collection_job_id")
-  collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
-
-  dataSourceId String     @map("data_source_id")
-  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Restrict)
-
-  status CollectionJobStatus @default(PENDING)
-
-  totalPosts    Int @default(0) @map("total_posts")
-  totalComments Int @default(0) @map("total_comments")
-
-  startedAt     DateTime? @map("started_at")
-  completedAt   DateTime? @map("completed_at")
-  failureReason String?   @map("failure_reason")
-
-  @@unique([collectionJobId, dataSourceId])
-  @@index([collectionJobId])
-  @@index([dataSourceId])
-  @@index([status])
-  @@map("collection_job_sources")
-}
-
 enum PromptType {
   IDEA_GENERATION
-  IDEA_EVALUATION
-  IDEA_UNLOCK
   CHAT_RESPONSE
   NLP_ANALYSIS
   ABSTRACT_GENERATION
+  IDEA_UNLOCK
+  IDEA_EVALUATION
 }
 
 enum NlpLexiconType {
@@ -391,7 +1690,6 @@ enum NlpLexiconType {
   NEED
   POSITIVE
   NEGATIVE
-
   FEATURE_REQUEST
   COMPLAINT
   URGENCY
@@ -403,1340 +1701,15 @@ enum NlpLexiconType {
   OPPORTUNITY
 }
 
-/**
- * USERS
- */
-
-model User {
-  id                      String        @id @default(uuid())
-  fullName                String        @map("full_name")
-  email                   String        @unique
-  passwordHash            String        @map("password_hash")
-  role                    UserRole      @default(USER)
-  emailVerifiedAt         DateTime?     @map("email_verified_at")
-  verificationEmailSentAt DateTime?     @map("verification_email_sent_at")
-  lastLoginAt             DateTime?     @map("last_login_at")
-  passwordChangedAt       DateTime?     @map("password_changed_at")
-  accountStatus           AccountStatus @default(NORMAL) @map("account_status")
-
-  freeGenerationLimit Int @default(3) @map("free_generation_limit")
-  freeGenerationsUsed Int @default(0) @map("free_generations_used")
-  creditBalance       Int @default(0) @map("credit_balance")
-
-  isActive   Boolean @default(true) @map("is_active")
-  isVerified Boolean @default(false) @map("is_verified")
-
-  failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
-  failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
-  loginLockLevel             Int       @default(0) @map("login_lock_level")
-  lockedUntil                DateTime? @map("locked_until")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  userType  UserType
-
-  ideas                   Idea[]
-  payments                Payment[]
-  creditTransactions      CreditTransaction[]
-  chatSessions            ChatSession[]
-  alerts                  Alert[]
-  complaints              Complaint[]
-  externalApiLogs         ExternalApiLog[]
-  auditLogs               AuditLog[]               @relation("AuditLogs")
-  updatedSettings         SystemSetting[]          @relation("SettingsUpdatedBy")
-  refreshTokens           RefreshToken[]
-  passwordResetTokens     PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  authenticationLogs      AuthenticationLog[]
-  favoriteIdeas           FavoriteIdea[]
-  preference              UserPreference?
-  savedGenerationSearches SavedGenerationSearch[]
-  contactMessages         ContactMessage[]
-  devices                 UserDevice[]
-  deletedAt               DateTime?                @map("deleted_at")
-
-  /**
-   * Prompts requested by this authenticated user.
-   * Guest prompts are linked through GuestSession instead.
-   */
-  promptHistories PromptHistory[]
-  publishedIdeas  IdeaPublication[] @relation("PublishedIdeas")
-
-  publicationRatings  IdeaPublicationRating[]
-  publicationVotes    IdeaPublicationVote[]
-  publicationFeedback IdeaPublicationFeedback[]
-  generationRuns      IdeaGenerationRun[]
-  collectionJobs      CollectionJob[]           @relation("CollectionJobsCreatedBy")
-
-  publicationReportsSubmitted IdeaPublicationReport[] @relation("PublicationReportsSubmitted")
-  publicationReportsReviewed  IdeaPublicationReport[] @relation("PublicationReportsReviewed")
-
-  @@index([lockedUntil])
-  @@index([loginLockLevel])
-  @@map("users")
-}
-
 enum DevicePlatform {
   ANDROID
   IOS
   WEB
 }
 
-model UserDevice {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  fcmToken String @unique @map("fcm_token")
-
-  platform DevicePlatform
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  lastUsedAt DateTime? @map("last_used_at")
-  revokedAt  DateTime? @map("revoked_at")
-
-  @@index([userId])
-  @@index([platform])
-  @@index([userId, revokedAt])
-  @@map("user_devices")
-}
-
-/**
- * Refresh Token
- */
-
-model RefreshToken {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @unique @map("token_hash")
-  expiresAt  DateTime  @map("expires_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  ipAddress  String?   @map("ip_address")
-  userAgent  String?   @map("user_agent")
-  lastUsedAt DateTime? @map("last_used_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([revokedAt])
-  @@map("refresh_tokens")
-}
-
-/**
- * Password Reset Token
- */
-model PasswordResetToken {
-  id        String @id @default(uuid())
-  userId    String @map("user_id")
-  tokenHash String @unique @map("token_hash")
-
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([usedAt])
-  @@map("password_reset_tokens")
-}
-
-model SystemSetting {
-  id String @id @default(uuid())
-
-  /**
-   * Guarantees that only one global system-settings row exists.
-   */
-  key String @unique @default("GLOBAL")
-
-  /**
-   * Price of one credit.
-   * One credit allows one premium idea generation.
-   */
-  creditPrice Decimal @map("credit_price") @db.Decimal(10, 2)
-
-  /**
-   * Price paid directly to unlock advanced features
-   * for one previously generated free idea.
-   * This payment does not purchase or consume credits.
-   */
-  directUnlockPrice Decimal @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
-
-  /**
-   * Minimum number of purchased credits required
-   * to receive bonus credits.
-   */
-  bonusThreshold Int @default(0) @map("bonus_threshold")
-
-  /**
-   * Number of bonus credits granted when the
-   * configured threshold is reached.
-   */
-  bonusCredits Int @default(0) @map("bonus_credits")
-
-  ideaPromptTemplate String? @map("idea_prompt_template")
-
-  updatedById String? @map("updated_by")
-
-  updatedBy User? @relation("SettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("system_settings")
-}
-
-model AuditLog {
-  id String @id @default(uuid())
-
-  actorId String? @map("actor_id")
-  actor   User?   @relation("AuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
-
-  action AuditAction
-
-  targetType AuditTargetType @map("target_type")
-  targetId   String?         @map("target_id")
-
-  oldValue Json? @map("old_value")
-  newValue Json? @map("new_value")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([actorId])
-  @@index([action])
-  @@index([targetType])
-  @@index([createdAt])
-  @@index([targetType, targetId])
-  @@map("audit_logs")
-}
-
-model GuestSession {
-  id String @id @default(uuid())
-
-  /**
-   * Public random identifier stored in a secure HTTP-only cookie.
-   */
-  sessionToken String @unique @map("session_token")
-
-  /**
-   * One-way hash derived from request information.
-   * Prevents the same guest client from repeatedly creating
-   * new sessions after consuming the free guest generation.
-   */
-  fingerprintHash String @unique @map("fingerprint_hash")
-
-  hasGenerated Boolean @default(false) @map("has_generated")
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  expiresAt DateTime? @map("expires_at")
-
-  ideas           Idea[]
-  generationRuns  IdeaGenerationRun[]
-  promptHistories PromptHistory[]
-
-  @@index([expiresAt])
-  @@map("guest_sessions")
-}
-
-model Idea {
-  id String @id @default(uuid())
-
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  guestSessionId String?       @map("guest_session_id")
-  guestSession   GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: Restrict)
-
-  publication   IdeaPublication?
-  generationRun IdeaGenerationRun?
-  deletedAt     DateTime?          @map("deleted_at")
-
-  title String
-
-  domainId String @map("domain_id")
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
-
-  selectedRegion String? @map("selected_region")
-
-  limitedAbstract String? @map("limited_abstract")
-  partialAbstract String? @map("partial_abstract")
-  fullAbstract    String? @map("full_abstract")
-
-  problemStatement String? @map("problem_statement")
-  objectives       Json?
-  targetUsers      Json?   @map("target_users")
-
-  generationType IdeaGenerationType @map("generation_type")
-
-  isUnlocked   Boolean      @default(false) @map("is_unlocked")
-  unlockMethod UnlockMethod @default(NONE) @map("unlock_method")
-  unlockedAt   DateTime?    @map("unlocked_at")
-
-  collectionJobId String?        @map("collection_job_id")
-  collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
-
-  commentsCount Int @default(0) @map("comments_count")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  promptHistories    PromptHistory[]
-  payments           Payment[]
-  creditTransactions CreditTransaction[]
-  chatSessions       ChatSession[]
-  generatedOutputs   GeneratedOutput[]
-  favorites          FavoriteIdea[]
-  complaints         Complaint[]
-  externalApiLogs    ExternalApiLog[]
-
-  @@index([userId, createdAt])
-  @@index([guestSessionId])
-  @@index([generationType])
-  @@index([isUnlocked])
-  @@index([collectionJobId])
-  @@map("ideas")
-}
-
-model Payment {
-  id String @id @default(uuid())
-
-  userId         String  @map("user_id")
-  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  idempotencyKey String? @unique @map("idempotency_key")
-  ideaId         String? @map("idea_id")
-  idea           Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-
-  amount   Decimal @db.Decimal(10, 2)
-  currency String  @default("USD")
-
-  /**
-   * User-facing method.
-   * Examples: card, paypal.
-   */
-  paymentMethodKey String @map("payment_method_key")
-
-  /**
-   * Backend gateway implementation.
-   * Examples: stripe, paypal.
-   */
-  providerKey String @map("provider_key")
-
-  status PaymentStatus @default(PENDING)
-
-  paymentPurpose PaymentPurpose @map("payment_purpose")
-
-  creditsAmount      Int @default(0) @map("credits_amount")
-  bonusCreditsAmount Int @default(0) @map("bonus_credits_amount")
-
-  creditPriceAtPurchase Decimal? @map("credit_price_at_purchase") @db.Decimal(10, 2)
-
-  providerPaymentId String? @unique @map("provider_payment_id")
-  providerSessionId String? @unique @map("provider_session_id")
-
-  transactionReference String? @map("transaction_reference")
-  failureReason        String? @map("failure_reason")
-
-  paidAt     DateTime? @map("paid_at")
-  failedAt   DateTime? @map("failed_at")
-  refundedAt DateTime? @map("refunded_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  creditTransactions CreditTransaction[]
-
-  @@index([userId])
-  @@index([ideaId])
-  @@index([status])
-  @@index([providerKey])
-  @@index([paymentMethodKey])
-  @@index([paymentPurpose])
-  @@index([createdAt])
-  @@map("payments")
-}
-
-/**
- * CREDIT TRANSACTIONS
- */
-
-model CreditTransaction {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  paymentId String?  @map("payment_id")
-  payment   Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-
-  type         CreditTransactionType
-  amount       Int
-  balanceAfter Int                   @map("balance_after")
-  description  String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([paymentId, type])
-  @@index([userId])
-  @@index([paymentId])
-  @@index([ideaId])
-  @@index([type])
-  @@index([createdAt])
-  @@map("credit_transactions")
-}
-
-/**
- * CHAT
- */
-
-model ChatSession {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  title String?
-
-  lastMessageAt DateTime  @default(now()) @map("last_message_at")
-  deletedAt     DateTime? @map("deleted_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  messages ChatMessage[]
-
-  @@index([userId, deletedAt, lastMessageAt])
-  @@index([ideaId, deletedAt])
-  @@map("chat_sessions")
-}
-
-model ChatMessage {
-  id String @id @default(uuid())
-
-  sessionId String      @map("session_id")
-  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  sender ChatSender
-  status ChatMessageStatus @default(COMPLETED)
-
-  /**
-   * Identifier generated by the frontend for idempotent user-message
-   * submission. AI messages do not require this value.
-   */
-  clientRequestId String? @map("client_request_id")
-
-  message String @db.Text
-
-  errorCode    String? @map("error_code")
-  errorMessage String? @map("error_message") @db.Text
-
-  completedAt DateTime? @map("completed_at")
-  deletedAt   DateTime? @map("deleted_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([sessionId, clientRequestId])
-  @@index([sessionId, deletedAt, createdAt])
-  @@index([sessionId, status])
-  @@map("chat_messages")
-}
-
-/**
- * ALERTS
- */
-
-model Alert {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  title   String
-  message String
-  type    AlertType @default(SYSTEM)
-  isRead  Boolean   @default(false) @map("is_read")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([userId, isRead])
-  @@index([createdAt])
-  @@map("alerts")
-}
-
-/**
- * COMPLAINTS
- */
-
-model Complaint {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  ideaId    String?   @map("idea_id")
-  idea      Idea?     @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-  deletedAt DateTime? @map("deleted_at")
-
-  subject  String
-  message  String
-  status   ComplaintStatus   @default(OPEN)
-  priority ComplaintPriority @default(MEDIUM)
-
-  adminReply String? @map("admin_reply")
-
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  resolvedAt DateTime? @map("resolved_at")
-
-  @@index([userId])
-  @@index([userId, deletedAt, createdAt])
-  @@index([ideaId])
-  @@index([status])
-  @@index([priority])
-  @@index([createdAt])
-  @@map("complaints")
-}
-
-model ExternalApiLog {
-  id String @id @default(uuid())
-
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-
-  aiModelId String?  @map("ai_model_id")
-  aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
-
-  serviceCategory ExternalServiceCategory @map("service_category")
-
-  providerKey String @map("provider_key")
-
-  endpoint    String?
-  requestId   String?        @map("request_id")
-  requestType ApiRequestType @map("request_type")
-
-  operationId String? @map("operation_id")
-
-  attemptNumber Int @default(1) @map("attempt_number")
-
-  fallbackUsed Boolean @default(false) @map("fallback_used")
-
-  statusCode Int?    @map("status_code")
-  isSuccess  Boolean @default(false) @map("is_success")
-
-  responseTimeMs Int?    @map("response_time_ms")
-  errorMessage   String? @map("error_message")
-
-  errorCode String? @map("error_code")
-
-  isRetryable Boolean? @map("is_retryable")
-
-  costEstimate Decimal? @map("cost_estimate") @db.Decimal(12, 6)
-
-  apiModelId   String? @map("api_model_id")
-  inputTokens  Int?    @map("input_tokens")
-  outputTokens Int?    @map("output_tokens")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([aiModelId, createdAt])
-  @@index([operationId])
-  @@index([operationId, attemptNumber])
-  @@index([providerKey, createdAt])
-  @@index([errorCode, createdAt])
-  @@index([isRetryable, createdAt])
-  @@index([serviceCategory, createdAt])
-  @@index([requestType, createdAt])
-  @@index([isSuccess, createdAt])
-  @@index([userId, createdAt])
-  @@index([ideaId, createdAt])
-  @@map("external_api_logs")
-}
-
-/**
- * Domain
- */
-
-model Domain {
-  id             String          @id @default(uuid())
-  name           String          @unique
-  isActive       Boolean         @default(true) @map("is_active")
-  domainKeywords DomainKeyword[]
-
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  collectionJobs CollectionJob[]
-
-  ideas                   Idea[]
-  savedGenerationSearches SavedGenerationSearch[]
-  topicRules              NlpTopicRule[]
-
-  @@map("domains")
-}
-
-model DomainKeyword {
-  id String @id @default(uuid())
-
-  domainId String @map("domain_id")
-  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  keyword  String
-  language LanguageCode @default(ANY)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([domainId, keyword, language])
-  @@index([domainId])
-  @@index([language])
-  @@map("domain_keywords")
-}
-
-model EmailVerificationToken {
-  id        String @id @default(uuid())
-  userId    String @map("user_id")
-  tokenHash String @unique @map("token_hash")
-
-  expiresAt DateTime  @map("expires_at")
-  usedAt    DateTime? @map("used_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@index([usedAt])
-  @@map("email_verification_tokens")
-}
-
-model AuthenticationLog {
-  id String @id @default(uuid())
-
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  action AuthAction
-
-  email     String?
-  isSuccess Boolean @default(true) @map("is_success")
-  message   String?
-
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@index([action])
-  @@index([email])
-  @@index([createdAt])
-  @@map("authentication_logs")
-}
-
-model CollectionJob {
-  id String @id @default(uuid())
-
-  /**
-   * User who started or owns this collection job.
-   * Nullable to support guest, internal, and legacy jobs.
-   */
-  createdById String? @map("created_by_id")
-
-  createdBy User? @relation("CollectionJobsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-
-  domainId String @map("domain_id")
-
-  domain Domain @relation(fields: [domainId], references: [id], onDelete: Restrict)
-
-  language LanguageCode
-
-  country  String?
-  city     String?
-  region   String?
-  radiusKm Int?    @map("radius_km")
-
-  keywords Json?
-
-  status CollectionJobStatus @default(PENDING)
-
-  totalPosts    Int @default(0) @map("total_posts")
-  totalComments Int @default(0) @map("total_comments")
-
-  startedAt   DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
-
-  failedReason String? @map("failed_reason")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  sources CollectionJobSource[]
-  posts   SocialPost[]
-
-  nlpAnalysis NlpAnalysis?
-  ideas       Idea[]
-
-  promptHistories PromptHistory[]
-  generationRuns  IdeaGenerationRun[]
-
-  @@index([createdById])
-  @@index([domainId])
-  @@index([country])
-  @@index([status])
-  @@index([createdAt])
-  @@map("collection_jobs")
-}
-
-model SocialPost {
-  id String @id @default(uuid())
-
-  collectionJobId String        @map("collection_job_id")
-  collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
-
-  dataSourceId String     @map("data_source_id")
-  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Restrict)
-
-  externalId String @map("external_id")
-
-  title   String?
-  content String
-  author  String?
-  url     String?
-
-  country      String?
-  city         String?
-  region       String?
-  languageCode String? @map("language_code")
-
-  likesCount   Int @default(0) @map("likes_count")
-  repliesCount Int @default(0) @map("replies_count")
-
-  publishedAt DateTime? @map("published_at")
-  collectedAt DateTime  @default(now()) @map("collected_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  comments SocialComment[]
-
-  @@unique([collectionJobId, dataSourceId, externalId])
-  @@index([collectionJobId])
-  @@index([dataSourceId])
-  @@index([country])
-  @@index([region])
-  @@index([languageCode])
-  @@map("social_posts")
-}
-
-model SocialComment {
-  id String @id @default(uuid())
-
-  postId String     @map("post_id")
-  post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  externalId   String  @map("external_id")
-  content      String
-  author       String?
-  languageCode String? @map("language_code")
-  sentiment    String?
-
-  likesCount Int @default(0) @map("likes_count")
-
-  publishedAt DateTime? @map("published_at")
-  collectedAt DateTime  @default(now()) @map("collected_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  @@unique([postId, externalId])
-  @@index([postId])
-  @@index([languageCode])
-  @@index([sentiment])
-  @@map("social_comments")
-}
-
-model NlpAnalysis {
-  id String @id @default(uuid())
-
-  collectionJobId String        @unique @map("collection_job_id")
-  collectionJob   CollectionJob @relation(fields: [collectionJobId], references: [id], onDelete: Cascade)
-
-  totalTextsAnalyzed    Int @default(0) @map("total_texts_analyzed")
-  totalPostsAnalyzed    Int @default(0) @map("total_posts_analyzed")
-  totalCommentsAnalyzed Int @default(0) @map("total_comments_analyzed")
-
-  sentimentStats Json @map("sentiment_stats")
-
-  keywords Json
-  topics   Json?
-
-  recurringProblems Json  @map("recurring_problems")
-  extractedNeeds    Json? @map("extracted_needs")
-  featureRequests   Json? @map("feature_requests")
-  opportunities     Json?
-  insights          Json?
-
-  dataQuality Json? @map("data_quality")
-
-  samplePosts    Json? @map("sample_posts")
-  sampleComments Json? @map("sample_comments")
-
-  aiUsed     Boolean  @default(false) @map("ai_used")
-  confidence Decimal? @db.Decimal(4, 3)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("nlp_analyses")
-}
-
-model PromptHistory {
-  id String @id @default(uuid())
-
-  /**
-   * Registered user who requested the prompt.
-   * Null when the prompt was requested by a guest session.
-   */
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  /**
-   * Guest session that requested the prompt.
-   * Null when the prompt was requested by an authenticated user.
-   */
-  guestSessionId  String?            @map("guest_session_id")
-  guestSession    GuestSession?      @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
-  generationRunId String?            @map("generation_run_id")
-  generationRun   IdeaGenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: SetNull)
-  /**
-   * Collection job supplying the persisted NLP analysis.
-   */
-  collectionJobId String?            @map("collection_job_id")
-  collectionJob   CollectionJob?     @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
-
-  /**
-   * Idea associated with this prompt-history record.
-   */
-  ideaId String? @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-
-  /**
-   * Determines the operation for which the prompt was built.
-   */
-  promptType PromptType @map("prompt_type")
-
-  /**
-   * Complete rendered prompt sent to the AI provider.
-   */
-  promptText String @map("prompt_text")
-
-  /**
-   * SHA-256 hash of the template used to build the prompt.
-   */
-  templateHash String? @map("template_hash")
-
-  /**
-   * Estimated number of input tokens in the rendered prompt.
-   */
-  estimatedInputTokens Int? @map("estimated_input_tokens")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@index([guestSessionId])
-  @@index([collectionJobId])
-  @@index([ideaId])
-  @@index([promptType])
-  @@index([generationRunId])
-  @@index([templateHash])
-  @@index([createdAt])
-  @@map("prompt_histories")
-}
-
-model FavoriteIdea {
-  id     String @id @default(uuid())
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([userId, ideaId])
-  @@index([userId, createdAt])
-  @@index([ideaId])
-  @@map("favorite_ideas")
-}
-
-model UserPreference {
-  id String @id @default(uuid())
-
-  userId String @unique @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  preferredCountry  String?       @map("preferred_country")
-  preferredCity     String?       @map("preferred_city")
-  preferredRegion   String?       @map("preferred_region")
-  preferredLanguage LanguageCode? @map("preferred_language")
-
-  preferredDomains      Json? @map("preferred_domains")
-  preferredDataSources  Json? @map("preferred_data_sources")
-  preferredTechnologies Json? @map("preferred_technologies")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("user_preferences")
-}
-
-model SavedGenerationSearch {
-  id String @id @default(uuid())
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  name String?
-
-  domainId String? @map("domain_id")
-  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: SetNull)
-
-  country  String?
-  city     String?
-  region   String?
-  language LanguageCode?
-
-  dataSourceKeys Json? @map("data_source_keys")
-  keywords       Json?
-
-  lastUsedAt DateTime? @map("last_used_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([userId])
-  @@index([domainId])
-  @@map("saved_generation_searches")
-}
-
-model AiModel {
-  id String @id @default(uuid())
-
-  /**
-   * Backend provider-registry key.
-   * Examples: openrouter, google.
-   */
-  providerKey String @map("provider_key")
-
-  modelName   String  @map("model_name")
-  apiModelId  String  @map("api_model_id")
-  displayName String? @map("display_name")
-  description String?
-
-  priority Int @default(0)
-  weight   Int @default(1)
-
-  maxOutputTokens    Int     @default(2048) @map("max_output_tokens")
-  supportsJsonOutput Boolean @default(false) @map("supports_json_output")
-  supportsTools      Boolean @default(false) @map("supports_tools")
-  supportsVision     Boolean @default(false) @map("supports_vision")
-  contextWindow      Int?    @map("context_window")
-
-  inputCostPerMillion Decimal @default(0) @map("input_cost_per_million") @db.Decimal(12, 6)
-
-  outputCostPerMillion Decimal @default(0) @map("output_cost_per_million") @db.Decimal(12, 6)
-
-  isActive  Boolean @default(true) @map("is_active")
-  isDefault Boolean @default(false) @map("is_default")
-
-  healthStatus AiModelHealthStatus @default(UNKNOWN) @map("health_status")
-
-  consecutiveFailures Int @default(0) @map("consecutive_failures")
-
-  lastHealthCheckAt DateTime? @map("last_health_check_at")
-  lastFailureAt     DateTime? @map("last_failure_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  externalApiLogs      ExternalApiLog[]
-  generationCandidates IdeaGenerationCandidate[]
-
-  @@unique([providerKey, apiModelId])
-  @@index([providerKey, isActive])
-  @@index([isActive, healthStatus, priority])
-  @@index([priority])
-  @@map("ai_models")
-}
-
-model IdeaGenerationCandidate {
-  id String @id @default(uuid())
-
-  runId String            @map("run_id")
-  run   IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  aiModelId String?  @map("ai_model_id")
-  aiModel   AiModel? @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
-
-  providerKey String  @map("provider_key")
-  apiModelId  String  @map("api_model_id")
-  modelName   String  @map("model_name")
-  displayName String? @map("display_name")
-
-  rawResponse    String? @map("raw_response")
-  parsedResponse Json?   @map("parsed_response")
-
-  opportunityRank  Int?    @map("opportunity_rank")
-  opportunityTitle String? @map("opportunity_title")
-
-  overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
-
-  finalScore Decimal? @map("final_score") @db.Decimal(5, 2)
-
-  semanticDiversityAdjustedScore Decimal? @map("semantic_diversity_adjusted_score") @db.Decimal(5, 2)
-
-  hybridFinalScore Decimal? @map("hybrid_final_score") @db.Decimal(5, 2)
-
-  semanticDiversityScore Decimal? @map("semantic_diversity_score") @db.Decimal(5, 2)
-
-  maximumSimilarity Decimal? @map("maximum_similarity") @db.Decimal(5, 2)
-
-  mostSimilarCandidateId String? @map("most_similar_candidate_id")
-
-  semanticDuplicateRisk String? @map("semantic_duplicate_risk")
-
-  innovationScore       Decimal? @map("innovation_score") @db.Decimal(5, 2)
-  marketFitScore        Decimal? @map("market_fit_score") @db.Decimal(5, 2)
-  technicalQualityScore Decimal? @map("technical_quality_score") @db.Decimal(5, 2)
-  completenessScore     Decimal? @map("completeness_score") @db.Decimal(5, 2)
-  originalityScore      Decimal? @map("originality_score") @db.Decimal(5, 2)
-
-  aiJudgeScore               Decimal? @map("ai_judge_score") @db.Decimal(5, 2)
-  localRelevanceScore        Decimal? @map("local_relevance_score") @db.Decimal(5, 2)
-  problemImportanceScore     Decimal? @map("problem_importance_score") @db.Decimal(5, 2)
-  aiJudgeInnovationScore     Decimal? @map("ai_judge_innovation_score") @db.Decimal(5, 2)
-  regulatoryFeasibilityScore Decimal? @map("regulatory_feasibility_score") @db.Decimal(5, 2)
-  technicalFeasibilityScore  Decimal? @map("technical_feasibility_score") @db.Decimal(5, 2)
-  marketPotentialScore       Decimal? @map("market_potential_score") @db.Decimal(5, 2)
-  implementationClarityScore Decimal? @map("implementation_clarity_score") @db.Decimal(5, 2)
-
-  judgeStrengths Json?   @map("judge_strengths")
-  judgeRisks     Json?   @map("judge_risks")
-  judgeReason    String? @map("judge_reason")
-
-  judgeConfidence Decimal? @map("judge_confidence") @db.Decimal(5, 2)
-
-  requiresLegalVerification Boolean? @map("requires_legal_verification")
-
-  inputTokens    Int? @map("input_tokens")
-  outputTokens   Int? @map("output_tokens")
-  responseTimeMs Int? @map("response_time_ms")
-
-  costEstimate Decimal? @map("cost_estimate") @db.Decimal(12, 6)
-
-  selected Boolean @default(false)
-
-  errorCode    String? @map("error_code")
-  errorMessage String? @map("error_message")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([runId, providerKey, apiModelId, opportunityRank], map: "idea_generation_candidates_run_model_opportunity_key")
-  @@index([runId, selected])
-  @@index([runId, opportunityRank])
-  @@index([opportunityTitle])
-  @@index([aiModelId])
-  @@index([providerKey, apiModelId])
-  @@index([overallScore])
-  @@index([finalScore])
-  @@index([aiJudgeScore])
-  @@index([createdAt])
-  @@index([semanticDiversityAdjustedScore])
-  @@index([hybridFinalScore])
-  @@index([semanticDiversityScore])
-  @@index([maximumSimilarity])
-  @@index([mostSimilarCandidateId])
-  @@index([semanticDuplicateRisk])
-  @@map("idea_generation_candidates")
-}
-
-model ContactMessage {
-  id String @id @default(uuid())
-
-  fullName String
-  email    String
-  subject  String
-  message  String
-
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  deletedAt DateTime? @map("deleted_at")
-
-  status ContactMessageStatus @default(NEW)
-
-  adminReply String? @map("admin_reply")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([userId])
-  @@index([userId, deletedAt, createdAt])
-  @@index([email])
-  @@index([status])
-  @@index([deletedAt, status, createdAt])
-  @@index([createdAt])
-  @@map("contact_messages")
-}
-
-model NlpLexicon {
-  id String @id @default(uuid())
-
-  word     String
-  type     NlpLexiconType
-  language LanguageCode   @default(ANY)
-
-  isActive Boolean @default(true) @map("is_active")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  /// Prevent duplicate lexicon entries for the same word, category, and language.
-  @@unique([word, type, language])
-  /// Used when querying lexicon entries by language.
-  @@index([language])
-  /// Optimizes the most common NLP lookup:
-  /// WHERE type = ? AND language IN (?, ANY)
-  @@index([type, language])
-  /// Speeds up filtering active lexicon entries.
-  @@index([isActive])
-  @@map("nlp_lexicons")
-}
-
-model NlpTopicRule {
-  id String @id @default(uuid())
-
-  topic    String
-  terms    Json
-  domainId String? @map("domain_id")
-  domain   Domain? @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  language LanguageCode @default(ANY)
-
-  isActive Boolean @default(true) @map("is_active")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([domainId])
-  @@index([language])
-  @@index([isActive])
-  @@map("nlp_topic_rules")
-}
-
-/**
- * Distributed lock for expensive idea-generation workflows.
- * Prevents concurrent requests from:
- * - Calling AI more than once for the same entitlement.
- * - Consuming the same final free attempt.
- * - Consuming the same premium credit.
- * The lock is stored in PostgreSQL and therefore works across
- * multiple backend instances.
- */
-model IdeaGenerationLock {
-  id String @id @default(uuid())
-
-  /**
-   * Examples:
-   * - user:<userId>
-   * - guest:<guestSessionId>
-   */
-  lockKey String @unique @map("lock_key")
-
-  ownerToken String @map("owner_token")
-
-  expiresAt DateTime @map("expires_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([expiresAt])
-  @@map("idea_generation_locks")
-}
-
-model IdeaPublication {
-  id String @id @default(uuid())
-
-  ideaId String @unique @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  publisherId String @map("publisher_id")
-  publisher   User   @relation("PublishedIdeas", fields: [publisherId], references: [id], onDelete: Cascade)
-
-  status IdeaPublicationStatus @default(DRAFT)
-
-  visibility IdeaPublicationVisibility
-
-  /**
-   * Safe public snapshot.
-   * These fields are copied from Idea when publishing.
-   * Internal paid details are never exposed directly.
-   */
-  publicTitle       String                    @map("public_title")
-  publicAbstract    String?                   @map("public_abstract")
-  publicProblem     String?                   @map("public_problem")
-  publicObjectives  String?                   @map("public_objectives")
-  revisions         IdeaPublicationRevision[]
-  publicTargetUsers String?                   @map("public_target_users")
-
-  allowRatings  Boolean @default(true) @map("allow_ratings")
-  allowFeedback Boolean @default(true) @map("allow_feedback")
-  allowVoting   Boolean @default(true) @map("allow_voting")
-
-  averageRating Decimal @default(0) @map("average_rating") @db.Decimal(3, 2)
-
-  ratingsCount Int @default(0) @map("ratings_count")
-
-  upvotesCount   Int @default(0) @map("upvotes_count")
-  downvotesCount Int @default(0) @map("downvotes_count")
-  feedbackCount  Int @default(0) @map("feedback_count")
-
-  publishedAt  DateTime? @map("published_at")
-  archivedAt   DateTime? @map("archived_at")
-  isHidden     Boolean   @default(false) @map("is_hidden")
-  hiddenAt     DateTime? @map("hidden_at")
-  hiddenReason String?   @map("hidden_reason")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  audiences IdeaPublicationAudience[]
-  ratings   IdeaPublicationRating[]
-  votes     IdeaPublicationVote[]
-  feedback  IdeaPublicationFeedback[]
-  reports   IdeaPublicationReport[]
-
-  @@index([status, visibility, publishedAt])
-  @@index([publisherId, status, createdAt])
-  @@index([status, publishedAt])
-  @@index([publisherId])
-  @@index([isHidden, status, publishedAt])
-  @@index([averageRating])
-  @@index([upvotesCount])
-  @@map("idea_publications")
-}
-
-model IdeaPublicationReport {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  reporterId String @map("reporter_id")
-  reporter   User   @relation("PublicationReportsSubmitted", fields: [reporterId], references: [id], onDelete: Cascade)
-
-  reason  PublicationReportReason
-  details String?
-
-  status ModerationReportStatus @default(PENDING)
-
-  reviewedById String? @map("reviewed_by_id")
-  reviewedBy   User?   @relation("PublicationReportsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
-
-  reviewedAt DateTime? @map("reviewed_at")
-  adminNote  String?   @map("admin_note")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([publicationId, reporterId])
-  @@index([publicationId, status])
-  @@index([reporterId, createdAt])
-  @@index([status, createdAt])
-  @@map("idea_publication_reports")
-}
-
-model IdeaPublicationAudience {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  /**
-   * Examples:
-   * user-type
-   * domain-interest
-   * specific-user
-   */
-  audienceType String @map("audience_type")
-
-  /**
-   * Examples:
-   * STUDENT
-   * DEVELOPER
-   * <userId>
-   */
-  audienceValue String @map("audience_value")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([publicationId, audienceType, audienceValue])
-  @@index([audienceType, audienceValue])
-  @@map("idea_publication_audiences")
-}
-
 enum IdeaVoteValue {
   UP
   DOWN
-}
-
-model IdeaPublicationVote {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  value IdeaVoteValue
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([publicationId, userId])
-  @@index([userId])
-  @@map("idea_publication_votes")
-}
-
-model IdeaPublicationRating {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  value Int
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([publicationId, userId])
-  @@index([publicationId])
-  @@index([userId])
-  @@map("idea_publication_ratings")
 }
 
 enum PublicationFeedbackStatus {
@@ -1745,190 +1718,9 @@ enum PublicationFeedbackStatus {
   REPORTED
 }
 
-model IdeaPublicationFeedback {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  userId String @map("user_id")
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  comment String
-
-  status PublicationFeedbackStatus @default(VISIBLE)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([publicationId, userId])
-  @@index([publicationId, status])
-  @@index([userId])
-  @@map("idea_publication_feedback")
-}
-
-model IdeaGenerationRun {
-  id String @id @default(uuid())
-
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  guestSessionId    String?       @map("guest_session_id")
-  lastHeartbeatAt   DateTime?     @map("last_heartbeat_at")
-  cancelRequestedAt DateTime?     @map("cancel_requested_at")
-  guestSession      GuestSession? @relation(fields: [guestSessionId], references: [id], onDelete: SetNull)
-
-  ideaId String? @unique @map("idea_id")
-  idea   Idea?   @relation(fields: [ideaId], references: [id], onDelete: SetNull)
-
-  collectionJobId String?        @map("collection_job_id")
-  collectionJob   CollectionJob? @relation(fields: [collectionJobId], references: [id], onDelete: SetNull)
-
-  generationType IdeaGenerationType @map("generation_type")
-
-  status IdeaGenerationRunStatus @default(QUEUED)
-
-  currentStageKey String? @map("current_stage_key")
-  progressPercent Int     @default(0) @map("progress_percent")
-
-  errorCode       String? @map("error_code")
-  errorMessage    String? @map("error_message")
-  contextSnapshot Json?   @map("context_snapshot")
-
-  retryCount Int @default(0) @map("retry_count")
-
-  nextRetryAt DateTime? @map("next_retry_at")
-
-  pausedAt DateTime? @map("paused_at")
-
-  startedAt   DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  stages              IdeaGenerationStage[]
-  promptHistories     PromptHistory[]
-  benchmarkCandidates IdeaGenerationCandidate[]
-
-  @@index([userId, createdAt])
-  @@index([status])
-  @@index([status, nextRetryAt])
-  @@index([collectionJobId])
-  @@map("idea_generation_runs")
-}
-
-model IdeaGenerationStage {
-  id String @id @default(uuid())
-
-  runId String            @map("run_id")
-  run   IdeaGenerationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
-
-  /**
-   * Extensible stage identifier.
-   * Examples:
-   * request-validation
-   * data-source-selection
-   * data-collection
-   * nlp-analysis
-   * idea-generation
-   * abstract-generation
-   * business-model
-   * technology-stack
-   * feasibility
-   */
-  stageKey String @map("stage_key")
-
-  displayName String @map("display_name")
-  sequence    Int
-
-  status IdeaGenerationStageStatus @default(PENDING)
-
-  progressPercent Int @default(0) @map("progress_percent")
-
-  /**
-   * Safe summary displayed to the user.
-   */
-  resultPreview Json? @map("result_preview")
-
-  errorMessage String? @map("error_message")
-
-  startedAt   DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
-
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  attemptCount Int      @default(0) @map("attempt_count")
-  maxAttempts  Int      @default(1) @map("max_attempts")
-
-  @@unique([runId, stageKey])
-  @@index([runId, sequence])
-  @@index([status])
-  @@map("idea_generation_stages")
-}
-
 enum GeneratedOutputStatus {
   PENDING
   GENERATING
   COMPLETED
   FAILED
-}
-
-model GeneratedOutput {
-  id String @id @default(uuid())
-
-  ideaId String @map("idea_id")
-  idea   Idea   @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-
-  /**
-   * Examples:
-   * full-abstract
-   * technology-stack
-   * system-architecture
-   * database-design
-   * business-model
-   */
-  outputKey String @map("output_key")
-
-  title String
-
-  sequence Int @default(0)
-
-  status GeneratedOutputStatus @default(PENDING)
-
-  content           String?
-  structuredContent Json?   @map("structured_content")
-
-  errorMessage String? @map("error_message")
-
-  generatedAt DateTime? @map("generated_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([ideaId, outputKey])
-  @@index([ideaId, sequence])
-  @@index([status])
-  @@map("generated_outputs")
-}
-
-model IdeaPublicationRevision {
-  id String @id @default(uuid())
-
-  publicationId String          @map("publication_id")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-
-  version Int
-
-  publicTitle       String  @map("public_title")
-  publicAbstract    String  @map("public_abstract")
-  publicProblem     String? @map("public_problem")
-  publicObjectives  String? @map("public_objectives")
-  publicTargetUsers String? @map("public_target_users")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([publicationId, version])
-  @@index([publicationId, createdAt])
-  @@map("idea_publication_revisions")
 }

@@ -434,6 +434,11 @@ export class PromptBuilderService {
       '- Merge semantically equivalent problem labels instead of presenting duplicate variants.',
       '- For premium output, budgetEstimation must be explicitly labeled as a preliminary estimate and include: one currency, a numeric minimum-to-maximum range, major cost categories, assumptions, and exclusions.',
       '- Do not invent a precise market price. Use a defensible planning range and identify every assumption.',
+      '- Keep technologyStack and systemArchitecture internally consistent. Every listed technology must have a clear role in the described architecture.',
+      '- Do not list both REST and GraphQL unless the architecture explicitly needs both. Prefer one primary API style for an MVP.',
+      '- Do not list TensorFlow Lite, Core ML, ONNX Runtime, or another on-device inference framework when classification is described as backend-only.',
+      '- Prefer the smallest maintainable MVP stack. Avoid Kubernetes, multiple backend languages, or multiple databases unless scale or integration requirements clearly justify them.',
+      '- When NLP runs on the backend, use a conventional backend API plus a dedicated NLP component or service; do not imply unsupported cross-application or on-device access.',
     ].join('\n');
   }
 

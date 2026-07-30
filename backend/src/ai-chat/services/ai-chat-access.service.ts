@@ -20,12 +20,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { AccountStatus } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 
 import {
   AI_CHAT_IDEA_ACCESS_SELECT,
   AI_CHAT_SESSION_ACCESS_SELECT,
 } from '../constants/ai-chat-access-selects.constants';
+
 import type {
   AiChatIdeaAccessRecord,
   AiChatSessionAccessRecord,
@@ -46,6 +49,8 @@ export class AiChatAccessService {
    * - The idea exists.
    * - The idea is not soft-deleted.
    * - The idea belongs to the authenticated user.
+   * - The idea belongs to a registered user.
+   * - The user's account is currently Premium.
    * - The idea has been unlocked.
    *
    * A missing or inaccessible idea is reported as not found to avoid exposing
@@ -56,8 +61,7 @@ export class AiChatAccessService {
    * @returns Minimal validated idea record.
    * @throws NotFoundException When the idea does not exist, is deleted, or
    * does not belong to the authenticated user.
-   * @throws ForbiddenException When AI Chat is unavailable because the idea
-   * has not been unlocked.
+   * @throws ForbiddenException When AI Chat is unavailable for the idea.
    */
   async ensureIdeaChatAccess(
     userId: string,
@@ -74,6 +78,12 @@ export class AiChatAccessService {
 
     if (!idea) {
       throw new NotFoundException('Idea was not found.');
+    }
+
+    if (!idea.user || idea.user.accountStatus !== AccountStatus.PREMIUM) {
+      throw new ForbiddenException(
+        'AI Chat is available only while the account is Premium.',
+      );
     }
 
     if (!idea.isUnlocked) {
@@ -94,6 +104,8 @@ export class AiChatAccessService {
    * - The session belongs to the authenticated user.
    * - The related idea exists and is not soft-deleted.
    * - The related idea belongs to the authenticated user.
+   * - The related idea belongs to a registered user.
+   * - The user's account is currently Premium.
    * - The related idea is unlocked.
    *
    * Ownership constraints are included directly in the database query to
@@ -104,8 +116,7 @@ export class AiChatAccessService {
    * @returns Minimal validated chat-session record.
    * @throws NotFoundException When the session or related idea does not exist,
    * is deleted, or does not belong to the authenticated user.
-   * @throws ForbiddenException When AI Chat is unavailable because the related
-   * idea has not been unlocked.
+   * @throws ForbiddenException When AI Chat is unavailable for the session.
    */
   async ensureSessionChatAccess(
     userId: string,
@@ -126,6 +137,15 @@ export class AiChatAccessService {
 
     if (!session) {
       throw new NotFoundException('AI chat session was not found.');
+    }
+
+    if (
+      !session.idea.user ||
+      session.idea.user.accountStatus !== AccountStatus.PREMIUM
+    ) {
+      throw new ForbiddenException(
+        'AI Chat is available only while the account is Premium.',
+      );
     }
 
     if (!session.idea.isUnlocked) {
@@ -150,8 +170,7 @@ export class AiChatAccessService {
    * @returns Minimal validated chat-session record.
    * @throws NotFoundException When the session does not belong to the expected
    * idea or cannot be accessed by the authenticated user.
-   * @throws ForbiddenException When AI Chat is unavailable because the related
-   * idea has not been unlocked.
+   * @throws ForbiddenException When AI Chat is unavailable for the session.
    */
   async ensureSessionBelongsToIdea(
     userId: string,
@@ -175,6 +194,15 @@ export class AiChatAccessService {
 
     if (!session) {
       throw new NotFoundException('AI chat session was not found.');
+    }
+
+    if (
+      !session.idea.user ||
+      session.idea.user.accountStatus !== AccountStatus.PREMIUM
+    ) {
+      throw new ForbiddenException(
+        'AI Chat is available only while the account is Premium.',
+      );
     }
 
     if (!session.idea.isUnlocked) {

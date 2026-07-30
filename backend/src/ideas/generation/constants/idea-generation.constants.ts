@@ -94,10 +94,16 @@ export const DEFAULT_STAGE_MAX_ATTEMPTS = 2;
  */
 export const DEFAULT_STAGE_RETRY_DELAY_MS = 1_000;
 /** Maximum number of database reconnect attempts before a run is paused. */
-export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 8;
+/**
+ * Maximum immediate retries for one critical database operation.
+ *
+ * A prolonged outage is handled by the persisted RETRYING/PAUSED lifecycle;
+ * keeping this bounded prevents a single request from blocking for minutes.
+ */
+export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 7;
 
 /** Initial delay used by exponential database retry backoff. */
-export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 1_000;
+export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 2_000;
 
 /** Maximum delay between database retry attempts. */
 export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 30_000;
@@ -474,16 +480,13 @@ export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
 /** Maximum targeted evidence-recovery attempts per generation run. */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
-
-/** Minimum direct-evidence coverage required before skipping recovery. */
-export const MIN_EVIDENCE_COVERAGE_BEFORE_RECOVERY = 0.5;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 4;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
-export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.4;
+export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.2;
 
 /** Minimum number of representative samples required before skipping recovery. */
-export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 2;
+export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 1;
 
 /** Minimum deterministic quality score required for an AI idea candidate. */
 export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
@@ -492,7 +495,7 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */
-export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 2;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -501,7 +504,7 @@ export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
  * selected providers fail, but it should attempt this many models first for
  * every opportunity.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
@@ -545,8 +548,7 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * attempt limit from becoming inconsistent with the configured opportunity
  * and model counts.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS =
-  IDEA_BENCHMARK_MAX_CANDIDATES + IDEA_BENCHMARK_INITIAL_MODEL_COUNT;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = IDEA_BENCHMARK_MAX_CANDIDATES;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved
@@ -594,4 +596,6 @@ export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;
 export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
   'nvidia/nemotron-nano-9b-v2:free',
   'cohere/north-mini-code:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'poolside/laguna-s-2.1:free',
 ]);

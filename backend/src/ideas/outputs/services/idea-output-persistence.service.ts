@@ -13,10 +13,18 @@ import {
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { IDEA_ADVANCED_OUTPUT_DEFINITIONS } from '../../generation/constants/idea-output.constants';
-import {
-  DIRECT_UNLOCK_CLAIM_OUTPUT_KEY,
-  DIRECT_UNLOCK_CLAIM_TTL_MS,
-} from '../constants/idea-outputs.constants';
+/**
+ * Stable output key used as the durable direct-unlock generation claim.
+ *
+ * It intentionally matches the registered advanced-output definition and the
+ * unique GeneratedOutput (ideaId, outputKey) constraint.
+ */
+const DIRECT_UNLOCK_CLAIM_OUTPUT_KEY = 'full-abstract' as const;
+
+/**
+ * A pending claim older than this duration may be safely reclaimed.
+ */
+const DIRECT_UNLOCK_CLAIM_TTL_MS = 10 * 60 * 1000;
 import type {
   BeginIdeaUnlockResult,
   IdeaOutputDatabaseClient,

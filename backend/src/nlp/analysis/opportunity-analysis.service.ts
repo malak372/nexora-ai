@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { isRepositoryOperationalRecord } from '../common/utils/community-evidence.util';
+
 import {
   IntelligentAnalysisOutput,
   WeightedKeyword,
@@ -49,13 +51,24 @@ export class OpportunityAnalysisService {
     topics: WeightedTopic[],
     keywords: WeightedKeyword[],
   ): Opportunity[] {
-    const evidenceBackedProblems = problems.filter(
-      (problem) => problem.evidenceSamples.length > 0,
-    );
-    const evidenceBackedNeeds = needs.filter(
-      (need) =>
-        need.evidenceSamples.length > 0 && this.isConcreteNeedLabel(need.need),
-    );
+    const evidenceBackedProblems = problems
+      .map((problem) => ({
+        ...problem,
+        evidenceSamples: this.removeOperationalEvidence(
+          problem.evidenceSamples,
+        ),
+      }))
+      .filter((problem) => problem.evidenceSamples.length > 0);
+    const evidenceBackedNeeds = needs
+      .map((need) => ({
+        ...need,
+        evidenceSamples: this.removeOperationalEvidence(need.evidenceSamples),
+      }))
+      .filter(
+        (need) =>
+          need.evidenceSamples.length > 0 &&
+          this.isConcreteNeedLabel(need.need),
+      );
     const opportunities: Opportunity[] = [
       ...this.buildProblemNeedOpportunities(
         evidenceBackedProblems,
@@ -78,6 +91,7 @@ export class OpportunityAnalysisService {
     ];
 
     return this.mergeSimilarOpportunities(opportunities)
+      .filter((opportunity) => opportunity.evidenceSamples.length > 0)
       .sort((first, second) => {
         if (second.score !== first.score) {
           return second.score - first.score;
@@ -86,6 +100,19 @@ export class OpportunityAnalysisService {
         return first.solutionArea.localeCompare(second.solutionArea);
       })
       .slice(0, this.maxOpportunities);
+  }
+
+  /**
+   * Removes repository governance and contribution records before they can
+   * support a rule-based opportunity. This is a second defensive gate in case
+   * a legacy analysis result or a future extractor bypasses preprocessing.
+   */
+  private removeOperationalEvidence(
+    evidenceSamples: readonly string[],
+  ): string[] {
+    return evidenceSamples.filter(
+      (sample) => !isRepositoryOperationalRecord(sample),
+    );
   }
 
   /** Prevents incomplete NLP trigger fragments from becoming opportunities. */

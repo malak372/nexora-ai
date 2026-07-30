@@ -43,7 +43,11 @@ export class UserCreditsService {
   ) {}
 
   /**
-   * Returns the user's credit summary.
+   * Returns the user's current credit summary.
+   *
+   * A NORMAL user may technically have stored credits after a refund
+   * or administrator adjustment. Stored credits alone do not activate
+   * Premium.
    */
   async getCredits(userId: string) {
     const cacheKey = userCacheKeys.credits(userId);
@@ -62,7 +66,6 @@ export class UserCreditsService {
       where: {
         id: userId,
       },
-
       select: {
         creditBalance: true,
         accountStatus: true,
@@ -114,7 +117,6 @@ export class UserCreditsService {
         skip,
         take,
         orderBy,
-
         select: {
           id: true,
           type: true,
@@ -124,6 +126,18 @@ export class UserCreditsService {
           createdAt: true,
           ideaId: true,
           paymentId: true,
+          publicationAcceptanceId: true,
+
+          publicationAcceptance: {
+            select: {
+              publication: {
+                select: {
+                  id: true,
+                  publicTitle: true,
+                },
+              },
+            },
+          },
         },
       }),
 
@@ -134,7 +148,6 @@ export class UserCreditsService {
 
     return {
       data: transactions,
-
       meta: {
         total,
         page,
@@ -144,15 +157,12 @@ export class UserCreditsService {
     };
   }
 
-  /**
-   * Ensures that the user exists.
-   */
+  /** Ensures that the requested user exists. */
   private async ensureUserExists(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
       },
-
       select: {
         id: true,
       },

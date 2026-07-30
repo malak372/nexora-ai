@@ -37,11 +37,7 @@ import { UserNotificationsService } from './services/user-notifications.service'
  * @author Eman
  */
 @Module({
-  imports: [
-    PrismaModule,
-    AuditModule,
-    MailModule,
-  ],
+  imports: [PrismaModule, AuditModule, MailModule],
 
   controllers: [
     AdminAlertsController,
@@ -58,9 +54,6 @@ import { UserNotificationsService } from './services/user-notifications.service'
     SystemAlertsService,
   ],
 
-  exports: [
-    SystemAlertsService,
-    PushNotificationService,
-  ],
+  exports: [SystemAlertsService, PushNotificationService],
 })
-export class AlertsModule { }
+export class AlertsModule {}

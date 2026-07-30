@@ -59,6 +59,159 @@ export class UserIdeasService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Reads one nested value from a persisted JSON snapshot without trusting its
+   * runtime shape. Generation snapshots are historical audit data and must be
+   * treated as untyped input at the API boundary.
+   */
+  private readSnapshotRecord(
+    value: Prisma.JsonValue | null | undefined,
+  ): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : null;
+  }
+
+  /**
+   * Builds a user-facing evidence qualification for the generated idea.
+   *
+   * PRELIMINARY means the pipeline deliberately continued with the strongest
+   * penalized fallback after no opportunity passed the strict evidence gate.
+   * This is not a generation failure; it is an explicit validation warning.
+   */
+  private buildEvidenceAssessment(
+    contextSnapshot: Prisma.JsonValue | null | undefined,
+  ) {
+    const snapshot = this.readSnapshotRecord(contextSnapshot);
+    const ranking = this.readSnapshotRecord(
+      snapshot?.opportunityRanking as Prisma.JsonValue | undefined,
+    );
+    const selected = this.readSnapshotRecord(
+      ranking?.selected as Prisma.JsonValue | undefined,
+    );
+    const snapshotNlp = this.readSnapshotRecord(
+      snapshot?.nlp as Prisma.JsonValue | undefined,
+    );
+
+    if (!selected) {
+      return null;
+    }
+
+    const selectionEligible = selected.selectionEligible === true;
+    const finalScore =
+      typeof selected.finalScore === 'number' ? selected.finalScore : null;
+    const reliability =
+      typeof selected.evidenceReliabilityScore === 'number'
+        ? selected.evidenceReliabilityScore
+        : null;
+    const evidenceScore =
+      typeof selected.evidenceScore === 'number'
+        ? selected.evidenceScore
+        : null;
+    const nlpConfidence =
+      typeof selected.nlpConfidenceScore === 'number'
+        ? selected.nlpConfidenceScore
+        : typeof snapshotNlp?.confidence === 'number'
+          ? snapshotNlp.confidence
+          : null;
+    const evidenceSamples = Array.isArray(selected.evidenceSamples)
+      ? selected.evidenceSamples.filter(
+          (sample): sample is string => typeof sample === 'string',
+        )
+      : [];
+    const raw = this.readSnapshotRecord(
+      selected.raw as Prisma.JsonValue | undefined,
+    );
+    const localEvidenceAvailable = raw?.localEvidenceAvailable === true;
+
+    /*
+     * Passing the strict gate is necessary but not sufficient for HIGH
+     * confidence. A single highly specific report can pass the gate, yet it
+     * must remain a pilot hypothesis until repetition or local evidence exists.
+     */
+    const hasRepeatedEvidence =
+      evidenceSamples.length >= 2 ||
+      (typeof selected.frequency === 'number' && selected.frequency >= 2);
+    const hasStrongEvidenceQuality =
+      evidenceScore !== null && evidenceScore >= 0.5;
+    const hasStrongNlpConfidence =
+      nlpConfidence !== null && nlpConfidence >= 0.65;
+
+    const confidence = !selectionEligible
+      ? 'LOW'
+      : reliability !== null &&
+          reliability >= 0.8 &&
+          hasRepeatedEvidence &&
+          hasStrongEvidenceQuality &&
+          hasStrongNlpConfidence
+        ? 'HIGH'
+        : 'MEDIUM';
+
+    const pilotValidationRequired =
+      !selectionEligible || confidence !== 'HIGH' || !localEvidenceAvailable;
+
+    return {
+      status: selectionEligible ? 'SUPPORTED' : 'PRELIMINARY',
+      confidence,
+      pilotValidationRequired,
+      strictEvidenceGatePassed: selectionEligible,
+      opportunityEvidenceScore:
+        finalScore === null ? null : Math.round(finalScore * 10_000) / 100,
+      evidenceReliability:
+        reliability === null ? null : Math.round(reliability * 10_000) / 100,
+      evidenceQuality:
+        evidenceScore === null
+          ? null
+          : Math.round(evidenceScore * 10_000) / 100,
+      finalEvidenceConfidence:
+        nlpConfidence === null
+          ? null
+          : Math.round(nlpConfidence * 10_000) / 100,
+      directEvidenceCount: evidenceSamples.length,
+      localEvidenceAvailable,
+      disqualificationReasons: Array.isArray(selected.disqualificationReasons)
+        ? selected.disqualificationReasons.filter(
+            (reason): reason is string => typeof reason === 'string',
+          )
+        : [],
+      message: !selectionEligible
+        ? 'The idea is a preliminary pilot hypothesis because no opportunity passed the strict evidence gate after bounded recovery.'
+        : pilotValidationRequired
+          ? 'The opportunity passed the strict gate, but independent or local pilot validation is still required because the supporting evidence is limited.'
+          : 'The selected opportunity passed the strict evidence gate with repeated, high-quality support.',
+    } as const;
+  }
+
+  /**
+   * Separates deterministic base NLP metrics from later community-AI
+   * enrichment so clients never need to infer the meaning of legacy fields.
+   */
+  private buildNlpConfidenceSummary(
+    baseConfidence: number | null,
+    baseAiUsed: boolean,
+    contextSnapshot: Prisma.JsonValue | null | undefined,
+  ) {
+    const snapshot = this.readSnapshotRecord(contextSnapshot);
+    const snapshotNlp = this.readSnapshotRecord(
+      snapshot?.nlp as Prisma.JsonValue | undefined,
+    );
+    const enrichedConfidence =
+      typeof snapshotNlp?.confidence === 'number'
+        ? snapshotNlp.confidence
+        : null;
+    const communityAiUsed = snapshot?.communityAiAnalysis != null;
+
+    return {
+      baseAnalysisMode: baseAiUsed ? 'AI_ENHANCED' : 'RULE_BASED',
+      baseNlpConfidence: baseConfidence,
+      perTextAiEnhancementUsed: baseAiUsed,
+      communityAiAnalysisUsed: communityAiUsed,
+      finalEvidenceConfidence: enrichedConfidence,
+      /** @deprecated Use finalEvidenceConfidence. */
+      enrichedNlpConfidence: enrichedConfidence,
+    } as const;
+  }
+
+  /**
    * Creates the Prisma where clause shared by the
    * authenticated user's idea-listing endpoint.
    */
@@ -298,6 +451,7 @@ export class UserIdeasService {
             completedAt: true,
             createdAt: true,
             updatedAt: true,
+            contextSnapshot: true,
 
             stages: {
               orderBy: {
@@ -502,6 +656,16 @@ export class UserIdeasService {
         }
       : null;
 
+    const contextSnapshot = idea.generationRun?.contextSnapshot ?? null;
+    const evidenceAssessment = this.buildEvidenceAssessment(contextSnapshot);
+    const baseNlpConfidence =
+      idea.collectionJob?.nlpAnalysis?.confidence?.toNumber() ?? null;
+    const nlpConfidenceSummary = this.buildNlpConfidenceSummary(
+      baseNlpConfidence,
+      idea.collectionJob?.nlpAnalysis?.aiUsed ?? false,
+      contextSnapshot,
+    );
+
     return {
       id: idea.id,
       title: idea.title,
@@ -537,6 +701,8 @@ export class UserIdeasService {
 
       generationRun,
 
+      evidenceAssessment: advancedAccess ? evidenceAssessment : null,
+
       /**
        * Collection metadata may be shown in a limited form
        * for locked ideas, but NLP evidence and sample data
@@ -570,7 +736,22 @@ export class UserIdeasService {
               ? idea.collectionJob.totalComments
               : undefined,
 
-            nlpAnalysis: advancedAccess ? idea.collectionJob.nlpAnalysis : null,
+            nlpAnalysis:
+              advancedAccess && idea.collectionJob.nlpAnalysis
+                ? {
+                    ...idea.collectionJob.nlpAnalysis,
+                    samplePosts: this.sanitizeEvidenceSamples(
+                      idea.collectionJob.nlpAnalysis.samplePosts,
+                      'POST',
+                    ),
+                    sampleComments: this.sanitizeEvidenceSamples(
+                      idea.collectionJob.nlpAnalysis.sampleComments,
+                      'COMMENT',
+                    ),
+                    confidence: baseNlpConfidence,
+                    confidenceSummary: nlpConfidenceSummary,
+                  }
+                : null,
           }
         : null,
 
@@ -607,6 +788,83 @@ export class UserIdeasService {
       createdAt: idea.createdAt,
       updatedAt: idea.updatedAt,
     };
+  }
+
+  /**
+   * Sanitizes persisted representative evidence at the API boundary.
+   *
+   * Older analyses may contain store descriptions, repository RFCs, or broad
+   * conversation that was persisted before stricter extraction rules existed.
+   * This method changes display output only; it does not delete source records,
+   * rewrite NLP metrics, or alter opportunity ranking.
+   */
+  private sanitizeEvidenceSamples(
+    value: unknown,
+    sourceType: 'POST' | 'COMMENT',
+  ): unknown[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter((item): item is Record<string, unknown> => this.isRecord(item))
+      .filter((item) => {
+        const text = typeof item.text === 'string' ? item.text : '';
+        return this.isUsefulEvidencePreview(text, sourceType);
+      })
+      .slice(0, 5);
+  }
+
+  /** Keeps only user-observed software evidence in the Evidence-tab preview. */
+  private isUsefulEvidencePreview(
+    text: string,
+    sourceType: 'POST' | 'COMMENT',
+  ): boolean {
+    const normalized = text.replace(/\s+/gu, ' ').trim().toLowerCase();
+
+    if (normalized.length < 20) {
+      return false;
+    }
+
+    const softwareNeedSignal =
+      /\b(?:cannot|can't|unable|blocked|missing|unavailable|error|fails?|failed|broken|bug|crash|timeout|slow|does not|doesn't|should|need|request|feature|paywall|subscription|login|authentication|sync|storage|interface|ui|website|app|document|transcript|subject|category|configuration)\b/iu.test(
+        normalized,
+      );
+
+    if (!softwareNeedSignal) {
+      return false;
+    }
+
+    const unrelatedConversation =
+      /\b(?:love from|invite you|my country|mam |congratulations|beautiful speech|god bless|thank you for this video)\b/iu.test(
+        normalized,
+      ) &&
+      !/\b(?:app|software|platform|website|login|error|feature|subscription|storage|sync)\b/iu.test(
+        normalized,
+      );
+
+    if (unrelatedConversation) {
+      return false;
+    }
+
+    if (sourceType === 'POST') {
+      const promotionalOrBlueprint =
+        normalized.length > 250 &&
+        /\b(?:welcome to|all-in-one|download|app features|main features|award-winning|our mission|our goal|designed to|rfc|proposal|what i'?m proposing|implementation|roadmap|pilot centered)\b/iu.test(
+          normalized,
+        );
+
+      if (promotionalOrBlueprint) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /** Type guard used by evidence-preview sanitization. */
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   /**

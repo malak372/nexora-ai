@@ -1,5 +1,8 @@
+import { HttpService } from '@nestjs/axios';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AxiosError } from 'axios';
+import { firstValueFrom } from 'rxjs';
 
 import { BaseCollector } from '../base/base.collector';
 import { CollectorCacheUtil } from '../base/collector-cache.util';
@@ -213,7 +216,10 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
    */
   private cachedToken?: CachedRedditToken;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    private readonly httpService: HttpService,
+  ) {
     super(configService, RedditCollector.name);
 
     this.maxSearchQueries = this.getPositiveNumber(
@@ -913,6 +919,10 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
   private async getAccessToken(
     credentials: RedditCredentials,
   ): Promise<string> {
+    /*
+     * Reddit access tokens are reused until one minute before expiration.
+     * This avoids requesting a new token for every collection request.
+     */
     if (this.cachedToken && this.cachedToken.expiresAt > Date.now() + 60_000) {
       return this.cachedToken.accessToken;
     }
@@ -925,51 +935,64 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
       grant_type: 'client_credentials',
     });
 
-    const response = await fetch(this.tokenUrl, {
-      method: 'POST',
-
-      headers: {
-        Authorization: `Basic ${basicCredentials}`,
-
-        'Content-Type': 'application/x-www-form-urlencoded',
-
-        Accept: 'application/json',
-
-        'User-Agent': credentials.userAgent,
-      },
-
-      body: formBody.toString(),
-    });
-
-    if (!response.ok) {
-      const responseBody = await response.text();
-
-      throw new Error(
-        `Reddit OAuth failed with status ${response.status}: ${responseBody}`,
+    try {
+      /*
+       * HttpService is NestJS's Axios integration.
+       * firstValueFrom converts the returned Observable into a Promise.
+       */
+      const response = await firstValueFrom(
+        this.httpService.post<RedditTokenResponse>(
+          this.tokenUrl,
+          formBody.toString(),
+          {
+            headers: {
+              Authorization: `Basic ${basicCredentials}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Accept: 'application/json',
+              'User-Agent': credentials.userAgent,
+            },
+            timeout: 10_000,
+          },
+        ),
       );
+
+      const tokenResponse = response.data;
+
+      if (
+        !this.isRedditTokenResponse(tokenResponse) ||
+        !tokenResponse.access_token
+      ) {
+        throw new Error(
+          'Reddit OAuth returned an invalid access-token response.',
+        );
+      }
+
+      const expiresInSeconds =
+        Number.isFinite(tokenResponse.expires_in) &&
+        (tokenResponse.expires_in ?? 0) > 0
+          ? tokenResponse.expires_in!
+          : 3_600;
+
+      this.cachedToken = {
+        accessToken: tokenResponse.access_token,
+        expiresAt: Date.now() + expiresInSeconds * 1_000,
+      };
+
+      return tokenResponse.access_token;
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        const status = error.response?.status;
+        const responseData: unknown = error.response?.data;
+
+        throw new Error(
+          `Reddit OAuth failed${
+            status ? ` with status ${status}` : ''
+          }: ${this.stringifyErrorPayload(responseData ?? error.message)}`,
+        );
+      }
+
+      throw error;
     }
-
-    const rawResponse: unknown = await response.json();
-
-    if (!this.isRedditTokenResponse(rawResponse) || !rawResponse.access_token) {
-      throw new Error(
-        'Reddit OAuth returned an invalid access-token response.',
-      );
-    }
-
-    const expiresInSeconds =
-      Number.isFinite(rawResponse.expires_in) &&
-      (rawResponse.expires_in ?? 0) > 0
-        ? rawResponse.expires_in!
-        : 3_600;
-
-    this.cachedToken = {
-      accessToken: rawResponse.access_token,
-
-      expiresAt: Date.now() + expiresInSeconds * 1_000,
-    };
-
-    return rawResponse.access_token;
   }
 
   /**
@@ -1179,6 +1202,24 @@ export class RedditCollector extends BaseCollector implements SocialCollector {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
+  }
+
+  /**
+   * Converts an unknown HTTP error payload into a readable string.
+   *
+   * @param payload Unknown Axios response body.
+   * @returns Safe readable representation.
+   */
+  private stringifyErrorPayload(payload: unknown): string {
+    if (typeof payload === 'string') {
+      return payload;
+    }
+
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return 'Unknown HTTP response payload.';
+    }
   }
 
   /**

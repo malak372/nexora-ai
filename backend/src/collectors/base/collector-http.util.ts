@@ -225,7 +225,19 @@ export class CollectorHttpUtil {
           );
         }
 
+        const requestFailureKind = this.getRequestFailureKind(axiosError);
+
+        if (requestFailureKind === 'TIMEOUT') {
+          this.logger.warn(
+            `HTTP GET timed out after ${String(requestConfig.timeout)}ms: ${url}`,
+          );
+        } else if (requestFailureKind === 'CANCELED') {
+          this.logger.warn(`HTTP GET was canceled: ${url}`);
+        }
+
         const shouldRetry =
+          requestFailureKind === 'TIMEOUT' ||
+          requestFailureKind === 'CANCELED' ||
           status === undefined ||
           status === 408 ||
           status === 429 ||
@@ -233,7 +245,10 @@ export class CollectorHttpUtil {
 
         if (!shouldRetry || attempt === retryAttempts) {
           this.logger.error(
-            `HTTP GET failed: ${url}. ${this.getErrorMessage(error)}`,
+            `HTTP GET failed: ${url}. ${this.getDetailedErrorMessage(
+              error,
+              requestConfig.timeout,
+            )}`,
           );
 
           if (cachedData) {
@@ -264,6 +279,71 @@ export class CollectorHttpUtil {
     }
 
     throw lastError;
+  }
+
+  /**
+   * Classifies transport-level request failures.
+   *
+   * Axios may report request timeouts or cancellations using
+   * different error codes depending on the active HTTP adapter.
+   * Normalizing them here keeps retry and logging behavior clear.
+   *
+   * @param error Axios request error.
+   * @returns The normalized transport failure kind.
+   */
+  private static getRequestFailureKind(
+    error: AxiosError<unknown> | undefined,
+  ): 'TIMEOUT' | 'CANCELED' | 'OTHER' {
+    if (!error) {
+      return 'OTHER';
+    }
+
+    const normalizedMessage = error.message.toLowerCase();
+
+    if (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ETIMEDOUT' ||
+      normalizedMessage.includes('timeout') ||
+      normalizedMessage.includes('timed out')
+    ) {
+      return 'TIMEOUT';
+    }
+
+    if (
+      error.code === 'ERR_CANCELED' ||
+      normalizedMessage === 'aborted' ||
+      normalizedMessage.includes('canceled') ||
+      normalizedMessage.includes('cancelled')
+    ) {
+      return 'CANCELED';
+    }
+
+    return 'OTHER';
+  }
+
+  /**
+   * Builds an actionable final request error message.
+   *
+   * @param error Unknown request error.
+   * @param timeoutMs Configured request timeout.
+   * @returns A readable diagnostic message.
+   */
+  private static getDetailedErrorMessage(
+    error: unknown,
+    timeoutMs: AxiosRequestConfig['timeout'],
+  ): string {
+    const axiosError = this.getAxiosError(error);
+    const failureKind = this.getRequestFailureKind(axiosError);
+
+    if (failureKind === 'TIMEOUT') {
+      return `Request timed out after ${String(timeoutMs)}ms.`;
+    }
+
+    if (failureKind === 'CANCELED') {
+      return 'Request was canceled before completion.';
+    }
+
+    return this.getErrorMessage(error);
   }
 
   /**

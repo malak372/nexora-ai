@@ -42,20 +42,13 @@ export type IdeaDuplicateCheckResult = {
   readonly matchedIdea: DuplicateIdeaCandidate | null;
 };
 
-type RegionalCollectionScope = {
-  readonly country: string;
-  readonly city: string | null;
-  readonly region: string | null;
-};
-
 /**
- * Detects exact, near-title, and semantic duplicates within one software
- * domain and one geographic collection scope.
+ * Detects exact, near-title, and semantic duplicates globally across all
+ * non-deleted ideas.
  *
- * The check intentionally spans different users in the same area. This keeps
- * users who select the same domain and location from receiving materially
- * identical ideas, while still allowing the same general domain to produce
- * different ideas in different locations.
+ * The check intentionally spans users, countries, regions, cities, and domains.
+ * Geographic or domain differences cannot be used to persist a materially
+ * identical idea.
  *
  * Semantic comparison is provider-independent and uses a weighted token
  * fingerprint built from the title, problem statement, objectives, target
@@ -87,18 +80,15 @@ export class IdeaDuplicateDetectionService {
     }
 
     const client = database ?? this.prisma;
-    const regionalScope = await this.getRegionalScope(
-      client,
-      normalizedCollectionJobId,
-    );
 
+    /*
+     * Duplicate detection is intentionally global. Domain and location remain
+     * useful ranking signals, but they must never allow a materially repeated
+     * idea to be persisted in another country, region, city, or domain.
+     */
     const storedIdeas = await client.idea.findMany({
       where: {
-        domainId: normalizedDomainId,
         deletedAt: null,
-        collectionJob: {
-          is: this.buildRegionalCollectionFilter(regionalScope),
-        },
       },
       select: {
         id: true,
@@ -271,64 +261,6 @@ export class IdeaDuplicateDetectionService {
         semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
     });
-  }
-
-  private async getRegionalScope(
-    client: PrismaService | Prisma.TransactionClient,
-    collectionJobId: string,
-  ): Promise<RegionalCollectionScope> {
-    const collectionJob = await client.collectionJob.findUnique({
-      where: { id: collectionJobId },
-      select: {
-        country: true,
-        city: true,
-        region: true,
-      },
-    });
-
-    if (!collectionJob) {
-      throw new ConflictException({
-        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
-        message:
-          'The collection job required for duplicate detection was not found.',
-      });
-    }
-
-    const normalizedCountry = collectionJob.country?.trim();
-
-    if (!normalizedCountry) {
-      throw new ConflictException({
-        code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
-        message:
-          'The collection job does not contain a valid country for duplicate detection.',
-      });
-    }
-
-    return {
-      country: normalizedCountry,
-      city: this.normalizeOptionalLocation(collectionJob.city),
-      region: this.normalizeOptionalLocation(collectionJob.region),
-    };
-  }
-
-  private buildRegionalCollectionFilter(
-    scope: RegionalCollectionScope,
-  ): Prisma.CollectionJobWhereInput {
-    return {
-      country: {
-        equals: scope.country,
-        mode: 'insensitive',
-      },
-      city: scope.city ? { equals: scope.city, mode: 'insensitive' } : null,
-      region: scope.region
-        ? { equals: scope.region, mode: 'insensitive' }
-        : null,
-    };
-  }
-
-  private normalizeOptionalLocation(value: string | null): string | null {
-    const normalized = value?.trim();
-    return normalized ? normalized : null;
   }
 
   private mapStoredIdeaToCandidate(idea: {

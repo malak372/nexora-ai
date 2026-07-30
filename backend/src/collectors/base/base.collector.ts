@@ -73,6 +73,41 @@ export abstract class BaseCollector {
     return Number.isFinite(value) && value > 0 ? value : defaultValue;
   }
 
+  /** Resolves a positive per-run override without mutating collector state. */
+  protected resolveLimit(
+    override: number | undefined,
+    fallback: number,
+  ): number {
+    return Number.isFinite(override) && Number(override) > 0
+      ? Math.floor(Number(override))
+      : fallback;
+  }
+
+  protected resolveMaxFetchedPosts(input: CollectorInput): number {
+    return this.resolveLimit(
+      input.limits?.maxFetchedPosts,
+      this.maxFetchedPosts,
+    );
+  }
+
+  protected resolveMaxSavedPosts(input: CollectorInput): number {
+    return this.resolveLimit(input.limits?.maxSavedPosts, this.maxSavedPosts);
+  }
+
+  protected resolveMaxFetchedComments(input: CollectorInput): number {
+    return this.resolveLimit(
+      input.limits?.maxFetchedComments,
+      this.maxFetchedComments,
+    );
+  }
+
+  protected resolveMaxSavedComments(input: CollectorInput): number {
+    return this.resolveLimit(
+      input.limits?.maxSavedComments,
+      this.maxSavedComments,
+    );
+  }
+
   /**
    * Extracts normalized domain keywords.
    */

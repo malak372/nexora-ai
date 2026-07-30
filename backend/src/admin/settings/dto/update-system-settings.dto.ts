@@ -2,51 +2,57 @@ import { Type } from 'class-transformer';
 import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 /**
- * DTO for updating system settings related to the credit system.
+ * Partial update for the single global system-settings record.
  *
- * Used with:
- * PATCH /admin/settings
- *
- * This DTO allows administrators to update configurable
- * credit system values.
- *
- * All properties are optional, allowing partial updates.
+ * Prices are stored in USD and are intentionally configurable so the web and
+ * mobile clients never hard-code commercial rules.
  *
  * @author Malak
  */
 export class UpdateSystemSettingsDto {
-  /**
-   * Price of a single credit.
-   *
-   * Must be a number greater than or equal to 0.
-   *
-   * Example:
-   * 15
-   */
+  /** Price of one premium credit. */
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
-  @Min(0)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
   creditPrice?: number;
 
-  /**
-   * Minimum number of purchased credits required
-   * for bonus eligibility.
-   *
-   * Must be a non-negative integer.
-   */
+  /** Direct-payment price for unlocking one user-owned free idea. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  directUnlockPrice?: number;
+
+  /** Fee added when a NORMAL account transitions to PREMIUM. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  premiumActivationFee?: number;
+
+  /** Fixed price paid by a NORMAL user to accept a published idea. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  publishedIdeaPrice?: number;
+
+  /** Credits a PREMIUM user spends to unlock advanced publication outputs. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  publicationAdvancedCreditCost?: number;
+
+  /** Minimum purchased quantity required for bonus eligibility. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   bonusThreshold?: number;
 
-  /**
-   * Number of bonus credits awarded when
-   * the threshold is reached.
-   *
-   * Must be a non-negative integer.
-   */
+  /** Bonus credits awarded when the threshold is reached. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()

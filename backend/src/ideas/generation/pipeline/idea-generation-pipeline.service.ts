@@ -232,6 +232,21 @@ export class IdeaGenerationPipelineService {
           continue;
         }
 
+        if (currentContext.noResultOutcome) {
+          await this.markStageSkipped(
+            currentContext.runId,
+            resolvedStage.definition,
+            0,
+          );
+          processedStages.push({
+            stageKey: resolvedStage.definition.key,
+            status: IdeaGenerationStageStatus.SKIPPED,
+            attemptCount: 0,
+            resultPreview: currentContext.noResultOutcome.message,
+          });
+          continue;
+        }
+
         const stageResult = await this.executeResolvedStage(
           currentContext,
           resolvedStage,
@@ -750,31 +765,38 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     error: Error,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
+    const stage = await this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationStage.update({
+          where: {
+            runId_stageKey: {
+              runId,
+              stageKey: definition.key,
+            },
+          },
+          data: {
+            /*
+             * Return the stage to a clean pending lifecycle state before the
+             * next attempt. A pending stage is not actively executing, so both
+             * lifecycle timestamps must be null.
+             *
+             * The bounded error message is intentionally retained to make the
+             * previous failed attempt observable while the retry is pending.
+             */
+            status: IdeaGenerationStageStatus.PENDING,
+            progressPercent: definition.progressStart,
+            attemptCount: attempt,
+            resultPreview: Prisma.JsonNull,
+            errorMessage: this.toSafeErrorMessage(error),
+            startedAt: null,
+            completedAt: null,
+          },
+        }),
+      {
+        operationName: 'record retryable generation-stage failure',
+        runId,
       },
-      data: {
-        /*
-         * Return the stage to a clean pending lifecycle state before the
-         * next attempt. A pending stage is not actively executing, so both
-         * lifecycle timestamps must be null.
-         *
-         * The bounded error message is intentionally retained to make the
-         * previous failed attempt observable while the retry is pending.
-         */
-        status: IdeaGenerationStageStatus.PENDING,
-        progressPercent: definition.progressStart,
-        attemptCount: attempt,
-        resultPreview: Prisma.JsonNull,
-        errorMessage: this.toSafeErrorMessage(error),
-        startedAt: null,
-        completedAt: null,
-      },
-    });
+    );
 
     this.realtime.publishStageUpdated(stage);
   }

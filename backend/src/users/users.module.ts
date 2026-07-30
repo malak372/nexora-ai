@@ -8,6 +8,7 @@ import { UserDashboardController } from './dashboard/dashboard.controller';
 import { UserActivityController } from './activity/activity.controller';
 import { UserFavoritesController } from './favorites/favorites.controller';
 import { UserSavedSearchesController } from './saved-searches/saved-searches.controller';
+import { UserPreferencesController } from './preferences/user-preferences.controller';
 
 import { UserProfileService } from './profile/profile.service';
 import { UserValidationService } from './validation/validation.service';
@@ -16,6 +17,7 @@ import { UserActivityService } from './activity/activity.service';
 import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
+import { UserPreferencesService } from './preferences/user-preferences.service';
 
 /**
  * User management module.
@@ -53,6 +55,7 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserActivityController,
     UserFavoritesController,
     UserSavedSearchesController,
+    UserPreferencesController,
   ],
   providers: [
     UserValidationService,
@@ -62,6 +65,7 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserActivityService,
     UserFavoritesService,
     UserSavedSearchesService,
+    UserPreferencesService,
   ],
   exports: [
     UserValidationService,
@@ -71,6 +75,7 @@ import { UserSavedSearchesService } from './saved-searches/saved-searches.servic
     UserActivityService,
     UserFavoritesService,
     UserSavedSearchesService,
+    UserPreferencesService,
   ],
 })
 export class UsersModule {}

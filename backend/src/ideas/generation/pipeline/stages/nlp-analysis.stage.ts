@@ -111,6 +111,10 @@ export class NlpAnalysisStage implements IdeaGenerationStage {
       resultPreview: `NLP analysis verified successfully for ${normalizedNlp.totalTextsAnalyzed} text record(s).`,
 
       metadata: {
+        stageRole: 'VALIDATION_CHECKPOINT',
+
+        executesNlpPipeline: false,
+
         nlpAnalysisId: normalizedNlp.nlpAnalysisId,
 
         totalTextsAnalyzed: normalizedNlp.totalTextsAnalyzed,

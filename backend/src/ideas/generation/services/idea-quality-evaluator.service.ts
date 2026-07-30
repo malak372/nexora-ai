@@ -17,12 +17,17 @@ export type IdeaQualityIssue = {
     | 'UNSUPPORTED_LOCAL_CLAIM'
     | 'UNSUPPORTED_PLATFORM_ACCESS'
     | 'MALFORMED_MEASURABLE_TARGET'
+    | 'UNSUPPORTED_IMPACT_TARGET'
+    | 'UNSUPPORTED_ROOT_CAUSE'
+    | 'UNSUPPORTED_CONFIGURATION_STORAGE_ASSUMPTION'
     | 'COMMON_TITLE_MISSPELLING'
     | 'LOW_DIFFERENTIATION'
     | 'LOW_ACTIONABILITY'
     | 'NARROW_INTERMEDIARY_PRODUCT'
     | 'UNCLEAR_ADOPTION_PATH'
     | 'WEAK_BUDGET_ESTIMATION'
+    | 'OVER_SCOPED_MVP'
+    | 'UNSUPPORTED_MARKET_GENERALIZATION'
     | 'INACCURATE_NLP_SUMMARY';
   readonly message: string;
   readonly penalty: number;
@@ -324,8 +329,35 @@ export class IdeaQualityEvaluatorService {
       issues.push({
         code: 'MALFORMED_MEASURABLE_TARGET',
         message:
-          'Rewrite every percentage objective using one complete grammatical form with an explicit direction: "Target at least a X percent increase/reduction during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent increase/reduction during a defined period, measured by ...". Include a metric, measurement method, and evaluation period. Never use ambiguous phrases such as "percent change" or malformed phrases such as "target an evaluate".',
+          'Remove malformed percentage wording. Prefer a non-numeric pilot objective that establishes a baseline first, identifies the metric and measurement method, and then evaluates directional improvement during a defined period.',
         penalty: 20,
+      });
+    }
+
+    if (this.hasUnsupportedImpactTarget(output)) {
+      issues.push({
+        code: 'UNSUPPORTED_IMPACT_TARGET',
+        message:
+          'Remove the invented numeric percentage. Unless the supplied evidence explicitly contains a validated baseline and prior measured result, write the objective as: establish a baseline during the first pilot phase, then measure whether the selected metric improves during the remaining pilot period.',
+        penalty: 18,
+      });
+    }
+
+    if (this.hasUnsupportedRootCauseClaim(output)) {
+      issues.push({
+        code: 'UNSUPPORTED_ROOT_CAUSE',
+        message:
+          'Keep the observed symptom separate from the inferred diagnosis. Describe token drift, session mismatch, database inconsistency, network failure, or any other root cause as suspected or plausible and explicitly require pilot validation unless the supplied evidence proves causation.',
+        penalty: 18,
+      });
+    }
+
+    if (this.hasUnsupportedConfigurationStorageAssumption(output)) {
+      issues.push({
+        code: 'UNSUPPORTED_CONFIGURATION_STORAGE_ASSUMPTION',
+        message:
+          'Do not imply that paywall, entitlement, or taxonomy rules are always available in local JSON, YAML, or XML files. Limit static analysis to host projects that explicitly expose supported configuration schemas, and describe backend databases, remote feature-flag services, application code, subscription APIs, and CMS rules as separate adapters or validation targets.',
+        penalty: 16,
       });
     }
 
@@ -371,6 +403,11 @@ export class IdeaQualityEvaluatorService {
         output,
         'nlp-executive-summary',
       );
+      const mvpFeatures = this.findAdvancedOutput(output, 'mvp-features');
+      const marketPotential = this.findAdvancedOutput(
+        output,
+        'market-potential',
+      );
 
       if (!budget || !this.hasUsefulBudgetEstimate(budget)) {
         issues.push({
@@ -378,6 +415,27 @@ export class IdeaQualityEvaluatorService {
           message:
             'Provide an explicitly labeled preliminary budget with a currency, numeric range, major cost categories, and assumptions instead of vague cost wording.',
           penalty: 12,
+        });
+      }
+
+      if (mvpFeatures && this.hasOverScopedMvp(mvpFeatures, output)) {
+        issues.push({
+          code: 'OVER_SCOPED_MVP',
+          message:
+            'Reduce the six-month MVP to one primary integration, one simple backend workflow, one basic report or dashboard, and manual remediation guidance. For sparse evidence, move Redis, automatic reproduction-script generation, generated test cases, autonomous code suggestions, advanced exports, and broad CI/CD enforcement to post-MVP.',
+          penalty: 16,
+        });
+      }
+
+      if (
+        marketPotential &&
+        this.hasUnsupportedMarketGeneralization(marketPotential)
+      ) {
+        issues.push({
+          code: 'UNSUPPORTED_MARKET_GENERALIZATION',
+          message:
+            'Qualify market potential as an inference from the observed case. Do not call the need common, substantial, widespread, recurring, or market-proven when the supplied evidence contains only one direct report.',
+          penalty: 14,
         });
       }
 
@@ -436,6 +494,7 @@ export class IdeaQualityEvaluatorService {
         issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||
         issue.code === 'UNSUPPORTED_PLATFORM_ACCESS' ||
         issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
+        issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
         issue.code === 'COMMON_TITLE_MISSPELLING',
     );
 
@@ -619,6 +678,9 @@ export class IdeaQualityEvaluatorService {
         idea.partialAbstract ?? '',
         idea.fullAbstract ?? '',
       ].join(' '),
+    ).replace(
+      /\b(?:the\s+)?(?:first|initial)\s+pilot\s+(?:deployment\s+)?(?:is\s+)?(?:planned|proposed|designed)\s+(?:for|in)\s+[^.!?]+[.!?]?/giu,
+      ' ',
     );
 
     return locations.some((location) => {
@@ -686,6 +748,70 @@ export class IdeaQualityEvaluatorService {
     );
   }
 
+  /**
+   * Detects MVP definitions that combine too many high-effort capabilities for
+   * one bounded pilot.
+   *
+   * The check is intentionally conservative: it requires several independent
+   * scope signals before applying a penalty.
+   */
+  private hasOverScopedMvp(
+    mvpFeatures: string,
+    output: ParsedIdeaAiOutput,
+  ): boolean {
+    const normalized = this.normalize(
+      [
+        mvpFeatures,
+        output.coreIdea.fullAbstract ?? '',
+        ...output.coreIdea.objectives,
+      ].join(' '),
+    );
+
+    const scopeSignals = [
+      /\bios\b/iu,
+      /\bandroid\b/iu,
+      /\bweb(?: sdk| client| integration| application)?\b/iu,
+      /\b(?:simulation|sandbox replay) engine\b/iu,
+      /\bsandbox replay\b/iu,
+      /\banomaly detection\b/iu,
+      /\bautomated (?:code|patch|fix) generation\b/iu,
+      /\bsuggest(?:ed|s)? code fixes?\b/iu,
+      /\bautomated (?:regression )?test(?: case| template)? generation\b/iu,
+      /\bautomatically generated regression tests?\b/iu,
+      /\bautomatic(?:ally)? (?:generate|generation of) (?:a )?(?:deterministic )?reproduction scripts?\b/iu,
+      /\breproduction script generation\b/iu,
+      /\bredis\b/iu,
+      /\badvanced dashboard exports?\b/iu,
+      /\breal-time\b/iu,
+      /\bci\/cd\b/iu,
+      /\bnative modules?\b/iu,
+      /\bserver-side (?:log )?correlation\b/iu,
+      /\bdeveloper dashboard\b/iu,
+      /\bhost-embedded (?:validation )?sdk\b/iu,
+      /\bbackend (?:analysis|orchestration|replay) engine\b/iu,
+    ].filter((pattern) => pattern.test(normalized)).length;
+
+    const clientPlatformCount = [
+      /\bios\b/iu,
+      /\bandroid\b/iu,
+      /\bweb(?: sdk| client| integration| application)?\b/iu,
+    ].filter((pattern) => pattern.test(normalized)).length;
+
+    return clientPlatformCount >= 2 || scopeSignals >= 5;
+  }
+
+  /**
+   * Rejects market wording that upgrades a single observed report into a
+   * market-wide fact.
+   */
+  private hasUnsupportedMarketGeneralization(value: string): boolean {
+    const normalized = this.normalize(value);
+
+    return /\b(?:common|substantial|widespread|frequent(?:ly)?|recurring|industry-wide|market-wide|large demand|proven demand|strong demand)\b/iu.test(
+      normalized,
+    );
+  }
+
   private hasAccurateNlpCounts(
     value: string,
     context: IdeaQualityEvaluationContext,
@@ -736,6 +862,105 @@ export class IdeaQualityEvaluatorService {
 
   private containsAny(value: string, terms: readonly string[]): boolean {
     return terms.some((term) => value.includes(this.normalize(term)));
+  }
+
+  /**
+   * Detects a generated diagnosis that is presented as established even though
+   * the output itself does not qualify it as a hypothesis requiring validation.
+   */
+  private hasUnsupportedRootCauseClaim(output: ParsedIdeaAiOutput): boolean {
+    const sections = [
+      output.coreIdea.problemStatement,
+      output.coreIdea.fullAbstract ?? '',
+      ...output.coreIdea.objectives,
+      ...output.advancedOutputs.map((item) => item.content),
+    ];
+
+    const diagnosisPattern =
+      /\b(?:token drift|token-state mismatch|session mismatch|expired token stub|invalidated token stub|server-side identity mismatch|database inconsistency|network failure|race condition|hardcoded enumeration|feature-gating rule|root[- ]cause rule)\b/iu;
+    const qualificationPattern =
+      /\b(?:suspected|possible|plausible|hypothesized|hypothesis|may be|might be|could be|to be validated|requires? validation|validate whether|test whether|candidate cause|potential cause)\b/iu;
+
+    return sections.some((section) =>
+      section
+        .split(/[.!?;\n]+/gu)
+        .map((sentence) => this.normalize(sentence))
+        .filter(Boolean)
+        .some(
+          (sentence) =>
+            diagnosisPattern.test(sentence) &&
+            !qualificationPattern.test(sentence),
+        ),
+    );
+  }
+
+  /**
+   * Rejects candidates that turn one plausible storage mechanism into a
+   * universal technical fact. Static configuration scanning is valid only when
+   * the host project actually exposes the relevant rules in supported files.
+   */
+  private hasUnsupportedConfigurationStorageAssumption(
+    output: ParsedIdeaAiOutput,
+  ): boolean {
+    const sections = [
+      output.coreIdea.problemStatement,
+      output.coreIdea.fullAbstract ?? '',
+      ...output.coreIdea.objectives,
+      ...output.advancedOutputs.map((item) => item.content),
+    ];
+
+    const staticFileMechanismPattern =
+      /\b(?:json|yaml|yml|xml|configuration files?|config files?|static configuration|hardcoded subject (?:list|enum)s?|requiresSubscription|subscription flag)\b/iu;
+    const universalDetectionPattern =
+      /\b(?:detects?|finds?|prevents?|scans?|identifies?|catches?|ensures?|blocks?)\b/iu;
+    const supportedScopePattern =
+      /\b(?:when|where|only if|provided that|for host projects? that|supported schemas?|explicitly exposes?|configured adapter|adapter-based|within supported inputs?|hypothesis to validate|plausible)\b/iu;
+
+    return sections.some((section) =>
+      section
+        .split(/[.!?;\n]+/gu)
+        .map((sentence) => this.normalize(sentence))
+        .filter(Boolean)
+        .some(
+          (sentence) =>
+            staticFileMechanismPattern.test(sentence) &&
+            universalDetectionPattern.test(sentence) &&
+            !supportedScopePattern.test(sentence),
+        ),
+    );
+  }
+
+  /**
+   * Detects unsupported guaranteed impact percentages.
+   *
+   * A generated idea may define what will be measured during a pilot, but it
+   * must not promise a percentage reduction or improvement when the supplied
+   * evidence contains no baseline or previous evaluation result.
+   */
+  private hasUnsupportedImpactTarget(output: ParsedIdeaAiOutput): boolean {
+    return output.coreIdea.objectives.some((objective) => {
+      const normalized = this.normalize(objective);
+      const containsNumericPercentage =
+        /\b\d{1,3}(?:\.\d+)?\s*(?:%|percent(?:age)?)\b/iu.test(normalized);
+
+      if (!containsNumericPercentage) {
+        return false;
+      }
+
+      /*
+       * A numeric percentage is allowed only when the objective explicitly
+       * states that the baseline and prior measured result were supplied by
+       * the evidence. Generic phrases such as "evaluate whether" or
+       * "during a pilot" are not enough because they can still introduce an
+       * arbitrary 30% or 40% target.
+       */
+      const hasEvidenceSuppliedValidatedBaseline =
+        /\b(?:validated baseline supplied by (?:the )?evidence|baseline and prior measured result supplied by (?:the )?evidence|evidence-provided baseline)\b/iu.test(
+          normalized,
+        );
+
+      return !hasEvidenceSuppliedValidatedBaseline;
+    });
   }
 
   private normalize(value: string): string {

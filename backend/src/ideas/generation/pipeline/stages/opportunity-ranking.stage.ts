@@ -6,7 +6,6 @@ import { PrismaService } from '../../../../prisma/prisma.service';
 import {
   IDEA_GENERATION_ERROR_CODES,
   MAX_EVIDENCE_RECOVERY_ATTEMPTS,
-  MIN_EVIDENCE_COVERAGE_BEFORE_RECOVERY,
   MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
   MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY,
 } from '../../constants/idea-generation.constants';
@@ -20,19 +19,26 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 import { IdeaEvidenceRecoveryService } from '../../services/idea-evidence-recovery.service';
+import { IndependentEvidenceVerificationService } from '../../services/independent-evidence-verification.service';
+import type { EvidenceRecoveryOutcome } from '../../services/idea-evidence-recovery.service';
 import {
   IdeaOpportunityRankingService,
   NoRankedIdeaOpportunityError,
 } from '../../services/idea-opportunity-ranking.service';
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
 import type { IdeaOpportunityRanking } from '../../types/idea-opportunity-ranking.type';
+import type {
+  CommunityAiAnalysis,
+  CommunityAiOpportunity,
+} from '../../types/community-ai-analysis.type';
 
 /**
  * Ranks evidence-backed opportunities and enforces a strict evidence gate.
  *
- * When the initial ranking has no eligible opportunity, the stage performs one
- * bounded targeted evidence-recovery collection pass. Idea-generation AI is
- * invoked only after an eligible opportunity exists.
+ * When the initial ranking has no eligible opportunity, the stage tries the
+ * three strongest distinct opportunities and then performs one broad recovery
+ * pass. If none reaches the strict recurrence gate, the run completes normally
+ * with NO_RECURRING_OPPORTUNITY and later AI stages are skipped.
  */
 @Injectable()
 export class OpportunityRankingStage implements IdeaGenerationStage {
@@ -42,6 +48,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
   constructor(
     private readonly opportunityRankingService: IdeaOpportunityRankingService,
+    private readonly independentEvidenceVerificationService: IndependentEvidenceVerificationService,
     private readonly evidenceRecoveryService: IdeaEvidenceRecoveryService,
     private readonly prisma: PrismaService,
   ) {}
@@ -63,94 +70,275 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const previousIdeaTexts = await this.loadPreviousIdeaTexts(
       context.domainId,
     );
-    const initialRanking = this.tryRankContext(context, previousIdeaTexts);
+    let workingContext = context;
+    let ranking = await this.tryRankContext(workingContext, previousIdeaTexts);
+    const recoveryMetadata: Array<{
+      readonly collectionJobId: string;
+      readonly selectedDataSourceKeys: readonly string[];
+      readonly recoveryKeywords: readonly string[];
+      readonly totalPosts: number;
+      readonly totalComments: number;
+      readonly usefulCleanTextCount: number;
+      readonly complaintEvidenceCount: number;
+      readonly evidenceFamilies: readonly string[];
+      readonly communityAiRecoveryApplied: boolean;
+      readonly communityAiRecoveryExecuted: boolean;
+      readonly newCorpusEvidenceSampleCount: number;
+      readonly selectedOpportunityNewEvidenceCount: number;
+      readonly newEvidenceSampleCount: number;
+      readonly recoveryOutcome: EvidenceRecoveryOutcome;
+    }> = [];
+
+    while (
+      (!ranking ||
+        !this.hasEligibleOpportunity(ranking) ||
+        this.requiresEvidenceRecovery(ranking)) &&
+      workingContext.evidenceRecoveryAttempts < MAX_EVIDENCE_RECOVERY_ATTEMPTS
+    ) {
+      const recoveryTarget = this.resolveRecoveryTarget(
+        ranking,
+        workingContext.evidenceRecoveryAttempts,
+      );
+      const recovery = await this.evidenceRecoveryService.recover(
+        workingContext,
+        recoveryTarget,
+      );
+      const contributedEvidence = recovery.newCorpusEvidenceSampleCount > 0;
+
+      workingContext = {
+        ...workingContext,
+        nlp: contributedEvidence
+          ? this.mergeNlpContexts(workingContext.nlp!, recovery.nlp)
+          : workingContext.nlp,
+        communityAiAnalysis: contributedEvidence
+          ? this.mergeCommunityAiAnalyses(
+              workingContext.communityAiAnalysis,
+              recovery.communityAiAnalysis,
+            )
+          : workingContext.communityAiAnalysis,
+        opportunityRanking: null,
+        evidenceRecoveryAttempts: workingContext.evidenceRecoveryAttempts + 1,
+        evidenceRecoveryCollectionJobIds: [
+          ...workingContext.evidenceRecoveryCollectionJobIds,
+          recovery.collectionJobId,
+        ],
+      };
+
+      ranking = await this.tryRankContext(workingContext, previousIdeaTexts);
+      const selectedOpportunityNewEvidenceCount =
+        this.countSelectedOpportunityNovelEvidence(
+          ranking?.selected ?? null,
+          recovery.novelEvidenceSamples,
+        );
+
+      recoveryMetadata.push({
+        collectionJobId: recovery.collectionJobId,
+        selectedDataSourceKeys: recovery.selectedDataSourceKeys,
+        recoveryKeywords: recovery.recoveryKeywords,
+        totalPosts: recovery.totalPosts,
+        totalComments: recovery.totalComments,
+        usefulCleanTextCount: recovery.usefulCleanTextCount,
+        complaintEvidenceCount: recovery.complaintEvidenceCount,
+        evidenceFamilies: recovery.evidenceFamilies,
+        communityAiRecoveryApplied:
+          contributedEvidence && Boolean(recovery.communityAiAnalysis),
+        communityAiRecoveryExecuted: recovery.communityAiRecoveryExecuted,
+        newCorpusEvidenceSampleCount: recovery.newCorpusEvidenceSampleCount,
+        selectedOpportunityNewEvidenceCount,
+        newEvidenceSampleCount: recovery.newEvidenceSampleCount,
+        recoveryOutcome: recovery.recoveryOutcome,
+      });
+    }
 
     if (
-      initialRanking &&
-      this.hasEligibleOpportunity(initialRanking) &&
-      !this.requiresEvidenceRecovery(initialRanking)
+      !ranking ||
+      !this.hasEligibleOpportunity(ranking) ||
+      this.requiresEvidenceRecovery(ranking)
     ) {
-      return this.buildSuccessResult(context, initialRanking, false, null);
-    }
-
-    if (context.evidenceRecoveryAttempts >= MAX_EVIDENCE_RECOVERY_ATTEMPTS) {
-      if (initialRanking) {
-        return this.buildFallbackResult(context, initialRanking, false, null);
-      }
-
-      this.throwInsufficientEvidence(initialRanking, context);
-    }
-
-    const recovery = await this.evidenceRecoveryService.recover(
-      context,
-      initialRanking?.selected ?? null,
-    );
-
-    const recoveredContext: IdeaGenerationContext = {
-      ...context,
-      /*
-       * Keep the primary collection job as the canonical generation source.
-       * The recovery job is supplemental evidence and is tracked separately in
-       * evidenceRecoveryCollectionJobIds and stage metadata. Replacing the
-       * canonical collection here caused the final snapshot to report only the
-       * small recovery sample instead of the verified primary NLP totals.
-       */
-      collection: context.collection,
-      nlp: this.mergeNlpContexts(context.nlp, recovery.nlp),
-      opportunityRanking: null,
-      evidenceRecoveryAttempts: context.evidenceRecoveryAttempts + 1,
-      evidenceRecoveryCollectionJobIds: [
-        ...context.evidenceRecoveryCollectionJobIds,
-        recovery.collectionJobId,
-      ],
-    };
-
-    const recoveredRanking = this.tryRankContext(
-      recoveredContext,
-      previousIdeaTexts,
-    );
-
-    if (!recoveredRanking) {
-      if (initialRanking) {
-        return this.buildFallbackResult(
-          recoveredContext,
-          initialRanking,
-          true,
-          {
-            collectionJobId: recovery.collectionJobId,
-            selectedDataSourceKeys: recovery.selectedDataSourceKeys,
-            recoveryKeywords: recovery.recoveryKeywords,
-            totalPosts: recovery.totalPosts,
-            totalComments: recovery.totalComments,
-          },
-        );
-      }
-
-      this.throwInsufficientEvidence(recoveredRanking, recoveredContext);
-    }
-
-    if (!this.hasEligibleOpportunity(recoveredRanking)) {
-      return this.buildFallbackResult(
-        recoveredContext,
-        recoveredRanking,
-        true,
-        {
-          collectionJobId: recovery.collectionJobId,
-          selectedDataSourceKeys: recovery.selectedDataSourceKeys,
-          recoveryKeywords: recovery.recoveryKeywords,
-          totalPosts: recovery.totalPosts,
-          totalComments: recovery.totalComments,
-        },
+      return this.buildNoResultResult(
+        workingContext,
+        ranking,
+        recoveryMetadata,
       );
     }
 
-    return this.buildSuccessResult(recoveredContext, recoveredRanking, true, {
-      collectionJobId: recovery.collectionJobId,
-      selectedDataSourceKeys: recovery.selectedDataSourceKeys,
-      recoveryKeywords: recovery.recoveryKeywords,
-      totalPosts: recovery.totalPosts,
-      totalComments: recovery.totalComments,
-    });
+    const aggregatedRecoveryMetadata = recoveryMetadata.length
+      ? this.aggregateRecoveryMetadata(recoveryMetadata)
+      : null;
+
+    return this.buildSuccessResult(
+      workingContext,
+      ranking,
+      recoveryMetadata.length > 0,
+      aggregatedRecoveryMetadata,
+    );
+  }
+
+  /**
+   * Chooses a different evidence direction on every bounded recovery attempt.
+   * Attempts 1-3 target the three strongest ranked opportunities. The final
+   * attempt is broad and lets the recovery service derive domain-level
+   * complaint queries instead of repeatedly chasing the same weak signal.
+   */
+  private resolveRecoveryTarget(
+    ranking: IdeaOpportunityRanking | null,
+    completedAttempts: number,
+  ): IdeaOpportunityRanking['selected'] | null {
+    if (!ranking) {
+      return null;
+    }
+
+    const rankedCandidates = [ranking.selected, ...ranking.alternatives]
+      .filter(
+        (candidate, index, candidates) =>
+          candidates.findIndex((item) => item.title === candidate.title) ===
+          index,
+      )
+      .slice(0, 3);
+
+    return rankedCandidates[completedAttempts] ?? null;
+  }
+
+  /**
+   * Returns a successful no-result checkpoint instead of throwing a technical
+   * failure. The pipeline will mark every later generation/persistence stage as
+   * skipped, complete the run, persist no idea, and consume no credit.
+   */
+  private buildNoResultResult(
+    context: IdeaGenerationContext,
+    ranking: IdeaOpportunityRanking | null,
+    recoveryMetadata: readonly {
+      readonly collectionJobId: string;
+      readonly selectedDataSourceKeys: readonly string[];
+      readonly recoveryKeywords: readonly string[];
+      readonly totalPosts: number;
+      readonly totalComments: number;
+      readonly usefulCleanTextCount: number;
+      readonly complaintEvidenceCount: number;
+      readonly evidenceFamilies: readonly string[];
+      readonly communityAiRecoveryApplied: boolean;
+      readonly communityAiRecoveryExecuted: boolean;
+      readonly newCorpusEvidenceSampleCount: number;
+      readonly selectedOpportunityNewEvidenceCount: number;
+      readonly newEvidenceSampleCount: number;
+      readonly recoveryOutcome: EvidenceRecoveryOutcome;
+    }[],
+  ): IdeaGenerationStageExecutionResult {
+    const strongestSignal = ranking?.selected ?? null;
+    const rankedCandidates = ranking
+      ? [ranking.selected, ...ranking.alternatives]
+      : [];
+    const hasVerifiedEvidence = rankedCandidates.some(
+      (candidate) => (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
+    );
+    const message = hasVerifiedEvidence
+      ? 'Collection and evidence recovery completed, and independently verified evidence was found, but no opportunity passed all quality and selection thresholds. No idea was generated and no credit should be consumed.'
+      : 'Collection and evidence recovery completed, but no opportunity contained at least one independently verified community evidence sample. No idea was generated and no credit should be consumed.';
+
+    return {
+      context: {
+        ...context,
+        opportunityRanking: ranking,
+        noResultOutcome: {
+          code: 'NO_RECURRING_OPPORTUNITY',
+          message,
+          strongestSignalTitle: strongestSignal?.title ?? null,
+          independentEvidenceCount:
+            strongestSignal?.evidenceSamples.length ?? 0,
+          requiredIndependentEvidenceCount: 1,
+          recoveryAttempts: context.evidenceRecoveryAttempts,
+          collectionJobIds: [...context.evidenceRecoveryCollectionJobIds],
+        },
+      },
+      resultPreview: message,
+      metadata: {
+        outcome: 'NO_RECURRING_OPPORTUNITY',
+        strongestSignalTitle: strongestSignal?.title ?? null,
+        strongestSignalScore: strongestSignal?.finalScore ?? null,
+        independentEvidenceCount: strongestSignal?.evidenceSamples.length ?? 0,
+        requiredIndependentEvidenceCount: 1,
+        evidenceRecoveryAttempts: context.evidenceRecoveryAttempts,
+        evidenceRecovery: recoveryMetadata.length
+          ? this.aggregateRecoveryMetadata(recoveryMetadata)
+          : null,
+        alternativesChecked: ranking
+          ? [ranking.selected, ...ranking.alternatives.slice(0, 2)].map(
+              (candidate) => ({
+                title: candidate.title,
+                evidenceCount: candidate.evidenceSamples.length,
+                selectionEligible: candidate.selectionEligible,
+                disqualificationReasons: candidate.disqualificationReasons,
+              }),
+            )
+          : [],
+      },
+    };
+  }
+
+  private aggregateRecoveryMetadata(
+    attempts: readonly {
+      readonly collectionJobId: string;
+      readonly selectedDataSourceKeys: readonly string[];
+      readonly recoveryKeywords: readonly string[];
+      readonly totalPosts: number;
+      readonly totalComments: number;
+      readonly usefulCleanTextCount: number;
+      readonly complaintEvidenceCount: number;
+      readonly evidenceFamilies: readonly string[];
+      readonly communityAiRecoveryApplied: boolean;
+      readonly communityAiRecoveryExecuted: boolean;
+      readonly newCorpusEvidenceSampleCount: number;
+      readonly selectedOpportunityNewEvidenceCount: number;
+      readonly newEvidenceSampleCount: number;
+      readonly recoveryOutcome: EvidenceRecoveryOutcome;
+    }[],
+  ) {
+    const latest = attempts[attempts.length - 1];
+
+    return {
+      collectionJobId: latest.collectionJobId,
+      selectedDataSourceKeys: Array.from(
+        new Set(attempts.flatMap((item) => item.selectedDataSourceKeys)),
+      ),
+      recoveryKeywords: Array.from(
+        new Set(attempts.flatMap((item) => item.recoveryKeywords)),
+      ),
+      totalPosts: attempts.reduce((sum, item) => sum + item.totalPosts, 0),
+      totalComments: attempts.reduce(
+        (sum, item) => sum + item.totalComments,
+        0,
+      ),
+      usefulCleanTextCount: attempts.reduce(
+        (sum, item) => sum + item.usefulCleanTextCount,
+        0,
+      ),
+      complaintEvidenceCount: attempts.reduce(
+        (sum, item) => sum + item.complaintEvidenceCount,
+        0,
+      ),
+      evidenceFamilies: Array.from(
+        new Set(attempts.flatMap((item) => item.evidenceFamilies)),
+      ),
+      communityAiRecoveryApplied: attempts.some(
+        (item) => item.communityAiRecoveryApplied,
+      ),
+      communityAiRecoveryExecuted: attempts.some(
+        (item) => item.communityAiRecoveryExecuted,
+      ),
+      newCorpusEvidenceSampleCount: attempts.reduce(
+        (sum, item) => sum + item.newCorpusEvidenceSampleCount,
+        0,
+      ),
+      selectedOpportunityNewEvidenceCount: attempts.reduce(
+        (sum, item) => sum + item.selectedOpportunityNewEvidenceCount,
+        0,
+      ),
+      newEvidenceSampleCount: attempts.reduce(
+        (sum, item) => sum + item.newEvidenceSampleCount,
+        0,
+      ),
+      recoveryOutcome: latest.recoveryOutcome,
+    } as const;
   }
 
   /**
@@ -163,6 +351,106 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
    * Every merged sample is revalidated by IdeaOpportunityRankingService before
    * it affects scoring.
    */
+  /**
+   * Combines primary and recovery Community AI analyses while preserving
+   * independent evidence samples. Ranking performs the final semantic merge,
+   * evidence validation, and duplicate control.
+   */
+  private mergeCommunityAiAnalyses(
+    primary: CommunityAiAnalysis | null,
+    recovered: CommunityAiAnalysis | null,
+  ): CommunityAiAnalysis | null {
+    if (!primary) {
+      return recovered;
+    }
+
+    if (!recovered) {
+      return primary;
+    }
+
+    return {
+      summary:
+        `${primary.summary} Supplemental targeted recovery: ${recovered.summary}`.trim(),
+      dominantProblems: this.mergeStrings(
+        primary.dominantProblems,
+        recovered.dominantProblems,
+      ),
+      unmetNeeds: this.mergeStrings(primary.unmetNeeds, recovered.unmetNeeds),
+      opportunities: this.mergeCommunityOpportunities(
+        primary.opportunities,
+        recovered.opportunities,
+      ),
+      overallConfidence:
+        Math.round(
+          Math.max(primary.overallConfidence, recovered.overallConfidence) *
+            100,
+        ) / 100,
+      qualityWarnings: this.mergeStrings(
+        primary.qualityWarnings,
+        recovered.qualityWarnings,
+      ),
+      modelId: recovered.modelId ?? primary.modelId,
+      apiModelId: recovered.apiModelId ?? primary.apiModelId,
+      attemptCount: primary.attemptCount + recovered.attemptCount,
+    };
+  }
+
+  /**
+   * Keeps each recovered opportunity intact. The ranking service owns semantic
+   * family matching and only merges candidates after revalidating their direct
+   * evidence samples.
+   */
+  private mergeCommunityOpportunities(
+    primary: readonly CommunityAiOpportunity[],
+    recovered: readonly CommunityAiOpportunity[],
+  ): CommunityAiOpportunity[] {
+    const values = [...primary, ...recovered];
+    const seen = new Set<string>();
+
+    return values.filter((opportunity) => {
+      const evidenceKey = opportunity.evidenceSamples
+        .map((sample) => this.normalizeEvidenceKey(sample))
+        .sort()
+        .join('|');
+      const key = `${this.normalizeEvidenceKey(opportunity.title)}::${evidenceKey}`;
+
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private mergeStrings(
+    primary: readonly string[],
+    recovered: readonly string[],
+  ): string[] {
+    const seen = new Set<string>();
+    const output: string[] = [];
+
+    for (const value of [...primary, ...recovered]) {
+      const normalized = this.normalizeEvidenceKey(value);
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      output.push(value);
+    }
+
+    return output;
+  }
+
+  private normalizeEvidenceKey(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+  }
+
   private mergeNlpContexts(
     primary: NonNullable<IdeaGenerationContext['nlp']>,
     recovered: NonNullable<IdeaGenerationContext['nlp']>,
@@ -285,10 +573,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
   }
 
-  private tryRankContext(
+  private async tryRankContext(
     context: IdeaGenerationContext,
     previousIdeaTexts: readonly string[],
-  ): IdeaOpportunityRanking | null {
+  ): Promise<IdeaOpportunityRanking | null> {
     if (!context.nlp) {
       throw new BadRequestException({
         code: IDEA_GENERATION_ERROR_CODES.NLP_ANALYSIS_FAILED,
@@ -297,7 +585,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     try {
-      return this.opportunityRankingService.rank(
+      const ranking = this.opportunityRankingService.rank(
         context.nlp,
         [
           context.location.country,
@@ -306,6 +594,13 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         ],
         previousIdeaTexts,
         context.communityAiAnalysis,
+      );
+
+      const collectionJobIds = this.resolveEvidenceCollectionJobIds(context);
+
+      return await this.independentEvidenceVerificationService.verifyRanking(
+        ranking,
+        collectionJobIds,
       );
     } catch (error: unknown) {
       if (error instanceof NoRankedIdeaOpportunityError) {
@@ -322,6 +617,32 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
   }
 
+  /**
+   * Resolves every collection job that may contain evidence for this run.
+   *
+   * The primary collection identifier is nested under context.collection.
+   * Recovery identifiers are stored separately. The resulting list excludes
+   * missing values and duplicate identifiers before evidence verification.
+   */
+  private resolveEvidenceCollectionJobIds(
+    context: IdeaGenerationContext,
+  ): string[] {
+    const collectionJobIds = [
+      context.collection?.collectionJobId,
+      ...context.evidenceRecoveryCollectionJobIds,
+    ];
+
+    return Array.from(
+      new Set(
+        collectionJobIds.filter(
+          (collectionJobId): collectionJobId is string =>
+            typeof collectionJobId === 'string' &&
+            collectionJobId.trim().length > 0,
+        ),
+      ),
+    );
+  }
+
   private hasEligibleOpportunity(ranking: IdeaOpportunityRanking): boolean {
     return [ranking.selected, ...ranking.alternatives].some(
       (opportunity) => opportunity.selectionEligible,
@@ -336,7 +657,6 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const selected = ranking.selected;
 
     return (
-      ranking.evidenceCoverage < MIN_EVIDENCE_COVERAGE_BEFORE_RECOVERY ||
       selected.evidenceScore < MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY ||
       selected.evidenceSamples.length <
         MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY
@@ -353,6 +673,16 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       readonly recoveryKeywords: readonly string[];
       readonly totalPosts: number;
       readonly totalComments: number;
+      readonly usefulCleanTextCount: number;
+      readonly complaintEvidenceCount: number;
+      readonly evidenceFamilies: readonly string[];
+      readonly communityAiRecoveryApplied: boolean;
+      readonly communityAiRecoveryExecuted: boolean;
+      readonly newCorpusEvidenceSampleCount: number;
+      readonly selectedOpportunityNewEvidenceCount: number;
+      /** Backward-compatible corpus-level alias. */
+      readonly newEvidenceSampleCount: number;
+      readonly recoveryOutcome: EvidenceRecoveryOutcome;
     } | null,
   ): IdeaGenerationStageExecutionResult {
     const updatedContext: IdeaGenerationContext = {
@@ -396,73 +726,38 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   }
 
   /**
-   * Continues with the strongest evidence-backed fallback after the bounded
-   * recovery pass is exhausted. The ranking keeps its penalties and warnings,
-   * allowing downstream prompts to present the result as preliminary rather
-   * than persisting an unsupported high-confidence claim.
+   * Counts only novel recovery samples that directly support the opportunity
+   * selected after reranking. Corpus novelty and opportunity support are
+   * intentionally separate metrics: unrelated new complaints must never imply
+   * stronger evidence for the selected problem family.
    */
-  private buildFallbackResult(
-    context: IdeaGenerationContext,
-    ranking: IdeaOpportunityRanking,
-    recoveryApplied: boolean,
-    recoveryMetadata: {
-      readonly collectionJobId: string;
-      readonly selectedDataSourceKeys: readonly string[];
-      readonly recoveryKeywords: readonly string[];
-      readonly totalPosts: number;
-      readonly totalComments: number;
-    } | null,
-  ): IdeaGenerationStageExecutionResult {
-    const fallbackWarning =
-      'No opportunity passed the strict evidence gate after bounded recovery. The strongest available opportunity was selected with its reliability penalties preserved; generated claims must remain preliminary and pilot-validated.';
+  private countSelectedOpportunityNovelEvidence(
+    selectedOpportunity: IdeaOpportunityRanking['selected'] | null,
+    novelRecoverySamples: readonly string[],
+  ): number {
+    if (!selectedOpportunity || novelRecoverySamples.length === 0) {
+      return 0;
+    }
 
-    const fallbackRanking: IdeaOpportunityRanking = {
-      ...ranking,
-      selectionReason: `${ranking.selectionReason} ${fallbackWarning}`,
-      qualityWarnings: Array.from(
-        new Set([...ranking.qualityWarnings, fallbackWarning]),
-      ),
-    };
+    const selectedSamples = selectedOpportunity.evidenceSamples
+      .map((sample) => this.normalizeEvidenceKey(sample))
+      .filter(Boolean);
 
-    const result = this.buildSuccessResult(
-      context,
-      fallbackRanking,
-      recoveryApplied,
-      recoveryMetadata,
-    );
+    return novelRecoverySamples.filter((sample) => {
+      const normalizedRecoverySample = this.normalizeEvidenceKey(sample);
+      if (!normalizedRecoverySample) {
+        return false;
+      }
 
-    return {
-      ...result,
-      resultPreview: `Evidence recovery did not produce a strictly eligible opportunity; continuing with penalized fallback "${fallbackRanking.selected.title}" at ${(fallbackRanking.selected.finalScore * 100).toFixed(1)}/100.`,
-      metadata: {
-        ...(result.metadata ?? {}),
-        fallbackApplied: true,
-        qualityWarning: fallbackWarning,
-      },
-    };
-  }
-
-  private throwInsufficientEvidence(
-    ranking: IdeaOpportunityRanking | null,
-    context: IdeaGenerationContext,
-  ): never {
-    throw new BadRequestException({
-      code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_EVIDENCE_FOR_IDEA_GENERATION,
-      message:
-        'No sufficiently reliable community opportunity was found after targeted evidence recovery. Idea generation was stopped before contacting the generation AI, and no idea should be persisted from this run.',
-      details: {
-        evidenceRecoveryAttempts: context.evidenceRecoveryAttempts,
-        collectionJobIds: context.evidenceRecoveryCollectionJobIds,
-        selectedFallbackTitle: ranking?.selected.title ?? null,
-        selectedFallbackScore: ranking?.selected.finalScore ?? null,
-        disqualificationReasons: ranking?.selected.disqualificationReasons ?? [
-          'NO_RANKABLE_EVIDENCE_BACKED_OPPORTUNITY',
-        ],
-        qualityWarnings: ranking?.qualityWarnings ?? [
-          'NLP completed, but every extracted candidate was removed by the evidence-quality gate.',
-        ],
-      },
-    });
+      return selectedSamples.some(
+        (selectedSample) =>
+          selectedSample === normalizedRecoverySample ||
+          (selectedSample.length >= 80 &&
+            normalizedRecoverySample.includes(selectedSample)) ||
+          (normalizedRecoverySample.length >= 80 &&
+            selectedSample.includes(normalizedRecoverySample)),
+      );
+    }).length;
   }
 
   private resolveDefinition(): IdeaGenerationStageDefinition {

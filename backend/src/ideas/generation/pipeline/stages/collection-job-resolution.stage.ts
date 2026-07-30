@@ -147,6 +147,12 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         : `Completed new collection job "${result.job.id}".`,
 
       metadata: {
+        stageRole: 'EXECUTION_AND_RESOLUTION',
+
+        executesCollectors: !result.reused,
+
+        executesOrRestoresNlp: true,
+
         collectionJobId: result.job.id,
 
         reused: result.reused,

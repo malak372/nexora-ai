@@ -19,7 +19,7 @@ type AuthenticatedAdmin = {
  *
  * Provides admin-only endpoints for:
  * - Retrieving current system settings.
- * - Updating credit price and bonus credit rules.
+ * - Updating all configurable payment, Premium, and credit rules.
  *
  * Base route:
  * /admin/settings

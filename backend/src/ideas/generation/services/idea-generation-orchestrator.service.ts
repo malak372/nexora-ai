@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { IdeaGenerationRunStatus, IdeaGenerationType } from '@prisma/client';
 
@@ -29,6 +29,9 @@ import { GuestIdeaSessionService } from './guest-idea-session.service';
 import { IdeaGenerationLockService } from './idea-generation-lock.service';
 
 import { IdeaGenerationRunService } from './idea-generation-run.service';
+import { DomainResolutionService } from './domain-resolution.service';
+import { IdeaGenerationPolicyService } from './idea-generation-policy.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 /**
  * Dependency-injection token used to register all executable
@@ -176,6 +179,12 @@ export class IdeaGenerationOrchestratorService {
 
     private readonly pipelineService: IdeaGenerationPipelineService,
 
+    private readonly domainResolutionService: DomainResolutionService,
+
+    private readonly prisma: PrismaService,
+
+    private readonly policyService: IdeaGenerationPolicyService,
+
     @Inject(IDEA_GENERATION_STAGES)
     private readonly stages: readonly IdeaGenerationStage[],
   ) {}
@@ -238,6 +247,25 @@ export class IdeaGenerationOrchestratorService {
    * @param input Authenticated user and validated request DTO.
    * @returns Complete pipeline result.
    */
+  private resolveDomainForUser(userId: string, dto: GenerateIdeaDto) {
+    return this.domainResolutionService.resolve({
+      userId,
+      domainId: dto.domainId,
+      description: dto.description,
+      keywords: dto.keywords,
+      language: dto.language,
+    });
+  }
+
+  private resolveDomainForGuest(dto: GenerateGuestIdeaDto) {
+    return this.domainResolutionService.resolve({
+      domainId: dto.domainId,
+      description: dto.description,
+      keywords: dto.keywords,
+      language: dto.language,
+    });
+  }
+
   async generateForUser(
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
@@ -247,19 +275,18 @@ export class IdeaGenerationOrchestratorService {
       type: IDEA_OWNER_TYPES.USER,
       userId,
     };
+    const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
 
     return this.executeOwnedGeneration({
       owner,
 
       generationType: input.dto.generationType,
 
-      domainId: input.dto.domainId,
+      domainId: resolvedDomain.domainId,
 
       keywords: this.normalizeStringArray(input.dto.keywords),
 
-      requestedDataSourceKeys: this.normalizeSourceKeys(
-        input.dto.dataSourceKeys,
-      ),
+      requestedDataSourceKeys: [],
 
       forceRefresh: input.dto.forceRefresh ?? false,
 
@@ -308,19 +335,18 @@ export class IdeaGenerationOrchestratorService {
       type: IDEA_OWNER_TYPES.GUEST,
       guestSessionId: guestSession.id,
     };
+    const resolvedDomain = await this.resolveDomainForGuest(input.dto);
 
     return this.executeOwnedGeneration({
       owner,
 
       generationType: IdeaGenerationType.GUEST_FREE,
 
-      domainId: input.dto.domainId,
+      domainId: resolvedDomain.domainId,
 
       keywords: this.normalizeStringArray(input.dto.keywords),
 
-      requestedDataSourceKeys: this.normalizeSourceKeys(
-        input.dto.dataSourceKeys,
-      ),
+      requestedDataSourceKeys: [],
 
       forceRefresh: input.dto.forceRefresh ?? false,
 
@@ -348,14 +374,21 @@ export class IdeaGenerationOrchestratorService {
   ): Promise<QueuedIdeaGenerationResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
 
+    /*
+     * Reject unavailable premium/free requests before a queued run is created.
+     * The pipeline entitlement stage still performs the same validation again
+     * to protect against balance changes between queue acceptance and execution.
+     */
+    await this.assertUserCanQueueGeneration(userId, input.dto.generationType);
+
+    const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
+
     return this.queueOwnedGeneration({
       owner: { type: IDEA_OWNER_TYPES.USER, userId },
       generationType: input.dto.generationType,
-      domainId: input.dto.domainId,
+      domainId: resolvedDomain.domainId,
       keywords: this.normalizeStringArray(input.dto.keywords),
-      requestedDataSourceKeys: this.normalizeSourceKeys(
-        input.dto.dataSourceKeys,
-      ),
+      requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),
@@ -367,6 +400,53 @@ export class IdeaGenerationOrchestratorService {
     });
   }
 
+  /**
+   * Performs a lightweight entitlement preflight before creating a queued run.
+   *
+   * This avoids returning HTTP 202 for a request that is already known to be
+   * impossible, such as premium generation with a zero credit balance. The
+   * entitlement stage remains authoritative and validates the state again when
+   * the pipeline starts.
+   */
+  private async assertUserCanQueueGeneration(
+    userId: string,
+    requestedGenerationType: Exclude<
+      IdeaGenerationType,
+      typeof IdeaGenerationType.GUEST_FREE
+    >,
+  ): Promise<void> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        role: true,
+        userType: true,
+        accountStatus: true,
+        isActive: true,
+        isVerified: true,
+        creditBalance: true,
+        freeGenerationLimit: true,
+        freeGenerationsUsed: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException({
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
+        message: 'The registered generation owner was not found.',
+      });
+    }
+
+    this.policyService.evaluate({
+      ownerType: IDEA_OWNER_TYPES.USER,
+      requestedGenerationType,
+      user,
+    });
+  }
+
   /** Accepts a guest generation request and returns its run ID immediately. */
   async queueForGuest(
     input: GenerateGuestIdeaInput,
@@ -374,6 +454,7 @@ export class IdeaGenerationOrchestratorService {
     const guestSession = await this.guestSessionService.resolveAvailableSession(
       input.guestSessionToken,
     );
+    const resolvedDomain = await this.resolveDomainForGuest(input.dto);
 
     return this.queueOwnedGeneration({
       owner: {
@@ -381,11 +462,9 @@ export class IdeaGenerationOrchestratorService {
         guestSessionId: guestSession.id,
       },
       generationType: IdeaGenerationType.GUEST_FREE,
-      domainId: input.dto.domainId,
+      domainId: resolvedDomain.domainId,
       keywords: this.normalizeStringArray(input.dto.keywords),
-      requestedDataSourceKeys: this.normalizeSourceKeys(
-        input.dto.dataSourceKeys,
-      ),
+      requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
         country: this.normalizeRequiredValue(input.dto.country, 'Country'),

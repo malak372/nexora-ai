@@ -305,14 +305,22 @@ export class IdeaGenerationBenchmarkService {
       }
     }
 
-    if (successfulCandidates.length === 0 && localFallbackModel) {
+    if (
+      successfulCandidates.length < IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES &&
+      localFallbackModel
+    ) {
       const localCandidate = await this.executeLocalEmergencyFallback(
         context,
         localFallbackModel,
         conceptDirections,
       );
 
-      if (localCandidate) {
+      if (
+        localCandidate &&
+        !successfulCandidates.some(
+          (candidate) => candidate.candidateId === localCandidate.candidateId,
+        )
+      ) {
         successfulCandidates.push(localCandidate);
       }
     }
@@ -397,19 +405,18 @@ export class IdeaGenerationBenchmarkService {
         diversityScoresForScoring.get(candidate.candidateId) ?? null;
 
       const diversityScore = semanticDiversity?.diversityScore ?? 100;
-      const semanticDiversityAdjustedScore = this.calculateFinalScore(
-        candidate.quality.score,
-        null,
-        diversityScore,
-      );
+      const semanticDiversityAdjustedScore =
+        this.calculateDiversityAdjustedDeterministicScore(
+          candidate.quality.score,
+          diversityScore,
+        );
       const hybridFinalScore =
         useJudgeScores &&
         judgeCandidateIds.has(candidate.candidateId) &&
         aiJudge !== null
-          ? this.calculateFinalScore(
-              candidate.quality.score,
+          ? this.calculateHybridFinalScore(
+              semanticDiversityAdjustedScore,
               aiJudge.overallScore,
-              diversityScore,
             )
           : null;
 
@@ -1026,9 +1033,12 @@ export class IdeaGenerationBenchmarkService {
       responseSchema: prompt.responseSchema,
       responseSchemaName: prompt.responseSchemaName,
       estimatedOutputTokens: context.policy?.includePremiumOutputs
-        ? 6_144
+        ? 5_120
         : 2_048,
-      maxOutputTokens: context.policy?.includePremiumOutputs ? 8_192 : 2_048,
+      maxOutputTokens: this.resolveBenchmarkMaxOutputTokens(
+        model,
+        Boolean(context.policy?.includePremiumOutputs),
+      ),
       temperature: 0.55,
       // Retry the exact assigned model once for transient provider failures.
       // If that bounded retry is exhausted, the benchmark loop immediately
@@ -1036,7 +1046,7 @@ export class IdeaGenerationBenchmarkService {
       // provider-diverse fallback rotation. This keeps candidate attribution
       // correct while preventing one temporary network failure from reducing
       // the comparative benchmark to a single candidate.
-      timeoutMs: 90_000,
+      timeoutMs: 250_000,
       maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
@@ -1046,6 +1056,24 @@ export class IdeaGenerationBenchmarkService {
     );
 
     return { aiResult, parsedOutput, quality };
+  }
+
+  /**
+   * Resolves a benchmark output budget without exceeding the configured model
+   * capability. Premium candidates need more headroom because they return the
+   * core idea together with all advanced outputs in one structured response.
+   *
+   * The previous fixed 6,144-token request could truncate otherwise valid
+   * candidates. The model record remains the authoritative upper bound, so
+   * this change cannot request more than the administrator configured.
+   */
+  private resolveBenchmarkMaxOutputTokens(
+    model: AiModel,
+    includePremiumOutputs: boolean,
+  ): number {
+    const desiredTokens = includePremiumOutputs ? 8_192 : 2_048;
+
+    return Math.max(1, Math.min(desiredTokens, model.maxOutputTokens));
   }
 
   /**
@@ -1126,6 +1154,7 @@ export class IdeaGenerationBenchmarkService {
       '- Improve the same candidate using the evaluation feedback below.',
       '- Rewrite the complete response, not only the listed fields.',
       '- Preserve every evidence-grounding, location, schema, and entitlement rule from the original prompt.',
+      '- When local evidence is unavailable, location may appear only as a planned pilot target, for example: "The first pilot is planned for Nablus." Do not say or imply that users, institutions, or platforms in Nablus currently face, report, or suffer from the problem.',
       '- Keep valid strengths from the previous candidate while fixing every listed weakness.',
       '- Do not invent facts, APIs, regulations, statistics, local evidence, user complaints, or market claims.',
       '<deterministic_quality_feedback>',
@@ -1282,12 +1311,32 @@ export class IdeaGenerationBenchmarkService {
           : []),
         '- Do not switch to, merge with, or replace it using an alternative opportunity.',
         '- All candidates must solve the same observed problem, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
-        '- Produce one coherent commercially viable software product, not a feature list or a minor patch. The product may use a host-integrated SDK, vendor backend, or supported companion workflow when platform boundaries require it.',
+        '- Produce one coherent commercially viable software product, not a feature list or a minor patch.',
+        ...(effectiveEvidenceSamples.length === 1
+          ? [
+              '- SPARSE-EVIDENCE SCOPE: exactly one direct evidence sample supports this opportunity. Prefer the smallest standalone product, configurable module, or narrow API that directly solves the observed user job.',
+              '- USER-ALIGNMENT RULE: when the evidence is an end-user review or complaint, the default product must directly improve the affected user workflow. Do not redirect the solution to developers, QA teams, or platform operators unless the evidence explicitly identifies them as the affected user or direct buyer.',
+              '- A developer testing library, monitoring tool, SDK, or CI/CD product is not an acceptable default response to a teacher, student, parent, or learner complaint. Prefer a user-facing workflow, configurable feature, support tool, or operator-assisted service that resolves the observed friction.',
+              '- Prefer a durable standalone product with its own recurring user workflow and value proposition. Do not default to a companion app whose main value is explaining another app, suggesting that users switch to a web version, or documenting manual workarounds.',
+              '- A companion or diagnostic workflow is acceptable only when platform boundaries make direct resolution impossible. In that case, it must still provide an independent core capability such as personal organization, portable data, comparison, planning, or user-owned records; generic navigation advice alone is insufficient.',
+              '- For paywall or rigid-taxonomy evidence, do not bypass or alter another product. Build an independent user-owned workflow such as transparent feature comparison, customizable study organization, portable subject mapping, or accessible onboarding support that remains useful even when the original host app is unavailable.',
+              '- Do not choose an SDK, telemetry platform, compliance engine, CI/CD integration, multi-tenant enterprise dashboard, or cross-platform architecture unless the observed workflow technically cannot function without host integration.',
+              '- When host integration is genuinely required, limit the MVP to one lightweight integration path, one validation rule family, and one basic report. Put backend orchestration, broad analytics, automated enforcement, and additional adapters in post-MVP.',
+              '- The title, objectives, and abstract must describe a preliminary pilot product proportional to one observed case, not an enterprise platform inferred from market-wide demand.',
+            ]
+          : [
+              '- The product may use a host-integrated SDK, vendor backend, or supported companion workflow when platform boundaries require it.',
+            ]),
         '- Use only the supplied evidence for problem and local claims.',
         '- Treat the requested location as the initial pilot target unless direct local evidence explicitly proves local prevalence.',
-        '- Any numerical impact goal must state an explicit direction such as increase, improvement, reduction, or decrease. Use one complete grammatical form: "Target at least a X percent increase/reduction during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent increase/reduction during a defined period, measured by ...". Never use the ambiguous phrase "percent change", combine the openings, or write "target an evaluate".',
+        '- Every objective must name a concrete user action, product capability, or measurable pilot activity. Avoid generic objectives such as improve experience, increase efficiency, enhance accessibility, or provide insights unless the exact workflow and measurement method are stated.',
+        '- Do not invent a percentage target. Unless the supplied evidence explicitly includes a validated baseline and prior measured result, define impact without a numeric percentage: establish a baseline during the first pilot phase, then measure whether the selected problem metric decreases or improves during the remaining pilot period.',
+        '- When no direct local evidence exists, describe Nablus, Palestine, or any requested location only as a proposed pilot or deployment target. Never state or imply that local users currently experience the problem, that local prevalence is known, or that the evidence was collected locally.',
+        '- Premium budget estimation must provide explicit assumptions, named cost categories, a currency, a realistic numeric range, and a clear distinction between one-time development cost and recurring operating cost. Do not return vague labels such as low, medium, affordable, or cost-effective without figures.',
         '- Check spelling in the product name and all proper nouns. Never use common misspellings such as "Resiliant"; use "Resilient".',
         '- Do not present an inferred root cause as observed fact. Use wording such as plausible technical cause, likely failure pattern, or hypothesis to validate unless the evidence explicitly proves causation.',
+        '- Do not assume feature gates, paywall rules, taxonomies, or entitlement logic are stored in local JSON, YAML, or XML files. They may instead live in application code, a backend database, a remote feature-flag service, a subscription API, or a CMS.',
+        '- A static configuration linter is valid only when the host project explicitly exposes the relevant rules through supported configuration schemas. State that limitation in the problem statement, abstract, MVP, and architecture, and treat other storage mechanisms as post-MVP adapters or unsupported inputs.',
         "- Respect operating-system and application sandbox boundaries. A standalone mobile or desktop app cannot read another app's secure receipts, private logs, storage, or identifiers unless a host-integrated SDK, supported API/export, or explicit user-authorized import makes that access possible.",
         '- Make the supported integration path primary in the title direction, objectives, architecture, and abstract; do not mention an SDK only as an optional afterthought when the core workflow depends on host-app access.',
         "- For subscription, receipt, entitlement, or account-recovery concepts involving third-party apps, use one of these primary designs: (a) an SDK embedded by the host application plus a vendor-owned verification backend, or (b) a user-authorized diagnostic/import workflow that does not claim to change the host app entitlement. A standalone independent verification bridge that reads or restores another app's subscription is technically invalid.",
@@ -1307,23 +1356,33 @@ export class IdeaGenerationBenchmarkService {
       ].join('\n'),
     });
 
-    return [
-      buildDirection('Prevention and developer remediation', [
+    const endUserDirection = buildDirection('Direct user workflow resolution', [
+      'Make the primary user the person directly affected in the evidence, such as a student, teacher, parent, learner, or app user.',
+      'Center the product on completing the blocked task, restoring communication, improving access, or removing the observed friction through one clear user-facing workflow.',
+      'Do not turn the concept into a developer testing tool when the evidence describes an end-user problem.',
+    ]);
+
+    const developerDirection = buildDirection(
+      'Prevention and developer remediation',
+      [
         'Make the primary buyer and operator a development, QA, or product engineering team.',
         'Center the product on detecting, reproducing, prioritizing, and preventing the failure before it reaches users.',
-        'The dominant workflow must be engineering remediation, not end-user session restoration.',
-      ]),
-      buildDirection('User continuity and state recovery', [
-        'Make the primary outcome preservation of user work and rapid continuity after interruption.',
-        'Center the product on safe checkpointing, recovery orchestration, and user-visible continuity.',
-        'The dominant workflow must be state preservation and recovery, not merely crash analytics or developer monitoring.',
-      ]),
-      buildDirection('Operational resilience and assisted triage', [
+        'Use this direction only when a developer-operated product is genuinely justified by the supplied evidence and platform boundaries.',
+      ],
+    );
+
+    const operationalDirection = buildDirection(
+      'Operational resilience and assisted triage',
+      [
         'Make the primary buyer and operator an institutional IT, support, or platform-operations team.',
         'Center the product on evidence capture, incident triage, prioritization, and coordinated remediation across affected deployments.',
-        'The dominant workflow must be operational diagnosis and response coordination, materially distinct from developer prevention and end-user state recovery.',
-      ]),
-    ];
+        'The dominant workflow must be operational diagnosis and response coordination, materially distinct from direct end-user resolution.',
+      ],
+    );
+
+    return effectiveEvidenceSamples.length === 1
+      ? [endUserDirection, developerDirection, operationalDirection]
+      : [developerDirection, endUserDirection, operationalDirection];
   }
 
   /** Builds trusted metrics used by premium-output quality validation. */
@@ -1352,8 +1411,23 @@ export class IdeaGenerationBenchmarkService {
       'Generate one specific, evidence-grounded, differentiated, locally deployable software product.',
       'Do not invent statistics, market sizes, legal conclusions, API availability, institutional counts, failure rates, or local facts.',
       'When evidence is not locally verified, describe the discovered problem generally and say that the initial pilot deployment is planned for the target location. Never write that students, faculty, institutions, or residents in the requested city currently face or report the problem.',
-      'Mark estimates and assumptions explicitly. Any inferred root cause must be described as a plausible hypothesis to validate unless direct evidence proves causation. A percentage objective must use one complete grammatical form with an explicit direction: "Target at least a X percent increase/reduction during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent increase/reduction during a defined period, measured by ...". Never use the ambiguous phrase "percent change", never write "target an evaluate", and never present the percentage as a promise.',
+      'Mark estimates and assumptions explicitly. Any inferred root cause must be labeled as suspected, plausible, or a hypothesis to validate in every section where it appears, unless direct evidence proves causation. Never convert a symptom-only report into a confirmed token, database, network, or server diagnosis. Do not invent percentage impact targets. When no validated baseline is supplied, require the pilot to establish a baseline first and then measure directional change without precommitting to a numeric percentage.',
       'Treat store descriptions and promotional product copy as contextual source material, never as direct proof of a user complaint or unmet need.',
+      'Reject evidence from unrelated developer programs, cloud-credit claims, repository governance records, political news, and AI research reports even when they contain broad words such as student, education, platform, or system.',
+      'A GitHub issue that already specifies proposed implementation, routes, components, files to modify, infrastructure, tests, phases, or expected impact is a solution blueprint, not independent community-demand evidence. Do not copy, repackage, or productize that implementation plan. Use only independent user-observed pain that remains after removing the prescribed solution.',
+      'Keep the JSON concise. Use short arrays, avoid repeating the abstract in advanced outputs, and keep each advanced-output section focused on implementation decisions rather than generic prose.',
+      'Preserve the selected opportunity as one immutable evidence unit: title, problem, need, solution area, severity, frequency, and evidence samples must remain mutually consistent. Never combine a title from one opportunity with a need, severity, or evidence sample from another.',
+      'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',
+      'When directEvidenceCount or frequency equals 1, use singular and qualified wording such as one report indicates or a limited evidence sample suggests. Never use frequently, recurring discussions, common, widespread, or equivalent market-wide language.',
+      'When directEvidenceCount equals 1, the solution scope must remain proportional to one observed case: prefer one narrow user workflow and one primary product surface. Do not escalate a simple taxonomy, access, storage, or usability complaint into an enterprise SDK, telemetry platform, compliance suite, or CI/CD product unless host integration is strictly necessary and explicitly justified.',
+      'Apply the same singular evidence qualifier to the problem statement, abstract, objectives, value proposition, feasibility assessment, market potential, architecture, database design, and MVP features. A qualifier in one section does not authorize stronger causal or prevalence claims elsewhere.',
+      'Capabilities may detect observed behavior and test candidate causes. Unless direct technical evidence proves a code-level cause, never claim that the product identifies hardcoded rules, misconfigured feature gates, configuration files, database faults, token defects, or exact code locations. Describe outputs as diagnostic hypotheses, reviewed remediation guidance, or candidate causes requiring validation.',
+      'Keep the MVP deliberately narrow. For a six-month pilot, choose exactly one primary client platform, one ingestion or local-analysis workflow, and one basic dashboard or local report. When direct evidence count is one, the MVP must contain only: one host integration or local capture path, simple ingestion or local processing, one basic report/dashboard, and manual remediation guidance. Do not include Redis, automatic reproduction-script generation, generated test cases, automatic code suggestions, advanced exports, broad CI/CD enforcement, autonomous diagnosis, or advanced analytics in the sparse-evidence MVP. Place every excluded capability explicitly in post-MVP. Do not include Android, iOS, and web together in the MVP.',
+      'Do not output any numeric percentage improvement or reduction when no validated baseline and prior measurement are supplied. Express impact as a validation metric: establish the baseline during the first pilot phase, then measure the change in the selected defect, friction, access, or reliability metric during the remaining period.',
+      'For budget estimation, size the preliminary range to the stated team, pilot duration, target location, and MVP scope. Do not default to enterprise-scale budgets. Separate MVP development, infrastructure, testing/security, contingency, and excluded legal or marketing costs. When the proposal is a small six-month pilot with two or three developers, use a defensible lean-pilot range and keep the upper bound at or below $50,000 unless a named compliance, hardware, licensing, or security requirement in the supplied evidence clearly justifies more.',
+      'Market potential must distinguish observed evidence from inference. With one direct evidence sample, state that the observed case suggests possible transferability to similar systems; do not claim the need is common, substantial, widespread, recurring, or proven across the market. Do not invent TAM, SAM, SOM, customer counts, or market-size figures.',
+      'Advanced outputs must not introduce capabilities absent from the core idea. With one direct evidence sample, remediation must remain manual and reviewed; do not generate code patches, test cases, or reproduction scripts in the MVP. With stronger evidence, automated code fixes must still be framed as reviewed patch templates, never autonomous production changes, and test generation must remain bounded to the selected failure family.',
+
       "Respect operating-system, browser, app-store, and cross-application permission boundaries. When a product depends on another app's receipts, subscription state, entitlements, secure storage, or private logs, the primary architecture must use a host-integrated SDK and vendor-owned backend, a supported platform API/export, or explicit user-authorized import. Do not describe an independent app as able to restore or control another app's entitlement.",
       metrics,
       context.policy?.includePremiumOutputs
@@ -1592,7 +1666,7 @@ export class IdeaGenerationBenchmarkService {
           mostSimilarCandidateId: null,
           semanticDuplicateRisk: 'LOW',
           judgeReason:
-            'Selected because it was the only quality-approved candidate available for this benchmark run.',
+            'Selected by deterministic fallback because only one quality-approved candidate remained; comparative AI judging was not performed.',
           judgeConfidence: 0,
           requiresLegalVerification: null,
         },
@@ -1699,9 +1773,17 @@ export class IdeaGenerationBenchmarkService {
       ].join(' ');
     }
 
+    const diversityScore = winner.semanticDiversity?.diversityScore ?? 100;
+    const diversityPenalty = this.calculateDiversityPenalty(diversityScore);
+    const adjustedDeterministicScore =
+      winner.semanticDiversityAdjustedScore.toFixed(2);
+
     return [
-      `Hybrid winner selection used ${Math.round(IDEA_JUDGE_FINAL_SCORE_WEIGHT * 100)}% AI judge and ${Math.round(IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT * 100)}% deterministic quality.`,
-      `Winner deterministic score: ${deterministicScore}.`,
+      `Hybrid winner selection used ${Math.round(IDEA_JUDGE_FINAL_SCORE_WEIGHT * 100)}% AI judge and ${Math.round(IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT * 100)}% semantic-diversity-adjusted deterministic quality.`,
+      `Winner raw deterministic score: ${deterministicScore}.`,
+      `Semantic diversity score: ${diversityScore.toFixed(2)}.`,
+      `Applied deterministic diversity penalty: ${diversityPenalty.toFixed(2)} point(s).`,
+      `Adjusted deterministic score: ${adjustedDeterministicScore}.`,
       judgeScore === undefined
         ? 'Judge score was unavailable.'
         : `Winner judge score: ${judgeScore.toFixed(2)}.`,
@@ -1711,24 +1793,37 @@ export class IdeaGenerationBenchmarkService {
     ].join(' ');
   }
 
-  /** Calculates the stable hybrid winner score. */
-  private calculateFinalScore(
+  /** Applies one bounded semantic-diversity penalty to deterministic quality. */
+  private calculateDiversityAdjustedDeterministicScore(
     deterministicScore: number,
-    aiJudgeScore: number | null,
     diversityScore: number,
   ): number {
-    const baseScore =
-      aiJudgeScore === null
-        ? deterministicScore
-        : aiJudgeScore * IDEA_JUDGE_FINAL_SCORE_WEIGHT +
-          deterministicScore * IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT;
+    const adjustedScore =
+      deterministicScore - this.calculateDiversityPenalty(diversityScore);
 
-    // Diversity acts as a bounded penalty, not as a substitute for quality.
-    // A concept with 100 diversity keeps its full score; a near duplicate can
-    // lose at most 12 points, preventing repeated ideas from winning only due
-    // to polished wording.
-    const diversityPenalty = Math.max(0, (100 - diversityScore) * 0.12);
-    return Math.round(Math.max(0, baseScore - diversityPenalty) * 100) / 100;
+    return this.roundScore(adjustedScore);
+  }
+
+  /** Combines judge quality with the already diversity-adjusted score. */
+  private calculateHybridFinalScore(
+    diversityAdjustedDeterministicScore: number,
+    aiJudgeScore: number,
+  ): number {
+    return this.roundScore(
+      aiJudgeScore * IDEA_JUDGE_FINAL_SCORE_WEIGHT +
+        diversityAdjustedDeterministicScore *
+          IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT,
+    );
+  }
+
+  /** Returns the bounded semantic-diversity penalty in score points. */
+  private calculateDiversityPenalty(diversityScore: number): number {
+    return Math.max(0, (100 - diversityScore) * 0.12);
+  }
+
+  /** Clamps and rounds one candidate score to two decimal places. */
+  private roundScore(score: number): number {
+    return Math.round(Math.max(0, Math.min(100, score)) * 100) / 100;
   }
 
   /** Converts a validated idea output into Prisma-compatible JSON. */
