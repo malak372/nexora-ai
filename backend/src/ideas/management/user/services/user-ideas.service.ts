@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { GeneratedOutputStatus, Prisma } from '@prisma/client';
+import { AccountStatus, GeneratedOutputStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 
@@ -265,7 +265,12 @@ export class UserIdeasService {
       'createdAt',
     );
 
-    const [ideas, total] = await Promise.all([
+    const [user, ideas, total] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { accountStatus: true },
+      }),
+
       this.prisma.idea.findMany({
         where,
         skip,
@@ -360,6 +365,8 @@ export class UserIdeasService {
       }),
     ]);
 
+    const canUseAiChat = user.accountStatus === AccountStatus.PREMIUM;
+
     const data = ideas.map((idea) => ({
       ...idea,
 
@@ -372,7 +379,7 @@ export class UserIdeasService {
 
       access: {
         canViewAdvancedOutputs: idea.isUnlocked,
-        canUseAiChat: idea.isUnlocked,
+        canUseAiChat: idea.isUnlocked && canUseAiChat,
         canViewCommunityData: idea.isUnlocked,
         canPublish: true,
       },
@@ -431,6 +438,17 @@ export class UserIdeasService {
           select: {
             id: true,
             name: true,
+          },
+        },
+
+        /*
+         * The idea is already scoped to the authenticated owner. Select only
+         * the owner's current account status so response access flags remain
+         * consistent with the central AI Chat authorization service.
+         */
+        user: {
+          select: {
+            accountStatus: true,
           },
         },
 
@@ -770,7 +788,8 @@ export class UserIdeasService {
 
         canViewNlpAnalysis: advancedAccess,
 
-        canUseAiChat: advancedAccess,
+        canUseAiChat:
+          advancedAccess && idea.user?.accountStatus === AccountStatus.PREMIUM,
 
         canPublish: true,
 
