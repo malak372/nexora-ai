@@ -282,7 +282,10 @@ export class KeywordExtractionService {
         `${text.originalText} ${text.cleanedText}`,
       );
       const canonicalTerms = this.extractCanonicalTerms(normalizedText);
-      const lexiconTerms = this.extractPriorityLexiconTerms(text);
+      const lexiconTerms = this.extractPriorityLexiconTerms(
+        text,
+        normalizedText,
+      );
       const baseWeight =
         text.sourceType === 'COMMENT' ? COMMENT_TERM_WEIGHT : POST_TERM_WEIGHT;
 
@@ -305,13 +308,16 @@ export class KeywordExtractionService {
   }
 
   private extractCanonicalTerms(value: string): string[] {
+    const keywordSafeValue = this.removeCrashCourseTitlePhrase(value);
+
     return CANONICAL_KEYWORD_DEFINITIONS.filter((definition) =>
-      definition.patterns.some((pattern) => pattern.test(value)),
+      definition.patterns.some((pattern) => pattern.test(keywordSafeValue)),
     ).map((definition) => definition.keyword);
   }
 
   private extractPriorityLexiconTerms(
     text: LexiconTextAnalysisResult,
+    normalizedText: string,
   ): string[] {
     const stopWords = new Set(
       (STOP_WORDS[text.language] ?? []).map((word) => this.normalizeTerm(word)),
@@ -323,7 +329,40 @@ export class KeywordExtractionService {
       .map((term) => this.normalizeTerm(term))
       .filter((term) => Boolean(term) && !stopWords.has(term))
       .map((term) => LEXICON_TERM_ALIASES.get(term) ?? null)
-      .filter((term): term is string => term !== null);
+      .filter((term): term is string => term !== null)
+      .filter(
+        (term) =>
+          term !== 'application crash' ||
+          this.hasActualApplicationFailureSignal(normalizedText),
+      );
+  }
+
+  /**
+   * Removes the educational title phrase "Crash Course" before keyword
+   * matching. The phrase names a lesson/video series and is not evidence that
+   * an application crashed. Other crash words remain available for normal
+   * reliability detection.
+   */
+  private removeCrashCourseTitlePhrase(value: string): string {
+    return value.replace(/\bcrash course\b/giu, ' ');
+  }
+
+  /**
+   * Requires an application-context failure signal before accepting a crash
+   * alias supplied by the administrator lexicon. This prevents a matched word
+   * from bypassing the canonical "Crash Course" safeguard.
+   */
+  private hasActualApplicationFailureSignal(value: string): boolean {
+    const keywordSafeValue = this.removeCrashCourseTitlePhrase(value);
+
+    return (
+      /\b(?:app|application|platform|software|website|system)\b[^.!?\n]{0,60}\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b/iu.test(
+        keywordSafeValue,
+      ) ||
+      /\b(?:crash|crashes|crashed|crashing|freeze|freezes|frozen)\b[^.!?\n]{0,60}\b(?:app|application|platform|software|website|system)\b/iu.test(
+        keywordSafeValue,
+      )
+    );
   }
 
   private addUniqueTerms(

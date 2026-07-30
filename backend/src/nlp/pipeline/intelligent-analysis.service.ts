@@ -208,7 +208,7 @@ export class IntelligentAnalysisService {
       complexityMetrics,
     });
 
-    const finalOutput = await this.resolveFinalOutput(
+    const finalOutput = this.resolveFinalOutput(
       ruleBasedOutput,
       decision.action,
       decision.reasons.map((reason) => `${reason.code}: ${reason.message}`),
@@ -255,38 +255,31 @@ export class IntelligentAnalysisService {
    * @param qualityMetrics Prompt-safe quality metrics.
    * @returns Final analysis safe for persistence.
    */
-  private async resolveFinalOutput(
+  private resolveFinalOutput(
     ruleBasedOutput: IntelligentAnalysisOutput,
     action: AnalysisDecisionAction,
     decisionReasons: readonly string[],
     complexityMetrics: Readonly<Record<string, number>>,
     qualityMetrics: Readonly<Record<string, number>>,
-  ): Promise<IntelligentAnalysisOutput> {
-    switch (action) {
-      case AnalysisDecisionAction.RULE_BASED_ONLY:
-      case AnalysisDecisionAction.INSUFFICIENT_DATA:
-        return this.aiEnhancementService.skip(ruleBasedOutput).analysis;
+  ): IntelligentAnalysisOutput {
+    /*
+     * Preserve the decision inputs for observability and future policy changes.
+     * They intentionally do not trigger a second AI request in this layer.
+     */
+    void action;
+    void decisionReasons;
+    void complexityMetrics;
+    void qualityMetrics;
 
-      case AnalysisDecisionAction.AI_ENHANCEMENT_REQUIRED: {
-        const evidence =
-          this.analysisEvidenceService.buildAiEnhancementEvidence(
-            ruleBasedOutput.analyzedTexts,
-          );
-
-        const result = await this.aiEnhancementService.enhance({
-          ruleBasedOutput,
-          evidence,
-          decisionReasons,
-          complexityMetrics,
-          qualityMetrics,
-        });
-
-        return result.analysis;
-      }
-
-      default:
-        return this.assertNever(action);
-    }
+    /*
+     * The deterministic NLP layer is now preprocessing and emergency fallback
+     * only. The dedicated CommunityAiAnalysisStage performs the single
+     * authoritative AI analysis after this result is persisted.
+     *
+     * Keeping the persistence contract unchanged minimizes migration risk while
+     * preventing a duplicate AI call inside the NLP module.
+     */
+    return this.aiEnhancementService.skip(ruleBasedOutput).analysis;
   }
 
   /**

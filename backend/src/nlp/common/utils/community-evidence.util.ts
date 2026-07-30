@@ -174,6 +174,56 @@ export function isLikelyProductDescription(
 }
 
 /**
+ * Detects repository status records, contribution trackers, changelogs, and
+ * implementation-governance text that can contain words such as sync,
+ * recovery, data, issue, or failed without describing an end-user problem.
+ *
+ * These records are useful engineering artifacts, but they are not independent
+ * community-demand evidence and must not create needs or opportunities.
+ */
+export function isRepositoryOperationalRecord(value: string): boolean {
+  const normalized = normalizeCommunityText(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  const strongTrackerSignals = [
+    /\bupstream contribution tracker\b/iu,
+    /\bupstream contribution status\b/iu,
+    /\bstill open\b[\s\S]{0,160}\bmerged\b/iu,
+    /\bmerged\b[\s\S]{0,160}\bpull requests?\b/iu,
+    /\b(?:pull request|merge request)s?\s*#?\d+\b/iu,
+    /\b(?:changelog|release notes?|implementation status|project status)\b/iu,
+  ];
+
+  if (strongTrackerSignals.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+
+  const repositoryStructureSignals = [
+    /github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues?)\/\d+/iu,
+    /\b(?:feat|fix|docs|test|chore|refactor)\([^)]*\):/iu,
+    /\b(?:rfc|pr|issue)\s*#\d+\b/iu,
+    /\b(?:config\.ya?ml|package\.json|schema|fixture|contract)\b/iu,
+    /\b(?:repository|maintainer|contribution|commit|branch)\b/iu,
+  ];
+  const statusSignals = [
+    /\b(?:open|merged|closed|approved|pending)\b/iu,
+    /(?:✅|⏳|📡|#\s*upstream)/u,
+  ];
+
+  const structureCount = repositoryStructureSignals.filter((pattern) =>
+    pattern.test(normalized),
+  ).length;
+  const statusCount = statusSignals.filter((pattern) =>
+    pattern.test(normalized),
+  ).length;
+
+  return structureCount >= 2 && statusCount >= 1;
+}
+
+/**
  * Strong operational-failure signals that make an evidence sentence more
  * useful than a vague mention of a minor bug or glitch.
  */
