@@ -246,7 +246,7 @@ export class IdeaDuplicateDetectionService {
     throw new ConflictException({
       code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
       message:
-        'A semantically similar idea already exists for this domain and geographic area.',
+        'A materially similar idea already exists on the platform and cannot be generated again.',
       details: {
         matchedIdeaId: result.matchedIdea?.id ?? null,
         matchedTitle: result.matchedIdea?.title ?? null,

@@ -2,6 +2,8 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 
+import { AccountStatus } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { userCacheKeys } from '../cache/user-cache.keys';
 import { UserValidationService } from '../validation/validation.service';
@@ -85,70 +87,83 @@ export class UserFavoritesService {
   async getFavorites(userId: string) {
     await this.userValidationService.findUserOrThrow(userId);
 
-    const favorites = await this.prisma.favoriteIdea.findMany({
-      where: {
-        userId,
-        idea: {
+    /*
+     * AI Chat is a Premium-only capability. Resolve the authenticated user's
+     * current account status once for the complete response instead of deriving
+     * chat access from idea unlock state or issuing one query per favorite.
+     */
+    const [user, favorites] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { accountStatus: true },
+      }),
+      this.prisma.favoriteIdea.findMany({
+        where: {
           userId,
-          deletedAt: null,
+          idea: {
+            userId,
+            deletedAt: null,
+          },
         },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        id: true,
-        createdAt: true,
-        idea: {
-          select: {
-            id: true,
-            title: true,
-            generationType: true,
-            selectedRegion: true,
-            limitedAbstract: true,
-            partialAbstract: true,
-            fullAbstract: true,
-            problemStatement: true,
-            objectives: true,
-            targetUsers: true,
-            isUnlocked: true,
-            unlockMethod: true,
-            unlockedAt: true,
-            commentsCount: true,
-            createdAt: true,
-            updatedAt: true,
-            domain: {
-              select: {
-                id: true,
-                name: true,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          idea: {
+            select: {
+              id: true,
+              title: true,
+              generationType: true,
+              selectedRegion: true,
+              limitedAbstract: true,
+              partialAbstract: true,
+              fullAbstract: true,
+              problemStatement: true,
+              objectives: true,
+              targetUsers: true,
+              isUnlocked: true,
+              unlockMethod: true,
+              unlockedAt: true,
+              commentsCount: true,
+              createdAt: true,
+              updatedAt: true,
+              domain: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
-            },
-            publication: {
-              select: {
-                id: true,
-                status: true,
-                visibility: true,
-                publishedAt: true,
+              publication: {
+                select: {
+                  id: true,
+                  status: true,
+                  visibility: true,
+                  publishedAt: true,
+                },
               },
-            },
-            generationRun: {
-              select: {
-                id: true,
-                status: true,
-                currentStageKey: true,
-                progressPercent: true,
+              generationRun: {
+                select: {
+                  id: true,
+                  status: true,
+                  currentStageKey: true,
+                  progressPercent: true,
+                },
               },
-            },
-            _count: {
-              select: {
-                generatedOutputs: true,
-                chatSessions: true,
+              _count: {
+                select: {
+                  generatedOutputs: true,
+                  chatSessions: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+    ]);
+
+    const canUseAiChat = user.accountStatus === AccountStatus.PREMIUM;
 
     return favorites.map((favorite) => ({
       id: favorite.id,
@@ -166,7 +181,7 @@ export class UserFavoritesService {
           canViewAdvancedOutputs: favorite.idea.isUnlocked,
           canViewFullAbstract: favorite.idea.isUnlocked,
           canViewCommunityData: favorite.idea.isUnlocked,
-          canUseAiChat: favorite.idea.isUnlocked,
+          canUseAiChat: favorite.idea.isUnlocked && canUseAiChat,
           requiresDirectUnlock: !favorite.idea.isUnlocked,
         },
       },
