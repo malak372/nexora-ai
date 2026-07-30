@@ -95,6 +95,18 @@ export class AdminCreditsService {
         title: true,
       },
     },
+
+    publicationAcceptance: {
+      select: {
+        id: true,
+        publication: {
+          select: {
+            id: true,
+            publicTitle: true,
+          },
+        },
+      },
+    },
   } satisfies Prisma.CreditTransactionSelect;
 
   /**
@@ -147,7 +159,8 @@ export class AdminCreditsService {
       totalTransactions,
       purchasedCredits,
       bonusCredits,
-      deductedCredits,
+      generationDeductions,
+      publicationAdvancedDeductions,
       refundedCredits,
       adminAdjustments,
     ] = await Promise.all([
@@ -161,6 +174,11 @@ export class AdminCreditsService {
 
       this.sumCreditsByType(where, CreditTransactionType.DEDUCTION_GENERATION),
 
+      this.sumCreditsByType(
+        where,
+        CreditTransactionType.DEDUCTION_PUBLICATION_ADVANCED,
+      ),
+
       this.sumCreditsByType(where, CreditTransactionType.REFUND),
 
       this.sumCreditsByType(where, CreditTransactionType.ADMIN_ADJUSTMENT),
@@ -170,7 +188,11 @@ export class AdminCreditsService {
       totalTransactions,
       purchasedCredits,
       bonusCredits,
-      deductedCredits: Math.abs(deductedCredits),
+      deductedCredits: Math.abs(
+        generationDeductions + publicationAdvancedDeductions,
+      ),
+      generationDeductions: Math.abs(generationDeductions),
+      publicationAdvancedDeductions: Math.abs(publicationAdvancedDeductions),
       refundedCredits,
       adminAdjustments,
     };
@@ -245,6 +267,9 @@ export class AdminCreditsService {
       'Payment Status',
       'Idea ID',
       'Idea Title',
+      'Publication Acceptance ID',
+      'Published Idea ID',
+      'Published Idea Title',
       'Created At',
     ];
 
@@ -263,6 +288,9 @@ export class AdminCreditsService {
       transaction.payment?.status ?? '',
       transaction.idea?.id ?? '',
       transaction.idea?.title ?? '',
+      transaction.publicationAcceptance?.id ?? '',
+      transaction.publicationAcceptance?.publication.id ?? '',
+      transaction.publicationAcceptance?.publication.publicTitle ?? '',
       transaction.createdAt.toISOString(),
     ]);
 

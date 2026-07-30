@@ -1,13 +1,11 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 
 import { GetUserCreditHistoryQueryDto } from '../dto/get-user-credit-history-query.dto';
-
 import { UserCreditsService } from '../services/user-credits.service';
 
 /**
@@ -36,11 +34,6 @@ export class UserCreditsController {
   /**
    * Returns the authenticated user's current credit summary.
    *
-   * The response may include:
-   * - Current credit balance.
-   * - Account status.
-   * - Free-generation usage and remaining quota.
-   *
    * GET /users/credits
    */
   @Get()
@@ -51,13 +44,6 @@ export class UserCreditsController {
   /**
    * Returns the authenticated user's own paginated
    * and filtered credit transaction history.
-   *
-   * The history may contain transaction types such as:
-   * - PURCHASE
-   * - BONUS
-   * - DEDUCTION_GENERATION
-   * - REFUND
-   * - ADMIN_ADJUSTMENT
    *
    * GET /users/credits/history
    */

@@ -16,6 +16,7 @@ type CreditPurchasePayment = {
   readonly userId: string;
   readonly creditsAmount: number;
   readonly bonusCreditsAmount: number;
+  readonly activatesPremium: boolean;
 };
 
 /**
@@ -73,6 +74,8 @@ export class CreditPurchaseService {
       type: CreditTransactionType.PURCHASE,
 
       description: 'Credits added after successful purchase payment.',
+
+      activatePremium: payment.activatesPremium,
 
       tx,
     });

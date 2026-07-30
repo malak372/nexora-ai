@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { CreditsModule } from '../credits/credits.module';
 import { IdeaOutputsModule } from '../ideas/outputs/idea-outputs.module';
+import { IdeaPublicationModule } from '../ideas/publication/idea-publication.module';
 import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -59,6 +60,7 @@ import { UserPaymentsService } from './services/user-payments.service';
     CreditsModule,
     MailModule,
     IdeaOutputsModule,
+    forwardRef(() => IdeaPublicationModule),
   ],
 
   controllers: [

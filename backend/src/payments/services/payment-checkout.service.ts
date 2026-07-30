@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import {
+  AccountStatus,
   IdeaGenerationType,
   PaymentPurpose,
   PaymentStatus,
@@ -18,6 +19,7 @@ import {
 
 import type { CreateDirectUnlockPaymentDto } from '../dto/create-direct-unlock-payment.dto';
 import type { PurchaseCreditsDto } from '../dto/purchase-credits.dto';
+import type { CreatePublicationAcceptanceDto } from '../../ideas/publication/dto/create-publication-acceptance.dto';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
@@ -54,6 +56,7 @@ type PendingPayment = {
   readonly id: string;
   readonly userId: string;
   readonly ideaId: string | null;
+  readonly publicationId: string | null;
   readonly amount: Prisma.Decimal;
   readonly currency: string;
   readonly paymentMethodKey: string;
@@ -122,7 +125,7 @@ export class PaymentCheckoutService {
     userId: string,
     dto: PurchaseCreditsDto,
   ): Promise<PaymentCheckoutResult> {
-    await this.ensureEligibleUser(userId);
+    const purchasingUser = await this.ensureEligibleUser(userId);
 
     const settings = await this.getSystemSettings();
 
@@ -144,7 +147,14 @@ export class PaymentCheckoutService {
       settings.bonusCredits,
     );
 
-    const amount = settings.creditPrice.mul(purchasedCredits);
+    const activatesPremium =
+      purchasingUser.accountStatus === AccountStatus.NORMAL;
+    const activationFee = activatesPremium
+      ? settings.premiumActivationFee
+      : new Prisma.Decimal(0);
+    const amount = settings.creditPrice
+      .mul(purchasedCredits)
+      .add(activationFee);
 
     if (amount.lte(0)) {
       throw new PaymentProcessingError(
@@ -169,6 +179,12 @@ export class PaymentCheckoutService {
       creditsAmount: purchasedCredits,
       bonusCreditsAmount: bonusCredits,
       creditPriceAtPurchase: settings.creditPrice,
+      premiumActivationFeeAtPurchase: activatesPremium ? activationFee : null,
+      activatesPremium,
+      publicationId: null,
+      acceptanceCountry: null,
+      acceptanceCity: null,
+      acceptanceRegion: null,
     });
 
     return this.createExternalCheckout(payment, {
@@ -278,12 +294,94 @@ export class PaymentCheckoutService {
       creditsAmount: 0,
       bonusCreditsAmount: 0,
       creditPriceAtPurchase: null,
+      premiumActivationFeeAtPurchase: null,
+      activatesPremium: false,
+      publicationId: null,
+      acceptanceCountry: null,
+      acceptanceCity: null,
+      acceptanceRegion: null,
     });
 
     return this.createExternalCheckout(payment, {
       successUrl: dto.successUrl,
       cancelUrl: dto.cancelUrl,
       ideaId: idea.id,
+    });
+  }
+
+  /** Creates a fixed-price publication acceptance checkout for a NORMAL user. */
+  async createPublicationAcceptanceCheckout(
+    userId: string,
+    publicationId: string,
+    dto: CreatePublicationAcceptanceDto,
+  ): Promise<PaymentCheckoutResult> {
+    const user = await this.ensureEligibleUser(userId);
+    if (user.accountStatus !== AccountStatus.NORMAL) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+        'Premium users accept basic publication details without direct payment.',
+      );
+    }
+
+    const [settings, publication, existing] = await Promise.all([
+      this.getSystemSettings(),
+      this.prisma.ideaPublication.findFirst({
+        where: { id: publicationId, status: 'PUBLISHED', isHidden: false },
+        select: { id: true, publisherId: true },
+      }),
+      this.prisma.ideaPublicationAcceptance.findUnique({
+        where: { publicationId_userId: { publicationId, userId } },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!publication) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_NOT_FOUND,
+        'The publication does not exist or is unavailable.',
+      );
+    }
+    if (publication.publisherId === userId) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_ACCESS_DENIED,
+        'You cannot accept your own publication.',
+      );
+    }
+    if (existing) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_ALREADY_UNLOCKED,
+        'This publication has already been accepted.',
+      );
+    }
+
+    const paymentMethodKey = this.normalizePaymentMethodKey(
+      dto.paymentMethodKey,
+    );
+    const providerKey = this.resolveProviderKey(paymentMethodKey);
+    const payment = await this.createPendingPayment({
+      userId,
+      ideaId: null,
+      publicationId,
+      amount: settings.publishedIdeaPrice,
+      currency: DEFAULT_PAYMENT_CURRENCY,
+      paymentMethodKey,
+      providerKey,
+      paymentPurpose: PaymentPurpose.ACCEPT_PUBLICATION,
+      creditsAmount: 0,
+      bonusCreditsAmount: 0,
+      creditPriceAtPurchase: null,
+      premiumActivationFeeAtPurchase: null,
+      activatesPremium: false,
+      acceptanceCountry: dto.country?.trim() || null,
+      acceptanceCity: dto.city?.trim() || null,
+      acceptanceRegion: dto.region?.trim() || null,
+      idempotencyKey: dto.clientRequestId,
+    });
+
+    return this.createExternalCheckout(payment, {
+      successUrl: dto.successUrl,
+      cancelUrl: dto.cancelUrl,
+      publicationId,
     });
   }
 
@@ -301,11 +399,19 @@ export class PaymentCheckoutService {
     readonly creditsAmount: number;
     readonly bonusCreditsAmount: number;
     readonly creditPriceAtPurchase: Prisma.Decimal | null;
+    readonly premiumActivationFeeAtPurchase: Prisma.Decimal | null;
+    readonly activatesPremium: boolean;
+    readonly publicationId: string | null;
+    readonly acceptanceCountry: string | null;
+    readonly acceptanceCity: string | null;
+    readonly acceptanceRegion: string | null;
+    readonly idempotencyKey?: string;
   }): Promise<PendingPayment> {
     return this.prisma.payment.create({
       data: {
         userId: input.userId,
         ideaId: input.ideaId,
+        publicationId: input.publicationId,
         amount: input.amount,
         currency: input.currency,
         paymentMethodKey: input.paymentMethodKey,
@@ -315,11 +421,18 @@ export class PaymentCheckoutService {
         creditsAmount: input.creditsAmount,
         bonusCreditsAmount: input.bonusCreditsAmount,
         creditPriceAtPurchase: input.creditPriceAtPurchase,
+        premiumActivationFeeAtPurchase: input.premiumActivationFeeAtPurchase,
+        activatesPremium: input.activatesPremium,
+        acceptanceCountry: input.acceptanceCountry,
+        acceptanceCity: input.acceptanceCity,
+        acceptanceRegion: input.acceptanceRegion,
+        idempotencyKey: input.idempotencyKey,
       },
       select: {
         id: true,
         userId: true,
         ideaId: true,
+        publicationId: true,
         amount: true,
         currency: true,
         paymentMethodKey: true,
@@ -340,6 +453,7 @@ export class PaymentCheckoutService {
       readonly successUrl: string;
       readonly cancelUrl: string;
       readonly ideaId?: string;
+      readonly publicationId?: string;
       readonly creditsQuantity?: number;
     },
   ): Promise<PaymentCheckoutResult> {
@@ -394,6 +508,7 @@ export class PaymentCheckoutService {
       readonly successUrl: string;
       readonly cancelUrl: string;
       readonly ideaId?: string;
+      readonly publicationId?: string;
       readonly creditsQuantity?: number;
     },
   ): CreatePaymentSessionInput {
@@ -402,6 +517,10 @@ export class PaymentCheckoutService {
       [PAYMENT_METADATA_KEYS.USER_ID]: payment.userId,
       [PAYMENT_METADATA_KEYS.PAYMENT_PURPOSE]: payment.paymentPurpose,
     };
+
+    if (options.publicationId) {
+      metadata.publicationId = options.publicationId;
+    }
 
     if (options.ideaId) {
       metadata[PAYMENT_METADATA_KEYS.IDEA_ID] = options.ideaId;
@@ -578,13 +697,17 @@ export class PaymentCheckoutService {
   /**
    * Ensures the authenticated account can initiate payments.
    */
-  private async ensureEligibleUser(userId: string): Promise<void> {
+  private async ensureEligibleUser(userId: string): Promise<{
+    id: string;
+    accountStatus: AccountStatus;
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         role: true,
         isActive: true,
+        accountStatus: true,
         isVerified: true,
       },
     });
@@ -620,6 +743,11 @@ export class PaymentCheckoutService {
         { details: { userId } },
       );
     }
+
+    return {
+      id: user.id,
+      accountStatus: user.accountStatus,
+    };
   }
 
   /**
@@ -631,6 +759,8 @@ export class PaymentCheckoutService {
       select: {
         creditPrice: true,
         directUnlockPrice: true,
+        premiumActivationFee: true,
+        publishedIdeaPrice: true,
         bonusThreshold: true,
         bonusCredits: true,
       },
