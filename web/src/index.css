@@ -1,13 +1,92 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+:root {
+  --nexora-background: #f7f3ed;
+  --nexora-surface: #ffffff;
+  --nexora-primary: #5b4b8a;
+  --nexora-primary-dark: #403464;
+  --nexora-secondary: #8d6e63;
+  --nexora-text: #28231f;
+  --nexora-muted: #716a64;
+  --nexora-border: #e3dbd1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  background-color: var(--nexora-background);
+  color: var(--nexora-text);
+  font-family: 'Inter', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+html[dir='rtl'] body {
+  font-family: 'Cairo', Arial, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background-color: rgba(91, 75, 138, 0.2);
+}
+
+@layer components {
+  .nexora-container {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .nexora-card {
+    @apply rounded-nexora border border-nexora-border bg-nexora-surface shadow-soft;
+  }
+
+  .nexora-button-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-nexora-primary px-5 py-3 font-semibold text-white transition duration-200 hover:bg-nexora-primaryDark disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .nexora-button-secondary {
+    @apply inline-flex items-center justify-center rounded-xl border border-nexora-border bg-white px-5 py-3 font-semibold text-nexora-text transition duration-200 hover:bg-nexora-cream;
+  }
+
+  .nexora-input {
+    @apply w-full rounded-xl border border-nexora-border bg-white px-4 py-3 text-nexora-text outline-none transition placeholder:text-nexora-muted focus:border-nexora-primary focus:ring-4 focus:ring-nexora-primary/10;
+  }
 }
