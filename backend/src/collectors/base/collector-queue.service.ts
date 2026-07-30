@@ -92,7 +92,7 @@ export class CollectorQueueService {
   private readonly maxQueueSize: number;
 
   constructor(private readonly configService: ConfigService) {
-    this.concurrency = this.getPositiveNumber('COLLECTOR_QUEUE_CONCURRENCY', 1);
+    this.concurrency = this.getPositiveNumber('COLLECTOR_QUEUE_CONCURRENCY', 3);
 
     this.maxQueueSize = this.getPositiveNumber('COLLECTOR_QUEUE_MAX_SIZE', 100);
   }

@@ -69,6 +69,8 @@ export class StackOverflowCollector
 
   private readonly apiBaseUrl = 'https://api.stackexchange.com/2.3';
 
+  private throttleBlockedUntil = 0;
+
   constructor(configService: ConfigService) {
     super(configService, StackOverflowCollector.name);
   }
@@ -77,6 +79,16 @@ export class StackOverflowCollector
    * Collects and ranks Stack Overflow questions.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
+    if (Date.now() < this.throttleBlockedUntil) {
+      const remainingSeconds = Math.ceil(
+        (this.throttleBlockedUntil - Date.now()) / 1000,
+      );
+      this.logger.warn(
+        `Stack Overflow collection skipped because the API throttle is active for approximately ${remainingSeconds} more second(s).`,
+      );
+      return [];
+    }
+
     try {
       const queries = this.buildSearchQueries(input);
 
@@ -165,15 +177,54 @@ export class StackOverflowCollector
 
       return posts;
     } catch (error: unknown) {
-      this.logger.error(
-        'Stack Overflow collection failed',
-        this.getErrorMessage(error),
+      const errorMessage = this.getErrorMessage(error);
+      const providerMessage = this.extractProviderErrorMessage(error);
+      const throttleMatch = `${errorMessage} ${providerMessage}`.match(
+        /more requests available in\s+(\d+)\s+seconds/iu,
       );
+
+      if (throttleMatch) {
+        const throttleSeconds = Number(throttleMatch[1]);
+        this.throttleBlockedUntil =
+          Date.now() + Math.max(throttleSeconds, 60) * 1000;
+        this.logger.warn(
+          `Stack Overflow collection skipped because the API throttle limit was reached. Cooldown: ${throttleSeconds} second(s).`,
+        );
+        return [];
+      }
+
+      this.logger.error('Stack Overflow collection failed', errorMessage);
 
       throw new ServiceUnavailableException(
         'Stack Overflow collection failed. Check collector limits, API limits, or network connection.',
       );
     }
+  }
+
+  /**
+   * Extracts Stack Exchange error_message from an Axios-like error without
+   * introducing an unsafe any assignment.
+   */
+  private extractProviderErrorMessage(error: unknown): string {
+    if (!error || typeof error !== 'object' || !('response' in error)) {
+      return '';
+    }
+
+    const response = (error as { response?: unknown }).response;
+
+    if (!response || typeof response !== 'object' || !('data' in response)) {
+      return '';
+    }
+
+    const data = (response as { data?: unknown }).data;
+
+    if (!data || typeof data !== 'object' || !('error_message' in data)) {
+      return '';
+    }
+
+    const message = (data as { error_message?: unknown }).error_message;
+
+    return typeof message === 'string' ? message : '';
   }
 
   /**

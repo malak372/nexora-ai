@@ -134,7 +134,7 @@ export class AppStoreCollector
         }))
         .filter((item) => item.score > 0)
         .sort((first, second) => second.score - first.score)
-        .slice(0, this.maxSavedPosts);
+        .slice(0, this.resolveMaxSavedPosts(input));
 
       const posts: CollectorPost[] = [];
 
@@ -179,7 +179,7 @@ export class AppStoreCollector
       appStoreClient.search({
         term: searchQuery,
         country: requestedCountry,
-        num: Math.min(this.maxFetchedPosts, 25),
+        num: Math.min(this.resolveMaxFetchedPosts(input), 25),
       }),
     );
 
@@ -204,7 +204,7 @@ export class AppStoreCollector
         appStoreClient.search({
           term: searchQuery,
           country: 'us',
-          num: Math.min(this.maxFetchedPosts, 25),
+          num: Math.min(this.resolveMaxFetchedPosts(input), 25),
         }),
     );
   }
@@ -218,11 +218,19 @@ export class AppStoreCollector
       .map((keyword) => this.cleanNormalizedText(keyword))
       .filter(Boolean);
     const domainName = this.cleanNormalizedText(input.domainName);
-    const terms = this.unique([
-      ...userKeywords,
-      ...domainKeywords,
-      ...(domainName ? [domainName] : []),
-    ])
+    const terms = this.unique(
+      input.collectionMode === 'TARGETED_RECOVERY'
+        ? [
+            ...domainKeywords,
+            ...(domainName ? [domainName] : []),
+            ...userKeywords,
+          ]
+        : [
+            ...userKeywords,
+            ...domainKeywords,
+            ...(domainName ? [domainName] : []),
+          ],
+    )
       .map((term) => term.trim())
       .filter(Boolean)
       .slice(0, 8);
@@ -451,7 +459,7 @@ export class AppStoreCollector
 
       return reviews
         .filter((review) => this.isUsefulReview(review, input))
-        .slice(0, this.maxSavedComments)
+        .slice(0, this.resolveMaxSavedComments(input))
         .map(
           (review): CollectorComment => ({
             externalId: this.buildReviewExternalId(appId, review),

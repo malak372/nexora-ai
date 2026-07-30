@@ -5,6 +5,15 @@ import { LanguageCode } from '@prisma/client';
  *
  * @author Malak
  */
+export type CollectorCollectionMode = 'STANDARD' | 'TARGETED_RECOVERY';
+
+export type CollectorLimits = {
+  readonly maxFetchedPosts?: number;
+  readonly maxSavedPosts?: number;
+  readonly maxFetchedComments?: number;
+  readonly maxSavedComments?: number;
+};
+
 export type CollectorInput = {
   /**
    * Selected software-domain name.
@@ -36,6 +45,12 @@ export type CollectorInput = {
    * Optional custom keywords supplied by the user.
    */
   keywords?: string[];
+
+  /** Distinguishes normal domain discovery from targeted evidence recovery. */
+  collectionMode?: CollectorCollectionMode;
+
+  /** Optional per-run limits used without mutating singleton collector state. */
+  limits?: CollectorLimits;
 };
 
 /**

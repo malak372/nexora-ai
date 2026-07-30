@@ -8,6 +8,7 @@ import {
   AuditAction,
   AuditTargetType,
   CollectionJobStatus,
+  DomainResolutionSource,
   LanguageCode,
 } from '@prisma/client';
 
@@ -53,6 +54,9 @@ export type IdeaGenerationCollectionInput = {
   readonly userId?: string;
 
   readonly domainId: string;
+  readonly domainResolutionSource?: DomainResolutionSource;
+  readonly domainResolutionConfidence?: number;
+  readonly userDescription?: string;
 
   readonly country?: string;
   readonly city?: string;
@@ -68,6 +72,9 @@ export type IdeaGenerationCollectionInput = {
   readonly dataSourceKeys?: string[];
 
   readonly keywords?: string[];
+
+  readonly collectionMode?: CollectorInput['collectionMode'];
+  readonly collectorLimits?: CollectorInput['limits'];
 };
 
 /**
@@ -109,7 +116,7 @@ export class DataCollectionService {
    * This is especially useful for platforms such as DEV.to, where the source
    * API already classifies articles under meaningful tags.
    */
-  private readonly EXACT_SOURCE_TAG_MATCH_BONUS = 35;
+  private readonly EXACT_SOURCE_TAG_MATCH_BONUS = 10;
 
   /**
    * Reserved domain name representing all domains.
@@ -219,113 +226,126 @@ export class DataCollectionService {
       },
     });
 
+    const collectionMode =
+      'collectionMode' in dto ? dto.collectionMode : undefined;
+
+    const collectorLimits =
+      'collectorLimits' in dto ? dto.collectorLimits : undefined;
+
     let completedSources = 0;
     let failedSources = 0;
 
     try {
-      for (const dataSource of dataSources) {
-        /*
-         * Check whether an administrator stopped the job
-         * before starting the next collector.
-         */
-        if (await this.isStopped(job.id)) {
-          await this.collectionJobService.markRemainingSourcesStopped(job.id);
-
-          return this.collectionJobService.findJobOrThrow(job.id);
-        }
-
-        await this.collectionJobService.markSourceRunning(
-          job.id,
-          dataSource.id,
-        );
-
-        try {
-          const collector = this.collectorsFactory.getCollector(dataSource.key);
-
-          const collectorInput: CollectorInput = {
-            domainName: isGeneralDomain ? 'All Domains' : domain.name,
-
-            domainKeywords,
-
-            country: dto.country,
-
-            city: dto.city,
-
-            region: dto.region,
-
-            language: dto.language,
-
-            radiusKm: dto.radiusKm,
-
-            keywords: userKeywords,
-          };
-
-          const posts = await this.collectorQueueService.run(
-            () => collector.collect(collectorInput),
-
-            {
-              platform: dataSource.key,
-            },
-          );
-
+      const sourceResults = await Promise.all(
+        dataSources.map(async (dataSource) => {
           /*
-           * A collector may finish after the Admin has
-           * stopped the job.
-           *
-           * Check again before saving the returned data.
+           * Every selected source is submitted immediately. CollectorQueueService
+           * enforces COLLECTOR_QUEUE_CONCURRENCY, so this service can wait for the
+           * whole collection job without serializing individual collectors.
            */
           if (await this.isStopped(job.id)) {
-            await this.collectionJobService.markRemainingSourcesStopped(job.id);
-
-            return this.collectionJobService.findJobOrThrow(job.id);
+            return 'STOPPED' as const;
           }
 
-          const relevantPosts = this.filterRelevantPosts(posts, relevanceTerms);
-
-          const totals = await this.socialPostService.createManyWithComments(
+          await this.collectionJobService.markSourceRunning(
             job.id,
             dataSource.id,
-
-            {
-              country: dto.country,
-
-              city: dto.city,
-
-              region: dto.region,
-            },
-
-            relevantPosts,
           );
 
-          await this.collectionJobService.markSourceCompleted(
-            job.id,
-            dataSource.id,
-            totals,
-          );
-
-          completedSources += 1;
-        } catch (error: unknown) {
-          failedSources += 1;
-
-          /*
-           * A source may fail after some records were already persisted. Count
-           * those rows before marking the source failed so source-level and
-           * parent counters remain consistent with the data later consumed by
-           * NLP.
-           */
-          const persistedTotals =
-            await this.socialPostService.countByCollectionJobSource(
-              job.id,
-              dataSource.id,
+          try {
+            const collector = this.collectorsFactory.getCollector(
+              dataSource.key,
             );
 
-          await this.collectionJobService.markSourceFailed(
-            job.id,
-            dataSource.id,
-            error,
-            persistedTotals,
-          );
-        }
+            const collectorInput: CollectorInput = {
+              domainName: isGeneralDomain ? 'All Domains' : domain.name,
+              domainKeywords,
+              country: dto.country,
+              city: dto.city,
+              region: dto.region,
+              language: dto.language,
+              radiusKm: dto.radiusKm,
+              keywords: userKeywords,
+              collectionMode,
+              limits: collectorLimits,
+            };
+
+            const posts = await this.collectorQueueService.run(
+              () => collector.collect(collectorInput),
+              {
+                platform: dataSource.key,
+              },
+            );
+
+            /*
+             * A collector may finish after an administrator stopped the job.
+             * Do not persist late results in that case.
+             */
+            if (await this.isStopped(job.id)) {
+              return 'STOPPED' as const;
+            }
+
+            const relevantPosts = this.filterRelevantPosts(
+              posts,
+              relevanceTerms,
+            );
+
+            const totals = await this.socialPostService.createManyWithComments(
+              job.id,
+              dataSource.id,
+              {
+                country: dto.country,
+                city: dto.city,
+                region: dto.region,
+              },
+              relevantPosts,
+            );
+
+            await this.collectionJobService.markSourceCompleted(
+              job.id,
+              dataSource.id,
+              totals,
+            );
+
+            return 'COMPLETED' as const;
+          } catch (error: unknown) {
+            /*
+             * A source may fail after some records were already persisted. Count
+             * those rows before marking the source failed so source-level and
+             * parent counters remain consistent with data consumed by NLP.
+             */
+            const persistedTotals =
+              await this.socialPostService.countByCollectionJobSource(
+                job.id,
+                dataSource.id,
+              );
+
+            await this.collectionJobService.markSourceFailed(
+              job.id,
+              dataSource.id,
+              error,
+              persistedTotals,
+            );
+
+            return 'FAILED' as const;
+          }
+        }),
+      );
+
+      completedSources = sourceResults.filter(
+        (result) => result === 'COMPLETED',
+      ).length;
+      failedSources = sourceResults.filter(
+        (result) => result === 'FAILED',
+      ).length;
+
+      if (
+        sourceResults.some((result) => result === 'STOPPED') ||
+        (await this.isStopped(job.id))
+      ) {
+        await this.collectionJobService.markRemainingSourcesStopped(job.id);
+
+        return this.collectionJobService.findJobOrThrow(job.id);
       }
 
       /*
@@ -548,14 +568,22 @@ export class DataCollectionService {
         : 0;
 
       const finalScore = baseScore + sourceTagBonus;
+      const hasMinimumIndependentRelevance =
+        baseScore >= this.MIN_RELEVANCE_SCORE ||
+        (hasExactSourceTagMatch && baseScore >= 40);
       const passesGenericTitleGuard = this.passesGenericTitleGuard(
         post,
         normalizedTerms,
         normalizedTags,
         hasExactSourceTagMatch,
       );
+      const hasCommunityProblemSignal = this.hasCommunityProblemSignal(post);
+
       const accepted =
-        finalScore >= this.MIN_RELEVANCE_SCORE && passesGenericTitleGuard;
+        hasMinimumIndependentRelevance &&
+        finalScore >= this.MIN_RELEVANCE_SCORE &&
+        passesGenericTitleGuard &&
+        hasCommunityProblemSignal;
 
       this.logger.debug(
         [
@@ -565,13 +593,38 @@ export class DataCollectionService {
           `sourceTagBonus=${sourceTagBonus}`,
           `finalScore=${finalScore}`,
           `minimum=${this.MIN_RELEVANCE_SCORE}`,
+          `independentRelevance=${hasMinimumIndependentRelevance}`,
           `genericTitleGuard=${passesGenericTitleGuard}`,
+          `communityProblemSignal=${hasCommunityProblemSignal}`,
           `accepted=${accepted}`,
         ].join(' | '),
       );
 
       return accepted;
     });
+  }
+
+  /**
+   * Requires at least one concrete community problem, need, complaint, or
+   * feature-request signal before a post can enter the evidence corpus.
+   *
+   * The check includes comments because marketplace listings often have a
+   * neutral title while their reviews contain the actual user problems.
+   */
+  private hasCommunityProblemSignal(post: CollectorPost): boolean {
+    const commentsText = post.comments
+      .slice(0, 20)
+      .map((comment) => comment.content)
+      .join(' ');
+
+    const content = [post.title, post.content, commentsText]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|privacy|consent|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
+      content,
+    );
   }
 
   /**
@@ -596,8 +649,16 @@ export class DataCollectionService {
       return true;
     }
 
-    if (hasExactSourceTagMatch || normalizedTags.length > 0) {
-      return true;
+    if (hasExactSourceTagMatch && normalizedTags.length > 0) {
+      const body = (post.content ?? '').toLowerCase();
+      const hasConcreteTaggedSignal =
+        /\b(?:cannot|can't|doesn't work|failed|failure|error|bug|crash|freeze|missing|limited|need|wish|request|should add|privacy|consent|paywall|subscription|slow|confusing|difficult)\b/iu.test(
+          body,
+        );
+
+      if (hasConcreteTaggedSignal) {
+        return true;
+      }
     }
 
     const body = (post.content ?? '').toLowerCase();

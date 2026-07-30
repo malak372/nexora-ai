@@ -96,8 +96,22 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
    */
   private readonly apiBaseUrl = 'https://api.github.com';
 
+  /**
+   * GitHub-specific HTTP timeout.
+   *
+   * GitHub search may take longer than lightweight collector APIs,
+   * especially while collectors are running concurrently. Keeping
+   * this value platform-specific avoids slowing every collector.
+   */
+  private readonly requestTimeoutMs: number;
+
   constructor(configService: ConfigService) {
     super(configService, GitHubCollector.name);
+
+    this.requestTimeoutMs = this.getPositiveNumber(
+      'GITHUB_REQUEST_TIMEOUT_MS',
+      45_000,
+    );
   }
 
   /**
@@ -133,7 +147,7 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
               order: 'desc',
               per_page: Math.min(this.maxFetchedPosts, 100),
             },
-            timeout: 10_000,
+            timeout: this.requestTimeoutMs,
           },
           {
             cacheKey,
@@ -207,7 +221,11 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
 
     const domainName = this.cleanNormalizedText(input.domainName);
 
-    const terms = this.unique([domainName, ...domainKeywords, ...userQueries])
+    const preferredTerms = userQueries.length
+      ? userQueries
+      : [domainName, ...domainKeywords];
+
+    const terms = this.unique(preferredTerms)
       .filter((term) => term.length >= 3)
       .slice(0, 5);
 
@@ -282,7 +300,14 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       return false;
     }
 
-    return !this.hasIgnoredIssueTitle(normalizedTitle);
+    const hasConcreteProblemSignal =
+      /\b(?:bug|error|fail|failure|broken|crash|missing|cannot|can't|unable|blocked|problem|issue|feature request|request|should add|needs?|slow|confusing|difficult|regression)\b/iu.test(
+        content,
+      );
+
+    return (
+      hasConcreteProblemSignal && !this.hasIgnoredIssueTitle(normalizedTitle)
+    );
   }
 
   /**
@@ -360,7 +385,7 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
           params: {
             per_page: Math.min(this.maxFetchedComments, 100),
           },
-          timeout: 10_000,
+          timeout: this.requestTimeoutMs,
         },
         {
           cacheKey,
