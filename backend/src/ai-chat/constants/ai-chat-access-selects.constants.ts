@@ -18,6 +18,11 @@ export const AI_CHAT_IDEA_ACCESS_SELECT = Prisma.validator<Prisma.IdeaSelect>()(
     userId: true,
     isUnlocked: true,
     deletedAt: true,
+    user: {
+      select: {
+        accountStatus: true,
+      },
+    },
   },
 );
 
