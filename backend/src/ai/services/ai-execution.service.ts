@@ -20,10 +20,13 @@ import {
   DEFAULT_AI_ESTIMATED_OUTPUT_TOKENS,
   DEFAULT_AI_MAX_RETRIES_PER_MODEL,
   DEFAULT_AI_REQUEST_TIMEOUT_MS,
+  DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS,
   DEFAULT_AI_RETRY_BASE_DELAY_MS,
   MAX_AI_REQUEST_TIMEOUT_MS,
+  MAX_OLLAMA_REQUEST_TIMEOUT_MS,
   MAX_AI_STRUCTURED_OUTPUT_REPAIRS,
   MIN_AI_REQUEST_TIMEOUT_MS,
+  MIN_OLLAMA_REQUEST_TIMEOUT_MS,
 } from '../constants';
 
 import {
@@ -249,6 +252,15 @@ export class AiExecutionService {
   private readonly timeoutMs: number;
 
   /**
+   * Maximum duration of one local Ollama request.
+   *
+   * Ollama receives a larger deadline than hosted providers because local
+   * inference may run on CPU. The deadline remains bounded so a stopped or
+   * unreachable local service cannot block the complete benchmark forever.
+   */
+  private readonly ollamaTimeoutMs: number;
+
+  /**
    * Maximum number of retries after the initial request for one model.
    */
   private readonly maxRetriesPerModel: number;
@@ -281,6 +293,14 @@ export class AiExecutionService {
       DEFAULT_AI_REQUEST_TIMEOUT_MS,
       MIN_AI_REQUEST_TIMEOUT_MS,
       MAX_AI_REQUEST_TIMEOUT_MS,
+    );
+
+    this.ollamaTimeoutMs = this.resolveBoundedPositiveIntegerConfig(
+      configService,
+      'OLLAMA_REQUEST_TIMEOUT_MS',
+      DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS,
+      MIN_OLLAMA_REQUEST_TIMEOUT_MS,
+      MAX_OLLAMA_REQUEST_TIMEOUT_MS,
     );
 
     this.maxRetriesPerModel = this.resolveNonNegativeIntegerConfig(
@@ -722,6 +742,7 @@ export class AiExecutionService {
        */
       if (
         useNativeResponseSchema &&
+        !this.disablesSameModelRetry(model) &&
         this.shouldUseJsonCompatibilityFallback(input, normalizedError)
       ) {
         return this.executeModelAttempt(
@@ -769,7 +790,7 @@ export class AiExecutionService {
     model: AiModel,
     error: AiProviderError,
   ): boolean {
-    if (!error.retryable) {
+    if (!error.retryable || this.disablesSameModelRetry(model)) {
       return false;
     }
 
@@ -785,6 +806,15 @@ export class AiExecutionService {
     }
 
     return true;
+  }
+
+  /**
+   * Paid DeepSeek requests must never be repeated against the same model.
+   * A failure immediately advances routing to the next configured model, which
+   * prevents duplicate paid requests and reduces tail latency.
+   */
+  private disablesSameModelRetry(model: AiModel): boolean {
+    return model.apiModelId.toLocaleLowerCase().includes('deepseek');
   }
 
   /**
@@ -831,7 +861,7 @@ export class AiExecutionService {
     provider: AiProvider,
     model: AiModel,
     request: ExecuteProviderRequestInput,
-    timeoutMs: number,
+    timeoutMs: number | null,
   ): Promise<AiProviderGenerateResult> {
     return this.timeoutService.execute(
       (signal) =>
@@ -843,6 +873,8 @@ export class AiExecutionService {
           systemInstruction: request.systemInstruction,
 
           maxOutputTokens: request.maxOutputTokens,
+
+          contextWindow: model.contextWindow ?? undefined,
 
           temperature: request.temperature,
 
@@ -1511,7 +1543,18 @@ export class AiExecutionService {
   private resolveModelRequestTimeoutMs(
     model: AiModel,
     timeoutMs: number | undefined,
-  ): number {
+  ): number | null {
+    /*
+     * Local Ollama generation can be substantially slower than hosted model
+     * calls, especially on CPU or limited-VRAM machines. Give it a dedicated
+     * configurable deadline instead of disabling the timeout. This prevents a
+     * stopped or unreachable Ollama service from holding the benchmark open
+     * indefinitely while preserving more time than hosted requests receive.
+     */
+    if (model.providerKey === 'ollama') {
+      return this.ollamaTimeoutMs;
+    }
+
     const resolvedTimeoutMs = this.resolveRequestTimeoutMs(timeoutMs);
     const isOpenRouterFreeModel =
       model.providerKey === 'openrouter' &&

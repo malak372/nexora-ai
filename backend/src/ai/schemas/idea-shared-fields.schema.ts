@@ -85,11 +85,6 @@ export const AdvancedIdeaFields = {
   mvpFeatures: z.array(z.string().trim().min(3).max(300)).min(3).max(15),
 
   /**
-   * Preliminary business-model recommendation.
-   */
-  businessModel: z.string().trim().min(20).max(2_500),
-
-  /**
    * Suggested revenue streams and monetization strategy.
    */
   revenueModel: z.string().trim().min(20).max(2_000),

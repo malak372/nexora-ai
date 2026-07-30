@@ -36,3 +36,19 @@ export const MIN_AI_REQUEST_TIMEOUT_MS = 1_000;
  * allowing one provider request to remain active indefinitely.
  */
 export const MAX_AI_REQUEST_TIMEOUT_MS = 300_000;
+/**
+ * Default maximum duration of one local Ollama request.
+ *
+ * Local CPU inference is slower than hosted inference, but it must remain
+ * bounded so an unavailable or stalled Ollama process cannot hold the whole
+ * benchmark open indefinitely. Three minutes is intentionally longer than the
+ * hosted default while remaining short enough for an interactive generation
+ * run.
+ */
+export const DEFAULT_OLLAMA_REQUEST_TIMEOUT_MS = 180_000;
+
+/** Minimum configurable Ollama request timeout. */
+export const MIN_OLLAMA_REQUEST_TIMEOUT_MS = 30_000;
+
+/** Maximum configurable Ollama request timeout. */
+export const MAX_OLLAMA_REQUEST_TIMEOUT_MS = 600_000;

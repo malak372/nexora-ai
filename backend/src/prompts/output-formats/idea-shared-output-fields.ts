@@ -156,15 +156,6 @@ export const ADVANCED_IDEA_OUTPUT_PROPERTIES = {
   },
 
   /**
-   * Preliminary business-model recommendation.
-   */
-  businessModel: {
-    type: 'string',
-    minLength: 20,
-    maxLength: 2_500,
-  },
-
-  /**
    * Suggested revenue streams and monetization strategy.
    */
   revenueModel: {
@@ -257,7 +248,6 @@ export const ADVANCED_IDEA_REQUIRED_FIELDS = [
   'systemArchitecture',
   'databaseDesign',
   'mvpFeatures',
-  'businessModel',
   'revenueModel',
   'budgetEstimation',
   'implementationTimeline',
@@ -289,7 +279,6 @@ export const ADVANCED_IDEA_OUTPUT_FORMAT = {
   systemArchitecture: 'string',
   databaseDesign: 'string',
   mvpFeatures: ['string'],
-  businessModel: 'string',
   revenueModel: 'string',
   budgetEstimation: 'string',
   implementationTimeline: 'string',

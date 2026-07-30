@@ -69,6 +69,9 @@ export class OllamaProvider implements AiProvider {
             : {}),
           options: {
             num_predict: input.maxOutputTokens,
+            ...(input.contextWindow !== undefined
+              ? { num_ctx: input.contextWindow }
+              : {}),
             ...(input.temperature !== undefined
               ? { temperature: input.temperature }
               : {}),
@@ -136,6 +139,24 @@ export class OllamaProvider implements AiProvider {
     ) {
       throw new BadRequestException(
         'AI maximum output tokens must be a positive integer.',
+      );
+    }
+
+    if (
+      input.contextWindow !== undefined &&
+      (!Number.isInteger(input.contextWindow) || input.contextWindow <= 0)
+    ) {
+      throw new BadRequestException(
+        'Ollama context window must be a positive integer when provided.',
+      );
+    }
+
+    if (
+      input.contextWindow !== undefined &&
+      input.maxOutputTokens > input.contextWindow
+    ) {
+      throw new BadRequestException(
+        'Ollama maximum output tokens cannot exceed the configured context window.',
       );
     }
   }
