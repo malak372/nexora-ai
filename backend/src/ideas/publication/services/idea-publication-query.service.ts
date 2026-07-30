@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import {
+  AccountStatus,
   IdeaPublicationStatus,
   IdeaPublicationVisibility,
   Prisma,
@@ -9,6 +10,7 @@ import {
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
+import { GetAcceptedPublicationsQueryDto } from '../dto/get-accepted-publications-query.dto';
 import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
 
 /**
@@ -18,6 +20,7 @@ import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
  * - Retrieving publicly visible publications.
  * - Retrieving publications discoverable by authenticated users.
  * - Retrieving publications owned by a specific publisher.
+ * - Retrieving publications accepted by the authenticated user.
  * - Enforcing publication visibility and audience-access rules.
  * - Applying pagination, search, filtering, and sorting.
  *
@@ -53,7 +56,9 @@ export class IdeaPublicationQueryService {
   /**
    * Retrieves publications discoverable by an authenticated user.
    *
-   * A publication is discoverable when it is:
+   * Premium users may discover all active published publications.
+   *
+   * A non-premium user may discover a publication when it is:
    * - Public.
    * - Visible to all registered users.
    * - Shared directly with the current user.
@@ -63,14 +68,26 @@ export class IdeaPublicationQueryService {
    *
    * @param userId Authenticated user identifier.
    * @param userType Authenticated user's account type, when available.
+   * @param accountStatus Authenticated user's current account status.
    * @param query Publication list query options.
    * @returns Paginated publications accessible to the user.
    */
   async findDiscoverable(
     userId: string,
     userType: UserType | null,
+    accountStatus: AccountStatus,
     query: GetPublicationsQueryDto,
   ) {
+    if (accountStatus === AccountStatus.PREMIUM) {
+      return this.findMany(
+        {
+          status: IdeaPublicationStatus.PUBLISHED,
+          isHidden: false,
+        },
+        query,
+      );
+    }
+
     return this.findMany(
       {
         status: IdeaPublicationStatus.PUBLISHED,
@@ -133,6 +150,121 @@ export class IdeaPublicationQueryService {
   }
 
   /**
+   * Retrieves publications accepted by the authenticated user.
+   *
+   * Both NORMAL and PREMIUM users can retrieve their acceptance history.
+   * The result includes the safe publication snapshot and the user's
+   * acceptance and advanced-access state.
+   *
+   * @param userId Authenticated user identifier.
+   * @param query Accepted-publication query options.
+   * @returns Paginated publications accepted by the user.
+   */
+  async findAccepted(userId: string, query: GetAcceptedPublicationsQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const search = query.search?.trim();
+
+    const publicationWhere: Prisma.IdeaPublicationWhereInput = {
+      isHidden: false,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.visibility ? { visibility: query.visibility } : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                publicTitle: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                publicAbstract: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                publicProblem: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const where: Prisma.IdeaPublicationAcceptanceWhereInput = {
+      userId,
+      ...(query.advancedUnlocked === true
+        ? {
+            advancedUnlockedAt: {
+              not: null,
+            },
+          }
+        : {}),
+      ...(query.advancedUnlocked === false
+        ? {
+            advancedUnlockedAt: null,
+          }
+        : {}),
+      ...(query.fromDate || query.toDate
+        ? {
+            acceptedAt: {
+              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+              ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+            },
+          }
+        : {}),
+      publication: publicationWhere,
+    };
+
+    const allowedSorts = new Set(['acceptedAt', 'createdAt', 'updatedAt']);
+
+    const sortBy = allowedSorts.has(query.sortBy ?? '')
+      ? query.sortBy!
+      : 'acceptedAt';
+
+    const [acceptances, total] = await this.prisma.$transaction([
+      this.prisma.ideaPublicationAcceptance.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: {
+          [sortBy]: query.sortOrder ?? 'desc',
+        },
+        select: this.acceptedPublicationSelect,
+      }),
+      this.prisma.ideaPublicationAcceptance.count({
+        where,
+      }),
+    ]);
+
+    return {
+      items: acceptances.map((acceptance) => ({
+        acceptanceId: acceptance.id,
+        acceptedAt: acceptance.acceptedAt,
+        country: acceptance.country,
+        city: acceptance.city,
+        region: acceptance.region,
+        advancedUnlockedAt: acceptance.advancedUnlockedAt,
+        advancedUnlockMethod: acceptance.advancedUnlockMethod,
+        hasAdvancedAccess: acceptance.advancedUnlockedAt !== null,
+        createdAt: acceptance.createdAt,
+        updatedAt: acceptance.updatedAt,
+        publication: acceptance.publication,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
    * Retrieves one publicly accessible publication by identifier.
    *
    * The publication must be published and publicly visible.
@@ -155,6 +287,8 @@ export class IdeaPublicationQueryService {
    *
    * Access is granted when:
    * - The user owns the publication.
+   * - The user has previously accepted the publication.
+   * - The authenticated user is Premium and the publication is published.
    * - The publication is published and public.
    * - The publication is published and visible to registered users.
    * - The publication is published and explicitly shared with the user.
@@ -165,6 +299,7 @@ export class IdeaPublicationQueryService {
    * @param publicationId Publication identifier.
    * @param userId Authenticated user identifier.
    * @param userType Authenticated user's account type, when available.
+   * @param accountStatus Authenticated user's current account status.
    * @returns Accessible publication details.
    * @throws NotFoundException When the publication does not exist or is inaccessible.
    */
@@ -172,12 +307,44 @@ export class IdeaPublicationQueryService {
     publicationId: string,
     userId: string,
     userType: UserType | null,
+    accountStatus: AccountStatus,
   ) {
+    if (accountStatus === AccountStatus.PREMIUM) {
+      return this.findOneOrThrow({
+        id: publicationId,
+        OR: [
+          {
+            publisherId: userId,
+          },
+          {
+            isHidden: false,
+            acceptances: {
+              some: {
+                userId,
+              },
+            },
+          },
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+            isHidden: false,
+          },
+        ],
+      });
+    }
+
     return this.findOneOrThrow({
       id: publicationId,
       OR: [
         {
           publisherId: userId,
+        },
+        {
+          isHidden: false,
+          acceptances: {
+            some: {
+              userId,
+            },
+          },
         },
         {
           status: IdeaPublicationStatus.PUBLISHED,
@@ -238,9 +405,6 @@ export class IdeaPublicationQueryService {
     const limit = query.limit ?? 10;
     const search = query.search?.trim();
 
-    /**
-     * Combines access conditions with optional search and date filters.
-     */
     const effectiveWhere: Prisma.IdeaPublicationWhereInput = {
       AND: [
         where,
@@ -279,9 +443,6 @@ export class IdeaPublicationQueryService {
       ],
     };
 
-    /**
-     * Prevents clients from sorting by unsupported or sensitive fields.
-     */
     const allowedSorts = new Set([
       'createdAt',
       'publishedAt',
@@ -368,6 +529,9 @@ export class IdeaPublicationQueryService {
     allowRatings: true,
     allowFeedback: true,
     allowVoting: true,
+    allowAdoption: true,
+    maximumAdoptions: true,
+    adoptionMode: true,
 
     averageRating: true,
     ratingsCount: true,
@@ -376,6 +540,8 @@ export class IdeaPublicationQueryService {
     feedbackCount: true,
 
     publishedAt: true,
+    archivedAt: true,
+    isHidden: true,
     createdAt: true,
     updatedAt: true,
 
@@ -387,4 +553,22 @@ export class IdeaPublicationQueryService {
       },
     },
   } satisfies Prisma.IdeaPublicationSelect;
+
+  /**
+   * Safe accepted-publication projection.
+   */
+  private readonly acceptedPublicationSelect = {
+    id: true,
+    acceptedAt: true,
+    country: true,
+    city: true,
+    region: true,
+    advancedUnlockedAt: true,
+    advancedUnlockMethod: true,
+    createdAt: true,
+    updatedAt: true,
+    publication: {
+      select: this.publicationSelect,
+    },
+  } satisfies Prisma.IdeaPublicationAcceptanceSelect;
 }

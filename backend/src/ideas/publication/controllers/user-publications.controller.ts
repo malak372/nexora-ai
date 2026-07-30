@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.type';
 
 import { GeneratePublicationDescriptionDto } from '../dto/generate-publication-description.dto';
+import { GetAcceptedPublicationsQueryDto } from '../dto/get-accepted-publications-query.dto';
 import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
 import { UpsertIdeaPublicationDto } from '../dto/upsert-idea-publication.dto';
 import { IdeaPublicationAiService } from '../services/idea-publication-ai.service';
@@ -108,6 +109,19 @@ export class UserPublicationsController {
   }
 
   /**
+   * Returns publications accepted by the authenticated user.
+   *
+   * This endpoint is available to both NORMAL and PREMIUM users.
+   */
+  @Get('publications/accepted')
+  findAccepted(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: GetAcceptedPublicationsQueryDto,
+  ) {
+    return this.queryService.findAccepted(user.id, query);
+  }
+
+  /**
    * Returns published ideas visible to the authenticated user.
    */
   @Get('publications/discover')
@@ -115,7 +129,12 @@ export class UserPublicationsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetPublicationsQueryDto,
   ) {
-    return this.queryService.findDiscoverable(user.id, user.userType, query);
+    return this.queryService.findDiscoverable(
+      user.id,
+      user.userType,
+      user.accountStatus,
+      query,
+    );
   }
 
   /**
@@ -131,6 +150,7 @@ export class UserPublicationsController {
       publicationId,
       user.id,
       user.userType,
+      user.accountStatus,
     );
   }
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { FeedbackModule } from '../feedback/feedback.module';
 
+import { IdeaBusinessModelsModule } from './business-models/idea-business-models.module';
 import { IdeaGenerationModule } from './generation/idea-generation.module';
 import { IdeaManagementModule } from './management/idea-management.module';
 import { IdeaOutputsModule } from './outputs/idea-outputs.module';
@@ -15,6 +16,7 @@ import { IdeaVotingModule } from './voting/idea-voting.module';
  */
 @Module({
   imports: [
+    IdeaBusinessModelsModule,
     IdeaGenerationModule,
     IdeaManagementModule,
     IdeaOutputsModule,
@@ -23,6 +25,7 @@ import { IdeaVotingModule } from './voting/idea-voting.module';
     FeedbackModule,
   ],
   exports: [
+    IdeaBusinessModelsModule,
     IdeaGenerationModule,
     IdeaManagementModule,
     IdeaOutputsModule,
