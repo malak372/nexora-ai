@@ -11,22 +11,22 @@ export const FIREBASE_PRIVATE_KEY_KEY = 'FIREBASE_PRIVATE_KEY';
  * Firebase initialization and runtime messages.
  */
 export const FIREBASE_INITIALIZATION_SUCCESS_MESSAGE =
-    'Firebase Messaging initialized successfully.';
+  'Firebase Messaging initialized successfully.';
 
 export const FIREBASE_INITIALIZATION_FAILURE_MESSAGE =
-    'Firebase Admin initialization failed.';
+  'Firebase Admin initialization failed.';
 
 export const FIREBASE_EXISTING_APP_MESSAGE =
-    'Existing Firebase Admin application reused.';
+  'Existing Firebase Admin application reused.';
 
 export const FIREBASE_SERVICE_ACCOUNT_MESSAGE =
-    'Firebase Admin initialized using service-account credentials.';
+  'Firebase Admin initialized using service-account credentials.';
 
 export const FIREBASE_APPLICATION_DEFAULT_MESSAGE =
-    'Firebase service-account credentials were not configured. Application Default Credentials are being used.';
+  'Firebase service-account credentials were not configured. Application Default Credentials are being used.';
 
 export const FIREBASE_MESSAGING_UNAVAILABLE_MESSAGE =
-    'Firebase Messaging is not available.';
+  'Firebase Messaging is not available.';
 
 export const FIREBASE_SERVICE_ACCOUNT_INCOMPLETE_MESSAGE =
-    'Firebase service-account configuration is incomplete.';
+  'Firebase service-account configuration is incomplete.';

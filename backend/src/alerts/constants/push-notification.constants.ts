@@ -19,15 +19,15 @@ export const PUSH_NOTIFICATION_RETRY_DELAY_MS = 500;
  * must no longer be used.
  */
 export const INVALID_FCM_TOKEN_ERROR_CODES = new Set<string>([
-    'messaging/invalid-registration-token',
-    'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+  'messaging/registration-token-not-registered',
 ]);
 
 /**
  * Firebase errors that may succeed when retried.
  */
 export const RETRYABLE_FCM_ERROR_CODES = new Set<string>([
-    'messaging/internal-error',
-    'messaging/server-unavailable',
-    'messaging/unknown-error',
+  'messaging/internal-error',
+  'messaging/server-unavailable',
+  'messaging/unknown-error',
 ]);

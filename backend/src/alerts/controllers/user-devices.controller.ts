@@ -1,23 +1,23 @@
 import {
-    Body,
-    Controller,
-    Delete,
-    Get,
-    HttpCode,
-    HttpStatus,
-    Param,
-    ParseUUIDPipe,
-    Post,
-    UseGuards,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
 
 import {
-    ApiBearerAuth,
-    ApiNoContentResponse,
-    ApiOkResponse,
-    ApiOperation,
-    ApiTags,
-    ApiUnauthorizedResponse,
+  ApiBearerAuth,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -47,68 +47,68 @@ import { UserDeviceService } from '../services/user-device.service';
 @ApiTags('User Devices')
 @ApiBearerAuth()
 @ApiUnauthorizedResponse({
-    description: 'Authentication is required.',
+  description: 'Authentication is required.',
 })
 @Controller('users/devices')
 @UseGuards(JwtAuthGuard)
 export class UserDevicesController {
-    constructor(private readonly userDeviceService: UserDeviceService) { }
+  constructor(private readonly userDeviceService: UserDeviceService) {}
 
-    /**
-     * Registers a device or refreshes an existing FCM token.
-     *
-     * POST /users/devices
-     */
-    @Post()
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({
-        summary: 'Register or refresh a push-notification device',
-    })
-    @ApiOkResponse({
-        description: 'The device was registered or refreshed successfully.',
-    })
-    registerDevice(
-        @CurrentUser() currentUser: AuthenticatedUser,
-        @Body() dto: RegisterDeviceDto,
-    ) {
-        return this.userDeviceService.registerDevice(currentUser.id, dto);
-    }
+  /**
+   * Registers a device or refreshes an existing FCM token.
+   *
+   * POST /users/devices
+   */
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Register or refresh a push-notification device',
+  })
+  @ApiOkResponse({
+    description: 'The device was registered or refreshed successfully.',
+  })
+  registerDevice(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() dto: RegisterDeviceDto,
+  ) {
+    return this.userDeviceService.registerDevice(currentUser.id, dto);
+  }
 
-    /**
-     * Retrieves active devices belonging to the authenticated user.
-     *
-     * The response must not expose raw FCM tokens.
-     *
-     * GET /users/devices
-     */
-    @Get()
-    @ApiOperation({
-        summary: 'Retrieve the authenticated user devices',
-    })
-    @ApiOkResponse({
-        description: 'The active devices were retrieved successfully.',
-    })
-    getDevices(@CurrentUser() currentUser: AuthenticatedUser) {
-        return this.userDeviceService.getActiveDevices(currentUser.id);
-    }
+  /**
+   * Retrieves active devices belonging to the authenticated user.
+   *
+   * The response must not expose raw FCM tokens.
+   *
+   * GET /users/devices
+   */
+  @Get()
+  @ApiOperation({
+    summary: 'Retrieve the authenticated user devices',
+  })
+  @ApiOkResponse({
+    description: 'The active devices were retrieved successfully.',
+  })
+  getDevices(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.userDeviceService.getActiveDevices(currentUser.id);
+  }
 
-    /**
-     * Revokes one device belonging to the authenticated user.
-     *
-     * DELETE /users/devices/:id
-     */
-    @Delete(':id')
-    @HttpCode(HttpStatus.NO_CONTENT)
-    @ApiOperation({
-        summary: 'Revoke a push-notification device',
-    })
-    @ApiNoContentResponse({
-        description: 'The device was revoked successfully.',
-    })
-    async revokeDevice(
-        @CurrentUser() currentUser: AuthenticatedUser,
-        @Param('id', new ParseUUIDPipe({ version: '4' })) deviceId: string,
-    ): Promise<void> {
-        await this.userDeviceService.revokeDevice(currentUser.id, deviceId);
-    }
+  /**
+   * Revokes one device belonging to the authenticated user.
+   *
+   * DELETE /users/devices/:id
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Revoke a push-notification device',
+  })
+  @ApiNoContentResponse({
+    description: 'The device was revoked successfully.',
+  })
+  async revokeDevice(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) deviceId: string,
+  ): Promise<void> {
+    await this.userDeviceService.revokeDevice(currentUser.id, deviceId);
+  }
 }

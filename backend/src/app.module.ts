@@ -13,6 +13,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
+import { BusinessModelTemplatesModule } from './business-model-templates/business-model-templates.module';
 import { CollectorsModule } from './collectors/collectors.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { ContactMessagesModule } from './contact-messages/contact-messages.module';
@@ -83,6 +84,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     AuthModule,
     UsersModule,
+    BusinessModelTemplatesModule,
     MailModule,
     AuditModule,
     AdminModule,
