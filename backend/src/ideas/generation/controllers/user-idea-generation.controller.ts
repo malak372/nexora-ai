@@ -16,6 +16,8 @@ import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.type';
 
 import { GenerateIdeaDto } from '../dto/generate-idea.dto';
+import { CollectionPreviewDto } from '../dto/collection-preview.dto';
+import { CollectionPreviewService } from '../services/collection-preview.service';
 
 import { IdeaGenerationOrchestratorService } from '../services/idea-generation-orchestrator.service';
 
@@ -61,6 +63,7 @@ const USER_GENERATION_RATE_LIMIT_TTL_MS = 60_000;
 export class UserIdeaGenerationController {
   constructor(
     private readonly orchestrator: IdeaGenerationOrchestratorService,
+    private readonly collectionPreviewService: CollectionPreviewService,
   ) {}
 
   /**
@@ -74,6 +77,16 @@ export class UserIdeaGenerationController {
    * @param dto Validated generation request.
    * @returns Completed generation-pipeline result.
    */
+  /** Returns the newest compatible collection and its completedAt-based freshness. */
+  @Post('collection-preview')
+  @HttpCode(HttpStatus.OK)
+  previewCollection(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Body() dto: CollectionPreviewDto,
+  ) {
+    return this.collectionPreviewService.preview(currentUser.id, dto);
+  }
+
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({

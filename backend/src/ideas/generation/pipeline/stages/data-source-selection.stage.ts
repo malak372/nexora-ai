@@ -24,9 +24,8 @@ import { mergeGenerationStringArrays } from '../../utils/idea-generation-normali
  * Responsibilities:
  * - Validate that the selected domain exists and is active.
  * - Load configured domain keywords.
- * - Resolve requested active and implemented data sources.
- * - Select all available data sources when no explicit keys were
- *   supplied.
+ * - Select all active and implemented data sources automatically.
+ * - Keep source coverage controlled by backend configuration.
  * - Merge domain keywords with requester-provided keywords.
  * - Store the resolved domain and source information in the
  *   generation context.
@@ -67,8 +66,6 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     const selection = await this.selectionService.resolveSelection({
       domainId: context.domainId,
-
-      requestedDataSourceKeys: context.requestedDataSourceKeys,
     });
 
     const mergedKeywords = mergeGenerationStringArrays(

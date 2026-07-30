@@ -64,7 +64,7 @@ export class IdeaCandidateJudgePromptService {
       'Reward a clear buyer, adoption trigger, repeatable deployment path, measurable organizational value, and multiple coherent value pillars that address one problem.',
       'Prefer the strongest startup opportunity, not automatically the candidate attached to the highest-ranked NLP label. Balance evidence strength with product scope, adoption feasibility, and sustainable standalone value.',
       'Provider and model identities are intentionally omitted and must not influence the evaluation.',
-      'Produce a complete comparison report: explain why the winner won, why every other candidate ranked lower, and how each weaker candidate could improve without rewriting it.',
+      'Produce a concise comparison report: explain why the winner won and one decisive reason each other candidate ranked lower.',
       'Return valid JSON matching the supplied response schema and no additional text.',
     ].join(' ');
   }
@@ -113,7 +113,7 @@ export class IdeaCandidateJudgePromptService {
         evaluateEveryCandidate: true,
         returnExactlyOneScorePerCandidate: true,
         returnExactlyOneComparisonReportPerCandidate: true,
-        explainWinnerAndAllRejectedCandidates: true,
+        explainWinnerAndAllRejectedCandidatesConcisely: true,
         scoresMustBeAnArray: true,
         scoreArrayLengthMustEqualCandidateCount: true,
         chooseExistingCandidateOnly: true,

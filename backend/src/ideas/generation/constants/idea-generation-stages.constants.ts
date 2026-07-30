@@ -51,8 +51,6 @@ export const IDEA_GENERATION_STAGE_KEYS = {
 
   MVP_FEATURES_GENERATION: 'mvp-features-generation',
 
-  BUSINESS_MODEL_GENERATION: 'business-model-generation',
-
   VALUE_PROPOSITION_GENERATION: 'value-proposition-generation',
 
   REVENUE_MODEL_GENERATION: 'revenue-model-generation',
@@ -184,7 +182,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION,
 
-      displayName: 'Collection-job resolution',
+      displayName: 'Collection and NLP resolution',
 
       sequence: 4,
 
@@ -200,7 +198,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
 
-      displayName: 'Data collection',
+      displayName: 'Collection validation checkpoint',
 
       sequence: 5,
 
@@ -216,7 +214,7 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS,
 
-      displayName: 'NLP analysis',
+      displayName: 'NLP validation checkpoint',
 
       sequence: 6,
 
@@ -437,29 +435,13 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
     },
 
     {
-      key: IDEA_GENERATION_STAGE_KEYS.BUSINESS_MODEL_GENERATION,
-
-      displayName: 'Business model',
-
-      sequence: 19,
-
-      progressStart: 85,
-
-      progressEnd: 87,
-
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-
-      requiredForPremium: true,
-    },
-
-    {
       key: IDEA_GENERATION_STAGE_KEYS.VALUE_PROPOSITION_GENERATION,
 
       displayName: 'Value proposition',
 
-      sequence: 20,
+      sequence: 19,
 
-      progressStart: 87,
+      progressStart: 85,
 
       progressEnd: 89,
 
@@ -473,7 +455,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Revenue model',
 
-      sequence: 21,
+      sequence: 20,
 
       progressStart: 89,
 
@@ -489,7 +471,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Local regulations',
 
-      sequence: 22,
+      sequence: 21,
 
       progressStart: 90,
 
@@ -505,7 +487,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Budget estimation',
 
-      sequence: 23,
+      sequence: 22,
 
       progressStart: 91,
 
@@ -521,7 +503,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Feasibility assessment',
 
-      sequence: 24,
+      sequence: 23,
 
       progressStart: 92,
 
@@ -537,7 +519,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Implementation timeline',
 
-      sequence: 25,
+      sequence: 24,
 
       progressStart: 93,
 
@@ -553,7 +535,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Market potential',
 
-      sequence: 26,
+      sequence: 25,
 
       progressStart: 94,
 
@@ -569,7 +551,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'NLP executive summary',
 
-      sequence: 27,
+      sequence: 26,
 
       progressStart: 95,
 
@@ -585,7 +567,7 @@ export const PREMIUM_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinit
 
       displayName: 'Community feedback summary',
 
-      sequence: 28,
+      sequence: 27,
 
       progressStart: 97,
 
@@ -606,7 +588,7 @@ export const IDEA_GENERATION_FINALIZATION_STAGE: IdeaGenerationStageDefinition =
 
     displayName: 'Generation finalization',
 
-    sequence: 29,
+    sequence: 28,
 
     progressStart: 99,
 

@@ -34,6 +34,7 @@ import type {
 } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import { CommunityAiAnalysisPromptService } from './community-ai-analysis-prompt.service';
+import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 
 /**
  * Executes bounded, evidence-grounded LLM analysis over cleaned community data.
@@ -68,6 +69,7 @@ export class CommunityAiAnalysisService {
     context: IdeaGenerationContext,
   ): Promise<CommunityAiAnalysis | null> {
     const prompt = this.promptService.build(context);
+    const preferredOnlineModel = await this.findPreferredOnlineModel();
     const localFallbackModel = await this.findLocalFallbackModel();
     const excludedAiModelIds = new Set<string>(
       localFallbackModel ? [localFallbackModel.id] : [],
@@ -88,6 +90,7 @@ export class CommunityAiAnalysisService {
     ) {
       try {
         const result = await this.aiExecutionService.execute({
+          aiModelId: attempt === 1 ? preferredOnlineModel?.id : undefined,
           userPrompt: prompt.userPrompt,
           systemInstruction: prompt.systemInstruction,
           requestType: ApiRequestType.NLP_ENHANCEMENT,
@@ -139,11 +142,24 @@ export class CommunityAiAnalysisService {
         }
       } catch (executionError: unknown) {
         lastError = executionError;
+        const databaseUnavailable = isTransientDatabaseError(executionError);
 
         this.logger.warn(
-          `Community AI analysis online execution failed. attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, nextOnlineAttempt=false, localFallbackAvailable=${Boolean(localFallbackModel)}, error=${this.getErrorMessage(executionError)}.`,
+          `Community AI analysis online execution failed. attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, nextOnlineAttempt=${!databaseUnavailable && attempt < COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, localFallbackAvailable=${Boolean(localFallbackModel)}, databaseUnavailable=${databaseUnavailable}, error=${this.getErrorMessage(executionError)}.`,
         );
-        break;
+
+        /*
+         * AI routing and model-health persistence both depend on the database.
+         * Retrying three models while Prisma cannot reach PostgreSQL only adds
+         * delay and cannot succeed. Stop immediately and let the deterministic
+         * NLP path remain the in-memory fallback while the pipeline-level
+         * infrastructure recovery handles the interrupted run.
+         */
+        if (databaseUnavailable) {
+          break;
+        }
+
+        continue;
       }
     }
 
@@ -235,21 +251,59 @@ export class CommunityAiAnalysisService {
   }
 
   /**
+   * Resolves the configured default online model for the first attempt.
+   *
+   * The method deliberately ignores an Ollama default because the local
+   * provider is reserved for the explicit final fallback tier.
+   *
+   * A missing or temporarily unavailable default model is non-fatal; normal
+   * balanced routing is used instead.
+   */
+  private async findPreferredOnlineModel(): Promise<AiModel | null> {
+    try {
+      const model = await this.aiModelsService.getDefaultModel();
+
+      if (
+        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA
+      ) {
+        return null;
+      }
+
+      return model;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Finds one active, routable Ollama model supporting structured output.
    *
    * The model remains an explicit last-resort tier and is never mixed into the
    * online domain-validation rotation.
    */
   private async findLocalFallbackModel(): Promise<AiModel | null> {
-    const models = await this.aiModelsService.getRoutableModels();
+    try {
+      const models = await this.aiModelsService.getRoutableModels();
 
-    return (
-      models.find(
-        (model) =>
-          normalizeAiProviderKey(model.providerKey) ===
-            AI_PROVIDER_KEYS.OLLAMA && model.supportsJsonOutput,
-      ) ?? null
-    );
+      return (
+        models.find(
+          (model) =>
+            normalizeAiProviderKey(model.providerKey) ===
+              AI_PROVIDER_KEYS.OLLAMA && model.supportsJsonOutput,
+        ) ?? null
+      );
+    } catch (error: unknown) {
+      /*
+       * The local model record is stored in PostgreSQL. When PostgreSQL is
+       * unavailable, attempting to resolve Ollama through the same database
+       * would fail before any local HTTP request is made. Treat model discovery
+       * as unavailable and allow deterministic NLP fallback instead.
+       */
+      this.logger.warn(
+        `Local Ollama fallback discovery was skipped because model metadata could not be loaded. error=${this.getErrorMessage(error)}.`,
+      );
+      return null;
+    }
   }
 
   /** Parses the central runtime's validated JSON into the domain contract. */
@@ -587,10 +641,13 @@ export class CommunityAiAnalysisService {
   }
 
   /**
-   * Verifies that every accepted quote exists in the supplied NLP evidence and
-   * has a defensible lexical connection to the stated opportunity. Unsupported
-   * quotes are removed; an opportunity with no grounded evidence is rejected.
-   * Location scores and risks are also constrained by explicit local evidence.
+   * Grounds AI-generated opportunities against the persisted NLP evidence.
+   *
+   * Unsupported evidence samples are removed. An individual opportunity
+   * is discarded when none of its evidence samples can be grounded.
+   *
+   * The complete AI response is rejected only when no grounded
+   * opportunities remain.
    */
   private applyEvidenceGrounding(
     context: IdeaGenerationContext,
@@ -601,6 +658,13 @@ export class CommunityAiAnalysisService {
     }
 
     const corpus = this.collectEvidenceCorpus(context.nlp);
+
+    if (corpus.length === 0) {
+      throw new Error(
+        'No persisted NLP evidence samples are available for grounding.',
+      );
+    }
+
     const locationTerms = [
       context.location.country,
       context.location.city ?? '',
@@ -609,54 +673,88 @@ export class CommunityAiAnalysisService {
       .map((term) => this.normalizeComparableText(term))
       .filter((term) => term.length >= 3);
 
-    const opportunities = analysis.opportunities.map((opportunity) => {
-      const groundedEvidence = opportunity.evidenceSamples
-        .map((sample) => this.findGroundedCorpusMatch(sample, corpus))
-        .filter((sample): sample is string => sample !== null)
-        .filter((sample) => this.supportsOpportunity(opportunity, sample));
+    const discardedOpportunityTitles: string[] = [];
 
-      const uniqueEvidence = [...new Set(groundedEvidence)].slice(0, 5);
+    const groundedOpportunities = analysis.opportunities.flatMap(
+      (opportunity): CommunityAiOpportunity[] => {
+        const groundedEvidence = opportunity.evidenceSamples
+          .map((sample) => this.findGroundedCorpusMatch(sample, corpus))
+          .filter((sample): sample is string => sample !== null)
+          .filter((sample) => this.supportsOpportunity(opportunity, sample));
 
-      if (uniqueEvidence.length === 0) {
-        throw new Error(
-          `Opportunity "${opportunity.title}" has no directly grounded evidence sample.`,
+        const uniqueEvidence = [...new Set(groundedEvidence)].slice(0, 5);
+
+        /*
+         * Do not reject the complete provider response because one
+         * opportunity was unsupported. Discard only that opportunity.
+         */
+        if (uniqueEvidence.length === 0) {
+          discardedOpportunityTitles.push(opportunity.title);
+          return [];
+        }
+
+        const groundingScore = Math.round(
+          (uniqueEvidence.length /
+            Math.max(opportunity.evidenceSamples.length, 1)) *
+            100,
         );
-      }
 
-      const groundingScore = Math.round(
-        (uniqueEvidence.length /
-          Math.max(opportunity.evidenceSamples.length, 1)) *
-          100,
-      );
-      const localEvidenceSamples = uniqueEvidence.filter((sample) => {
-        const normalized = this.normalizeComparableText(sample);
-        return locationTerms.some((term) => normalized.includes(term));
-      });
-      const localEvidenceAvailable = localEvidenceSamples.length > 0;
+        const localEvidenceSamples = uniqueEvidence.filter((sample) => {
+          const normalizedSample = this.normalizeComparableText(sample);
 
-      return {
-        ...opportunity,
-        evidenceSamples: uniqueEvidence,
-        groundingScore,
-        localEvidenceAvailable,
-        localEvidenceSamples,
-        localRelevance: localEvidenceAvailable
-          ? opportunity.localRelevance
-          : Math.min(opportunity.localRelevance, 25),
-        risks: localEvidenceAvailable
+          return locationTerms.some((term) => normalizedSample.includes(term));
+        });
+
+        const localEvidenceAvailable = localEvidenceSamples.length > 0;
+
+        const groundedRisks = localEvidenceAvailable
           ? opportunity.risks
           : opportunity.risks.filter(
               (risk) => !this.isUnsupportedLocalRisk(risk, locationTerms),
-            ),
-      };
-    });
+            );
+
+        return [
+          {
+            ...opportunity,
+            evidenceSamples: uniqueEvidence,
+            groundingScore,
+            localEvidenceAvailable,
+            localEvidenceSamples,
+            localRelevance: localEvidenceAvailable
+              ? opportunity.localRelevance
+              : Math.min(opportunity.localRelevance, 25),
+            risks:
+              groundedRisks.length > 0
+                ? groundedRisks
+                : [
+                    'Direct local evidence is limited and requires further validation.',
+                  ],
+          },
+        ];
+      },
+    );
+
+    if (groundedOpportunities.length === 0) {
+      throw new Error(
+        'The AI response did not contain any opportunity supported by the persisted NLP evidence.',
+      );
+    }
 
     return {
       ...analysis,
-      opportunities,
+      opportunities: groundedOpportunities,
       qualityWarnings: [
         ...analysis.qualityWarnings,
-        ...(opportunities.some((item) => !item.localEvidenceAvailable)
+
+        ...(discardedOpportunityTitles.length > 0
+          ? [
+              `${discardedOpportunityTitles.length} unsupported opportunity candidate(s) were discarded during evidence grounding.`,
+            ]
+          : []),
+
+        ...(groundedOpportunities.some(
+          (opportunity) => !opportunity.localEvidenceAvailable,
+        )
           ? [
               'Requested location is treated as a pilot target where direct local evidence is unavailable.',
             ]

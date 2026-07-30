@@ -9,7 +9,6 @@ import type { SelectedIdeaDataSource } from '../types/idea-generation-context.ty
 
 type ResolveIdeaGenerationSelectionInput = {
   readonly domainId: string;
-  readonly requestedDataSourceKeys: readonly string[];
 };
 
 type IdeaGenerationSelectionResult = {
@@ -27,9 +26,8 @@ type IdeaGenerationSelectionResult = {
  * Responsibilities:
  * - Verify that the requested domain exists and is active.
  * - Load and normalize configured domain keywords.
- * - Resolve explicitly requested active, implemented data sources.
- * - Select every active, implemented source when no keys are supplied.
- * - Reject unknown, inactive, or unimplemented requested source keys.
+ * - Select every active and implemented data source automatically.
+ * - Keep source-selection policy internal so callers cannot weaken coverage.
  *
  * This service performs selection only. It does not execute collectors or
  * create collection jobs.
@@ -43,10 +41,6 @@ export class IdeaGenerationSelectionService {
   async resolveSelection(
     input: ResolveIdeaGenerationSelectionInput,
   ): Promise<IdeaGenerationSelectionResult> {
-    const requestedKeys = this.normalizeRequestedKeys(
-      input.requestedDataSourceKeys,
-    );
-
     const domain = await this.prisma.domain.findFirst({
       where: {
         id: input.domainId,
@@ -76,11 +70,6 @@ export class IdeaGenerationSelectionService {
       where: {
         isActive: true,
         isImplemented: true,
-        ...(requestedKeys.length > 0 && {
-          key: {
-            in: requestedKeys,
-          },
-        }),
       },
       select: {
         id: true,
@@ -93,10 +82,6 @@ export class IdeaGenerationSelectionService {
       },
       orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
     });
-
-    if (requestedKeys.length > 0) {
-      this.assertAllRequestedSourcesResolved(requestedKeys, dataSources);
-    }
 
     if (dataSources.length === 0) {
       throw new BadRequestException(
@@ -116,16 +101,6 @@ export class IdeaGenerationSelectionService {
     };
   }
 
-  private normalizeRequestedKeys(keys: readonly string[]): string[] {
-    return [
-      ...new Set(
-        keys
-          .map((key) => key.trim().toLowerCase())
-          .filter((key) => key.length > 0),
-      ),
-    ];
-  }
-
   private normalizeKeywords(keywords: readonly string[]): string[] {
     return [
       ...new Set(
@@ -134,23 +109,5 @@ export class IdeaGenerationSelectionService {
           .filter((keyword) => keyword.length > 0),
       ),
     ];
-  }
-
-  private assertAllRequestedSourcesResolved(
-    requestedKeys: readonly string[],
-    dataSources: readonly SelectedIdeaDataSource[],
-  ): void {
-    const resolvedKeys = new Set(dataSources.map((source) => source.key));
-    const unavailableKeys = requestedKeys.filter(
-      (key) => !resolvedKeys.has(key),
-    );
-
-    if (unavailableKeys.length === 0) {
-      return;
-    }
-
-    throw new BadRequestException(
-      `The following data source key(s) are unknown, inactive, or not implemented: ${unavailableKeys.join(', ')}.`,
-    );
   }
 }

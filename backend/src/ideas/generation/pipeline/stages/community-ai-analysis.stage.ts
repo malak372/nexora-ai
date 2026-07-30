@@ -40,7 +40,11 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         context,
         resultPreview:
           'Community AI analysis skipped because NLP data is unavailable.',
-        metadata: { aiAnalysisApplied: false },
+        metadata: {
+          analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
+          duplicatesNlpAiEnhancement: false,
+          aiAnalysisApplied: false,
+        },
       };
     }
 
@@ -51,6 +55,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         resultPreview:
           'Community AI analysis was unavailable; deterministic NLP opportunities were preserved.',
         metadata: {
+          analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
+          duplicatesNlpAiEnhancement: false,
           aiAnalysisApplied: false,
           fallbackApplied: true,
         },
@@ -118,6 +124,8 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       },
       resultPreview: `Community AI analysis extracted ${analysis.opportunities.length} evidence-grounded opportunity candidate(s).`,
       metadata: {
+        analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
+        duplicatesNlpAiEnhancement: false,
         aiAnalysisApplied: true,
         opportunityCount: analysis.opportunities.length,
         overallConfidence: analysis.overallConfidence,

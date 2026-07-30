@@ -40,6 +40,8 @@ import { CommunityAiAnalysisPromptService } from './services/community-ai-analys
 import { CommunityAiAnalysisService } from './services/community-ai-analysis.service';
 import { CollectionJobResolverService } from './services/collection-job-resolver.service';
 import { GuestIdeaSessionService } from './services/guest-idea-session.service';
+import { DomainResolutionService } from './services/domain-resolution.service';
+import { CollectionPreviewService } from './services/collection-preview.service';
 import { IdeaAiOutputParserService } from './services/idea-ai-output-parser.service';
 import { IdeaCandidateJudgePromptService } from './services/idea-candidate-judge-prompt.service';
 import { IdeaCandidateJudgeService } from './services/idea-candidate-judge.service';
@@ -62,6 +64,7 @@ import { IdeaGenerationSelectionService } from './services/idea-generation-selec
 import { IdeaPersistenceService } from './services/idea-persistence.service';
 import { IdeaQualityEvaluatorService } from './services/idea-quality-evaluator.service';
 import { IdeaOpportunityRankingService } from './services/idea-opportunity-ranking.service';
+import { IndependentEvidenceVerificationService } from './services/independent-evidence-verification.service';
 import { IdeaSemanticDiversityService } from './services/idea-semantic-diversity.service';
 import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-parser.service';
 
@@ -105,6 +108,8 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaGenerationOrchestratorService,
 
     GuestIdeaSessionService,
+    DomainResolutionService,
+    CollectionPreviewService,
     IdeaGenerationPolicyService,
     IdeaGenerationSelectionService,
     CollectionJobResolverService,
@@ -115,6 +120,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaPersistenceService,
     IdeaQualityEvaluatorService,
     IdeaOpportunityRankingService,
+    IndependentEvidenceVerificationService,
     IdeaSemanticDiversityService,
     IdeaCandidateJudgePromptService,
     IdeaCandidateJudgeService,

@@ -734,7 +734,11 @@ export class IdeaGenerationRunService {
       },
       data: {
         status: IdeaGenerationRunStatus.RETRYING,
-        startedAt: now,
+        /*
+         * Preserve the original execution start time. Resetting startedAt on
+         * every infrastructure interruption corrupts duration metrics and can
+         * make heartbeat ordering harder to reason about.
+         */
         completedAt: null,
         errorCode: 'TRANSIENT_DATABASE_FAILURE',
         errorMessage,

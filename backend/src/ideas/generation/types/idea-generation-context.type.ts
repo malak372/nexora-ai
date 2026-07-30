@@ -283,6 +283,22 @@ export type IdeaGenerationPromptContext = {
  *
  * @author Malak
  */
+
+/**
+ * Normal, non-error terminal outcome produced when collection and recovery
+ * complete successfully but no recurring problem reaches the strict evidence
+ * gate. Later AI-generation and persistence stages must be skipped.
+ */
+export type IdeaGenerationNoResultOutcome = {
+  readonly code: 'NO_RECURRING_OPPORTUNITY';
+  readonly message: string;
+  readonly strongestSignalTitle: string | null;
+  readonly independentEvidenceCount: number;
+  readonly requiredIndependentEvidenceCount: number;
+  readonly recoveryAttempts: number;
+  readonly collectionJobIds: readonly string[];
+};
+
 export type IdeaGenerationContext = {
   /**
    * Persisted IdeaGenerationRun identifier.
@@ -384,6 +400,13 @@ export type IdeaGenerationContext = {
 
   /** Collection-job identifiers created by targeted evidence recovery. */
   evidenceRecoveryCollectionJobIds: string[];
+
+  /**
+   * Successful terminal outcome when no recurring evidence-backed problem was
+   * found. This is not a technical pipeline failure and must not consume a
+   * credit or persist an idea.
+   */
+  noResultOutcome: IdeaGenerationNoResultOutcome | null;
 
   /**
    * Prompt built for core idea generation.
@@ -514,6 +537,7 @@ export function createIdeaGenerationContext(
     benchmarkWinnerOpportunity: null,
     evidenceRecoveryAttempts: 0,
     evidenceRecoveryCollectionJobIds: [],
+    noResultOutcome: null,
     prompt: null,
 
     coreIdea: null,

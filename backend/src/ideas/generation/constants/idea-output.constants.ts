@@ -122,13 +122,6 @@ export const IDEA_ADVANCED_OUTPUT_DEFINITIONS = [
     collection: true,
   },
   {
-    field: 'businessModel',
-    outputKey: 'business-model',
-    title: 'Business Model',
-    requiredForPremium: true,
-    collection: false,
-  },
-  {
     field: 'valueProposition',
     outputKey: 'value-proposition',
     title: 'Value Proposition',

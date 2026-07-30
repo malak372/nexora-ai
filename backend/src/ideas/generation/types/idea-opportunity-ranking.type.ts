@@ -1,5 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
+import type { IndependentEvidence } from './independent-evidence.type';
+
 /**
  * Supported evidence categories used while ranking product opportunities.
  *
@@ -55,6 +57,16 @@ export type RankedIdeaOpportunity = {
   readonly finalScore: number;
   readonly selectionEligible: boolean;
   readonly disqualificationReasons: readonly string[];
+
+  /** Auditable evidence provenance resolved from persisted collection records. */
+  readonly independentEvidence?: readonly IndependentEvidence[];
+
+  /** Number of independently verified complaints, requests, or reviews. */
+  readonly verifiedIndependentEvidenceCount?: number;
+
+  /** Number of distinct source platforms represented by verified evidence. */
+  readonly verifiedIndependentSourceCount?: number;
+
   readonly raw: Prisma.JsonValue;
 };
 

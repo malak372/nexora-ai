@@ -19,7 +19,9 @@ const MIN_LOW_CONFIDENCE_RELIABILITY = 0.52;
 const MIN_EVIDENCE_RELEVANCE_SCORE = 0.34;
 const MIN_GENERIC_RELIABILITY_RELEVANCE_SCORE = 0.46;
 const INELIGIBLE_SELECTION_PENALTY = 0.12;
-const MIN_STANDARD_SELECTION_EVIDENCE_SAMPLES = 2;
+const MIN_STRICT_OPPORTUNITY_SCORE = 0.4;
+const MIN_STRICT_EVIDENCE_QUALITY = 0.4;
+const MIN_STRICT_INDEPENDENT_EVIDENCE_COUNT = 1;
 
 /** Labels that are too generic to be selected without concrete evidence. */
 const GENERIC_LABELS = new Set([
@@ -215,9 +217,15 @@ export class IdeaOpportunityRankingService {
 
     const ranked = candidatesToRank
       .sort((first, second) => {
-        // Eligibility is reflected through a deterministic score penalty.
-        // It is not used as a hard ordering gate so the strongest available
-        // fallback remains selectable when evidence recovery is exhausted.
+        /*
+         * Strictly eligible opportunities always outrank preliminary
+         * fallbacks. This prevents a highly specific but weak one-off ticket
+         * from winning over an adequately supported community opportunity.
+         */
+        if (first.selectionEligible !== second.selectionEligible) {
+          return first.selectionEligible ? -1 : 1;
+        }
+
         const supportDifference = second.supportScore - first.supportScore;
 
         if (Math.abs(supportDifference) >= 0.12) {
@@ -299,7 +307,12 @@ export class IdeaOpportunityRankingService {
         ).toFixed(1)} point(s).`
       : '';
 
+    const selectionMode = selected.selectionEligible
+      ? 'STRICT_EVIDENCE_SELECTION'
+      : 'LOW_EVIDENCE_FALLBACK';
+
     return [
+      `Selection mode: ${selectionMode}.`,
       `"${selected.title}" was selected with ${selectedScore}/100.`,
       `The decision used ${evidenceCount} direct evidence sample(s), frequency ${selected.frequency},`,
       `severity ${selected.severity ?? 'UNSPECIFIED'},`,
@@ -596,9 +609,21 @@ export class IdeaOpportunityRankingService {
       originalTitle.split(/\s+/u).length < 2
         ? (derivedTitle ?? structuredFallbackTitle)
         : originalTitle;
-    const finalTitle = tentativeTitle
-      ? this.canonicalizeOpportunityTitle(tentativeTitle)
-      : null;
+
+    /*
+     * Community AI already returns a structured, corpus-grounded title.
+     * Preserve that title when it is specific instead of remapping it through
+     * a broad rule-based family label such as "Data Loss" or "Login Failure".
+     */
+    const preserveCommunityTitle =
+      isCommunityAiCandidate &&
+      !GENERIC_LABELS.has(normalizedTitle) &&
+      originalTitle.split(/\s+/u).length >= 3;
+    const finalTitle = preserveCommunityTitle
+      ? originalTitle
+      : tentativeTitle
+        ? this.canonicalizeOpportunityTitle(tentativeTitle)
+        : null;
 
     if (!finalTitle) {
       return null;
@@ -681,13 +706,27 @@ export class IdeaOpportunityRankingService {
       isCommunityAiCandidate,
     );
 
+    const boundedEvidenceSamples = evidenceSamples.slice(
+      0,
+      MAX_EVIDENCE_SAMPLES,
+    );
+
     return {
       ...workingCandidate,
       title: finalTitle,
       problem: alignedDescriptors.problem,
       need: alignedDescriptors.need,
       solutionArea: alignedDescriptors.solutionArea,
-      evidenceSamples: evidenceSamples.slice(0, MAX_EVIDENCE_SAMPLES),
+      /*
+       * Frequency must remain auditable. Community AI can estimate a larger
+       * count than the evidence excerpts actually retained, but downstream
+       * scoring must never treat an unsupported estimate as repeated demand.
+       */
+      frequency: this.boundFrequencyToIndependentEvidence(
+        workingCandidate.frequency,
+        boundedEvidenceSamples,
+      ),
+      evidenceSamples: boundedEvidenceSamples,
     };
   }
 
@@ -794,6 +833,94 @@ export class IdeaOpportunityRankingService {
   }
 
   /**
+   * Resolves a concrete opportunity family used to prevent cross-candidate
+   * descriptor fusion. Families are intentionally narrow: a cybersecurity
+   * incident must never merge with ordinary synchronization failures, and a
+   * mobile feature-parity complaint must never inherit a data-loss title.
+   */
+  private resolveOpportunityFamily(candidate: NormalizedCandidate): string {
+    const context = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+      ...candidate.evidenceSamples,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(' ')
+      .toLowerCase();
+
+    if (
+      /\b(?:ransomware|data breach|cyberattack|malware|attacker deleted|compromised personal information)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'CYBERSECURITY_INCIDENT';
+    }
+
+    if (
+      /\b(?:feature parity|missing pages|not accessible through the app|forced to use the website|transcripts|student info)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'MOBILE_FEATURE_PARITY';
+    }
+
+    if (
+      /\b(?:cancelled|canceled)\s+applications?\b|\b(?:active|action)\s+queues?\b|\bqueue integrity\b|\bnon-actionable items?\b/iu.test(
+        context,
+      )
+    ) {
+      return 'ADMINISTRATIVE_QUEUE_INTEGRITY';
+    }
+
+    if (
+      /\b(?:soroban|stellar wallet|on-chain|off-chain|smart contract|emit(?:s|ted)? an? event|ledger sequence)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'BLOCKCHAIN_IMPLEMENTATION_TASK';
+    }
+
+    if (
+      /\b(?:sync|synchronization|data transfer|storage destination|sd-card|phone storage|network timeout|file transfer)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'DATA_SYNCHRONIZATION';
+    }
+
+    if (
+      /\b(?:login|authentication|activation|verification|session|token)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'AUTHENTICATION';
+    }
+
+    if (
+      /\b(?:crash|freeze|minor bugs|application reliability|unresponsive)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'APPLICATION_RELIABILITY';
+    }
+
+    return `GENERIC:${this.canonicalizeOpportunityTitle(candidate.title).toLowerCase()}`;
+  }
+
+  /** Returns true only when both records belong to the same concrete family. */
+  private haveCompatibleOpportunityFamilies(
+    first: NormalizedCandidate,
+    second: NormalizedCandidate,
+  ): boolean {
+    return (
+      this.resolveOpportunityFamily(first) ===
+      this.resolveOpportunityFamily(second)
+    );
+  }
+
+  /**
    * Consolidates candidates that express the same underlying opportunity even
    * when NLP returned different surface titles. Consolidation uses canonical
    * problem families, semantic similarity, and shared evidence fingerprints.
@@ -866,9 +993,9 @@ export class IdeaOpportunityRankingService {
 
       const alignedDescriptors = this.deriveAlignedDescriptors(
         preferred.title,
-        preferred.problem ?? secondary.problem,
-        preferred.need ?? secondary.need,
-        preferred.solutionArea ?? secondary.solutionArea,
+        preferred.problem,
+        preferred.need,
+        preferred.solutionArea,
         this.isCommunityAiCandidate(preferred),
       );
 
@@ -883,10 +1010,9 @@ export class IdeaOpportunityRankingService {
          * manufacture demand.
          */
         frequency: this.mergeCandidateFrequency(preferred, secondary),
-        severity: this.selectHigherSeverity(
-          preferred.severity,
-          secondary.severity,
-        ),
+        severity: this.shouldAggregateFrequency(preferred, secondary)
+          ? this.selectHigherSeverity(preferred.severity, secondary.severity)
+          : preferred.severity,
         evidenceSamples,
         sourceIndex: Math.min(preferred.sourceIndex, secondary.sourceIndex),
       };
@@ -902,6 +1028,29 @@ export class IdeaOpportunityRankingService {
   ): boolean {
     const firstTitle = this.canonicalizeOpportunityTitle(first.title);
     const secondTitle = this.canonicalizeOpportunityTitle(second.title);
+
+    /*
+     * The same verbatim evidence is persisted in multiple NLP projections
+     * (problem, need, recurring problem, and opportunity). Treat those records
+     * as one opportunity before applying family compatibility rules so the
+     * ranking output does not expose duplicate alternatives for one complaint.
+     */
+    const firstEvidence = new Set(
+      first.evidenceSamples.map((sample) =>
+        this.normalizeEvidenceSample(sample),
+      ),
+    );
+    const hasExactSharedEvidence = second.evidenceSamples.some((sample) =>
+      firstEvidence.has(this.normalizeEvidenceSample(sample)),
+    );
+
+    if (hasExactSharedEvidence) {
+      return true;
+    }
+
+    if (!this.haveCompatibleOpportunityFamilies(first, second)) {
+      return false;
+    }
 
     if (firstTitle.toLocaleLowerCase() === secondTitle.toLocaleLowerCase()) {
       return true;
@@ -956,14 +1105,43 @@ export class IdeaOpportunityRankingService {
     first: NormalizedCandidate,
     second: NormalizedCandidate,
   ): number {
-    const firstFrequency = Math.max(0, first.frequency);
-    const secondFrequency = Math.max(0, second.frequency);
+    const mergedEvidence = this.deduplicateEvidenceSamples([
+      ...first.evidenceSamples,
+      ...second.evidenceSamples,
+    ]);
 
     if (!this.shouldAggregateFrequency(first, second)) {
-      return Math.max(firstFrequency, secondFrequency);
+      return this.boundFrequencyToIndependentEvidence(
+        Math.max(first.frequency, second.frequency),
+        mergedEvidence,
+      );
     }
 
-    return firstFrequency + secondFrequency;
+    return this.boundFrequencyToIndependentEvidence(
+      first.frequency + second.frequency,
+      mergedEvidence,
+    );
+  }
+
+  /**
+   * Prevents model-estimated frequency from exceeding independently retained
+   * evidence excerpts.
+   *
+   * The ranking response exposes frequency as an auditable evidence count.
+   * Therefore a candidate with one unique quote cannot be scored or displayed
+   * as supported unless at least one independently verified excerpt is retained.
+   */
+  private boundFrequencyToIndependentEvidence(
+    _reportedFrequency: number,
+    evidenceSamples: readonly string[],
+  ): number {
+    /*
+     * The AI may cluster semantically equivalent complaints, but it must not
+     * invent how many users reported the problem. Frequency is therefore the
+     * number of independently retained evidence excerpts after deterministic
+     * normalization and duplicate removal.
+     */
+    return this.deduplicateEvidenceSamples(evidenceSamples).length;
   }
 
   /** Returns true only when equivalent candidates add independent support. */
@@ -1147,6 +1325,10 @@ export class IdeaOpportunityRankingService {
       Math.max(0, baseScore - confidencePenalty - eligibilityPenalty),
     );
 
+    if (finalScore < MIN_STRICT_OPPORTUNITY_SCORE) {
+      disqualificationReasons.push('LOW_OPPORTUNITY_SCORE');
+    }
+
     return {
       ...candidate,
       frequencyScore: this.round(frequencyScore),
@@ -1207,6 +1389,35 @@ export class IdeaOpportunityRankingService {
     );
   }
 
+  /**
+   * Detects evidence that is primarily a repository implementation blueprint.
+   * Such evidence can be retained for diagnostics, but it cannot independently
+   * qualify a market opportunity because technical detail is not equivalent to
+   * independent user demand.
+   */
+  private containsSolutionSpecificationEvidence(
+    candidate: NormalizedCandidate,
+  ): boolean {
+    return candidate.evidenceSamples.some((sample) => {
+      const normalized = sample.toLowerCase();
+      const patterns: readonly RegExp[] = [
+        /\bproposed implementation\b/iu,
+        /\bfiles to modify(?:\/create)?\b/iu,
+        /\bfrontend components?\b/iu,
+        /\bexpected impact\b/iu,
+        /\bcreate\s+`?(?:app|src|lib|components?|tests?)\//iu,
+        /\b(?:api tests?|e2e tests?|unit tests?|test fixtures?)\b/iu,
+        /\b(?:route\.js|manager\.js|service\.js|spec\.js|config\.js)\b/iu,
+        /(?:^|\n)\s*[-*]\s*\[[ x]\]/iu,
+      ];
+      const signalCount = patterns.filter((pattern) =>
+        pattern.test(normalized),
+      ).length;
+
+      return signalCount >= 3 || (normalized.length >= 900 && signalCount >= 2);
+    });
+  }
+
   private getDisqualificationReasons(
     candidate: NormalizedCandidate,
     nlpConfidence: number,
@@ -1237,35 +1448,25 @@ export class IdeaOpportunityRankingService {
     }
 
     const hasConcreteMultiSampleEvidence =
-      candidate.evidenceSamples.length >= 2 &&
+      candidate.evidenceSamples.length >=
+        MIN_STRICT_INDEPENDENT_EVIDENCE_COUNT &&
       directEvidenceRatio >= 0.6 &&
-      evidenceQualityScore >= 0.5;
-    const singleSampleQualityThreshold =
-      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
-        ? 0.5
-        : 0.55;
-    const singleSampleDirectRatioThreshold =
-      candidate.evidenceType === IDEA_OPPORTUNITY_EVIDENCE_TYPES.FEATURE_REQUEST
-        ? 0.75
-        : 0.85;
-    const hasStrongSingleSampleEvidence =
-      candidate.evidenceSamples.length === 1 &&
-      candidate.evidenceSamples[0].length >= 140 &&
-      directEvidenceRatio >= singleSampleDirectRatioThreshold &&
-      evidenceQualityScore >= singleSampleQualityThreshold;
+      evidenceQualityScore >= MIN_STRICT_EVIDENCE_QUALITY;
 
-    if (
-      supportScore < 0.36 &&
-      !hasConcreteMultiSampleEvidence &&
-      !hasStrongSingleSampleEvidence
-    ) {
+    if (this.containsSolutionSpecificationEvidence(candidate)) {
+      reasons.push('SOLUTION_SPECIFICATION_EVIDENCE');
+    }
+
+    if (evidenceQualityScore < MIN_STRICT_EVIDENCE_QUALITY) {
+      reasons.push('LOW_EVIDENCE_QUALITY');
+    }
+
+    if (supportScore < 0.36 && !hasConcreteMultiSampleEvidence) {
       reasons.push('INSUFFICIENT_SUPPORT');
     }
 
     if (
-      candidate.evidenceSamples.length <
-        MIN_STANDARD_SELECTION_EVIDENCE_SAMPLES &&
-      !hasStrongSingleSampleEvidence
+      candidate.evidenceSamples.length < MIN_STRICT_INDEPENDENT_EVIDENCE_COUNT
     ) {
       reasons.push('INSUFFICIENT_EVIDENCE_COUNT');
     }
@@ -1273,19 +1474,9 @@ export class IdeaOpportunityRankingService {
     if (
       nlpConfidence < LOW_NLP_CONFIDENCE_THRESHOLD &&
       evidenceReliabilityScore < MIN_LOW_CONFIDENCE_RELIABILITY &&
-      !hasConcreteMultiSampleEvidence &&
-      !hasStrongSingleSampleEvidence
+      !hasConcreteMultiSampleEvidence
     ) {
       reasons.push('LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE');
-    }
-
-    if (
-      nlpConfidence < LOW_NLP_CONFIDENCE_THRESHOLD &&
-      candidate.evidenceSamples.length < 2 &&
-      candidate.frequency < 3 &&
-      !hasStrongSingleSampleEvidence
-    ) {
-      reasons.push('SPARSE_EVIDENCE_UNDER_LOW_CONFIDENCE');
     }
 
     return reasons;
@@ -2189,15 +2380,42 @@ export class IdeaOpportunityRankingService {
   }
 
   private calculateSpecificity(candidate: NormalizedCandidate): number {
+    if (this.containsSolutionSpecificationEvidence(candidate)) {
+      return 0.1;
+    }
+
+    const evidenceText = candidate.evidenceSamples.join(' ');
+    const candidateText = [candidate.title, candidate.problem, evidenceText]
+      .filter((value): value is string => Boolean(value))
+      .join(' ');
     const titleWords = candidate.title.split(/\s+/u).filter(Boolean).length;
     const workflowBonus =
       /download|upload|navigation|login|activation|access|assignment|grade|document|sync|data|notification|recovery|payment/iu.test(
-        [candidate.title, ...candidate.evidenceSamples].join(' '),
+        candidateText,
       )
         ? 0.3
         : 0;
 
-    return Math.min(1, 0.35 + Math.min(titleWords / 8, 0.35) + workflowBonus);
+    const rawSpecificity =
+      0.35 + Math.min(titleWords / 8, 0.35) + workflowBonus;
+
+    /*
+     * One report can describe a concrete symptom, but it cannot establish the
+     * underlying technical cause with maximum certainty. Capping specificity
+     * prevents a short, detailed complaint from receiving 100/100 merely
+     * because the generated title contains diagnostic terminology.
+     */
+    const singleEvidenceCap = candidate.evidenceSamples.length === 1 ? 0.78 : 1;
+    const symptomWithoutVerifiedCause =
+      /\b(?:error|fails?|failure|cannot|unable|blocked|wrong|incorrect|logs? out|asks? you to log back in)\b/iu.test(
+        evidenceText,
+      ) &&
+      !/\b(?:root cause|caused by|confirmed|verified|stack trace|error code|token expired|invalid token|server log)\b/iu.test(
+        evidenceText,
+      );
+    const causationCap = symptomWithoutVerifiedCause ? 0.72 : 1;
+
+    return Math.min(1, rawSpecificity, singleEvidenceCap, causationCap);
   }
 
   private calculateFeasibility(candidate: NormalizedCandidate): number {
@@ -2244,6 +2462,12 @@ export class IdeaOpportunityRankingService {
     evidenceCoverage: number,
   ): string[] {
     const warnings: string[] = [];
+
+    if (!ranked[0]?.selectionEligible) {
+      warnings.push(
+        `No opportunity reached the strict minimum score of ${(MIN_STRICT_OPPORTUNITY_SCORE * 100).toFixed(0)}/100. The selected direction is a LOW_EVIDENCE_FALLBACK and must remain a pilot hypothesis.`,
+      );
+    }
 
     const confidence = nlp.confidence ?? 0;
 

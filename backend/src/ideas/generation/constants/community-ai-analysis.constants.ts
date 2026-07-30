@@ -1,52 +1,92 @@
-/** Stable structured-output schema name used by AI runtime logs. */
-export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
-  'nexora_community_opportunity_analysis_v2';
-
-/** Bounded output size for community opportunity extraction. */
-export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 4_500;
-
-/** Low temperature keeps extraction repeatable and evidence focused. */
-export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.15;
-
-/** Maximum samples sent to the LLM from each persisted NLP sample group. */
-export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 20;
-
-/** Maximum characters retained from one evidence sample. */
-export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH = 650;
-
-/** Preferred minimum number of distinct opportunities when evidence supports it. */
-export const COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES = 5;
-
-/** Maximum opportunities accepted from the LLM. */
-export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 8;
-
 /**
- * Maximum domain-level attempts for community analysis.
+ * Stable structured-output schema name used by AI runtime logs.
  *
- * AiExecutionService already performs temporary retries and provider fallback.
- * These attempts are an additional business-validation layer used when a
- * response is technically valid JSON but semantically unreliable.
+ * Increment the version whenever the provider-facing contract or
+ * grounding requirements change materially.
+ *
+ * @author Malak
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 2;
+export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
+  'nexora_community_opportunity_analysis_v3';
 
 /**
- * Maximum number of routed models attempted by one community-analysis
- * execution. The domain-level retry loop may rotate to another model after a
- * schema-valid but semantically weak response.
+ * Maximum generated tokens for one community-analysis response.
+ *
+ * The value intentionally fits the configured local Qwen fallback
+ * while remaining sufficient for a compact structured response.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 2;
+export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 2_048;
 
-/** Per-provider timeout used only by the non-fatal community-analysis stage. */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * Low temperature keeps extraction deterministic, evidence-focused,
+ * and less likely to invent unsupported opportunities.
+ */
+export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
 
-/** Maximum entries retained from one NLP summary array in the AI prompt. */
-export const COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS = 12;
+/**
+ * Maximum evidence samples included from each persisted NLP group.
+ *
+ * Bounding the sample count reduces prompt size and improves local
+ * fallback latency.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 12;
 
-/** Minimum overall confidence accepted from one community-analysis response. */
-export const COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE = 45;
+/**
+ * Maximum number of characters retained from one evidence sample.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH = 450;
 
-/** Minimum confidence required for at least one returned opportunity. */
-export const COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE = 40;
+/**
+ * Preferred minimum number of grounded opportunities.
+ *
+ * Fewer opportunities may still be accepted when the available
+ * evidence cannot safely support three distinct candidates.
+ */
+export const COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES = 3;
 
-/** Minimum number of evidence samples required by the accepted response. */
-export const COMMUNITY_AI_ANALYSIS_MIN_TOTAL_EVIDENCE_SAMPLES = 2;
+/**
+ * Maximum number of opportunities accepted from one AI response.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 5;
+
+/**
+ * Number of domain-validation attempts using different online models.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 3;
+
+/**
+ * Maximum models routed by AiExecutionService during one attempt.
+ *
+ * CommunityAiAnalysisService performs explicit cross-attempt rotation.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
+
+/**
+ * Maximum duration of one provider request.
+ *
+ * The longer timeout gives the local Ollama fallback enough time to
+ * return valid structured JSON on consumer hardware.
+ */
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 300_000;
+
+/**
+ * Maximum entries retained from one persisted NLP summary array.
+ */
+export const COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS = 8;
+
+/**
+ * Minimum overall confidence accepted after grounding.
+ */
+export const COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE = 40;
+
+/**
+ * Minimum confidence required for an opportunity to participate
+ * in business-quality validation.
+ */
+export const COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE = 35;
+
+/**
+ * Minimum total grounded evidence samples required in an accepted
+ * community-analysis response.
+ */
+export const COMMUNITY_AI_ANALYSIS_MIN_TOTAL_EVIDENCE_SAMPLES = 1;

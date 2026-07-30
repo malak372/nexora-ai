@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { CollectionJobStatus, LanguageCode, Prisma } from '@prisma/client';
 
+import type { CollectorInput } from '../../../collectors/base/collector.types';
+
 import {
   DataCollectionService,
   type IdeaGenerationCollectionInput,
@@ -121,6 +123,9 @@ export type ResolveCollectionJobInput = {
    * plus NLP analysis is produced.
    */
   readonly forceRefresh?: boolean;
+
+  readonly collectionMode?: CollectorInput['collectionMode'];
+  readonly collectorLimits?: CollectorInput['limits'];
 };
 
 /**
@@ -248,6 +253,9 @@ export class CollectionJobResolverService {
       keywords: normalizedInput.keywords
         ? [...normalizedInput.keywords]
         : undefined,
+
+      collectionMode: normalizedInput.collectionMode,
+      collectorLimits: normalizedInput.collectorLimits,
     };
 
     const startedJob =
@@ -288,7 +296,7 @@ export class CollectionJobResolverService {
   private async findReusableJob(
     input: ResolveCollectionJobInput,
   ): Promise<ResolvedCollectionJob | null> {
-    const createdAfter = this.createReuseCutoffDate();
+    const completedAfter = this.createReuseCutoffDate();
 
     const candidates = await this.prisma.collectionJob.findMany({
       where: {
@@ -312,10 +320,7 @@ export class CollectionJobResolverService {
 
         completedAt: {
           not: null,
-        },
-
-        createdAt: {
-          gte: createdAfter,
+          gte: completedAfter,
         },
       },
 
@@ -646,6 +651,8 @@ export class CollectionJobResolverService {
       keywords: this.normalizeKeywords(input.keywords),
 
       forceRefresh: input.forceRefresh === true,
+      collectionMode: input.collectionMode,
+      collectorLimits: input.collectorLimits,
     };
   }
 
