@@ -1,28 +1,26 @@
 /**
- * Renders the main hero section for the Nexora landing page.
+ * Renders the primary hero section of the Nexora public landing page.
  *
- * The hero introduces the platform, presents the primary calls to action,
- * highlights Nexora's core value, and includes a visual explanation of the
- * idea discovery process.
+ * The section introduces the platform, presents the main call-to-action
+ * buttons, displays key platform highlights, and includes the visual
+ * AI process card.
  *
- * Motion preferences are respected by disabling entrance animations when
- * the user has enabled reduced motion at the operating system level.
+ * Framer Motion is used to provide subtle entrance animations while
+ * respecting the user's reduced-motion accessibility preference.
  *
  * @component
- * @returns {JSX.Element} The landing page hero section.
+ * @returns {JSX.Element} The main landing-page hero section.
  *
  * @author Eman
  */
 
 import { motion, useReducedMotion } from 'framer-motion';
 import {
-    ArrowRight,
-    Search,
+    ArrowDownRight,
+    Mail,
     Sparkles,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
-import { ROUTES } from '../../../constants/routes.constants';
 import {
     HERO_CONTENT,
     HERO_HIGHLIGHTS,
@@ -30,134 +28,203 @@ import {
 import HeroProcessCard from './HeroProcessCard';
 
 /**
- * Main landing page hero section.
+ * Smoothly scrolls the page to a specific section.
+ *
+ * The optional chaining operator prevents runtime errors when the
+ * requested section does not exist in the current document.
+ *
+ * @param {string} sectionId - The ID of the destination section.
+ * @returns {void}
+ */
+function scrollToSection(sectionId) {
+    document.getElementById(sectionId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+    });
+}
+
+/**
+ * Displays the introductory content of the Nexora landing page.
+ *
+ * The hero includes:
+ * - An AI-powered platform badge.
+ * - The main Nexora heading and description.
+ * - Navigation buttons for the process and contact sections.
+ * - Key platform highlights.
+ * - A visual representation of the AI discovery workflow.
  *
  * @returns {JSX.Element}
  */
 export default function HeroSection() {
+    /**
+     * Detects whether the user prefers reduced animation.
+     *
+     * When enabled, entrance animations are disabled to improve
+     * accessibility and user comfort.
+     */
     const shouldReduceMotion = useReducedMotion();
 
-    const contentAnimation = shouldReduceMotion
+    /**
+     * Shared animation configuration for the hero textual content.
+     *
+     * An empty configuration is used when reduced motion is enabled.
+     */
+    const reveal = shouldReduceMotion
         ? {}
         : {
             initial: {
                 opacity: 0,
-                y: 30,
+                y: 28,
             },
             animate: {
                 opacity: 1,
                 y: 0,
             },
             transition: {
-                duration: 0.7,
-            },
-        };
-
-    const cardAnimation = shouldReduceMotion
-        ? {}
-        : {
-            initial: {
-                opacity: 0,
-                scale: 0.94,
-            },
-            animate: {
-                opacity: 1,
-                scale: 1,
-            },
-            transition: {
-                duration: 0.8,
-                delay: 0.15,
+                duration: 0.75,
             },
         };
 
     return (
-        <section className="relative overflow-hidden">
+        <section
+            id="home"
+            className="hero-grid relative isolate overflow-hidden"
+            aria-labelledby="hero-heading"
+        >
+            {/* Decorative animated background elements */}
             <div
-                className="absolute inset-0 -z-10"
+                className="hero-orb hero-orb-one"
                 aria-hidden="true"
-            >
-                <div className="absolute -left-24 top-24 h-80 w-80 rounded-full bg-nexora-primary/10 blur-3xl" />
+            />
 
-                <div className="absolute right-0 top-0 h-96 w-96 rounded-full bg-nexora-accent/10 blur-3xl" />
-            </div>
+            <div
+                className="hero-orb hero-orb-two"
+                aria-hidden="true"
+            />
 
-            <div className="nexora-container grid min-h-[calc(100vh-80px)] items-center gap-14 py-20 lg:grid-cols-2">
-                <motion.div {...contentAnimation}>
-                    <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-nexora-border bg-white px-4 py-2 text-sm font-semibold text-nexora-primary shadow-soft">
-                        <Sparkles
-                            size={17}
-                            aria-hidden="true"
-                        />
+            <div
+                className="hero-orb hero-orb-three"
+                aria-hidden="true"
+            />
+
+            <div
+                className="hero-noise"
+                aria-hidden="true"
+            />
+
+            <div className="nexora-container grid min-h-[calc(100vh-80px)] items-center gap-16 py-20 lg:grid-cols-[1.05fr_.95fr] lg:py-24">
+                {/* Hero textual content */}
+                <motion.div
+                    {...reveal}
+                    className="relative z-10"
+                >
+                    {/* Platform badge */}
+                    <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-[#ded1ff] bg-white/80 px-4 py-2 text-sm font-bold text-[#7555c7] shadow-[0_12px_35px_rgba(126,87,194,0.12)] backdrop-blur-xl">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#eee6ff] to-[#dff3ff]">
+                            <Sparkles
+                                size={15}
+                                className="text-[#7c5bd4]"
+                                aria-hidden="true"
+                            />
+                        </span>
 
                         {HERO_CONTENT.badge}
                     </div>
 
-                    <h1 className="max-w-3xl text-5xl font-extrabold leading-[1.08] tracking-tight text-nexora-text sm:text-6xl lg:text-7xl">
+                    {/* Main hero heading */}
+                    <h1
+                        id="hero-heading"
+                        className="max-w-4xl text-5xl font-black leading-[1.02] tracking-[-0.045em] text-[#211b33] sm:text-6xl lg:text-[4.7rem]"
+                    >
                         {HERO_CONTENT.titlePrefix}{' '}
 
-                        <span className="text-nexora-primary">
+                        <span className="nexora-gradient-text">
                             {HERO_CONTENT.highlightedTitle}
                         </span>
                     </h1>
 
-                    <p className="mt-7 max-w-2xl text-lg leading-8 text-nexora-muted">
+                    {/* Hero description */}
+                    <p className="mt-7 max-w-2xl text-lg leading-8 text-[#6f6881] sm:text-xl">
                         {HERO_CONTENT.description}
                     </p>
 
+                    {/* Hero actions */}
                     <div className="mt-10 flex flex-wrap gap-4">
-                        <Link
-                            to={ROUTES.GENERATE}
-                            className="nexora-button-primary gap-2"
+                        <button
+                            type="button"
+                            onClick={() => scrollToSection('how-it-works')}
+                            className="nexora-button-primary group gap-3 px-6 py-3.5"
+                            aria-label={HERO_CONTENT.primaryActionLabel}
                         >
                             {HERO_CONTENT.primaryActionLabel}
 
-                            <ArrowRight
+                            <ArrowDownRight
+                                className="transition-transform duration-300 group-hover:translate-x-1 group-hover:translate-y-1"
                                 size={19}
                                 aria-hidden="true"
                             />
-                        </Link>
+                        </button>
 
-                        <Link
-                            to={ROUTES.DISCOVER}
-                            className="nexora-button-secondary gap-2"
+                        <button
+                            type="button"
+                            onClick={() => scrollToSection('contact')}
+                            className="nexora-button-secondary gap-3 px-6 py-3.5"
+                            aria-label={HERO_CONTENT.secondaryActionLabel}
                         >
-                            <Search
-                                size={19}
+                            <Mail
+                                size={18}
                                 aria-hidden="true"
                             />
 
                             {HERO_CONTENT.secondaryActionLabel}
-                        </Link>
+                        </button>
                     </div>
 
-                    <div className="mt-12 flex flex-wrap items-center gap-8">
-                        {HERO_HIGHLIGHTS.map((highlight, index) => (
-                            <div
+                    {/* Platform highlights */}
+                    <div className="mt-12 grid max-w-2xl grid-cols-3 gap-3 sm:gap-5">
+                        {HERO_HIGHLIGHTS.map((highlight) => (
+                            <article
                                 key={highlight.id}
-                                className="contents"
+                                className="hero-highlight-card rounded-2xl border border-white/90 bg-white/65 p-4 backdrop-blur-xl"
                             >
-                                <div>
-                                    <p className="text-3xl font-extrabold text-nexora-text">
-                                        {highlight.title}
-                                    </p>
+                                <p className="text-lg font-extrabold text-[#2a223d] sm:text-2xl">
+                                    {highlight.title}
+                                </p>
 
-                                    <p className="mt-1 text-sm text-nexora-muted">
-                                        {highlight.description}
-                                    </p>
-                                </div>
-
-                                {index < HERO_HIGHLIGHTS.length - 1 && (
-                                    <div
-                                        className="hidden h-14 w-px bg-nexora-border sm:block"
-                                        aria-hidden="true"
-                                    />
-                                )}
-                            </div>
+                                <p className="mt-1 text-xs leading-5 text-[#746d84] sm:text-sm">
+                                    {highlight.description}
+                                </p>
+                            </article>
                         ))}
                     </div>
                 </motion.div>
 
-                <motion.div {...cardAnimation}>
+                {/* Nexora process visualization */}
+                <motion.div
+                    initial={
+                        shouldReduceMotion
+                            ? undefined
+                            : {
+                                opacity: 0,
+                                scale: 0.94,
+                                rotate: 1.5,
+                            }
+                    }
+                    animate={
+                        shouldReduceMotion
+                            ? undefined
+                            : {
+                                opacity: 1,
+                                scale: 1,
+                                rotate: 0,
+                            }
+                    }
+                    transition={{
+                        duration: 0.85,
+                        delay: 0.12,
+                    }}
+                    className="relative z-10"
+                >
                     <HeroProcessCard />
                 </motion.div>
             </div>
