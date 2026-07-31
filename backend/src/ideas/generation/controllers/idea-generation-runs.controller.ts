@@ -35,6 +35,13 @@ export class IdeaGenerationRunsController {
     return this.queries.findUserRuns(user.id, query);
   }
 
+
+  /** Returns the newest queued/running/retrying/paused run for the user. */
+  @Get('active')
+  getMyActiveGenerationRun(@CurrentUser() user: AuthenticatedUser) {
+    return this.queries.findActiveUserRun(user.id);
+  }
+
   @Get(':runId')
   getMyGenerationRun(
     @CurrentUser() user: AuthenticatedUser,

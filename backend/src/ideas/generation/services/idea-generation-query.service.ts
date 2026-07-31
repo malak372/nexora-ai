@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { IdeaGenerationRunStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import type { GetGenerationRunsQueryDto } from '../dto/get-generation-runs-query.dto';
@@ -82,6 +82,44 @@ export class IdeaGenerationQueryService {
         total,
         totalPages: total === 0 ? 0 : Math.ceil(total / limit),
       },
+    };
+  }
+
+
+  /** Returns the newest non-terminal generation run owned by the user. */
+  async findActiveUserRun(userId: string) {
+    const run = await this.prisma.ideaGenerationRun.findFirst({
+      where: {
+        userId,
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
+            IdeaGenerationRunStatus.RETRYING,
+            IdeaGenerationRunStatus.PAUSED,
+          ],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        idea: { select: { id: true, title: true } },
+        stages: { orderBy: { sequence: 'asc' } },
+      },
+    });
+
+    if (!run) return null;
+
+    const currentStage = run.stages.find(
+      (stage) => stage.stageKey === run.currentStageKey,
+    );
+
+    return {
+      ...run,
+      currentStageLabel: currentStage?.displayName ?? null,
+      stages: run.stages.map((stage, index) => ({
+        ...stage,
+        displaySequence: index + 1,
+      })),
     };
   }
 
