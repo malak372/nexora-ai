@@ -2,14 +2,13 @@
  * Renders the main footer for Nexora public pages.
  *
  * The footer provides:
- * - Nexora branding.
- * - Public platform navigation.
- * - Contact information.
- * - Legal navigation.
+ * - Nexora branding and platform description.
+ * - Smooth navigation to public landing-page sections.
+ * - Direct contact information.
  * - A dynamically generated copyright year.
  *
- * Contact information is read from the application environment variables
- * with a safe fallback value for local development.
+ * Landing-page navigation uses URL hashes so users can navigate to
+ * sections from both the home page and other future public routes.
  *
  * @component
  * @returns {JSX.Element} The public application footer.
@@ -17,15 +16,66 @@
  * @author Eman
  */
 
-import { Mail, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import {
+    Mail,
+    Sparkles,
+} from 'lucide-react';
+import {
+    Link,
+    useLocation,
+    useNavigate,
+} from 'react-router-dom';
 
 import { ROUTES } from '../../constants/routes.constants';
 
-const currentYear = new Date().getFullYear();
+/**
+ * Current year displayed in the copyright notice.
+ *
+ * @type {number}
+ */
+const CURRENT_YEAR = new Date().getFullYear();
 
-const contactEmail =
-  process.env.REACT_APP_CONTACT_EMAIL || 'ainexora0@gmail.com';
+/**
+ * Public contact email.
+ *
+ * The value can be configured using REACT_APP_CONTACT_EMAIL.
+ *
+ * @type {string}
+ */
+const CONTACT_EMAIL =
+    process.env.REACT_APP_CONTACT_EMAIL || 'ainexora0@gmail.com';
+
+/**
+ * Footer links that navigate to sections inside the public home page.
+ *
+ * @type {Array<{
+ *     id: string,
+ *     label: string,
+ *     sectionId: string
+ * }>}
+ */
+const FOOTER_SECTION_LINKS = [
+    {
+        id: 'how-it-works',
+        label: 'How It Works',
+        sectionId: 'how-it-works',
+    },
+    {
+        id: 'about',
+        label: 'About Nexora',
+        sectionId: 'about',
+    },
+    {
+        id: 'domains',
+        label: 'Explore Domains',
+        sectionId: 'domains',
+    },
+    {
+        id: 'contact',
+        label: 'Contact',
+        sectionId: 'contact',
+    },
+];
 
 /**
  * Public application footer.
@@ -33,19 +83,52 @@ const contactEmail =
  * @returns {JSX.Element}
  */
 export default function Footer() {
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    /**
+     * Navigates to a section inside the public home page.
+     *
+     * When the user is already on the home page, the section is scrolled
+     * into view directly. Otherwise, navigation returns to the home page
+     * with the appropriate URL hash.
+     *
+     * @param {string} sectionId - Destination section identifier.
+     * @returns {void}
+     */
+    const navigateToSection = (sectionId) => {
+        const destination = {
+            pathname: ROUTES.HOME,
+            hash: `#${sectionId}`,
+        };
+
+        if (location.pathname !== ROUTES.HOME) {
+            navigate(destination);
+            return;
+        }
+
+        navigate(destination);
+
+        document.getElementById(sectionId)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+    };
+
     return (
         <footer className="border-t border-nexora-border bg-white">
             <div className="nexora-container py-12">
                 <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
+                    {/* Nexora brand */}
                     <div className="lg:col-span-2">
                         <Link
                             to={ROUTES.HOME}
-                            className="inline-flex items-center gap-3"
+                            className="group inline-flex items-center gap-3"
                             aria-label="Go to Nexora home page"
                         >
-                            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-nexora-primary text-white">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8060ce] to-[#64a6d8] text-white shadow-soft transition duration-300 group-hover:-rotate-3 group-hover:scale-105">
                                 <Sparkles
-                                    size={20}
+                                    size={21}
                                     aria-hidden="true"
                                 />
                             </span>
@@ -56,18 +139,20 @@ export default function Footer() {
                         </Link>
 
                         <p className="mt-5 max-w-md leading-7 text-nexora-muted">
-                            Nexora transforms real community feedback into meaningful and
-                            locally relevant software project ideas.
+                            Nexora transforms real community feedback into
+                            meaningful, evidence-driven, and locally relevant
+                            software project ideas.
                         </p>
                     </div>
 
+                    {/* Landing-page navigation */}
                     <div>
                         <h2 className="font-bold text-nexora-text">
                             Platform
                         </h2>
 
                         <nav
-                            className="mt-5 flex flex-col gap-3 text-sm text-nexora-muted"
+                            className="mt-5 flex flex-col items-start gap-3 text-sm text-nexora-muted"
                             aria-label="Footer platform navigation"
                         >
                             <Link
@@ -77,78 +162,60 @@ export default function Footer() {
                                 Home
                             </Link>
 
-                            <Link
-                                to={ROUTES.DISCOVER}
-                                className="transition hover:text-nexora-primary"
-                            >
-                                Discover Ideas
-                            </Link>
-
-                            <Link
-                                to={ROUTES.GENERATE}
-                                className="transition hover:text-nexora-primary"
-                            >
-                                Generate Idea
-                            </Link>
-
-                            <Link
-                                to={ROUTES.ABOUT}
-                                className="transition hover:text-nexora-primary"
-                            >
-                                About
-                            </Link>
+                            {FOOTER_SECTION_LINKS.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() =>
+                                        navigateToSection(item.sectionId)
+                                    }
+                                    className="text-left transition hover:text-nexora-primary"
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
                         </nav>
                     </div>
 
+                    {/* Contact information */}
                     <div>
                         <h2 className="font-bold text-nexora-text">
                             Contact
                         </h2>
 
                         <a
-                            href={`mailto:${contactEmail}`}
-                            className="mt-5 flex items-center gap-2 text-sm text-nexora-muted transition hover:text-nexora-primary"
+                            href={`mailto:${CONTACT_EMAIL}`}
+                            className="mt-5 flex items-start gap-2 break-all text-sm leading-6 text-nexora-muted transition hover:text-nexora-primary"
+                            aria-label={`Email Nexora at ${CONTACT_EMAIL}`}
                         >
                             <Mail
+                                className="mt-0.5 shrink-0"
                                 size={17}
                                 aria-hidden="true"
                             />
 
-                            {contactEmail}
+                            <span>{CONTACT_EMAIL}</span>
                         </a>
 
-                        <Link
-                            to={ROUTES.CONTACT}
+                        <button
+                            type="button"
+                            onClick={() => navigateToSection('contact')}
                             className="mt-4 inline-flex text-sm font-semibold text-nexora-primary transition hover:text-nexora-primaryDark"
                         >
-                            Contact us
-                        </Link>
+                            Contact the Nexora team
+                        </button>
                     </div>
                 </div>
 
-                <div className="mt-10 flex flex-col gap-4 border-t border-nexora-border pt-6 text-sm text-nexora-muted sm:flex-row sm:items-center sm:justify-between">
+                {/* Footer bottom */}
+                <div className="mt-10 flex flex-col gap-3 border-t border-nexora-border pt-6 text-sm text-nexora-muted sm:flex-row sm:items-center sm:justify-between">
                     <p>
-                        © {currentYear} Nexora AI. All rights reserved.
+                        © {CURRENT_YEAR} Nexora AI. All rights reserved.
                     </p>
 
-                    <nav
-                        className="flex gap-5"
-                        aria-label="Legal navigation"
-                    >
-                        <Link
-                            to={ROUTES.PRIVACY}
-                            className="transition hover:text-nexora-primary"
-                        >
-                            Privacy
-                        </Link>
-
-                        <Link
-                            to={ROUTES.TERMS}
-                            className="transition hover:text-nexora-primary"
-                        >
-                            Terms
-                        </Link>
-                    </nav>
+                    <p>
+                        Ideas built from real needs.
+                    </p>
                 </div>
             </div>
         </footer>

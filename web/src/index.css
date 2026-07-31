@@ -1,3 +1,22 @@
+/**
+ * Global styles and design system for the Nexora web application.
+ *
+ * This stylesheet defines the shared color palette, typography,
+ * responsive layout utilities, reusable UI components, landing-page
+ * sections, visual effects, animations, and accessibility preferences.
+ *
+ * The file includes styling for:
+ * - Global document defaults.
+ * - Nexora design tokens.
+ * - Reusable buttons, cards, containers, and inputs.
+ * - Hero section backgrounds and animations.
+ * - How-it-works workflow cards.
+ * - Opportunity domains section.
+ * - Contact and call-to-action section.
+ * - Reduced-motion accessibility support.
+ *
+ * @authors Eman, Malak
+ */
 
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -5,16 +24,15 @@
 @tailwind components;
 @tailwind utilities;
 
-
 :root {
-  --nexora-background: #f7f3ed;
+  --nexora-background: #fbf9ff;
   --nexora-surface: #ffffff;
-  --nexora-primary: #5b4b8a;
-  --nexora-primary-dark: #403464;
-  --nexora-secondary: #8d6e63;
-  --nexora-text: #28231f;
-  --nexora-muted: #716a64;
-  --nexora-border: #e3dbd1;
+  --nexora-primary: #7658c8;
+  --nexora-primary-dark: #5d42ad;
+  --nexora-secondary: #5f9fd2;
+  --nexora-text: #29213d;
+  --nexora-muted: #756e83;
+  --nexora-border: #e9e1f4;
 }
 
 * {
@@ -33,7 +51,8 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--nexora-background);
+  background:
+    linear-gradient(180deg, #fbf9ff 0%, #ffffff 45%, #fafcff 100%);
   color: var(--nexora-text);
   font-family: 'Inter', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -66,7 +85,7 @@ img {
 }
 
 ::selection {
-  background-color: rgba(91, 75, 138, 0.2);
+  background-color: rgba(118, 88, 200, 0.18);
 }
 
 @layer components {
@@ -79,14 +98,430 @@ img {
   }
 
   .nexora-button-primary {
-    @apply inline-flex items-center justify-center rounded-xl bg-nexora-primary px-5 py-3 font-semibold text-white transition duration-200 hover:bg-nexora-primaryDark disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-full px-5 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50;
+    border: 1px solid rgba(125, 91, 207, 0.22);
+    background: linear-gradient(110deg, #7658ca 0%, #9470d9 48%, #609fd4 100%);
+    box-shadow:
+      0 15px 35px rgba(112, 81, 185, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    transition:
+      transform 250ms ease,
+      box-shadow 250ms ease,
+      filter 250ms ease;
+  }
+
+  .nexora-button-primary:hover {
+    transform: translateY(-3px);
+    filter: brightness(1.04);
+    box-shadow:
+      0 20px 40px rgba(112, 81, 185, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
 
   .nexora-button-secondary {
-    @apply inline-flex items-center justify-center rounded-xl border border-nexora-border bg-white px-5 py-3 font-semibold text-nexora-text transition duration-200 hover:bg-nexora-cream;
+    @apply inline-flex items-center justify-center rounded-full px-5 py-3 font-bold;
+    color: #594775;
+    border: 1px solid rgba(129, 99, 191, 0.2);
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow:
+      0 12px 28px rgba(77, 55, 115, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(16px);
+    transition:
+      transform 250ms ease,
+      border-color 250ms ease,
+      background-color 250ms ease,
+      box-shadow 250ms ease;
+  }
+
+  .nexora-button-secondary:hover {
+    transform: translateY(-3px);
+    color: #7153c4;
+    border-color: rgba(126, 91, 201, 0.4);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 18px 35px rgba(77, 55, 115, 0.12);
   }
 
   .nexora-input {
     @apply w-full rounded-xl border border-nexora-border bg-white px-4 py-3 text-nexora-text outline-none transition placeholder:text-nexora-muted focus:border-nexora-primary focus:ring-4 focus:ring-nexora-primary/10;
   }
+}
+
+/* Hero */
+.hero-grid {
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(220, 203, 255, 0.5), transparent 30%),
+    radial-gradient(circle at 87% 17%, rgba(198, 232, 255, 0.55), transparent 31%),
+    radial-gradient(circle at 78% 80%, rgba(255, 211, 235, 0.42), transparent 28%),
+    linear-gradient(135deg, #fffefe 0%, #faf7ff 38%, #f1f8ff 72%, #fff7fb 100%);
+}
+
+.hero-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(126, 91, 195, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(126, 91, 195, 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent 92%);
+}
+
+.hero-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(12px);
+  opacity: 0.75;
+  animation: heroOrbFloat 11s ease-in-out infinite alternate;
+}
+
+.hero-orb-one {
+  top: 8%;
+  left: -7rem;
+  width: 24rem;
+  height: 24rem;
+  background: linear-gradient(135deg, rgba(207, 185, 255, 0.75), rgba(240, 225, 255, 0.35));
+}
+
+.hero-orb-two {
+  top: 12%;
+  right: -8rem;
+  width: 27rem;
+  height: 27rem;
+  background: linear-gradient(135deg, rgba(182, 225, 255, 0.7), rgba(220, 244, 255, 0.3));
+  animation-delay: -3s;
+}
+
+.hero-orb-three {
+  right: 25%;
+  bottom: -10rem;
+  width: 23rem;
+  height: 23rem;
+  background: linear-gradient(135deg, rgba(255, 204, 229, 0.6), rgba(255, 235, 245, 0.3));
+  animation-delay: -6s;
+}
+
+.hero-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image: radial-gradient(circle at center, rgba(112, 83, 168, 0.18) 0.6px, transparent 0.7px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
+}
+
+.nexora-gradient-text {
+  display: inline-block;
+  color: transparent;
+  background-image: linear-gradient(100deg, #7357c7 0%, #9b70dd 40%, #579ed5 72%, #d17eae 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.hero-highlight-card {
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 14px 35px rgba(96, 73, 134, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  transition:
+    transform 250ms ease,
+    box-shadow 250ms ease,
+    border-color 250ms ease;
+}
+
+.hero-highlight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 18%;
+  width: 64%;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, rgba(135, 96, 210, 0.55), rgba(97, 169, 219, 0.5), transparent);
+}
+
+.hero-highlight-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(150, 119, 214, 0.28);
+  box-shadow:
+    0 22px 44px rgba(96, 73, 134, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+.hero-process-card {
+  box-shadow:
+    0 32px 80px rgba(91, 67, 130, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+/* Shared sections */
+.nexora-eyebrow {
+  color: #7658c8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.nexora-section-title {
+  color: #29213d;
+  font-size: clamp(2.2rem, 5vw, 4rem);
+  font-weight: 900;
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.nexora-section-description {
+  max-width: 44rem;
+  color: #756e83;
+  font-size: 1.05rem;
+  line-height: 1.9;
+}
+
+.how-it-works-section {
+  background:
+    radial-gradient(circle at 0% 30%, rgba(222, 210, 255, 0.28), transparent 28%),
+    radial-gradient(circle at 100% 70%, rgba(205, 235, 255, 0.28), transparent 30%),
+    #ffffff;
+}
+
+.how-step-card {
+  box-shadow:
+    0 14px 36px rgba(96, 73, 134, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition:
+    transform 280ms ease,
+    box-shadow 280ms ease,
+    border-color 280ms ease;
+}
+
+.how-step-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(151, 121, 214, 0.34);
+  box-shadow: 0 24px 50px rgba(96, 73, 134, 0.13);
+}
+
+/* Domains */
+.domains-panel {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(221, 205, 255, 0.5), transparent 30%),
+    radial-gradient(circle at 92% 88%, rgba(200, 233, 255, 0.5), transparent 32%),
+    linear-gradient(135deg, #fbf8ff 0%, #f7fbff 55%, #fff8fc 100%);
+}
+
+.domains-panel-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+.domains-panel-orb-one {
+  width: 18rem;
+  height: 18rem;
+  top: -8rem;
+  right: 12%;
+  background: rgba(215, 196, 255, 0.35);
+}
+
+.domains-panel-orb-two {
+  width: 20rem;
+  height: 20rem;
+  left: -10rem;
+  bottom: -12rem;
+  background: rgba(190, 229, 255, 0.38);
+}
+
+.domain-card {
+  box-shadow:
+    0 12px 30px rgba(96, 73, 134, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition:
+    transform 260ms ease,
+    box-shadow 260ms ease,
+    border-color 260ms ease;
+}
+
+.domain-card:hover {
+  transform: translateY(-7px);
+  border-color: rgba(145, 112, 209, 0.3);
+  box-shadow: 0 22px 42px rgba(96, 73, 134, 0.12);
+}
+
+/* Contact */
+.contact-panel {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(218, 201, 255, 0.55), transparent 30%),
+    radial-gradient(circle at 10% 80%, rgba(197, 232, 255, 0.55), transparent 34%),
+    radial-gradient(circle at 70% 85%, rgba(255, 215, 235, 0.36), transparent 28%),
+    linear-gradient(135deg, #fbf8ff 0%, #f7fbff 55%, #fff9fc 100%);
+}
+
+.contact-orb {
+  position: absolute;
+  width: 20rem;
+  height: 20rem;
+  right: -8rem;
+  bottom: -10rem;
+  border-radius: 9999px;
+  background: rgba(194, 224, 255, 0.42);
+  filter: blur(18px);
+}
+
+.contact-card {
+  box-shadow:
+    0 20px 50px rgba(96, 73, 134, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+@keyframes heroOrbFloat {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(22px, -18px, 0) scale(1.05);
+  }
+
+  100% {
+    transform: translate3d(-15px, 18px, 0) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .hero-orb {
+    animation: none;
+  }
+}
+
+/* About Nexora */
+.about-nexora-section {
+  background:
+    radial-gradient(circle at 8% 18%,
+      rgba(220, 205, 255, 0.3),
+      transparent 28%),
+    radial-gradient(circle at 92% 82%,
+      rgba(198, 233, 255, 0.34),
+      transparent 30%),
+    linear-gradient(180deg,
+      #ffffff 0%,
+      #fcfaff 50%,
+      #f9fcff 100%);
+}
+
+.about-nexora-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(28px);
+}
+
+.about-nexora-orb-one {
+  top: 2rem;
+  left: -8rem;
+  width: 22rem;
+  height: 22rem;
+  background: rgba(216, 197, 255, 0.3);
+}
+
+.about-nexora-orb-two {
+  right: -9rem;
+  bottom: 0;
+  width: 24rem;
+  height: 24rem;
+  background: rgba(190, 230, 255, 0.34);
+}
+
+.about-mission-card {
+  box-shadow:
+    0 18px 42px rgba(96, 73, 134, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+.about-feature-card {
+  box-shadow:
+    0 15px 38px rgba(96, 73, 134, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition:
+    transform 280ms ease,
+    border-color 280ms ease,
+    box-shadow 280ms ease;
+}
+
+.about-feature-card:hover {
+  transform: translateY(-8px);
+  border-color: rgba(145, 112, 209, 0.32);
+  box-shadow:
+    0 25px 52px rgba(96, 73, 134, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+/* Featured Ideas */
+.featured-ideas-section {
+  background:
+    radial-gradient(circle at 5% 18%,
+      rgba(218, 201, 255, 0.3),
+      transparent 27%),
+    radial-gradient(circle at 96% 82%,
+      rgba(197, 232, 255, 0.34),
+      transparent 29%),
+    linear-gradient(180deg,
+      #ffffff 0%,
+      #fcfaff 48%,
+      #f9fcff 100%);
+}
+
+.featured-ideas-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(30px);
+}
+
+.featured-ideas-orb-one {
+  top: 4rem;
+  left: -9rem;
+  width: 23rem;
+  height: 23rem;
+  background: rgba(216, 198, 255, 0.28);
+}
+
+.featured-ideas-orb-two {
+  right: -10rem;
+  bottom: -3rem;
+  width: 25rem;
+  height: 25rem;
+  background: rgba(192, 231, 255, 0.32);
+}
+
+.featured-idea-card {
+  box-shadow:
+    0 18px 45px rgba(96, 73, 134, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transition:
+    transform 280ms ease,
+    border-color 280ms ease,
+    box-shadow 280ms ease;
+}
+
+.featured-idea-card:hover {
+  transform: translateY(-9px);
+  border-color: rgba(145, 112, 209, 0.33);
+  box-shadow:
+    0 28px 58px rgba(96, 73, 134, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
 }

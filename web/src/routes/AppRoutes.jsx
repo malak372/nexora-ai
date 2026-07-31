@@ -1,5 +1,14 @@
 /**
- * Application route configuration.
+ * Defines the application route configuration.
+ *
+ * Public pages are rendered inside PublicLayout so they share the same
+ * navigation bar, footer, and general page structure.
+ *
+ * The About, Domains, How It Works, and Contact content are sections
+ * inside HomePage and therefore do not require separate routes.
+ *
+ * @component
+ * @returns {JSX.Element} The application route tree.
  *
  */
 
@@ -19,7 +28,10 @@ export default function AppRoutes() {
         <Routes>
             {/* Public pages */}
             <Route element={<PublicLayout />}>
-                <Route index element={<HomePage />} />
+                <Route
+                    index
+                    element={<HomePage />}
+                />
             </Route>
 
             {/* Authentication pages */}
