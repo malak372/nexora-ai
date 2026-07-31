@@ -8,43 +8,95 @@ module.exports = {
     extend: {
       colors: {
         nexora: {
-          background: '#F7F3ED',
+          primary: '#7C5CC4',
+          secondary: '#5FA8D3',
+          accent: '#D98CB3',
+          text: '#241D35',
+          muted: '#746D84',
+          background: '#FAF8FF',
           surface: '#FFFFFF',
-          cream: '#EDE4D8',
-          primary: '#5B4B8A',
-          primaryDark: '#403464',
-          secondary: '#8D6E63',
-          accent: '#7A9E9F',
-          text: '#28231F',
-          muted: '#716A64',
-          border: '#E3DBD1',
-          success: '#3E8062',
-          warning: '#C68A35',
-          danger: '#B75454',
+          lavender: '#EEE8FF',
+          sky: '#EAF7FF',
+          pink: '#FFF0F7',
+          border: '#E7DFF4',
         },
       },
 
-      fontFamily: {
-        sans: ['Inter', 'Arial', 'sans-serif'],
-        arabic: ['Cairo', 'Arial', 'sans-serif'],
-      },
-
       boxShadow: {
-        card: '0 12px 40px rgba(40, 35, 31, 0.08)',
-        soft: '0 8px 24px rgba(40, 35, 31, 0.06)',
+        soft: '0 18px 45px rgba(94, 70, 135, 0.12)',
+        card: '0 24px 60px rgba(93, 70, 133, 0.14)',
+        button: '0 14px 30px rgba(117, 86, 190, 0.25)',
       },
 
       borderRadius: {
-        nexora: '1.5rem',
+        '4xl': '2rem',
+        '5xl': '2.5rem',
       },
 
       backgroundImage: {
         'nexora-gradient':
-          'linear-gradient(135deg, #5B4B8A 0%, #7A9E9F 100%)',
+          'linear-gradient(110deg, #7658CA 0%, #9470D9 48%, #609FD4 100%)',
+
+        'nexora-light-gradient':
+          'linear-gradient(135deg, #FFFDFE 0%, #F8F4FF 45%, #EEF8FF 100%)',
+
+        'nexora-card-gradient':
+          'linear-gradient(145deg, rgba(255,255,255,0.96), rgba(247,242,255,0.82))',
+      },
+
+      fontFamily: {
+        sans: [
+          'Inter',
+          'Poppins',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
+      },
+
+      keyframes: {
+        float: {
+          '0%, 100%': {
+            transform: 'translateY(0)',
+          },
+          '50%': {
+            transform: 'translateY(-12px)',
+          },
+        },
+
+        pulseSoft: {
+          '0%, 100%': {
+            opacity: '0.7',
+            transform: 'scale(1)',
+          },
+          '50%': {
+            opacity: '1',
+            transform: 'scale(1.06)',
+          },
+        },
+
+        gradientMove: {
+          '0%': {
+            backgroundPosition: '0% 50%',
+          },
+          '50%': {
+            backgroundPosition: '100% 50%',
+          },
+          '100%': {
+            backgroundPosition: '0% 50%',
+          },
+        },
+      },
+
+      animation: {
+        float: 'float 6s ease-in-out infinite',
+        'pulse-soft': 'pulseSoft 5s ease-in-out infinite',
+        'gradient-move': 'gradientMove 8s ease infinite',
       },
     },
   },
 
   plugins: [],
 };
-
