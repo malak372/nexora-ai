@@ -1,0 +1,1617 @@
+/**
+ * Nexora AI login experience.
+ *
+ * Desktop design is intentionally viewport-bound to avoid unnecessary
+ * page scrolling. Mobile layouts switch to natural document flow.
+ *
+ * @author Malak
+ */
+
+:root {
+    --nx-ink: #151426;
+    --nx-muted: #77758a;
+    --nx-soft-muted: #9a98aa;
+    --nx-violet: #6f52e5;
+    --nx-violet-dark: #4f34ca;
+    --nx-purple-light: #a690ff;
+    --nx-line: rgba(77, 61, 140, 0.13);
+    --nx-success: #27aa72;
+    --nx-danger: #d94b5d;
+    --nx-danger-bg: rgba(255, 242, 244, 0.92);
+}
+
+.nx-login {
+    position: relative;
+    min-height: 100svh;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 20% 15%, rgba(166, 144, 255, 0.2), transparent 28%),
+        radial-gradient(circle at 90% 86%, rgba(237, 175, 255, 0.18), transparent 26%),
+        #f9f7fc;
+    color: var(--nx-ink);
+    isolation: isolate;
+}
+
+.nx-login__mesh,
+.nx-login__grain {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.nx-login__mesh {
+    z-index: -3;
+    opacity: 0.62;
+    background-image:
+        linear-gradient(rgba(104, 79, 200, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(104, 79, 200, 0.045) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(to right, #000 0 56%, transparent 82%);
+}
+
+.nx-login__grain {
+    z-index: -1;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.75'/%3E%3C/svg%3E");
+}
+
+.nx-login__aurora {
+    position: absolute;
+    z-index: -2;
+    border-radius: 999px;
+    filter: blur(12px);
+    pointer-events: none;
+}
+
+.nx-login__aurora--one {
+    width: 310px;
+    height: 310px;
+    top: -110px;
+    left: 34%;
+    background: rgba(124, 89, 238, 0.16);
+}
+
+.nx-login__aurora--two {
+    width: 270px;
+    height: 270px;
+    right: -80px;
+    bottom: -90px;
+    background: rgba(220, 133, 250, 0.16);
+}
+
+.nx-login__experience {
+    width: 100%;
+    min-height: 100svh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(470px, 0.92fr);
+}
+
+.nx-login__story {
+    min-width: 0;
+    margin: 26px 0 26px 26px;
+    padding: clamp(28px, 4vh, 48px) clamp(32px, 5vw, 72px);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    border-radius: 36px;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(239, 233, 255, 0.75)),
+        rgba(245, 240, 255, 0.72);
+    box-shadow:
+        0 30px 80px rgba(74, 50, 149, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(18px);
+}
+
+.nx-brand,
+.nx-brand__link,
+.nx-login__story-footer,
+.nx-story-item,
+.nx-form__options,
+.nx-auth-card__topline,
+.nx-auth-card__trust {
+    display: flex;
+    align-items: center;
+}
+
+.nx-brand {
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.nx-brand__link {
+    gap: 13px;
+}
+
+.nx-brand__symbol {
+    width: 48px;
+    height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 15px;
+    color: #fff;
+    background:
+        linear-gradient(145deg, #8c72ef 0%, #5d3ed3 72%);
+    box-shadow:
+        0 14px 30px rgba(91, 61, 208, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.nx-brand__copy {
+    display: grid;
+    gap: 2px;
+}
+
+.nx-brand__copy strong {
+    font-size: 1.06rem;
+    line-height: 1.2;
+}
+
+.nx-brand__copy small {
+    color: var(--nx-muted);
+    font-size: 0.76rem;
+}
+
+.nx-brand__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #6e6b7f;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.nx-brand__status span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2ac37d;
+    box-shadow: 0 0 0 5px rgba(42, 195, 125, 0.12);
+    animation: nx-pulse 2.1s ease-in-out infinite;
+}
+
+.nx-login__story-content {
+    width: min(100%, 720px);
+    margin: auto 0;
+    padding-block: 24px;
+}
+
+.nx-kicker {
+    width: fit-content;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 13px;
+    border: 1px solid rgba(111, 82, 229, 0.15);
+    border-radius: 999px;
+    color: #6043d4;
+    background: rgba(255, 255, 255, 0.62);
+    box-shadow: 0 8px 24px rgba(84, 60, 170, 0.07);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.nx-login__story h1 {
+    max-width: 760px;
+    margin: clamp(20px, 3vh, 30px) 0 16px;
+    color: #151424;
+    font-size: clamp(3rem, 5.4vw, 5.55rem);
+    font-weight: 800;
+    line-height: 0.94;
+    letter-spacing: -0.065em;
+}
+
+.nx-login__story h1 span {
+    display: block;
+    color: transparent;
+    background: linear-gradient(100deg, #795ee8 8%, #5133c7 62%, #9d63eb);
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+.nx-login__lead {
+    max-width: 690px;
+    margin: 0;
+    color: #666376;
+    font-size: clamp(0.98rem, 1.15vw, 1.14rem);
+    line-height: 1.68;
+}
+
+.nx-login__story-items {
+    margin-top: clamp(22px, 3.2vh, 34px);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.nx-story-item {
+    position: relative;
+    min-width: 0;
+    min-height: 98px;
+    gap: 11px;
+    padding: 14px;
+    border: 1px solid rgba(101, 78, 178, 0.11);
+    border-radius: 19px;
+    background: rgba(255, 255, 255, 0.62);
+    box-shadow: 0 10px 26px rgba(65, 47, 130, 0.05);
+    transition:
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.nx-story-item:hover {
+    border-color: rgba(111, 82, 229, 0.24);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 15px 30px rgba(65, 47, 130, 0.09);
+}
+
+.nx-story-item__icon {
+    width: 35px;
+    height: 35px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 11px;
+    color: #6848db;
+    background: rgba(115, 84, 226, 0.1);
+}
+
+.nx-story-item > span:nth-child(2) {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.nx-story-item strong {
+    font-size: 0.79rem;
+    line-height: 1.25;
+}
+
+.nx-story-item small {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #777486;
+    font-size: 0.67rem;
+    line-height: 1.4;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.nx-story-item__arrow {
+    position: absolute;
+    top: 13px;
+    right: 13px;
+    color: #a09bab;
+    opacity: 0;
+    transition: opacity 180ms ease;
+}
+
+.nx-story-item:hover .nx-story-item__arrow {
+    opacity: 1;
+}
+
+.nx-login__story-footer {
+    gap: 14px;
+    padding-top: 18px;
+    border-top: 1px solid var(--nx-line);
+}
+
+.nx-login__mini-orbit {
+    display: flex;
+    align-items: center;
+}
+
+.nx-login__mini-orbit span {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: -7px;
+    border: 3px solid rgba(246, 241, 255, 0.95);
+    border-radius: 50%;
+    color: #6848d6;
+    background: #fff;
+    font-size: 0.65rem;
+    font-weight: 800;
+}
+
+.nx-login__story-footer > div:last-child {
+    display: grid;
+    gap: 5px;
+}
+
+.nx-login__story-footer strong {
+    font-size: 0.77rem;
+}
+
+.nx-login__story-footer > div:last-child > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #7e7a8a;
+    font-size: 0.69rem;
+}
+
+.nx-login__auth {
+    min-width: 0;
+    display: grid;
+    place-items: center;
+    padding: 28px clamp(30px, 5vw, 86px);
+}
+
+.nx-auth-card {
+    width: min(100%, 510px);
+    padding: clamp(28px, 4vh, 44px);
+    border: 1px solid rgba(102, 75, 184, 0.1);
+    border-radius: 30px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow:
+        0 30px 75px rgba(58, 42, 113, 0.1),
+        inset 0 1px 0 #fff;
+    backdrop-filter: blur(18px);
+}
+
+.nx-login__mobile-brand {
+    display: none;
+}
+
+.nx-auth-card__topline {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.nx-auth-card__topline > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #5b3ed0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.nx-auth-card__step {
+    color: #aaa6b4;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.nx-auth-card__heading {
+    margin: 24px 0 27px;
+}
+
+.nx-auth-card__heading h2 {
+    margin: 0;
+    color: #191727;
+    font-size: clamp(2.25rem, 3.3vw, 3.45rem);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.055em;
+}
+
+.nx-auth-card__heading p {
+    max-width: 450px;
+    margin: 12px 0 0;
+    color: var(--nx-muted);
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.nx-form {
+    display: grid;
+    gap: 17px;
+}
+
+.nx-form__alert {
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 11px;
+    padding: 13px;
+    border: 1px solid rgba(217, 75, 93, 0.22);
+    border-radius: 16px;
+    color: #b33d4c;
+    background: var(--nx-danger-bg);
+}
+
+.nx-form__alert-icon {
+    width: 35px;
+    height: 35px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: rgba(217, 75, 93, 0.1);
+}
+
+.nx-form__alert-copy {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.nx-form__alert-copy strong {
+    font-size: 0.78rem;
+}
+
+.nx-form__alert-copy small {
+    color: #c04c59;
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+.nx-form__alert button,
+.nx-field__action {
+    border: 0;
+    color: #918c9d;
+    background: transparent;
+}
+
+.nx-form__alert button {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+}
+
+.nx-form__alert button:hover {
+    color: #b33d4c;
+    background: rgba(217, 75, 93, 0.08);
+}
+
+.nx-field {
+    display: grid;
+    gap: 8px;
+}
+
+.nx-field__label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.nx-field__label-row label {
+    color: #282638;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.nx-field__label-row a {
+    color: #5d3bd2;
+    font-size: 0.73rem;
+    font-weight: 800;
+}
+
+.nx-field__verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--nx-success);
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.nx-field__control {
+    position: relative;
+    height: 58px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 11px;
+    padding: 0 17px;
+    border: 1px solid rgba(89, 70, 152, 0.15);
+    border-radius: 17px;
+    color: #918da0;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow:
+        0 12px 30px rgba(65, 47, 130, 0.045),
+        inset 0 1px 0 #fff;
+    transition:
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        transform 180ms ease,
+        background 180ms ease;
+}
+
+.nx-field__control:focus-within {
+    border-color: rgba(111, 82, 229, 0.62);
+    background: #fff;
+    box-shadow:
+        0 0 0 4px rgba(111, 82, 229, 0.09),
+        0 16px 34px rgba(65, 47, 130, 0.08);
+    transform: translateY(-1px);
+}
+
+.nx-field__control--valid {
+    border-color: rgba(39, 170, 114, 0.26);
+}
+
+.nx-field__control--error {
+    border-color: rgba(217, 75, 93, 0.42);
+    box-shadow: 0 0 0 4px rgba(217, 75, 93, 0.07);
+}
+
+.nx-field__control input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    color: #242131;
+    background: transparent;
+    font-size: 0.91rem;
+}
+
+.nx-field__control input::placeholder {
+    color: #aaa6b3;
+}
+
+.nx-field__control input:disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+}
+
+.nx-field__status-icon {
+    color: var(--nx-success);
+}
+
+.nx-field__action {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+}
+
+.nx-field__action:hover {
+    color: #5d3bd2;
+    background: rgba(111, 82, 229, 0.08);
+}
+
+.nx-field__error {
+    color: var(--nx-danger);
+    font-size: 0.69rem;
+    font-weight: 650;
+}
+
+.nx-form__options {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.nx-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: #716e7d;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.nx-check input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+}
+
+.nx-check__box {
+    width: 19px;
+    height: 19px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(100, 80, 165, 0.23);
+    border-radius: 6px;
+    color: transparent;
+    background: #fff;
+    transition: all 180ms ease;
+}
+
+.nx-check input:checked + .nx-check__box {
+    border-color: var(--nx-violet);
+    color: #fff;
+    background: var(--nx-violet);
+    box-shadow: 0 6px 14px rgba(111, 82, 229, 0.24);
+}
+
+.nx-form__secure-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #9894a3;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.nx-secure-dot {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid rgba(111, 82, 229, 0.2);
+    border-radius: 50%;
+}
+
+.nx-secure-dot span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--nx-violet);
+}
+
+.nx-form__submit {
+    position: relative;
+    height: 58px;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+    border: 0;
+    border-radius: 17px;
+    color: #fff;
+    background:
+        linear-gradient(100deg, #8768ee 0%, #6847db 48%, #4d31c8 100%);
+    box-shadow:
+        0 18px 36px rgba(86, 55, 202, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    font-size: 0.87rem;
+    font-weight: 800;
+}
+
+.nx-form__submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+}
+
+.nx-form__submit-shine {
+    position: absolute;
+    top: -40%;
+    bottom: -40%;
+    left: -28%;
+    width: 20%;
+    transform: rotate(18deg);
+    background: rgba(255, 255, 255, 0.28);
+    filter: blur(5px);
+    animation: nx-shine 4.5s ease-in-out infinite;
+}
+
+.nx-form__spinner {
+    animation: nx-spin 0.8s linear infinite;
+}
+
+.nx-form__register {
+    margin: -1px 0 0;
+    color: #8f8b9a;
+    text-align: center;
+    font-size: 0.74rem;
+}
+
+.nx-form__register a {
+    margin-left: 5px;
+    color: #5737cf;
+    font-weight: 800;
+}
+
+.nx-auth-card__trust {
+    justify-content: center;
+    gap: 7px;
+    margin-top: 23px;
+    padding-top: 19px;
+    border-top: 1px solid var(--nx-line);
+    color: #9692a2;
+    font-size: 0.68rem;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #242131;
+    transition: background-color 9999s ease-out;
+    box-shadow: 0 0 0 1000px transparent inset;
+}
+
+@keyframes nx-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 5px rgba(42, 195, 125, 0.1);
+    }
+
+    50% {
+        box-shadow: 0 0 0 9px rgba(42, 195, 125, 0.02);
+    }
+}
+
+@keyframes nx-shine {
+    0%,
+    18% {
+        transform: translateX(0) rotate(18deg);
+    }
+
+    55%,
+    100% {
+        transform: translateX(760%) rotate(18deg);
+    }
+}
+
+@keyframes nx-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (max-height: 790px) and (min-width: 1051px) {
+    .nx-login__story {
+        margin-block: 16px;
+        padding-block: 25px;
+    }
+
+    .nx-login__story h1 {
+        font-size: clamp(2.65rem, 4.7vw, 4.65rem);
+        margin-block: 17px 12px;
+    }
+
+    .nx-login__lead {
+        line-height: 1.52;
+    }
+
+    .nx-login__story-items {
+        margin-top: 18px;
+    }
+
+    .nx-story-item {
+        min-height: 88px;
+        padding: 12px;
+    }
+
+    .nx-auth-card {
+        padding: 29px 34px;
+    }
+
+    .nx-auth-card__heading {
+        margin-block: 18px 21px;
+    }
+
+    .nx-auth-card__heading h2 {
+        font-size: 2.55rem;
+    }
+
+    .nx-form {
+        gap: 14px;
+    }
+
+    .nx-field__control,
+    .nx-form__submit {
+        height: 53px;
+    }
+
+    .nx-auth-card__trust {
+        margin-top: 18px;
+        padding-top: 15px;
+    }
+}
+
+@media (max-width: 1180px) {
+    .nx-login__experience {
+        grid-template-columns: minmax(0, 1fr) minmax(420px, 0.92fr);
+    }
+
+    .nx-login__story {
+        padding-inline: 38px;
+    }
+
+    .nx-login__story-items {
+        grid-template-columns: 1fr;
+    }
+
+    .nx-story-item {
+        min-height: auto;
+    }
+
+    .nx-story-item small {
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+    }
+
+    .nx-login__story h1 {
+        font-size: clamp(3rem, 5.7vw, 4.8rem);
+    }
+}
+
+@media (max-width: 920px) {
+    .nx-login {
+        min-height: 100%;
+        overflow: auto;
+    }
+
+    .nx-login__experience {
+        min-height: 100svh;
+        grid-template-columns: 1fr;
+    }
+
+    .nx-login__story {
+        display: none;
+    }
+
+    .nx-login__auth {
+        min-height: 100svh;
+        padding: 28px 20px;
+    }
+
+    .nx-login__mobile-brand {
+        width: min(100%, 510px);
+        display: block;
+        margin-bottom: 18px;
+    }
+
+    .nx-auth-card {
+        border-radius: 25px;
+    }
+}
+
+@media (max-width: 560px) {
+    .nx-login__auth {
+        align-content: start;
+        padding: 18px 14px 28px;
+    }
+
+    .nx-login__mobile-brand {
+        margin: 4px 2px 14px;
+    }
+
+    .nx-auth-card {
+        padding: 25px 19px;
+        border-radius: 22px;
+    }
+
+    .nx-auth-card__heading {
+        margin-block: 21px 24px;
+    }
+
+    .nx-auth-card__heading h2 {
+        font-size: 2.25rem;
+    }
+
+    .nx-auth-card__heading p {
+        font-size: 0.84rem;
+    }
+
+    .nx-form__options {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .nx-form__secure-note {
+        display: none;
+    }
+
+    .nx-field__control,
+    .nx-form__submit {
+        height: 55px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ========================================================================== */
+/* Animated creative layer                                                    */
+/* ========================================================================== */
+
+.nx-login {
+    background:
+        radial-gradient(circle at 16% 18%, rgba(151, 119, 255, 0.10), transparent 31%),
+        radial-gradient(circle at 90% 82%, rgba(240, 141, 255, 0.10), transparent 29%),
+        linear-gradient(135deg, #fdfcff 0%, #faf8ff 50%, #fffCff 100%);
+}
+
+.nx-login__gradient-flow {
+    position: absolute;
+    z-index: -7;
+    inset: -35%;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 18% 30%, rgba(119, 82, 229, 0.18), transparent 25%),
+        radial-gradient(circle at 72% 18%, rgba(87, 185, 255, 0.12), transparent 23%),
+        radial-gradient(circle at 82% 78%, rgba(236, 118, 255, 0.14), transparent 27%),
+        radial-gradient(circle at 40% 84%, rgba(148, 111, 255, 0.11), transparent 24%);
+    filter: blur(34px) saturate(108%);
+    opacity: 0.58;
+    transform-origin: center;
+    animation: nx-gradient-drift 22s ease-in-out infinite alternate;
+}
+
+.nx-login__mesh {
+    animation: nx-mesh-drift 30s linear infinite;
+}
+
+.nx-login__beam {
+    position: absolute;
+    z-index: -4;
+    top: -20%;
+    left: -24%;
+    width: 58%;
+    height: 150%;
+    pointer-events: none;
+    transform: rotate(17deg);
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.27),
+            rgba(148, 111, 255, 0.09),
+            transparent
+        );
+    filter: blur(9px);
+    animation: nx-beam-sweep 13s ease-in-out infinite;
+}
+
+.nx-login__aurora {
+    filter: blur(32px);
+    opacity: 0.48;
+    mix-blend-mode: multiply;
+}
+
+.nx-login__aurora--one {
+    width: 360px;
+    height: 360px;
+    top: -130px;
+    left: 22%;
+    background:
+        radial-gradient(circle, rgba(126, 88, 238, 0.20), transparent 68%);
+}
+
+.nx-login__aurora--two {
+    width: 360px;
+    height: 360px;
+    right: -110px;
+    bottom: -120px;
+    background:
+        radial-gradient(circle, rgba(223, 111, 248, 0.18), transparent 68%);
+}
+
+.nx-login__aurora--three {
+    width: 300px;
+    height: 300px;
+    right: 35%;
+    top: 30%;
+    background:
+        radial-gradient(circle, rgba(87, 183, 255, 0.12), transparent 69%);
+}
+
+.nx-login__particles {
+    position: absolute;
+    z-index: -2;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.nx-login__particles span {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(109, 76, 224, 0.42);
+    box-shadow: 0 0 14px rgba(109, 76, 224, 0.45);
+    animation: nx-particle-float 14s ease-in-out infinite;
+}
+
+.nx-login__particles span:nth-child(1) { left: 8%; top: 18%; animation-delay: -2s; }
+.nx-login__particles span:nth-child(2) { left: 14%; top: 74%; animation-delay: -8s; }
+.nx-login__particles span:nth-child(3) { left: 27%; top: 11%; animation-delay: -5s; }
+.nx-login__particles span:nth-child(4) { left: 35%; top: 63%; animation-delay: -11s; }
+.nx-login__particles span:nth-child(5) { left: 47%; top: 27%; animation-delay: -4s; }
+.nx-login__particles span:nth-child(6) { left: 56%; top: 84%; animation-delay: -9s; }
+.nx-login__particles span:nth-child(7) { left: 64%; top: 15%; animation-delay: -6s; }
+.nx-login__particles span:nth-child(8) { left: 72%; top: 66%; animation-delay: -12s; }
+.nx-login__particles span:nth-child(9) { left: 83%; top: 32%; animation-delay: -3s; }
+.nx-login__particles span:nth-child(10) { left: 91%; top: 79%; animation-delay: -7s; }
+.nx-login__particles span:nth-child(11) { left: 21%; top: 45%; animation-delay: -10s; }
+.nx-login__particles span:nth-child(12) { left: 42%; top: 91%; animation-delay: -1s; }
+.nx-login__particles span:nth-child(13) { left: 59%; top: 48%; animation-delay: -13s; }
+.nx-login__particles span:nth-child(14) { left: 77%; top: 8%; animation-delay: -5s; }
+.nx-login__particles span:nth-child(15) { left: 88%; top: 53%; animation-delay: -9s; }
+.nx-login__particles span:nth-child(16) { left: 4%; top: 92%; animation-delay: -4s; }
+
+.nx-login__story {
+    position: relative;
+    overflow: hidden;
+}
+
+.nx-login__story::after {
+    content: '';
+    position: absolute;
+    right: -130px;
+    bottom: -150px;
+    width: 340px;
+    height: 340px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, rgba(137, 101, 241, 0.18), transparent 68%);
+    filter: blur(8px);
+    pointer-events: none;
+    animation: nx-story-glow 10s ease-in-out infinite;
+}
+
+.nx-signal-map {
+    position: absolute;
+    right: 5%;
+    top: 23%;
+    width: 250px;
+    height: 250px;
+    pointer-events: none;
+    opacity: 0.32;
+}
+
+.nx-signal-map__orbit,
+.nx-signal-map__node {
+    position: absolute;
+    border-radius: 50%;
+}
+
+.nx-signal-map__orbit {
+    inset: 0;
+    border: 1px solid rgba(111, 82, 229, 0.2);
+    animation: nx-orbit-spin 20s linear infinite;
+}
+
+.nx-signal-map__orbit--two {
+    inset: 42px;
+    border-style: dashed;
+    animation-duration: 13s;
+    animation-direction: reverse;
+}
+
+.nx-signal-map__node {
+    width: 10px;
+    height: 10px;
+    background: #7255e5;
+    box-shadow:
+        0 0 0 7px rgba(114, 85, 229, 0.11),
+        0 0 22px rgba(114, 85, 229, 0.55);
+}
+
+.nx-signal-map__node--one { top: 12px; left: 116px; }
+.nx-signal-map__node--two { right: 25px; bottom: 53px; }
+.nx-signal-map__node--three { left: 26px; bottom: 58px; }
+
+.nx-story-item {
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.nx-story-item__glow {
+    position: absolute;
+    z-index: -1;
+    inset: auto -45px -65px auto;
+    width: 115px;
+    height: 115px;
+    border-radius: 50%;
+    background: rgba(122, 85, 233, 0.15);
+    filter: blur(18px);
+    transform: scale(0.5);
+    opacity: 0;
+    transition:
+        opacity 220ms ease,
+        transform 220ms ease;
+}
+
+.nx-story-item:hover .nx-story-item__glow {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.nx-auth-card {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.nx-auth-card__spotlight {
+    position: absolute;
+    z-index: -1;
+    width: 260px;
+    height: 260px;
+    top: -170px;
+    right: -80px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, rgba(132, 96, 239, 0.2), transparent 70%);
+    animation: nx-card-spotlight 9s ease-in-out infinite;
+}
+
+.nx-form__submit {
+    background-size: 200% 100%;
+    animation: nx-button-gradient 5s ease infinite;
+}
+
+.nx-form__submit:hover {
+    box-shadow:
+        0 22px 46px rgba(86, 55, 202, 0.35),
+        0 0 0 5px rgba(111, 82, 229, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+@keyframes nx-gradient-drift {
+    0% {
+        transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1);
+    }
+
+    50% {
+        transform: translate3d(4%, 2%, 0) rotate(8deg) scale(1.06);
+    }
+
+    100% {
+        transform: translate3d(-1%, 5%, 0) rotate(-5deg) scale(1.02);
+    }
+}
+
+@keyframes nx-mesh-drift {
+    to {
+        background-position: 88px 44px, 44px 88px;
+    }
+}
+
+@keyframes nx-beam-sweep {
+    0%,
+    15% {
+        transform: translateX(-30%) rotate(17deg);
+        opacity: 0;
+    }
+
+    42% {
+        opacity: 0.75;
+    }
+
+    72%,
+    100% {
+        transform: translateX(230%) rotate(17deg);
+        opacity: 0;
+    }
+}
+
+@keyframes nx-particle-float {
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0) scale(0.75);
+        opacity: 0.18;
+    }
+
+    50% {
+        transform: translate3d(18px, -34px, 0) scale(1.25);
+        opacity: 0.75;
+    }
+}
+
+@keyframes nx-story-glow {
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    50% {
+        transform: translate3d(-35px, -25px, 0) scale(1.12);
+    }
+}
+
+@keyframes nx-orbit-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes nx-card-spotlight {
+    0%,
+    100% {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    50% {
+        transform: translate3d(-45px, 40px, 0) scale(1.18);
+    }
+}
+
+@keyframes nx-button-gradient {
+    0%,
+    100% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+@media (max-width: 1180px) {
+    .nx-signal-map {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nx-login__gradient-flow,
+    .nx-login__mesh,
+    .nx-login__beam,
+    .nx-login__particles span,
+    .nx-login__story::after,
+    .nx-signal-map__orbit,
+    .nx-auth-card__spotlight,
+    .nx-form__submit {
+        animation: none !important;
+    }
+}
+
+/* ========================================================================== */
+/* Cursor-following signal pixels                                             */
+/* ========================================================================== */
+
+/**
+ * Coordinates are updated from LoginPage.jsx.
+ *
+ * This layer stays behind the interface, so it cannot cover text, fields,
+ * cards, or buttons.
+ */
+.nx-login {
+    --nx-pointer-x: 50%;
+    --nx-pointer-y: 50%;
+    --nx-pointer-visible: 0;
+}
+
+/**
+ * Keeps all interface content above the decorative pixel layer.
+ */
+.nx-login__experience {
+    position: relative;
+    z-index: 2;
+}
+
+/**
+ * Full-page background layer that follows the pointer.
+ */
+.nx-login__cursor-pixels {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: var(--nx-pointer-visible);
+    transition: opacity 220ms ease;
+}
+
+/**
+ * Creates the small diamond-shaped signal pixels shown in the reference.
+ * The radial mask limits them to a soft area around the pointer.
+ */
+.nx-login__cursor-pixels::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+
+    /*
+     * Small circular dots like the reference image.
+     * The dots stay soft and lightweight in the background.
+     */
+    background-image:
+        radial-gradient(
+            circle,
+            rgba(105, 79, 210, 0.72) 0 2.2px,
+            transparent 2.8px
+        );
+    background-size: 28px 28px;
+    background-position:
+        calc(var(--nx-pointer-x) - 14px)
+        calc(var(--nx-pointer-y) - 14px);
+    filter: drop-shadow(0 0 3px rgba(99, 72, 195, 0.16));
+    opacity: 0.68;
+
+    /*
+     * Reveal the dots only around the pointer.
+     * The fade keeps the effect blended into the page background.
+     */
+    mask-image:
+        radial-gradient(
+            circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
+            #000 0%,
+            rgba(0, 0, 0, 0.96) 24%,
+            rgba(0, 0, 0, 0.55) 56%,
+            rgba(0, 0, 0, 0.12) 80%,
+            transparent 100%
+        );
+    -webkit-mask-image:
+        radial-gradient(
+            circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
+            #000 0%,
+            rgba(0, 0, 0, 0.96) 24%,
+            rgba(0, 0, 0, 0.55) 56%,
+            rgba(0, 0, 0, 0.12) 80%,
+            transparent 100%
+        );
+}
+
+/**
+ * Adds a subtle dark-violet glow behind the pixels without changing the
+ * existing page palette.
+ */
+.nx-login__cursor-pixels::after {
+    content: '';
+    position: absolute;
+    width: 330px;
+    height: 330px;
+    left: var(--nx-pointer-x);
+    top: var(--nx-pointer-y);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background:
+        radial-gradient(
+            circle,
+            rgba(75, 42, 151, 0.055) 0%,
+            rgba(104, 65, 204, 0.03) 35%,
+            transparent 72%
+        );
+    filter: blur(10px);
+    animation: nx-cursor-signal-breathe 2.8s ease-in-out infinite;
+}
+
+@keyframes nx-cursor-signal-breathe {
+    0%,
+    100% {
+        transform: translate(-50%, -50%) scale(0.96);
+        opacity: 0.72;
+    }
+
+    50% {
+        transform: translate(-50%, -50%) scale(1.06);
+        opacity: 1;
+    }
+}
+
+/**
+ * Hide only on devices that do not have a precise hovering pointer.
+ * Resizing a desktop browser no longer disables the effect.
+ */
+@media (hover: none), (pointer: coarse) {
+    .nx-login__cursor-pixels {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nx-login__cursor-pixels::after {
+        animation: none;
+    }
+}
+
+/* ========================================================================== */
+/* Home-page visual identity alignment                                        */
+/* ========================================================================== */
+
+/**
+ * Keeps the login page aligned with the public Nexora home page.
+ * The shared identity uses Inter typography, violet-to-blue gradients,
+ * soft lavender surfaces, and the same compact brand treatment.
+ */
+.nx-login {
+    --nx-ink: #201b35;
+    --nx-muted: #746e86;
+    --nx-soft-muted: #9a94aa;
+    --nx-violet: #7357df;
+    --nx-violet-dark: #5940c5;
+    --nx-purple-light: #a58cff;
+    --nx-home-blue: #62a9dd;
+    --nx-home-lavender: #f5f1ff;
+    --nx-line: rgba(112, 88, 190, 0.13);
+    font-family: 'Inter', Arial, sans-serif;
+    background:
+        radial-gradient(circle at 14% 22%, rgba(134, 105, 232, 0.10), transparent 31%),
+        radial-gradient(circle at 88% 18%, rgba(98, 169, 221, 0.12), transparent 30%),
+        radial-gradient(circle at 82% 88%, rgba(205, 143, 238, 0.10), transparent 28%),
+        linear-gradient(135deg, #fcfbff 0%, #f8f5ff 52%, #f8fcff 100%);
+}
+
+.nx-login__gradient-flow {
+    background:
+        radial-gradient(circle at 18% 30%, rgba(115, 87, 223, 0.16), transparent 25%),
+        radial-gradient(circle at 72% 18%, rgba(98, 169, 221, 0.14), transparent 24%),
+        radial-gradient(circle at 82% 78%, rgba(196, 119, 232, 0.11), transparent 27%),
+        radial-gradient(circle at 40% 84%, rgba(165, 140, 255, 0.10), transparent 24%);
+    opacity: 0.5;
+    filter: blur(36px) saturate(106%);
+}
+
+.nx-brand__symbol {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #7557df 0%, #6654df 52%, #62a9dd 100%);
+    box-shadow:
+        0 13px 28px rgba(99, 75, 199, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.nx-brand__copy strong {
+    color: #211c34;
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+}
+
+.nx-brand__copy small {
+    color: #7c768c;
+    font-size: 0.74rem;
+    font-weight: 500;
+}
+
+.nx-kicker,
+.nx-auth-card__topline > span:first-child {
+    color: #6950cf;
+}
+
+.nx-kicker {
+    border-color: rgba(112, 86, 216, 0.16);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.nx-login__story h1 {
+    color: #211c34;
+    font-family: 'Inter', Arial, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.066em;
+}
+
+.nx-login__story h1 span {
+    background: linear-gradient(100deg, #7357df 5%, #684fd8 47%, #62a9dd 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+.nx-login__lead,
+.nx-auth-card__heading p {
+    color: #746e86;
+}
+
+.nx-story-item__icon {
+    color: #6e53d8;
+    background: linear-gradient(145deg, rgba(117, 87, 223, 0.12), rgba(98, 169, 221, 0.13));
+}
+
+.nx-story-item:nth-child(2) .nx-story-item__icon {
+    color: #4f91c9;
+    background: rgba(98, 169, 221, 0.14);
+}
+
+.nx-story-item:nth-child(3) .nx-story-item__icon {
+    color: #9a5ed1;
+    background: rgba(190, 116, 225, 0.12);
+}
+
+.nx-auth-card {
+    border-color: rgba(112, 88, 190, 0.11);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow:
+        0 30px 75px rgba(73, 54, 135, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.nx-auth-card__heading h2 {
+    color: #211c34;
+    font-family: 'Inter', Arial, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.055em;
+}
+
+.nx-field__control:focus-within {
+    border-color: rgba(115, 87, 223, 0.58);
+    box-shadow:
+        0 0 0 4px rgba(115, 87, 223, 0.08),
+        0 16px 34px rgba(65, 47, 130, 0.07);
+}
+
+.nx-form__submit {
+    background: linear-gradient(100deg, #7658e7 0%, #6b50dc 48%, #62a9dd 100%);
+    background-size: 200% 100%;
+    box-shadow:
+        0 17px 34px rgba(89, 70, 190, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.nx-form__submit:hover {
+    box-shadow:
+        0 21px 43px rgba(89, 70, 190, 0.29),
+        0 0 0 5px rgba(98, 169, 221, 0.07),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.nx-check input:checked + .nx-check__box {
+    border-color: #7357df;
+    background: linear-gradient(135deg, #7557df, #62a9dd);
+}
+
+.nx-login__cursor-pixels::before {
+    background-image:
+        radial-gradient(
+            circle,
+            rgba(105, 79, 210, 0.66) 0 2px,
+            transparent 2.7px
+        );
+    background-size: 28px 28px;
+    filter: drop-shadow(0 0 4px rgba(98, 169, 221, 0.18));
+    opacity: 0.75;
+}
+
+/* ========================================================================== */
+/* Primary button aligned with the Home page                                  */
+/* ========================================================================== */
+
+/**
+ * Matches the compact violet-to-blue "Get Started" identity used on Home.
+ * This override changes only the login submit button.
+ */
+.nx-form__submit {
+    background:
+        linear-gradient(
+            135deg,
+            #7657df 0%,
+            #6c5bdc 52%,
+            #68a9dd 100%
+        );
+    background-size: 100% 100%;
+    box-shadow:
+        0 14px 30px rgba(93, 72, 194, 0.22),
+        0 7px 20px rgba(104, 169, 221, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    transition:
+        transform 180ms ease,
+        box-shadow 180ms ease,
+        filter 180ms ease;
+}
+
+.nx-form__submit:hover:not(:disabled) {
+    background:
+        linear-gradient(
+            135deg,
+            #6e50d5 0%,
+            #6250d2 52%,
+            #5d9fd4 100%
+        );
+    transform: translateY(-2px);
+    filter: saturate(1.04);
+    box-shadow:
+        0 18px 36px rgba(93, 72, 194, 0.25),
+        0 9px 24px rgba(104, 169, 221, 0.18),
+        0 0 0 4px rgba(105, 137, 218, 0.07),
+        inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.nx-form__submit:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    box-shadow:
+        0 10px 22px rgba(93, 72, 194, 0.2),
+        0 5px 14px rgba(104, 169, 221, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
