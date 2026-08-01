@@ -1,6 +1,8 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,7 +13,10 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import type { Cache } from 'cache-manager';
+
 import { PrismaService } from '../../../prisma/prisma.service';
+import { userCacheKeys } from '../../../users/cache/user-cache.keys';
 
 import { UpsertIdeaPublicationDto } from '../dto/upsert-idea-publication.dto';
 
@@ -37,7 +42,10 @@ import { UpsertIdeaPublicationDto } from '../dto/upsert-idea-publication.dto';
  */
 @Injectable()
 export class IdeaPublicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   /**
    * Creates or updates the publication snapshot of a user-owned idea.
@@ -223,7 +231,7 @@ export class IdeaPublicationService {
           audiences: true,
         },
       });
-    });
+    }, { maxWait: 10_000, timeout: 30_000 });;
   }
 
   /**
@@ -276,7 +284,7 @@ export class IdeaPublicationService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedPublication = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.ideaPublication.update({
         where: {
           id: publication.id,
@@ -306,6 +314,9 @@ export class IdeaPublicationService {
 
       return updated;
     });
+
+    await this.cacheManager.del(userCacheKeys.summary(userId));
+    return updatedPublication;
   }
 
   /**
@@ -330,7 +341,7 @@ export class IdeaPublicationService {
       return publication;
     }
 
-    return this.prisma.ideaPublication.update({
+    const archivedPublication = await this.prisma.ideaPublication.update({
       where: {
         id: publication.id,
       },
@@ -339,6 +350,9 @@ export class IdeaPublicationService {
         archivedAt: new Date(),
       },
     });
+
+    await this.cacheManager.del(userCacheKeys.summary(userId));
+    return archivedPublication;
   }
 
   /**

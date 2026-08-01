@@ -83,6 +83,7 @@ export class IdeaPublicationQueryService {
         {
           status: IdeaPublicationStatus.PUBLISHED,
           isHidden: false,
+          publisherId: { not: userId },
         },
         query,
       );
@@ -92,6 +93,7 @@ export class IdeaPublicationQueryService {
       {
         status: IdeaPublicationStatus.PUBLISHED,
         isHidden: false,
+        publisherId: { not: userId },
         OR: [
           {
             visibility: IdeaPublicationVisibility.PUBLIC,

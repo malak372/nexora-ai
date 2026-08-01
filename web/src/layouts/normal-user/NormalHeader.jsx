@@ -15,9 +15,10 @@ import {
   Lightbulb,
   LogOut,
   Menu,
-  Search,
   Settings,
   SlidersHorizontal,
+  Search,
+  ShieldAlert,
   Sparkles,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -46,6 +47,7 @@ export default function NormalHeader({ onOpenMenu }) {
   const menuRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(() => getStoredUser() ?? {});
+  const [headerSearch, setHeaderSearch] = useState('');
 
   const displayName = user.fullName || user.name || 'Nexora user';
   const accessLabel = user.accountStatus === 'PREMIUM' ? 'Premium access' : 'Normal access';
@@ -119,20 +121,24 @@ export default function NormalHeader({ onOpenMenu }) {
         </nav>
 
         <div className="normal-header__tools">
-          <label className="normal-header__search">
-            <Search size={17} />
+          <form
+            className="normal-header__search"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = headerSearch.trim();
+              navigate(value ? `/normal/ideas?search=${encodeURIComponent(value)}` : '/normal/ideas');
+            }}
+          >
+            <Search size={17} aria-hidden="true" />
             <input
-              aria-label="Search ideas"
+              value={headerSearch}
+              onChange={(event) => setHeaderSearch(event.target.value)}
               placeholder="Search ideas"
-              onKeyDown={(event) => {
-                const value = event.currentTarget.value.trim();
-                if (event.key === 'Enter' && value) {
-                  navigate(`/normal/ideas?search=${encodeURIComponent(value)}`);
-                }
-              }}
+              aria-label="Search your ideas"
             />
             <kbd>↵</kbd>
-          </label>
+          </form>
 
           <motion.button
             type="button"
@@ -191,6 +197,9 @@ export default function NormalHeader({ onOpenMenu }) {
                     </span>
                     <div><b>{displayName}</b><small>{user.email || 'Manage your Nexora experience'}</small></div>
                   </div>
+                  <button type="button" onClick={() => navigateFromMenu('/normal/compliance')}>
+                    <ShieldAlert size={16} /><span><b>Complaints</b><small>Cases and admin replies</small></span>
+                  </button>
                   <button type="button" onClick={() => navigateFromMenu('/normal/preferences')}>
                     <SlidersHorizontal size={16} /><span><b>Preferences</b><small>Discovery defaults</small></span>
                   </button>

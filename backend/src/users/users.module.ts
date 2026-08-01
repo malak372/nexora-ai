@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit-logs/audit-logs.module';
+import { MailModule } from '../mail/mail.module';
 
 import { UserProfileController } from './profile/profile.controller';
 import { UserDashboardController } from './dashboard/dashboard.controller';
@@ -48,7 +49,7 @@ import { UserPreferencesService } from './preferences/user-preferences.service';
  * @author Eman
  */
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [PrismaModule, AuditModule, MailModule],
   controllers: [
     UserProfileController,
     UserDashboardController,

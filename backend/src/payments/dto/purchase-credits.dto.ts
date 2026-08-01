@@ -45,6 +45,7 @@ export class PurchaseCreditsDto {
    */
   @IsUrl({
     require_protocol: true,
+    require_tld: false,
   })
   successUrl!: string;
 
@@ -53,6 +54,7 @@ export class PurchaseCreditsDto {
    */
   @IsUrl({
     require_protocol: true,
+    require_tld: false,
   })
   cancelUrl!: string;
 }

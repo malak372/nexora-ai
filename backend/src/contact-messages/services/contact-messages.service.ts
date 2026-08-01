@@ -68,45 +68,42 @@ export class ContactMessagesService {
   async createContactMessage(dto: CreateContactMessageDto, userId?: string) {
     const sender = await this.resolveSender(dto, userId);
 
-    const contactMessage = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.contactMessage.create({
-        data: {
-          fullName: sender.fullName,
-          email: sender.email,
-          subject: dto.subject,
-          message: dto.message,
-          userId: sender.userId,
-          status: ContactMessageStatus.NEW,
-        },
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          subject: true,
-          message: true,
-          status: true,
-          createdAt: true,
-        },
-      });
-
-      if (sender.userId) {
-        await this.auditService.createLog(
-          {
-            actorId: sender.userId,
-            action: AuditAction.USER_CREATE_CONTACT_MESSAGE,
-            targetType: AuditTargetType.CONTACT_MESSAGE,
-            targetId: created.id,
-            newValue: {
-              subject: created.subject,
-              status: created.status,
-            },
-          },
-          tx,
-        );
-      }
-
-      return created;
+    const contactMessage = await this.prisma.contactMessage.create({
+      data: {
+        fullName: sender.fullName,
+        email: sender.email,
+        subject: dto.subject,
+        message: dto.message,
+        userId: sender.userId,
+        status: ContactMessageStatus.NEW,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        subject: true,
+        message: true,
+        status: true,
+        createdAt: true,
+      },
     });
+
+    if (sender.userId) {
+      try {
+        await this.auditService.createLog({
+          actorId: sender.userId,
+          action: AuditAction.USER_CREATE_CONTACT_MESSAGE,
+          targetType: AuditTargetType.CONTACT_MESSAGE,
+          targetId: contactMessage.id,
+          newValue: {
+            subject: contactMessage.subject,
+            status: contactMessage.status,
+          },
+        });
+      } catch {
+        // Contact submission must not fail only because audit logging failed.
+      }
+    }
 
     return {
       message: 'Contact message submitted successfully',

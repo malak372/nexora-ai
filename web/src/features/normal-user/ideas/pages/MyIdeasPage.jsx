@@ -1,39 +1,262 @@
+/**
+ * Private idea library.
+ *
+ * Displays generated, unlocked, free, and accepted ideas in one unified
+ * library. Search, date filtering, pagination, deletion, and accepted-item
+ * normalization are handled inside this page.
+ *
+ * @author Malak
+ */
 import {
   ArrowLeft,
   ArrowRight,
+  CheckCircle2,
   Grid2X2,
-  ListFilter,
   RefreshCw,
   Search,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { getAcceptedPublications } from '../../accepted/api/acceptedPublicationsApi';
 import { deleteMyIdea, getMyIdeas } from '../api/userIdeasApi';
 import IdeaLibraryCard from '../components/IdeaLibraryCard';
 import '../styles/ideas.css';
 
 const PAGE_SIZE = 9;
-const ACTIVE_RUN_STATUSES = new Set(['QUEUED', 'RUNNING', 'RETRYING', 'PAUSED']);
+
+const ACTIVE_RUN_STATUSES = new Set([
+  'QUEUED',
+  'RUNNING',
+  'RETRYING',
+  'PAUSED',
+]);
 
 const FILTERS = [
-  { value: 'all', label: 'All ideas' },
-  { value: 'generating', label: 'Generating' },
+  { value: 'all', label: 'All' },
+  { value: 'core', label: 'Free' },
   { value: 'unlocked', label: 'Unlocked' },
-  { value: 'core', label: 'Core' },
+  {
+    value: 'accepted',
+    label: 'Accepted',
+    icon: CheckCircle2,
+  },
 ];
 
+/**
+ * Returns today's date using the user's local timezone.
+ *
+ * @returns {string} Local date formatted as YYYY-MM-DD.
+ */
+function getTodayInputValue() {
+  const now = new Date();
+  const localTime =
+    now.getTime() - now.getTimezoneOffset() * 60_000;
+
+  return new Date(localTime)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Converts a backend date value into a valid local Date object.
+ *
+ * @param {string | Date | null | undefined} value
+ * @returns {Date | null}
+ */
+function toLocalDateValue(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+/**
+ * Checks whether an item date is inside the selected inclusive range.
+ *
+ * @param {object} item
+ * @param {string} fromDate
+ * @param {string} toDate
+ * @returns {boolean}
+ */
+function matchesDateRange(item, fromDate, toDate) {
+  const itemDate = toLocalDateValue(
+    item?.acceptedAt ??
+      item?.createdAt ??
+      item?.publication?.publishedAt ??
+      item?.updatedAt,
+  );
+
+  if (!itemDate) return false;
+
+  const from = fromDate
+    ? new Date(`${fromDate}T00:00:00`)
+    : null;
+
+  const to = toDate
+    ? new Date(`${toDate}T23:59:59.999`)
+    : null;
+
+  return (
+    (!from || itemDate >= from) &&
+    (!to || itemDate <= to)
+  );
+}
+
+/**
+ * Loads every page returned by a paginated backend loader.
+ *
+ * This is used when client-side date filtering is required.
+ *
+ * @param {Function} loader
+ * @param {object} params
+ * @returns {Promise<object[]>}
+ */
+async function loadEveryPage(loader, params) {
+  const pageSize = 50;
+
+  const first = await loader({
+    ...params,
+    page: 1,
+    limit: pageSize,
+  });
+
+  const totalPages = Math.max(
+    1,
+    Number(first.pagination?.totalPages ?? 1),
+  );
+
+  const items = [...(first.items ?? [])];
+
+  for (
+    let nextPage = 2;
+    nextPage <= totalPages;
+    nextPage += 1
+  ) {
+    const next = await loader({
+      ...params,
+      page: nextPage,
+      limit: pageSize,
+    });
+
+    items.push(...(next.items ?? []));
+  }
+
+  return items;
+}
+
+/**
+ * Converts an accepted publication into the shape required by the shared
+ * IdeaLibraryCard component.
+ *
+ * @param {object} record
+ * @returns {object}
+ */
+function normalizeAcceptedRecord(record) {
+  const publication = record?.publication ?? {};
+  const sourceIdea =
+    publication?.idea ??
+    record?.idea ??
+    {};
+
+  return {
+    ...sourceIdea,
+
+    id:
+      record?.acceptanceId ??
+      record?.id ??
+      publication?.id,
+
+    title:
+      publication?.publicTitle ??
+      sourceIdea?.title ??
+      'Untitled accepted idea',
+
+    limitedAbstract:
+      publication?.publicAbstract ??
+      sourceIdea?.limitedAbstract ??
+      sourceIdea?.partialAbstract ??
+      sourceIdea?.problemStatement,
+
+    domain:
+      sourceIdea?.domain ??
+      publication?.domain ??
+      null,
+
+    createdAt:
+      record?.acceptedAt ??
+      publication?.publishedAt ??
+      publication?.createdAt ??
+      sourceIdea?.createdAt,
+
+    isUnlocked: Boolean(
+      record?.hasAdvancedAccess ??
+        sourceIdea?.isUnlocked,
+    ),
+
+    publication,
+    acceptance: record,
+    acceptedAt: record?.acceptedAt,
+
+    hasAdvancedAccess: Boolean(
+      record?.hasAdvancedAccess,
+    ),
+
+    __libraryKind: 'accepted',
+  };
+}
+
+/**
+ * Displays and manages the authenticated user's private idea library.
+ *
+ * @returns {JSX.Element}
+ */
 export default function MyIdeasPage() {
   const navigate = useNavigate();
-  const [items, setItems] = useState([]);
-  const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 });
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
+  const today = useMemo(
+    () => getTodayInputValue(),
+    [],
+  );
+
+  const [items, setItems] = useState([]);
+
+  const [pagination, setPagination] = useState({
+    page: 1,
+    total: 0,
+    totalPages: 1,
+  });
+
+  const [searchInput, setSearchInput] =
+    useState('');
+
+  const [search, setSearch] =
+    useState('');
+
+  const [filter, setFilter] =
+    useState('all');
+
+  const [fromDate, setFromDate] =
+    useState('');
+
+  const [toDate, setToDate] =
+    useState('');
+
+  const [page, setPage] =
+    useState(1);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
+
+  /**
+   * Builds backend query parameters for standard idea filters.
+   */
   const queryParams = useMemo(() => {
     const params = {
       page,
@@ -42,88 +265,386 @@ export default function MyIdeasPage() {
       sortOrder: 'desc',
     };
 
-    if (search) params.search = search;
-    if (filter === 'unlocked') params.isUnlocked = true;
-    if (filter === 'core') params.isUnlocked = false;
+    if (search) {
+      params.search = search;
+    }
+
+    if (filter === 'unlocked') {
+      params.isUnlocked = true;
+    }
+
+    if (filter === 'core') {
+      params.isUnlocked = false;
+    }
 
     return params;
   }, [filter, page, search]);
 
-  const loadIdeas = useCallback(async () => {
+  /**
+   * Loads ideas for the selected filter, date range, and page.
+   */
+  const loadIdeas = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError('');
 
     try {
-      const result = await getMyIdeas(queryParams);
-      const visibleItems = filter === 'generating'
-        ? result.items.filter((item) =>
-            ACTIVE_RUN_STATUSES.has(
-              String(item?.generationRun?.status ?? '').toUpperCase(),
+      const hasDateRange = Boolean(
+        fromDate || toDate,
+      );
+
+      if (filter === 'accepted') {
+        const acceptedParams = {
+          search: search || undefined,
+          sortBy: 'acceptedAt',
+          sortOrder: 'desc',
+        };
+
+        if (hasDateRange) {
+          const allAccepted = await loadEveryPage(
+            async (params) => {
+              const result =
+                await getAcceptedPublications(params);
+
+              return {
+                items: (result.items ?? []).map(
+                  normalizeAcceptedRecord,
+                ),
+                pagination: result.pagination,
+              };
+            },
+            acceptedParams,
+          );
+
+          const filtered = allAccepted.filter(
+            (item) =>
+              matchesDateRange(
+                item,
+                fromDate,
+                toDate,
+              ),
+          );
+
+          const start =
+            (page - 1) * PAGE_SIZE;
+
+          const pageItems =
+            filtered.slice(
+              start,
+              start + PAGE_SIZE,
+            );
+
+          setItems(pageItems);
+
+          setPagination({
+            page,
+            limit: PAGE_SIZE,
+            total: filtered.length,
+            totalPages: Math.max(
+              1,
+              Math.ceil(
+                filtered.length /
+                  PAGE_SIZE,
+              ),
             ),
-          )
-        : result.items;
+          });
+
+          return;
+        }
+
+        const acceptedResult =
+          await getAcceptedPublications({
+            ...acceptedParams,
+            page,
+            limit: PAGE_SIZE,
+          });
+
+        const acceptedItems =
+          (acceptedResult.items ?? []).map(
+            normalizeAcceptedRecord,
+          );
+
+        setItems(acceptedItems);
+
+        setPagination({
+          page:
+            acceptedResult.pagination?.page ??
+            page,
+
+          limit:
+            acceptedResult.pagination?.limit ??
+            PAGE_SIZE,
+
+          total:
+            acceptedResult.pagination?.total ??
+            acceptedItems.length,
+
+          totalPages:
+            acceptedResult.pagination
+              ?.totalPages ?? 1,
+        });
+
+        return;
+      }
+
+      if (hasDateRange) {
+        const baseParams = {
+          ...queryParams,
+          page: undefined,
+          limit: undefined,
+        };
+
+        const allIdeas =
+          await loadEveryPage(
+            (params) => getMyIdeas(params, { force }),
+            baseParams,
+          );
+
+        const statusFiltered =
+          filter === 'generating'
+            ? allIdeas.filter((item) =>
+                ACTIVE_RUN_STATUSES.has(
+                  String(
+                    item?.generationRun
+                      ?.status ?? '',
+                  ).toUpperCase(),
+                ),
+              )
+            : allIdeas;
+
+        const dateFiltered =
+          statusFiltered.filter((item) =>
+            matchesDateRange(
+              item,
+              fromDate,
+              toDate,
+            ),
+          );
+
+        const start =
+          (page - 1) * PAGE_SIZE;
+
+        setItems(
+          dateFiltered.slice(
+            start,
+            start + PAGE_SIZE,
+          ),
+        );
+
+        setPagination({
+          page,
+          limit: PAGE_SIZE,
+          total: dateFiltered.length,
+          totalPages: Math.max(
+            1,
+            Math.ceil(
+              dateFiltered.length /
+                PAGE_SIZE,
+            ),
+          ),
+        });
+
+        return;
+      }
+
+      const result =
+        await getMyIdeas(queryParams, { force });
+
+      const visibleItems =
+        filter === 'generating'
+          ? result.items.filter((item) =>
+              ACTIVE_RUN_STATUSES.has(
+                String(
+                  item?.generationRun
+                    ?.status ?? '',
+                ).toUpperCase(),
+              ),
+            )
+          : result.items;
 
       setItems(visibleItems);
+
       setPagination({
-        page: result.pagination?.page ?? page,
-        limit: result.pagination?.limit ?? PAGE_SIZE,
-        total: result.pagination?.total ?? visibleItems.length,
-        totalPages: result.pagination?.totalPages ?? 1,
+        page:
+          result.pagination?.page ??
+          page,
+
+        limit:
+          result.pagination?.limit ??
+          PAGE_SIZE,
+
+        total:
+          filter === 'generating'
+            ? visibleItems.length
+            : result.pagination?.total ??
+              visibleItems.length,
+
+        totalPages:
+          filter === 'generating'
+            ? 1
+            : result.pagination
+                ?.totalPages ?? 1,
       });
     } catch (requestError) {
-      setError(requestError.message);
+      setError(
+        requestError.message ||
+          'Unable to load ideas.',
+      );
     } finally {
       setLoading(false);
     }
-  }, [filter, page, queryParams]);
+  }, [
+    filter,
+    fromDate,
+    page,
+    queryParams,
+    search,
+    toDate,
+  ]);
 
   useEffect(() => {
-    loadIdeas();
+    void loadIdeas();
   }, [loadIdeas]);
 
+  /**
+   * Opens the correct destination based on the library item type and state.
+   *
+   * @param {object} idea
+   */
   function openIdea(idea) {
-    const runStatus = String(idea?.generationRun?.status ?? '').toUpperCase();
+    if (
+      idea?.__libraryKind ===
+      'accepted'
+    ) {
+      const publicationId =
+        idea?.publication?.id;
 
-    if (ACTIVE_RUN_STATUSES.has(runStatus) && idea?.generationRun?.id) {
-      navigate(`/normal/generation/${idea.generationRun.id}`);
+      if (publicationId) {
+        navigate(
+          `/normal/discover/${publicationId}`,
+        );
+      }
+
       return;
     }
 
-    navigate(`/normal/ideas/${idea.id}`);
+    const runStatus = String(
+      idea?.generationRun?.status ??
+        '',
+    ).toUpperCase();
+
+    if (
+      ACTIVE_RUN_STATUSES.has(
+        runStatus,
+      ) &&
+      idea?.generationRun?.id
+    ) {
+      navigate(
+        `/normal/generation/${idea.generationRun.id}`,
+      );
+
+      return;
+    }
+
+    navigate(
+      `/normal/ideas/${idea.id}`,
+    );
   }
 
+  /**
+   * Deletes a standard idea after user confirmation.
+   *
+   * Accepted records cannot be deleted from this page.
+   *
+   * @param {object} idea
+   */
   async function handleDelete(idea) {
-    const confirmed = window.confirm(
-      `Delete “${idea?.title || 'this idea'}”? It will be removed from your library.`,
-    );
+    if (
+      idea?.__libraryKind ===
+      'accepted'
+    ) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Delete “${
+          idea?.title ||
+          'this idea'
+        }”? It will be removed from your library.`,
+      );
 
     if (!confirmed) return;
 
     try {
       await deleteMyIdea(idea.id);
-      setItems((current) => current.filter((item) => item.id !== idea.id));
+
+      setItems((current) =>
+        current.filter(
+          (item) =>
+            item.id !== idea.id,
+        ),
+      );
+
       setPagination((current) => ({
         ...current,
-        total: Math.max(0, Number(current.total ?? 0) - 1),
+        total: Math.max(
+          0,
+          Number(
+            current.total ?? 0,
+          ) - 1,
+        ),
       }));
     } catch (requestError) {
-      setError(requestError.message);
+      setError(
+        requestError.message ||
+          'Unable to delete the idea.',
+      );
     }
   }
+
+  const isAcceptedView =
+    filter === 'accepted';
 
   return (
     <section className="ideas-page reveal-page">
       <header className="ideas-page__header">
         <div>
-          <span className="ideas-page__kicker">Private workspace</span>
+          <span className="ideas-page__kicker">
+            Private workspace
+          </span>
+
           <h1>My ideas</h1>
-          <p>Review, continue, and manage every idea you created.</p>
+
+          <p>
+            Review, continue, and
+            manage every idea you
+            created.
+          </p>
         </div>
 
-        <div className="ideas-page__count">
-          <Grid2X2 size={18} />
-          <strong>{pagination.total ?? items.length}</strong>
-          <span>ideas</span>
+        <div
+          className={`ideas-page__count${
+            isAcceptedView
+              ? ' ideas-page__count--accepted'
+              : ''
+          }`}
+        >
+          {isAcceptedView ? (
+            <CheckCircle2 size={18} />
+          ) : (
+            <Grid2X2 size={18} />
+          )}
+
+          <strong>
+            {pagination.total ??
+              items.length}
+          </strong>
+
+          <span>
+            {isAcceptedView
+              ? 'accepted'
+              : 'ideas'}
+          </span>
         </div>
       </header>
 
@@ -133,90 +654,333 @@ export default function MyIdeasPage() {
           onSubmit={(event) => {
             event.preventDefault();
             setPage(1);
-            setSearch(searchInput.trim());
+
+            setSearch(
+              searchInput.trim(),
+            );
           }}
         >
           <Search size={18} />
+
           <input
             value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
+            onChange={(event) =>
+              setSearchInput(
+                event.target.value,
+              )
+            }
             placeholder="Search by title, problem, or domain..."
           />
-          <button type="submit">Search</button>
+
+          <button type="submit">
+            Search
+          </button>
         </form>
 
-        <div className="ideas-filters" aria-label="Idea filters">
-          <ListFilter size={17} aria-hidden="true" />
-          {FILTERS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={filter === option.value ? 'is-active' : ''}
-              onClick={() => {
-                setFilter(option.value);
-                setPage(1);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div
+          className={`ideas-date-filter${
+            fromDate || toDate
+              ? ' has-value'
+              : ''
+          }`}
+          aria-label="Creation date range"
+        >
+          <div className="ideas-date-filter__heading">
+            <span>Date range</span>
+
+            {fromDate || toDate ? (
+              <button
+                className="ideas-date-filter__clear"
+                type="button"
+                aria-label="Clear selected dates"
+                title="Clear selected dates"
+                onClick={() => {
+                  setFromDate('');
+                  setToDate('');
+                  setPage(1);
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+
+          <div className="ideas-date-filter__fields">
+            <label>
+              <span>From</span>
+
+              <input
+                type="date"
+                value={fromDate}
+                max={toDate || today}
+                onChange={(event) => {
+                  const nextFrom =
+                    event.target.value;
+
+                  setFromDate(nextFrom);
+
+                  if (
+                    toDate &&
+                    nextFrom &&
+                    nextFrom > toDate
+                  ) {
+                    setToDate(nextFrom);
+                  }
+
+                  setPage(1);
+                }}
+              />
+            </label>
+
+            <label>
+              <span>To</span>
+
+              <input
+                type="date"
+                value={toDate}
+                min={
+                  fromDate ||
+                  undefined
+                }
+                max={today}
+                onChange={(event) => {
+                  const nextTo =
+                    event.target.value;
+
+                  setToDate(nextTo);
+
+                  if (
+                    fromDate &&
+                    nextTo &&
+                    nextTo < fromDate
+                  ) {
+                    setFromDate(nextTo);
+                  }
+
+                  setPage(1);
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div
+          className="ideas-filters"
+          aria-label="Idea filters"
+        >
+          {FILTERS.map((option) => {
+            const FilterIcon =
+              option.icon;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                className={`${
+                  filter ===
+                  option.value
+                    ? 'is-active'
+                    : ''
+                }${
+                  option.value ===
+                  'accepted'
+                    ? ' is-accepted-filter'
+                    : ''
+                }`}
+                onClick={() => {
+                  setFilter(
+                    option.value,
+                  );
+
+                  setPage(1);
+                }}
+              >
+                {FilterIcon ? (
+                  <FilterIcon
+                    size={14}
+                    aria-hidden="true"
+                  />
+                ) : null}
+
+                {option.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
+      {isAcceptedView &&
+      !loading &&
+      !error ? (
+        <div className="ideas-accepted-note">
+          <span>
+            <CheckCircle2
+              size={17}
+            />
+          </span>
+
+          <div>
+            <strong>
+              Accepted idea library
+            </strong>
+
+            <p>
+              These ideas were adopted
+              from Discover and are
+              ready for their next
+              publication or access
+              step.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
-        <div className="ideas-grid" aria-label="Loading ideas">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="idea-skeleton" />
+        <div
+          className="ideas-grid"
+          aria-label="Loading ideas"
+        >
+          {Array.from({
+            length: 6,
+          }).map((_, index) => (
+            <div
+              key={index}
+              className="idea-skeleton"
+            />
           ))}
         </div>
       ) : error ? (
         <div className="ideas-state ideas-state--error">
           <RefreshCw size={28} />
-          <h2>We could not load your ideas</h2>
+
+          <h2>
+            We could not load your
+            ideas
+          </h2>
+
           <p>{error}</p>
-          <button type="button" onClick={loadIdeas}>Try again</button>
+
+          <button
+            type="button"
+            onClick={() => loadIdeas({ force: true })}
+          >
+            Try again
+          </button>
         </div>
       ) : items.length === 0 ? (
-        <div className="ideas-state">
-          <Grid2X2 size={30} />
-          <h2>No ideas in this view</h2>
-          <p>Change the active filter or create a new idea from the Generate page.</p>
-          <button type="button" onClick={() => navigate('/normal/generate')}>
-            Go to Generate
+        <div
+          className={`ideas-state${
+            isAcceptedView
+              ? ' ideas-state--accepted'
+              : ''
+          }`}
+        >
+          {isAcceptedView ? (
+            <CheckCircle2 size={30} />
+          ) : (
+            <Grid2X2 size={30} />
+          )}
+
+          <h2>
+            {isAcceptedView
+              ? 'No accepted ideas yet'
+              : 'No ideas in this view'}
+          </h2>
+
+          <p>
+            {isAcceptedView
+              ? 'Open Discover, review an opportunity, then choose Accept & continue.'
+              : 'Change the active filter or create a new idea from the Generate page.'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                isAcceptedView
+                  ? '/normal/discover'
+                  : '/normal/generate',
+              )
+            }
+          >
+            {isAcceptedView
+              ? 'Open Discover'
+              : 'Go to Generate'}
           </button>
         </div>
       ) : (
         <div className="ideas-grid">
           {items.map((idea) => (
             <IdeaLibraryCard
-              key={idea.id}
+              key={`${
+                idea.__libraryKind ??
+                'idea'
+              }-${idea.id}`}
               idea={idea}
-              onOpen={() => openIdea(idea)}
-              onDelete={() => handleDelete(idea)}
+              onOpen={() =>
+                openIdea(idea)
+              }
+              onDelete={
+                idea.__libraryKind ===
+                'accepted'
+                  ? undefined
+                  : () =>
+                      handleDelete(
+                        idea,
+                      )
+              }
             />
           ))}
         </div>
       )}
 
-      {!loading && !error && pagination.totalPages > 1 && (
-        <nav className="ideas-pagination" aria-label="Ideas pagination">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((current) => current - 1)}
+      {!loading &&
+        !error &&
+        pagination.totalPages >
+          1 && (
+          <nav
+            className="ideas-pagination"
+            aria-label="Ideas pagination"
           >
-            <ArrowLeft size={17} /> Previous
-          </button>
-          <span>Page <strong>{page}</strong> of {pagination.totalPages}</span>
-          <button
-            type="button"
-            disabled={page >= pagination.totalPages}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            Next <ArrowRight size={17} />
-          </button>
-        </nav>
-      )}
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() =>
+                setPage(
+                  (current) =>
+                    current - 1,
+                )
+              }
+            >
+              <ArrowLeft size={17} />
+              Previous
+            </button>
+
+            <span>
+              Page{' '}
+              <strong>{page}</strong>{' '}
+              of{' '}
+              {pagination.totalPages}
+            </span>
+
+            <button
+              type="button"
+              disabled={
+                page >=
+                pagination.totalPages
+              }
+              onClick={() =>
+                setPage(
+                  (current) =>
+                    current + 1,
+                )
+              }
+            >
+              Next
+              <ArrowRight size={17} />
+            </button>
+          </nav>
+        )}
     </section>
   );
 }

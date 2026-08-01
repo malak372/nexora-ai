@@ -16,6 +16,11 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
 const DEFAULT_PAGE_SIZE = 9;
 
@@ -103,10 +108,21 @@ function normalizeIdeasListResponse(response, params = {}) {
 /**
  * Retrieves ideas owned by the currently authenticated user.
  */
-export async function getMyIdeas(params = {}) {
+export async function getMyIdeas(params = {}, options = {}) {
+  const cacheKey = createRequestCacheKey('my-ideas', params);
+
   try {
-    const response = await normalUserApi.get('/users/ideas', { params });
-    return normalizeIdeasListResponse(response, params);
+    return await cachedRequest(
+      cacheKey,
+      async () => {
+        const response = await normalUserApi.get('/users/ideas', { params });
+        return normalizeIdeasListResponse(response, params);
+      },
+      {
+        ttlMs: 3 * 60 * 1000,
+        force: Boolean(options.force),
+      },
+    );
   } catch (error) {
     throw new Error(
       getApiErrorMessage(error, 'Your ideas could not be loaded.'),
@@ -120,6 +136,8 @@ export async function getMyIdeas(params = {}) {
 export async function deleteMyIdea(ideaId) {
   try {
     const response = await normalUserApi.delete(`/users/ideas/${ideaId}`);
+    invalidateRequestCache('my-ideas:');
+    invalidateRequestCache('dashboard-summary:');
     return response?.data?.data ?? response?.data;
   } catch (error) {
     throw new Error(

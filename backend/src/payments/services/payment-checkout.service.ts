@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-
 import {
   AccountStatus,
   IdeaGenerationType,
@@ -457,11 +456,12 @@ export class PaymentCheckoutService {
       readonly creditsQuantity?: number;
     },
   ): Promise<PaymentCheckoutResult> {
-    const gateway = this.paymentGatewayFactory.getGateway(payment.providerKey);
     const sessionInput = this.buildPaymentSessionInput(payment, options);
 
     try {
-      const session = await gateway.createPaymentSession(sessionInput);
+      const session = await this.paymentGatewayFactory
+        .getGateway(payment.providerKey)
+        .createPaymentSession(sessionInput);
 
       this.validateSessionResult(payment, session);
       await this.storeCheckoutSession(payment.id, session);
@@ -498,6 +498,7 @@ export class PaymentCheckoutService {
       );
     }
   }
+
 
   /**
    * Builds provider-independent checkout-session input.

@@ -5,3 +5,4 @@ dist/
 prisma/seed.ts
 *.zip
 backend/.gitignore
+backend/uploads/
