@@ -10,6 +10,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { PromptsModule } from '../../prompts/prompts.module';
 
 import { GuestIdeaGenerationController } from './controllers/guest-idea-generation.controller';
+import { GuestIdeaGenerationRunsController } from './controllers/guest-idea-generation-runs.controller';
 import { IdeaGenerationGateway } from './gateways/idea-generation.gateway';
 import { IdeaGenerationRunsController } from './controllers/idea-generation-runs.controller';
 import { UserIdeaGenerationController } from './controllers/user-idea-generation.controller';
@@ -90,6 +91,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
   ],
   controllers: [
     GuestIdeaGenerationController,
+    GuestIdeaGenerationRunsController,
     UserIdeaGenerationController,
     IdeaGenerationRunsController,
   ],
@@ -237,4 +239,4 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaGenerationModelSelectorService,
   ],
 })
-export class IdeaGenerationModule {}
+export class IdeaGenerationModule { }

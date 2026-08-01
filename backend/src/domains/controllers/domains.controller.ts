@@ -1,17 +1,12 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
-
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Controller, Get } from '@nestjs/common';
 
 import { DomainsService } from '../domains.service';
 
 /**
- * Provides user-facing domain-discovery endpoints.
+ * Provides public domain-discovery endpoints.
  *
- * These endpoints expose only active domains that may be selected
- * during data collection and idea generation.
+ * These endpoints expose only active domains that may be displayed
+ * or selected during public idea discovery.
  *
  * Administrative fields, inactive domains, reports, and modification
  * operations are intentionally not exposed here.
@@ -22,13 +17,14 @@ import { DomainsService } from '../domains.service';
  * @author Eman
  */
 @Controller('domains')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.USER, UserRole.ADMIN)
 export class DomainsController {
-  constructor(private readonly domainsService: DomainsService) {}
+  constructor(private readonly domainsService: DomainsService) { }
 
   /**
    * Returns active domains available for idea generation.
+   *
+   * This endpoint is intentionally public so guests can view
+   * the available domains from the landing page.
    *
    * Endpoint:
    * GET /domains/available

@@ -91,11 +91,17 @@ export class MailService {
    */
   private readonly transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: this.smtpPort,
+    port: this.smtpPort || 587,
     secure: this.smtpPort === 465,
+    requireTLS: this.smtpPort !== 465,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: process.env.SMTP_USER?.trim(),
+      pass: process.env.SMTP_PASS?.replace(/\s+/g, ''),
+    },
+    tls: {
+      minVersion: 'TLSv1.2',
+      rejectUnauthorized:
+        process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
     },
   });
 
@@ -133,7 +139,7 @@ export class MailService {
         errorStack,
       );
 
-      throw new InternalServerErrorException('Failed to send email.');
+      throw new InternalServerErrorException(errorMessage);
     }
   }
 
