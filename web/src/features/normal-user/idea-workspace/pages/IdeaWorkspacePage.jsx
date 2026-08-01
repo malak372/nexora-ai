@@ -1,7 +1,7 @@
 import { ArrowLeft, BriefcaseBusiness, CalendarDays, CheckCircle2, Globe2, LockKeyhole, Rocket, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getIdeaOutputs, getIdeaWorkspace } from '../api/ideaWorkspaceApi';
+import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 import '../styles/idea-workspace.css';
 
 const text = (value) => Array.isArray(value) ? value.join('\n') : value || 'Not available yet.';
@@ -19,9 +19,12 @@ export default function IdeaWorkspacePage() {
         let mounted = true;
         (async () => {
             try {
-                const loadedIdea = await getIdeaWorkspace(ideaId);
-                const loadedOutputs = loadedIdea?.isUnlocked ? await getIdeaOutputs(ideaId) : [];
-                if (mounted) { setIdea(loadedIdea); setOutputs(loadedOutputs); }
+                const { idea: loadedIdea, outputs: loadedOutputs } =
+                    await getIdeaWorkspaceBundle(ideaId);
+                if (mounted) {
+                    setIdea(loadedIdea);
+                    setOutputs(loadedIdea?.isUnlocked ? loadedOutputs : []);
+                }
             } catch (requestError) {
                 if (mounted) setError(requestError.message);
             } finally { if (mounted) setLoading(false); }

@@ -81,6 +81,7 @@ model User {
   verificationEmailSentAt     DateTime?                   @map("verification_email_sent_at")
   premiumActivatedAt          DateTime?                   @map("premium_activated_at")
   alerts                      Alert[]
+  avatarUrl                   String?                     @map("avatar_url")
   auditLogs                   AuditLog[]                  @relation("AuditLogs")
   authenticationLogs          AuthenticationLog[]
   chatSessions                ChatSession[]

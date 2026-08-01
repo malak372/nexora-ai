@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { warmIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 
 export default function LatestIdeaCard({ idea }) {
   const navigate = useNavigate();
@@ -89,6 +90,8 @@ export default function LatestIdeaCard({ idea }) {
           <motion.button
             type="button"
             className="normal-work-card__open"
+            onMouseEnter={() => warmIdeaWorkspace(idea.id)}
+            onFocus={() => warmIdeaWorkspace(idea.id)}
             onClick={() => navigate(`/normal/ideas/${idea.id}`)}
             whileHover={{ x: 2 }}
             whileTap={{ scale: 0.98 }}

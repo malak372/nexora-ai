@@ -25,10 +25,11 @@ import { useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '../../shared/api/normalUserApi';
 import { getActiveGenerationRun } from '../../idea-generation/api/ideaGenerationApi';
 import { clearActiveGenerationRunId, saveActiveGenerationRunId } from '../../idea-generation/store/activeGenerationRun.storage';
-import { getNormalUserSummary } from '../api/dashboardApi';
+import { getNormalUserSummary, getPublishedIdeasCount } from '../api/dashboardApi';
 import IdeaLauncher from '../components/IdeaLauncher';
 import LatestIdeaCard from '../components/LatestIdeaCard';
 import MetricCard from '../components/MetricCard';
+import DashboardContactSection from '../components/DashboardContactSection';
 import '../normal-dashboard.css';
 
 const getFirstName = (fullName) => fullName?.trim().split(/\s+/)[0] || 'there';
@@ -52,11 +53,16 @@ export default function NormalDashboardPage() {
     setIsLoading(true);
     setError('');
     try {
-      const [summaryResult, activeRunResult] = await Promise.all([
+      const [summaryResult, activeRunResult, publishedCount] = await Promise.all([
         getNormalUserSummary(),
         getActiveGenerationRun().catch(() => null),
+        getPublishedIdeasCount().catch(() => null),
       ]);
-      setSummary(summaryResult);
+      setSummary({
+        ...summaryResult,
+        publishedIdeasCount:
+          publishedCount ?? summaryResult?.publishedIdeasCount ?? 0,
+      });
       setActiveRun(activeRunResult);
       if (activeRunResult?.id) saveActiveGenerationRunId(activeRunResult.id);
       else clearActiveGenerationRunId();
@@ -185,6 +191,10 @@ export default function NormalDashboardPage() {
         <div className="normal-section-heading"><div><span className="normal-eyebrow">Continue building</span><h2>Your latest workspace</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>View all ideas <ArrowRight size={17} /></button></div>
         <LatestIdeaCard idea={summary?.latestIdea ?? null} />
       </motion.section>
+
+      <motion.div {...reveal}>
+        <DashboardContactSection />
+      </motion.div>
 
     </div>
   );

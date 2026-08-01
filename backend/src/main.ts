@@ -7,6 +7,10 @@ import cookieParser from 'cookie-parser';
 
 import type { Express } from 'express';
 
+import { join } from 'node:path';
+
+import { NestExpressApplication } from '@nestjs/platform-express';
+
 import { AppModule } from './app.module';
 
 /**
@@ -32,9 +36,7 @@ async function bootstrap(): Promise<void> {
    * This is required by payment providers such as Stripe
    * when validating webhook signatures.
    */
-  const app = await NestFactory.create(AppModule, {
-    rawBody: true,
-  });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const configService = app.get(ConfigService);
 
@@ -200,6 +202,9 @@ async function bootstrap(): Promise<void> {
    * Reads the application port from the environment.
    */
   const port = configService.get<number>('PORT', 3000);
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+    prefix: '/uploads/',
+  });
 
   /**
    * Starts the HTTP server on all network interfaces.
