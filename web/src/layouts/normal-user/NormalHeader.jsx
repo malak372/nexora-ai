@@ -13,6 +13,7 @@ import {
   Crown,
   LayoutDashboard,
   Lightbulb,
+  LogOut,
   Menu,
   Search,
   Settings,
@@ -20,10 +21,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 
-import { getStoredUser } from '../../features/auth/shared/auth.storage';
+import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -43,12 +45,21 @@ export default function NormalHeader({ onOpenMenu }) {
   const navigate = useNavigate();
   const menuRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const user = useMemo(() => getStoredUser() ?? {}, []);
+  const [user, setUser] = useState(() => getStoredUser() ?? {});
 
   const displayName = user.fullName || user.name || 'Nexora user';
   const accessLabel = user.accountStatus === 'PREMIUM' ? 'Premium access' : 'Normal access';
-  const imageUrl = user.avatarUrl || user.profileImageUrl || user.photoUrl || null;
+  const imageUrl = resolveMediaUrl(user.avatarUrl || user.profileImageUrl || user.photoUrl || '');
   const initials = getInitials(displayName);
+
+  useEffect(() => {
+    const handleUserUpdated = (event) => {
+      setUser(event.detail || getStoredUser() || {});
+    };
+
+    window.addEventListener('nexora:user-updated', handleUserUpdated);
+    return () => window.removeEventListener('nexora:user-updated', handleUserUpdated);
+  }, []);
 
   useEffect(() => {
     const closeOnOutsideClick = (event) => {
@@ -64,6 +75,12 @@ export default function NormalHeader({ onOpenMenu }) {
   const navigateFromMenu = (path) => {
     setMenuOpen(false);
     navigate(path);
+  };
+
+  const signOut = () => {
+    setMenuOpen(false);
+    clearAuthSession();
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -180,8 +197,8 @@ export default function NormalHeader({ onOpenMenu }) {
                   <button type="button" onClick={() => navigateFromMenu('/normal/settings/profile')}>
                     <Settings size={16} /><span><b>Settings</b><small>Profile and privacy</small></span>
                   </button>
-                  <button type="button" onClick={() => navigateFromMenu('/normal/published')}>
-                    <BookOpenCheck size={16} /><span><b>Published ideas</b><small>Community visibility</small></span>
+                  <button type="button" onClick={signOut} className="normal-header__sign-out">
+                    <LogOut size={16} /><span><b>Sign out</b><small>End this session safely</small></span>
                   </button>
                 </motion.div>
               ) : null}

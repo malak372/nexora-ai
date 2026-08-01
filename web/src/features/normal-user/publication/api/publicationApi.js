@@ -10,6 +10,7 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import { invalidateIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 
 /**
  * Loads an idea together with its current publication snapshot, when present.
@@ -56,6 +57,7 @@ export async function savePublicationDraft(ideaId, payload) {
       payload,
     );
 
+    invalidateIdeaWorkspace(ideaId);
     return extractApiData(response);
   } catch (error) {
     throw new Error(
@@ -118,6 +120,7 @@ export async function publishIdea(ideaId) {
       `/users/ideas/${ideaId}/publication/publish`,
     );
 
+    invalidateIdeaWorkspace(ideaId);
     return extractApiData(response);
   } catch (error) {
     throw new Error(

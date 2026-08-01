@@ -201,6 +201,7 @@ export class AuthLoginService {
         freeGenerationLimit: user.freeGenerationLimit,
         freeGenerationsUsed: user.freeGenerationsUsed,
         creditBalance: user.creditBalance,
+        avatarUrl: user.avatarUrl,
       },
     };
   }
