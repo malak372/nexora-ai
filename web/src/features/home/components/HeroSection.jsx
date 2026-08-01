@@ -17,7 +17,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import {
     ArrowDownRight,
-    Mail,
+    ArrowUpRight,
     Sparkles,
 } from 'lucide-react';
 
@@ -49,7 +49,7 @@ function scrollToSection(sectionId) {
  * The hero includes:
  * - An AI-powered platform badge.
  * - The main Nexora heading and description.
- * - Navigation buttons for the process and contact sections.
+ * - Navigation buttons for the process and discovery sections.
  * - Key platform highlights.
  * - A visual representation of the AI discovery workflow.
  *
@@ -167,16 +167,17 @@ export default function HeroSection() {
 
                         <button
                             type="button"
-                            onClick={() => scrollToSection('contact')}
-                            className="nexora-button-secondary gap-3 px-6 py-3.5"
-                            aria-label={HERO_CONTENT.secondaryActionLabel}
+                            onClick={() => scrollToSection('featured-ideas')}
+                            className="nexora-button-secondary group gap-3 px-6 py-3.5"
+                            aria-label="Start Discovering"
                         >
-                            <Mail
-                                size={18}
+                            Start Discovering
+
+                            <ArrowUpRight
+                                className="transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"
+                                size={19}
                                 aria-hidden="true"
                             />
-
-                            {HERO_CONTENT.secondaryActionLabel}
                         </button>
                     </div>
 
@@ -223,7 +224,7 @@ export default function HeroSection() {
                         duration: 0.85,
                         delay: 0.12,
                     }}
-                    className="relative z-10"
+                    className="relative z-10 lg:-top-20"
                 >
                     <HeroProcessCard />
                 </motion.div>
