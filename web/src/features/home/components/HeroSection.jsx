@@ -15,6 +15,7 @@
  */
 
 import { motion, useReducedMotion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
     ArrowDownRight,
     ArrowUpRight,
@@ -56,6 +57,7 @@ function scrollToSection(sectionId) {
  * @returns {JSX.Element}
  */
 export default function HeroSection() {
+    const navigate = useNavigate();
     /**
      * Detects whether the user prefers reduced animation.
      *
@@ -167,11 +169,11 @@ export default function HeroSection() {
 
                         <button
                             type="button"
-                            onClick={() => scrollToSection('featured-ideas')}
+                            onClick={() => navigate('/generate')}
                             className="nexora-button-secondary group gap-3 px-6 py-3.5"
-                            aria-label="Start Discovering"
+                            aria-label="Generate a free idea"
                         >
-                            Start Discovering
+                            Generate Free Idea
 
                             <ArrowUpRight
                                 className="transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"

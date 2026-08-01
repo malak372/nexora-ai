@@ -1,0 +1,626 @@
+/**
+ * Guest idea generation styles.
+ *
+ * Defines the complete visual design for the guest idea generation flow,
+ * including:
+ * - Multi-step generation form.
+ * - Guest generation progress.
+ * - Completed idea result.
+ * - Guest usage limit state.
+ * - Responsive mobile layouts.
+ *
+ * @author Eman
+ */
+
+/* 
+   Page backgrounds
+ */
+
+.guest-generator-page,
+.guest-progress-page,
+.guest-limit-page {
+    min-height: calc(100vh - 80px);
+    padding: 70px 20px 90px;
+    background:
+        radial-gradient(circle at 10% 10%,
+            rgba(218, 204, 255, 0.58),
+            transparent 30%),
+        radial-gradient(circle at 90% 12%,
+            rgba(197, 231, 255, 0.58),
+            transparent 30%),
+        linear-gradient(135deg,
+            #ffffff,
+            #faf7ff 52%,
+            #f5fbff);
+}
+
+.guest-progress-page,
+.guest-limit-page {
+    display: grid;
+    place-items: center;
+}
+
+/* 
+   Main generator layout
+ */
+
+.guest-generator-shell {
+    width: min(1080px, 100%);
+    margin: auto;
+}
+
+.guest-generator-header {
+    max-width: 820px;
+    margin: auto;
+    text-align: center;
+}
+
+.guest-back-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 28px;
+    border: 0;
+    background: transparent;
+    color: #756d84;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.guest-back-home svg,
+.guest-primary svg,
+.guest-secondary svg {
+    width: 18px;
+}
+
+/* 
+   Shared typography
+ */
+
+.guest-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #7557c6;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.guest-eyebrow svg {
+    width: 17px;
+}
+
+.guest-generator-header h1,
+.guest-progress-card h1,
+.guest-limit-card h1 {
+    margin: 18px 0;
+    color: #241d35;
+    font-size: clamp(2.4rem, 5vw, 4.9rem);
+    line-height: 1.02;
+    letter-spacing: -0.05em;
+}
+
+.guest-generator-header h1 span {
+    background: linear-gradient(110deg,
+            #7658ca,
+            #609fd4);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+.guest-generator-header p,
+.guest-progress-card>p,
+.guest-limit-card>p {
+    max-width: 720px;
+    margin: 0 auto;
+    color: #716a80;
+    font-size: 1.08rem;
+    line-height: 1.8;
+}
+
+/* 
+   Multi-step indicator
+ */
+
+.guest-stepper {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    max-width: 850px;
+    margin: 46px auto 22px;
+}
+
+.guest-stepper>div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #a29aaa;
+    font-weight: 700;
+}
+
+.guest-stepper span {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid #e9e1f4;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(79, 60, 110, 0.07);
+}
+
+.guest-stepper svg {
+    width: 15px;
+}
+
+.guest-stepper .active {
+    color: #5f43ad;
+}
+
+.guest-stepper .active span,
+.guest-stepper .done span {
+    border-color: transparent;
+    background: linear-gradient(135deg,
+            #7658ca,
+            #609fd4);
+    color: #ffffff;
+}
+
+/* 
+   Shared cards
+ */
+
+.guest-form-card,
+.guest-progress-card,
+.guest-limit-card {
+    max-width: 930px;
+    margin: auto;
+    padding: 42px;
+    border: 1px solid rgba(224, 214, 242, 0.9);
+    border-radius: 32px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 30px 90px rgba(77, 56, 116, 0.14);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+}
+
+/* 
+   Form panels
+ */
+
+.guest-panel {
+    text-align: left;
+}
+
+.guest-panel-icon,
+.guest-icon,
+.guest-success-icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border-radius: 16px;
+    background: linear-gradient(135deg,
+            #eee7ff,
+            #e5f4ff);
+    color: #7153c4;
+}
+
+.guest-panel h2 {
+    margin: 18px 0 8px;
+    font-size: 2rem;
+    letter-spacing: -0.035em;
+}
+
+.guest-panel>p {
+    margin-bottom: 25px;
+    color: #777081;
+    line-height: 1.7;
+}
+
+/* 
+   Problem description field
+ */
+
+.guest-panel textarea {
+    width: 100%;
+    min-height: 190px;
+    padding: 22px;
+    border: 1px solid #e5dcef;
+    border-radius: 22px;
+    background: #fcfbff;
+    color: #2b243b;
+    font: inherit;
+    line-height: 1.7;
+    outline: none;
+    resize: vertical;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.guest-panel textarea:focus,
+.guest-location-grid input:focus,
+.guest-location-grid select:focus {
+    border-color: #8b6bd2;
+    box-shadow: 0 0 0 5px rgba(118, 88, 200, 0.1);
+}
+
+.guest-field-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    color: #91899b;
+    font-size: 0.82rem;
+}
+
+/* 
+   Domain selection
+ */
+
+.guest-auto-domain {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid #e5ddef;
+    border-radius: 18px;
+    background: #ffffff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.guest-auto-domain>span {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.guest-auto-domain small {
+    color: #8a8294;
+}
+
+.guest-auto-domain.selected,
+.guest-domain-grid button.selected {
+    border-color: #8060cf;
+    background: #f7f3ff;
+    box-shadow: 0 0 0 4px rgba(118, 88, 200, 0.08);
+}
+
+.guest-domain-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.guest-domain-grid button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 17px;
+    border: 1px solid #ece5f3;
+    border-radius: 17px;
+    background: #ffffff;
+    color: #352d46;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color 0.2s ease,
+        background 0.2s ease,
+        box-shadow 0.2s ease,
+        transform 0.2s ease;
+}
+
+.guest-domain-grid button:hover,
+.guest-auto-domain:hover {
+    transform: translateY(-2px);
+    border-color: #cdbde8;
+}
+
+/* 
+   Location fields
+ */
+
+.guest-location-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.guest-location-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.guest-location-grid input,
+.guest-location-grid select {
+    width: 100%;
+    padding: 14px;
+    border: 1px solid #e7dfef;
+    border-radius: 15px;
+    background: #ffffff;
+    color: #2b243b;
+    font: inherit;
+    outline: none;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+/* 
+   Review section
+ */
+
+.guest-review {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 16px;
+}
+
+.guest-review article,
+.guest-review>div {
+    padding: 22px;
+    border: 1px solid #ebe4f2;
+    border-radius: 20px;
+    background: #fcfbff;
+}
+
+.guest-review article p {
+    color: #4b4358;
+    line-height: 1.7;
+}
+
+.guest-review>div {
+    display: grid;
+    gap: 15px;
+}
+
+.guest-review span {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.guest-review small {
+    color: #928a9e;
+}
+
+/* 
+   Shared actions
+ */
+
+.guest-form-actions,
+.guest-result-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 30px;
+}
+
+.guest-primary,
+.guest-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 13px 21px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.guest-primary {
+    background: linear-gradient(110deg,
+            #7658ca,
+            #9470d9 48%,
+            #609fd4);
+    color: #ffffff;
+    box-shadow: 0 15px 35px rgba(112, 81, 185, 0.22);
+}
+
+.guest-primary:hover:not(:disabled),
+.guest-secondary:hover {
+    transform: translateY(-2px);
+}
+
+.guest-primary:hover:not(:disabled) {
+    box-shadow: 0 18px 42px rgba(112, 81, 185, 0.3);
+}
+
+.guest-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.guest-secondary {
+    border-color: #ded4ec;
+    background: #ffffff;
+    color: #5e4d76;
+}
+
+/* 
+   Progress and limit cards
+ */
+
+.guest-progress-card,
+.guest-limit-card {
+    max-width: 760px;
+    text-align: center;
+}
+
+.guest-progress-orb,
+.guest-success-icon,
+.guest-icon {
+    margin: 0 auto 20px;
+}
+
+.guest-progress-orb {
+    display: grid;
+    width: 76px;
+    height: 76px;
+    place-items: center;
+    border-radius: 24px;
+    background: linear-gradient(135deg,
+            #eee7ff,
+            #e4f4ff);
+    color: #7153c4;
+}
+
+.guest-progress-bar {
+    height: 12px;
+    margin: 30px 0 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #eee8f5;
+}
+
+.guest-progress-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg,
+            #7658ca,
+            #609fd4);
+    transition: width 0.5s ease;
+}
+
+.guest-progress-number {
+    color: #6f5b91;
+}
+
+/* 
+   Completed guest result
+ */
+
+.guest-result-abstract {
+    font-size: 1.05rem !important;
+}
+
+.guest-preview-lock {
+    display: flex;
+    gap: 14px;
+    margin-top: 26px;
+    padding: 18px;
+    border: 1px solid #e7ddf6;
+    border-radius: 18px;
+    background: #f8f5ff;
+    color: #654c9f;
+    text-align: left;
+}
+
+.guest-preview-lock div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.guest-preview-lock span {
+    color: #7d7487;
+}
+
+.guest-result-actions {
+    justify-content: center;
+}
+
+.guest-trust-note {
+    display: block;
+    margin-top: 18px;
+    color: #8b8492;
+}
+
+/* 
+   Error and loading states
+ */
+
+.guest-error {
+    margin-top: 18px;
+    padding: 13px 16px;
+    border: 1px solid #ffd8df;
+    border-radius: 14px;
+    background: #fff2f4;
+    color: #a73e53;
+}
+
+.guest-idea-loading {
+    display: grid;
+    min-height: 60vh;
+    place-items: center;
+    align-content: center;
+    gap: 12px;
+    color: #6e56ad;
+}
+
+.guest-spin {
+    animation: guest-spin 1s linear infinite;
+}
+
+@keyframes guest-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 
+   Responsive layout
+ */
+
+@media (max-width: 760px) {
+
+    .guest-generator-page,
+    .guest-progress-page,
+    .guest-limit-page {
+        padding: 45px 16px 65px;
+    }
+
+    .guest-stepper {
+        max-width: 280px;
+    }
+
+    .guest-stepper b {
+        display: none;
+    }
+
+    .guest-form-card,
+    .guest-progress-card,
+    .guest-limit-card {
+        padding: 25px;
+        border-radius: 24px;
+    }
+
+    .guest-domain-grid,
+    .guest-location-grid,
+    .guest-review {
+        grid-template-columns: 1fr;
+    }
+
+    .guest-generator-header h1,
+    .guest-progress-card h1,
+    .guest-limit-card h1 {
+        font-size: 2.55rem;
+    }
+
+    .guest-form-actions,
+    .guest-result-actions {
+        flex-direction: column-reverse;
+    }
+
+    .guest-primary,
+    .guest-secondary {
+        width: 100%;
+    }
+}

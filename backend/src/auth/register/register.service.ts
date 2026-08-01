@@ -69,7 +69,7 @@ export class AuthRegisterService {
     private readonly authGuestService: AuthGuestService,
     private readonly authEmailService: AuthEmailService,
     private readonly authAuditService: AuthAuditService,
-  ) {}
+  ) { }
 
   /**
    * Registers a user and optionally transfers eligible guest activity.
@@ -135,7 +135,9 @@ export class AuthRegisterService {
         result.user.id,
         result.user.email,
       );
-    } catch {
+    } catch (error) {
+      console.error('Verification email sending failed:', error);
+
       await this.authAuditService.createLog({
         userId: result.user.id,
         email: result.user.email,
