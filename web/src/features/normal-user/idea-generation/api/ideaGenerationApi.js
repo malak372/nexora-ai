@@ -11,6 +11,11 @@ import {
     extractApiData,
     normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+    cachedRequest,
+    createRequestCacheKey,
+    invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
 /**
  * Returns the active software domains available for idea generation.
@@ -50,6 +55,10 @@ export async function startIdeaGeneration(payload) {
         payload,
     );
 
+    invalidateRequestCache('active-generation-run:');
+    invalidateRequestCache('dashboard-summary:');
+    invalidateRequestCache('my-ideas:');
+
     return extractApiData(response);
 }
 
@@ -80,6 +89,9 @@ export async function cancelGenerationRun(runId, reason) {
         reason ? { reason } : {},
     );
 
+    invalidateRequestCache('active-generation-run:');
+    invalidateRequestCache('dashboard-summary:');
+
     return extractApiData(response);
 }
 
@@ -89,10 +101,22 @@ export async function cancelGenerationRun(runId, reason) {
  *
  * @returns {Promise<Object|null>} Active generation run or null.
  */
-export async function getActiveGenerationRun() {
-    const response = await normalUserApi.get(
-        '/users/idea-generation-runs/active',
-    );
+export async function getActiveGenerationRun({ force = false } = {}) {
+    const cacheKey = createRequestCacheKey('active-generation-run');
 
-    return extractApiData(response);
+    return cachedRequest(
+        cacheKey,
+        async () => {
+            const response = await normalUserApi.get(
+                '/users/idea-generation-runs/active',
+            );
+
+            return extractApiData(response);
+        },
+        {
+            ttlMs: 15 * 1000,
+            force,
+            persist: false,
+        },
+    );
 }

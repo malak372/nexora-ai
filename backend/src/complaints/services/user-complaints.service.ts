@@ -95,35 +95,32 @@ export class UserComplaintsService {
       await this.ensureUserOwnsActiveIdea(userId, dto.ideaId);
     }
 
-    const complaint = await this.prisma.$transaction(async (tx) => {
-      const createdComplaint = await tx.complaint.create({
-        data: {
-          userId,
-          ideaId: dto.ideaId,
-          subject: dto.subject,
-          message: dto.message,
-        },
-        select: this.complaintSelect,
-      });
-
-      await this.auditService.createLog(
-        {
-          actorId: userId,
-          action: AuditAction.USER_CREATE_COMPLAINT,
-          targetType: AuditTargetType.COMPLAINT,
-          targetId: createdComplaint.id,
-          newValue: {
-            subject: createdComplaint.subject,
-            ideaId: createdComplaint.ideaId,
-            status: createdComplaint.status,
-            priority: createdComplaint.priority,
-          },
-        },
-        tx,
-      );
-
-      return createdComplaint;
+    const complaint = await this.prisma.complaint.create({
+      data: {
+        userId,
+        ideaId: dto.ideaId || null,
+        subject: dto.subject,
+        message: dto.message,
+      },
+      select: this.complaintSelect,
     });
+
+    try {
+      await this.auditService.createLog({
+        actorId: userId,
+        action: AuditAction.USER_CREATE_COMPLAINT,
+        targetType: AuditTargetType.COMPLAINT,
+        targetId: complaint.id,
+        newValue: {
+          subject: complaint.subject,
+          ideaId: complaint.ideaId,
+          status: complaint.status,
+          priority: complaint.priority,
+        },
+      });
+    } catch {
+      // Complaint submission must not fail only because audit logging failed.
+    }
 
     await this.invalidateComplaintCaches(userId);
 

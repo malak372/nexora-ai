@@ -1,0 +1,534 @@
+/**
+ * Premium credit purchase experience.
+ *
+ * Users may choose any quantity supported by the backend, while common
+ * quantities remain available as quick-select shortcuts.
+ *
+ * @author Malak
+ */
+
+import {
+  CheckCircle2,
+  CreditCard,
+  Crown,
+  BotMessageSquare,
+  Eye,
+  LoaderCircle,
+  Minus,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  UsersRound,
+  WalletCards,
+} from 'lucide-react';
+import {
+  motion,
+  useReducedMotion,
+} from 'framer-motion';
+import { useMemo, useState } from 'react';
+
+import { getStoredUser } from '../../../auth/shared/auth.storage';
+import { createCreditsCheckout } from '../api/upgradeApi';
+import '../styles/upgrade.css';
+
+const QUICK_AMOUNTS = [1, 3, 5, 10];
+
+const BENEFITS = [
+  {
+    icon: Sparkles,
+    title: 'Premium idea generation',
+    description:
+      'Each credit generates one Premium idea with the complete technical, business, feasibility, market, budget, and execution outputs.',
+  },
+  {
+    icon: BotMessageSquare,
+    title: 'AI Chat for unlocked ideas',
+    description:
+      'Use Nexora AI Chat while your account is Premium to explore and refine ideas that are already unlocked.',
+  },
+  {
+    icon: Eye,
+    title: 'See every active published idea',
+    description:
+      'Browse all active published ideas even when a publication was originally limited to another audience category.',
+  },
+  {
+    icon: UsersRound,
+    title: 'Premium publication access',
+    description:
+      'Use the Premium acceptance flow for published ideas, then spend the configured credit cost only when unlocking advanced publication outputs.',
+  },
+  {
+    icon: CheckCircle2,
+    title: 'Permanent unlocked access',
+    description:
+      'Ideas and outputs already generated or unlocked remain available even after your credit balance reaches zero.',
+  },
+  {
+    icon: Crown,
+    title: 'Premium account capabilities',
+    description:
+      'Premium status enables the Premium discovery and AI workspace experience while the account remains Premium.',
+  },
+];
+
+const PAYMENT_METHODS = [
+  {
+    key: 'card',
+    title: 'Credit or debit card',
+    description: 'Visa or Mastercard through Stripe Checkout',
+    badge: 'Most popular',
+    icon: CreditCard,
+  },
+  {
+    key: 'paypal',
+    title: 'PayPal',
+    description: 'Continue securely through PayPal Checkout',
+    badge: 'Secure',
+    icon: WalletCards,
+  },
+];
+
+export default function UpgradePage() {
+  const shouldReduceMotion = useReducedMotion();
+  const storedUser = getStoredUser() || {};
+  const isAlreadyPremium = storedUser.accountStatus === 'PREMIUM';
+
+  const [credits, setCredits] = useState(1);
+  const [method, setMethod] = useState('card');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const totalLabel = useMemo(
+    () =>
+      `${credits} premium credit${
+        credits === 1 ? '' : 's'
+      }`,
+    [credits],
+  );
+
+  const updateCredits = (value) => {
+    const nextValue = Math.max(
+      1,
+      Math.min(100, Number(value) || 1),
+    );
+
+    setCredits(nextValue);
+  };
+
+  const checkout = async () => {
+    try {
+      setBusy(true);
+      setError('');
+
+      const origin = window.location.origin;
+
+      const result = await createCreditsCheckout({
+        creditsQuantity: Number(credits),
+        paymentMethodKey: method,
+        successUrl: `${origin}/normal/credits?payment=success`,
+        cancelUrl: `${origin}/normal/upgrade?payment=cancelled`,
+      });
+
+      if (!result?.checkoutUrl) {
+        throw new Error(
+          'The payment provider did not return a checkout URL.',
+        );
+      }
+
+      window.location.assign(result.checkoutUrl);
+    } catch (requestError) {
+      const message = String(
+        requestError?.message ||
+          'Checkout could not be created.',
+      );
+
+      if (
+        /invalid api key|authentication|401|payment session/i.test(
+          message,
+        )
+      ) {
+        setError(
+          'The selected payment provider is not configured correctly on the server. Add valid test credentials, restart the backend, then try again.',
+        );
+      } else {
+        setError(message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <motion.main
+      className="upgrade-page reveal-page"
+      initial={
+        shouldReduceMotion
+          ? undefined
+          : { opacity: 0 }
+      }
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35 }}
+    >
+      <motion.section
+        className="upgrade-story"
+        initial={
+          shouldReduceMotion
+            ? undefined
+            : {
+                opacity: 0,
+                x: -26,
+                scale: 0.985,
+              }
+        }
+        animate={{
+          opacity: 1,
+          x: 0,
+          scale: 1,
+        }}
+        transition={{
+          duration: 0.68,
+          ease: [0.22, 1, 0.36, 1],
+        }}
+      >
+        <div className="upgrade-story__grid" />
+        <div className="upgrade-story__orb upgrade-story__orb--one" />
+        <div className="upgrade-story__orb upgrade-story__orb--two" />
+
+        <div className="upgrade-story__content">
+          <span className="upgrade-story__eyebrow">
+            <Crown size={16} />
+            Nexora premium credits
+          </span>
+
+          <h1>
+            Unlock premium capabilities
+            <em>only when you need them.</em>
+          </h1>
+
+          <p>
+            Purchase credits for premium generation and advanced
+            idea outputs without changing your existing access.
+          </p>
+
+          <div className="upgrade-benefits">
+            {BENEFITS.map((benefit, index) => {
+              const BenefitIcon = benefit.icon;
+
+              return (
+              <motion.article
+                key={benefit.title}
+                initial={
+                  shouldReduceMotion
+                    ? undefined
+                    : {
+                        opacity: 0,
+                        y: 18,
+                      }
+                }
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                transition={{
+                  duration: 0.42,
+                  delay: shouldReduceMotion
+                    ? 0
+                    : 0.18 + index * 0.08,
+                }}
+              >
+                <span>
+                  <BenefitIcon size={16} />
+                </span>
+
+                <div>
+                  <small>
+                    {String(index + 1).padStart(
+                      2,
+                      '0',
+                    )}
+                  </small>
+                  <strong>{benefit.title}</strong>
+                  <p>{benefit.description}</p>
+                </div>
+              </motion.article>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="upgrade-story__trust">
+          <span>
+            <ShieldCheck size={15} />
+            Verified provider webhook
+          </span>
+
+          <span>
+            <Sparkles size={15} />
+            Permanent unlocked access
+          </span>
+        </div>
+      </motion.section>
+
+      <motion.aside
+        className="upgrade-checkout"
+        initial={
+          shouldReduceMotion
+            ? undefined
+            : {
+                opacity: 0,
+                x: 26,
+                scale: 0.985,
+              }
+        }
+        animate={{
+          opacity: 1,
+          x: 0,
+          scale: 1,
+        }}
+        transition={{
+          duration: 0.68,
+          delay: shouldReduceMotion ? 0 : 0.08,
+          ease: [0.22, 1, 0.36, 1],
+        }}
+      >
+        <span className="upgrade-summary-kicker">
+          Additional premium purchase
+        </span>
+
+        <h2>Choose your credit amount</h2>
+
+        <p className="upgrade-summary-copy">
+          Select a shortcut or enter the exact quantity
+          you want to add.
+        </p>
+
+        <div className="upgrade-quantity">
+          {QUICK_AMOUNTS.map((amount) => (
+            <motion.button
+              type="button"
+              className={
+                credits === amount
+                  ? 'selected'
+                  : ''
+              }
+              onClick={() => setCredits(amount)}
+              key={amount}
+              whileHover={
+                shouldReduceMotion
+                  ? undefined
+                  : { y: -3 }
+              }
+              whileTap={
+                shouldReduceMotion
+                  ? undefined
+                  : { scale: 0.98 }
+              }
+            >
+              <strong>{amount}</strong>
+              <small>
+                credit{amount > 1 ? 's' : ''}
+              </small>
+            </motion.button>
+          ))}
+        </div>
+
+        <div className="upgrade-custom-quantity">
+          <div>
+            <span>Custom quantity</span>
+            <small>1 to 100 credits</small>
+          </div>
+
+          <div className="upgrade-custom-quantity__control">
+            <button
+              type="button"
+              onClick={() =>
+                updateCredits(credits - 1)
+              }
+              aria-label="Decrease credits"
+            >
+              <Minus size={16} />
+            </button>
+
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={credits}
+              onChange={(event) =>
+                updateCredits(event.target.value)
+              }
+            />
+
+            <button
+              type="button"
+              onClick={() =>
+                updateCredits(credits + 1)
+              }
+              aria-label="Increase credits"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="upgrade-section-title">
+          <span>Payment method</span>
+          <small>Provider-hosted checkout</small>
+        </div>
+
+        <div className="upgrade-methods">
+          {PAYMENT_METHODS.map(
+            (paymentMethod) => {
+              const Icon = paymentMethod.icon;
+              const isSelected =
+                method === paymentMethod.key;
+
+              return (
+                <motion.label
+                  key={paymentMethod.key}
+                  className={
+                    isSelected ? 'selected' : ''
+                  }
+                  whileHover={
+                    shouldReduceMotion
+                      ? undefined
+                      : { y: -3 }
+                  }
+                  whileTap={
+                    shouldReduceMotion
+                      ? undefined
+                      : { scale: 0.99 }
+                  }
+                >
+                  <input
+                    type="radio"
+                    name="payment-method"
+                    checked={isSelected}
+                    onChange={() =>
+                      setMethod(
+                        paymentMethod.key,
+                      )
+                    }
+                  />
+
+                  <span className="upgrade-methods__icon">
+                    <Icon size={20} />
+                  </span>
+
+                  <span className="upgrade-methods__copy">
+                    <span>
+                      <b>
+                        {paymentMethod.title}
+                      </b>
+                      <small>
+                        {paymentMethod.badge}
+                      </small>
+                    </span>
+
+                    <em>
+                      {paymentMethod.description}
+                    </em>
+                  </span>
+
+                  <span className="upgrade-methods__check">
+                    {isSelected ? (
+                      <CheckCircle2 size={17} />
+                    ) : null}
+                  </span>
+                </motion.label>
+              );
+            },
+          )}
+        </div>
+
+        <div
+          className={`upgrade-activation-fee ${
+            isAlreadyPremium ? 'is-inactive' : 'is-applicable'
+          }`}
+        >
+          <span>
+            <Crown size={16} />
+          </span>
+
+          <div>
+            <strong>
+              {isAlreadyPremium
+                ? 'No Premium activation fee'
+                : 'One-time Premium activation fee'}
+            </strong>
+
+            <small>
+              {isAlreadyPremium
+                ? 'Your account is already Premium, so the activation fee is not charged again.'
+                : 'A $5 activation fee is currently added when a Normal account becomes Premium. This value is configurable and may change.'}
+            </small>
+          </div>
+        </div>
+
+        <div className="upgrade-order-summary">
+          <div>
+            <span>Selected package</span>
+            <small>
+              Final amount is calculated by the backend from the current database pricing.
+            </small>
+          </div>
+
+          <strong>{totalLabel}</strong>
+        </div>
+
+        {error ? (
+          <p className="upgrade-error">
+            {error}
+          </p>
+        ) : null}
+
+        <motion.button
+          className="upgrade-checkout-button"
+          type="button"
+          disabled={busy}
+          onClick={checkout}
+          whileHover={
+            shouldReduceMotion || busy
+              ? undefined
+              : { y: -3 }
+          }
+          whileTap={
+            shouldReduceMotion || busy
+              ? undefined
+              : { scale: 0.985 }
+          }
+        >
+          {busy ? (
+            <>
+              <LoaderCircle
+                className="upgrade-spin"
+                size={18}
+              />
+              Creating secure checkout…
+            </>
+          ) : (
+            <>
+              Continue to secure payment
+              <CreditCard size={18} />
+            </>
+          )}
+        </motion.button>
+
+        <div className="upgrade-secure">
+          <ShieldCheck size={15} />
+
+          <span>
+            <strong>
+              Protected payment flow
+            </strong>
+
+            <small>
+              Credits are added only after a verified provider webhook.
+            </small>
+          </span>
+        </div>
+      </motion.aside>
+    </motion.main>
+  );
+}

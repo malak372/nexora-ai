@@ -1,35 +1,52 @@
+/**
+ * Normal-user dashboard API helpers with session-scoped caching.
+ *
+ * @author Malak
+ */
 import {
   extractApiData,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
-export const getNormalUserSummary = async () => {
-  const response = await normalUserApi.get('/users/summary', {
-    params: { _fresh: Date.now() },
-  });
-  return extractApiData(response);
-};
+const DASHBOARD_TTL_MS = 2 * 60 * 1000;
 
-export const getPublishedIdeasCount = async () => {
-  const response = await normalUserApi.get('/users/publications/mine', {
-    params: {
-      page: 1,
-      limit: 1,
-      status: 'PUBLISHED',
-      _fresh: Date.now(),
+/** Loads the dashboard summary and reuses it during normal navigation. */
+export const getNormalUserSummary = async ({ force = false } = {}) => {
+  const cacheKey = createRequestCacheKey('dashboard-summary');
+
+  return cachedRequest(
+    cacheKey,
+    async () => {
+      const response = await normalUserApi.get('/users/summary');
+      return extractApiData(response);
     },
-  });
-
-  const payload = extractApiData(response) ?? {};
-  return Number(
-    payload?.pagination?.total ??
-    payload?.meta?.total ??
-    payload?.total ??
-    0,
+    {
+      ttlMs: DASHBOARD_TTL_MS,
+      force,
+    },
   );
 };
 
+/**
+ * Reads the published count from the same cached summary.
+ * This avoids the previous duplicate /users/summary request.
+ */
+export const getPublishedIdeasCount = async (options = {}) => {
+  const summary = await getNormalUserSummary(options);
+  return Number(summary?.publishedIdeasCount ?? 0);
+};
+
 export const createContactMessage = async (payload) => {
-  const response = await normalUserApi.post('/contact-messages', payload);
+  const response = await normalUserApi.post('/users/contact-messages', payload);
   return extractApiData(response);
+};
+
+/** Call after idea, publication, payment, or profile mutations. */
+export const invalidateDashboardCache = () => {
+  invalidateRequestCache('dashboard-summary:');
 };

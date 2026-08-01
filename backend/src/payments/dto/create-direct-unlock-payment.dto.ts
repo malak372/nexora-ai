@@ -36,6 +36,7 @@ export class CreateDirectUnlockPaymentDto {
    */
   @IsUrl({
     require_protocol: true,
+    require_tld: false,
   })
   successUrl!: string;
 
@@ -44,6 +45,7 @@ export class CreateDirectUnlockPaymentDto {
    */
   @IsUrl({
     require_protocol: true,
+    require_tld: false,
   })
   cancelUrl!: string;
 }

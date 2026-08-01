@@ -85,6 +85,7 @@ model User {
   auditLogs                   AuditLog[]                  @relation("AuditLogs")
   authenticationLogs          AuthenticationLog[]
   chatSessions                ChatSession[]
+  emailChangeRequests EmailChangeRequest[]
   collectionJobs              CollectionJob[]             @relation("CollectionJobsCreatedBy")
   complaints                  Complaint[]
   contactMessages             ContactMessage[]
@@ -1724,4 +1725,32 @@ enum GeneratedOutputStatus {
   GENERATING
   COMPLETED
   FAILED
+}
+model EmailChangeRequest {
+  id                     String    @id @default(uuid())
+  userId                 String    @map("user_id")
+  oldEmail               String    @map("old_email")
+  newEmail               String    @map("new_email")
+
+  currentCodeHash        String    @map("current_code_hash")
+  currentCodeExpiresAt   DateTime  @map("current_code_expires_at")
+  currentAttempts        Int       @default(0) @map("current_attempts")
+  currentEmailVerifiedAt DateTime? @map("current_email_verified_at")
+
+  newCodeHash            String?   @map("new_code_hash")
+  newCodeExpiresAt       DateTime? @map("new_code_expires_at")
+  newAttempts            Int       @default(0) @map("new_attempts")
+  newEmailVerifiedAt     DateTime? @map("new_email_verified_at")
+
+  completedAt            DateTime? @map("completed_at")
+  cancelledAt            DateTime? @map("cancelled_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId],references: [id],onDelete: Cascade)
+
+  @@index([userId, completedAt, cancelledAt])
+  @@index([currentCodeExpiresAt])
+  @@index([newCodeExpiresAt])
+  @@map("email_change_requests")
 }

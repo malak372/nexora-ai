@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '../../shared/api/normalUserApi';
 import { getActiveGenerationRun } from '../../idea-generation/api/ideaGenerationApi';
 import { clearActiveGenerationRunId, saveActiveGenerationRunId } from '../../idea-generation/store/activeGenerationRun.storage';
-import { getNormalUserSummary, getPublishedIdeasCount } from '../api/dashboardApi';
+import { getNormalUserSummary } from '../api/dashboardApi';
 import IdeaLauncher from '../components/IdeaLauncher';
 import LatestIdeaCard from '../components/LatestIdeaCard';
 import MetricCard from '../components/MetricCard';
@@ -49,20 +49,15 @@ export default function NormalDashboardPage() {
   const [error, setError] = useState('');
   const [activeRun, setActiveRun] = useState(null);
 
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async ({ force = false } = {}) => {
     setIsLoading(true);
     setError('');
     try {
-      const [summaryResult, activeRunResult, publishedCount] = await Promise.all([
-        getNormalUserSummary(),
-        getActiveGenerationRun().catch(() => null),
-        getPublishedIdeasCount().catch(() => null),
+      const [summaryResult, activeRunResult] = await Promise.all([
+        getNormalUserSummary({ force }),
+        getActiveGenerationRun({ force }).catch(() => null),
       ]);
-      setSummary({
-        ...summaryResult,
-        publishedIdeasCount:
-          publishedCount ?? summaryResult?.publishedIdeasCount ?? 0,
-      });
+      setSummary(summaryResult);
       setActiveRun(activeRunResult);
       if (activeRunResult?.id) saveActiveGenerationRunId(activeRunResult.id);
       else clearActiveGenerationRunId();
@@ -119,7 +114,7 @@ export default function NormalDashboardPage() {
   }
 
   if (error) {
-    return <div className="normal-dashboard-state"><h2>Workspace unavailable</h2><p>{error}</p><button className="normal-primary-button" type="button" onClick={loadSummary}><RefreshCw size={17} />Try again</button></div>;
+    return <div className="normal-dashboard-state"><h2>Workspace unavailable</h2><p>{error}</p><button className="normal-primary-button" type="button" onClick={() => loadSummary({ force: true })}><RefreshCw size={17} />Try again</button></div>;
   }
 
   return (

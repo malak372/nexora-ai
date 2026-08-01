@@ -503,6 +503,95 @@ Please do not reply.
     });
   }
 
+  /** Sends the first approval code to the account's current email address. */
+  async sendCurrentEmailChangeApprovalCode(
+    currentEmail: string,
+    fullName: string,
+    newEmail: string,
+    code: string,
+    expiresInMinutes: number,
+  ): Promise<void> {
+    const safeName = this.escapeHtml(fullName);
+    const safeNewEmail = this.escapeHtml(newEmail);
+    const safeCode = this.escapeHtml(code);
+
+    await this.sendEmail({
+      to: currentEmail,
+      subject: 'Approve your Nexora AI email change',
+      text: `Hello ${fullName}, use code ${code} to approve changing your Nexora AI sign-in email to ${newEmail}. The code expires in ${expiresInMinutes} minutes. If you did not request this, do not share the code.`,
+      html: this.buildEmailTemplate(
+        'Approve your email change',
+        `
+          <p>Hello <strong>${safeName}</strong>,</p>
+          <p>A request was made to change your Nexora AI sign-in email to:</p>
+          <p style="font-weight:700;">${safeNewEmail}</p>
+          <p>Use this code to approve the request:</p>
+          <div style="font-size:30px;font-weight:700;letter-spacing:8px;text-align:center;padding:18px;background:#f1f5f9;border-radius:8px;margin:20px 0;">
+            ${safeCode}
+          </div>
+          <p>This code expires in <strong>${expiresInMinutes} minutes</strong>.</p>
+          <p><strong>If you did not request this change, do not share the code and change your password.</strong></p>
+        `,
+      ),
+    });
+  }
+
+  /** Sends the second ownership-verification code to the requested new address. */
+  async sendNewEmailChangeVerificationCode(
+    newEmail: string,
+    fullName: string,
+    code: string,
+    expiresInMinutes: number,
+  ): Promise<void> {
+    const safeName = this.escapeHtml(fullName);
+    const safeCode = this.escapeHtml(code);
+
+    await this.sendEmail({
+      to: newEmail,
+      subject: 'Verify your new Nexora AI email',
+      text: `Hello ${fullName}, your Nexora AI new-email verification code is ${code}. It expires in ${expiresInMinutes} minutes.`,
+      html: this.buildEmailTemplate(
+        'Verify your new email',
+        `
+          <p>Hello <strong>${safeName}</strong>,</p>
+          <p>The current account email approved this change.</p>
+          <p>Use this code to verify this address as your new Nexora AI sign-in email:</p>
+          <div style="font-size:30px;font-weight:700;letter-spacing:8px;text-align:center;padding:18px;background:#f1f5f9;border-radius:8px;margin:20px 0;">
+            ${safeCode}
+          </div>
+          <p>This code expires in <strong>${expiresInMinutes} minutes</strong>.</p>
+          <p>If you did not expect this message, do not share the code.</p>
+        `,
+      ),
+    });
+  }
+
+  /** Notifies the previous address after an email change succeeds. */
+  async sendEmailChangedNotice(
+    oldEmail: string,
+    fullName: string,
+    newEmail: string,
+  ): Promise<void> {
+    const safeName = this.escapeHtml(fullName);
+    const safeNewEmail = this.escapeHtml(newEmail);
+
+    await this.sendEmail({
+      to: oldEmail,
+      subject: 'Your Nexora AI email was changed',
+      text: `Hello ${fullName}, the sign-in email for your Nexora AI account was changed to ${newEmail}. If this was not you, contact support immediately.`,
+      html: this.buildEmailTemplate(
+        'Your email was changed',
+        `
+          <p>Hello <strong>${safeName}</strong>,</p>
+          <p>The sign-in email for your Nexora AI account was changed to:</p>
+          <p style="font-weight:700;">${safeNewEmail}</p>
+          <p>If you made this change, no further action is required.</p>
+          <p><strong>If you did not make this change, contact Nexora AI support immediately and change your password.</strong></p>
+        `,
+      ),
+    });
+  }
+
   /**
    * Sends a payment receipt after a payment is confirmed
    * as SUCCEEDED.

@@ -11,12 +11,13 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { GetReceivedFeedbackQueryDto } from '../dto/get-received-feedback-query.dto';
 import { ReceivedFeedbackService } from '../services/received-feedback.service';
+import type { ReceivedFeedbackResponse } from '../services/received-feedback.service';
 
 /** Private endpoint for publication owners to view received feedback. @author Eman */
 @Controller('users/publications')
 @UseGuards(JwtAuthGuard)
 export class ReceivedFeedbackController {
-  constructor(private readonly service: ReceivedFeedbackService) {}
+  constructor(private readonly service: ReceivedFeedbackService) { }
 
   @Get(':publicationId/received-feedback')
   findReceived(
@@ -24,7 +25,7 @@ export class ReceivedFeedbackController {
     @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
     @Query() query: GetReceivedFeedbackQueryDto,
-  ) {
+  ): Promise<ReceivedFeedbackResponse> {
     return this.service.findReceived(user.id, publicationId, query);
   }
 }

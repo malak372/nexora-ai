@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Patch,
+  Post,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,7 +16,9 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { avatarUploadOptions } from '../config/avatar-upload.config';
+import { RequestEmailChangeDto } from './dto/request-email-change.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { VerifyEmailChangeDto } from './dto/verify-email-change.dto';
 import { UserProfileService } from './profile.service';
 
 /**
@@ -43,6 +46,40 @@ export class UserProfileController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.userProfileService.updateProfile(user.id, dto);
+  }
+
+
+  /** Starts an email change and sends an approval code to the current address. */
+  @Post('profile/email-change/request')
+  requestEmailChange(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RequestEmailChangeDto,
+  ) {
+    return this.userProfileService.requestEmailChange(user.id, dto);
+  }
+
+  /** Confirms that the current email owner approves the change. */
+  @Post('profile/email-change/verify-current')
+  verifyCurrentEmailChange(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyEmailChangeDto,
+  ) {
+    return this.userProfileService.verifyCurrentEmailChange(user.id, dto);
+  }
+
+  /** Confirms ownership of the requested new email address. */
+  @Post('profile/email-change/verify-new')
+  verifyNewEmailChange(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyEmailChangeDto,
+  ) {
+    return this.userProfileService.verifyNewEmailChange(user.id, dto);
+  }
+
+  /** Cancels the active email-change request. */
+  @Post('profile/email-change/cancel')
+  cancelEmailChange(@CurrentUser() user: AuthenticatedUser) {
+    return this.userProfileService.cancelEmailChange(user.id);
   }
 
   /**

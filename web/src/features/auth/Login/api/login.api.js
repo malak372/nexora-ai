@@ -6,7 +6,7 @@
  * - Call the backend login endpoint.
  * - Convert backend failures into safe user-facing messages.
  *
- * @author Eman
+ * @author Malak
  */
 
 const API_BASE_URL = (

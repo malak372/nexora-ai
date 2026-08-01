@@ -5,6 +5,7 @@ import {
   ComplaintStatus,
   CreditTransactionType,
   IdeaGenerationType,
+  IdeaPublicationStatus,
   PaymentStatus,
 } from '@prisma/client';
 import type { Cache } from 'cache-manager';
@@ -14,10 +15,14 @@ import { userCacheKeys } from '../cache/user-cache.keys';
 import { UserValidationService } from '../validation/validation.service';
 
 /**
- * Builds the authenticated-user dashboard summary.
+ * Builds the authenticated user's dashboard summary.
  *
- * The service only exposes account-level summaries. Paid idea outputs are
- * intentionally retrieved through the dedicated ideas and outputs modules.
+ * Dashboard reads are intentionally executed through one Prisma batch
+ * transaction. This prevents a single dashboard request from starting many
+ * database queries concurrently and exhausting a small connection pool.
+ *
+ * Paid idea outputs remain available only through the dedicated ideas and
+ * outputs modules.
  *
  * @author Eman
  */
@@ -30,22 +35,37 @@ export class UserDashboardService {
     private readonly cacheManager: Cache,
   ) {}
 
-  /** Returns a cached dashboard summary for one authenticated user. */
+  /**
+   * Returns a cached dashboard summary for one authenticated user.
+   *
+   * @param userId - Authenticated user's UUID.
+   * @returns Account and workspace summary.
+   */
   async getSummary(userId: string) {
     const cacheKey = userCacheKeys.summary(userId);
-    const cached = await this.cacheManager.get(cacheKey);
+    const cachedSummary = await this.cacheManager.get(cacheKey);
 
-    if (cached) {
-      return cached;
+    if (cachedSummary) {
+      return cachedSummary;
     }
 
     const user = await this.userValidationService.findUserOrThrow(userId);
 
+    /*
+     * Do not use Promise.all here.
+     *
+     * The database pool in the current environment is limited to 15 clients.
+     * Running all dashboard queries concurrently can consume most of that pool
+     * in one HTTP request, especially when more than one Nest process is open.
+     * Prisma's batch transaction executes these reads using one transaction
+     * context instead of creating a large burst of parallel requests.
+     */
     const [
       ideasCount,
       freeIdeasCount,
       premiumIdeasCount,
       favoriteIdeasCount,
+      publishedIdeasCount,
       unreadNotificationsCount,
       openComplaintsCount,
       resolvedComplaintsCount,
@@ -54,8 +74,14 @@ export class UserDashboardService {
       purchasedCredits,
       latestIdea,
       latestPayment,
-    ] = await Promise.all([
-      this.prisma.idea.count({ where: { userId, deletedAt: null } }),
+    ] = await this.prisma.$transaction([
+      this.prisma.idea.count({
+        where: {
+          userId,
+          deletedAt: null,
+        },
+      }),
+
       this.prisma.idea.count({
         where: {
           userId,
@@ -63,6 +89,7 @@ export class UserDashboardService {
           generationType: IdeaGenerationType.NORMAL_FREE,
         },
       }),
+
       this.prisma.idea.count({
         where: {
           userId,
@@ -70,30 +97,79 @@ export class UserDashboardService {
           generationType: IdeaGenerationType.PREMIUM_CREDIT,
         },
       }),
-      this.prisma.favoriteIdea.count({ where: { userId } }),
-      this.prisma.alert.count({ where: { userId, isRead: false } }),
-      this.prisma.complaint.count({
-        where: { userId, deletedAt: null, status: ComplaintStatus.OPEN },
+
+      this.prisma.favoriteIdea.count({
+        where: {
+          userId,
+        },
       }),
-      this.prisma.complaint.count({
-        where: { userId, deletedAt: null, status: ComplaintStatus.RESOLVED },
+
+      this.prisma.ideaPublication.count({
+        where: {
+          publisherId: userId,
+          status: IdeaPublicationStatus.PUBLISHED,
+        },
       }),
-      this.prisma.payment.count({ where: { userId } }),
+
+      this.prisma.alert.count({
+        where: {
+          userId,
+          isRead: false,
+        },
+      }),
+
+      this.prisma.complaint.count({
+        where: {
+          userId,
+          deletedAt: null,
+          status: ComplaintStatus.OPEN,
+        },
+      }),
+
+      this.prisma.complaint.count({
+        where: {
+          userId,
+          deletedAt: null,
+          status: ComplaintStatus.RESOLVED,
+        },
+      }),
+
       this.prisma.payment.count({
-        where: { userId, status: PaymentStatus.SUCCEEDED },
+        where: {
+          userId,
+        },
       }),
+
+      this.prisma.payment.count({
+        where: {
+          userId,
+          status: PaymentStatus.SUCCEEDED,
+        },
+      }),
+
       this.prisma.creditTransaction.aggregate({
         where: {
           userId,
           type: {
-            in: [CreditTransactionType.PURCHASE, CreditTransactionType.BONUS],
+            in: [
+              CreditTransactionType.PURCHASE,
+              CreditTransactionType.BONUS,
+            ],
           },
         },
-        _sum: { amount: true },
+        _sum: {
+          amount: true,
+        },
       }),
+
       this.prisma.idea.findFirst({
-        where: { userId, deletedAt: null },
-        orderBy: { createdAt: 'desc' },
+        where: {
+          userId,
+          deletedAt: null,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
         select: {
           id: true,
           title: true,
@@ -102,9 +178,14 @@ export class UserDashboardService {
           createdAt: true,
         },
       }),
+
       this.prisma.payment.findFirst({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
+        where: {
+          userId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
         select: {
           id: true,
           amount: true,
@@ -136,6 +217,7 @@ export class UserDashboardService {
       freeIdeasCount,
       premiumIdeasCount,
       favoriteIdeasCount,
+      publishedIdeasCount,
       unreadNotificationsCount,
       openComplaintsCount,
       resolvedComplaintsCount,
@@ -147,6 +229,7 @@ export class UserDashboardService {
     };
 
     await this.cacheManager.set(cacheKey, summary);
+
     return summary;
   }
 }

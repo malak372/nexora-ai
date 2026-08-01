@@ -1,41 +1,24 @@
-import { getApiErrorMessage, normalUserApi } from '../../shared/api/normalUserApi';
+/**
+ * Cached API helpers for the private idea workspace.
+ *
+ * The idea and its generated outputs are loaded in parallel and cached as one
+ * bundle. This prevents the workspace from repeating two expensive requests
+ * whenever the user returns from Business Model, Publish, or Direct Unlock.
+ *
+ * @author Nexora Team
+ */
 
-const CACHE_TTL_MS = 2 * 60 * 1000;
-const memoryCache = new Map();
-const pendingRequests = new Map();
+import { getApiErrorMessage, normalUserApi } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
+
+const WORKSPACE_CACHE_NAMESPACE = 'idea-workspace';
+const WORKSPACE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const unwrap = (response) => response?.data?.data ?? response?.data;
-const cacheKey = (ideaId) => `nexora:idea-workspace:${ideaId}`;
-
-function readCache(ideaId) {
-  const memoryValue = memoryCache.get(ideaId);
-  if (memoryValue && Date.now() - memoryValue.savedAt < CACHE_TTL_MS) {
-    return memoryValue.value;
-  }
-
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(cacheKey(ideaId)) || 'null');
-    if (stored && Date.now() - stored.savedAt < CACHE_TTL_MS) {
-      memoryCache.set(ideaId, stored);
-      return stored.value;
-    }
-  } catch {
-    sessionStorage.removeItem(cacheKey(ideaId));
-  }
-
-  return null;
-}
-
-function writeCache(ideaId, value) {
-  const entry = { savedAt: Date.now(), value };
-  memoryCache.set(ideaId, entry);
-
-  try {
-    sessionStorage.setItem(cacheKey(ideaId), JSON.stringify(entry));
-  } catch {
-    // Memory cache remains available when browser storage is full or blocked.
-  }
-}
 
 async function requestWorkspaceBundle(ideaId) {
   const [ideaResult, outputsResult] = await Promise.allSettled([
@@ -60,47 +43,65 @@ async function requestWorkspaceBundle(ideaId) {
   return { idea, outputs };
 }
 
+/**
+ * Loads the full workspace bundle.
+ *
+ * options.forceRefresh bypasses the cache after a write operation or when the
+ * caller explicitly needs the newest backend state.
+ */
 export async function getIdeaWorkspaceBundle(ideaId, options = {}) {
-  if (!ideaId) throw new Error('An idea identifier is required.');
-
-  if (!options.forceRefresh) {
-    const cached = readCache(ideaId);
-    if (cached) return cached;
+  if (!ideaId) {
+    throw new Error('An idea identifier is required.');
   }
 
-  if (pendingRequests.has(ideaId)) return pendingRequests.get(ideaId);
+  const key = createRequestCacheKey(WORKSPACE_CACHE_NAMESPACE, { ideaId });
 
-  const request = requestWorkspaceBundle(ideaId)
-    .then((value) => {
-      writeCache(ideaId, value);
-      return value;
-    })
-    .catch((error) => {
-      throw new Error(getApiErrorMessage(error, 'The idea workspace could not be loaded.'));
-    })
-    .finally(() => pendingRequests.delete(ideaId));
-
-  pendingRequests.set(ideaId, request);
-  return request;
+  try {
+    return await cachedRequest(
+      key,
+      () => requestWorkspaceBundle(ideaId),
+      {
+        ttlMs: WORKSPACE_CACHE_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: true,
+        allowStaleOnError: true,
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, 'The idea workspace could not be loaded.'),
+    );
+  }
 }
 
+/**
+ * Starts loading the workspace before navigation completes.
+ * This can be called from an Open Idea hover/focus handler.
+ */
 export function warmIdeaWorkspace(ideaId) {
-  if (!ideaId || readCache(ideaId) || pendingRequests.has(ideaId)) return;
+  if (!ideaId) return;
+
   getIdeaWorkspaceBundle(ideaId).catch(() => undefined);
 }
 
+/** Invalidates one workspace after unlock, edit, generation, or publication. */
 export function invalidateIdeaWorkspace(ideaId) {
-  memoryCache.delete(ideaId);
-  pendingRequests.delete(ideaId);
-  sessionStorage.removeItem(cacheKey(ideaId));
+  if (!ideaId) {
+    invalidateRequestCache(`${WORKSPACE_CACHE_NAMESPACE}:`);
+    return;
+  }
+
+  invalidateRequestCache(
+    createRequestCacheKey(WORKSPACE_CACHE_NAMESPACE, { ideaId }),
+  );
 }
 
-export async function getIdeaWorkspace(ideaId) {
-  const bundle = await getIdeaWorkspaceBundle(ideaId);
+export async function getIdeaWorkspace(ideaId, options = {}) {
+  const bundle = await getIdeaWorkspaceBundle(ideaId, options);
   return bundle.idea;
 }
 
-export async function getIdeaOutputs(ideaId) {
-  const bundle = await getIdeaWorkspaceBundle(ideaId);
+export async function getIdeaOutputs(ideaId, options = {}) {
+  const bundle = await getIdeaWorkspaceBundle(ideaId, options);
   return bundle.outputs;
 }

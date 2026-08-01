@@ -49,8 +49,15 @@
   color: #6454e7;
 }
 
-.ideas-page__count strong { color: #1a1734; font-size: 1.15rem; }
-.ideas-page__count span { color: #7e7892; font-size: 0.82rem; }
+.ideas-page__count strong {
+  color: #1a1734;
+  font-size: 1.15rem;
+}
+
+.ideas-page__count span {
+  color: #7e7892;
+  font-size: 0.82rem;
+}
 
 .ideas-page__toolbar {
   display: flex;
@@ -83,7 +90,9 @@
   font: inherit;
 }
 
-.ideas-search input::placeholder { color: #9b96aa; }
+.ideas-search input::placeholder {
+  color: #9b96aa;
+}
 
 .ideas-search button,
 .ideas-state button {
@@ -162,7 +171,7 @@
 
 .idea-tile__topbar,
 .idea-tile footer,
-.idea-tile__progress > div {
+.idea-tile__progress>div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -179,13 +188,31 @@
   font-weight: 800;
 }
 
-.idea-tile__status--processing { background: #fff5d8; color: #9b6a00; }
-.idea-tile__status--published { background: #e9fbf5; color: #147d5b; }
-.idea-tile__status--unlocked { background: #eef8ff; color: #2477aa; }
-.idea-tile__status--core { background: #f1eff8; color: #6f6883; }
+.idea-tile__status--processing {
+  background: #fff5d8;
+  color: #9b6a00;
+}
 
-.idea-tile__menu { position: relative; }
-.idea-tile__menu > button {
+.idea-tile__status--published {
+  background: #e9fbf5;
+  color: #147d5b;
+}
+
+.idea-tile__status--unlocked {
+  background: #eef8ff;
+  color: #2477aa;
+}
+
+.idea-tile__status--core {
+  background: #f1eff8;
+  color: #6f6883;
+}
+
+.idea-tile__menu {
+  position: relative;
+}
+
+.idea-tile__menu>button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -226,8 +253,13 @@
   cursor: pointer;
 }
 
-.idea-tile__popover button:hover { background: #f6f3ff; }
-.idea-tile__popover .is-danger { color: #bf3e55; }
+.idea-tile__popover button:hover {
+  background: #f6f3ff;
+}
+
+.idea-tile__popover .is-danger {
+  color: #bf3e55;
+}
 
 .idea-tile__domain {
   display: flex;
@@ -257,7 +289,7 @@
   letter-spacing: -0.025em;
 }
 
-.idea-tile > p {
+.idea-tile>p {
   display: -webkit-box;
   overflow: hidden;
   margin: 0;
@@ -269,9 +301,19 @@
   line-clamp: 4;
 }
 
-.idea-tile__progress { margin-top: 18px; }
-.idea-tile__progress > div { color: #817a90; font-size: 0.75rem; }
-.idea-tile__progress strong { color: #5d4be1; }
+.idea-tile__progress {
+  margin-top: 18px;
+}
+
+.idea-tile__progress>div {
+  color: #817a90;
+  font-size: 0.75rem;
+}
+
+.idea-tile__progress strong {
+  color: #5d4be1;
+}
+
 .idea-tile__track {
   display: block;
   overflow: hidden;
@@ -280,6 +322,7 @@
   border-radius: 999px;
   background: #efedf5;
 }
+
 .idea-tile__track i {
   display: block;
   height: 100%;
@@ -292,7 +335,7 @@
   padding-top: 20px;
 }
 
-.idea-tile footer > span {
+.idea-tile footer>span {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -334,9 +377,20 @@
   text-align: center;
 }
 
-.ideas-state h2 { margin: 15px 0 7px; color: #211c39; }
-.ideas-state p { max-width: 520px; margin: 0 0 20px; color: #817b8e; }
-.ideas-state--error { color: #c1495c; }
+.ideas-state h2 {
+  margin: 15px 0 7px;
+  color: #211c39;
+}
+
+.ideas-state p {
+  max-width: 520px;
+  margin: 0 0 20px;
+  color: #817b8e;
+}
+
+.ideas-state--error {
+  color: #c1495c;
+}
 
 .ideas-pagination {
   display: flex;
@@ -359,22 +413,2261 @@
   font-weight: 750;
   cursor: pointer;
 }
-.ideas-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-@keyframes ideaShimmer { to { background-position: -300% 0; } }
+.ideas-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@keyframes ideaShimmer {
+  to {
+    background-position: -300% 0;
+  }
+}
 
 @media (max-width: 1100px) {
-  .ideas-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ideas-page__toolbar { align-items: stretch; flex-direction: column; }
-  .ideas-search { width: 100%; }
-  .ideas-filters { justify-content: flex-start; }
+  .ideas-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ideas-page__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ideas-search {
+    width: 100%;
+  }
+
+  .ideas-filters {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 680px) {
-  .ideas-page { padding-inline: 14px; }
-  .ideas-page__header { align-items: flex-start; flex-direction: column; }
-  .ideas-grid { grid-template-columns: 1fr; }
-  .ideas-search { grid-template-columns: auto minmax(0, 1fr); }
-  .ideas-search button { grid-column: 1 / -1; }
-  .ideas-filters > svg { display: none; }
+  .ideas-page {
+    padding-inline: 14px;
+  }
+
+  .ideas-page__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ideas-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ideas-search {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ideas-search button {
+    grid-column: 1 / -1;
+  }
+
+  .ideas-filters>svg {
+    display: none;
+  }
+}
+
+.ideas-date-filter {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap
+}
+
+.ideas-date-filter label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #777184;
+  text-transform: uppercase;
+  letter-spacing: .08em
+}
+
+.ideas-date-filter input {
+  border: 1px solid #ddd8ee;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #252038
+}
+
+.ideas-date-filter button {
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 13px;
+  background: #f0edff;
+  color: #5c3ddd;
+  font-weight: 800
+}
+
+/* --------------------------------------------------------------------------
+   Accepted ideas integration
+   These rules extend the existing design without changing standard card sizes.
+   -------------------------------------------------------------------------- */
+
+.ideas-filters button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.ideas-filters button.is-accepted-filter {
+  position: relative;
+}
+
+.ideas-filters button.is-accepted-filter:hover,
+.ideas-filters button.is-accepted-filter.is-active {
+  border-color: rgba(24, 163, 122, 0.3);
+  background: linear-gradient(135deg, #effcf7, #f5fffb);
+  color: #11815f;
+  box-shadow: 0 9px 22px rgba(31, 164, 123, 0.11);
+}
+
+.ideas-page__count--accepted {
+  border-color: rgba(31, 165, 124, 0.18);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(235, 253, 247, 0.86));
+  color: #168362;
+}
+
+.ideas-accepted-note {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: -10px 0 22px;
+  padding: 13px 16px;
+  border: 1px solid rgba(26, 157, 119, 0.13);
+  border-radius: 17px;
+  background: linear-gradient(100deg, rgba(239, 253, 248, 0.82), rgba(255, 255, 255, 0.78));
+  box-shadow: 0 12px 30px rgba(36, 126, 101, 0.05);
+  animation: acceptedNoteIn 360ms ease both;
+}
+
+.ideas-accepted-note>span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: #dcf8ee;
+  color: #14805f;
+}
+
+.ideas-accepted-note strong {
+  display: block;
+  color: #21463b;
+  font-size: 0.84rem;
+}
+
+.ideas-accepted-note p {
+  margin: 3px 0 0;
+  color: #73877f;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.idea-tile--accepted {
+  isolation: isolate;
+  border-color: rgba(29, 154, 118, 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(250, 255, 253, 0.94));
+}
+
+.idea-tile--accepted:hover {
+  border-color: rgba(28, 159, 120, 0.28);
+  box-shadow: 0 28px 60px rgba(36, 120, 98, 0.12);
+}
+
+.idea-tile--accepted .idea-tile__accent {
+  background: linear-gradient(90deg, #24b887, #67d8e8 62%, transparent);
+}
+
+.idea-tile__accepted-glow {
+  position: absolute;
+  z-index: -1;
+  top: -54px;
+  right: -48px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(87, 220, 178, 0.14), transparent 67%);
+  pointer-events: none;
+  transition: transform 300ms ease, opacity 300ms ease;
+}
+
+.idea-tile--accepted:hover .idea-tile__accepted-glow {
+  transform: scale(1.14) translate(-4px, 4px);
+  opacity: 0.92;
+}
+
+.idea-tile__status--accepted {
+  border: 1px solid rgba(25, 153, 115, 0.1);
+  background: linear-gradient(135deg, #e7faf3, #effff9);
+  color: #12805f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.idea-tile--accepted .idea-tile__domain span {
+  background: #eafaf5;
+  color: #168565;
+}
+
+.idea-tile__accepted-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border: 1px solid rgba(29, 156, 119, 0.1);
+  border-radius: 14px;
+  background: rgba(239, 252, 247, 0.8);
+}
+
+.idea-tile__accepted-info>span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 10px;
+  background: white;
+  color: #168563;
+  box-shadow: 0 7px 18px rgba(29, 130, 101, 0.09);
+}
+
+.idea-tile__accepted-info strong,
+.idea-tile__accepted-info small {
+  display: block;
+}
+
+.idea-tile__accepted-info strong {
+  color: #275347;
+  font-size: 0.75rem;
+}
+
+.idea-tile__accepted-info small {
+  margin-top: 2px;
+  color: #758a83;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.idea-tile--accepted footer button {
+  color: #148262;
+}
+
+.ideas-state--accepted {
+  color: #188363;
+  border-color: rgba(31, 157, 120, 0.22);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(239, 253, 248, 0.74));
+}
+
+.ideas-state--accepted button {
+  background: linear-gradient(135deg, #168765, #2ba47e);
+}
+
+@keyframes acceptedNoteIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ideas-accepted-note {
+    animation: none;
+  }
+
+  .idea-tile__accepted-glow {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Compact library controls
+   Keeps search, date range, and all status filters aligned on one clean row
+   on wide screens without changing the idea-card layout.
+   -------------------------------------------------------------------------- */
+
+.ideas-page__header {
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.ideas-page__count {
+  min-width: 112px;
+  min-height: 54px;
+  justify-content: center;
+  padding: 10px 15px;
+  border-radius: 17px;
+}
+
+.ideas-page__toolbar {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.18fr) auto minmax(500px, 1fr);
+  align-items: end;
+  gap: 18px;
+  margin-bottom: 26px;
+}
+
+.ideas-search {
+  width: 100%;
+  min-height: 58px;
+  padding: 7px 7px 7px 17px;
+  border-radius: 18px;
+}
+
+.ideas-search button {
+  min-width: 108px;
+  min-height: 44px;
+  padding: 10px 17px;
+  border-radius: 13px;
+}
+
+.ideas-date-filter {
+  display: grid;
+  grid-template-columns: repeat(2, 146px);
+  align-items: end;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.ideas-date-filter label {
+  min-width: 0;
+  gap: 6px;
+  font-size: 0.66rem;
+}
+
+.ideas-date-filter input {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 11px;
+  border-radius: 13px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ideas-date-filter button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 0.72rem;
+}
+
+.ideas-filters {
+  display: grid;
+  grid-template-columns: 18px repeat(5, max-content);
+  align-items: center;
+  justify-content: end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.ideas-filters button {
+  min-height: 44px;
+  padding: 9px 14px;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.ideas-filters button.is-accepted-filter {
+  padding-inline: 15px;
+}
+
+.ideas-accepted-note {
+  min-height: 70px;
+  margin: 0 0 22px;
+  padding: 12px 16px;
+  border-radius: 18px;
+}
+
+.ideas-accepted-note>span {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  border-radius: 11px;
+}
+
+.ideas-accepted-note strong {
+  font-size: 0.82rem;
+}
+
+.ideas-accepted-note p {
+  font-size: 0.76rem;
+}
+
+@media (max-width: 1420px) {
+  .ideas-page__toolbar {
+    grid-template-columns: minmax(330px, 1fr) auto;
+  }
+
+  .ideas-filters {
+    grid-column: 1 / -1;
+    justify-content: start;
+  }
+}
+
+@media (max-width: 900px) {
+  .ideas-page__toolbar {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ideas-date-filter {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .ideas-filters {
+    display: flex;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scrollbar-width: thin;
+  }
+
+  .ideas-filters button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .ideas-page__count {
+    min-height: 48px;
+  }
+
+  .ideas-date-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .ideas-date-filter button {
+    grid-column: 1;
+  }
+
+  .ideas-accepted-note {
+    align-items: flex-start;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Final toolbar sizing refinement
+   Makes the search control visually match the date fields and status pills.
+   -------------------------------------------------------------------------- */
+
+.ideas-page__toolbar {
+  align-items: end;
+  gap: 14px;
+}
+
+.ideas-search {
+  min-height: 54px;
+  height: 54px;
+  padding: 5px 6px 5px 16px;
+  border-radius: 16px;
+}
+
+.ideas-search input {
+  height: 42px;
+  font-size: 0.94rem;
+  line-height: 1.2;
+}
+
+.ideas-search button {
+  min-width: 104px;
+  min-height: 42px;
+  height: 42px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+}
+
+.ideas-date-filter input,
+.ideas-filters button {
+  min-height: 54px;
+  height: 54px;
+}
+
+.ideas-date-filter input {
+  padding: 10px 13px;
+  border-radius: 16px;
+  font-size: 0.8rem;
+}
+
+.ideas-filters button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .ideas-search {
+    width: 100%;
+  }
+
+  .ideas-date-filter input,
+  .ideas-filters button {
+    min-height: 50px;
+    height: 50px;
+  }
+}
+
+@media (max-width: 560px) {
+  .ideas-search {
+    min-height: 52px;
+    height: 52px;
+  }
+
+  .ideas-search input {
+    height: 40px;
+    font-size: 0.88rem;
+  }
+
+  .ideas-search button {
+    min-width: 90px;
+    min-height: 40px;
+    height: 40px;
+    padding-inline: 13px;
+  }
+}
+
+
+/* ==========================================================================
+   Date range alignment refinement
+   Keeps FROM and TO equal, separated, and aligned with the search control.
+   ========================================================================== */
+
+.ideas-page__toolbar {
+  grid-template-columns: minmax(390px, 1.15fr) 390px minmax(560px, 1fr);
+  column-gap: 20px;
+  row-gap: 14px;
+}
+
+.ideas-date-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 390px;
+  gap: 14px;
+  align-items: end;
+}
+
+.ideas-date-filter label {
+  display: grid;
+  grid-template-rows: 18px 54px;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: #747087;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ideas-date-filter input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 54px;
+  min-height: 54px;
+  padding: 0 42px 0 15px;
+  border-radius: 16px;
+  font-size: 0.82rem;
+  line-height: 54px;
+}
+
+.ideas-date-filter input::-webkit-calendar-picker-indicator {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.ideas-filters {
+  align-self: end;
+  min-height: 54px;
+}
+
+/* Keep the filter icon away from the TO field. */
+.ideas-filters>svg {
+  margin-left: 2px;
+  margin-right: 2px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1500px) {
+  .ideas-page__toolbar {
+    grid-template-columns: minmax(350px, 1fr) 370px;
+  }
+
+  .ideas-date-filter {
+    width: 370px;
+  }
+
+  .ideas-filters {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .ideas-page__toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ideas-date-filter {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .ideas-date-filter {
+    grid-template-columns: 1fr;
+  }
+
+  .ideas-date-filter label {
+    grid-template-rows: 18px 50px;
+  }
+
+  .ideas-date-filter input {
+    height: 50px;
+    min-height: 50px;
+    line-height: 50px;
+  }
+}
+
+
+/* ==========================================================================
+   Refined library toolbar
+   Equal-height search, reliable date-range card, and balanced filter pills.
+   ========================================================================== */
+
+.ideas-page__toolbar {
+  display: grid;
+  grid-template-columns: minmax(330px, 1.25fr) minmax(310px, .78fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.ideas-search {
+  width: 100%;
+  min-height: 58px;
+  padding: 6px 7px 6px 17px;
+  border-radius: 18px;
+}
+
+.ideas-search button {
+  min-width: 112px;
+  min-height: 46px;
+  border-radius: 13px;
+}
+
+.ideas-date-filter {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ideas-date-filter__heading {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3px;
+}
+
+.ideas-date-filter__heading>span {
+  color: #817b90;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.ideas-date-filter__clear {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid rgba(102, 82, 225, .14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .72);
+  color: #746c86;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: .18s ease;
+}
+
+.ideas-date-filter__clear:hover {
+  border-color: rgba(102, 82, 225, .36);
+  color: #5947df;
+  transform: rotate(8deg);
+}
+
+.ideas-date-filter__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  padding: 6px;
+  border: 1px solid rgba(71, 55, 121, .1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .74);
+  box-shadow: 0 14px 32px rgba(65, 50, 125, .055);
+}
+
+.ideas-date-filter.has-value .ideas-date-filter__fields {
+  border-color: rgba(100, 79, 239, .25);
+  box-shadow: 0 14px 34px rgba(92, 72, 217, .09);
+}
+
+.ideas-date-filter label {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 10px 8px;
+  border-radius: 13px;
+  background: #faf9fd;
+}
+
+.ideas-date-filter label+label::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  background: #e7e2ef;
+}
+
+.ideas-date-filter label>span {
+  color: #8b8599;
+  font-size: .61rem;
+  font-weight: 850;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.ideas-date-filter input {
+  width: 100%;
+  min-width: 0;
+  height: 27px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #27213f;
+  font: inherit;
+  font-size: .79rem;
+  font-weight: 760;
+}
+
+.ideas-filters {
+  min-height: 58px;
+  flex-wrap: nowrap;
+  align-self: end;
+}
+
+.ideas-filters button {
+  min-height: 46px;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1320px) {
+  .ideas-page__toolbar {
+    grid-template-columns: minmax(330px, 1fr) minmax(310px, .8fr);
+  }
+
+  .ideas-filters {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 800px) {
+  .ideas-page__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .ideas-date-filter__fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ideas-filters {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .ideas-date-filter__fields {
+    grid-template-columns: 1fr;
+  }
+
+  .ideas-date-filter label+label::before {
+    display: none;
+  }
+}
+
+
+
+
+/* ==========================================================================
+   FINAL POLISHED TOOLBAR OVERRIDES
+   Keeps search, date range, and filters compact on one visual baseline.
+   ========================================================================== */
+
+.ideas-page__toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(360px, 1fr) 300px auto !important;
+  align-items: end !important;
+  gap: 16px !important;
+  width: 100%
+}
+
+
+.ideas-search {
+  height: 56px !important;
+  min-height: 56px !important;
+  padding: 5px 6px 5px 16px !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, .82) !important;
+  box-shadow: 0 14px 34px rgba(51, 38, 102, .06) !important
+}
+
+
+.ideas-search button {
+  min-width: 108px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #251b57, #5039c8) !important;
+  box-shadow: 0 10px 24px rgba(43, 28, 112, .18) !important
+}
+
+
+.ideas-date-filter {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 15px 56px !important;
+  gap: 6px !important;
+  width: 300px !important;
+  min-width: 300px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  align-self: end !important
+}
+
+
+.ideas-date-filter__heading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  min-height: 15px !important;
+  padding: 0 4px !important
+}
+
+
+.ideas-date-filter__heading>span {
+  font-size: .61rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .11em !important;
+  color: #847e92 !important
+}
+
+
+.ideas-date-filter__clear {
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  border-radius: 50% !important;
+  padding: 0 !important
+}
+
+
+.ideas-date-filter__fields {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 5px !important;
+  height: 56px !important;
+  min-height: 56px !important;
+  padding: 4px !important;
+  border: 1px solid rgba(79, 61, 140, .1) !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, .8) !important;
+  box-shadow: 0 14px 32px rgba(55, 42, 107, .06) !important;
+  overflow: hidden !important
+}
+
+
+.ideas-date-filter label {
+  display: grid !important;
+  grid-template-rows: 12px 26px !important;
+  gap: 1px !important;
+  height: 46px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 5px 9px 4px !important;
+  border: 0 !important;
+  border-radius: 13px !important;
+  background: #faf9fd !important
+}
+
+
+.ideas-date-filter label+label:before {
+  left: -3px !important;
+  top: 10px !important;
+  bottom: 10px !important;
+  background: #e7e3ef !important
+}
+
+
+.ideas-date-filter label>span {
+  font-size: .52rem !important;
+  line-height: 1 !important;
+  color: #918a9d !important
+}
+
+
+.ideas-date-filter input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  font-size: .69rem !important;
+  font-weight: 760 !important;
+  line-height: 26px !important;
+  box-shadow: none !important
+}
+
+
+.ideas-date-filter input::-webkit-calendar-picker-indicator {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: .72 !important
+}
+
+
+.ideas-filters {
+  display: flex !important;
+  min-height: 56px !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important
+}
+
+
+.ideas-filters button {
+  min-height: 46px !important;
+  padding: 0 15px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease !important
+}
+
+
+.ideas-filters button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 12px 24px rgba(64, 48, 128, .08) !important
+}
+
+@media(max-width:1380px) {
+  .ideas-page__toolbar {
+    grid-template-columns: minmax(330px, 1fr) 300px !important
+  }
+
+  .ideas-filters {
+    grid-column: 1/-1 !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important
+  }
+}
+
+@media(max-width:800px) {
+  .ideas-page__toolbar {
+    grid-template-columns: 1fr !important
+  }
+
+  .ideas-date-filter {
+    width: 100% !important;
+    min-width: 0 !important
+  }
+
+  .ideas-filters {
+    grid-column: auto !important
+  }
+}
+
+/* ===== Nexora luxury idea library ===== */
+.ideas-page__toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(360px, 1fr) 300px auto !important;
+  gap: 14px !important;
+  align-items: end !important
+}
+
+.ideas-search {
+  height: 58px !important;
+  min-height: 58px !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, .82) !important;
+  box-shadow: 0 14px 38px rgba(65, 49, 122, .07) !important;
+  border: 1px solid rgba(88, 68, 154, .1) !important
+}
+
+.ideas-search button {
+  height: 46px !important;
+  min-height: 46px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #241952, #5943d4) !important;
+  box-shadow: 0 12px 25px rgba(57, 40, 139, .2) !important
+}
+
+.ideas-date-filter {
+  width: 300px !important;
+  min-width: 300px !important;
+  display: grid !important;
+  grid-template-rows: 16px 58px !important;
+  gap: 6px !important
+}
+
+.ideas-date-filter__heading {
+  padding: 0 4px !important
+}
+
+.ideas-date-filter__heading>span {
+  font-size: .62rem !important;
+  letter-spacing: .13em !important;
+  color: #817a91 !important
+}
+
+.ideas-date-filter__fields {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  height: 58px !important;
+  padding: 5px !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, .86) !important;
+  border: 1px solid rgba(89, 69, 151, .11) !important;
+  box-shadow: 0 14px 36px rgba(58, 43, 112, .06) !important
+}
+
+.ideas-date-filter label {
+  height: 48px !important;
+  padding: 6px 9px !important;
+  border-radius: 13px !important;
+  background: linear-gradient(145deg, #fbfaff, #f7f8fc) !important;
+  display: grid !important;
+  grid-template-rows: 12px 25px !important
+}
+
+.ideas-date-filter input {
+  font-size: .69rem !important;
+  height: 25px !important;
+  min-height: 25px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important
+}
+
+.ideas-filters {
+  display: flex !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  min-height: 58px !important;
+  align-items: center !important
+}
+
+.ideas-filters>svg {
+  display: none !important
+}
+
+.ideas-filters button {
+  min-height: 46px !important;
+  padding: 0 17px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, .76) !important;
+  border: 1px solid rgba(82, 64, 137, .09) !important;
+  box-shadow: 0 10px 24px rgba(60, 45, 114, .05) !important;
+  transition: .2s ease !important
+}
+
+.ideas-filters button:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 15px 30px rgba(60, 45, 114, .09) !important
+}
+
+.ideas-filters button.is-active {
+  background: linear-gradient(135deg, #f0ecff, #edf7ff) !important;
+  border-color: #8a75ea !important;
+  color: #5945d4 !important
+}
+
+.idea-tile {
+  transition: transform .25s ease, box-shadow .25s ease !important
+}
+
+.idea-tile:hover {
+  transform: translateY(-7px) !important;
+  box-shadow: 0 28px 62px rgba(51, 38, 103, .12) !important
+}
+
+@media(max-width:1280px) {
+  .ideas-page__toolbar {
+    grid-template-columns: 1fr 300px !important
+  }
+
+  .ideas-filters {
+    grid-column: 1/-1 !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important
+  }
+}
+
+@media(max-width:760px) {
+  .ideas-page__toolbar {
+    grid-template-columns: 1fr !important
+  }
+
+  .ideas-date-filter {
+    width: 100% !important;
+    min-width: 0 !important
+  }
+
+  .ideas-filters {
+    grid-column: auto !important;
+    overflow: auto !important
+  }
+}
+
+
+/* Premium scroll reveal — progressive enhancement for modern browsers. */
+@supports (animation-timeline: view()) {
+
+  .lux-reveal,
+  .ideas-grid>*,
+  .notifications-timeline>*,
+  .discover-grid>*,
+  .published-grid>*,
+  .bm-grid>*,
+  .preferences-grid>*,
+  .compliance-principles__cards>*,
+  .workspace-summary-grid>*,
+  .publish-layout>*,
+  .publication-detail-grid>* {
+    animation: luxuryReveal both linear;
+    animation-timeline: view();
+    animation-range: entry 8% cover 26%;
+  }
+}
+
+@keyframes luxuryReveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(.985);
+    filter: blur(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ==========================================================================
+   Nexora — Final Polished My Ideas Toolbar
+   ==========================================================================
+
+   This section is the final visual authority for the My Ideas toolbar.
+
+   Desktop:
+   - Search is capped at 620px to avoid excessive empty space.
+   - Date range uses a comfortable 365px column.
+   - Status filters stay aligned on the right.
+
+   Responsive:
+   - Filters move to a second row before the controls become cramped.
+   - Tablet and mobile layouts collapse into one column.
+   - Status filters remain horizontally scrollable on narrow screens.
+
+   Keep this section at the very end of this file.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Main toolbar layout
+   -------------------------------------------------------------------------- */
+
+.ideas-page__toolbar {
+  display: grid !important;
+  grid-template-columns:
+    minmax(420px, 620px)
+    365px
+    minmax(max-content, 1fr) !important;
+  align-items: end !important;
+  justify-content: space-between !important;
+  column-gap: 10px !important;
+  row-gap: 14px !important;
+  width: 100% !important;
+  margin-bottom: 26px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Search control
+   -------------------------------------------------------------------------- */
+
+.ideas-search {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 10px !important;
+
+  width: min(100%, 620px) !important;
+  max-width: 620px !important;
+  height: 50px !important;
+  min-height: 50px !important;
+
+  padding: 5px 6px 5px 15px !important;
+  border: 1px solid rgba(90, 72, 160, 0.12) !important;
+  border-radius: 16px !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.95),
+      rgba(249, 247, 255, 0.89)
+    ) !important;
+
+  box-shadow:
+    0 11px 28px rgba(62, 45, 123, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
+
+  color: #777189 !important;
+
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease !important;
+}
+
+.ideas-search:focus-within {
+  border-color: rgba(105, 82, 232, 0.42) !important;
+  box-shadow:
+    0 15px 32px rgba(83, 62, 171, 0.1),
+    0 0 0 4px rgba(105, 82, 232, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94) !important;
+  transform: translateY(-1px);
+}
+
+.ideas-search > svg {
+  width: 18px !important;
+  height: 18px !important;
+  flex: 0 0 auto !important;
+  color: #807991 !important;
+}
+
+.ideas-search input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 38px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #201c38 !important;
+  font: inherit !important;
+  font-size: 0.9rem !important;
+  line-height: 1.2 !important;
+}
+
+.ideas-search input::placeholder {
+  color: #9b96aa !important;
+  opacity: 1 !important;
+}
+
+.ideas-search button {
+  display: inline-flex !important;
+  min-width: 98px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 17px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+
+  background:
+    linear-gradient(
+      135deg,
+      #35206f 0%,
+      #6244dd 58%,
+      #7659ef 100%
+    ) !important;
+
+  box-shadow:
+    0 9px 21px rgba(72, 47, 164, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+
+  color: #ffffff !important;
+  font: inherit !important;
+  font-size: 0.84rem !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease !important;
+}
+
+.ideas-search button:hover {
+  transform: translateY(-2px) !important;
+  filter: saturate(1.07) brightness(1.03);
+  box-shadow:
+    0 13px 26px rgba(72, 47, 164, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
+}
+
+.ideas-search button:active {
+  transform: translateY(0) scale(0.98) !important;
+}
+
+.ideas-search button:focus-visible {
+  outline: 3px solid rgba(105, 82, 232, 0.22) !important;
+  outline-offset: 3px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Date range
+   -------------------------------------------------------------------------- */
+
+.ideas-date-filter {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 15px 50px !important;
+  width: 365px !important;
+  min-width: 365px !important;
+  gap: 5px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  align-self: end !important;
+}
+
+.ideas-date-filter__heading {
+  display: flex !important;
+  min-height: 15px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 3px !important;
+}
+
+.ideas-date-filter__heading > span {
+  color: #817a92 !important;
+  font-size: 0.6rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.13em !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+.ideas-date-filter__clear {
+  position: static !important;
+  display: grid !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 1px solid rgba(208, 70, 94, 0.18) !important;
+  border-radius: 7px !important;
+  background: linear-gradient(145deg, #fff7f8, #ffedf0) !important;
+  color: #c64660 !important;
+  box-shadow: none !important;
+  font-size: 0.84rem !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease !important;
+}
+
+.ideas-date-filter__clear:hover {
+  transform: translateY(-1px) rotate(6deg) !important;
+  border-color: rgba(208, 70, 94, 0.35) !important;
+  background: linear-gradient(145deg, #fff1f4, #ffe1e7) !important;
+  color: #b83651 !important;
+}
+
+.ideas-date-filter__fields {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 5px !important;
+  width: 100% !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  padding: 4px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(88, 69, 151, 0.11) !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.89) !important;
+
+  box-shadow:
+    0 11px 28px rgba(58, 43, 112, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.93) !important;
+
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease !important;
+}
+
+.ideas-date-filter.has-value .ideas-date-filter__fields {
+  border-color: rgba(105, 82, 232, 0.29) !important;
+  box-shadow:
+    0 13px 30px rgba(83, 62, 171, 0.09),
+    0 0 0 3px rgba(105, 82, 232, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94) !important;
+}
+
+.ideas-date-filter label {
+  position: relative !important;
+  display: grid !important;
+  grid-template-rows: 10px 23px !important;
+  gap: 1px !important;
+  height: 42px !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 5px 9px 4px !important;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: linear-gradient(145deg, #fbfaff, #f6f7fc) !important;
+}
+
+.ideas-date-filter label + label::before {
+  content: "";
+  position: absolute !important;
+  left: -3px !important;
+  top: 8px !important;
+  bottom: 8px !important;
+  width: 1px !important;
+  background: #e7e3ef !important;
+}
+
+.ideas-date-filter label > span {
+  color: #91899d !important;
+  font-size: 0.5rem !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.08em !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+.ideas-date-filter input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 23px !important;
+  min-height: 23px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #2c2643 !important;
+  font: inherit !important;
+  font-size: 0.67rem !important;
+  font-weight: 780 !important;
+  line-height: 23px !important;
+}
+
+.ideas-date-filter input::-webkit-calendar-picker-indicator {
+  width: 13px !important;
+  height: 13px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  cursor: pointer !important;
+  opacity: 0.72 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Idea filter pills
+   -------------------------------------------------------------------------- */
+
+.ideas-filters {
+  display: flex !important;
+  min-width: 0 !important;
+  min-height: 50px !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  align-self: end !important;
+  color: #8b8599 !important;
+}
+
+.ideas-filters > svg {
+  display: none !important;
+}
+
+.ideas-filters button {
+  display: inline-flex !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 0 15px !important;
+  border: 1px solid rgba(82, 64, 137, 0.09) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  color: #6f697e !important;
+  box-shadow: 0 8px 20px rgba(60, 45, 114, 0.05) !important;
+  font: inherit !important;
+  font-size: 0.78rem !important;
+  font-weight: 750 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease !important;
+}
+
+.ideas-filters button:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(100, 79, 239, 0.27) !important;
+  box-shadow: 0 12px 24px rgba(64, 48, 128, 0.085) !important;
+}
+
+.ideas-filters button.is-active {
+  border-color: rgba(108, 83, 237, 0.58) !important;
+  background: linear-gradient(135deg, #f0ecff, #edf7ff) !important;
+  color: #5945d4 !important;
+  box-shadow:
+    0 9px 22px rgba(83, 61, 191, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
+}
+
+.ideas-filters button.is-accepted-filter {
+  padding-inline: 16px !important;
+}
+
+.ideas-filters button.is-accepted-filter:hover,
+.ideas-filters button.is-accepted-filter.is-active {
+  border-color: rgba(24, 163, 122, 0.32) !important;
+  background: linear-gradient(135deg, #effcf7, #f5fffb) !important;
+  color: #11815f !important;
+  box-shadow: 0 9px 22px rgba(31, 164, 123, 0.1) !important;
+}
+
+.ideas-filters button:focus-visible,
+.ideas-date-filter__clear:focus-visible {
+  outline: 3px solid rgba(105, 82, 232, 0.2) !important;
+  outline-offset: 3px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Medium desktop and tablet
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1280px) {
+  .ideas-page__toolbar {
+    grid-template-columns:
+      minmax(330px, 1fr)
+      365px !important;
+  }
+
+  .ideas-search {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .ideas-filters {
+    grid-column: 1 / -1 !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Tablet and mobile
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 800px) {
+  .ideas-page__toolbar {
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+  }
+
+  .ideas-search {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .ideas-date-filter {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .ideas-filters {
+    grid-column: auto !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    padding: 2px 2px 6px !important;
+    scrollbar-width: thin;
+  }
+
+  .ideas-filters button {
+    flex: 0 0 auto !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Small phones
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 520px) {
+  .ideas-search {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    height: auto !important;
+    min-height: 50px !important;
+  }
+
+  .ideas-search button {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+  }
+
+  .ideas-date-filter__fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .ideas-date-filter label {
+    padding-inline: 7px !important;
+  }
+
+  .ideas-date-filter input {
+    font-size: 0.63rem !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion accessibility
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .ideas-search,
+  .ideas-search button,
+  .ideas-date-filter__clear,
+  .ideas-date-filter__fields,
+  .ideas-filters button {
+    transition: none !important;
+  }
+
+  .ideas-search:focus-within,
+  .ideas-search button:hover,
+  .ideas-date-filter__clear:hover,
+  .ideas-filters button:hover {
+    transform: none !important;
+  }
+}
+
+/* ==========================================================================
+   Nexora — Final Premium Idea Card Motion
+   Keep this section at the very end of ideas.css.
+   ========================================================================== */
+
+.idea-tile {
+  --idea-tone: #6850e4;
+
+  isolation: isolate;
+  overflow: visible;
+
+  min-height: 370px;
+  padding: 21px;
+
+  border: 1px solid rgba(77, 59, 139, 0.11);
+  border-radius: 26px;
+
+  background:
+    radial-gradient(
+      circle at 92% 4%,
+      rgba(105, 82, 232, 0.08),
+      transparent 26%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.97),
+      rgba(249, 247, 255, 0.92)
+    );
+
+  box-shadow:
+    0 22px 52px rgba(57, 42, 111, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+
+  transform-origin: center;
+
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+}
+
+.idea-tile:hover {
+  z-index: 5;
+
+  border-color:
+    color-mix(
+      in srgb,
+      var(--idea-tone) 30%,
+      transparent
+    );
+
+  box-shadow:
+    0 34px 74px rgba(56, 41, 111, 0.15),
+    0 0 0 1px
+      color-mix(
+        in srgb,
+        var(--idea-tone) 8%,
+        transparent
+      ),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+.idea-tile--processing {
+  --idea-tone: #d39a2d;
+}
+
+.idea-tile--published {
+  --idea-tone: #209b75;
+}
+
+.idea-tile--unlocked {
+  --idea-tone: #3b8fc5;
+}
+
+.idea-tile--accepted {
+  --idea-tone: #26a77c;
+}
+
+.idea-tile--core {
+  --idea-tone: #7564b7;
+}
+
+/* Animated accent line. */
+.idea-tile__accent {
+  z-index: 3;
+  inset: 0 22px auto;
+  height: 3px;
+
+  background:
+    linear-gradient(
+      90deg,
+      var(--idea-tone),
+      color-mix(
+        in srgb,
+        var(--idea-tone) 48%,
+        #70d4ff
+      ),
+      transparent
+    );
+
+  transform-origin: left;
+  transition:
+    transform 300ms ease,
+    filter 300ms ease;
+}
+
+.idea-tile:hover .idea-tile__accent {
+  transform: scaleX(1.04);
+  filter:
+    drop-shadow(
+      0 0 8px
+      color-mix(
+        in srgb,
+        var(--idea-tone) 34%,
+        transparent
+      )
+    );
+}
+
+/* Soft ambient orb behind the content. */
+.idea-tile__ambient {
+  position: absolute;
+  z-index: -2;
+  top: -54px;
+  right: -52px;
+
+  width: 170px;
+  height: 170px;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle,
+      color-mix(
+        in srgb,
+        var(--idea-tone) 13%,
+        transparent
+      ),
+      transparent 68%
+    );
+
+  pointer-events: none;
+
+  transition:
+    transform 360ms ease,
+    opacity 360ms ease;
+}
+
+.idea-tile:hover .idea-tile__ambient {
+  transform:
+    translate(-8px, 8px)
+    scale(1.16);
+
+  opacity: 0.96;
+}
+
+/* Slow premium light sweep. */
+.idea-tile__shine {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+
+  overflow: hidden;
+  border-radius: inherit;
+
+  pointer-events: none;
+}
+
+.idea-tile__shine::after {
+  content: "";
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -52%;
+
+  width: 34%;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.34),
+      transparent
+    );
+
+  transform: skewX(-14deg);
+
+  transition: left 700ms ease;
+}
+
+.idea-tile:hover .idea-tile__shine::after {
+  left: 122%;
+}
+
+/* Status pill refinement. */
+.idea-tile__status {
+  position: relative;
+  z-index: 4;
+
+  min-height: 30px;
+  padding: 0 11px;
+
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--idea-tone) 13%,
+      transparent
+    );
+
+  background:
+    color-mix(
+      in srgb,
+      var(--idea-tone) 9%,
+      #ffffff
+    );
+
+  color: var(--idea-tone);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+/* Menu trigger. */
+.idea-tile__menu {
+  z-index: 20;
+}
+
+.idea-tile__menu > button {
+  position: relative;
+  z-index: 3;
+
+  width: 36px;
+  height: 36px;
+
+  border: 1px solid rgba(78, 60, 132, 0.08);
+  border-radius: 11px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.94),
+      rgba(246, 244, 250, 0.92)
+    );
+
+  box-shadow:
+    0 8px 20px rgba(55, 42, 106, 0.05);
+
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.idea-tile__menu > button:hover {
+  border-color:
+    color-mix(
+      in srgb,
+      var(--idea-tone) 24%,
+      transparent
+    );
+
+  color: var(--idea-tone);
+
+  box-shadow:
+    0 12px 24px rgba(55, 42, 106, 0.1);
+}
+
+/* Floating action menu. */
+.idea-tile__popover {
+  top: 43px;
+  right: 0;
+
+  width: 182px;
+  padding: 7px;
+
+  border: 1px solid rgba(54, 42, 94, 0.11);
+  border-radius: 15px;
+
+  background:
+    rgba(255, 255, 255, 0.96);
+
+  box-shadow:
+    0 22px 54px rgba(39, 28, 77, 0.2);
+
+  backdrop-filter: blur(18px);
+  transform-origin: top right;
+}
+
+.idea-tile__popover button {
+  min-height: 38px;
+  padding: 0 11px;
+
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.idea-tile__popover button:hover {
+  background:
+    color-mix(
+      in srgb,
+      var(--idea-tone) 8%,
+      #ffffff
+    );
+
+  color: var(--idea-tone);
+  transform: translateX(2px);
+}
+
+.idea-tile__popover .is-danger:hover {
+  background: #fff0f3;
+  color: #b93450;
+}
+
+/* Domain chip. */
+.idea-tile__domain {
+  position: relative;
+  z-index: 3;
+
+  margin-top: 24px;
+
+  color: #716b81;
+  font-size: 0.76rem;
+}
+
+.idea-tile__domain span {
+  width: 31px;
+  height: 31px;
+
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--idea-tone) 11%,
+      transparent
+    );
+
+  border-radius: 10px;
+
+  background:
+    color-mix(
+      in srgb,
+      var(--idea-tone) 9%,
+      #ffffff
+    );
+
+  color: var(--idea-tone);
+
+  box-shadow:
+    0 8px 18px
+      color-mix(
+        in srgb,
+        var(--idea-tone) 8%,
+        transparent
+      );
+
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.idea-tile:hover .idea-tile__domain span {
+  transform:
+    translateY(-2px)
+    rotate(-4deg);
+
+  box-shadow:
+    0 12px 22px
+      color-mix(
+        in srgb,
+        var(--idea-tone) 13%,
+        transparent
+      );
+}
+
+/* Content refinement. */
+.idea-tile h2 {
+  position: relative;
+  z-index: 3;
+
+  margin: 19px 0 10px;
+
+  color: #1e1838;
+
+  font-size: 1.25rem;
+  line-height: 1.28;
+  letter-spacing: -0.03em;
+}
+
+.idea-tile > p {
+  position: relative;
+  z-index: 3;
+
+  color: #756f80;
+
+  font-size: 0.87rem;
+  line-height: 1.68;
+}
+
+/* Progress track. */
+.idea-tile__progress {
+  position: relative;
+  z-index: 3;
+
+  padding: 12px 13px;
+
+  border: 1px solid rgba(203, 151, 43, 0.12);
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 249, 230, 0.84),
+      rgba(255, 255, 255, 0.78)
+    );
+}
+
+.idea-tile__track {
+  height: 7px;
+  background: rgba(219, 209, 183, 0.42);
+}
+
+.idea-tile__track i {
+  background:
+    linear-gradient(
+      90deg,
+      #d59a2f,
+      #f0c866
+    );
+
+  box-shadow:
+    0 0 16px rgba(224, 169, 55, 0.26);
+}
+
+/* Accepted information panel. */
+.idea-tile__accepted-info {
+  position: relative;
+  z-index: 3;
+
+  border-color: rgba(29, 156, 119, 0.12);
+  border-radius: 15px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(237, 252, 247, 0.94),
+      rgba(250, 255, 253, 0.88)
+    );
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.idea-tile:hover .idea-tile__accepted-info {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 13px 28px rgba(29, 130, 101, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+/* Footer. */
+.idea-tile footer {
+  position: relative;
+  z-index: 3;
+
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.idea-tile footer > span {
+  color: #918b9e;
+  font-size: 0.72rem;
+}
+
+.idea-tile footer button {
+  min-height: 34px;
+  padding: 0 4px;
+
+  color: var(--idea-tone);
+
+  transition:
+    color 180ms ease,
+    filter 180ms ease;
+}
+
+.idea-tile footer button:hover {
+  filter: brightness(0.92);
+}
+
+/* Accepted cards keep green semantics. */
+.idea-tile--accepted {
+  background:
+    radial-gradient(
+      circle at 92% 4%,
+      rgba(54, 191, 147, 0.10),
+      transparent 27%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(248, 255, 252, 0.94)
+    );
+}
+
+/* Responsive card density. */
+@media (max-width: 680px) {
+  .idea-tile {
+    min-height: 350px;
+    padding: 19px;
+    border-radius: 22px;
+  }
+
+  .idea-tile h2 {
+    font-size: 1.17rem;
+  }
+}
+
+/* Motion accessibility. */
+@media (prefers-reduced-motion: reduce) {
+  .idea-tile,
+  .idea-tile__accent,
+  .idea-tile__ambient,
+  .idea-tile__shine::after,
+  .idea-tile__domain span,
+  .idea-tile__accepted-info,
+  .idea-tile__menu > button,
+  .idea-tile__popover button {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .idea-tile:hover,
+  .idea-tile:hover .idea-tile__domain span,
+  .idea-tile:hover .idea-tile__accepted-info {
+    transform: none !important;
+  }
+
+  .idea-tile__shine::after {
+    display: none;
+  }
 }
