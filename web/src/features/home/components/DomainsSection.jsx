@@ -14,18 +14,22 @@
  * @author Eman
  */
 
+import { useState } from 'react';
+
 import {
     BriefcaseBusiness,
+    ChevronDown,
+    ChevronUp,
     CircleHelp,
     Cpu,
     GraduationCap,
     HeartPulse,
+    Layers3,
     Leaf,
     UsersRound,
 } from 'lucide-react';
 
 import { useDomains } from '../../domains/hooks/useDomains';
-import { DOMAIN_ITEMS } from '../constants/home.constants';
 
 /**
  * Maps domain icon identifiers to Lucide React icon components.
@@ -48,14 +52,14 @@ const DOMAIN_ICONS = {
 };
 
 /**
- * Maximum number of domains displayed in the landing-page section.
+ * Number of database domains shown before the Explore More card.
  *
- * Keeping the landing-page grid concise prevents the section from becoming
- * visually overwhelming when the backend contains many domain records.
+ * The sixth grid position is reserved for the expansion control whenever
+ * additional database domains are available.
  *
  * @type {number}
  */
-const MAX_VISIBLE_DOMAINS = 6;
+const INITIAL_VISIBLE_DOMAINS = 5;
 
 /**
  * Converts a value to a trimmed string.
@@ -176,8 +180,7 @@ function normalizeDomains(domains) {
 
     return domains
         .map(normalizeDomain)
-        .filter(Boolean)
-        .slice(0, MAX_VISIBLE_DOMAINS);
+        .filter(Boolean);
 }
 
 /**
@@ -207,8 +210,13 @@ function DomainCard({ domain }) {
     const Icon = getDomainIcon(domain.icon);
 
     return (
-        <article className="domain-card group rounded-2xl border border-white/90 bg-white/65 p-5 backdrop-blur-xl">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#eee6ff] to-[#e2f3ff] text-[#7556c1] transition duration-300 group-hover:scale-110">
+        <article className="domain-card group relative min-h-[190px] overflow-hidden rounded-[1.35rem] border border-white/90 bg-white/72 p-5 backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:bg-white/88 hover:shadow-[0_20px_45px_rgba(96,73,134,0.12)]">
+            <div
+                className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#8d70d7]/45 to-transparent"
+                aria-hidden="true"
+            />
+
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#eee6ff] to-[#e2f3ff] text-[#7556c1] shadow-[0_8px_18px_rgba(117,86,193,0.08)] transition duration-300 group-hover:scale-110">
                 <Icon
                     size={22}
                     aria-hidden="true"
@@ -258,6 +266,8 @@ function DomainSkeleton({ index }) {
  * @returns {JSX.Element}
  */
 export default function DomainsSection() {
+    const [isExpanded, setIsExpanded] = useState(false);
+
     const {
         data: availableDomains = [],
         isLoading,
@@ -266,10 +276,25 @@ export default function DomainsSection() {
 
     const normalizedDomains = normalizeDomains(availableDomains);
 
-    const domainsToDisplay =
-        normalizedDomains.length > 0
-            ? normalizedDomains
-            : DOMAIN_ITEMS.slice(0, MAX_VISIBLE_DOMAINS);
+    const initialDomains = normalizedDomains.slice(
+        0,
+        INITIAL_VISIBLE_DOMAINS,
+    );
+
+    const remainingDomains = normalizedDomains.slice(
+        INITIAL_VISIBLE_DOMAINS,
+    );
+
+    const hasMoreDomains = remainingDomains.length > 0;
+
+    /**
+     * Expands or collapses the remaining domains returned by the backend.
+     *
+     * @returns {void}
+     */
+    function toggleExpandedDomains() {
+        setIsExpanded((currentValue) => !currentValue);
+    }
 
     return (
         <section
@@ -291,7 +316,7 @@ export default function DomainsSection() {
                         aria-hidden="true"
                     />
 
-                    <div className="relative z-10 grid gap-12 lg:grid-cols-[.85fr_1.15fr] lg:items-end">
+                    <div className="relative z-10 grid gap-12 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
                         {/* Section introduction */}
                         <div>
                             <p className="nexora-eyebrow">
@@ -306,44 +331,219 @@ export default function DomainsSection() {
                             </h2>
 
                             <p className="mt-5 max-w-xl leading-8 text-[#716a81]">
-                                Discover meaningful software opportunities
-                                across domains where communities continuously
-                                express real needs.
+                                Explore opportunity areas available across
+                                Nexora. The platform reads its live domain
+                                catalog directly from the backend and supports
+                                a growing range of community needs.
                             </p>
 
                             {isError && (
                                 <p
-                                    className="mt-5 max-w-lg rounded-2xl border border-[#eadff8] bg-white/65 px-4 py-3 text-sm leading-6 text-[#756e83]"
-                                    role="status"
+                                    className="mt-6 flex max-w-lg items-start gap-2 text-sm font-semibold leading-6 text-[#81788f]"
+                                    role="alert"
                                 >
-                                    Live domains are temporarily unavailable.
-                                    Showing featured Nexora domains instead.
+                                    <span
+                                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#d05d75]"
+                                        aria-hidden="true"
+                                    />
+
+                                    Domains could not be loaded from the server.
+                                    Please try again shortly.
                                 </p>
                             )}
                         </div>
 
-                        {/* Supported domain cards */}
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {isLoading
-                                ? Array.from(
-                                    { length: MAX_VISIBLE_DOMAINS },
-                                    (_, index) => (
-                                        <DomainSkeleton
-                                            key={`domain-skeleton-${index}`}
-                                            index={index}
-                                        />
-                                    ),
-                                )
-                                : domainsToDisplay.map((domain) => (
-                                    <DomainCard
-                                        key={domain.id}
-                                        domain={domain}
+                        {/* Database-backed domain cards */}
+                        <div>
+                            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-sm font-extrabold text-[#342947]">
+                                        Available domains
+                                    </p>
+
+                                    <p className="mt-1 text-sm text-[#81798e]">
+                                        Live opportunity areas from Nexora
+                                    </p>
+                                </div>
+
+                                {!isLoading && !isError && normalizedDomains.length > 0 && (
+                                    <span className="rounded-full border border-white/90 bg-white/60 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#7b6f91] backdrop-blur-xl">
+                                        {normalizedDomains.length} available
+                                    </span>
+                                )}
+                            </div>
+
+                            {isLoading && (
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {Array.from(
+                                        { length: 6 },
+                                        (_, index) => (
+                                            <DomainSkeleton
+                                                key={`domain-skeleton-${index}`}
+                                                index={index}
+                                            />
+                                        ),
+                                    )}
+                                </div>
+                            )}
+
+                            {!isLoading && !isError && normalizedDomains.length === 0 && (
+                                <div className="rounded-[1.5rem] border border-white/90 bg-white/65 px-6 py-10 text-center backdrop-blur-xl">
+                                    <CircleHelp
+                                        className="mx-auto text-[#8165cd]"
+                                        size={30}
+                                        aria-hidden="true"
                                     />
-                                ))}
+
+                                    <h3 className="mt-4 text-lg font-extrabold text-[#302642]">
+                                        No domains are available yet
+                                    </h3>
+
+                                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#777083]">
+                                        New opportunity domains will appear here
+                                        as soon as they are enabled in Nexora.
+                                    </p>
+                                </div>
+                            )}
+
+                            {!isLoading && !isError && normalizedDomains.length > 0 && (
+                                <>
+                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                        {initialDomains.map((domain) => (
+                                            <DomainCard
+                                                key={domain.id}
+                                                domain={domain}
+                                            />
+                                        ))}
+
+                                        {hasMoreDomains && (
+                                            <ExploreMoreCard
+                                                remainingCount={
+                                                    remainingDomains.length
+                                                }
+                                                isExpanded={isExpanded}
+                                                onClick={
+                                                    toggleExpandedDomains
+                                                }
+                                            />
+                                        )}
+                                    </div>
+
+                                    {hasMoreDomains && isExpanded && (
+                                        <div
+                                            id="additional-domains"
+                                            className="mt-7 rounded-[1.75rem] border border-white/90 bg-white/45 p-4 shadow-[0_18px_45px_rgba(96,73,134,0.07)] backdrop-blur-xl sm:p-5"
+                                        >
+                                            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                                                <div>
+                                                    <p className="font-extrabold text-[#342947]">
+                                                        More Nexora domains
+                                                    </p>
+
+                                                    <p className="mt-1 text-sm text-[#81798e]">
+                                                        Additional live domains
+                                                        from the database
+                                                    </p>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={
+                                                        toggleExpandedDomains
+                                                    }
+                                                    className="inline-flex items-center gap-2 rounded-full border border-white/90 bg-white/75 px-4 py-2 text-sm font-bold text-[#6f57b9] transition hover:bg-white"
+                                                    aria-expanded="true"
+                                                    aria-controls="additional-domains"
+                                                >
+                                                    Show less
+
+                                                    <ChevronUp
+                                                        size={17}
+                                                        aria-hidden="true"
+                                                    />
+                                                </button>
+                                            </div>
+
+                                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                                {remainingDomains.map(
+                                                    (domain) => (
+                                                        <DomainCard
+                                                            key={domain.id}
+                                                            domain={domain}
+                                                        />
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
         </section>
+    );
+}
+
+/**
+ * Displays the sixth-grid-position control for revealing more domains.
+ *
+ * @param {Object} props - Component properties.
+ * @param {number} props.remainingCount - Number of hidden domains.
+ * @param {boolean} props.isExpanded - Whether hidden domains are visible.
+ * @param {() => void} props.onClick - Expansion callback.
+ * @returns {JSX.Element} The Explore More card.
+ */
+function ExploreMoreCard({
+    remainingCount,
+    isExpanded,
+    onClick,
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="domain-card group relative min-h-[190px] overflow-hidden rounded-[1.35rem] border border-[#d9cdf3] bg-gradient-to-br from-[#f2ebff]/90 via-white/80 to-[#e8f6ff]/90 p-5 text-left shadow-[0_16px_38px_rgba(98,77,143,0.09)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_rgba(98,77,143,0.16)]"
+            aria-expanded={isExpanded}
+            aria-controls="additional-domains"
+        >
+            <div
+                className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#8062d0]/70 to-transparent"
+                aria-hidden="true"
+            />
+
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#8062d0] to-[#64a5d8] text-white shadow-[0_10px_22px_rgba(117,86,193,0.18)] transition duration-300 group-hover:scale-110">
+                <Layers3
+                    size={22}
+                    aria-hidden="true"
+                />
+            </span>
+
+            <h3 className="mt-5 font-extrabold text-[#302642]">
+                {isExpanded ? 'Hide More' : 'Explore More'}
+            </h3>
+
+            <p className="mt-1 text-sm leading-6 text-[#777083]">
+                {remainingCount} additional domain
+                {remainingCount === 1 ? '' : 's'} available
+            </p>
+
+            <span className="mt-5 inline-flex items-center gap-2 text-sm font-extrabold text-[#7155bf]">
+                {isExpanded ? 'Show less' : 'View all domains'}
+
+                {isExpanded ? (
+                    <ChevronUp
+                        size={17}
+                        aria-hidden="true"
+                    />
+                ) : (
+                    <ChevronDown
+                        size={17}
+                        aria-hidden="true"
+                    />
+                )}
+            </span>
+        </button>
     );
 }
