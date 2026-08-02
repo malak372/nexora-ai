@@ -1,8 +1,11 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import {
   AuditAction,
   AuditTargetType,
@@ -30,6 +33,17 @@ import { UpdateDomainDto } from './dto/update-domain.dto';
  *
  * Keywords are normalized to lowercase and assigned a language.
  */
+const AVAILABLE_DOMAINS_CACHE_KEY = 'public:domains:available';
+const AVAILABLE_DOMAINS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type AvailableDomainsResponse = {
+  data: Array<{
+    id: string;
+    name: string;
+  }>;
+  total: number;
+};
+
 type NormalizedDomainKeyword = {
   /**
    * Normalized lowercase keyword.
@@ -68,7 +82,8 @@ export class DomainsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogsService: AuditService,
-  ) {}
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
 
   /**
    * Returns active domains available for selection by users.
@@ -85,7 +100,16 @@ export class DomainsService {
    *
    * @returns Active domains ordered alphabetically by name.
    */
-  async getAvailableDomains() {
+  async getAvailableDomains(): Promise<AvailableDomainsResponse> {
+    const cachedDomains =
+      await this.cacheManager.get<AvailableDomainsResponse>(
+        AVAILABLE_DOMAINS_CACHE_KEY,
+      );
+
+    if (cachedDomains) {
+      return cachedDomains;
+    }
+
     const domains = await this.prisma.domain.findMany({
       where: {
         isActive: true,
@@ -99,10 +123,25 @@ export class DomainsService {
       },
     });
 
-    return {
+    const response: AvailableDomainsResponse = {
       data: domains,
       total: domains.length,
     };
+
+    await this.cacheManager.set(
+      AVAILABLE_DOMAINS_CACHE_KEY,
+      response,
+      AVAILABLE_DOMAINS_CACHE_TTL_MS,
+    );
+
+    return response;
+  }
+
+  /**
+   * Removes the cached public domain list after an administrative change.
+   */
+  private async clearAvailableDomainsCache(): Promise<void> {
+    await this.cacheManager.del(AVAILABLE_DOMAINS_CACHE_KEY);
   }
 
   /**
@@ -460,6 +499,8 @@ export class DomainsService {
       },
     });
 
+    await this.clearAvailableDomainsCache();
+
     await this.auditLogsService.createLog({
       actorId: adminId,
       action: AuditAction.ADMIN_CREATE_DOMAIN,
@@ -574,6 +615,8 @@ export class DomainsService {
       },
     });
 
+    await this.clearAvailableDomainsCache();
+
     await this.auditLogsService.createLog({
       actorId: adminId,
       action: AuditAction.ADMIN_UPDATE_DOMAIN,
@@ -653,6 +696,8 @@ export class DomainsService {
         isActive: false,
       },
     });
+
+    await this.clearAvailableDomainsCache();
 
     await this.auditLogsService.createLog({
       actorId: adminId,
