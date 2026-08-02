@@ -19,23 +19,24 @@ import { useState } from 'react';
 import {
     Banknote,
     BriefcaseBusiness,
-    Building2,
     ChevronDown,
     ChevronUp,
     CircleHelp,
     Cpu,
+    Factory,
     GraduationCap,
     HeartPulse,
     Landmark,
     Layers3,
     Leaf,
-    RadioTower,
-    ShoppingBag,
-    Sparkles,
+    Plane,
+    ShoppingCart,
+    Sprout,
     Truck,
     UserSearch,
     UsersRound,
     UtensilsCrossed,
+    Wifi,
     Zap,
 } from 'lucide-react';
 
@@ -47,37 +48,31 @@ import { useDomains } from '../../domains/hooks/useDomains';
  * @type {Object.<string, import('lucide-react').LucideIcon>}
  */
 const DOMAIN_ICONS = {
-    graduation: GraduationCap,
-    education: GraduationCap,
-    heart: HeartPulse,
-    health: HeartPulse,
-    briefcase: BriefcaseBusiness,
+    agriculture: Sprout,
     business: BriefcaseBusiness,
-    leaf: Leaf,
-    environment: Leaf,
-    users: UsersRound,
+    commerce: ShoppingCart,
     community: UsersRound,
     cpu: Cpu,
-    technology: Cpu,
+    education: GraduationCap,
     energy: Zap,
-    electricity: Zap,
-    finance: Landmark,
-    banking: Landmark,
-    fintech: Banknote,
+    environment: Leaf,
+    finance: Banknote,
     food: UtensilsCrossed,
-    restaurant: UtensilsCrossed,
-    government: Building2,
-    public: Building2,
-    recruitment: UserSearch,
+    government: Landmark,
+    graduation: GraduationCap,
+    health: HeartPulse,
     hr: UserSearch,
-    hiring: UserSearch,
-    iot: RadioTower,
-    internet: RadioTower,
-    retail: ShoppingBag,
-    ecommerce: ShoppingBag,
+    industry: Factory,
+    internet: Wifi,
+    iot: Wifi,
+    leaf: Leaf,
     logistics: Truck,
+    recruitment: UserSearch,
+    retail: ShoppingCart,
+    technology: Cpu,
+    tourism: Plane,
     transport: Truck,
-    innovation: Sparkles,
+    users: UsersRound,
 };
 
 /**
@@ -130,42 +125,38 @@ function resolveDomainIconKey(domain, title) {
         return configuredIcon;
     }
 
-    const normalizedTitle = title.toLowerCase();
+    const searchableValue = `${configuredIcon} ${title}`
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
 
-    const titleAliases = [
-        ['human resources', 'hr'],
-        ['recruitment', 'recruitment'],
-        ['food', 'food'],
-        ['restaurant', 'restaurant'],
-        ['internet of things', 'iot'],
-        ['iot', 'iot'],
-        ['financial', 'finance'],
-        ['finance', 'finance'],
-        ['banking', 'banking'],
-        ['government', 'government'],
-        ['public sector', 'public'],
-        ['energy', 'energy'],
-        ['electricity', 'electricity'],
-        ['retail', 'retail'],
-        ['e-commerce', 'ecommerce'],
-        ['ecommerce', 'ecommerce'],
-        ['logistics', 'logistics'],
-        ['transport', 'transport'],
+    const iconRules = [
+        { keywords: ['education', 'learning', 'school', 'university'], icon: 'education' },
+        { keywords: ['health', 'healthcare', 'medical', 'medicine'], icon: 'health' },
+        { keywords: ['energy', 'electricity', 'power', 'renewable'], icon: 'energy' },
+        { keywords: ['environment', 'climate', 'sustainability', 'green'], icon: 'environment' },
+        { keywords: ['finance', 'financial', 'fintech', 'banking', 'insurance'], icon: 'finance' },
+        { keywords: ['food', 'restaurant', 'restaurants', 'hospitality'], icon: 'food' },
+        { keywords: ['government', 'public sector', 'civic', 'municipality'], icon: 'government' },
+        { keywords: ['human resources', 'hr', 'recruitment', 'hiring', 'jobs'], icon: 'recruitment' },
+        { keywords: ['internet of things', 'iot', 'smart devices', 'connected devices'], icon: 'iot' },
+        { keywords: ['agriculture', 'farming', 'agritech'], icon: 'agriculture' },
+        { keywords: ['retail', 'ecommerce', 'e commerce', 'shopping'], icon: 'retail' },
+        { keywords: ['logistics', 'delivery', 'shipping', 'supply chain'], icon: 'logistics' },
+        { keywords: ['transport', 'transportation', 'mobility'], icon: 'transport' },
+        { keywords: ['tourism', 'travel'], icon: 'tourism' },
+        { keywords: ['industry', 'manufacturing', 'factory'], icon: 'industry' },
+        { keywords: ['technology', 'software', 'artificial intelligence', 'ai'], icon: 'technology' },
+        { keywords: ['business', 'enterprise', 'startup'], icon: 'business' },
+        { keywords: ['community', 'social'], icon: 'community' },
     ];
 
-    const matchedAlias = titleAliases.find(([phrase]) =>
-        normalizedTitle.includes(phrase),
+    const matchingRule = iconRules.find(({ keywords }) =>
+        keywords.some((keyword) => searchableValue.includes(keyword)),
     );
 
-    if (matchedAlias) {
-        return matchedAlias[1];
-    }
-
-    const matchingIconKey = Object.keys(DOMAIN_ICONS).find((key) =>
-        normalizedTitle.includes(key),
-    );
-
-    return matchingIconKey || 'unknown';
+    return matchingRule?.icon || 'generic';
 }
 
 /**
@@ -248,7 +239,7 @@ function normalizeDomains(domains) {
  * @returns {import('lucide-react').LucideIcon} The resolved icon component.
  */
 function getDomainIcon(iconKey) {
-    return DOMAIN_ICONS[iconKey] || CircleHelp;
+    return DOMAIN_ICONS[iconKey] || Layers3;
 }
 
 /**

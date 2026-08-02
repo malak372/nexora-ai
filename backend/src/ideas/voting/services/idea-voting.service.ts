@@ -4,14 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  IdeaPublicationStatus,
-  IdeaVoteValue,
-  Prisma,
-} from '@prisma/client';
+import { IdeaPublicationStatus, IdeaVoteValue, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { VotePublicationDto } from '../dto/vote-publication.dto';
+import { PublicationCacheService } from '../../publication/cache/publication-cache.service';
 
 type RegisteredPublicationActor = {
   userId: string;
@@ -34,7 +31,10 @@ export type PublicationEngagementActor =
  */
 @Injectable()
 export class IdeaVotingService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   async upsertVote(
     actor: PublicationEngagementActor,
@@ -52,7 +52,7 @@ export class IdeaVotingService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let vote;
 
       if (this.isRegisteredActor(actor)) {
@@ -104,12 +104,12 @@ export class IdeaVotingService {
         publicationVotes,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
-  async getMyVote(
-    actor: PublicationEngagementActor,
-    publicationId: string,
-  ) {
+  async getMyVote(actor: PublicationEngagementActor, publicationId: string) {
     await this.ensurePublished(publicationId);
 
     if (this.isRegisteredActor(actor)) {
@@ -139,10 +139,7 @@ export class IdeaVotingService {
     });
   }
 
-  async deleteVote(
-    actor: PublicationEngagementActor,
-    publicationId: string,
-  ) {
+  async deleteVote(actor: PublicationEngagementActor, publicationId: string) {
     await this.ensurePublished(publicationId);
 
     const existing = await this.getMyVote(actor, publicationId);
@@ -151,7 +148,7 @@ export class IdeaVotingService {
       throw new NotFoundException('Publication vote not found');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.ideaPublicationVote.delete({
         where: {
           id: existing.id,
@@ -165,6 +162,9 @@ export class IdeaVotingService {
         publicationVotes,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   private readonly voteSelect = {
@@ -196,9 +196,7 @@ export class IdeaVotingService {
     }
 
     if (!publication.allowVoting) {
-      throw new BadRequestException(
-        'Voting is disabled for this publication.',
-      );
+      throw new BadRequestException('Voting is disabled for this publication.');
     }
 
     return publication;

@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { PublicationCacheService } from '../cache/publication-cache.service';
 
 import { GetAcceptedPublicationsQueryDto } from '../dto/get-accepted-publications-query.dto';
 import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
@@ -31,7 +32,10 @@ import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
  */
 @Injectable()
 export class IdeaPublicationQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   /**
    * Retrieves publications available to unauthenticated users.
@@ -43,7 +47,15 @@ export class IdeaPublicationQueryService {
    * @returns Paginated public publications.
    */
   async findPublic(query: GetPublicationsQueryDto) {
-    return this.findMany(
+    const cacheKey = await this.publicationCache.buildKey(
+      'public-list',
+      'guest',
+      query,
+    );
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.findMany(
       {
         status: IdeaPublicationStatus.PUBLISHED,
         isHidden: false,
@@ -51,6 +63,9 @@ export class IdeaPublicationQueryService {
       },
       query,
     );
+
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -78,54 +93,53 @@ export class IdeaPublicationQueryService {
     accountStatus: AccountStatus,
     query: GetPublicationsQueryDto,
   ) {
-    if (accountStatus === AccountStatus.PREMIUM) {
-      return this.findMany(
-        {
+    const identity = `${userId}:${userType ?? 'none'}:${accountStatus}`;
+    const cacheKey = await this.publicationCache.buildKey(
+      'discover-list',
+      identity,
+      query,
+    );
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const where: Prisma.IdeaPublicationWhereInput =
+      accountStatus === AccountStatus.PREMIUM
+        ? {
           status: IdeaPublicationStatus.PUBLISHED,
           isHidden: false,
           publisherId: { not: userId },
-        },
-        query,
-      );
-    }
-
-    return this.findMany(
-      {
-        status: IdeaPublicationStatus.PUBLISHED,
-        isHidden: false,
-        publisherId: { not: userId },
-        OR: [
-          {
-            visibility: IdeaPublicationVisibility.PUBLIC,
-          },
-          {
-            visibility: IdeaPublicationVisibility.REGISTERED_USERS,
-          },
-          {
-            visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
-            audiences: {
-              some: {
-                OR: [
-                  {
-                    audienceType: 'specific-user',
-                    audienceValue: userId,
-                  },
-                  ...(userType
-                    ? [
+        }
+        : {
+          status: IdeaPublicationStatus.PUBLISHED,
+          isHidden: false,
+          publisherId: { not: userId },
+          OR: [
+            { visibility: IdeaPublicationVisibility.PUBLIC },
+            { visibility: IdeaPublicationVisibility.REGISTERED_USERS },
+            {
+              visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
+              audiences: {
+                some: {
+                  OR: [
+                    { audienceType: 'specific-user', audienceValue: userId },
+                    ...(userType
+                      ? [
                         {
                           audienceType: 'user-type',
                           audienceValue: userType,
                         },
                       ]
-                    : []),
-                ],
+                      : []),
+                  ],
+                },
               },
             },
-          },
-        ],
-      },
-      query,
-    );
+          ],
+        };
+
+    const result = await this.findMany(where, query);
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -173,27 +187,27 @@ export class IdeaPublicationQueryService {
       ...(query.visibility ? { visibility: query.visibility } : {}),
       ...(search
         ? {
-            OR: [
-              {
-                publicTitle: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+          OR: [
+            {
+              publicTitle: {
+                contains: search,
+                mode: 'insensitive',
               },
-              {
-                publicAbstract: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+            },
+            {
+              publicAbstract: {
+                contains: search,
+                mode: 'insensitive',
               },
-              {
-                publicProblem: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+            },
+            {
+              publicProblem: {
+                contains: search,
+                mode: 'insensitive',
               },
-            ],
-          }
+            },
+          ],
+        }
         : {}),
     };
 
@@ -201,23 +215,23 @@ export class IdeaPublicationQueryService {
       userId,
       ...(query.advancedUnlocked === true
         ? {
-            advancedUnlockedAt: {
-              not: null,
-            },
-          }
+          advancedUnlockedAt: {
+            not: null,
+          },
+        }
         : {}),
       ...(query.advancedUnlocked === false
         ? {
-            advancedUnlockedAt: null,
-          }
+          advancedUnlockedAt: null,
+        }
         : {}),
       ...(query.fromDate || query.toDate
         ? {
-            acceptedAt: {
-              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-              ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
-            },
-          }
+          acceptedAt: {
+            ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+            ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+          },
+        }
         : {}),
       publication: publicationWhere,
     };
@@ -276,12 +290,19 @@ export class IdeaPublicationQueryService {
    * @throws NotFoundException When no matching publication exists.
    */
   async findPublicById(publicationId: string) {
-    return this.findOneOrThrow({
+    const cacheKey = `publications:public-detail:${publicationId}`;
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.findOneOrThrow({
       id: publicationId,
       status: IdeaPublicationStatus.PUBLISHED,
       isHidden: false,
       visibility: IdeaPublicationVisibility.PUBLIC,
     });
+
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -371,11 +392,11 @@ export class IdeaPublicationQueryService {
                 },
                 ...(userType
                   ? [
-                      {
-                        audienceType: 'user-type',
-                        audienceValue: userType,
-                      },
-                    ]
+                    {
+                      audienceType: 'user-type',
+                      audienceValue: userType,
+                    },
+                  ]
                   : []),
               ],
             },
@@ -412,35 +433,35 @@ export class IdeaPublicationQueryService {
         where,
         search
           ? {
-              OR: [
-                {
-                  publicTitle: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+            OR: [
+              {
+                publicTitle: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-                {
-                  publicAbstract: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+              },
+              {
+                publicAbstract: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-                {
-                  publicProblem: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+              },
+              {
+                publicProblem: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-              ],
-            }
+              },
+            ],
+          }
           : {},
         query.fromDate || query.toDate
           ? {
-              createdAt: {
-                ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-                ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
-              },
-            }
+            createdAt: {
+              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+              ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+            },
+          }
           : {},
       ],
     };

@@ -78,6 +78,93 @@ export async function getGuestGenerationRun(runId) {
 }
 
 /**
+ * Determines whether the backend rejected a new request because another
+ * generation run is already active for the current guest.
+ *
+ * @param {unknown} error - Error returned by the API client.
+ * @returns {boolean} True when an active generation run already exists.
+ */
+export function isGuestGenerationAlreadyRunningError(error) {
+    const responseData = error?.response?.data;
+    const code = String(responseData?.code ?? '').toUpperCase();
+    const rawMessage = responseData?.message;
+
+    const message = Array.isArray(rawMessage)
+        ? rawMessage.join(' ')
+        : String(rawMessage ?? '');
+
+    return (
+        code === 'GENERATION_ALREADY_RUNNING' ||
+        message
+            .toLowerCase()
+            .includes(
+                'an idea-generation run is already active for this owner',
+            )
+    );
+}
+
+/**
+ * Extracts the active generation run identifier from a backend conflict.
+ *
+ * @param {unknown} error - Error returned by the API client.
+ * @returns {string|null} Active run ID when supplied by the backend.
+ */
+export function getGuestActiveRunId(error) {
+    const activeRunId = error?.response?.data?.activeRunId;
+
+    if (typeof activeRunId !== 'string' || !activeRunId.trim()) {
+        return null;
+    }
+
+    return activeRunId.trim();
+}
+
+/**
+ * Determines whether the backend rejected generation because the current
+ * guest has already consumed the one-time free attempt.
+ *
+ * @param {unknown} error - Error returned by the API client.
+ * @returns {boolean} True when the guest generation limit was reached.
+ */
+export function isGuestGenerationLimitError(error) {
+    if (isGuestGenerationAlreadyRunningError(error)) {
+        return false;
+    }
+
+    const status = error?.response?.status;
+    const responseData = error?.response?.data;
+    const code = String(responseData?.code ?? '').toUpperCase();
+    const rawMessage = responseData?.message;
+
+    const message = Array.isArray(rawMessage)
+        ? rawMessage.join(' ')
+        : String(rawMessage ?? '');
+
+    const normalizedMessage = message.toLowerCase();
+
+    const hasExplicitLimitCode = [
+        'GUEST_GENERATION_LIMIT_REACHED',
+        'GUEST_FREE_GENERATION_USED',
+        'GUEST_GENERATION_ALREADY_USED',
+    ].includes(code);
+
+    const hasLimitMessage =
+        normalizedMessage.includes('guest') &&
+        (
+            normalizedMessage.includes('limit') ||
+            normalizedMessage.includes('free attempt') ||
+            normalizedMessage.includes('already used') ||
+            normalizedMessage.includes('one-time') ||
+            normalizedMessage.includes('one idea')
+        );
+
+    return (
+        [403, 409, 429].includes(status) &&
+        (hasExplicitLimitCode || hasLimitMessage)
+    );
+}
+
+/**
  * Extracts a readable message from an API error.
  *
  * Supports both:

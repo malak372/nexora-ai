@@ -5,8 +5,10 @@
  * @author Malak
  */
 
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -24,8 +26,10 @@ import { CreditBalanceNotificationService } from '../../../credits/services/cred
 import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
 import { CreditCacheService } from '../../../credits/services/credit-cache.service';
 import type { CreditBalanceResult } from '../../../credits/types/credit-balance-result.type';
+import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { userCacheKeys } from '../../../users/cache/user-cache.keys';
 
 import { PREMIUM_IDEA_CREDIT_COST } from '../constants/idea-generation.constants';
 
@@ -224,7 +228,8 @@ export class IdeaPersistenceService {
     private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
 
     private readonly creditCacheService: CreditCacheService,
-  ) {}
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
 
   /**
    * Persists one generated idea and consumes its entitlement
@@ -248,6 +253,12 @@ export class IdeaPersistenceService {
       await this.executeSerializableTransaction(normalizedInput);
 
     await this.invalidatePremiumCreditCaches(normalizedInput);
+
+    if (normalizedInput.userId) {
+      await this.cacheManager.del(
+        userCacheKeys.summary(normalizedInput.userId),
+      );
+    }
 
     await this.notifyPremiumCreditBalance(
       normalizedInput,

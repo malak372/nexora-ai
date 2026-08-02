@@ -496,11 +496,47 @@
     background: linear-gradient(90deg,
             #7658ca,
             #609fd4);
-    transition: width 0.5s ease;
 }
 
-.guest-progress-number {
-    color: #6f5b91;
+.guest-progress-bar--indeterminate span {
+    width: 38%;
+    animation: guest-progress-slide 1.8s ease-in-out infinite;
+}
+
+.guest-progress-message {
+    min-height: 34px;
+    transition: opacity 0.25s ease;
+}
+
+.guest-progress-note {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    margin-top: 8px;
+    color: #7d748b;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.guest-progress-note svg {
+    width: 17px;
+    height: 17px;
+    color: #7658ca;
+}
+
+@keyframes guest-progress-slide {
+    0% {
+        transform: translateX(-115%);
+    }
+
+    50% {
+        transform: translateX(90%);
+    }
+
+    100% {
+        transform: translateX(265%);
+    }
 }
 
 /* 
@@ -636,4 +672,122 @@
 
 .guest-field-meta.limit-exceeded b {
     font-weight: 800;
+}
+
+/* Enhanced state shown after the guest consumes the free generation. */
+.guest-limit-card--used {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    max-width: 780px;
+    padding: 52px 56px 44px;
+}
+
+.guest-limit-glow {
+    position: absolute;
+    z-index: -1;
+    top: -150px;
+    left: 50%;
+    width: 430px;
+    height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(119, 88, 202, 0.22), transparent 68%);
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.guest-limit-icon {
+    width: 70px;
+    height: 70px;
+    border-radius: 22px;
+    box-shadow: 0 18px 38px rgba(105, 78, 175, 0.18);
+}
+
+.guest-limit-icon svg {
+    width: 29px;
+    height: 29px;
+}
+
+.guest-limit-card--used h1 {
+    max-width: 650px;
+    margin-inline: auto;
+    font-size: clamp(2.25rem, 5vw, 4.2rem);
+}
+
+.guest-limit-benefits {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: 28px 0 30px;
+}
+
+.guest-limit-benefits span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 13px;
+    border: 1px solid #e6ddf4;
+    border-radius: 999px;
+    background: rgba(248, 245, 255, 0.86);
+    color: #695284;
+    font-size: 0.9rem;
+    font-weight: 750;
+}
+
+.guest-limit-benefits svg {
+    width: 15px;
+    height: 15px;
+    color: #6c52bd;
+}
+
+.guest-limit-actions {
+    margin-top: 0;
+}
+
+.guest-limit-actions .guest-primary,
+.guest-limit-actions .guest-secondary {
+    min-width: 210px;
+}
+
+.guest-limit-actions .guest-primary svg:last-child {
+    margin-left: 2px;
+}
+
+.guest-limit-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 22px;
+    border: 0;
+    background: transparent;
+    color: #81798a;
+    font: inherit;
+    font-size: 0.92rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.guest-limit-home:hover {
+    color: #654bb0;
+}
+
+.guest-limit-home svg {
+    width: 16px;
+    height: 16px;
+}
+
+@media (max-width: 760px) {
+    .guest-limit-card--used {
+        padding: 38px 22px 32px;
+    }
+
+    .guest-limit-benefits {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .guest-limit-benefits span {
+        justify-content: center;
+    }
 }

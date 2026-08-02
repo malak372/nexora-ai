@@ -17,6 +17,7 @@ import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { userCacheKeys } from '../../../users/cache/user-cache.keys';
+import { PublicationCacheService } from '../cache/publication-cache.service';
 
 import { UpsertIdeaPublicationDto } from '../dto/upsert-idea-publication.dto';
 
@@ -45,7 +46,8 @@ export class IdeaPublicationService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
-  ) {}
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   /**
    * Creates or updates the publication snapshot of a user-owned idea.
@@ -136,102 +138,111 @@ export class IdeaPublicationService {
         dto.publicTargetUsers?.trim() || this.stringifyJson(idea.targetUsers),
     };
 
-    return this.prisma.$transaction(async (tx) => {
-      /**
-       * Creates a draft publication or updates the existing snapshot.
-       *
-       * Undefined interaction flags are preserved during updates because
-       * Prisma ignores undefined update values.
-       */
-      const publication = await tx.ideaPublication.upsert({
-        where: {
-          ideaId,
-        },
-        create: {
-          ideaId,
-          publisherId: userId,
-          status: IdeaPublicationStatus.DRAFT,
-          visibility: dto.visibility,
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        /**
+         * Creates a draft publication or updates the existing snapshot.
+         *
+         * Undefined interaction flags are preserved during updates because
+         * Prisma ignores undefined update values.
+         */
+        const publication = await tx.ideaPublication.upsert({
+          where: {
+            ideaId,
+          },
+          create: {
+            ideaId,
+            publisherId: userId,
+            status: IdeaPublicationStatus.DRAFT,
+            visibility: dto.visibility,
 
-          ...snapshot,
+            ...snapshot,
 
-          allowRatings: dto.allowRatings ?? true,
-          allowFeedback: dto.allowFeedback ?? true,
-          allowVoting: dto.allowVoting ?? true,
-        },
-        update: {
-          visibility: dto.visibility,
+            allowRatings: dto.allowRatings ?? true,
+            allowFeedback: dto.allowFeedback ?? true,
+            allowVoting: dto.allowVoting ?? true,
+          },
+          update: {
+            visibility: dto.visibility,
 
-          ...snapshot,
+            ...snapshot,
 
-          allowRatings: dto.allowRatings,
-          allowFeedback: dto.allowFeedback,
-          allowVoting: dto.allowVoting,
-        },
-        select: {
-          id: true,
-          status: true,
-        },
-      });
-
-      /**
-       * Replaces the previous audience configuration.
-       *
-       * Audience entries are only stored when the publication uses
-       * selected-audience visibility.
-       */
-      await tx.ideaPublicationAudience.deleteMany({
-        where: {
-          publicationId: publication.id,
-        },
-      });
-
-      if (dto.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE) {
-        await tx.ideaPublicationAudience.createMany({
-          data: (dto.audiences ?? []).map((audience) => ({
-            publicationId: publication.id,
-            audienceType: audience.audienceType.trim().toLowerCase(),
-            audienceValue: audience.audienceValue.trim(),
-          })),
-          skipDuplicates: true,
+            allowRatings: dto.allowRatings,
+            allowFeedback: dto.allowFeedback,
+            allowVoting: dto.allowVoting,
+          },
+          select: {
+            id: true,
+            status: true,
+          },
         });
-      }
 
-      /**
-       * Stores an immutable revision whenever a published snapshot changes.
-       */
-      if (publication.status === IdeaPublicationStatus.PUBLISHED) {
-        const latest = await tx.ideaPublicationRevision.aggregate({
+        /**
+         * Replaces the previous audience configuration.
+         *
+         * Audience entries are only stored when the publication uses
+         * selected-audience visibility.
+         */
+        await tx.ideaPublicationAudience.deleteMany({
           where: {
             publicationId: publication.id,
           },
-          _max: {
-            version: true,
-          },
         });
 
-        await tx.ideaPublicationRevision.create({
-          data: {
-            publicationId: publication.id,
-            version: (latest._max.version ?? 0) + 1,
-            publicTitle: snapshot.publicTitle,
-            publicAbstract: snapshot.publicAbstract ?? '',
-            publicProblem: snapshot.publicProblem,
-            publicObjectives: snapshot.publicObjectives,
-            publicTargetUsers: snapshot.publicTargetUsers,
+        if (dto.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE) {
+          await tx.ideaPublicationAudience.createMany({
+            data: (dto.audiences ?? []).map((audience) => ({
+              publicationId: publication.id,
+              audienceType: audience.audienceType.trim().toLowerCase(),
+              audienceValue: audience.audienceValue.trim(),
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        /**
+         * Stores an immutable revision whenever a published snapshot changes.
+         */
+        if (publication.status === IdeaPublicationStatus.PUBLISHED) {
+          const latest = await tx.ideaPublicationRevision.aggregate({
+            where: {
+              publicationId: publication.id,
+            },
+            _max: {
+              version: true,
+            },
+          });
+
+          await tx.ideaPublicationRevision.create({
+            data: {
+              publicationId: publication.id,
+              version: (latest._max.version ?? 0) + 1,
+              publicTitle: snapshot.publicTitle,
+              publicAbstract: snapshot.publicAbstract ?? '',
+              publicProblem: snapshot.publicProblem,
+              publicObjectives: snapshot.publicObjectives,
+              publicTargetUsers: snapshot.publicTargetUsers,
+            },
+          });
+        }
+
+        return tx.ideaPublication.findUniqueOrThrow({
+          where: {
+            id: publication.id,
+          },
+          include: {
+            audiences: true,
           },
         });
-      }
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
 
-      return tx.ideaPublication.findUniqueOrThrow({
-        where: {
-          id: publication.id,
-        },
-        include: {
-          audiences: true,
-        },
-      });
-    }, { maxWait: 10_000, timeout: 30_000 });;
+    if (result.status === IdeaPublicationStatus.PUBLISHED) {
+      await this.publicationCache.invalidateDiscovery(result.id);
+    }
+
+    return result;
   }
 
   /**
@@ -315,7 +326,10 @@ export class IdeaPublicationService {
       return updated;
     });
 
-    await this.cacheManager.del(userCacheKeys.summary(userId));
+    await Promise.all([
+      this.cacheManager.del(userCacheKeys.summary(userId)),
+      this.publicationCache.invalidateDiscovery(updatedPublication.id),
+    ]);
     return updatedPublication;
   }
 
@@ -351,7 +365,10 @@ export class IdeaPublicationService {
       },
     });
 
-    await this.cacheManager.del(userCacheKeys.summary(userId));
+    await Promise.all([
+      this.cacheManager.del(userCacheKeys.summary(userId)),
+      this.publicationCache.invalidateDiscovery(archivedPublication.id),
+    ]);
     return archivedPublication;
   }
 
@@ -380,6 +397,8 @@ export class IdeaPublicationService {
         id: publication.id,
       },
     });
+
+    await this.publicationCache.invalidateDiscovery(publication.id);
 
     return {
       message: 'Publication draft deleted successfully',
