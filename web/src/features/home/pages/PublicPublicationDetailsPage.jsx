@@ -10,21 +10,34 @@
  * @author Eman
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     ArrowLeft,
     CalendarDays,
     Lightbulb,
     MessageSquareText,
+    Send,
     Star,
+    ThumbsDown,
+    ThumbsUp,
     Target,
     UserRound,
     UsersRound,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { apiClient } from '../../../api/client';
 import { ROUTES } from '../../../constants/routes.constants';
+import {
+    ensureGuestSession,
+    getGuestFeedback,
+    getGuestRating,
+    getGuestVote,
+    setGuestFeedback,
+    setGuestRating,
+    setGuestVote,
+} from '../api/guest-publication-engagement.api';
 
 async function getPublicPublication(publicationId) {
     const response = await apiClient.get(`/publications/${publicationId}`);
@@ -61,6 +74,36 @@ function normalizeTextList(value) {
 
 export default function PublicPublicationDetailsPage() {
     const { publicationId } = useParams();
+    const queryClient = useQueryClient();
+    const [guestReady, setGuestReady] = useState(false);
+    const [rating, setRating] = useState(0);
+    const [vote, setVote] = useState('');
+    const [feedback, setFeedback] = useState('');
+    const [busy, setBusy] = useState('');
+    const [engagementError, setEngagementError] = useState('');
+    const [engagementNotice, setEngagementNotice] = useState('');
+
+    useEffect(() => {
+        if (!engagementNotice) {
+            return undefined;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setEngagementNotice('');
+        }, 3000);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [engagementNotice]);
+
+    useEffect(() => {
+        let active = true;
+        ensureGuestSession()
+            .then(() => active && setGuestReady(true))
+            .catch(() => active && setEngagementError('Guest interactions could not be prepared.'));
+        return () => { active = false; };
+    }, []);
 
     const { data, isLoading, isError } = useQuery({
         queryKey: ['publications', 'public', publicationId],
@@ -69,6 +112,91 @@ export default function PublicPublicationDetailsPage() {
         staleTime: 2 * 60 * 1000,
         retry: 1,
     });
+
+    useEffect(() => {
+        if (!guestReady || !data) return;
+
+        const requests = [];
+        if (data.allowRatings !== false) requests.push(getGuestRating(publicationId).then((value) => setRating(Number(value?.value ?? value?.rating?.value ?? 0))));
+        if (data.allowVoting !== false) requests.push(getGuestVote(publicationId).then((value) => setVote(value?.value ?? value?.vote?.value ?? '')));
+        if (data.allowFeedback !== false) requests.push(getGuestFeedback(publicationId).then((value) => setFeedback(value?.comment ?? value?.feedback?.comment ?? '')));
+
+        Promise.allSettled(requests).catch(() => undefined);
+    }, [data, guestReady, publicationId]);
+
+    async function saveRating(value) {
+        setBusy('rating');
+        setEngagementError('');
+        setEngagementNotice('');
+
+        try {
+            await setGuestRating(publicationId, value);
+            setRating(value);
+            setEngagementNotice(`Thank you! Your ${value}-star rating was saved.`);
+            await queryClient.invalidateQueries({
+                queryKey: ['publications', 'public', publicationId],
+            });
+        } catch (error) {
+            setEngagementError(
+                error?.response?.data?.message ||
+                'Your rating could not be saved.',
+            );
+        } finally {
+            setBusy('');
+        }
+    }
+
+    async function saveVote(value) {
+        setBusy('vote');
+        setEngagementError('');
+        setEngagementNotice('');
+
+        try {
+            await setGuestVote(publicationId, value);
+            setVote(value);
+            setEngagementNotice('Thank you for your vote!');
+            await queryClient.invalidateQueries({
+                queryKey: ['publications', 'public', publicationId],
+            });
+        } catch (error) {
+            setEngagementError(
+                error?.response?.data?.message ||
+                'Your vote could not be saved.',
+            );
+        } finally {
+            setBusy('');
+        }
+    }
+
+    async function saveFeedback(event) {
+        event.preventDefault();
+
+        const comment = feedback.trim();
+
+        if (!comment) {
+            return;
+        }
+
+        setBusy('feedback');
+        setEngagementError('');
+        setEngagementNotice('');
+
+        try {
+            await setGuestFeedback(publicationId, comment);
+            setFeedback(comment);
+            setEngagementNotice('Thank you! Your feedback was saved.');
+            await queryClient.invalidateQueries({
+                queryKey: ['publications', 'public', publicationId],
+            });
+        } catch (error) {
+            setEngagementError(
+                error?.response?.data?.message ||
+                'Your feedback could not be saved.',
+            );
+        } finally {
+            setBusy('');
+        }
+    }
 
     if (isLoading) {
         return (
@@ -207,14 +335,100 @@ export default function PublicPublicationDetailsPage() {
                                 </p>
                             )}
 
-                            <div className="mt-7 border-t border-[#e8e0f4] pt-6">
-                                <p className="text-sm font-bold leading-6 text-[#554b63]">
-                                    Sign in to access community interactions available for registered users.
-                                </p>
-                                <Link to={ROUTES.LOGIN} className="nexora-button-primary mt-5 w-full">
-                                    Sign in
-                                </Link>
-                            </div>
+                            {(data.allowRatings !== false || data.allowVoting !== false || data.allowFeedback !== false) && (
+                                <div className="mt-7 border-t border-[#e8e0f4] pt-6">
+                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">Community interaction</p>
+                                    <p className="mt-2 text-sm leading-6 text-[#756e83]">You can participate as a guest because the publisher enabled these options.</p>
+
+                                    {data.allowRatings !== false && (
+                                        <div className="mt-5">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <p className="text-sm font-extrabold text-[#554b63]">
+                                                    Rate this idea
+                                                </p>
+
+                                                {rating > 0 && (
+                                                    <span className="text-xs font-bold text-[#7656c6]">
+                                                        Your rating: {rating}/5
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-2 flex gap-1">
+                                                {[1, 2, 3, 4, 5].map((value) => {
+                                                    const isSelected = value <= rating;
+
+                                                    return (
+                                                        <button
+                                                            key={value}
+                                                            type="button"
+                                                            disabled={!guestReady || busy === 'rating'}
+                                                            onClick={() => saveRating(value)}
+                                                            className="rounded-lg p-1 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
+                                                            aria-label={`Rate ${value} stars`}
+                                                            aria-pressed={rating === value}
+                                                        >
+                                                            <Star
+                                                                size={23}
+                                                                className={
+                                                                    isSelected
+                                                                        ? 'fill-[#8b6bd1] text-[#8b6bd1]'
+                                                                        : 'text-[#cfc5df]'
+                                                                }
+                                                            />
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {rating > 0 && (
+                                                <p className="mt-2 text-xs font-semibold text-[#756e83]">
+                                                    You can select another star to update your rating.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {data.allowVoting !== false && (
+                                        <div className="mt-5 grid grid-cols-2 gap-2">
+                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('UP')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'UP' ? 'border-[#8b6bd1] bg-[#f2edff] text-[#6d4fba]' : 'border-[#ddd4eb] bg-white text-[#665b73]'}`}>
+                                                <ThumbsUp size={17} /> {data.upvotesCount || 0}
+                                            </button>
+                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('DOWN')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'DOWN' ? 'border-[#8b6bd1] bg-[#f2edff] text-[#6d4fba]' : 'border-[#ddd4eb] bg-white text-[#665b73]'}`}>
+                                                <ThumbsDown size={17} /> {data.downvotesCount || 0}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {data.allowFeedback !== false && (
+                                        <form className="mt-5" onSubmit={saveFeedback}>
+                                            <label className="text-sm font-extrabold text-[#554b63]" htmlFor="guest-feedback">Feedback</label>
+                                            <textarea id="guest-feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} maxLength={1000} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#ddd4eb] bg-white p-3 text-sm text-[#554b63] outline-none focus:border-[#8b6bd1]" placeholder="Share useful feedback with the publisher…" />
+                                            <button type="submit" disabled={!guestReady || busy === 'feedback' || !feedback.trim()} className="nexora-button-primary mt-3 w-full disabled:opacity-50">
+                                                <Send size={16} /> Save feedback
+                                            </button>
+                                        </form>
+                                    )}
+
+                                    {engagementNotice && (
+                                        <div
+                                            role="status"
+                                            className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700"
+                                        >
+                                            {engagementNotice}
+                                        </div>
+                                    )}
+
+                                    {engagementError && (
+                                        <div
+                                            role="alert"
+                                            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600"
+                                        >
+                                            {engagementError}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </aside>
                     </div>
                 </article>

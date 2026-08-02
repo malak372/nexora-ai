@@ -17,16 +17,26 @@
 import { useState } from 'react';
 
 import {
+    Banknote,
     BriefcaseBusiness,
+    Building2,
     ChevronDown,
     ChevronUp,
     CircleHelp,
     Cpu,
     GraduationCap,
     HeartPulse,
+    Landmark,
     Layers3,
     Leaf,
+    RadioTower,
+    ShoppingBag,
+    Sparkles,
+    Truck,
+    UserSearch,
     UsersRound,
+    UtensilsCrossed,
+    Zap,
 } from 'lucide-react';
 
 import { useDomains } from '../../domains/hooks/useDomains';
@@ -49,6 +59,25 @@ const DOMAIN_ICONS = {
     community: UsersRound,
     cpu: Cpu,
     technology: Cpu,
+    energy: Zap,
+    electricity: Zap,
+    finance: Landmark,
+    banking: Landmark,
+    fintech: Banknote,
+    food: UtensilsCrossed,
+    restaurant: UtensilsCrossed,
+    government: Building2,
+    public: Building2,
+    recruitment: UserSearch,
+    hr: UserSearch,
+    hiring: UserSearch,
+    iot: RadioTower,
+    internet: RadioTower,
+    retail: ShoppingBag,
+    ecommerce: ShoppingBag,
+    logistics: Truck,
+    transport: Truck,
+    innovation: Sparkles,
 };
 
 /**
@@ -102,6 +131,35 @@ function resolveDomainIconKey(domain, title) {
     }
 
     const normalizedTitle = title.toLowerCase();
+
+    const titleAliases = [
+        ['human resources', 'hr'],
+        ['recruitment', 'recruitment'],
+        ['food', 'food'],
+        ['restaurant', 'restaurant'],
+        ['internet of things', 'iot'],
+        ['iot', 'iot'],
+        ['financial', 'finance'],
+        ['finance', 'finance'],
+        ['banking', 'banking'],
+        ['government', 'government'],
+        ['public sector', 'public'],
+        ['energy', 'energy'],
+        ['electricity', 'electricity'],
+        ['retail', 'retail'],
+        ['e-commerce', 'ecommerce'],
+        ['ecommerce', 'ecommerce'],
+        ['logistics', 'logistics'],
+        ['transport', 'transport'],
+    ];
+
+    const matchedAlias = titleAliases.find(([phrase]) =>
+        normalizedTitle.includes(phrase),
+    );
+
+    if (matchedAlias) {
+        return matchedAlias[1];
+    }
 
     const matchingIconKey = Object.keys(DOMAIN_ICONS).find((key) =>
         normalizedTitle.includes(key),

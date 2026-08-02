@@ -1,18 +1,36 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   IdeaPublicationStatus,
   Prisma,
   PublicationFeedbackStatus,
 } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpsertPublicationFeedbackDto } from '../dto/upsert-publication-feedback.dto';
 import { UpsertPublicationRatingDto } from '../dto/upsert-publication-rating.dto';
 
-export type FeedbackActor =
-  | { userId: string; guestSessionId?: never }
-  | { guestSessionId: string; userId?: never };
+type UserFeedbackActor = {
+  userId: string;
+  guestSessionId?: never;
+};
 
-/** Handles ratings and textual feedback for users and secure guest sessions. */
+type GuestFeedbackActor = {
+  guestSessionId: string;
+  userId?: never;
+};
+
+export type FeedbackActor = UserFeedbackActor | GuestFeedbackActor;
+
+/**
+ * Handles publication ratings and textual feedback for authenticated users
+ * and secure guest sessions.
+ *
+ * @author Eman
+ */
 @Injectable()
 export class UserFeedbackService {
   constructor(private readonly prisma: PrismaService) { }
@@ -47,6 +65,9 @@ export class UserFeedbackService {
     },
   } satisfies Prisma.IdeaPublicationFeedbackSelect;
 
+  /**
+   * Creates or updates the actor's rating for a publication.
+   */
   async upsertRating(
     actor: FeedbackActor,
     publicationId: string,
@@ -55,32 +76,55 @@ export class UserFeedbackService {
     await this.ensurePublicationAllowsRatings(publicationId);
 
     return this.prisma.$transaction(async (tx) => {
-      const rating = actor.userId
-        ? await tx.ideaPublicationRating.upsert({
+      let rating;
+
+      if (this.isUserActor(actor)) {
+        const userId = actor.userId;
+
+        rating = await tx.ideaPublicationRating.upsert({
           where: {
-            publicationId_userId: { publicationId, userId: actor.userId },
-          },
-          update: { value: dto.value },
-          create: { publicationId, userId: actor.userId, value: dto.value },
-          select: this.ratingSelect,
-        })
-        : await tx.ideaPublicationRating.upsert({
-          where: {
-            publicationId_guestSessionId: {
+            publicationId_userId: {
               publicationId,
-              guestSessionId: actor.guestSessionId,
+              userId,
             },
           },
-          update: { value: dto.value },
+          update: {
+            value: dto.value,
+          },
           create: {
             publicationId,
-            guestSessionId: actor.guestSessionId,
+            userId,
             value: dto.value,
           },
           select: this.ratingSelect,
         });
+      } else {
+        const guestSessionId = actor.guestSessionId;
 
-      const publicationRating = await this.recalculateRatings(tx, publicationId);
+        rating = await tx.ideaPublicationRating.upsert({
+          where: {
+            publicationId_guestSessionId: {
+              publicationId,
+              guestSessionId,
+            },
+          },
+          update: {
+            value: dto.value,
+          },
+          create: {
+            publicationId,
+            guestSessionId,
+            value: dto.value,
+          },
+          select: this.ratingSelect,
+        });
+      }
+
+      const publicationRating = await this.recalculateRatings(
+        tx,
+        publicationId,
+      );
+
       return {
         message: 'Publication rating saved successfully',
         rating,
@@ -89,35 +133,63 @@ export class UserFeedbackService {
     });
   }
 
+  /**
+   * Returns the current actor's rating for a publication.
+   */
   async getMyRating(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublishedPublicationExists(publicationId);
 
-    return actor.userId
-      ? this.prisma.ideaPublicationRating.findUnique({
+    if (this.isUserActor(actor)) {
+      const userId = actor.userId;
+
+      return this.prisma.ideaPublicationRating.findUnique({
         where: {
-          publicationId_userId: { publicationId, userId: actor.userId },
-        },
-        select: this.ratingSelect,
-      })
-      : this.prisma.ideaPublicationRating.findUnique({
-        where: {
-          publicationId_guestSessionId: {
+          publicationId_userId: {
             publicationId,
-            guestSessionId: actor.guestSessionId,
+            userId,
           },
         },
         select: this.ratingSelect,
       });
+    }
+
+    const guestSessionId = actor.guestSessionId;
+
+    return this.prisma.ideaPublicationRating.findUnique({
+      where: {
+        publicationId_guestSessionId: {
+          publicationId,
+          guestSessionId,
+        },
+      },
+      select: this.ratingSelect,
+    });
   }
 
+  /**
+   * Deletes the current actor's rating and recalculates publication totals.
+   */
   async deleteRating(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublishedPublicationExists(publicationId);
+
     const existing = await this.getMyRating(actor, publicationId);
-    if (!existing) throw new NotFoundException('Publication rating not found');
+
+    if (!existing) {
+      throw new NotFoundException('Publication rating not found');
+    }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.ideaPublicationRating.delete({ where: { id: existing.id } });
-      const publicationRating = await this.recalculateRatings(tx, publicationId);
+      await tx.ideaPublicationRating.delete({
+        where: {
+          id: existing.id,
+        },
+      });
+
+      const publicationRating = await this.recalculateRatings(
+        tx,
+        publicationId,
+      );
+
       return {
         message: 'Publication rating deleted successfully',
         publicationRating,
@@ -125,6 +197,9 @@ export class UserFeedbackService {
     });
   }
 
+  /**
+   * Creates or updates the actor's textual feedback.
+   */
   async upsertFeedback(
     actor: FeedbackActor,
     publicationId: string,
@@ -133,23 +208,16 @@ export class UserFeedbackService {
     await this.ensurePublicationAllowsFeedback(publicationId);
 
     return this.prisma.$transaction(async (tx) => {
-      const feedback = actor.userId
-        ? await tx.ideaPublicationFeedback.upsert({
+      let feedback;
+
+      if (this.isUserActor(actor)) {
+        const userId = actor.userId;
+
+        feedback = await tx.ideaPublicationFeedback.upsert({
           where: {
-            publicationId_userId: { publicationId, userId: actor.userId },
-          },
-          update: {
-            comment: dto.comment,
-            status: PublicationFeedbackStatus.VISIBLE,
-          },
-          create: { publicationId, userId: actor.userId, comment: dto.comment },
-          select: this.feedbackSelect,
-        })
-        : await tx.ideaPublicationFeedback.upsert({
-          where: {
-            publicationId_guestSessionId: {
+            publicationId_userId: {
               publicationId,
-              guestSessionId: actor.guestSessionId,
+              userId,
             },
           },
           update: {
@@ -158,13 +226,39 @@ export class UserFeedbackService {
           },
           create: {
             publicationId,
-            guestSessionId: actor.guestSessionId,
+            userId,
             comment: dto.comment,
           },
           select: this.feedbackSelect,
         });
+      } else {
+        const guestSessionId = actor.guestSessionId;
 
-      const feedbackCount = await this.recalculateFeedback(tx, publicationId);
+        feedback = await tx.ideaPublicationFeedback.upsert({
+          where: {
+            publicationId_guestSessionId: {
+              publicationId,
+              guestSessionId,
+            },
+          },
+          update: {
+            comment: dto.comment,
+            status: PublicationFeedbackStatus.VISIBLE,
+          },
+          create: {
+            publicationId,
+            guestSessionId,
+            comment: dto.comment,
+          },
+          select: this.feedbackSelect,
+        });
+      }
+
+      const feedbackCount = await this.recalculateFeedback(
+        tx,
+        publicationId,
+      );
+
       return {
         message: 'Publication feedback saved successfully',
         feedback,
@@ -173,35 +267,63 @@ export class UserFeedbackService {
     });
   }
 
+  /**
+   * Returns the current actor's feedback for a publication.
+   */
   async getMyFeedback(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublishedPublicationExists(publicationId);
 
-    return actor.userId
-      ? this.prisma.ideaPublicationFeedback.findUnique({
+    if (this.isUserActor(actor)) {
+      const userId = actor.userId;
+
+      return this.prisma.ideaPublicationFeedback.findUnique({
         where: {
-          publicationId_userId: { publicationId, userId: actor.userId },
-        },
-        select: this.feedbackSelect,
-      })
-      : this.prisma.ideaPublicationFeedback.findUnique({
-        where: {
-          publicationId_guestSessionId: {
+          publicationId_userId: {
             publicationId,
-            guestSessionId: actor.guestSessionId,
+            userId,
           },
         },
         select: this.feedbackSelect,
       });
+    }
+
+    const guestSessionId = actor.guestSessionId;
+
+    return this.prisma.ideaPublicationFeedback.findUnique({
+      where: {
+        publicationId_guestSessionId: {
+          publicationId,
+          guestSessionId,
+        },
+      },
+      select: this.feedbackSelect,
+    });
   }
 
+  /**
+   * Deletes the current actor's feedback and recalculates its count.
+   */
   async deleteFeedback(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublishedPublicationExists(publicationId);
+
     const existing = await this.getMyFeedback(actor, publicationId);
-    if (!existing) throw new NotFoundException('Publication feedback not found');
+
+    if (!existing) {
+      throw new NotFoundException('Publication feedback not found');
+    }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.ideaPublicationFeedback.delete({ where: { id: existing.id } });
-      const feedbackCount = await this.recalculateFeedback(tx, publicationId);
+      await tx.ideaPublicationFeedback.delete({
+        where: {
+          id: existing.id,
+        },
+      });
+
+      const feedbackCount = await this.recalculateFeedback(
+        tx,
+        publicationId,
+      );
+
       return {
         message: 'Publication feedback deleted successfully',
         feedbackCount,
@@ -209,41 +331,73 @@ export class UserFeedbackService {
     });
   }
 
+  /**
+   * Recalculates and persists the publication rating statistics.
+   */
   private async recalculateRatings(
     tx: Prisma.TransactionClient,
     publicationId: string,
   ) {
     const aggregate = await tx.ideaPublicationRating.aggregate({
-      where: { publicationId },
-      _avg: { value: true },
-      _count: { value: true },
+      where: {
+        publicationId,
+      },
+      _avg: {
+        value: true,
+      },
+      _count: {
+        value: true,
+      },
     });
+
     const averageRating = aggregate._avg.value ?? 0;
     const ratingsCount = aggregate._count.value;
+
     await tx.ideaPublication.update({
-      where: { id: publicationId },
-      data: { averageRating, ratingsCount },
+      where: {
+        id: publicationId,
+      },
+      data: {
+        averageRating,
+        ratingsCount,
+      },
     });
+
     return {
       averageRating: Number(averageRating.toFixed(2)),
       ratingsCount,
     };
   }
 
+  /**
+   * Recalculates and persists the number of visible feedback records.
+   */
   private async recalculateFeedback(
     tx: Prisma.TransactionClient,
     publicationId: string,
   ) {
     const feedbackCount = await tx.ideaPublicationFeedback.count({
-      where: { publicationId, status: PublicationFeedbackStatus.VISIBLE },
+      where: {
+        publicationId,
+        status: PublicationFeedbackStatus.VISIBLE,
+      },
     });
+
     await tx.ideaPublication.update({
-      where: { id: publicationId },
-      data: { feedbackCount },
+      where: {
+        id: publicationId,
+      },
+      data: {
+        feedbackCount,
+      },
     });
+
     return feedbackCount;
   }
 
+  /**
+   * Ensures that the requested publication is publicly available.
+   */
   private async ensurePublishedPublicationExists(publicationId: string) {
     const publication = await this.prisma.ideaPublication.findFirst({
       where: {
@@ -251,34 +405,72 @@ export class UserFeedbackService {
         status: IdeaPublicationStatus.PUBLISHED,
         isHidden: false,
       },
-      select: { id: true },
+      select: {
+        id: true,
+      },
     });
-    if (!publication) throw new NotFoundException('Published idea not found');
+
+    if (!publication) {
+      throw new NotFoundException('Published idea not found');
+    }
   }
 
+  /**
+   * Ensures that rating is enabled for the requested publication.
+   */
   private async ensurePublicationAllowsRatings(publicationId: string) {
     const publication = await this.prisma.ideaPublication.findFirst({
-      where: { id: publicationId, status: IdeaPublicationStatus.PUBLISHED },
-      select: { allowRatings: true, isHidden: true },
+      where: {
+        id: publicationId,
+        status: IdeaPublicationStatus.PUBLISHED,
+      },
+      select: {
+        allowRatings: true,
+        isHidden: true,
+      },
     });
+
     if (!publication || publication.isHidden) {
       throw new NotFoundException('Published publication not found');
     }
+
     if (!publication.allowRatings) {
-      throw new BadRequestException('Ratings are disabled for this publication');
+      throw new BadRequestException(
+        'Ratings are disabled for this publication',
+      );
     }
   }
 
+  /**
+   * Ensures that feedback is enabled for the requested publication.
+   */
   private async ensurePublicationAllowsFeedback(publicationId: string) {
     const publication = await this.prisma.ideaPublication.findFirst({
-      where: { id: publicationId, status: IdeaPublicationStatus.PUBLISHED },
-      select: { allowFeedback: true, isHidden: true },
+      where: {
+        id: publicationId,
+        status: IdeaPublicationStatus.PUBLISHED,
+      },
+      select: {
+        allowFeedback: true,
+        isHidden: true,
+      },
     });
+
     if (!publication || publication.isHidden) {
       throw new NotFoundException('Published publication not found');
     }
+
     if (!publication.allowFeedback) {
-      throw new BadRequestException('Feedback is disabled for this publication');
+      throw new BadRequestException(
+        'Feedback is disabled for this publication',
+      );
     }
+  }
+
+  /**
+   * Narrows the feedback actor to an authenticated user.
+   */
+  private isUserActor(actor: FeedbackActor): actor is UserFeedbackActor {
+    return typeof actor.userId === 'string';
   }
 }

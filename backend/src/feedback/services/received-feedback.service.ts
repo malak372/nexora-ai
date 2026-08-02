@@ -7,6 +7,7 @@ import {
   IdeaVoteValue,
   PublicationFeedbackStatus,
 } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { GetReceivedFeedbackQueryDto } from '../dto/get-received-feedback-query.dto';
 
@@ -50,14 +51,15 @@ export interface ReceivedFeedbackResponse {
 /**
  * Returns publication-owner audience insights.
  *
- * The response combines each user's rating, vote, and written feedback into
- * one row. Users who rated or voted without writing feedback are still shown.
+ * The response combines each user's or guest's rating, vote, and written
+ * feedback into one row. Actors who rated or voted without writing feedback
+ * are still shown.
  *
  * @author Eman
  */
 @Injectable()
 export class ReceivedFeedbackService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async findReceived(
     userId: string,
@@ -65,7 +67,9 @@ export class ReceivedFeedbackService {
     query: GetReceivedFeedbackQueryDto,
   ): Promise<ReceivedFeedbackResponse> {
     const publication = await this.prisma.ideaPublication.findUnique({
-      where: { id: publicationId },
+      where: {
+        id: publicationId,
+      },
       select: {
         id: true,
         publisherId: true,
@@ -96,11 +100,14 @@ export class ReceivedFeedbackService {
 
     const [ratings, votes, feedbackEntries] = await Promise.all([
       this.prisma.ideaPublicationRating.findMany({
-        where: { publicationId },
+        where: {
+          publicationId,
+        },
         select: {
           value: true,
           createdAt: true,
           updatedAt: true,
+          guestSessionId: true,
           user: {
             select: {
               id: true,
@@ -110,12 +117,16 @@ export class ReceivedFeedbackService {
           },
         },
       }),
+
       this.prisma.ideaPublicationVote.findMany({
-        where: { publicationId },
+        where: {
+          publicationId,
+        },
         select: {
           value: true,
           createdAt: true,
           updatedAt: true,
+          guestSessionId: true,
           user: {
             select: {
               id: true,
@@ -125,6 +136,7 @@ export class ReceivedFeedbackService {
           },
         },
       }),
+
       this.prisma.ideaPublicationFeedback.findMany({
         where: {
           publicationId,
@@ -136,6 +148,7 @@ export class ReceivedFeedbackService {
           status: true,
           createdAt: true,
           updatedAt: true,
+          guestSessionId: true,
           user: {
             select: {
               id: true,
@@ -150,15 +163,20 @@ export class ReceivedFeedbackService {
     const responseMap = new Map<string, AudienceResponseRow>();
 
     const ensureRow = (
-      user: AudienceResponseRow['user'],
+      actor: AudienceResponseRow['user'],
       activityAt: Date,
     ): AudienceResponseRow => {
-      const current = responseMap.get(user.id);
+      const current = responseMap.get(actor.id);
 
       if (current) {
         if (activityAt > current.lastActivityAt) {
-          const updated = { ...current, lastActivityAt: activityAt };
-          responseMap.set(user.id, updated);
+          const updated: AudienceResponseRow = {
+            ...current,
+            lastActivityAt: activityAt,
+          };
+
+          responseMap.set(actor.id, updated);
+
           return updated;
         }
 
@@ -167,9 +185,9 @@ export class ReceivedFeedbackService {
 
       const created: AudienceResponseRow = {
         user: {
-          id: user.id,
-          fullName: user.fullName,
-          userType: user.userType ?? null,
+          id: actor.id,
+          fullName: actor.fullName,
+          userType: actor.userType ?? null,
         },
         rating: null,
         vote: null,
@@ -177,29 +195,60 @@ export class ReceivedFeedbackService {
         lastActivityAt: activityAt,
       };
 
-      responseMap.set(user.id, created);
+      responseMap.set(actor.id, created);
+
       return created;
     };
 
     for (const rating of ratings) {
-      const row = ensureRow(rating.user, rating.updatedAt);
-      responseMap.set(rating.user.id, {
+      const actor = this.resolveAudienceActor(
+        rating.user,
+        rating.guestSessionId,
+      );
+
+      if (!actor) {
+        continue;
+      }
+
+      const row = ensureRow(actor, rating.updatedAt);
+
+      responseMap.set(actor.id, {
         ...row,
         rating: rating.value,
       });
     }
 
     for (const vote of votes) {
-      const row = ensureRow(vote.user, vote.updatedAt);
-      responseMap.set(vote.user.id, {
+      const actor = this.resolveAudienceActor(
+        vote.user,
+        vote.guestSessionId,
+      );
+
+      if (!actor) {
+        continue;
+      }
+
+      const row = ensureRow(actor, vote.updatedAt);
+
+      responseMap.set(actor.id, {
         ...row,
         vote: vote.value,
       });
     }
 
     for (const feedback of feedbackEntries) {
-      const row = ensureRow(feedback.user, feedback.updatedAt);
-      responseMap.set(feedback.user.id, {
+      const actor = this.resolveAudienceActor(
+        feedback.user,
+        feedback.guestSessionId,
+      );
+
+      if (!actor) {
+        continue;
+      }
+
+      const row = ensureRow(actor, feedback.updatedAt);
+
+      responseMap.set(actor.id, {
         ...row,
         feedback: {
           id: feedback.id,
@@ -213,7 +262,9 @@ export class ReceivedFeedbackService {
 
     const rows = [...responseMap.values()]
       .filter((row) => {
-        if (!search) return true;
+        if (!search) {
+          return true;
+        }
 
         return (
           row.user.fullName.toLowerCase().includes(search) ||
@@ -222,7 +273,8 @@ export class ReceivedFeedbackService {
       })
       .sort(
         (left, right) =>
-          right.lastActivityAt.getTime() - left.lastActivityAt.getTime(),
+          right.lastActivityAt.getTime() -
+          left.lastActivityAt.getTime(),
       );
 
     const total = rows.length;
@@ -247,5 +299,32 @@ export class ReceivedFeedbackService {
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
+  }
+
+  private resolveAudienceActor(
+    user: {
+      readonly id: string;
+      readonly fullName: string;
+      readonly userType: string | null;
+    } | null,
+    guestSessionId: string | null,
+  ): AudienceResponseRow['user'] | null {
+    if (user) {
+      return {
+        id: user.id,
+        fullName: user.fullName,
+        userType: user.userType ?? null,
+      };
+    }
+
+    if (guestSessionId) {
+      return {
+        id: guestSessionId,
+        fullName: 'Guest',
+        userType: 'GUEST',
+      };
+    }
+
+    return null;
   }
 }

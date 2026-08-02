@@ -28,7 +28,7 @@ import { GetFeedbackQueryDto } from '../dto/get-feedback-query.dto';
  */
 @Injectable()
 export class AdminFeedbackService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * Returns paginated textual publication feedback.
@@ -352,9 +352,9 @@ export class AdminFeedbackService {
       item.id,
       item.comment,
       item.status,
-      item.user.id,
-      item.user.fullName,
-      item.user.email,
+      item.user?.id ?? 'GUEST',
+      item.user?.fullName ?? 'Guest',
+      item.user?.email ?? '',
       item.publication.id,
       item.publication.publicTitle,
       item.publication.idea.id,
@@ -421,9 +421,9 @@ export class AdminFeedbackService {
     const rows = ratings.map((item) => [
       item.id,
       item.value,
-      item.user.id,
-      item.user.fullName,
-      item.user.email,
+      item.user?.id ?? 'GUEST',
+      item.user?.fullName ?? 'Guest',
+      item.user?.email ?? '',
       item.publication.id,
       item.publication.publicTitle,
       item.publication.idea.id,
@@ -445,36 +445,36 @@ export class AdminFeedbackService {
 
       ...(query.publicationId
         ? {
-            id: query.publicationId,
-          }
+          id: query.publicationId,
+        }
         : {}),
 
       ...(query.ideaId
         ? {
-            ideaId: query.ideaId,
-          }
+          ideaId: query.ideaId,
+        }
         : {}),
 
       ...(query.userId || query.rating
         ? {
-            ratings: {
-              some: {
-                ...(query.userId
-                  ? {
-                      userId: query.userId,
-                    }
-                  : {}),
+          ratings: {
+            some: {
+              ...(query.userId
+                ? {
+                  userId: query.userId,
+                }
+                : {}),
 
-                ...(query.rating
-                  ? {
-                      value: query.rating,
-                    }
-                  : {}),
+              ...(query.rating
+                ? {
+                  value: query.rating,
+                }
+                : {}),
 
-                ...(buildDateFilter(query) ?? {}),
-              },
+              ...(buildDateFilter(query) ?? {}),
             },
-          }
+          },
+        }
         : {}),
     };
 
@@ -519,12 +519,12 @@ export class AdminFeedbackService {
 
       ...(query.ideaId
         ? {
-            publication: {
-              is: {
-                ideaId: query.ideaId,
-              },
+          publication: {
+            is: {
+              ideaId: query.ideaId,
             },
-          }
+          },
+        }
         : {}),
     };
 
@@ -594,12 +594,12 @@ export class AdminFeedbackService {
 
       ...(query.ideaId
         ? {
-            publication: {
-              is: {
-                ideaId: query.ideaId,
-              },
+          publication: {
+            is: {
+              ideaId: query.ideaId,
             },
-          }
+          },
+        }
         : {}),
     };
 
