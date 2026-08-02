@@ -12,8 +12,8 @@ import GenerationProgressPage from '../features/normal-user/idea-generation/page
 import MyIdeasPage from '../features/normal-user/ideas/pages/MyIdeasPage';
 import DiscoveriesPage from '../features/normal-user/discoveries/pages/DiscoveriesPage';
 import PublicationDetailPage from '../features/normal-user/discoveries/pages/PublicationDetailPage';
+import AcceptedIdeaWorkspacePage from '../features/normal-user/discoveries/pages/AcceptedIdeaWorkspacePage';
 import PublishedIdeasPage from '../features/normal-user/published/pages/PublishedIdeasPage';
-import AcceptedIdeasPage from '../features/normal-user/accepted/pages/AcceptedIdeasPage';
 import IdeaWorkspacePage from '../features/normal-user/idea-workspace/pages/IdeaWorkspacePage';
 import BusinessModelPage from '../features/normal-user/business-models/pages/BusinessModelPage';
 import DirectUnlockPage from '../features/normal-user/payments/pages/DirectUnlockPage';
@@ -49,8 +49,9 @@ export const normalUserRoutes = (
         <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />
         <Route path="discover" element={<DiscoveriesPage />} />
         <Route path="discover/:publicationId" element={<PublicationDetailPage />} />
+        <Route path="accepted/:publicationId/workspace" element={<AcceptedIdeaWorkspacePage />} />
         <Route path="published" element={<PublishedIdeasPage />} />
-        <Route path="accepted" element={<AcceptedIdeasPage />} />
+        <Route path="accepted" element={<Navigate to="/normal/ideas?view=accepted" replace />} />
         <Route path="compliance" element={<CompliancePage />} />
         <Route path="favorites" element={<TemporaryNormalPage title="Favorites" />} />
         <Route path="credits" element={<UpgradePage />} />

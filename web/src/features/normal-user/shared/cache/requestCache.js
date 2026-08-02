@@ -1,16 +1,16 @@
 /**
  * Session-scoped cache for slow authenticated GET requests.
  *
- * The cache uses both memory and sessionStorage:
- * - Memory keeps navigation between pages instant.
- * - sessionStorage keeps data available after a page refresh in the same tab.
- * - Private data is removed automatically when the browser tab is closed.
+ * The cache uses both memory and sessionStorage. Each key also owns a version
+ * number so an HTTP request started before invalidation cannot write stale data
+ * back into the cache after a payment, unlock, publication, or profile change.
  *
- * @author Malak
+ * @author Nexora Team
  */
 
 const memoryCache = new Map();
 const pendingRequests = new Map();
+const cacheVersions = new Map();
 const STORAGE_PREFIX = 'nexora:request-cache:';
 
 function safeSessionStorage() {
@@ -67,6 +67,18 @@ function isFresh(entry) {
   return Boolean(entry) && Number(entry.expiresAt) > Date.now();
 }
 
+function getCacheVersion(key) {
+  return cacheVersions.get(key) ?? 0;
+}
+
+function bumpCacheVersion(key) {
+  cacheVersions.set(key, getCacheVersion(key) + 1);
+}
+
+function matchesPrefix(key, prefix) {
+  return key === prefix || key.startsWith(prefix);
+}
+
 /**
  * Creates a deterministic key from a namespace and request parameters.
  */
@@ -86,6 +98,10 @@ export function createRequestCacheKey(namespace, params = {}) {
 
 /**
  * Returns cached data when fresh and deduplicates concurrent requests.
+ *
+ * A request captures the current cache version. When the key is invalidated
+ * while that request is still running, its response is returned to the caller
+ * but is deliberately not stored, preventing stale data from reappearing.
  */
 export async function cachedRequest(
   key,
@@ -102,9 +118,15 @@ export async function cachedRequest(
   if (!force && isFresh(existing)) return existing.value;
   if (!force && pendingRequests.has(key)) return pendingRequests.get(key);
 
+  const requestVersion = getCacheVersion(key);
+
   const request = Promise.resolve()
     .then(loader)
     .then((value) => {
+      if (getCacheVersion(key) !== requestVersion) {
+        return value;
+      }
+
       const entry = {
         value,
         expiresAt: Date.now() + ttlMs,
@@ -115,13 +137,20 @@ export async function cachedRequest(
       return value;
     })
     .catch((error) => {
-      if (allowStaleOnError && existing?.value !== undefined) {
+      if (
+        allowStaleOnError &&
+        getCacheVersion(key) === requestVersion &&
+        existing?.value !== undefined
+      ) {
         return existing.value;
       }
+
       throw error;
     })
     .finally(() => {
-      pendingRequests.delete(key);
+      if (pendingRequests.get(key) === request) {
+        pendingRequests.delete(key);
+      }
     });
 
   pendingRequests.set(key, request);
@@ -130,40 +159,56 @@ export async function cachedRequest(
 
 /**
  * Invalidates one key or all keys under a namespace prefix.
+ * Pending loaders are versioned out so they cannot restore stale values.
  */
 export function invalidateRequestCache(prefix) {
-  for (const key of [...memoryCache.keys()]) {
-    if (key === prefix || key.startsWith(prefix)) {
-      memoryCache.delete(key);
-      pendingRequests.delete(key);
-      removeStoredEntry(key);
+  const knownKeys = new Set([
+    ...memoryCache.keys(),
+    ...pendingRequests.keys(),
+    ...cacheVersions.keys(),
+  ]);
+
+  const storage = safeSessionStorage();
+
+  if (storage) {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const storageKey = storage.key(index);
+      if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
+      knownKeys.add(storageKey.slice(STORAGE_PREFIX.length));
     }
   }
 
-  const storage = safeSessionStorage();
-  if (!storage) return;
+  for (const key of knownKeys) {
+    if (!matchesPrefix(key, prefix)) continue;
 
-  for (let index = storage.length - 1; index >= 0; index -= 1) {
-    const storageKey = storage.key(index);
-    if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
-
-    const cacheKey = storageKey.slice(STORAGE_PREFIX.length);
-    if (cacheKey === prefix || cacheKey.startsWith(prefix)) {
-      storage.removeItem(storageKey);
-    }
+    bumpCacheVersion(key);
+    memoryCache.delete(key);
+    pendingRequests.delete(key);
+    removeStoredEntry(key);
   }
 }
 
 /** Clears all Nexora request-cache entries, normally during sign out. */
 export function clearRequestCache() {
-  memoryCache.clear();
-  pendingRequests.clear();
+  const knownKeys = new Set([
+    ...memoryCache.keys(),
+    ...pendingRequests.keys(),
+    ...cacheVersions.keys(),
+  ]);
 
   const storage = safeSessionStorage();
-  if (!storage) return;
 
-  for (let index = storage.length - 1; index >= 0; index -= 1) {
-    const key = storage.key(index);
-    if (key?.startsWith(STORAGE_PREFIX)) storage.removeItem(key);
+  if (storage) {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const storageKey = storage.key(index);
+      if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
+      knownKeys.add(storageKey.slice(STORAGE_PREFIX.length));
+      storage.removeItem(storageKey);
+    }
   }
+
+  for (const key of knownKeys) bumpCacheVersion(key);
+
+  memoryCache.clear();
+  pendingRequests.clear();
 }

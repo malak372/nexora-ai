@@ -30,6 +30,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { createCreditsCheckout } from '../api/upgradeApi';
 import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
+import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
 import '../styles/upgrade.css';
 
 const QUICK_AMOUNTS = [1, 3, 5, 10];
@@ -139,6 +140,11 @@ export default function UpgradePage() {
           'The payment provider did not return a checkout URL.',
         );
       }
+
+      storePaymentReturnReference({
+        paymentId: result.paymentId,
+        paymentPurpose: result.paymentPurpose ?? 'BUY_CREDITS',
+      });
 
       window.location.assign(result.checkoutUrl);
     } catch (requestError) {

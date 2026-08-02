@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -25,11 +24,31 @@ const DIRECT_UNLOCK_CLAIM_OUTPUT_KEY = 'full-abstract' as const;
  * A pending claim older than this duration may be safely reclaimed.
  */
 const DIRECT_UNLOCK_CLAIM_TTL_MS = 10 * 60 * 1000;
+
+/** Maximum time a duplicate reconciliation waits for the active worker. */
+const DIRECT_UNLOCK_WAIT_TIMEOUT_MS = 90 * 1000;
+
+/** Poll interval used while another worker owns the durable claim. */
+const DIRECT_UNLOCK_WAIT_POLL_MS = 1000;
+
+/** Maximum time Prisma may wait to acquire a transaction connection. */
+const DIRECT_UNLOCK_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
+
+/**
+ * Maximum lifetime of the interactive persistence transaction.
+ *
+ * Direct unlock persists several advanced-output rows against a remote
+ * PostgreSQL database. Prisma's default interactive-transaction timeout is
+ * too short for this workload and can close the transaction before the final
+ * Idea update, causing P2028 (Transaction not found).
+ */
+const DIRECT_UNLOCK_TRANSACTION_TIMEOUT_MS = 120 * 1000;
 import type {
   BeginIdeaUnlockResult,
   IdeaOutputDatabaseClient,
   PersistedIdeaUnlockResult,
   PersistIdeaUnlockOutputInput,
+  WaitForIdeaUnlockResult,
 } from '../types/idea-output.type';
 
 type OutputDatabaseClient = PrismaService | IdeaOutputDatabaseClient;
@@ -85,6 +104,7 @@ export class IdeaOutputPersistenceService {
         return {
           ideaId: idea.id,
           alreadyUnlocked: true,
+          inProgress: false,
           unlockedAt: idea.unlockedAt,
         };
       }
@@ -139,9 +159,11 @@ export class IdeaOutputPersistenceService {
         });
 
         if (claim.count !== 1) {
-          throw new ConflictException(
-            'Advanced-output generation is already in progress for this idea.',
-          );
+          return {
+            ideaId: idea.id,
+            alreadyUnlocked: false,
+            inProgress: true,
+          };
         }
       } else {
         try {
@@ -163,9 +185,11 @@ export class IdeaOutputPersistenceService {
             error instanceof Prisma.PrismaClientKnownRequestError &&
             error.code === 'P2002'
           ) {
-            throw new ConflictException(
-              'Advanced-output generation is already in progress for this idea.',
-            );
+            return {
+              ideaId: idea.id,
+              alreadyUnlocked: false,
+              inProgress: true,
+            };
           }
 
           throw error;
@@ -175,8 +199,89 @@ export class IdeaOutputPersistenceService {
       return {
         ideaId: idea.id,
         alreadyUnlocked: false,
+        inProgress: false,
       };
     });
+  }
+
+  /**
+   * Waits for a concurrently running direct unlock to reach a terminal state.
+   *
+   * This prevents repeated webhook or reconcile requests from turning a valid
+   * in-flight unlock into an HTTP 500. The caller may retry acquisition when
+   * the previous claim failed or became stale.
+   */
+  async waitForDirectUnlockCompletion(
+    ideaId: string,
+    userId: string,
+  ): Promise<WaitForIdeaUnlockResult> {
+    const deadline = Date.now() + DIRECT_UNLOCK_WAIT_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      const state = await this.prisma.idea.findFirst({
+        where: {
+          id: ideaId,
+          userId,
+          deletedAt: null,
+        },
+        select: {
+          isUnlocked: true,
+          unlockedAt: true,
+          generatedOutputs: {
+            where: { outputKey: DIRECT_UNLOCK_CLAIM_OUTPUT_KEY },
+            take: 1,
+            select: {
+              status: true,
+              updatedAt: true,
+            },
+          },
+        },
+      });
+
+      if (!state) {
+        throw new NotFoundException('The selected idea was not found.');
+      }
+
+      if (state.isUnlocked && state.unlockedAt) {
+        return {
+          completed: true,
+          failed: false,
+          retryable: false,
+          unlockedAt: state.unlockedAt,
+        };
+      }
+
+      const claim = state.generatedOutputs[0];
+
+      if (!claim || claim.status === GeneratedOutputStatus.FAILED) {
+        return {
+          completed: false,
+          failed: true,
+          retryable: true,
+        };
+      }
+
+      if (
+        claim.status === GeneratedOutputStatus.PENDING &&
+        claim.updatedAt.getTime() <= Date.now() - DIRECT_UNLOCK_CLAIM_TTL_MS
+      ) {
+        return {
+          completed: false,
+          failed: false,
+          retryable: true,
+        };
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, DIRECT_UNLOCK_WAIT_POLL_MS);
+      });
+    }
+
+    return {
+      completed: false,
+      failed: false,
+      retryable: false,
+    };
   }
 
   async markDirectUnlockFailed(
@@ -211,8 +316,12 @@ export class IdeaOutputPersistenceService {
   async persistDirectUnlock(
     input: PersistIdeaUnlockOutputInput,
   ): Promise<PersistedIdeaUnlockResult> {
-    return this.prisma.$transaction((tx) =>
-      this.persistDirectUnlockWithClient(input, tx),
+    return this.prisma.$transaction(
+      (tx) => this.persistDirectUnlockWithClient(input, tx),
+      {
+        maxWait: DIRECT_UNLOCK_TRANSACTION_MAX_WAIT_MS,
+        timeout: DIRECT_UNLOCK_TRANSACTION_TIMEOUT_MS,
+      },
     );
   }
 

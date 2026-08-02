@@ -131,7 +131,9 @@ export default function IdeaLibraryCard({
     : idea?.createdAt;
 
   const primaryActionLabel = isAccepted
-    ? 'View accepted brief'
+    ? idea?.hasAdvancedAccess
+      ? 'Go to idea workspace'
+      : 'View accepted brief'
     : status.tone === 'processing'
       ? 'Track progress'
       : 'Open idea';
@@ -275,7 +277,9 @@ export default function IdeaLibraryCard({
                 >
                   <ArrowUpRight size={15} />
                   {isAccepted
-                    ? 'View accepted brief'
+                    ? idea?.hasAdvancedAccess
+                      ? 'Go to idea workspace'
+                      : 'View accepted brief'
                     : 'Open workspace'}
                 </button>
 

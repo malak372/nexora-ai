@@ -57,10 +57,14 @@ export async function getDiscoveries(params = {}) {
   }
 }
 
-export async function getDiscoveryById(publicationId) {
+export async function getDiscoveryById(publicationId, options = {}) {
   try {
     return unwrap(
-      await normalUserApi.get(`/users/publications/${publicationId}`),
+      await normalUserApi.get(`/users/publications/${publicationId}`, {
+        params: options.forceRefresh
+          ? { _refresh: Date.now() }
+          : undefined,
+      }),
     );
   } catch (error) {
     throwApiError(error, 'This discovery could not be opened.');
@@ -100,6 +104,48 @@ export async function acceptPublication(
     );
   } catch (error) {
     throwApiError(error, 'The publication could not be accepted.');
+  }
+}
+
+
+export async function createPublicationAdvancedUnlockCheckout(
+  publicationId,
+  paymentMethodKey = 'card',
+) {
+  const origin = window.location.origin;
+
+  try {
+    return unwrap(
+      await normalUserApi.post(
+        `/users/publications/${publicationId}/unlock-advanced/checkout`,
+        {
+          clientRequestId: createUuidV4(),
+          paymentMethodKey,
+          successUrl: `${origin}/normal/payments/success`,
+          cancelUrl: `${origin}/normal/discover/${publicationId}?advancedCancelled=1`,
+        },
+      ),
+    );
+  } catch (error) {
+    throwApiError(
+      error,
+      'The advanced-output checkout could not be created.',
+    );
+  }
+}
+
+export async function unlockPublicationAdvancedWithCredits(publicationId) {
+  try {
+    return unwrap(
+      await normalUserApi.post(
+        `/users/publications/${publicationId}/unlock-advanced`,
+      ),
+    );
+  } catch (error) {
+    throwApiError(
+      error,
+      'The advanced outputs could not be unlocked with credits.',
+    );
   }
 }
 

@@ -15,6 +15,7 @@ import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.t
 import { PaymentCheckoutService } from '../../../payments/services/payment-checkout.service';
 
 import { CreatePublicationAcceptanceDto } from '../dto/create-publication-acceptance.dto';
+import { CreatePublicationAdvancedUnlockDto } from '../dto/create-publication-advanced-unlock.dto';
 
 import { IdeaPublicationAcceptanceService } from '../services/idea-publication-acceptance.service';
 
@@ -91,6 +92,20 @@ export class PublicationAcceptancesController {
    * @param publicationId Publication identifier.
    * @returns Updated publication acceptance.
    */
+  @Post(':publicationId/unlock-advanced/checkout')
+  createNormalAdvancedCheckout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
+    publicationId: string,
+    @Body() dto: CreatePublicationAdvancedUnlockDto,
+  ) {
+    return this.paymentCheckoutService.createPublicationAdvancedUnlockCheckout(
+      user.id,
+      publicationId,
+      dto,
+    );
+  }
+
   @Post(':publicationId/unlock-advanced')
   unlockAdvanced(
     @CurrentUser() user: AuthenticatedUser,

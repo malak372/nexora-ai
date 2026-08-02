@@ -766,7 +766,10 @@ export class PayPalPaymentGateway
         return 'Unlock advanced outputs for one Nexora AI project idea.';
 
       case PaymentPurpose.ACCEPT_PUBLICATION:
-        return 'Open the complete protected opportunity brief and add it to the accepted ideas library.';
+        return 'Open the protected basic opportunity brief and add it to the accepted ideas library.';
+
+      case PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED:
+        return 'Unlock the advanced generated outputs for one accepted opportunity.';
 
       default:
         throw new PaymentProcessingError(

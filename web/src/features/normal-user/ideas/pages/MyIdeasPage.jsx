@@ -16,7 +16,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getAcceptedPublications } from '../../accepted/api/acceptedPublicationsApi';
 import { deleteMyIdea, getMyIdeas } from '../api/userIdeasApi';
@@ -216,6 +216,7 @@ function normalizeAcceptedRecord(record) {
  */
 export default function MyIdeasPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const today = useMemo(
     () => getTodayInputValue(),
@@ -236,8 +237,12 @@ export default function MyIdeasPage() {
   const [search, setSearch] =
     useState('');
 
-  const [filter, setFilter] =
-    useState('all');
+  const [filter, setFilter] = useState(() => {
+    const requestedView = searchParams.get('view');
+    return FILTERS.some((item) => item.value === requestedView)
+      ? requestedView
+      : 'all';
+  });
 
   const [fromDate, setFromDate] =
     useState('');
@@ -303,7 +308,7 @@ export default function MyIdeasPage() {
           const allAccepted = await loadEveryPage(
             async (params) => {
               const result =
-                await getAcceptedPublications(params);
+                await getAcceptedPublications(params, { force });
 
               return {
                 items: (result.items ?? []).map(
@@ -352,11 +357,14 @@ export default function MyIdeasPage() {
         }
 
         const acceptedResult =
-          await getAcceptedPublications({
-            ...acceptedParams,
-            page,
-            limit: PAGE_SIZE,
-          });
+          await getAcceptedPublications(
+            {
+              ...acceptedParams,
+              page,
+              limit: PAGE_SIZE,
+            },
+            { force },
+          );
 
         const acceptedItems =
           (acceptedResult.items ?? []).map(
@@ -501,6 +509,55 @@ export default function MyIdeasPage() {
     toDate,
   ]);
 
+  const requestedView = searchParams.get('view');
+
+  /**
+   * Synchronizes the filter only when the URL query value changes.
+   *
+   * The previous implementation depended on `filter` itself. Clicking a
+   * filter changed the state, immediately reran the effect, and restored the
+   * old URL value (usually `all`). That made the filter appear frozen.
+   */
+  useEffect(() => {
+    const nextFilter = FILTERS.some(
+      (item) => item.value === requestedView,
+    )
+      ? requestedView
+      : 'all';
+
+    setFilter((current) =>
+      current === nextFilter ? current : nextFilter,
+    );
+    setPage(1);
+  }, [requestedView]);
+
+  /**
+   * Applies a filter and keeps the browser URL in sync with the selected tab.
+   *
+   * @param {string} nextFilter
+   */
+  function handleFilterChange(nextFilter) {
+    if (!FILTERS.some((item) => item.value === nextFilter)) return;
+
+    setFilter(nextFilter);
+    setPage(1);
+
+    setSearchParams(
+      (currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+
+        if (nextFilter === 'all') {
+          nextParams.delete('view');
+        } else {
+          nextParams.set('view', nextFilter);
+        }
+
+        return nextParams;
+      },
+      { replace: true },
+    );
+  }
+
   useEffect(() => {
     void loadIdeas();
   }, [loadIdeas]);
@@ -520,7 +577,9 @@ export default function MyIdeasPage() {
 
       if (publicationId) {
         navigate(
-          `/normal/discover/${publicationId}`,
+          idea?.hasAdvancedAccess
+            ? `/normal/accepted/${publicationId}/workspace`
+            : `/normal/discover/${publicationId}`,
         );
       }
 
@@ -787,13 +846,9 @@ export default function MyIdeasPage() {
                     ? ' is-accepted-filter'
                     : ''
                 }`}
-                onClick={() => {
-                  setFilter(
-                    option.value,
-                  );
-
-                  setPage(1);
-                }}
+                onClick={() =>
+                  handleFilterChange(option.value)
+                }
               >
                 {FilterIcon ? (
                   <FilterIcon

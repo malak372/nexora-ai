@@ -211,6 +211,10 @@ model SystemSetting {
   /// Price paid by a PREMIUM user to accept a publication.
   premiumAcceptancePrice Decimal @default(5) @map("premium_acceptance_price") @db.Decimal(10, 2)
 
+  /// Direct-payment price for a NORMAL user to unlock advanced outputs
+  /// after the basic publication acceptance already exists.
+  normalPublicationAdvancedPrice Decimal @default(5) @map("normal_publication_advanced_price") @db.Decimal(10, 2)
+
   updatedBy User? @relation("SettingsUpdatedBy", fields: [updatedById], references: [id])
 
   @@map("system_settings")
@@ -373,7 +377,8 @@ model Payment {
   premiumActivationFeeAtPurchase Decimal?                   @map("premium_activation_fee_at_purchase") @db.Decimal(10, 2)
   publicationId                  String?                    @map("publication_id")
   creditTransactions             CreditTransaction[]
-  publicationAcceptance          IdeaPublicationAcceptance?
+  publicationAcceptance          IdeaPublicationAcceptance? @relation("PublicationAcceptancePayment")
+  publicationAdvancedUnlock      IdeaPublicationAcceptance? @relation("PublicationAdvancedPayment")
   idea                           Idea?                      @relation(fields: [ideaId], references: [id])
   publication                    IdeaPublication?           @relation(fields: [publicationId], references: [id])
   user                           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1104,6 +1109,8 @@ model IdeaPublicationAcceptance {
   /// *
   /// * Present only for a normal-user $15 acceptance payment.
   paymentId            String?                         @unique @map("payment_id")
+  /// Payment used by a NORMAL user to unlock advanced outputs after basic acceptance.
+  advancedPaymentId    String?                         @unique @map("advanced_payment_id")
   /// *
   /// * Snapshot of the adopter location at acceptance time.
   country              String?
@@ -1118,7 +1125,8 @@ model IdeaPublicationAcceptance {
   updatedAt            DateTime                        @updatedAt @map("updated_at")
   clientRequestId      String                          @map("client_request_id")
   creditTransactions   CreditTransaction[]
-  payment              Payment?                        @relation(fields: [paymentId], references: [id])
+  payment              Payment?                        @relation("PublicationAcceptancePayment", fields: [paymentId], references: [id])
+  advancedPayment      Payment?                        @relation("PublicationAdvancedPayment", fields: [advancedPaymentId], references: [id])
   publication          IdeaPublication                 @relation(fields: [publicationId], references: [id], onDelete: Cascade)
   user                 User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1442,6 +1450,7 @@ enum PaymentPurpose {
   BUY_CREDITS
   DIRECT_UNLOCK
   ACCEPT_PUBLICATION
+  UNLOCK_PUBLICATION_ADVANCED
 }
 
 enum CreditTransactionType {

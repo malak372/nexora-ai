@@ -33,6 +33,7 @@ export type PaymentProcessingResult = {
   readonly ideaId?: string;
   readonly ideaUnlocked?: boolean;
   readonly unlockCompletedNow?: boolean;
+  readonly unlockInProgress?: boolean;
   readonly unlockMethod?: UnlockMethod;
   readonly unlockedAt?: Date;
 
@@ -41,6 +42,8 @@ export type PaymentProcessingResult = {
    */
   readonly publicationId?: string;
   readonly publicationAccepted?: boolean;
+  readonly acceptanceId?: string;
+  readonly advancedPublicationAccess?: boolean;
 
   /*
    * Failed-payment result field.
