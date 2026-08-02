@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -19,9 +19,9 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 /**
  * Generates the core idea through a dynamic multi-model benchmark.
  *
- * The top three ranked NLP opportunities are evaluated first by three rotating
- * JSON-capable models. Opportunities four and five are fallback-only when the
- * initial batch does not produce enough accepted candidates.
+ * The highest-ranked NLP opportunity is evaluated by three rotating JSON-capable
+ * models in parallel. Additional ordered models are used only when a fast-path
+ * model fails or produces a rejected output; no second opportunity batch runs.
  * Quality-approved candidates are compared using the AI judge when its confidence is
  * sufficient. Final selection uses the persisted hybrid score, while a low-
  * confidence or unavailable judge falls back to deterministic quality.
@@ -30,6 +30,7 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  */
 @Injectable()
 export class CoreIdeaGenerationStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(CoreIdeaGenerationStage.name);
   readonly key = IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION;
 
   readonly definition: IdeaGenerationStageDefinition = this.resolveDefinition();
@@ -43,7 +44,9 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     this.validateContext(context);
 
+    const benchmarkStartedAt = Date.now();
     const benchmark = await this.benchmarkService.benchmark(context);
+    const benchmarkDurationMs = Date.now() - benchmarkStartedAt;
     const winner = benchmark.winner;
     const winnerOpportunity = context.opportunityRanking?.selected;
 
@@ -63,6 +66,23 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
         winner.parsedOutput.advancedOutputs,
       ),
     };
+
+    const modelTimings = benchmark.candidates.map((candidate) => ({
+      candidateId: candidate.candidateId,
+      providerKey: candidate.aiResult.providerKey,
+      apiModelId: candidate.aiResult.apiModelId,
+      responseTimeMs: candidate.aiResult.responseTimeMs,
+      selected: candidate.candidateId === winner.candidateId,
+    }));
+    const measuredModelTimes = modelTimings
+      .map((timing) => timing.responseTimeMs)
+      .filter((value): value is number => Number.isFinite(value));
+
+    this.logger.log(
+      `Multi-AI timing for run ${context.runId}: benchmark=${benchmarkDurationMs}ms, candidates=${modelTimings
+        .map((timing) => `${timing.providerKey}/${timing.apiModelId}=${timing.responseTimeMs}ms`)
+        .join(', ')}`,
+    );
 
     return {
       context: updatedContext,
@@ -96,6 +116,17 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           costEstimate: winner.aiResult.costEstimate,
           responseTimeMs: winner.aiResult.responseTimeMs,
         },
+        benchmarkDurationMs,
+        modelExecutionMode: 'PARALLEL_PER_BATCH',
+        modelTimings,
+        fastestModelResponseMs:
+          measuredModelTimes.length > 0 ? Math.min(...measuredModelTimes) : null,
+        slowestModelResponseMs:
+          measuredModelTimes.length > 0 ? Math.max(...measuredModelTimes) : null,
+        totalReportedModelResponseMs: measuredModelTimes.reduce(
+          (total, value) => total + value,
+          0,
+        ),
         comparedCandidates: benchmark.candidates.length,
         comparedStartupConcepts: new Set(
           benchmark.candidates.map((candidate) => candidate.opportunityRank),

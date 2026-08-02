@@ -15,7 +15,7 @@ export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
  * The value intentionally fits the configured local Qwen fallback
  * while remaining sufficient for a compact structured response.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 2_048;
+export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 1_400;
 
 /**
  * Low temperature keeps extraction deterministic, evidence-focused,
@@ -29,7 +29,7 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
  * Bounding the sample count reduces prompt size and improves local
  * fallback latency.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 12;
+export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 8;
 
 /**
  * Maximum number of characters retained from one evidence sample.
@@ -52,7 +52,7 @@ export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 5;
 /**
  * Number of domain-validation attempts using different online models.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 3;
+export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 2;
 
 /**
  * Maximum models routed by AiExecutionService during one attempt.
@@ -67,7 +67,7 @@ export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
  * The longer timeout gives the local Ollama fallback enough time to
  * return valid structured JSON on consumer hardware.
  */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 300_000;
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 75_000;
 
 /**
  * Maximum entries retained from one persisted NLP summary array.

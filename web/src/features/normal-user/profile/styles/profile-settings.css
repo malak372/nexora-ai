@@ -46,12 +46,10 @@
     linear-gradient(90deg, rgba(97, 76, 183, 0.04) 1px, transparent 1px);
   background-size: 30px 30px;
   mask-image:
-    linear-gradient(
-      90deg,
+    linear-gradient(90deg,
       #000 0%,
       rgba(0, 0, 0, 0.5) 66%,
-      transparent 100%
-    );
+      transparent 100%);
 }
 
 .profile-settings-page__orb {
@@ -67,11 +65,9 @@
   width: 330px;
   height: 330px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(117, 205, 255, 0.21),
-      transparent 68%
-    );
+      transparent 68%);
   animation:
     profileOrbOne 9s ease-in-out infinite;
 }
@@ -82,16 +78,14 @@
   width: 360px;
   height: 360px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(190, 145, 255, 0.18),
-      transparent 68%
-    );
+      transparent 68%);
   animation:
     profileOrbTwo 11s ease-in-out infinite;
 }
 
-.profile-settings-page__header > span {
+.profile-settings-page__header>span {
   display: inline-flex;
   min-height: 38px;
   align-items: center;
@@ -100,11 +94,9 @@
   border: 1px solid rgba(101, 82, 217, 0.14);
   border-radius: 999px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #f2edff,
-      #edf8ff
-    );
+      #edf8ff);
   color: #654edc;
   font-size: 0.68rem;
   font-weight: 900;
@@ -149,12 +141,10 @@
   border: 1px solid rgba(111, 78, 218, 0.12);
   border-radius: 30px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.97),
       rgba(248, 245, 255, 0.93),
-      rgba(239, 249, 255, 0.93)
-    );
+      rgba(239, 249, 255, 0.93));
   box-shadow:
     0 26px 68px rgba(49, 34, 91, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
@@ -169,11 +159,9 @@
   height: 260px;
   border-radius: 50%;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(105, 82, 232, 0.1),
-      transparent 68%
-    );
+      transparent 68%);
   pointer-events: none;
 }
 
@@ -191,11 +179,9 @@
   border: 5px solid #fff;
   border-radius: 36px;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #7350e5,
-      #62a9ec
-    );
+      #62a9ec);
   color: #fff;
   box-shadow:
     0 20px 42px rgba(91, 65, 178, 0.24),
@@ -208,8 +194,7 @@
 
 .profile-settings-card__avatar:hover {
   transform:
-    translateY(-4px)
-    rotate(-1deg);
+    translateY(-4px) rotate(-1deg);
 
   box-shadow:
     0 26px 52px rgba(91, 65, 178, 0.3),
@@ -217,7 +202,7 @@
 }
 
 .profile-settings-card__avatar img,
-.profile-settings-card__avatar > span {
+.profile-settings-card__avatar>span {
   display: grid;
   width: 100%;
   height: 100%;
@@ -239,11 +224,9 @@
   border: 4px solid #fff;
   border-radius: 14px;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #6745d8,
-      #4f88dc
-    );
+      #4f88dc);
   color: #fff;
   box-shadow:
     0 10px 22px rgba(83, 61, 205, 0.23);
@@ -262,7 +245,7 @@
   letter-spacing: -0.025em;
 }
 
-.profile-settings-card__identity > span {
+.profile-settings-card__identity>span {
   color: #81778c;
 }
 
@@ -298,11 +281,9 @@
   border-radius: 13px;
   padding: 0 16px;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #6847dc,
-      #4f85db
-    );
+      #4f85db);
   color: #fff;
   font-weight: 850;
   cursor: pointer;
@@ -347,11 +328,9 @@
   border: 1px solid rgba(107, 82, 230, 0.12);
   border-radius: 28px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.97),
-      rgba(249, 247, 255, 0.93)
-    );
+      rgba(249, 247, 255, 0.93));
   box-shadow:
     0 24px 62px rgba(55, 39, 110, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.95);
@@ -370,11 +349,9 @@
   height: 170px;
   border-radius: 50%;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(105, 82, 232, 0.08),
-      transparent 68%
-    );
+      transparent 68%);
   transition: transform 260ms ease;
 }
 
@@ -388,11 +365,10 @@
 
 .profile-settings-panel:hover::after {
   transform:
-    scale(1.18)
-    translate(-4px, -4px);
+    scale(1.18) translate(-4px, -4px);
 }
 
-.profile-settings-panel > * {
+.profile-settings-panel>* {
   position: relative;
   z-index: 1;
 }
@@ -405,21 +381,19 @@
   border-bottom: 1px solid #eeeaf5;
 }
 
-.profile-settings-panel__title > svg {
+.profile-settings-panel__title>svg {
   width: 44px;
   height: 44px;
   padding: 11px;
   border-radius: 14px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #eee9ff,
-      #edf8ff
-    );
+      #edf8ff);
   color: #6747e8;
 }
 
-.profile-settings-panel__title > div {
+.profile-settings-panel__title>div {
   display: grid;
   gap: 4px;
 }
@@ -473,8 +447,8 @@
   color: #8d879b;
 }
 
-.profile-settings-panel > button,
-.profile-settings-panel__verification > button {
+.profile-settings-panel>button,
+.profile-settings-panel__verification>button {
   display: inline-flex;
   min-height: 46px;
   align-items: center;
@@ -485,12 +459,10 @@
   border-radius: 14px;
   padding: 0 18px;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #6f4be8,
       #5234ca 60%,
-      #4e86da
-    );
+      #4e86da);
   color: #fff;
   font-weight: 850;
   cursor: pointer;
@@ -501,8 +473,8 @@
     box-shadow 180ms ease;
 }
 
-.profile-settings-panel > button:hover:not(:disabled),
-.profile-settings-panel__verification > button:hover:not(:disabled) {
+.profile-settings-panel>button:hover:not(:disabled),
+.profile-settings-panel__verification>button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow:
     0 18px 34px rgba(83, 61, 205, 0.25);
@@ -609,7 +581,7 @@
   gap: 5px;
 }
 
-.email-verification-dialog__heading > span {
+.email-verification-dialog__heading>span {
   color: #7059cf;
   font-size: 0.66rem;
   font-weight: 900;
@@ -664,7 +636,7 @@
   background: rgba(248, 247, 252, 0.78);
 }
 
-.email-verification-dialog__steps > div {
+.email-verification-dialog__steps>div {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -760,7 +732,7 @@
   box-shadow: 0 0 0 4px rgba(114, 85, 216, 0.09), 0 13px 30px rgba(54, 39, 107, 0.07);
 }
 
-.email-verification-dialog__code-wrap > span {
+.email-verification-dialog__code-wrap>span {
   position: absolute;
   top: 50%;
   right: 15px;
@@ -828,13 +800,26 @@
 }
 
 @keyframes emailDialogFloat {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(-12px, 15px, 0) scale(1.06); }
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(-12px, 15px, 0) scale(1.06);
+  }
 }
 
 @keyframes emailStepFlow {
-  0% { transform: translateX(-110%); }
-  50%, 100% { transform: translateX(310%); }
+  0% {
+    transform: translateX(-110%);
+  }
+
+  50%,
+  100% {
+    transform: translateX(310%);
+  }
 }
 
 @media (max-width: 600px) {
@@ -866,7 +851,7 @@
     margin-inline: 20px;
   }
 
-  .email-verification-dialog__steps > div span {
+  .email-verification-dialog__steps>div span {
     display: none;
   }
 
@@ -960,7 +945,7 @@
   gap: 4px;
 }
 
-.avatar-crop-dialog__title > span {
+.avatar-crop-dialog__title>span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -982,7 +967,7 @@
   font-size: 0.75rem;
 }
 
-.avatar-crop-dialog__head > button {
+.avatar-crop-dialog__head>button {
   display: grid;
   width: 40px;
   height: 40px;
@@ -997,7 +982,7 @@
     background 180ms ease;
 }
 
-.avatar-crop-dialog__head > button:hover {
+.avatar-crop-dialog__head>button:hover {
   transform: rotate(4deg);
   background: #eeeaf6;
 }
@@ -1010,11 +995,9 @@
   border: 1px solid rgba(101, 80, 229, 0.1);
   border-radius: 24px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #f3efff,
-      #edf8ff
-    );
+      #edf8ff);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
@@ -1052,7 +1035,7 @@
   pointer-events: none;
 }
 
-.avatar-crop-dialog__preview > span {
+.avatar-crop-dialog__preview>span {
   position: absolute;
   inset: 17%;
   border: 1px dashed rgba(255, 255, 255, 0.62);
@@ -1065,7 +1048,7 @@
   gap: 10px;
 }
 
-.avatar-crop-dialog__zoom > div:first-child {
+.avatar-crop-dialog__zoom>div:first-child {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1074,7 +1057,7 @@
   font-weight: 800;
 }
 
-.avatar-crop-dialog__zoom > div:first-child strong {
+.avatar-crop-dialog__zoom>div:first-child strong {
   color: #674bd9;
   font-size: 0.72rem;
 }
@@ -1128,32 +1111,30 @@
 }
 
 @keyframes profileOrbOne {
+
   0%,
   100% {
     transform:
-      translateY(0)
-      scale(1);
+      translateY(0) scale(1);
   }
 
   50% {
     transform:
-      translateY(18px)
-      scale(1.07);
+      translateY(18px) scale(1.07);
   }
 }
 
 @keyframes profileOrbTwo {
+
   0%,
   100% {
     transform:
-      translateX(0)
-      scale(1);
+      translateX(0) scale(1);
   }
 
   50% {
     transform:
-      translateX(20px)
-      scale(1.08);
+      translateX(20px) scale(1.08);
   }
 }
 
@@ -1180,11 +1161,9 @@
 
   .profile-settings-page__header h1 {
     font-size:
-      clamp(
-        2.4rem,
+      clamp(2.4rem,
         12vw,
-        4rem
-      );
+        4rem);
   }
 
   .profile-settings-card {
@@ -1208,13 +1187,269 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .profile-settings-page__orb,
   .profile-settings-card__avatar,
   .profile-settings-panel,
-  .avatar-crop-dialog__head > button,
+  .avatar-crop-dialog__head>button,
   .email-verification-dialog__glow,
   .email-verification-dialog__steps b::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Account deletion
+   -------------------------------------------------------------------------- */
+.profile-settings-danger {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  overflow: hidden;
+  margin-top: 22px;
+  padding: 26px 28px;
+  border: 1px solid rgba(201, 61, 88, 0.14);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(255, 246, 248, .96));
+  box-shadow: 0 20px 54px rgba(106, 36, 55, 0.08);
+}
+
+.profile-settings-danger::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  bottom: -100px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(230, 82, 111, .11), transparent 68%);
+  pointer-events: none;
+}
+
+.profile-settings-danger__icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid rgba(201, 61, 88, .13);
+  border-radius: 17px;
+  background: #fff0f3;
+  color: #bd3653;
+  box-shadow: 0 12px 26px rgba(179, 48, 76, .11);
+}
+
+.profile-settings-danger__copy {
+  position: relative;
+  z-index: 1;
+}
+
+.profile-settings-danger__copy>span {
+  color: #bd3653;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.profile-settings-danger__copy h2 {
+  margin: 5px 0 7px;
+  color: #33202a;
+  font-size: 1.2rem;
+}
+
+.profile-settings-danger__copy p {
+  max-width: 720px;
+  margin: 0;
+  color: #806e76;
+  font-size: .82rem;
+  line-height: 1.65;
+}
+
+.profile-settings-danger>button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 17px;
+  border: 1px solid rgba(190, 49, 77, .16);
+  border-radius: 14px;
+  background: #fff;
+  color: #b8314c;
+  font-weight: 850;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.profile-settings-danger>button:hover {
+  transform: translateY(-2px);
+  background: #fff3f5;
+  box-shadow: 0 12px 24px rgba(154, 38, 63, .1);
+}
+
+.delete-account-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.delete-account-dialog__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(28, 20, 38, .58);
+  backdrop-filter: blur(10px);
+}
+
+.delete-account-dialog__card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 500px);
+  padding: 30px;
+  border: 1px solid rgba(183, 55, 81, .15);
+  border-radius: 28px;
+  background: linear-gradient(145deg, #fff, #fff8f9);
+  box-shadow: 0 34px 90px rgba(31, 17, 27, .28);
+}
+
+.delete-account-dialog__close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: #f6eff1;
+  color: #76636b;
+  cursor: pointer;
+}
+
+.delete-account-dialog__icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 19px;
+  background: linear-gradient(145deg, #ffe9ed, #fff4f6);
+  color: #bc3451;
+  box-shadow: 0 13px 28px rgba(177, 45, 72, .13);
+}
+
+.delete-account-dialog__card>span {
+  color: #bc3451;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.delete-account-dialog__card h2 {
+  margin: 7px 0 9px;
+  color: #2e2027;
+  font-size: 1.65rem;
+  letter-spacing: -.035em;
+}
+
+.delete-account-dialog__card>p {
+  margin: 0 0 21px;
+  color: #7d6e75;
+  line-height: 1.65;
+}
+
+.delete-account-dialog__card label {
+  display: grid;
+  gap: 8px;
+  color: #43323a;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.delete-account-dialog__card input {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 15px;
+  border: 1px solid #dfd1d5;
+  border-radius: 14px;
+  background: #fff;
+  outline: none;
+}
+
+.delete-account-dialog__card input:focus {
+  border-color: #c84a65;
+  box-shadow: 0 0 0 4px rgba(200, 74, 101, .09);
+}
+
+.delete-account-dialog__error {
+  margin: 12px 0 0 !important;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff0f3;
+  color: #ad304b !important;
+  font-size: .78rem;
+}
+
+.delete-account-dialog__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.delete-account-dialog__actions button {
+  display: inline-flex;
+  min-height: 47px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(76, 60, 69, .1);
+  border-radius: 14px;
+  background: #f5f1f3;
+  color: #5c4d54;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.delete-account-dialog__actions button.is-danger {
+  border-color: transparent;
+  background: linear-gradient(135deg, #c83f5b, #a92d47);
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(170, 43, 70, .22);
+}
+
+.delete-account-dialog__actions button:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .profile-settings-danger {
+    grid-template-columns: auto 1fr;
+    padding: 22px;
+  }
+
+  .profile-settings-danger>button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .delete-account-dialog__card {
+    padding: 25px 20px;
+    border-radius: 24px;
+  }
+
+  .delete-account-dialog__actions {
+    grid-template-columns: 1fr;
   }
 }

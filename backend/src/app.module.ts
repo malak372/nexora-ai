@@ -63,13 +63,17 @@ import { UsersModule } from './users/users.module';
     /**
      * Defines the default application-wide rate limit.
      *
-     * Each client may make up to 10 requests during
-     * one 60-second window unless a route overrides it.
+     * Each client may make up to 120 requests during
+     * one 60-second window unless a sensitive route overrides it.
+     *
+     * Authentication and generation-start endpoints keep their own strict
+     * per-route limits. The wider default prevents harmless dashboard and
+     * live-progress reads from producing HTTP 429 responses.
      */
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 10,
+        limit: 120,
       },
     ]),
 

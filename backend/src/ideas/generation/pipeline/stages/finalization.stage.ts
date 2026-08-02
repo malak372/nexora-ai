@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -16,6 +16,9 @@ import type {
 } from '../../interfaces/idea-generation-stage.interface';
 
 import type { IdeaGenerationContext } from '../../types/idea-generation-context.type';
+import { AlertType } from '@prisma/client';
+import { SystemAlertsService } from '../../../../alerts/services/system-alerts.service';
+import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
 
 /**
  * Performs final pipeline consistency checks before the generation
@@ -32,6 +35,9 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  */
 @Injectable()
 export class FinalizationStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(FinalizationStage.name);
+
+  constructor(private readonly systemAlertsService: SystemAlertsService) {}
   /** Stable pipeline-stage key. */
   readonly key = IDEA_GENERATION_STAGE_KEYS.FINALIZATION;
 
@@ -46,6 +52,7 @@ export class FinalizationStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     await Promise.resolve();
     this.validateContext(context);
+    await this.notifyRegisteredUserSafely(context);
 
     return {
       context,
@@ -64,6 +71,29 @@ export class FinalizationStage implements IdeaGenerationStage {
         completedAt: new Date().toISOString(),
       },
     };
+  }
+
+  /** Creates an in-app completion alert for registered users only. */
+  private async notifyRegisteredUserSafely(
+    context: IdeaGenerationContext,
+  ): Promise<void> {
+    if (context.owner.type !== IDEA_OWNER_TYPES.USER || !context.ideaId) {
+      return;
+    }
+
+    try {
+      await this.systemAlertsService.create({
+        userId: context.owner.userId,
+        title: 'Your idea is ready',
+        message: `Your new idea${context.coreIdea?.title ? ` “${context.coreIdea.title}”` : ''} has been created successfully. Open My Ideas to review it.`,
+        type: AlertType.SYSTEM,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Idea ${context.ideaId} was created, but its completion alert could not be saved: ${message}`,
+      );
+    }
   }
 
   /**

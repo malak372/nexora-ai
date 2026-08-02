@@ -16,6 +16,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type';
 import { avatarUploadOptions } from '../config/avatar-upload.config';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { RequestEmailChangeDto } from './dto/request-email-change.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailChangeDto } from './dto/verify-email-change.dto';
@@ -103,6 +104,18 @@ export class UserProfileController {
   @Delete('profile/avatar')
   removeAvatar(@CurrentUser() user: AuthenticatedUser) {
     return this.userProfileService.removeAvatar(user.id);
+  }
+
+  /**
+   * Soft-deletes the authenticated account after password confirmation.
+   * Existing project records remain intact while personal access is revoked.
+   */
+  @Delete('account')
+  deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    return this.userProfileService.deleteAccount(user.id, dto);
   }
 
   /** Retrieves the authenticated user's free generation usage. */

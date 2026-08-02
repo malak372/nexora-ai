@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -44,6 +44,7 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  */
 @Injectable()
 export class DataCollectionStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(DataCollectionStage.name);
   /**
    * Stable pipeline-stage key.
    */
@@ -99,12 +100,13 @@ export class DataCollectionStage implements IdeaGenerationStage {
 
     const totalAnalyzedTexts = totalPosts + totalComments;
 
-    if (totalAnalyzedTexts < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_COLLECTED_DATA,
+    const sparseEvidence =
+      totalAnalyzedTexts < MIN_COLLECTED_TEXTS_FOR_GENERATION;
 
-        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record is required before idea generation.`,
-      });
+    if (sparseEvidence) {
+      this.logger.warn(
+        `Run ${context.runId} continues with sparse collection evidence: ${totalAnalyzedTexts}/${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record(s).`,
+      );
     }
 
     const updatedContext: IdeaGenerationContext = {
@@ -120,7 +122,9 @@ export class DataCollectionStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
 
-      resultPreview: `Collection data verified successfully: ${totalPosts} analyzed post(s) and ${totalComments} analyzed comment(s) are available for idea generation.`,
+      resultPreview: sparseEvidence
+        ? `Collection is sparse (${totalAnalyzedTexts} analyzed text record(s)), but generation will continue using the available evidence and domain context.`
+        : `Collection data verified successfully: ${totalPosts} analyzed post(s) and ${totalComments} analyzed comment(s) are available for idea generation.`,
 
       metadata: {
         stageRole: 'VALIDATION_CHECKPOINT',
@@ -136,6 +140,9 @@ export class DataCollectionStage implements IdeaGenerationStage {
         totalComments,
 
         totalAnalyzedTexts,
+        sparseEvidence,
+        minimumRecommendedTexts: MIN_COLLECTED_TEXTS_FOR_GENERATION,
+        generationContinued: true,
       },
     };
   }

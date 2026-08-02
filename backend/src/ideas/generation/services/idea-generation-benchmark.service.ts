@@ -35,6 +35,7 @@ import {
   IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
   IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
   IDEA_MIN_ACCEPTED_QUALITY_SCORE,
+  IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE,
   IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
 } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
@@ -305,10 +306,7 @@ export class IdeaGenerationBenchmarkService {
       }
     }
 
-    if (
-      successfulCandidates.length < IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES &&
-      localFallbackModel
-    ) {
+    if (successfulCandidates.length === 0 && localFallbackModel) {
       const localCandidate = await this.executeLocalEmergencyFallback(
         context,
         localFallbackModel,
@@ -637,7 +635,11 @@ export class IdeaGenerationBenchmarkService {
             direction.promptText,
           );
 
-      if (!qualityApprovedAttempt.quality.accepted) {
+      const usableAttempt = qualityApprovedAttempt.quality.accepted
+        ? qualityApprovedAttempt
+        : this.promoteUsableOnlineFallback(model, qualityApprovedAttempt);
+
+      if (!usableAttempt) {
         const errorMessage = this.buildQualityRejectionMessage(
           qualityApprovedAttempt.quality,
         );
@@ -658,7 +660,7 @@ export class IdeaGenerationBenchmarkService {
         context,
         model,
         direction,
-        qualityApprovedAttempt,
+        usableAttempt,
         qualityContext,
       );
 
@@ -1040,13 +1042,14 @@ export class IdeaGenerationBenchmarkService {
         Boolean(context.policy?.includePremiumOutputs),
       ),
       temperature: 0.55,
-      // Retry the exact assigned model once for transient provider failures.
-      // If that bounded retry is exhausted, the benchmark loop immediately
-      // replaces the failed assignment with the next healthy model in its
-      // provider-diverse fallback rotation. This keeps candidate attribution
-      // correct while preventing one temporary network failure from reducing
-      // the comparative benchmark to a single candidate.
-      timeoutMs: 250_000,
+      // Fast bounded recovery policy:
+      // 1. Retry the exact assigned model once for a transient failure.
+      // 2. If the same model still fails, return control to the benchmark loop.
+      // 3. The benchmark loop fills the missing candidate slot with the next
+      //    healthy ONLINE model from the provider-diverse rotation.
+      // The shorter timeout prevents one unavailable model from holding the
+      // complete parallel batch for several minutes.
+      timeoutMs: 90_000,
       maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
@@ -1330,6 +1333,9 @@ export class IdeaGenerationBenchmarkService {
         '- Use only the supplied evidence for problem and local claims.',
         '- Treat the requested location as the initial pilot target unless direct local evidence explicitly proves local prevalence.',
         '- Every objective must name a concrete user action, product capability, or measurable pilot activity. Avoid generic objectives such as improve experience, increase efficiency, enhance accessibility, or provide insights unless the exact workflow and measurement method are stated.',
+        '- Describe a capability set as one unified primary workflow, not as "one primary user workflow" followed by several unrelated actions. Group related actions under a clear end-to-end job, such as finding a service, opening its verified details, and triggering a call, email, or map route.',
+        '- Use natural, publication-ready English. Prefer "common navigation friction" or "recurring navigation friction"; never write ungrammatical phrases such as "commonly navigation friction". Remove awkward literal translations, duplicated qualifiers, and noun stacks before returning JSON.',
+        '- Target users must reflect the actual workflow and adoption roles. When the product is a public-service, civic-access, directory, accessibility, or assisted-navigation tool, explicitly consider residents with limited digital literacy, older adults, people with accessibility needs, caregivers, and frontline staff. Include only the segments that are genuinely served by the proposed workflow; do not invent unsupported prevalence claims.',
         '- Do not invent a percentage target. Unless the supplied evidence explicitly includes a validated baseline and prior measured result, define impact without a numeric percentage: establish a baseline during the first pilot phase, then measure whether the selected problem metric decreases or improves during the remaining pilot period.',
         '- When no direct local evidence exists, describe Nablus, Palestine, or any requested location only as a proposed pilot or deployment target. Never state or imply that local users currently experience the problem, that local prevalence is known, or that the evidence was collected locally.',
         '- Premium budget estimation must provide explicit assumptions, named cost categories, a currency, a realistic numeric range, and a clear distinction between one-time development cost and recurring operating cost. Do not return vague labels such as low, medium, affordable, or cost-effective without figures.',
@@ -1514,6 +1520,56 @@ export class IdeaGenerationBenchmarkService {
       .trim();
 
     return normalized ? normalized : null;
+  }
+
+  /**
+   * Promotes a structurally valid online response after its single bounded
+   * quality revision, while keeping factual and platform-safety violations as
+   * hard rejections.
+   *
+   * This prevents soft style penalties from causing every hosted model to be
+   * discarded and unnecessarily invoking Ollama. The original score and issue
+   * list are preserved for diagnostics and winner selection.
+   */
+  private promoteUsableOnlineFallback(
+    model: AiModel,
+    attempt: AcceptedModelAttempt,
+  ): AcceptedModelAttempt | null {
+    if (
+      normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA ||
+      attempt.quality.score < IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE ||
+      this.hasBlockingQualityIssue(attempt.quality)
+    ) {
+      return null;
+    }
+
+    this.logger.warn(
+      `Online model "${model.displayName ?? model.modelName}" scored ${attempt.quality.score}, below the preferred ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}-point gate, but produced a structurally valid candidate. It was retained as a degraded-quality online fallback instead of invoking Ollama.`,
+    );
+
+    return {
+      ...attempt,
+      quality: {
+        ...attempt.quality,
+        accepted: true,
+      },
+    };
+  }
+
+  /** Returns true for issues that must never be softened into acceptance. */
+  private hasBlockingQualityIssue(quality: IdeaQualityEvaluation): boolean {
+    const blockingCodes = new Set<IdeaQualityEvaluation['issues'][number]['code']>([
+      'UNSUPPORTED_LOCAL_CLAIM',
+      'UNSUPPORTED_PLATFORM_ACCESS',
+      'MALFORMED_MEASURABLE_TARGET',
+      'UNSUPPORTED_IMPACT_TARGET',
+      'UNSUPPORTED_ROOT_CAUSE',
+      'UNSUPPORTED_CONFIGURATION_STORAGE_ASSUMPTION',
+      'COMMON_TITLE_MISSPELLING',
+      'INACCURATE_NLP_SUMMARY',
+    ]);
+
+    return quality.issues.some((issue) => blockingCodes.has(issue.code));
   }
 
   /** Converts deterministic issues into one concise rejection reason. */
@@ -1842,7 +1898,7 @@ export class IdeaGenerationBenchmarkService {
         ? error.message.toLocaleLowerCase()
         : String(error).toLocaleLowerCase();
 
-    return /429|rate limit|quota|temporarily unavailable|provider unavailable|timeout|network/iu.test(
+    return /429|rate limit|quota|temporarily unavailable|provider unavailable|timeout|network|truncated|max(?:imum)?[- ]?tokens?|output-token limit/iu.test(
       message,
     );
   }

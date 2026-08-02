@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
+  Ack,
   ConnectedSocket,
   MessageBody,
   SubscribeMessage,
@@ -106,34 +107,42 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
   async joinRun(
     @ConnectedSocket() client: AuthenticatedIdeaGenerationSocket,
     @MessageBody() request: IdeaGenerationRoomRequest,
-  ): Promise<IdeaGenerationRoomAcknowledgement> {
+    @Ack() acknowledge: (result: IdeaGenerationRoomAcknowledgement) => void,
+  ): Promise<void> {
     const userId = client.data.userId;
     const runId = this.normalizeRunId(request?.runId);
 
     if (!userId) {
-      return this.failure('UNAUTHORIZED', 'Authentication is required.');
+      acknowledge(this.failure('UNAUTHORIZED', 'Authentication is required.'));
+      return;
     }
 
     if (!runId) {
-      return this.failure(
-        'INVALID_IDEA_GENERATION_RUN_ID',
-        'A valid generation-run ID is required.',
+      acknowledge(
+        this.failure(
+          'INVALID_IDEA_GENERATION_RUN_ID',
+          'A valid generation-run ID is required.',
+        ),
       );
+      return;
     }
 
     const snapshot = await this.loadOwnedSnapshot(userId, runId);
 
     if (!snapshot) {
-      return this.failure(
-        'IDEA_GENERATION_RUN_NOT_FOUND',
-        'The requested generation run was not found.',
+      acknowledge(
+        this.failure(
+          'IDEA_GENERATION_RUN_NOT_FOUND',
+          'The requested generation run was not found.',
+        ),
       );
+      return;
     }
 
     await client.join(this.roomName(runId));
     client.emit(IDEA_GENERATION_SOCKET_EVENTS.SNAPSHOT, snapshot);
 
-    return { success: true, runId };
+    acknowledge({ success: true, runId });
   }
 
   /** Leaves one generation-run room without affecting pipeline execution. */
@@ -141,19 +150,23 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
   async leaveRun(
     @ConnectedSocket() client: AuthenticatedIdeaGenerationSocket,
     @MessageBody() request: IdeaGenerationRoomRequest,
-  ): Promise<IdeaGenerationRoomAcknowledgement> {
+    @Ack() acknowledge: (result: IdeaGenerationRoomAcknowledgement) => void,
+  ): Promise<void> {
     const runId = this.normalizeRunId(request?.runId);
 
     if (!runId) {
-      return this.failure(
-        'INVALID_IDEA_GENERATION_RUN_ID',
-        'A valid generation-run ID is required.',
+      acknowledge(
+        this.failure(
+          'INVALID_IDEA_GENERATION_RUN_ID',
+          'A valid generation-run ID is required.',
+        ),
       );
+      return;
     }
 
     await client.leave(this.roomName(runId));
 
-    return { success: true, runId };
+    acknowledge({ success: true, runId });
   }
 
   private emitStageUpdated(payload: IdeaGenerationRealtimeStagePayload): void {
@@ -264,6 +277,7 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
         errorCode: true,
         errorMessage: true,
         completedAt: true,
+        updatedAt: true,
         stages: {
           orderBy: { sequence: 'asc' },
           select: {
@@ -298,6 +312,7 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
       errorCode: run.errorCode,
       errorMessage: run.errorMessage,
       completedAt: run.completedAt,
+      updatedAt: run.updatedAt,
       stages: run.stages.map((stage) => ({
         runId: stage.runId,
         stageKey: stage.stageKey,
