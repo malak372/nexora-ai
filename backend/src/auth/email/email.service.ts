@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { AuthAction } from '@prisma/client';
 
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 
 import { MailService } from '../../mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,14 +13,15 @@ import { AuthTokenService } from '../token/token.service';
 
 /**
  * Number of random bytes used to generate
- * an email-verification token.
+ * an email-verification code.
  */
-const EMAIL_VERIFICATION_TOKEN_BYTES = 32;
+const EMAIL_VERIFICATION_CODE_MIN = 100_000;
+const EMAIL_VERIFICATION_CODE_MAX = 1_000_000;
 
 /**
- * Email-verification token lifetime in hours.
+ * Email-verification code lifetime in hours.
  */
-const EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS = 24;
+const EMAIL_VERIFICATION_CODE_EXPIRES_MINUTES = 10;
 
 /**
  * Minimum duration between verification-email deliveries.
@@ -44,7 +45,7 @@ type AuthEmailMessage = {
  * Service responsible for email-verification operations.
  *
  * Handles:
- * - Secure verification-token creation.
+ * - Secure verification-code creation.
  * - Verification-email delivery.
  * - Verification-email resend cooldowns.
  * - Email-address verification.
@@ -63,7 +64,7 @@ export class AuthEmailService {
     private readonly mailService: MailService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) {}
+  ) { }
 
   /**
    * Generates and sends an email-verification link.
@@ -71,7 +72,7 @@ export class AuthEmailService {
    * Only the token hash is persisted. The plain token
    * is included exclusively in the verification email.
    *
-   * Previous unused verification tokens are invalidated
+   * Previous unused verification codes are invalidated
    * after the new verification email is delivered.
    *
    * @param userId User requiring email verification.
@@ -80,20 +81,21 @@ export class AuthEmailService {
    * @param claimedAt Cooldown timestamp already reserved
    * by the resend operation.
    */
-  async sendEmailVerificationLink(
+  async sendEmailVerificationCode(
     userId: string,
     email: string,
     meta?: AuthRequestMeta,
     claimedAt: Date = new Date(),
   ): Promise<void> {
-    const verificationToken = randomBytes(
-      EMAIL_VERIFICATION_TOKEN_BYTES,
-    ).toString('hex');
+    const verificationCode = randomInt(
+      EMAIL_VERIFICATION_CODE_MIN,
+      EMAIL_VERIFICATION_CODE_MAX,
+    ).toString();
 
-    const tokenHash = this.authTokenService.hashToken(verificationToken);
+    const tokenHash = this.authTokenService.hashToken(verificationCode);
 
     const expiresAt = new Date(
-      Date.now() + EMAIL_VERIFICATION_TOKEN_EXPIRES_HOURS * 60 * 60 * 1000,
+      Date.now() + EMAIL_VERIFICATION_CODE_EXPIRES_MINUTES * 60 * 1000,
     );
 
     const storedToken = await this.prisma.emailVerificationToken.create({
@@ -108,15 +110,11 @@ export class AuthEmailService {
     });
 
     try {
-      const frontendUrl =
-        process.env.APP_FRONTEND_URL ?? 'http://localhost:3000';
-
-      const verificationLink =
-        `${frontendUrl}/verify-email` +
-        `?email=${encodeURIComponent(email)}` +
-        `&token=${encodeURIComponent(verificationToken)}`;
-
-      await this.mailService.sendVerificationEmail(email, verificationLink);
+      await this.mailService.sendVerificationEmail(
+        email,
+        verificationCode,
+        EMAIL_VERIFICATION_CODE_EXPIRES_MINUTES,
+      );
 
       const now = new Date();
 
@@ -281,7 +279,7 @@ export class AuthEmailService {
       return genericResponse;
     }
 
-    await this.sendEmailVerificationLink(user.id, user.email, meta, claimedAt);
+    await this.sendEmailVerificationCode(user.id, user.email, meta, claimedAt);
 
     await this.authAuditService.createLog({
       userId: user.id,
@@ -297,10 +295,10 @@ export class AuthEmailService {
 
   /**
    * Verifies a user's email address using a valid
-   * email-verification token.
+   * email-verification code.
    *
    * @param email User email address.
-   * @param token Plain verification token.
+   * @param token Plain verification code.
    * @param meta Optional request metadata.
    * @returns Email-verification result.
    *
@@ -309,7 +307,7 @@ export class AuthEmailService {
    */
   async verifyEmail(
     email: string,
-    token: string,
+    code: string,
     meta?: AuthRequestMeta,
   ): Promise<AuthEmailMessage> {
     const user = await this.prisma.user.findUnique({
@@ -344,7 +342,7 @@ export class AuthEmailService {
       };
     }
 
-    const tokenHash = this.authTokenService.hashToken(token);
+    const tokenHash = this.authTokenService.hashToken(code);
 
     const storedToken = await this.prisma.emailVerificationToken.findUnique({
       where: {
@@ -371,18 +369,18 @@ export class AuthEmailService {
         email: user.email,
         action: AuthAction.VERIFY_EMAIL_FAILED,
         isSuccess: false,
-        message: 'Invalid or expired verification token',
+        message: 'Invalid or expired verification code',
         ...meta,
       });
 
-      throw new BadRequestException('Invalid or expired verification token');
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
     /*
      * Mark the token as used atomically.
      *
      * This prevents two simultaneous requests from
-     * successfully using the same verification token.
+     * successfully using the same verification code.
      */
     const consumedToken = await this.prisma.emailVerificationToken.updateMany({
       where: {
@@ -404,11 +402,11 @@ export class AuthEmailService {
         email: user.email,
         action: AuthAction.VERIFY_EMAIL_FAILED,
         isSuccess: false,
-        message: 'Verification token was already consumed',
+        message: 'Verification code was already consumed',
         ...meta,
       });
 
-      throw new BadRequestException('Invalid or expired verification token');
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
     await this.prisma.user.update({

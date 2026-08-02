@@ -23,6 +23,7 @@ import RegisterPage from '../features/auth/Register/pages/RegisterPage';
 import VerifyEmailPage from '../features/auth/Register/EmailVerification/pages/VerifyEmailPage';
 import HomePage from '../pages/public/HomePage';
 import GuestGenerateIdeaPage from '../features/guest-idea/pages/GuestGenerateIdeaPage';
+import PublicPublicationDetailsPage from '../features/home/pages/PublicPublicationDetailsPage';
 import NotFoundPage from '../pages/public/NotFoundPage';
 
 import { normalUserRoutes } from './normal-user.routes';
@@ -39,6 +40,10 @@ export default function AppRoutes() {
                 <Route
                     path="/generate"
                     element={<GuestGenerateIdeaPage />}
+                />
+                <Route
+                    path="/publications/:publicationId"
+                    element={<PublicPublicationDetailsPage />}
                 />
             </Route>
 

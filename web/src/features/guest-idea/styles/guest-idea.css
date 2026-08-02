@@ -624,3 +624,16 @@
         width: 100%;
     }
 }
+
+/* Guest description word-limit feedback. */
+.guest-field-meta.ready {
+    color: #4f7c63;
+}
+
+.guest-field-meta.limit-exceeded {
+    color: #b34352;
+}
+
+.guest-field-meta.limit-exceeded b {
+    font-weight: 800;
+}

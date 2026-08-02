@@ -316,7 +316,7 @@ export default function RegisterForm() {
 
             const successMessage =
                 result?.message ||
-                'A new verification email was sent successfully.';
+                'A new verification code was sent successfully.';
 
             setVerificationModal((currentModal) => ({
                 ...currentModal,
@@ -327,7 +327,7 @@ export default function RegisterForm() {
         } catch (error) {
             setResendError(
                 error?.message ||
-                'The verification email could not be sent. Please try again.',
+                'The verification code could not be sent. Please try again.',
             );
         } finally {
             setIsResendingVerification(false);
@@ -376,7 +376,7 @@ export default function RegisterForm() {
                 emailDeliveryFailed: false,
                 message:
                     result?.message ||
-                    'Your account was created. Check your inbox to verify your email.',
+                    'Your account was created. Check your inbox for the six-digit verification code.',
             });
         } catch (error) {
             const errorMessage = getRegisterErrorMessage(error);
@@ -872,13 +872,13 @@ export default function RegisterForm() {
                         <p className="register-verification-modal__eyebrow">
                             {verificationModal.emailDeliveryFailed
                                 ? 'Email delivery failed'
-                                : 'Verification email sent'}
+                                : 'Verification code sent'}
                         </p>
 
                         <h2 id="register-verification-title">
                             {verificationModal.emailDeliveryFailed
                                 ? 'Your account is ready.'
-                                : 'Check your inbox.'}
+                                : 'Enter the code.'}
                         </h2>
 
                         <p className="register-verification-modal__message">
@@ -890,9 +890,21 @@ export default function RegisterForm() {
                             <span>{verificationModal.email}</span>
                         </div>
 
+                        <Link
+                            className="register-verification-modal__primary"
+                            to="/verify-email"
+                            state={{
+                                email: verificationModal.email,
+                                registrationMessage: verificationModal.message,
+                            }}
+                        >
+                            Enter verification code
+                            <ArrowRight size={18} aria-hidden="true" />
+                        </Link>
+
                         <button
                             type="button"
-                            className="register-verification-modal__primary"
+                            className="register-verification-modal__secondary"
                             onClick={handleResendVerification}
                             disabled={isResendingVerification}
                         >
@@ -903,22 +915,14 @@ export default function RegisterForm() {
                                         size={18}
                                         aria-hidden="true"
                                     />
-                                    Sending email...
+                                    Sending code...
                                 </>
                             ) : (
                                 <>
                                     <RefreshCw size={18} aria-hidden="true" />
-                                    Resend verification email
+                                    Resend verification code
                                 </>
                             )}
-                        </button>
-
-                        <button
-                            type="button"
-                            className="register-verification-modal__secondary"
-                            onClick={handleCloseVerificationModal}
-                        >
-                            Edit registration details
                         </button>
 
                         <p className="register-verification-modal__signin">

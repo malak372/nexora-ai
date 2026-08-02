@@ -24,12 +24,12 @@ const DEFAULT_CREDIT_BALANCE = 0;
 const EMAIL_ALREADY_EXISTS_MESSAGE = 'Email already exists';
 
 const REGISTRATION_SUCCESS_MESSAGE =
-  'Registered successfully. Please verify your email.';
+  'Registered successfully. Please verify your email using the code we sent.';
 
 const REGISTRATION_AUDIT_SUCCESS_MESSAGE = 'User registered successfully';
 
 const REGISTRATION_EMAIL_FAILURE_MESSAGE =
-  'The account was created, but the verification email could not be sent. Request a new verification email.';
+  'The account was created, but the verification code could not be sent. Request a new verification code.';
 
 /**
  * Public user fields returned after registration.
@@ -131,7 +131,7 @@ export class AuthRegisterService {
      * open or roll back an already-created user account.
      */
     try {
-      await this.authEmailService.sendEmailVerificationLink(
+      await this.authEmailService.sendEmailVerificationCode(
         result.user.id,
         result.user.email,
       );

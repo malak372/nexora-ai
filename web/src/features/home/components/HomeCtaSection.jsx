@@ -19,6 +19,7 @@ import {
     CheckCircle2,
     CircleAlert,
     LoaderCircle,
+    Mail,
     MessageSquareText,
     Send,
     Sparkles,
@@ -117,6 +118,7 @@ export default function HomeCtaSection() {
         status: 'idle',
         message: '',
         referenceId: '',
+        replyEmail: '',
     });
 
     const isSubmitting = submitState.status === 'loading';
@@ -147,6 +149,7 @@ export default function HomeCtaSection() {
                 status: 'idle',
                 message: '',
                 referenceId: '',
+                replyEmail: '',
             });
         }
     }
@@ -172,6 +175,7 @@ export default function HomeCtaSection() {
                 status: 'error',
                 message: 'Please review the highlighted fields.',
                 referenceId: '',
+                replyEmail: '',
             });
 
             return;
@@ -181,12 +185,15 @@ export default function HomeCtaSection() {
             status: 'loading',
             message: '',
             referenceId: '',
+            replyEmail: '',
         });
+
+        const submittedEmail = formValues.email.trim().toLowerCase();
 
         try {
             const response = await submitContactMessage({
                 fullName: formValues.fullName.trim(),
-                email: formValues.email.trim().toLowerCase(),
+                email: submittedEmail,
                 subject: formValues.subject.trim(),
                 message: formValues.message.trim(),
             });
@@ -204,12 +211,14 @@ export default function HomeCtaSection() {
                     response?.data?.id ||
                     response?.id ||
                     '',
+                replyEmail: submittedEmail,
             });
         } catch (error) {
             setSubmitState({
                 status: 'error',
                 message: resolveSubmitError(error),
                 referenceId: '',
+                replyEmail: '',
             });
         }
     }
@@ -395,8 +404,8 @@ export default function HomeCtaSection() {
                                                 : undefined
                                         }
                                         className={`contact-form-control min-h-[10rem] resize-y ${fieldErrors.message
-                                                ? 'contact-form-control-error'
-                                                : ''
+                                            ? 'contact-form-control-error'
+                                            : ''
                                             }`}
                                     />
 
@@ -409,6 +418,20 @@ export default function HomeCtaSection() {
                                         </p>
                                     )}
                                 </div>
+
+                                {(formValues.email.trim() || submitState.replyEmail) && (
+                                    <small className="flex items-center gap-2 text-sm font-semibold text-[#716a81]">
+                                        <Mail
+                                            size={14}
+                                            aria-hidden="true"
+                                        />
+
+                                        Reply will be sent to{' '}
+                                        <span className="break-all text-[#403451]">
+                                            {formValues.email.trim() || submitState.replyEmail}
+                                        </span>
+                                    </small>
+                                )}
 
                                 {submitState.status === 'success' && (
                                     <div

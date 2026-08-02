@@ -49,7 +49,7 @@ export class AuthService {
     private readonly authLogoutService: AuthLogoutService,
     private readonly authPasswordService: AuthPasswordService,
     private readonly authEmailService: AuthEmailService,
-  ) {}
+  ) { }
 
   /**
    * Registers a new user account.
@@ -107,12 +107,12 @@ export class AuthService {
   /**
    * Verifies a user's email address.
    */
-  verifyEmail(email: string, token: string, meta?: AuthRequestMeta) {
-    return this.authEmailService.verifyEmail(email, token, meta);
+  verifyEmail(email: string, code: string, meta?: AuthRequestMeta) {
+    return this.authEmailService.verifyEmail(email, code, meta);
   }
 
   /**
-   * Resends the email verification link.
+   * Resends the email verification code.
    */
   resendVerificationEmail(email: string, meta?: AuthRequestMeta) {
     return this.authEmailService.resendVerificationEmail(email, meta);
