@@ -154,11 +154,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
      */
     JwtStrategy,
     RolesGuard,
+    GuestSessionService,
   ],
 
   exports: [
     AuthService,
     RolesGuard,
+    GuestSessionService,
   ],
 })
 export class AuthModule { }
