@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { PublicationCacheService } from '../../ideas/publication/cache/publication-cache.service';
 import { UpsertPublicationFeedbackDto } from '../dto/upsert-publication-feedback.dto';
 import { UpsertPublicationRatingDto } from '../dto/upsert-publication-rating.dto';
 
@@ -33,7 +34,10 @@ export type FeedbackActor = UserFeedbackActor | GuestFeedbackActor;
  */
 @Injectable()
 export class UserFeedbackService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   private readonly ratingSelect = {
     id: true,
@@ -75,7 +79,7 @@ export class UserFeedbackService {
   ) {
     await this.ensurePublicationAllowsRatings(publicationId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let rating;
 
       if (this.isUserActor(actor)) {
@@ -131,6 +135,9 @@ export class UserFeedbackService {
         publicationRating,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   /**
@@ -178,7 +185,7 @@ export class UserFeedbackService {
       throw new NotFoundException('Publication rating not found');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.ideaPublicationRating.delete({
         where: {
           id: existing.id,
@@ -195,6 +202,9 @@ export class UserFeedbackService {
         publicationRating,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   /**
@@ -207,7 +217,7 @@ export class UserFeedbackService {
   ) {
     await this.ensurePublicationAllowsFeedback(publicationId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let feedback;
 
       if (this.isUserActor(actor)) {
@@ -254,10 +264,7 @@ export class UserFeedbackService {
         });
       }
 
-      const feedbackCount = await this.recalculateFeedback(
-        tx,
-        publicationId,
-      );
+      const feedbackCount = await this.recalculateFeedback(tx, publicationId);
 
       return {
         message: 'Publication feedback saved successfully',
@@ -265,6 +272,9 @@ export class UserFeedbackService {
         feedbackCount,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   /**
@@ -312,23 +322,23 @@ export class UserFeedbackService {
       throw new NotFoundException('Publication feedback not found');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.ideaPublicationFeedback.delete({
         where: {
           id: existing.id,
         },
       });
 
-      const feedbackCount = await this.recalculateFeedback(
-        tx,
-        publicationId,
-      );
+      const feedbackCount = await this.recalculateFeedback(tx, publicationId);
 
       return {
         message: 'Publication feedback deleted successfully',
         feedbackCount,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { IdeaPublicationModule } from '../ideas/publication/idea-publication.module';
 import { AdminFeedbackController } from './controllers/admin-feedback.controller';
 import { ReceivedFeedbackController } from './controllers/received-feedback.controller';
 import { UserFeedbackController } from './controllers/user-feedback.controller';
@@ -10,10 +11,10 @@ import { ReceivedFeedbackService } from './services/received-feedback.service';
 import { UserFeedbackService } from './services/user-feedback.service';
 
 /** Publication ratings and private feedback module.
- * @author Eman 
+ * @author Eman
  */
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, IdeaPublicationModule],
   controllers: [
     AdminFeedbackController,
     UserFeedbackController,

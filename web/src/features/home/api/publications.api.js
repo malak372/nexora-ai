@@ -10,6 +10,25 @@
 
 import { apiClient } from '../../../api/client';
 
+/** Shared React Query keys for public guest publications. */
+export const publicPublicationQueryKeys = {
+    all: ['publications', 'public'],
+
+    featured: (limit = 6) => [
+        'publications',
+        'public',
+        'featured',
+        { limit },
+    ],
+
+    details: (publicationId) => [
+        'publications',
+        'public',
+        'details',
+        publicationId,
+    ],
+};
+
 /**
  * Retrieves the latest public idea publications for the Featured Ideas section.
  *
@@ -38,4 +57,18 @@ export async function getFeaturedPublications({ limit = 6 } = {}) {
             totalPages: 0,
         },
     };
+}
+
+/**
+ * Retrieves one public publication for the guest details page.
+ *
+ * @param {string} publicationId Publication identifier.
+ * @returns {Promise<Object>} Public publication details.
+ */
+export async function getPublicPublication(publicationId) {
+    const response = await apiClient.get(
+        `/publications/${publicationId}`,
+    );
+
+    return response.data;
 }

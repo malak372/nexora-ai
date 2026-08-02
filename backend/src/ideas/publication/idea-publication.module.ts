@@ -7,6 +7,7 @@ import { CreditsModule } from '../../credits/credits.module';
 import { PaymentsModule } from '../../payments/payments.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 
+import { PublicationCacheService } from './cache/publication-cache.service';
 import { AdminPublicationModerationController } from './controllers/admin-publication-moderation.controller';
 import { PublicPublicationsController } from './controllers/public-publications.controller';
 import { PublicationAcceptancesController } from './controllers/publication-acceptances.controller';
@@ -23,7 +24,25 @@ import { IdeaPublicationQueryService } from './services/idea-publication-query.s
 import { IdeaPublicationService } from './services/idea-publication.service';
 import { PublicationReportService } from './services/publication-report.service';
 
-/** Publication management, discovery, acceptance, reports, and moderation. */
+/**
+ * Configures the idea-publication feature.
+ *
+ * This module provides the controllers and services responsible for:
+ * - Public publication discovery and detail retrieval.
+ * - User publication creation and management.
+ * - Publication acceptance and advanced-content unlocking.
+ * - User and administrator publication reports.
+ * - Administrator moderation operations.
+ * - Publication discovery and dashboard caching.
+ *
+ * The payments module is imported using `forwardRef` because publication
+ * acceptance and payment fulfillment may depend on each other.
+ *
+ * Core publication services are exported so they can be reused by other
+ * application modules without duplicating publication business logic.
+ *
+ * @author Eman
+ */
 @Module({
   imports: [
     PrismaModule,
@@ -48,11 +67,13 @@ import { PublicationReportService } from './services/publication-report.service'
     IdeaPublicationAiService,
     PublicationReportService,
     AdminPublicationModerationService,
+    PublicationCacheService,
   ],
   exports: [
     IdeaPublicationService,
     IdeaPublicationQueryService,
     IdeaPublicationAcceptanceService,
+    PublicationCacheService,
   ],
 })
-export class IdeaPublicationModule {}
+export class IdeaPublicationModule { }

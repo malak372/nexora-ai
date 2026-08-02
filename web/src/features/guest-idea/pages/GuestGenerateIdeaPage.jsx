@@ -30,6 +30,7 @@ import {
     Lightbulb,
     LoaderCircle,
     LockKeyhole,
+    LogIn,
     MapPin,
     RefreshCcw,
     Sparkles,
@@ -42,8 +43,11 @@ import { getAvailableLanguages } from '../api/publicMetadataApi';
 import {
     ensureGuestSession,
     generateGuestIdea,
+    getGuestActiveRunId,
     getGuestGenerationRun,
     getGuestIdeaError,
+    isGuestGenerationAlreadyRunningError,
+    isGuestGenerationLimitError,
 } from '../api/guestIdeaApi';
 
 import '../styles/guest-idea.css';
@@ -96,6 +100,23 @@ function countWords(value) {
  *
  * @type {string[]}
  */
+
+/**
+ * General guest-facing messages shown while Nexora creates the idea.
+ *
+ * These messages intentionally avoid exposing internal pipeline stages,
+ * provider names, model decisions, or technical processing details.
+ *
+ * @type {string[]}
+ */
+const GUEST_PROGRESS_MESSAGES = [
+    'Exploring real-world needs around your signal…',
+    'Finding meaningful opportunities worth building…',
+    'Shaping a focused software direction…',
+    'Refining the concept for clarity and value…',
+    'Preparing your discovery…',
+];
+
 const FORM_STEPS = [
     'Your signal',
     'Focus',
@@ -183,6 +204,11 @@ export default function GuestGenerateIdeaPage() {
     const [guestUsed, setGuestUsed] = useState(false);
 
     /**
+     * Index of the current guest-safe progress message.
+     */
+    const [progressMessageIndex, setProgressMessageIndex] = useState(0);
+
+    /**
      * Initializes the guest page.
      *
      * Creates or restores the guest session and retrieves all active domains.
@@ -231,6 +257,28 @@ export default function GuestGenerateIdeaPage() {
             isMounted = false;
         };
     }, []);
+
+    /**
+     * Rotates general guest-facing loading messages while generation is active.
+     *
+     * Internal backend stage labels are deliberately not displayed to guests.
+     */
+    useEffect(() => {
+        if (!run?.id || TERMINAL_STATUSES.has(run.status)) {
+            setProgressMessageIndex(0);
+            return undefined;
+        }
+
+        const timer = window.setInterval(() => {
+            setProgressMessageIndex((currentIndex) =>
+                (currentIndex + 1) % GUEST_PROGRESS_MESSAGES.length,
+            );
+        }, 4200);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, [run?.id, run?.status]);
 
     /**
      * Polls the backend while the generation run remains active.
@@ -461,6 +509,41 @@ export default function GuestGenerateIdeaPage() {
                     queuedRun.progressPercent,
             });
         } catch (requestError) {
+            if (isGuestGenerationAlreadyRunningError(requestError)) {
+                const activeRunId = getGuestActiveRunId(requestError);
+
+                if (activeRunId) {
+                    try {
+                        const activeRun =
+                            await getGuestGenerationRun(activeRunId);
+
+                        setRun(activeRun);
+                        setError('');
+                        return;
+                    } catch {
+                        setRun({
+                            id: activeRunId,
+                            status: 'PENDING',
+                            progressPercent: 0,
+                        });
+                        setError('');
+                        return;
+                    }
+                }
+
+                setError(
+                    'Your idea is already being generated. Please wait a moment, then try again.',
+                );
+                return;
+            }
+
+            if (isGuestGenerationLimitError(requestError)) {
+                setGuestUsed(true);
+                setRun(null);
+                setError('');
+                return;
+            }
+
             setError(getGuestIdeaError(requestError));
         } finally {
             setSubmitting(false);
@@ -489,49 +572,63 @@ export default function GuestGenerateIdeaPage() {
     if (guestUsed && !run) {
         return (
             <section className="guest-limit-page">
-                <div className="guest-limit-card">
-                    <span className="guest-icon">
+                <div className="guest-limit-card guest-limit-card--used">
+                    <div className="guest-limit-glow" aria-hidden="true" />
+
+                    <span className="guest-icon guest-limit-icon">
                         <LockKeyhole />
                     </span>
 
                     <p className="guest-eyebrow">
-                        Your guest idea is already used
+                        Free guest idea completed
                     </p>
 
                     <h1>
-                        Keep building without losing your
-                        progress.
+                        Your free discovery is complete.
                     </h1>
 
                     <p>
-                        Create a free account to save the idea
-                        you generated and continue with your
-                        personal workspace.
+                        We’re sorry, your one-time guest generation has
+                        already been used. Create a free Nexora account to
+                        unlock more idea attempts, keep your discoveries, and
+                        continue building from your personal workspace.
                     </p>
 
-                    <div className="guest-result-actions">
+                    <div className="guest-limit-benefits" aria-label="Account benefits">
+                        <span><Check /> More idea attempts</span>
+                        <span><Check /> Saved discoveries</span>
+                        <span><Check /> Your own workspace</span>
+                    </div>
+
+                    <div className="guest-result-actions guest-limit-actions">
                         <button
                             type="button"
                             className="guest-primary"
-                            onClick={() =>
-                                navigate('/register')
-                            }
+                            onClick={() => navigate('/register')}
                         >
                             <UserPlus />
-
                             Create free account
+                            <ArrowRight />
                         </button>
 
                         <button
                             type="button"
                             className="guest-secondary"
-                            onClick={() =>
-                                navigate('/login')
-                            }
+                            onClick={() => navigate('/login')}
                         >
+                            <LogIn />
                             Sign in
                         </button>
                     </div>
+
+                    <button
+                        type="button"
+                        className="guest-limit-home"
+                        onClick={() => navigate('/')}
+                    >
+                        <ArrowLeft />
+                        Back to home
+                    </button>
                 </div>
             </section>
         );
@@ -617,43 +714,33 @@ export default function GuestGenerateIdeaPage() {
                                 validated software idea.
                             </h1>
 
-                            <p>
-                                {run.currentStageLabel ||
-                                    'Analyzing evidence, comparing AI candidates, and shaping the strongest direction.'}
+                            <p
+                                className="guest-progress-message"
+                                aria-live="polite"
+                            >
+                                {
+                                    GUEST_PROGRESS_MESSAGES[
+                                    progressMessageIndex
+                                    ]
+                                }
                             </p>
 
-                            <div className="guest-progress-bar">
-                                <span
-                                    style={{
-                                        width: `${Math.min(
-                                            100,
-                                            Math.max(
-                                                4,
-                                                Number(
-                                                    run.progressPercent ||
-                                                    0,
-                                                ),
-                                            ),
-                                        )}%`,
-                                    }}
-                                />
+                            <div
+                                className="guest-progress-bar guest-progress-bar--indeterminate"
+                                role="progressbar"
+                                aria-label="Your idea generation is in progress"
+                            >
+                                <span />
                             </div>
 
-                            <b className="guest-progress-number">
-                                {Math.min(
-                                    100,
-                                    Math.max(
-                                        0,
-                                        Math.round(
-                                            Number(
-                                                run.progressPercent ||
-                                                0,
-                                            ),
-                                        ),
-                                    ),
-                                )}
-                                % complete
-                            </b>
+                            <div className="guest-progress-note">
+                                <Sparkles />
+
+                                <span>
+                                    Please keep this page open. This may take a
+                                    few minutes.
+                                </span>
+                            </div>
                         </>
                     ) : (
                         <>
