@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 
@@ -128,6 +128,7 @@ export default function IdeaWorkspacePage() {
   const shouldReduceMotion = useReducedMotion();
   const { ideaId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [idea, setIdea] = useState(null);
   const [outputs, setOutputs] = useState([]);
@@ -141,7 +142,9 @@ export default function IdeaWorkspacePage() {
     (async () => {
       try {
         const { idea: loadedIdea, outputs: loadedOutputs } =
-          await getIdeaWorkspaceBundle(ideaId);
+          await getIdeaWorkspaceBundle(ideaId, {
+            forceRefresh: Boolean(location.state?.forceRefresh),
+          });
 
         if (!mounted) return;
 
@@ -157,7 +160,7 @@ export default function IdeaWorkspacePage() {
     return () => {
       mounted = false;
     };
-  }, [ideaId]);
+  }, [ideaId, location.state?.forceRefresh]);
 
   const sections = useMemo(() => {
     if (!idea) return [];

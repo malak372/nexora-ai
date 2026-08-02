@@ -6,7 +6,6 @@
 import {
   Bell,
   BookOpenCheck,
-  BadgeCheck,
   Compass,
   FileWarning,
   LayoutDashboard,
@@ -27,7 +26,6 @@ const items = [
   ['/normal/ideas', 'My ideas', Lightbulb],
   ['/normal/discover', 'Discover', Compass],
   ['/normal/published', 'Published ideas', BookOpenCheck],
-  ['/normal/accepted', 'Accepted ideas', BadgeCheck],
   ['/normal/compliance', 'Compliance', FileWarning],
   ['/normal/notifications', 'Notifications', Bell],
   ['/normal/preferences', 'Preferences', SlidersHorizontal],

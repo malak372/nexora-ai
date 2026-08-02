@@ -86,6 +86,7 @@ export class IdeaPublicationQueryService {
           publisherId: { not: userId },
         },
         query,
+        userId,
       );
     }
 
@@ -125,6 +126,7 @@ export class IdeaPublicationQueryService {
         ],
       },
       query,
+      userId,
     );
   }
 
@@ -311,78 +313,141 @@ export class IdeaPublicationQueryService {
     userType: UserType | null,
     accountStatus: AccountStatus,
   ) {
-    if (accountStatus === AccountStatus.PREMIUM) {
-      return this.findOneOrThrow({
-        id: publicationId,
-        OR: [
-          {
-            publisherId: userId,
-          },
-          {
-            isHidden: false,
-            acceptances: {
-              some: {
-                userId,
+    const accessWhere: Prisma.IdeaPublicationWhereInput =
+      accountStatus === AccountStatus.PREMIUM
+        ? {
+            id: publicationId,
+            OR: [
+              { publisherId: userId },
+              {
+                isHidden: false,
+                acceptances: { some: { userId } },
               },
-            },
+              {
+                status: IdeaPublicationStatus.PUBLISHED,
+                isHidden: false,
+              },
+            ],
+          }
+        : {
+            id: publicationId,
+            OR: [
+              { publisherId: userId },
+              {
+                isHidden: false,
+                acceptances: { some: { userId } },
+              },
+              {
+                status: IdeaPublicationStatus.PUBLISHED,
+                isHidden: false,
+                visibility: {
+                  in: [
+                    IdeaPublicationVisibility.PUBLIC,
+                    IdeaPublicationVisibility.REGISTERED_USERS,
+                  ],
+                },
+              },
+              {
+                status: IdeaPublicationStatus.PUBLISHED,
+                isHidden: false,
+                visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
+                audiences: {
+                  some: {
+                    OR: [
+                      {
+                        audienceType: 'specific-user',
+                        audienceValue: userId,
+                      },
+                      ...(userType
+                        ? [
+                            {
+                              audienceType: 'user-type',
+                              audienceValue: userType,
+                            },
+                          ]
+                        : []),
+                    ],
+                  },
+                },
+              },
+            ],
+          };
+
+    const publication = await this.prisma.ideaPublication.findFirst({
+      where: accessWhere,
+      select: {
+        ...this.publicationSelect,
+        acceptances: {
+          where: { userId },
+          take: 1,
+          select: {
+            id: true,
+            acceptedAt: true,
+            advancedUnlockedAt: true,
+            advancedUnlockMethod: true,
           },
-          {
-            status: IdeaPublicationStatus.PUBLISHED,
-            isHidden: false,
-          },
-        ],
-      });
+        },
+      },
+    });
+
+    if (!publication) {
+      throw new NotFoundException('Publication not found');
     }
 
-    return this.findOneOrThrow({
-      id: publicationId,
-      OR: [
-        {
-          publisherId: userId,
-        },
-        {
-          isHidden: false,
-          acceptances: {
-            some: {
-              userId,
-            },
-          },
-        },
-        {
-          status: IdeaPublicationStatus.PUBLISHED,
-          isHidden: false,
-          visibility: {
-            in: [
-              IdeaPublicationVisibility.PUBLIC,
-              IdeaPublicationVisibility.REGISTERED_USERS,
-            ],
-          },
-        },
-        {
-          status: IdeaPublicationStatus.PUBLISHED,
-          isHidden: false,
-          visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
-          audiences: {
-            some: {
-              OR: [
-                {
-                  audienceType: 'specific-user',
-                  audienceValue: userId,
-                },
-                ...(userType
-                  ? [
-                      {
-                        audienceType: 'user-type',
-                        audienceValue: userType,
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          },
-        },
-      ],
+    const acceptance = publication.acceptances[0] ?? null;
+    const isOwner = publication.publisher.id === userId;
+    const advancedAccessGranted =
+      isOwner || acceptance?.advancedUnlockedAt !== null;
+
+    /*
+     * Availability and access are intentionally separate:
+     * - availability means the source idea actually owns completed outputs;
+     * - access means this viewer is allowed to read those outputs.
+     *
+     * This prevents the UI from selling an empty advanced package for ideas
+     * that were generated without premium outputs.
+     */
+    const advancedOutputsCount = await this.prisma.generatedOutput.count({
+      where: {
+        ideaId: publication.ideaId,
+        status: 'COMPLETED',
+      },
     });
+
+    const advancedOutputsAvailable = advancedOutputsCount > 0;
+
+    const advancedOutputs =
+      advancedAccessGranted && advancedOutputsAvailable
+        ? await this.prisma.generatedOutput.findMany({
+            where: {
+              ideaId: publication.ideaId,
+              status: 'COMPLETED',
+            },
+            orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
+            select: {
+              id: true,
+              outputKey: true,
+              title: true,
+              content: true,
+              structuredContent: true,
+              sequence: true,
+              generatedAt: true,
+            },
+          })
+        : [];
+
+    const { acceptances: _acceptances, ...safePublication } = publication;
+
+    return {
+      ...safePublication,
+      acceptance,
+      hasAdvancedAccess:
+        advancedAccessGranted && advancedOutputsAvailable,
+      advancedAccessGranted,
+      advancedOutputsAvailable,
+      advancedOutputsCount,
+      advancedOutputs,
+    };
   }
 
   /**
@@ -402,6 +467,7 @@ export class IdeaPublicationQueryService {
   private async findMany(
     where: Prisma.IdeaPublicationWhereInput,
     query: GetPublicationsQueryDto,
+    viewerUserId?: string,
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -472,8 +538,43 @@ export class IdeaPublicationQueryService {
       }),
     ]);
 
+    const acceptanceByPublicationId = new Map<
+      string,
+      {
+        id: string;
+        advancedUnlockedAt: Date | null;
+      }
+    >();
+
+    if (viewerUserId && items.length > 0) {
+      const acceptances = await this.prisma.ideaPublicationAcceptance.findMany({
+        where: {
+          userId: viewerUserId,
+          publicationId: { in: items.map((item) => item.id) },
+        },
+        select: {
+          id: true,
+          publicationId: true,
+          advancedUnlockedAt: true,
+        },
+      });
+
+      acceptances.forEach((acceptance) => {
+        acceptanceByPublicationId.set(acceptance.publicationId, acceptance);
+      });
+    }
+
     return {
-      items,
+      items: items.map((item) => {
+        const acceptance = acceptanceByPublicationId.get(item.id) ?? null;
+
+        return {
+          ...item,
+          isAccepted: acceptance !== null,
+          acceptanceId: acceptance?.id ?? null,
+          hasAdvancedAccess: acceptance?.advancedUnlockedAt !== null && acceptance !== null,
+        };
+      }),
       pagination: {
         page,
         limit,

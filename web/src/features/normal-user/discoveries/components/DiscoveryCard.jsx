@@ -6,6 +6,7 @@
 
 import {
   ArrowUpRight,
+  CheckCircle2,
   MessageCircleMore,
   Sparkles,
   Star,
@@ -38,6 +39,12 @@ export default function DiscoveryCard({
   const publisherName =
     publication?.publisher?.fullName ||
     'Nexora creator';
+
+  const isAccepted = Boolean(
+    publication?.isAccepted ||
+    publication?.acceptanceId ||
+    publication?.acceptance?.id,
+  );
 
   const abstract =
     publication?.publicAbstract ||
@@ -116,9 +123,9 @@ export default function DiscoveryCard({
           </div>
         </div>
 
-        <span className="discovery-story__label">
-          <Sparkles size={13} />
-          Community discovery
+        <span className={`discovery-story__label ${isAccepted ? 'is-accepted' : ''}`}>
+          {isAccepted ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
+          {isAccepted ? 'Accepted opportunity' : 'Community discovery'}
         </span>
 
         <h2>

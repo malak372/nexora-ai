@@ -244,6 +244,13 @@ export class IdeaPublicationAcceptanceService {
             userId,
           },
         },
+        include: {
+          publication: {
+            select: {
+              ideaId: true,
+            },
+          },
+        },
       }),
       this.prisma.systemSetting.findUnique({
         where: {
@@ -273,6 +280,20 @@ export class IdeaPublicationAcceptanceService {
 
     if (acceptance.advancedUnlockedAt) {
       return acceptance;
+    }
+
+    const availableAdvancedOutputs =
+      await this.prisma.generatedOutput.count({
+        where: {
+          ideaId: acceptance.publication.ideaId,
+          status: 'COMPLETED',
+        },
+      });
+
+    if (availableAdvancedOutputs <= 0) {
+      throw new BadRequestException(
+        'This publication does not contain advanced outputs to unlock.',
+      );
     }
 
     if (
@@ -335,8 +356,8 @@ export class IdeaPublicationAcceptanceService {
    * Fulfills a successfully paid publication acceptance for a
    * Normal user.
    *
-   * Direct payment accepts the publication and immediately unlocks
-   * its advanced details.
+   * Direct payment creates the basic publication acceptance only.
+   * Advanced outputs remain locked until a separate payment or Premium credit unlock.
    *
    * The supplied transaction is controlled by PaymentProcessingService,
    * so payment completion and acceptance creation remain atomic.
@@ -389,10 +410,6 @@ export class IdeaPublicationAcceptanceService {
 
     this.assertNotOwner(publication.publisherId, payment.userId);
 
-    /*
-     * Return and upgrade an existing acceptance without consuming
-     * another publication-adoption slot.
-     */
     const existingAcceptance = await tx.ideaPublicationAcceptance.findUnique({
       where: {
         publicationId_userId: {
@@ -402,42 +419,25 @@ export class IdeaPublicationAcceptanceService {
       },
     });
 
-    if (!existingAcceptance) {
-      await this.assertCapacity(payment.publicationId, publication, tx);
+    if (existingAcceptance) {
+      return existingAcceptance;
     }
+
+    await this.assertCapacity(payment.publicationId, publication, tx);
 
     const clientRequestId = payment.clientRequestId?.trim() || payment.id;
 
-    const acceptance = existingAcceptance
-      ? await tx.ideaPublicationAcceptance.update({
-          where: {
-            id: existingAcceptance.id,
-          },
-          data: {
-            paymentId: payment.id,
-            advancedUnlockedAt:
-              existingAcceptance.advancedUnlockedAt ?? new Date(),
-            advancedUnlockMethod:
-              PublicationAdvancedUnlockMethod.DIRECT_PAYMENT,
-            country: existingAcceptance.country ?? payment.acceptanceCountry,
-            city: existingAcceptance.city ?? payment.acceptanceCity,
-            region: existingAcceptance.region ?? payment.acceptanceRegion,
-          },
-        })
-      : await tx.ideaPublicationAcceptance.create({
-          data: {
-            publicationId: payment.publicationId,
-            userId: payment.userId,
-            clientRequestId,
-            paymentId: payment.id,
-            country: payment.acceptanceCountry,
-            city: payment.acceptanceCity,
-            region: payment.acceptanceRegion,
-            advancedUnlockedAt: new Date(),
-            advancedUnlockMethod:
-              PublicationAdvancedUnlockMethod.DIRECT_PAYMENT,
-          },
-        });
+    const acceptance = await tx.ideaPublicationAcceptance.create({
+      data: {
+        publicationId: payment.publicationId,
+        userId: payment.userId,
+        clientRequestId,
+        paymentId: payment.id,
+        country: payment.acceptanceCountry,
+        city: payment.acceptanceCity,
+        region: payment.acceptanceRegion,
+      },
+    });
 
     await this.audit.createLog(
       {
@@ -465,6 +465,67 @@ export class IdeaPublicationAcceptanceService {
   }
 
   /**
+   * Fulfills a verified direct payment for advanced publication outputs.
+   *
+   * The basic acceptance must already exist. The update is idempotent and the
+   * payment is attached separately from the original acceptance payment.
+   */
+  async fulfillNormalAdvancedUnlock(
+    payment: {
+      readonly id: string;
+      readonly userId: string;
+      readonly publicationId: string | null;
+    },
+    tx: Prisma.TransactionClient,
+  ) {
+    if (!payment.publicationId) {
+      throw new BadRequestException(
+        'Advanced publication payment has no publication.',
+      );
+    }
+
+    const acceptance = await tx.ideaPublicationAcceptance.findUnique({
+      where: {
+        publicationId_userId: {
+          publicationId: payment.publicationId,
+          userId: payment.userId,
+        },
+      },
+    });
+
+    if (!acceptance) {
+      throw new BadRequestException(
+        'Accept the publication before unlocking advanced outputs.',
+      );
+    }
+
+    if (acceptance.advancedUnlockedAt) {
+      return acceptance;
+    }
+
+    const updatedAcceptance = await tx.ideaPublicationAcceptance.update({
+      where: { id: acceptance.id },
+      data: {
+        advancedPaymentId: payment.id,
+        advancedUnlockedAt: new Date(),
+        advancedUnlockMethod: PublicationAdvancedUnlockMethod.DIRECT_PAYMENT,
+      },
+    });
+
+    await this.audit.createLog(
+      {
+        actorId: payment.userId,
+        action: AuditAction.USER_UNLOCK_PUBLICATION_ADVANCED,
+        targetType: AuditTargetType.IDEA_PUBLICATION_ACCEPTANCE,
+        targetId: updatedAcceptance.id,
+      },
+      tx,
+    );
+
+    return updatedAcceptance;
+  }
+
+  /**
    * Returns the authenticated user's acceptance state for
    * one publication.
    *
@@ -484,6 +545,8 @@ export class IdeaPublicationAcceptanceService {
         acceptedAt: true,
         advancedUnlockedAt: true,
         advancedUnlockMethod: true,
+        advancedPaymentId: true,
+        paymentId: true,
       },
     });
   }

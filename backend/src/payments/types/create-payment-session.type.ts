@@ -43,6 +43,7 @@ export type CreatePaymentSessionInput = {
    *
    * BUY_CREDITS purchases generation credits.
    * DIRECT_UNLOCK unlocks advanced features for one existing free idea.
+   * UNLOCK_PUBLICATION_ADVANCED unlocks advanced outputs for an accepted publication.
    */
   paymentPurpose: PaymentPurpose;
 

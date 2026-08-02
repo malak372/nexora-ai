@@ -9,7 +9,13 @@ import {
   createRequestCacheKey,
 } from '../../shared/cache/requestCache';
 
-export async function getAcceptedPublications(params = {}) {
+/**
+ * Retrieves accepted publications with optional cache bypass.
+ *
+ * @param {object} params Request query parameters.
+ * @param {{ force?: boolean }} options Cache controls.
+ */
+export async function getAcceptedPublications(params = {}, options = {}) {
   try {
     const cacheKey = createRequestCacheKey('accepted-publications', params);
 
@@ -26,7 +32,10 @@ export async function getAcceptedPublications(params = {}) {
           pagination: payload.pagination ?? payload.meta ?? null,
         };
       },
-      { ttlMs: 3 * 60 * 1000 },
+      {
+        ttlMs: 3 * 60 * 1000,
+        force: Boolean(options.force),
+      },
     );
   } catch (error) {
     throw new Error(

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -74,7 +75,7 @@ export class IdeaUnlockService {
       );
     }
 
-    const claim = await this.persistence.beginDirectUnlock(
+    let claim = await this.persistence.beginDirectUnlock(
       idea.id,
       input.userId,
     );
@@ -93,6 +94,48 @@ export class IdeaUnlockService {
         completedNow: false,
         unlockedAt: claim.unlockedAt,
       };
+    }
+
+    if (claim.inProgress) {
+      const concurrentResult =
+        await this.persistence.waitForDirectUnlockCompletion(
+          idea.id,
+          input.userId,
+        );
+
+      if (concurrentResult.completed && concurrentResult.unlockedAt) {
+        return {
+          paymentId: input.paymentId,
+          ideaId: idea.id,
+          alreadyUnlocked: true,
+          completedNow: false,
+          unlockedAt: concurrentResult.unlockedAt,
+        };
+      }
+
+      if (!concurrentResult.retryable) {
+        throw new ConflictException(
+          'Advanced-output generation is still in progress for this idea.',
+        );
+      }
+
+      claim = await this.persistence.beginDirectUnlock(idea.id, input.userId);
+
+      if (claim.alreadyUnlocked && claim.unlockedAt) {
+        return {
+          paymentId: input.paymentId,
+          ideaId: idea.id,
+          alreadyUnlocked: true,
+          completedNow: false,
+          unlockedAt: claim.unlockedAt,
+        };
+      }
+
+      if (claim.inProgress) {
+        throw new ConflictException(
+          'Advanced-output generation is still in progress for this idea.',
+        );
+      }
     }
 
     try {

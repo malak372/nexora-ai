@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   AccountStatus,
+  GeneratedOutputStatus,
   IdeaGenerationType,
   PaymentPurpose,
   PaymentStatus,
@@ -19,6 +20,7 @@ import {
 import type { CreateDirectUnlockPaymentDto } from '../dto/create-direct-unlock-payment.dto';
 import type { PurchaseCreditsDto } from '../dto/purchase-credits.dto';
 import type { CreatePublicationAcceptanceDto } from '../../ideas/publication/dto/create-publication-acceptance.dto';
+import type { CreatePublicationAdvancedUnlockDto } from '../../ideas/publication/dto/create-publication-advanced-unlock.dto';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
@@ -125,7 +127,23 @@ export class PaymentCheckoutService {
     const activationFee = user.accountStatus === AccountStatus.NORMAL ? settings.premiumActivationFee : new Prisma.Decimal(0);
     const total = settings.creditPrice.mul(creditsQuantity).add(activationFee);
     const acceptance = user.accountStatus === AccountStatus.PREMIUM ? settings.premiumAcceptancePrice : settings.normalAcceptancePrice;
-    return { currency: DEFAULT_PAYMENT_CURRENCY, accountStatus: user.accountStatus, creditsQuantity, creditPrice: settings.creditPrice.toFixed(2), premiumActivationFee: settings.premiumActivationFee.toFixed(2), activationFeeApplied: activationFee.toFixed(2), creditPurchaseTotal: total.toFixed(2), directUnlockPrice: settings.directUnlockPrice.toFixed(2), normalAcceptancePrice: settings.normalAcceptancePrice.toFixed(2), premiumAcceptancePrice: settings.premiumAcceptancePrice.toFixed(2), publicationAcceptancePrice: acceptance.toFixed(2), publicationAdvancedCreditCost: settings.publicationAdvancedCreditCost };
+    return {
+      currency: DEFAULT_PAYMENT_CURRENCY,
+      accountStatus: user.accountStatus,
+      creditsQuantity,
+      creditPrice: settings.creditPrice.toFixed(2),
+      premiumActivationFee: settings.premiumActivationFee.toFixed(2),
+      activationFeeApplied: activationFee.toFixed(2),
+      creditPurchaseTotal: total.toFixed(2),
+      directUnlockPrice: settings.directUnlockPrice.toFixed(2),
+      normalAcceptancePrice: settings.normalAcceptancePrice.toFixed(2),
+      premiumAcceptancePrice: settings.premiumAcceptancePrice.toFixed(2),
+      publicationAcceptancePrice: acceptance.toFixed(2),
+      normalPublicationAdvancedPrice:
+        settings.normalPublicationAdvancedPrice.toFixed(2),
+      publicationAdvancedCreditCost:
+        settings.publicationAdvancedCreditCost,
+    };
   }
 
   /**
@@ -282,6 +300,7 @@ export class PaymentCheckoutService {
         providerKey,
         amount: settings.directUnlockPrice,
         successUrl: dto.successUrl,
+        ideaId: idea.id,
       });
     }
 
@@ -440,6 +459,7 @@ export class PaymentCheckoutService {
         providerKey: payment.providerKey,
         amount: payment.amount,
         successUrl: input.successUrl,
+        ideaId: input.ideaId,
         providerSessionId: payment.providerSessionId,
       });
     }
@@ -462,6 +482,7 @@ export class PaymentCheckoutService {
     readonly providerKey: string;
     readonly amount: Prisma.Decimal;
     readonly successUrl: string;
+    readonly ideaId: string;
     readonly providerSessionId?: string;
   }): PaymentCheckoutResult {
     return {
@@ -472,10 +493,42 @@ export class PaymentCheckoutService {
       status: PaymentStatus.SUCCEEDED,
       amount: input.amount.toFixed(2),
       currency: DEFAULT_PAYMENT_CURRENCY,
-      checkoutUrl: input.successUrl,
+      checkoutUrl: this.appendCompletedDirectUnlockReturnParameters(
+        input.successUrl,
+        input.paymentId,
+        input.ideaId,
+      ),
       providerSessionId:
         input.providerSessionId ?? `completed:${input.paymentId}`,
     };
+  }
+
+
+  /**
+   * Appends the payment reference to an already-completed direct-unlock
+   * redirect. This is required when an earlier provider session was reconciled
+   * server-to-server or when the idea was already unlocked before a new
+   * checkout was requested.
+   */
+  private appendCompletedDirectUnlockReturnParameters(
+    successUrl: string,
+    paymentId: string,
+    ideaId: string,
+  ): string {
+    const url = new URL(successUrl);
+
+    if (paymentId !== 'already-unlocked') {
+      url.searchParams.set('paymentId', paymentId);
+    }
+
+    url.searchParams.set('purpose', PaymentPurpose.DIRECT_UNLOCK);
+    url.searchParams.set('ideaId', ideaId);
+
+    if (paymentId === 'already-unlocked') {
+      url.searchParams.set('alreadyUnlocked', '1');
+    }
+
+    return url.toString();
   }
 
   /**
@@ -571,6 +624,113 @@ export class PaymentCheckoutService {
   }
 
   /**
+   * Creates a checkout for a NORMAL user who already accepted the publication
+   * and now wants the protected advanced outputs.
+   */
+  async createPublicationAdvancedUnlockCheckout(
+    userId: string,
+    publicationId: string,
+    dto: CreatePublicationAdvancedUnlockDto,
+  ): Promise<PaymentCheckoutResult> {
+    const user = await this.ensureEligibleUser(userId);
+
+    if (user.accountStatus !== AccountStatus.NORMAL) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+        'Premium users unlock advanced publication outputs with credits.',
+      );
+    }
+
+    const [settings, acceptance] = await Promise.all([
+      this.getSystemSettings(),
+      this.prisma.ideaPublicationAcceptance.findUnique({
+        where: {
+          publicationId_userId: {
+            publicationId,
+            userId,
+          },
+        },
+        select: {
+          id: true,
+          advancedUnlockedAt: true,
+          publication: {
+            select: {
+              ideaId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!acceptance) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_ACCESS_DENIED,
+        'Accept the publication before purchasing advanced outputs.',
+      );
+    }
+
+    if (acceptance.advancedUnlockedAt) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.IDEA_ALREADY_UNLOCKED,
+        'Advanced publication outputs are already unlocked.',
+      );
+    }
+
+    const availableAdvancedOutputs =
+      await this.prisma.generatedOutput.count({
+        where: {
+          ideaId: acceptance.publication.ideaId,
+          status: 'COMPLETED',
+        },
+      });
+
+    if (availableAdvancedOutputs <= 0) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+        'This publication does not contain purchasable advanced outputs.',
+      );
+    }
+
+    if (settings.normalPublicationAdvancedPrice.lte(0)) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_AMOUNT,
+        'The configured advanced publication price must be greater than zero.',
+      );
+    }
+
+    const paymentMethodKey = this.normalizePaymentMethodKey(
+      dto.paymentMethodKey,
+    );
+    const providerKey = this.resolveProviderKey(paymentMethodKey);
+
+    const payment = await this.createPendingPayment({
+      userId,
+      ideaId: null,
+      publicationId,
+      amount: settings.normalPublicationAdvancedPrice,
+      currency: DEFAULT_PAYMENT_CURRENCY,
+      paymentMethodKey,
+      providerKey,
+      paymentPurpose: PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED,
+      creditsAmount: 0,
+      bonusCreditsAmount: 0,
+      creditPriceAtPurchase: null,
+      premiumActivationFeeAtPurchase: null,
+      activatesPremium: false,
+      acceptanceCountry: null,
+      acceptanceCity: null,
+      acceptanceRegion: null,
+      idempotencyKey: dto.clientRequestId,
+    });
+
+    return this.createExternalCheckout(payment, {
+      successUrl: dto.successUrl,
+      cancelUrl: dto.cancelUrl,
+      publicationId,
+    });
+  }
+
+  /**
    * Creates the internal PENDING payment record.
    */
   /**
@@ -607,7 +767,20 @@ export class PaymentCheckoutService {
       input.bonusCreditsAmount === 0 &&
       input.activatesPremium === false;
 
-    if (!isCreditPurchase && !isDirectUnlock && !isPublicationAcceptance) {
+    const isPublicationAdvancedUnlock =
+      input.paymentPurpose === PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED &&
+      input.ideaId === null &&
+      input.publicationId !== null &&
+      input.creditsAmount === 0 &&
+      input.bonusCreditsAmount === 0 &&
+      input.activatesPremium === false;
+
+    if (
+      !isCreditPurchase &&
+      !isDirectUnlock &&
+      !isPublicationAcceptance &&
+      !isPublicationAdvancedUnlock
+    ) {
       throw new PaymentProcessingError(
         PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
         'Payment fields are inconsistent with the selected payment purpose.',
@@ -804,9 +977,24 @@ export class PaymentCheckoutService {
           select: {
             isUnlocked: true,
             unlockMethod: true,
+            generatedOutputs: {
+              where: {
+                outputKey: 'full-abstract',
+                status: GeneratedOutputStatus.PENDING,
+              },
+              take: 1,
+              select: { id: true },
+            },
           },
         },
         publicationAcceptance: {
+          select: {
+            id: true,
+            acceptedAt: true,
+            advancedUnlockedAt: true,
+          },
+        },
+        publicationAdvancedUnlock: {
           select: {
             id: true,
             acceptedAt: true,
@@ -845,12 +1033,23 @@ export class PaymentCheckoutService {
         payment.user.accountStatus === AccountStatus.PREMIUM,
       ideaId: payment.ideaId,
       ideaUnlocked: payment.idea?.isUnlocked ?? false,
+      unlockInProgress:
+        payment.paymentPurpose === PaymentPurpose.DIRECT_UNLOCK &&
+        payment.status === PaymentStatus.SUCCEEDED &&
+        !payment.idea?.isUnlocked &&
+        Boolean(payment.idea?.generatedOutputs.length),
       unlockMethod: payment.idea?.unlockMethod ?? null,
       publicationId: payment.publicationId,
-      publicationAccepted: Boolean(payment.publicationAcceptance),
-      acceptanceId: payment.publicationAcceptance?.id ?? null,
+      publicationAccepted: Boolean(
+        payment.publicationAcceptance ?? payment.publicationAdvancedUnlock,
+      ),
+      acceptanceId:
+        payment.publicationAcceptance?.id ??
+        payment.publicationAdvancedUnlock?.id ??
+        null,
       advancedPublicationAccess: Boolean(
-        payment.publicationAcceptance?.advancedUnlockedAt,
+        payment.publicationAcceptance?.advancedUnlockedAt ??
+          payment.publicationAdvancedUnlock?.advancedUnlockedAt,
       ),
     };
   }
@@ -1085,6 +1284,7 @@ export class PaymentCheckoutService {
         publishedIdeaPrice: true,
         normalAcceptancePrice: true,
         premiumAcceptancePrice: true,
+        normalPublicationAdvancedPrice: true,
         publicationAdvancedCreditCost: true,
         bonusThreshold: true,
         bonusCredits: true,

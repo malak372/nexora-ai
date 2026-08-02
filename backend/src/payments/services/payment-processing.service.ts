@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 
 import {
   PaymentPurpose,
@@ -21,6 +21,15 @@ import type { PaymentProcessingResult } from '../types/payment-processing-result
 import { CreditPurchaseService } from './credit-purchase.service';
 import { DirectUnlockPaymentService } from './direct-unlock-payment.service';
 import { PaymentNotificationService } from './payment-notification.service';
+
+/** Maximum time Prisma may wait for a payment transaction connection. */
+const PAYMENT_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
+
+/**
+ * Payment fulfillment may perform multiple remote PostgreSQL operations.
+ * Keeping an explicit timeout avoids relying on Prisma's short default.
+ */
+const PAYMENT_TRANSACTION_TIMEOUT_MS = 30 * 1000;
 
 /**
  * Internal payment representation required while processing
@@ -197,6 +206,10 @@ export class PaymentProcessingService {
               );
           }
         },
+        {
+          maxWait: PAYMENT_TRANSACTION_MAX_WAIT_MS,
+          timeout: PAYMENT_TRANSACTION_TIMEOUT_MS,
+        },
       );
 
       const completedResult =
@@ -266,6 +279,20 @@ export class PaymentProcessingService {
         unlockedAt: unlockResult.unlockedAt,
       };
     } catch (error) {
+      if (error instanceof ConflictException) {
+        this.logger.log(
+          `Direct unlock is already running for payment ${result.paymentId} and idea ${ideaId}.`,
+        );
+
+        return {
+          ...result,
+          ideaId,
+          ideaUnlocked: false,
+          unlockCompletedNow: false,
+          unlockInProgress: true,
+        };
+      }
+
       throw new PaymentProcessingError(
         PaymentErrorCode.DIRECT_UNLOCK_PROCESSING_FAILED,
         'The payment succeeded, but advanced idea outputs could not be generated. The unlock can be retried safely.',
@@ -585,6 +612,33 @@ export class PaymentProcessingService {
           creditBalanceChanged: false,
           publicationId: payment.publicationId ?? undefined,
           publicationAccepted: true,
+          advancedPublicationAccess: false,
+        };
+      }
+
+      case PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED: {
+        const acceptance =
+          await this.publicationAcceptanceService.fulfillNormalAdvancedUnlock(
+            {
+              id: payment.id,
+              userId: payment.userId,
+              publicationId: payment.publicationId,
+            },
+            tx,
+          );
+
+        return {
+          paymentId: payment.id,
+          userId: payment.userId,
+          paymentPurpose: PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED,
+          status: PaymentStatus.SUCCEEDED,
+          alreadyProcessed: false,
+          creditBalanceChanged: false,
+          publicationId: payment.publicationId ?? undefined,
+          publicationAccepted: true,
+          acceptanceId: acceptance.id,
+          advancedPublicationAccess:
+            acceptance.advancedUnlockedAt !== null,
         };
       }
 

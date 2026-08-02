@@ -25,6 +25,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { createDirectUnlockCheckout } from '../api/directUnlockApi';
 import { getPaymentPricing } from '../api/paymentFlowApi';
+import { storePaymentReturnReference } from '../utils/paymentReturn.storage';
 import '../styles/direct-unlock.css';
 
 const PAYMENT_METHODS = [
@@ -82,6 +83,12 @@ export default function DirectUnlockPage() {
           'The payment provider did not return a checkout URL.',
         );
       }
+
+      storePaymentReturnReference({
+        paymentId: result.paymentId,
+        paymentPurpose: result.paymentPurpose ?? 'DIRECT_UNLOCK',
+        ideaId,
+      });
 
       window.location.assign(result.checkoutUrl);
     } catch (requestError) {

@@ -28,6 +28,17 @@ export type PersistIdeaUnlockOutputInput = {
 export type BeginIdeaUnlockResult = {
   readonly ideaId: string;
   readonly alreadyUnlocked: boolean;
+  readonly inProgress: boolean;
+  readonly unlockedAt?: Date;
+};
+
+/**
+ * Result returned while waiting for another worker to finish the same unlock.
+ */
+export type WaitForIdeaUnlockResult = {
+  readonly completed: boolean;
+  readonly failed: boolean;
+  readonly retryable: boolean;
   readonly unlockedAt?: Date;
 };
 

@@ -9,6 +9,7 @@
  */
 import {
   ArrowLeft,
+  ArrowUpRight,
   CheckCircle2,
   CreditCard,
   Flag,
@@ -28,6 +29,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import {
   acceptPublication,
+  createPublicationAdvancedUnlockCheckout,
+  unlockPublicationAdvancedWithCredits,
   getDiscoveryById,
   getMyAcceptance,
   getMyFeedback,
@@ -40,6 +43,7 @@ import {
 } from '../api/discoveriesApi';
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
+import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
 import '../styles/publication-detail.css';
 
 function parseList(value) {
@@ -108,6 +112,7 @@ export default function PublicationDetailPage() {
   const [notice, setNotice] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [advancedPaymentOpen, setAdvancedPaymentOpen] = useState(false);
   const [reportReason, setReportReason] = useState('MISLEADING');
   const [reportDetails, setReportDetails] = useState('');
   const [paymentPricing, setPaymentPricing] = useState(null);
@@ -170,10 +175,23 @@ export default function PublicationDetailPage() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getPaymentPricing().then(setPaymentPricing).catch(() => undefined); }, []);
 
+  const effectiveAcceptance = acceptance ?? publication?.acceptance ?? null;
   const accepted = Boolean(
-    acceptance?.id || acceptance?.acceptedAt || acceptance?.hasAdvancedAccess,
+    effectiveAcceptance?.id || effectiveAcceptance?.acceptedAt,
   );
-
+  const hasAdvancedAccess = Boolean(
+    effectiveAcceptance?.advancedUnlockedAt ||
+    effectiveAcceptance?.hasAdvancedAccess ||
+    publication?.hasAdvancedAccess,
+  );
+  const advancedOutputsAvailable = Boolean(
+    publication?.advancedOutputsAvailable ||
+    Number(publication?.advancedOutputsCount ?? 0) > 0 ||
+    (Array.isArray(publication?.advancedOutputs) &&
+      publication.advancedOutputs.length > 0),
+  );
+  const currentUser = getStoredUser();
+  const isPremiumUser = currentUser?.accountStatus === 'PREMIUM';
   const ratingsEnabled = publication?.allowRatings !== false;
   const votingEnabled = publication?.allowVoting !== false;
   const feedbackEnabled = publication?.allowFeedback !== false;
@@ -204,6 +222,14 @@ export default function PublicationDetailPage() {
       const checkoutUrl = result?.checkoutUrl ?? result?.payment?.checkoutUrl;
 
       if (checkoutUrl) {
+        const payment = result?.payment ?? result;
+
+        storePaymentReturnReference({
+          paymentId: payment?.paymentId,
+          paymentPurpose: payment?.paymentPurpose ?? 'ACCEPT_PUBLICATION',
+          publicationId,
+        });
+
         window.location.assign(checkoutUrl);
         return;
       }
@@ -213,6 +239,61 @@ export default function PublicationDetailPage() {
       await load();
     } catch (error) {
       setErrorMessage(error.message);
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function handleAdvancedUnlock() {
+    setBusyAction('advanced-unlock');
+    setErrorMessage('');
+    setNotice('');
+
+    try {
+      const result = await createPublicationAdvancedUnlockCheckout(
+        publicationId,
+        paymentMethod,
+      );
+      const checkoutUrl = result?.checkoutUrl ?? result?.payment?.checkoutUrl;
+      const payment = result?.payment ?? result;
+
+      if (!checkoutUrl) {
+        await load();
+        setAdvancedPaymentOpen(false);
+        setNotice('Advanced access is already available for this opportunity.');
+        return;
+      }
+
+      storePaymentReturnReference({
+        paymentId: payment?.paymentId,
+        paymentPurpose:
+          payment?.paymentPurpose ?? 'UNLOCK_PUBLICATION_ADVANCED',
+        publicationId,
+      });
+
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      setErrorMessage(
+        error?.message || 'The advanced-output checkout could not be created.',
+      );
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function handlePremiumAdvancedUnlock() {
+    setBusyAction('premium-advanced-unlock');
+    setErrorMessage('');
+    setNotice('');
+
+    try {
+      await unlockPublicationAdvancedWithCredits(publicationId);
+      setNotice('Advanced access was unlocked with your Premium credits.');
+      await load();
+    } catch (error) {
+      setErrorMessage(
+        error?.message || 'Advanced access could not be unlocked.',
+      );
     } finally {
       setBusyAction('');
     }
@@ -478,16 +559,14 @@ export default function PublicationDetailPage() {
         </section>
       ) : (
         <>
-          <section className="publication-accepted-banner">
+          <section className="publication-accepted-banner publication-accepted-banner--clean">
             <CheckCircle2 size={24} />
             <div>
               <strong>Accepted opportunity</strong>
-              <span>This idea is also available in your Accepted ideas library.</span>
+              <span>The protected basic brief is available below.</span>
             </div>
-            <button type="button" onClick={() => navigate('/normal/accepted')}>
-              Open accepted ideas
-            </button>
           </section>
+
 
           <section className="publication-detail-grid">
             <article>
@@ -506,6 +585,85 @@ export default function PublicationDetailPage() {
               <ContentBlock value={publication.publicTargetUsers} fallback="No target-user description was provided." />
             </article>
           </section>
+
+          {advancedOutputsAvailable ? (
+            <section className={`publication-advanced-card ${hasAdvancedAccess ? 'is-unlocked' : ''}`}>
+              <div className="publication-advanced-card__visual" aria-hidden="true">
+                {hasAdvancedAccess ? <CheckCircle2 size={28} /> : <Sparkles size={28} />}
+              </div>
+
+              <div className="publication-advanced-card__copy">
+                <span>{hasAdvancedAccess ? 'ADVANCED ACCESS READY' : 'ADVANCED EXECUTION LAYER'}</span>
+                <h2>
+                  {hasAdvancedAccess
+                    ? 'Your complete accepted-idea workspace is ready.'
+                    : 'Unlock the complete execution package.'}
+                </h2>
+                <p>
+                  {hasAdvancedAccess
+                    ? `Open ${publication.advancedOutputsCount ?? 'all'} available advanced outputs in one premium workspace.`
+                    : 'This opportunity contains completed premium outputs, including architecture, technology, feasibility, implementation, and business planning.'}
+                </p>
+              </div>
+
+              <div className="publication-advanced-card__action">
+                {hasAdvancedAccess ? (
+                  <button
+                    type="button"
+                    className="publication-workspace-button"
+                    onClick={() =>
+                      navigate(`/normal/accepted/${publicationId}/workspace`, {
+                        state: { forceRefresh: true },
+                      })
+                    }
+                  >
+                    Open premium workspace <ArrowUpRight size={18} />
+                  </button>
+                ) : isPremiumUser ? (
+                  <>
+                    <div>
+                      <small>Premium credit unlock</small>
+                      <strong>Use account credits</strong>
+                      <span><ShieldCheck size={15} /> Verified by the backend</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="publication-advanced-pay-button"
+                      disabled={busyAction === 'premium-advanced-unlock'}
+                      onClick={handlePremiumAdvancedUnlock}
+                    >
+                      {busyAction === 'premium-advanced-unlock' ? (
+                        <LoaderCircle className="publication-spin" size={18} />
+                      ) : (
+                        <Sparkles size={18} />
+                      )}
+                      Unlock with credits
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <small>One-time advanced access</small>
+                      <strong>
+                        {paymentPricing
+                          ? `${paymentPricing.normalPublicationAdvancedPrice} ${paymentPricing.currency}`
+                          : 'Loading price…'}
+                      </strong>
+                      <span><ShieldCheck size={15} /> Backend-controlled pricing</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="publication-advanced-pay-button"
+                      disabled={!paymentPricing}
+                      onClick={() => setAdvancedPaymentOpen(true)}
+                    >
+                      <Sparkles size={18} /> Unlock advanced outputs
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          ) : null}
         </>
       )}
 
@@ -541,6 +699,53 @@ export default function PublicationDetailPage() {
               <button type="button" disabled={busyAction === 'accept'} onClick={handleAccept}>
                 {busyAction === 'accept' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
                 {busyAction === 'accept' ? 'Creating checkout…' : 'Continue securely'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+
+      {advancedPaymentOpen ? (
+        <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose advanced-output payment method">
+          <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setAdvancedPaymentOpen(false)} />
+          <section className="publication-payment-modal__panel publication-payment-modal__panel--advanced">
+            <header>
+              <div className="publication-payment-modal__icon"><Sparkles size={24} /></div>
+              <div>
+                <span>ADVANCED OPPORTUNITY ACCESS</span>
+                <h2>Open the complete idea workspace</h2>
+                <p>The backend determines the price and grants access only after the provider payment is verified.</p>
+              </div>
+              <button type="button" className="publication-payment-modal__close" onClick={() => setAdvancedPaymentOpen(false)}><X size={20} /></button>
+            </header>
+
+            <div className="publication-payment-modal__price">
+              <small>Advanced outputs · one-time payment</small>
+              <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
+            </div>
+
+            <div className="publication-payment-modal__benefits">
+              <span><CheckCircle2 size={16} /> Full abstract</span>
+              <span><CheckCircle2 size={16} /> Technology and architecture</span>
+              <span><CheckCircle2 size={16} /> Feasibility and implementation</span>
+              <span><CheckCircle2 size={16} /> Business and market outputs</span>
+            </div>
+
+            <div className="publication-payment-modal__methods">
+              <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
+                <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
+              </button>
+              <button type="button" className={paymentMethod === 'paypal' ? 'active' : ''} onClick={() => setPaymentMethod('paypal')}>
+                <i className="is-paypal">PP</i><span><strong>PayPal</strong><small>Continue securely in PayPal Sandbox</small></span><b>{paymentMethod === 'paypal' ? 'Selected' : 'Choose'}</b>
+              </button>
+            </div>
+
+            <footer>
+              <div><ShieldCheck size={17} /><span><strong>Verified fulfillment</strong><small>The workspace opens only after backend reconciliation succeeds.</small></span></div>
+              <button type="button" disabled={busyAction === 'advanced-unlock'} onClick={handleAdvancedUnlock}>
+                {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <Sparkles />}
+                {busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment'}
               </button>
             </footer>
           </section>

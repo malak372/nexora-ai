@@ -52,6 +52,15 @@ export class UpdateSystemSettingsDto {
   @Min(0.01)
   premiumAcceptancePrice?: number;
 
+
+
+  /** Direct-payment price for a NORMAL user's advanced publication outputs. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  normalPublicationAdvancedPrice?: number;
+
   /** Credits a PREMIUM user spends to unlock advanced publication outputs. */
   @IsOptional()
   @Type(() => Number)
