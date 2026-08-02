@@ -7,6 +7,7 @@ import {
 import { AuditService } from '../../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AdminPublicationModerationDto } from '../dto/admin-publication-moderation.dto';
+import { PublicationCacheService } from '../cache/publication-cache.service';
 
 /** Admin moderation operations for idea publications.
  *
@@ -18,7 +19,8 @@ export class AdminPublicationModerationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-  ) {}
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   async hide(
     adminId: string,
@@ -50,7 +52,7 @@ export class AdminPublicationModerationService {
     dto: AdminPublicationModerationDto,
   ) {
     const existing = await this.find(publicationId);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const publication = await tx.ideaPublication.update({
         where: { id: publicationId },
         data: {
@@ -78,6 +80,9 @@ export class AdminPublicationModerationService {
       );
       return { message: 'Publication archived successfully', publication };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   private async setHidden(
@@ -88,7 +93,7 @@ export class AdminPublicationModerationService {
     action: AuditAction,
   ) {
     const existing = await this.find(publicationId);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const publication = await tx.ideaPublication.update({
         where: { id: publicationId },
         data: {
@@ -121,6 +126,9 @@ export class AdminPublicationModerationService {
         publication,
       };
     });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   private async find(publicationId: string) {

@@ -1,12 +1,16 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 
 import { AccountStatus, GeneratedOutputStatus, Prisma } from '@prisma/client';
+import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
+import { userCacheKeys } from '../../../../users/cache/user-cache.keys';
 
 import {
   buildDateFilter,
@@ -56,7 +60,10 @@ import { GetUserIdeasQueryDto } from '../dto/get-user-ideas-query.dto';
  */
 @Injectable()
 export class UserIdeasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) { }
 
   /**
    * Reads one nested value from a persisted JSON snapshot without trusting its
@@ -115,8 +122,8 @@ export class UserIdeasService {
           : null;
     const evidenceSamples = Array.isArray(selected.evidenceSamples)
       ? selected.evidenceSamples.filter(
-          (sample): sample is string => typeof sample === 'string',
-        )
+        (sample): sample is string => typeof sample === 'string',
+      )
       : [];
     const raw = this.readSnapshotRecord(
       selected.raw as Prisma.JsonValue | undefined,
@@ -139,10 +146,10 @@ export class UserIdeasService {
     const confidence = !selectionEligible
       ? 'LOW'
       : reliability !== null &&
-          reliability >= 0.8 &&
-          hasRepeatedEvidence &&
-          hasStrongEvidenceQuality &&
-          hasStrongNlpConfidence
+        reliability >= 0.8 &&
+        hasRepeatedEvidence &&
+        hasStrongEvidenceQuality &&
+        hasStrongNlpConfidence
         ? 'HIGH'
         : 'MEDIUM';
 
@@ -170,8 +177,8 @@ export class UserIdeasService {
       localEvidenceAvailable,
       disqualificationReasons: Array.isArray(selected.disqualificationReasons)
         ? selected.disqualificationReasons.filter(
-            (reason): reason is string => typeof reason === 'string',
-          )
+          (reason): reason is string => typeof reason === 'string',
+        )
         : [],
       message: !selectionEligible
         ? 'The idea is a preliminary pilot hypothesis because no opportunity passed the strict evidence gate after bounded recovery.'
@@ -668,10 +675,10 @@ export class UserIdeasService {
         : [];
     const generationRun = idea.generationRun
       ? {
-          ...idea.generationRun,
-          benchmarkCandidates,
-          benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
-        }
+        ...idea.generationRun,
+        benchmarkCandidates,
+        benchmarkSummary: buildIdeaBenchmarkSummary(benchmarkCandidates),
+      }
       : null;
 
     const contextSnapshot = idea.generationRun?.contextSnapshot ?? null;
@@ -728,49 +735,49 @@ export class UserIdeasService {
        */
       collection: idea.collectionJob
         ? {
-            id: idea.collectionJob.id,
-            country: idea.collectionJob.country,
-            city: idea.collectionJob.city,
-            region: idea.collectionJob.region,
-            language: idea.collectionJob.language,
+          id: idea.collectionJob.id,
+          country: idea.collectionJob.country,
+          city: idea.collectionJob.city,
+          region: idea.collectionJob.region,
+          language: idea.collectionJob.language,
 
-            dataSources: idea.collectionJob.sources.map((source) => ({
-              key: source.dataSource.key,
+          dataSources: idea.collectionJob.sources.map((source) => ({
+            key: source.dataSource.key,
 
-              displayName: source.dataSource.displayName,
+            displayName: source.dataSource.displayName,
 
-              status: source.status,
+            status: source.status,
 
-              totalPosts: advancedAccess ? source.totalPosts : undefined,
+            totalPosts: advancedAccess ? source.totalPosts : undefined,
 
-              totalComments: advancedAccess ? source.totalComments : undefined,
-            })),
+            totalComments: advancedAccess ? source.totalComments : undefined,
+          })),
 
-            totalPosts: advancedAccess
-              ? idea.collectionJob.totalPosts
-              : undefined,
+          totalPosts: advancedAccess
+            ? idea.collectionJob.totalPosts
+            : undefined,
 
-            totalComments: advancedAccess
-              ? idea.collectionJob.totalComments
-              : undefined,
+          totalComments: advancedAccess
+            ? idea.collectionJob.totalComments
+            : undefined,
 
-            nlpAnalysis:
-              advancedAccess && idea.collectionJob.nlpAnalysis
-                ? {
-                    ...idea.collectionJob.nlpAnalysis,
-                    samplePosts: this.sanitizeEvidenceSamples(
-                      idea.collectionJob.nlpAnalysis.samplePosts,
-                      'POST',
-                    ),
-                    sampleComments: this.sanitizeEvidenceSamples(
-                      idea.collectionJob.nlpAnalysis.sampleComments,
-                      'COMMENT',
-                    ),
-                    confidence: baseNlpConfidence,
-                    confidenceSummary: nlpConfidenceSummary,
-                  }
-                : null,
-          }
+          nlpAnalysis:
+            advancedAccess && idea.collectionJob.nlpAnalysis
+              ? {
+                ...idea.collectionJob.nlpAnalysis,
+                samplePosts: this.sanitizeEvidenceSamples(
+                  idea.collectionJob.nlpAnalysis.samplePosts,
+                  'POST',
+                ),
+                sampleComments: this.sanitizeEvidenceSamples(
+                  idea.collectionJob.nlpAnalysis.sampleComments,
+                  'COMMENT',
+                ),
+                confidence: baseNlpConfidence,
+                confidenceSummary: nlpConfidenceSummary,
+              }
+              : null,
+        }
         : null,
 
       generatedOutputs: advancedAccess ? idea.generatedOutputs : [],
@@ -954,32 +961,32 @@ export class UserIdeasService {
 
           ...(query.dataSourceKey
             ? {
-                dataSource: {
-                  is: {
-                    key: query.dataSourceKey,
-                  },
+              dataSource: {
+                is: {
+                  key: query.dataSourceKey,
                 },
-              }
+              },
+            }
             : {}),
         },
       },
 
       ...(query.sentiment
         ? {
-            sentiment: {
-              equals: query.sentiment,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
+          sentiment: {
+            equals: query.sentiment,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
         : {}),
 
       ...(query.languageCode
         ? {
-            languageCode: {
-              equals: query.languageCode,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
+          languageCode: {
+            equals: query.languageCode,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
         : {}),
     };
 
@@ -1134,6 +1141,8 @@ export class UserIdeasService {
         });
       }
     });
+
+    await this.cacheManager.del(userCacheKeys.summary(userId));
 
     return {
       message: 'Idea deleted successfully.',

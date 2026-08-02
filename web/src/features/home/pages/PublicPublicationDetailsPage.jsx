@@ -27,7 +27,6 @@ import {
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { apiClient } from '../../../api/client';
 import { ROUTES } from '../../../constants/routes.constants';
 import {
     ensureGuestSession,
@@ -38,11 +37,10 @@ import {
     setGuestRating,
     setGuestVote,
 } from '../api/guest-publication-engagement.api';
-
-async function getPublicPublication(publicationId) {
-    const response = await apiClient.get(`/publications/${publicationId}`);
-    return response.data;
-}
+import {
+    getPublicPublication,
+    publicPublicationQueryKeys,
+} from '../api/publications.api';
 
 function formatDate(value) {
     if (!value) {
@@ -106,10 +104,12 @@ export default function PublicPublicationDetailsPage() {
     }, []);
 
     const { data, isLoading, isError } = useQuery({
-        queryKey: ['publications', 'public', publicationId],
+        queryKey: publicPublicationQueryKeys.details(publicationId),
         queryFn: () => getPublicPublication(publicationId),
         enabled: Boolean(publicationId),
-        staleTime: 2 * 60 * 1000,
+        staleTime: 3 * 60 * 1000,
+        gcTime: 15 * 60 * 1000,
+        refetchOnWindowFocus: false,
         retry: 1,
     });
 
@@ -134,7 +134,7 @@ export default function PublicPublicationDetailsPage() {
             setRating(value);
             setEngagementNotice(`Thank you! Your ${value}-star rating was saved.`);
             await queryClient.invalidateQueries({
-                queryKey: ['publications', 'public', publicationId],
+                queryKey: publicPublicationQueryKeys.all,
             });
         } catch (error) {
             setEngagementError(
@@ -156,7 +156,7 @@ export default function PublicPublicationDetailsPage() {
             setVote(value);
             setEngagementNotice('Thank you for your vote!');
             await queryClient.invalidateQueries({
-                queryKey: ['publications', 'public', publicationId],
+                queryKey: publicPublicationQueryKeys.all,
             });
         } catch (error) {
             setEngagementError(
@@ -186,7 +186,7 @@ export default function PublicPublicationDetailsPage() {
             setFeedback(comment);
             setEngagementNotice('Thank you! Your feedback was saved.');
             await queryClient.invalidateQueries({
-                queryKey: ['publications', 'public', publicationId],
+                queryKey: publicPublicationQueryKeys.all,
             });
         } catch (error) {
             setEngagementError(

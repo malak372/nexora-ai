@@ -26,12 +26,12 @@ import {
 import { Link } from 'react-router-dom';
 
 import { ROUTES, buildRoute } from '../../../constants/routes.constants';
-import { getFeaturedPublications } from '../api/publications.api';
+import {
+    getFeaturedPublications,
+    publicPublicationQueryKeys,
+} from '../api/publications.api';
 
-const FEATURED_PUBLICATIONS_QUERY_KEY = [
-    'publications',
-    'featured',
-];
+const FEATURED_PUBLICATIONS_LIMIT = 6;
 
 const IDEA_VARIANTS = [
     {
@@ -222,9 +222,16 @@ export default function FeaturedIdeasSection() {
         refetch,
         isFetching,
     } = useQuery({
-        queryKey: FEATURED_PUBLICATIONS_QUERY_KEY,
-        queryFn: () => getFeaturedPublications({ limit: 6 }),
-        staleTime: 2 * 60 * 1000,
+        queryKey: publicPublicationQueryKeys.featured(
+            FEATURED_PUBLICATIONS_LIMIT,
+        ),
+        queryFn: () =>
+            getFeaturedPublications({
+                limit: FEATURED_PUBLICATIONS_LIMIT,
+            }),
+        staleTime: 3 * 60 * 1000,
+        gcTime: 15 * 60 * 1000,
+        refetchOnWindowFocus: false,
         retry: 1,
     });
 

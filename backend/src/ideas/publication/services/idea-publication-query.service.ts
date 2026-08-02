@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { PublicationCacheService } from '../cache/publication-cache.service';
 
 import { GetAcceptedPublicationsQueryDto } from '../dto/get-accepted-publications-query.dto';
 import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
@@ -31,7 +32,10 @@ import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
  */
 @Injectable()
 export class IdeaPublicationQueryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly publicationCache: PublicationCacheService,
+  ) { }
 
   /**
    * Retrieves publications available to unauthenticated users.
@@ -43,7 +47,15 @@ export class IdeaPublicationQueryService {
    * @returns Paginated public publications.
    */
   async findPublic(query: GetPublicationsQueryDto) {
-    return this.findMany(
+    const cacheKey = await this.publicationCache.buildKey(
+      'public-list',
+      'guest',
+      query,
+    );
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.findMany(
       {
         status: IdeaPublicationStatus.PUBLISHED,
         isHidden: false,
@@ -51,6 +63,9 @@ export class IdeaPublicationQueryService {
       },
       query,
     );
+
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -78,56 +93,71 @@ export class IdeaPublicationQueryService {
     accountStatus: AccountStatus,
     query: GetPublicationsQueryDto,
   ) {
-    if (accountStatus === AccountStatus.PREMIUM) {
-      return this.findMany(
-        {
-          status: IdeaPublicationStatus.PUBLISHED,
-          isHidden: false,
-          publisherId: { not: userId },
-        },
-        query,
-        userId,
-      );
-    }
-
-    return this.findMany(
-      {
-        status: IdeaPublicationStatus.PUBLISHED,
-        isHidden: false,
-        publisherId: { not: userId },
-        OR: [
-          {
-            visibility: IdeaPublicationVisibility.PUBLIC,
-          },
-          {
-            visibility: IdeaPublicationVisibility.REGISTERED_USERS,
-          },
-          {
-            visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
-            audiences: {
-              some: {
-                OR: [
-                  {
-                    audienceType: 'specific-user',
-                    audienceValue: userId,
-                  },
-                  ...(userType
-                    ? [
-                        {
-                          audienceType: 'user-type',
-                          audienceValue: userType,
-                        },
-                      ]
-                    : []),
-                ],
-              },
-            },
-          },
-        ],
-      },
+    const identity = `${userId}:${userType ?? 'none'}:${accountStatus}`;
+    const cacheKey = await this.publicationCache.buildKey(
+      'discover-list',
+      identity,
       query,
-      userId,
     );
+
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    /*
+     * Premium users can discover every active published publication except
+     * their own. Normal users must additionally satisfy one of the supported
+     * visibility or selected-audience rules.
+     */
+    const where: Prisma.IdeaPublicationWhereInput =
+      accountStatus === AccountStatus.PREMIUM
+        ? {
+            status: IdeaPublicationStatus.PUBLISHED,
+            isHidden: false,
+            publisherId: { not: userId },
+          }
+        : {
+            status: IdeaPublicationStatus.PUBLISHED,
+            isHidden: false,
+            publisherId: { not: userId },
+            OR: [
+              {
+                visibility: IdeaPublicationVisibility.PUBLIC,
+              },
+              {
+                visibility: IdeaPublicationVisibility.REGISTERED_USERS,
+              },
+              {
+                visibility: IdeaPublicationVisibility.SELECTED_AUDIENCE,
+                audiences: {
+                  some: {
+                    OR: [
+                      {
+                        audienceType: 'specific-user',
+                        audienceValue: userId,
+                      },
+                      ...(userType
+                        ? [
+                            {
+                              audienceType: 'user-type',
+                              audienceValue: userType,
+                            },
+                          ]
+                        : []),
+                    ],
+                  },
+                },
+              },
+            ],
+          };
+
+    /*
+     * viewerUserId is passed to findMany so each card can include the current
+     * user's acceptance and advanced-access state without extra frontend calls.
+     */
+    const result = await this.findMany(where, query, userId);
+
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -175,27 +205,27 @@ export class IdeaPublicationQueryService {
       ...(query.visibility ? { visibility: query.visibility } : {}),
       ...(search
         ? {
-            OR: [
-              {
-                publicTitle: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+          OR: [
+            {
+              publicTitle: {
+                contains: search,
+                mode: 'insensitive',
               },
-              {
-                publicAbstract: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+            },
+            {
+              publicAbstract: {
+                contains: search,
+                mode: 'insensitive',
               },
-              {
-                publicProblem: {
-                  contains: search,
-                  mode: 'insensitive',
-                },
+            },
+            {
+              publicProblem: {
+                contains: search,
+                mode: 'insensitive',
               },
-            ],
-          }
+            },
+          ],
+        }
         : {}),
     };
 
@@ -203,23 +233,23 @@ export class IdeaPublicationQueryService {
       userId,
       ...(query.advancedUnlocked === true
         ? {
-            advancedUnlockedAt: {
-              not: null,
-            },
-          }
+          advancedUnlockedAt: {
+            not: null,
+          },
+        }
         : {}),
       ...(query.advancedUnlocked === false
         ? {
-            advancedUnlockedAt: null,
-          }
+          advancedUnlockedAt: null,
+        }
         : {}),
       ...(query.fromDate || query.toDate
         ? {
-            acceptedAt: {
-              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-              ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
-            },
-          }
+          acceptedAt: {
+            ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+            ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+          },
+        }
         : {}),
       publication: publicationWhere,
     };
@@ -278,12 +308,19 @@ export class IdeaPublicationQueryService {
    * @throws NotFoundException When no matching publication exists.
    */
   async findPublicById(publicationId: string) {
-    return this.findOneOrThrow({
+    const cacheKey = `publications:public-detail:${publicationId}`;
+    const cached = await this.publicationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const result = await this.findOneOrThrow({
       id: publicationId,
       status: IdeaPublicationStatus.PUBLISHED,
       isHidden: false,
       visibility: IdeaPublicationVisibility.PUBLIC,
     });
+
+    await this.publicationCache.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -313,15 +350,26 @@ export class IdeaPublicationQueryService {
     userType: UserType | null,
     accountStatus: AccountStatus,
   ) {
+    /*
+     * Owners and previous accepters keep access. Premium users may open any
+     * active published publication. Normal users must satisfy the publication
+     * visibility or selected-audience rules.
+     */
     const accessWhere: Prisma.IdeaPublicationWhereInput =
       accountStatus === AccountStatus.PREMIUM
         ? {
             id: publicationId,
             OR: [
-              { publisherId: userId },
+              {
+                publisherId: userId,
+              },
               {
                 isHidden: false,
-                acceptances: { some: { userId } },
+                acceptances: {
+                  some: {
+                    userId,
+                  },
+                },
               },
               {
                 status: IdeaPublicationStatus.PUBLISHED,
@@ -332,10 +380,16 @@ export class IdeaPublicationQueryService {
         : {
             id: publicationId,
             OR: [
-              { publisherId: userId },
+              {
+                publisherId: userId,
+              },
               {
                 isHidden: false,
-                acceptances: { some: { userId } },
+                acceptances: {
+                  some: {
+                    userId,
+                  },
+                },
               },
               {
                 status: IdeaPublicationStatus.PUBLISHED,
@@ -378,7 +432,9 @@ export class IdeaPublicationQueryService {
       select: {
         ...this.publicationSelect,
         acceptances: {
-          where: { userId },
+          where: {
+            userId,
+          },
           take: 1,
           select: {
             id: true,
@@ -396,17 +452,17 @@ export class IdeaPublicationQueryService {
 
     const acceptance = publication.acceptances[0] ?? null;
     const isOwner = publication.publisher.id === userId;
+
+    /*
+     * Access and availability are intentionally separate:
+     * - access means the viewer is allowed to read advanced outputs;
+     * - availability means the source idea actually has completed outputs.
+     *
+     * This prevents selling or displaying an empty advanced package.
+     */
     const advancedAccessGranted =
       isOwner || acceptance?.advancedUnlockedAt !== null;
 
-    /*
-     * Availability and access are intentionally separate:
-     * - availability means the source idea actually owns completed outputs;
-     * - access means this viewer is allowed to read those outputs.
-     *
-     * This prevents the UI from selling an empty advanced package for ideas
-     * that were generated without premium outputs.
-     */
     const advancedOutputsCount = await this.prisma.generatedOutput.count({
       where: {
         ideaId: publication.ideaId,
@@ -423,7 +479,14 @@ export class IdeaPublicationQueryService {
               ideaId: publication.ideaId,
               status: 'COMPLETED',
             },
-            orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
+            orderBy: [
+              {
+                sequence: 'asc',
+              },
+              {
+                createdAt: 'asc',
+              },
+            ],
             select: {
               id: true,
               outputKey: true,
@@ -478,35 +541,35 @@ export class IdeaPublicationQueryService {
         where,
         search
           ? {
-              OR: [
-                {
-                  publicTitle: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+            OR: [
+              {
+                publicTitle: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-                {
-                  publicAbstract: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+              },
+              {
+                publicAbstract: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-                {
-                  publicProblem: {
-                    contains: search,
-                    mode: 'insensitive',
-                  },
+              },
+              {
+                publicProblem: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
-              ],
-            }
+              },
+            ],
+          }
           : {},
         query.fromDate || query.toDate
           ? {
-              createdAt: {
-                ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-                ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
-              },
-            }
+            createdAt: {
+              ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+              ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+            },
+          }
           : {},
       ],
     };

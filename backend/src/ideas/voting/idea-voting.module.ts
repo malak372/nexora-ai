@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../../auth/auth.module';
+import { IdeaPublicationModule } from '../publication/idea-publication.module';
 
 import { PublicationVotesController } from './controllers/publication-votes.controller';
 import { GuestPublicationVotesController } from './controllers/guest-publication-votes.controller';
@@ -20,7 +21,7 @@ import { IdeaVotingService } from './services/idea-voting.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, IdeaPublicationModule],
 
   controllers: [PublicationVotesController, GuestPublicationVotesController],
 
