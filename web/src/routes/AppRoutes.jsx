@@ -9,6 +9,7 @@
  * The About, Domains, How It Works, and Contact content are sections
  * inside HomePage and therefore do not require separate routes.
  *
+ * @author Eman
  * @component
  * @returns {JSX.Element} The application route tree.
  */
@@ -27,6 +28,7 @@ import PublicPublicationDetailsPage from '../features/home/pages/PublicPublicati
 import NotFoundPage from '../pages/public/NotFoundPage';
 
 import { normalUserRoutes } from './normal-user.routes';
+import { premiumUserRoutes } from './premium-user.routes';
 
 export default function AppRoutes() {
     return (
@@ -67,6 +69,9 @@ export default function AppRoutes() {
 
             {/* Normal user pages */}
             {normalUserRoutes}
+
+            {/* Premium user pages */}
+            {premiumUserRoutes}
 
             {/* This route must always stay last */}
             <Route
