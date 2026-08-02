@@ -39,6 +39,7 @@ import {
   reportPublication,
 } from '../api/discoveriesApi';
 import { getStoredUser } from '../../../auth/shared/auth.storage';
+import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import '../styles/publication-detail.css';
 
 function parseList(value) {
@@ -109,6 +110,7 @@ export default function PublicationDetailPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [reportReason, setReportReason] = useState('MISLEADING');
   const [reportDetails, setReportDetails] = useState('');
+  const [paymentPricing, setPaymentPricing] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -165,9 +167,8 @@ export default function PublicationDetailPage() {
     }
   }, [publicationId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { getPaymentPricing().then(setPaymentPricing).catch(() => undefined); }, []);
 
   const accepted = Boolean(
     acceptance?.id || acceptance?.acceptedAt || acceptance?.hasAdvancedAccess,
@@ -467,7 +468,7 @@ export default function PublicationDetailPage() {
           <div className="publication-access-action">
             <div className="publication-access-action__price">
               <small>One-time protected access</small>
-              <strong>Open the complete opportunity</strong>
+              <strong>{paymentPricing ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}` : 'Open the complete opportunity'}</strong>
               <span><ShieldCheck size={15} /> Secure sandbox checkout</span>
             </div>
             <button type="button" className="accept-button" onClick={() => setPaymentOpen(true)}>

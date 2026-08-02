@@ -18,6 +18,7 @@ import IdeaWorkspacePage from '../features/normal-user/idea-workspace/pages/Idea
 import BusinessModelPage from '../features/normal-user/business-models/pages/BusinessModelPage';
 import DirectUnlockPage from '../features/normal-user/payments/pages/DirectUnlockPage';
 import DirectUnlockSuccessPage from '../features/normal-user/payments/pages/DirectUnlockSuccessPage';
+import PaymentResultPage from '../features/normal-user/payments/pages/PaymentResultPage';
 import PublishIdeaPage from '../features/normal-user/publication/pages/PublishIdeaPage';
 import ProfileSettingsPage from '../features/normal-user/profile/pages/ProfileSettingsPage';
 import CompliancePage from '../features/normal-user/compliance/pages/CompliancePage';
@@ -44,6 +45,7 @@ export const normalUserRoutes = (
         <Route path="ideas/:ideaId/business-model" element={<BusinessModelPage />} />
         <Route path="ideas/:ideaId/unlock" element={<DirectUnlockPage />} />
         <Route path="ideas/:ideaId/unlock/success" element={<DirectUnlockSuccessPage />} />
+        <Route path="payments/success" element={<PaymentResultPage />} />
         <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />
         <Route path="discover" element={<DiscoveriesPage />} />
         <Route path="discover/:publicationId" element={<PublicationDetailPage />} />

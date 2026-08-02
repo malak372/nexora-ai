@@ -25,10 +25,11 @@ import {
   motion,
   useReducedMotion,
 } from 'framer-motion';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
 import { createCreditsCheckout } from '../api/upgradeApi';
+import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import '../styles/upgrade.css';
 
 const QUICK_AMOUNTS = [1, 3, 5, 10];
@@ -98,6 +99,9 @@ export default function UpgradePage() {
   const [method, setMethod] = useState('card');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [pricing, setPricing] = useState(null);
+
+  useEffect(() => { let active=true; getPaymentPricing(credits).then((value)=>{if(active)setPricing(value)}).catch((e)=>{if(active)setError(e.message)}); return()=>{active=false}; }, [credits]);
 
   const totalLabel = useMemo(
     () =>
@@ -126,7 +130,7 @@ export default function UpgradePage() {
       const result = await createCreditsCheckout({
         creditsQuantity: Number(credits),
         paymentMethodKey: method,
-        successUrl: `${origin}/normal/credits?payment=success`,
+        successUrl: `${origin}/normal/payments/success`,
         cancelUrl: `${origin}/normal/upgrade?payment=cancelled`,
       });
 
@@ -461,7 +465,7 @@ export default function UpgradePage() {
             <small>
               {isAlreadyPremium
                 ? 'Your account is already Premium, so the activation fee is not charged again.'
-                : 'A $5 activation fee is currently added when a Normal account becomes Premium. This value is configurable and may change.'}
+                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is added once when this Normal account becomes Premium.` : 'Loading the current activation fee from Nexora settings…'}
             </small>
           </div>
         </div>
@@ -474,7 +478,7 @@ export default function UpgradePage() {
             </small>
           </div>
 
-          <strong>{totalLabel}</strong>
+          <strong>{pricing ? `${pricing.creditPurchaseTotal} ${pricing.currency}` : totalLabel}</strong>
         </div>
 
         {error ? (

@@ -1,0 +1,116 @@
+.payment-result-page {
+    position: fixed;
+    inset: 0;
+    z-index: 1600;
+    display: grid;
+    place-items: center;
+    padding: 22px;
+    background: radial-gradient(circle at 20% 10%, rgba(132, 95, 255, .35), transparent 32%), radial-gradient(circle at 85% 88%, rgba(68, 174, 255, .3), transparent 30%), rgba(17, 10, 47, .82);
+    backdrop-filter: blur(18px)
+}
+
+.payment-result-pop {
+    position: relative;
+    width: min(620px, 96vw);
+    overflow: hidden;
+    padding: 42px;
+    border: 1px solid rgba(255, 255, 255, .7);
+    border-radius: 34px;
+    background: linear-gradient(145deg, #fff, #f8f4ff 66%, #eef8ff);
+    box-shadow: 0 45px 140px rgba(9, 4, 35, .5);
+    text-align: center
+}
+
+.payment-result-pop:before {
+    content: '';
+    position: absolute;
+    inset: -40% 20% auto;
+    height: 210px;
+    background: radial-gradient(circle, rgba(111, 75, 235, .18), transparent 65%)
+}
+
+.payment-result-icon {
+    position: relative;
+    display: grid;
+    width: 88px;
+    height: 88px;
+    margin: 0 auto 18px;
+    place-items: center;
+    border-radius: 28px;
+    background: linear-gradient(135deg, #6547e9, #48a2e2);
+    box-shadow: 0 20px 44px rgba(77, 55, 196, .3);
+    color: #fff
+}
+
+.payment-result-icon svg {
+    width: 42px;
+    height: 42px
+}
+
+.payment-result-pop>span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #674de0;
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .13em
+}
+
+.payment-result-pop h1 {
+    margin: 15px 0 10px;
+    color: #21183d;
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.04
+}
+
+.payment-result-pop p {
+    margin: 0 auto;
+    color: #766f84;
+    line-height: 1.7;
+    max-width: 500px
+}
+
+.payment-result-facts {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 24px 0
+}
+
+.payment-result-facts b {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 14px;
+    border-radius: 14px;
+    background: #f0edff;
+    color: #5747c8
+}
+
+.payment-result-pop button {
+    min-height: 52px;
+    margin-top: 26px;
+    padding: 0 24px;
+    border: 0;
+    border-radius: 17px;
+    background: linear-gradient(110deg, #28185f, #6848df, #438fdc);
+    color: #fff;
+    font-weight: 900;
+    cursor: pointer
+}
+
+.payment-result-pop.is-error .payment-result-icon {
+    background: linear-gradient(135deg, #c43f60, #ee7b6e)
+}
+
+.payment-result-spin {
+    animation: paySpin 1s linear infinite
+}
+
+@keyframes paySpin {
+    to {
+        transform: rotate(360deg)
+    }
+}

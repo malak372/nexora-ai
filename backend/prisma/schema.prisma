@@ -170,40 +170,48 @@ model PasswordResetToken {
 }
 
 model SystemSetting {
-  id                            String   @id @default(uuid())
-  /// *
-  /// * Price of one credit.
-  /// * One credit allows one premium idea generation.
-  creditPrice                   Decimal  @map("credit_price") @db.Decimal(10, 2)
-  /// *
-  /// * Minimum number of purchased credits required
-  /// * to receive bonus credits.
-  bonusThreshold                Int      @default(0) @map("bonus_threshold")
-  /// *
-  /// * Number of bonus credits granted when the
-  /// * configured threshold is reached.
-  bonusCredits                  Int      @default(0) @map("bonus_credits")
-  updatedById                   String?  @map("updated_by")
-  updatedAt                     DateTime @updatedAt @map("updated_at")
-  ideaPromptTemplate            String?  @map("idea_prompt_template")
-  /// *
-  /// * Guarantees that only one global system-settings row exists.
-  key                           String   @unique @default("GLOBAL")
-  /// *
-  /// * Price paid directly to unlock advanced features
-  /// * for one previously generated free idea.
-  /// * This payment does not purchase or consume credits.
-  directUnlockPrice             Decimal  @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
-  /// *
-  /// * Activation fee charged when a NORMAL account transitions to Premium.
-  premiumActivationFee          Decimal  @default(5) @map("premium_activation_fee") @db.Decimal(10, 2)
-  /// *
-  /// * Credits consumed when a Premium user unlocks advanced outputs for an accepted publication.
-  publicationAdvancedCreditCost Int      @default(1) @map("publication_advanced_credit_cost")
-  /// *
-  /// * Fixed price paid by a normal registered user to accept a published idea and unlock all details.
-  publishedIdeaPrice            Decimal  @default(15) @map("published_idea_price") @db.Decimal(10, 2)
-  updatedBy                     User?    @relation("SettingsUpdatedBy", fields: [updatedById], references: [id])
+  id String @id @default(uuid())
+
+  /// Price of one credit.
+  /// One credit allows one premium idea generation.
+  creditPrice Decimal @map("credit_price") @db.Decimal(10, 2)
+
+  /// Minimum purchased credits required for bonus credits.
+  bonusThreshold Int @default(0) @map("bonus_threshold")
+
+  /// Bonus credits granted when the threshold is reached.
+  bonusCredits Int @default(0) @map("bonus_credits")
+
+  updatedById        String?  @map("updated_by")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ideaPromptTemplate String?  @map("idea_prompt_template")
+
+  /// Guarantees that only one global settings row exists.
+  key String @unique @default("GLOBAL")
+
+  /// Direct payment required to unlock advanced outputs
+  /// for one previously generated free idea.
+  directUnlockPrice Decimal @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
+
+  /// Additional fee charged when a NORMAL user becomes PREMIUM
+  /// through the first credit purchase.
+  premiumActivationFee Decimal @default(5) @map("premium_activation_fee") @db.Decimal(10, 2)
+
+  /// Credits required for a Premium user to unlock the
+  /// advanced details of an accepted publication.
+  publicationAdvancedCreditCost Int @default(1) @map("publication_advanced_credit_cost")
+
+  /// Legacy publication price retained temporarily
+  /// for backward compatibility.
+  publishedIdeaPrice Decimal @default(15) @map("published_idea_price") @db.Decimal(10, 2)
+
+  /// Price paid by a NORMAL user to accept a publication.
+  normalAcceptancePrice Decimal @default(15) @map("normal_acceptance_price") @db.Decimal(10, 2)
+
+  /// Price paid by a PREMIUM user to accept a publication.
+  premiumAcceptancePrice Decimal @default(5) @map("premium_acceptance_price") @db.Decimal(10, 2)
+
+  updatedBy User? @relation("SettingsUpdatedBy", fields: [updatedById], references: [id])
 
   @@map("system_settings")
 }

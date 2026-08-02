@@ -119,6 +119,15 @@ export class PaymentCheckoutService {
     private readonly paymentProcessingService: PaymentProcessingService,
   ) {}
 
+  /** Returns database-backed prices for the authenticated account. */
+  async getPaymentPricing(userId: string, creditsQuantity = 1) {
+    const [user, settings] = await Promise.all([this.ensureEligibleUser(userId), this.getSystemSettings()]);
+    const activationFee = user.accountStatus === AccountStatus.NORMAL ? settings.premiumActivationFee : new Prisma.Decimal(0);
+    const total = settings.creditPrice.mul(creditsQuantity).add(activationFee);
+    const acceptance = user.accountStatus === AccountStatus.PREMIUM ? settings.premiumAcceptancePrice : settings.normalAcceptancePrice;
+    return { currency: DEFAULT_PAYMENT_CURRENCY, accountStatus: user.accountStatus, creditsQuantity, creditPrice: settings.creditPrice.toFixed(2), premiumActivationFee: settings.premiumActivationFee.toFixed(2), activationFeeApplied: activationFee.toFixed(2), creditPurchaseTotal: total.toFixed(2), directUnlockPrice: settings.directUnlockPrice.toFixed(2), normalAcceptancePrice: settings.normalAcceptancePrice.toFixed(2), premiumAcceptancePrice: settings.premiumAcceptancePrice.toFixed(2), publicationAcceptancePrice: acceptance.toFixed(2), publicationAdvancedCreditCost: settings.publicationAdvancedCreditCost };
+  }
+
   /**
    * Creates a checkout session for purchasing generation credits.
    */
@@ -498,12 +507,6 @@ export class PaymentCheckoutService {
     dto: CreatePublicationAcceptanceDto,
   ): Promise<PaymentCheckoutResult> {
     const user = await this.ensureEligibleUser(userId);
-    if (user.accountStatus !== AccountStatus.NORMAL) {
-      throw new PaymentProcessingError(
-        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
-        'Premium users accept basic publication details without direct payment.',
-      );
-    }
 
     const [settings, publication, existing] = await Promise.all([
       this.getSystemSettings(),
@@ -544,7 +547,7 @@ export class PaymentCheckoutService {
       userId,
       ideaId: null,
       publicationId,
-      amount: settings.publishedIdeaPrice,
+      amount: user.accountStatus === AccountStatus.PREMIUM ? settings.premiumAcceptancePrice : settings.normalAcceptancePrice,
       currency: DEFAULT_PAYMENT_CURRENCY,
       paymentMethodKey,
       providerKey,
@@ -761,7 +764,7 @@ export class PaymentCheckoutService {
       paymentPurpose: payment.paymentPurpose,
       amount: payment.amount.toFixed(2),
       currency: payment.currency,
-      successUrl: options.successUrl,
+      successUrl: this.appendPaymentReturnParameters(options.successUrl, payment, options),
       cancelUrl: options.cancelUrl,
       ...(options.ideaId ? { ideaId: options.ideaId } : {}),
       ...(options.creditsQuantity !== undefined
@@ -770,6 +773,97 @@ export class PaymentCheckoutService {
       metadata,
     };
   }
+
+  /** Returns a trusted payment state owned by the authenticated user. */
+  async getPaymentState(userId: string, paymentId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        id: paymentId,
+        userId,
+      },
+      select: {
+        id: true,
+        status: true,
+        paymentPurpose: true,
+        amount: true,
+        currency: true,
+        ideaId: true,
+        publicationId: true,
+        activatesPremium: true,
+        failureReason: true,
+        paidAt: true,
+        providerKey: true,
+        providerSessionId: true,
+        user: {
+          select: {
+            accountStatus: true,
+            creditBalance: true,
+          },
+        },
+        idea: {
+          select: {
+            isUnlocked: true,
+            unlockMethod: true,
+          },
+        },
+        publicationAcceptance: {
+          select: {
+            id: true,
+            acceptedAt: true,
+            advancedUnlockedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.PAYMENT_NOT_FOUND,
+        'The requested payment was not found.',
+        {
+          details: {
+            paymentId,
+            userId,
+          },
+        },
+      );
+    }
+
+    return {
+      paymentId: payment.id,
+      status: payment.status,
+      paymentPurpose: payment.paymentPurpose,
+      amount: payment.amount.toFixed(2),
+      currency: payment.currency,
+      paidAt: payment.paidAt,
+      failureReason: payment.failureReason,
+      accountStatus: payment.user.accountStatus,
+      creditsBalance: payment.user.creditBalance,
+      premiumActivated:
+        payment.activatesPremium &&
+        payment.status === PaymentStatus.SUCCEEDED &&
+        payment.user.accountStatus === AccountStatus.PREMIUM,
+      ideaId: payment.ideaId,
+      ideaUnlocked: payment.idea?.isUnlocked ?? false,
+      unlockMethod: payment.idea?.unlockMethod ?? null,
+      publicationId: payment.publicationId,
+      publicationAccepted: Boolean(payment.publicationAcceptance),
+      acceptanceId: payment.publicationAcceptance?.id ?? null,
+      advancedPublicationAccess: Boolean(
+        payment.publicationAcceptance?.advancedUnlockedAt,
+      ),
+    };
+  }
+
+  /** Verifies the stored provider session server-to-server and fulfills it idempotently. */
+  async reconcilePayment(userId:string,paymentId:string){
+    const payment=await this.prisma.payment.findFirst({where:{id:paymentId,userId},select:{id:true,status:true,providerKey:true,providerSessionId:true}});
+    if(!payment) throw new PaymentProcessingError(PaymentErrorCode.PAYMENT_NOT_FOUND,'The requested payment was not found.',{details:{paymentId,userId}});
+    if(payment.status===PaymentStatus.PENDING && payment.providerSessionId){ const gateway=this.paymentGatewayFactory.getGateway(payment.providerKey); if(gateway.inspectPaymentSession){ const inspection=await gateway.inspectPaymentSession(payment.providerSessionId); if(inspection.state!=='OPEN') await this.paymentProcessingService.processConfirmation(inspection.confirmation); } }
+    return this.getPaymentState(userId,paymentId);
+  }
+
+  private appendPaymentReturnParameters(successUrl:string,payment:PendingPayment,options:{ideaId?:string;publicationId?:string}){ const url=new URL(successUrl); url.searchParams.set('paymentId',payment.id); url.searchParams.set('purpose',payment.paymentPurpose); if(options.ideaId) url.searchParams.set('ideaId',options.ideaId); if(options.publicationId) url.searchParams.set('publicationId',options.publicationId); return url.toString(); }
 
   /**
    * Validates the normalized checkout-session response.
@@ -989,6 +1083,9 @@ export class PaymentCheckoutService {
         directUnlockPrice: true,
         premiumActivationFee: true,
         publishedIdeaPrice: true,
+        normalAcceptancePrice: true,
+        premiumAcceptancePrice: true,
+        publicationAdvancedCreditCost: true,
         bonusThreshold: true,
         bonusCredits: true,
       },

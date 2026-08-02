@@ -38,6 +38,20 @@ export class UpdateSystemSettingsDto {
   @Min(0.01)
   publishedIdeaPrice?: number;
 
+  /** Fixed acceptance price for NORMAL accounts. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  normalAcceptancePrice?: number;
+
+  /** Fixed acceptance price for PREMIUM accounts. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  premiumAcceptancePrice?: number;
+
   /** Credits a PREMIUM user spends to unlock advanced publication outputs. */
   @IsOptional()
   @Type(() => Number)
