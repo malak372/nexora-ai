@@ -115,41 +115,49 @@ export default function PublicationDetailPage() {
     setErrorMessage('');
 
     try {
-      const results = await Promise.allSettled([
-        getDiscoveryById(publicationId),
-        getMyAcceptance(publicationId),
-        getMyRating(publicationId),
-        getMyVote(publicationId),
-        getMyFeedback(publicationId),
-      ]);
-
-      const publicationResult = results[0];
-      if (publicationResult.status === 'rejected') {
-        throw publicationResult.reason;
-      }
-
-      const publicationPayload = publicationResult.value;
+      // Load the publication first so disabled engagement features are never
+      // queried or rendered. This avoids unnecessary 403 responses and keeps
+      // the page visually clean when the publisher turns a feature off.
+      const publicationPayload = await getDiscoveryById(publicationId);
       const nextPublication = publicationPayload?.publication ?? publicationPayload;
       setPublication(nextPublication);
 
-      if (results[1].status === 'fulfilled') {
-        setAcceptance(extractAcceptance(results[1].value));
+      const engagementRequests = [getMyAcceptance(publicationId)];
+      const engagementKeys = ['acceptance'];
+
+      if (nextPublication.allowRatings !== false) {
+        engagementRequests.push(getMyRating(publicationId));
+        engagementKeys.push('rating');
       }
 
-      if (results[2].status === 'fulfilled') {
-        const payload = results[2].value;
-        setRatingValue(Number(payload?.rating?.value ?? payload?.value ?? 0));
+      if (nextPublication.allowVoting !== false) {
+        engagementRequests.push(getMyVote(publicationId));
+        engagementKeys.push('vote');
       }
 
-      if (results[3].status === 'fulfilled') {
-        const payload = results[3].value;
-        setVoteValue(payload?.vote?.value ?? payload?.value ?? '');
+      if (nextPublication.allowFeedback !== false) {
+        engagementRequests.push(getMyFeedback(publicationId));
+        engagementKeys.push('feedback');
       }
 
-      if (results[4].status === 'fulfilled') {
-        const payload = results[4].value;
-        setFeedbackValue(payload?.feedback?.comment ?? payload?.comment ?? '');
-      }
+      const engagementResults = await Promise.allSettled(engagementRequests);
+
+      engagementResults.forEach((result, index) => {
+        if (result.status !== 'fulfilled') return;
+
+        const key = engagementKeys[index];
+        const payload = result.value;
+
+        if (key === 'acceptance') {
+          setAcceptance(extractAcceptance(payload));
+        } else if (key === 'rating') {
+          setRatingValue(Number(payload?.rating?.value ?? payload?.value ?? 0));
+        } else if (key === 'vote') {
+          setVoteValue(payload?.vote?.value ?? payload?.value ?? '');
+        } else if (key === 'feedback') {
+          setFeedbackValue(payload?.feedback?.comment ?? payload?.comment ?? '');
+        }
+      });
     } catch (error) {
       setErrorMessage(error?.message || 'This discovery could not be opened.');
     } finally {
@@ -164,6 +172,26 @@ export default function PublicationDetailPage() {
   const accepted = Boolean(
     acceptance?.id || acceptance?.acceptedAt || acceptance?.hasAdvancedAccess,
   );
+
+  const ratingsEnabled = publication?.allowRatings !== false;
+  const votingEnabled = publication?.allowVoting !== false;
+  const feedbackEnabled = publication?.allowFeedback !== false;
+  const enabledEngagementCount = [
+    ratingsEnabled,
+    votingEnabled,
+    feedbackEnabled,
+  ].filter(Boolean).length;
+
+  const hasPublicEngagement = enabledEngagementCount > 0;
+
+  const engagementLayoutClass = [
+    'publication-engagement',
+    'publication-engagement--public',
+    `publication-engagement--count-${enabledEngagementCount}`,
+    feedbackEnabled ? 'publication-engagement--has-feedback' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   async function handleAccept() {
     setBusyAction('accept');
@@ -334,75 +362,77 @@ export default function PublicationDetailPage() {
               </button>
             ) : null}
           </div>
-          <div className="publication-detail-metrics">
-            <span><Star size={16} />{Number(publication.averageRating ?? 0).toFixed(1)} rating</span>
-            <span><ThumbsUp size={16} />{publication.upvotesCount ?? 0} upvotes</span>
-            <span><MessageCircleMore size={16} />{publication.feedbackCount ?? 0} feedback</span>
-          </div>
+          {hasPublicEngagement ? (
+            <div className="publication-detail-metrics">
+              {ratingsEnabled ? (
+                <span><Star size={16} />{Number(publication.averageRating ?? 0).toFixed(1)} rating</span>
+              ) : null}
+              {votingEnabled ? (
+                <span><ThumbsUp size={16} />{publication.upvotesCount ?? 0} upvotes</span>
+              ) : null}
+              {feedbackEnabled ? (
+                <span><MessageCircleMore size={16} />{publication.feedbackCount ?? 0} feedback</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </section>
 
-      <section className="publication-engagement publication-engagement--public">
-        <article>
-          <span className="publication-engagement__eyebrow">COMMUNITY SIGNAL</span>
-          <h2>Rate this opportunity</h2>
-          <p>You can rate the public concept before deciding whether to accept it.</p>
-          {publication.allowRatings === false ? (
-            <small>Ratings are disabled by the publisher.</small>
-          ) : (
-            <div className="rating-row">
-              {[1, 2, 3, 4, 5].map((value) => (
+      {hasPublicEngagement ? (
+        <section className={engagementLayoutClass}>
+          {ratingsEnabled ? (
+            <article className="publication-engagement-card publication-engagement-card--rating">
+              <span className="publication-engagement__eyebrow">COMMUNITY SIGNAL</span>
+              <h2>Rate this opportunity</h2>
+              <p>You can rate the public concept before deciding whether to accept it.</p>
+              <div className="rating-row">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={value <= rating ? 'active' : ''}
+                    disabled={busyAction === 'rating'}
+                    onClick={() => handleRating(value)}
+                    aria-label={`Rate ${value} out of 5`}
+                  >
+                    <Star size={22} />
+                  </button>
+                ))}
+              </div>
+            </article>
+          ) : null}
+
+          {votingEnabled ? (
+            <article className="publication-engagement-card publication-engagement-card--vote">
+              <span className="publication-engagement__eyebrow">YOUR SIGNAL</span>
+              <h2>Vote on the direction</h2>
+              <p>Upvote promising opportunities or flag weak directions.</p>
+              <div className="vote-row">
                 <button
                   type="button"
-                  key={value}
-                  className={value <= rating ? 'active' : ''}
-                  disabled={busyAction === 'rating'}
-                  onClick={() => handleRating(value)}
-                  aria-label={`Rate ${value} out of 5`}
+                  className={vote === 'UP' ? 'active' : ''}
+                  disabled={busyAction === 'vote'}
+                  onClick={() => handleVote('UP')}
                 >
-                  <Star size={22} />
+                  <ThumbsUp /> Upvote
                 </button>
-              ))}
-            </div>
-          )}
-        </article>
+                <button
+                  type="button"
+                  className={vote === 'DOWN' ? 'active' : ''}
+                  disabled={busyAction === 'vote'}
+                  onClick={() => handleVote('DOWN')}
+                >
+                  <ThumbsDown /> Downvote
+                </button>
+              </div>
+            </article>
+          ) : null}
 
-        <article>
-          <span className="publication-engagement__eyebrow">YOUR SIGNAL</span>
-          <h2>Vote on the direction</h2>
-          <p>Upvote promising opportunities or flag weak directions.</p>
-          {publication.allowVoting === false ? (
-            <small>Voting is disabled by the publisher.</small>
-          ) : (
-            <div className="vote-row">
-              <button
-                type="button"
-                className={vote === 'UP' ? 'active' : ''}
-                disabled={busyAction === 'vote'}
-                onClick={() => handleVote('UP')}
-              >
-                <ThumbsUp /> Upvote
-              </button>
-              <button
-                type="button"
-                className={vote === 'DOWN' ? 'active' : ''}
-                disabled={busyAction === 'vote'}
-                onClick={() => handleVote('DOWN')}
-              >
-                <ThumbsDown /> Downvote
-              </button>
-            </div>
-          )}
-        </article>
-
-        <form onSubmit={handleFeedback}>
-          <span className="publication-engagement__eyebrow">CONSTRUCTIVE REVIEW</span>
-          <h2>Written feedback</h2>
-          <p>Share useful feedback before or after acceptance.</p>
-          {publication.allowFeedback === false ? (
-            <small>Written feedback is disabled by the publisher.</small>
-          ) : (
-            <>
+          {feedbackEnabled ? (
+            <form className="publication-engagement-card publication-engagement-card--feedback" onSubmit={handleFeedback}>
+              <span className="publication-engagement__eyebrow">CONSTRUCTIVE REVIEW</span>
+              <h2>Written feedback</h2>
+              <p>Share useful feedback before or after acceptance.</p>
               <textarea
                 value={feedback}
                 maxLength={2000}
@@ -416,10 +446,10 @@ export default function PublicationDetailPage() {
                 {busyAction === 'feedback' ? <LoaderCircle className="publication-spin" /> : <MessageCircleMore />}
                 Save feedback
               </button>
-            </>
-          )}
-        </form>
-      </section>
+            </form>
+          ) : null}
+        </section>
+      ) : null}
 
       {!accepted ? (
         <section className="publication-access-card">
@@ -427,10 +457,10 @@ export default function PublicationDetailPage() {
             <span><LockKeyhole size={16} /> PROTECTED OPPORTUNITY BRIEF</span>
             <h2>Accept the opportunity to open the complete public brief.</h2>
             <p>
-              The title, abstract, rating, voting, and feedback stay available
-              before acceptance. Accepting opens the public problem, objectives,
-              and target users. Normal accounts continue to sandbox checkout;
-              Premium accounts accept the basic brief immediately.
+              The public title and abstract stay available before acceptance.
+              Accepting opens the public problem, objectives, and target users.
+              Normal accounts continue to secure sandbox checkout; Premium
+              accounts accept the basic brief immediately.
             </p>
           </div>
 
@@ -488,7 +518,7 @@ export default function PublicationDetailPage() {
           <section className="publication-payment-modal__panel">
             <header>
               <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
-              <div><span>PROTECTED ACCESS</span><h2>Unlock the complete opportunity brief</h2><p>Choose a secure test payment method. Your public rating, voting, and feedback remain available either way.</p></div>
+              <div><span>PROTECTED ACCESS</span><h2>Unlock the complete opportunity brief</h2><p>Choose a secure test payment method. Access is granted only after verified provider confirmation.</p></div>
               <button type="button" className="publication-payment-modal__close" onClick={() => setPaymentOpen(false)}><X size={20} /></button>
             </header>
             <div className="publication-payment-modal__benefits">

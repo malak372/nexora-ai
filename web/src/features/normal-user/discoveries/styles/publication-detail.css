@@ -215,6 +215,74 @@
     inset 0 1px 0 rgba(255,255,255,.95);
 }
 
+/*
+ * Adaptive engagement layout.
+ *
+ * The grid responds to the number of publisher-enabled engagement tools so
+ * the remaining cards always fill the available space instead of leaving an
+ * empty third column.
+ */
+.publication-engagement--count-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.publication-engagement--count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.publication-engagement--count-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.publication-engagement--count-1 .publication-engagement-card {
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+}
+
+.publication-engagement--count-2 .publication-engagement-card {
+  min-height: 100%;
+}
+
+/* Give written feedback more room when it shares the row with one tool. */
+.publication-engagement--count-2.publication-engagement--has-feedback {
+  grid-template-columns: minmax(320px, .82fr) minmax(440px, 1.18fr);
+}
+
+/* A single feedback form becomes a refined wide composition. */
+.publication-engagement--count-1 .publication-engagement-card--feedback {
+  display: grid;
+  grid-template-columns: minmax(220px, .55fr) minmax(420px, 1.45fr);
+  column-gap: 28px;
+  align-items: start;
+}
+
+.publication-engagement--count-1 .publication-engagement-card--feedback
+  .publication-engagement__eyebrow,
+.publication-engagement--count-1 .publication-engagement-card--feedback h2,
+.publication-engagement--count-1 .publication-engagement-card--feedback p {
+  grid-column: 1;
+}
+
+.publication-engagement--count-1 .publication-engagement-card--feedback textarea,
+.publication-engagement--count-1 .publication-engagement-card--feedback > button {
+  grid-column: 2;
+}
+
+.publication-engagement--count-1 .publication-engagement-card--feedback textarea {
+  grid-row: 1 / span 4;
+  min-height: 150px;
+  margin-top: 0;
+}
+
+.publication-engagement--count-1 .publication-engagement-card--feedback > button {
+  justify-self: start;
+}
+
+.publication-engagement-card {
+  min-width: 0;
+}
+
 .publication-engagement article,
 .publication-engagement form {
   position: relative;
@@ -929,8 +997,18 @@
   }
 
   .publication-engagement,
+  .publication-engagement--count-2.publication-engagement--has-feedback,
   .publication-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .publication-engagement--count-1 .publication-engagement-card--feedback {
+    display: block;
+  }
+
+  .publication-engagement--count-1 .publication-engagement-card--feedback textarea {
+    min-height: 130px;
+    margin-top: 12px;
   }
 
   .publication-access-card {

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -45,6 +45,7 @@ import type {
  */
 @Injectable()
 export class NlpAnalysisStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(NlpAnalysisStage.name);
   /**
    * Stable pipeline-stage key.
    */
@@ -92,12 +93,13 @@ export class NlpAnalysisStage implements IdeaGenerationStage {
 
     const normalizedNlp = this.normalizeNlpContext(context.nlp);
 
-    if (normalizedNlp.totalTextsAnalyzed < MIN_COLLECTED_TEXTS_FOR_GENERATION) {
-      throw new BadRequestException({
-        code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_COLLECTED_DATA,
+    const sparseEvidence =
+      normalizedNlp.totalTextsAnalyzed < MIN_COLLECTED_TEXTS_FOR_GENERATION;
 
-        message: `At least ${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record is required before prompt building.`,
-      });
+    if (sparseEvidence) {
+      this.logger.warn(
+        `Run ${context.runId} continues with sparse NLP evidence: ${normalizedNlp.totalTextsAnalyzed}/${MIN_COLLECTED_TEXTS_FOR_GENERATION} analyzed text record(s).`,
+      );
     }
 
     const updatedContext: IdeaGenerationContext = {
@@ -108,7 +110,9 @@ export class NlpAnalysisStage implements IdeaGenerationStage {
     return {
       context: updatedContext,
 
-      resultPreview: `NLP analysis verified successfully for ${normalizedNlp.totalTextsAnalyzed} text record(s).`,
+      resultPreview: sparseEvidence
+        ? `NLP evidence is sparse (${normalizedNlp.totalTextsAnalyzed} text record(s)); prompt building will continue with an explicit low-evidence signal.`
+        : `NLP analysis verified successfully for ${normalizedNlp.totalTextsAnalyzed} text record(s).`,
 
       metadata: {
         stageRole: 'VALIDATION_CHECKPOINT',
@@ -126,6 +130,9 @@ export class NlpAnalysisStage implements IdeaGenerationStage {
         aiUsed: normalizedNlp.aiUsed,
 
         confidence: normalizedNlp.confidence,
+        sparseEvidence,
+        minimumRecommendedTexts: MIN_COLLECTED_TEXTS_FOR_GENERATION,
+        generationContinued: true,
       },
     };
   }

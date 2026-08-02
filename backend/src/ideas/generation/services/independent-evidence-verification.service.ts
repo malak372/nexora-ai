@@ -11,8 +11,9 @@ import type {
   RankedIdeaOpportunity,
 } from '../types/idea-opportunity-ranking.type';
 
-const MIN_VERIFIED_RECURRENCE_COUNT = 1;
-const MAX_VERIFIED_EVIDENCE_SAMPLES = 5;
+const MIN_VERIFIED_RECURRENCE_COUNT = 3;
+const MIN_VERIFIED_SOURCE_COUNT = 2;
+const MAX_VERIFIED_EVIDENCE_SAMPLES = 8;
 const MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE = 0.25;
 
 const SPECIFICATION_PATTERNS: readonly RegExp[] = [
@@ -170,19 +171,35 @@ export class IndependentEvidenceVerificationService {
     ).slice(0, MAX_VERIFIED_EVIDENCE_SAMPLES);
 
     const verifiedCount = qualifyingEvidence.length;
+    const verifiedSourceCount = new Set(
+      qualifyingEvidence.map((evidence) => evidence.sourceKey),
+    ).size;
     const verifiedEvidenceScore = Math.min(verifiedCount / 5, 1);
-    const recurrenceEligible = verifiedCount >= MIN_VERIFIED_RECURRENCE_COUNT;
+    const recurrenceEligible =
+      verifiedCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
+      verifiedSourceCount >= MIN_VERIFIED_SOURCE_COUNT;
 
     const disqualificationReasons = new Set(candidate.disqualificationReasons);
 
     if (!recurrenceEligible) {
-      disqualificationReasons.add(
+      disqualificationReasons.delete(
         'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+      );
+      disqualificationReasons.delete(
+        'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
+      );
+      disqualificationReasons.add(
+        verifiedCount < MIN_VERIFIED_RECURRENCE_COUNT
+          ? 'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE'
+          : 'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
       );
     } else {
       disqualificationReasons.delete('INSUFFICIENT_EVIDENCE_COUNT');
       disqualificationReasons.delete(
         'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+      );
+      disqualificationReasons.delete(
+        'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
       );
     }
 
@@ -196,10 +213,10 @@ export class IndependentEvidenceVerificationService {
     );
 
     /*
-     * A single independently verified review is allowed by product policy.
-     * Re-enable only a narrow pilot candidate when the sole remaining failure
-     * is the strict aggregate score and the verified evidence is reliable.
-     * Other scientific-validity failures remain disqualifying.
+     * A candidate that passes the recurrence and source-diversity gate may be
+     * restored when the sole remaining failure is the aggregate score and the
+     * verified evidence is reliable. Scientific-validity failures remain
+     * blocking and can never be bypassed by this pilot fallback.
      */
     const nonScoreReasons = [...disqualificationReasons].filter(
       (reason) => reason !== 'LOW_OPPORTUNITY_SCORE',
@@ -226,9 +243,7 @@ export class IndependentEvidenceVerificationService {
       disqualificationReasons: [...disqualificationReasons],
       independentEvidence: resolvedEvidence,
       verifiedIndependentEvidenceCount: verifiedCount,
-      verifiedIndependentSourceCount: new Set(
-        qualifyingEvidence.map((evidence) => evidence.sourceKey),
-      ).size,
+      verifiedIndependentSourceCount: verifiedSourceCount,
     };
   }
 
@@ -427,7 +442,7 @@ export class IndependentEvidenceVerificationService {
   private buildSelectionReason(selected: RankedIdeaOpportunity): string {
     return selected.selectionEligible
       ? `Selected after verifying ${selected.verifiedIndependentEvidenceCount ?? 0} independent community reports across ${selected.verifiedIndependentSourceCount ?? 0} source(s).`
-      : `No opportunity currently has at least ${MIN_VERIFIED_RECURRENCE_COUNT} independently verified community reports.`;
+      : `No opportunity currently has at least ${MIN_VERIFIED_RECURRENCE_COUNT} independently verified community reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`;
   }
 
   private mergeWarnings(
@@ -438,7 +453,7 @@ export class IndependentEvidenceVerificationService {
 
     if (!selected.selectionEligible) {
       warnings.add(
-        'The strongest signal did not contain at least one independently verified user complaint, feature request, or review.',
+        `The strongest signal did not contain at least ${MIN_VERIFIED_RECURRENCE_COUNT} independently verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`,
       );
     }
 

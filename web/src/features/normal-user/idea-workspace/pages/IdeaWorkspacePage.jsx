@@ -30,6 +30,20 @@ const humanizeKey = (value) =>
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase());
 
+/**
+ * Converts backend generation enums into user-facing product labels.
+ * The API value remains unchanged so permissions and business logic are safe.
+ */
+const formatGenerationType = (generationType) => {
+  const labels = {
+    NORMAL_FREE: 'Free generation',
+    PREMIUM_CREDIT: 'Premium generation',
+    GUEST: 'Guest generation',
+  };
+
+  return labels[generationType] || humanizeKey(generationType) || 'AI generated';
+};
+
 function WorkspaceContent({ value }) {
   if (Array.isArray(value)) {
     return (
@@ -348,7 +362,7 @@ export default function IdeaWorkspacePage() {
           </span>
           <div>
             <span>Generation type</span>
-            <strong>{idea.generationType || 'AI generated'}</strong>
+            <strong>{formatGenerationType(idea.generationType)}</strong>
           </div>
         </motion.article>
 

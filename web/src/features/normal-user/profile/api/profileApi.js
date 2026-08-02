@@ -117,3 +117,16 @@ export async function removeProfileAvatar() {
     throw new Error(getApiErrorMessage(error, 'The profile image could not be removed.'));
   }
 }
+
+
+/** Permanently closes the current user's account after password confirmation. */
+export async function deleteMyAccount(currentPassword) {
+  try {
+    const response = await normalUserApi.delete('/users/account', {
+      data: { currentPassword },
+    });
+    return extractApiData(response);
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Your account could not be deleted.'));
+  }
+}

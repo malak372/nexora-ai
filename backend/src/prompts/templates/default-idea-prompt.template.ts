@@ -50,9 +50,12 @@ GENERATION RULES
 16. The title must communicate distinctive product value.
 17. The problem statement must identify affected users, the observed failure pattern, consequences, and supported deployment context. State a root cause only when directly supported; otherwise label it as a plausible technical cause or hypothesis to validate.
 18. Objectives must describe concrete capabilities or measurable outcomes and cover the core workflow, differentiator, reliability needs, and one evaluation outcome.
+18A. Present related actions as one unified end-to-end user workflow. Do not write "implement one primary user workflow" and then list several disconnected actions; name the job and show how the actions complete it.
+18B. Use polished, natural English throughout. Prefer "common navigation friction" or "recurring navigation friction" and reject malformed wording such as "commonly navigation friction". Remove duplicated qualifiers, awkward noun stacks, and literal-translation phrasing.
 19. Unsupported numbers must be written as measurable pilot targets, evaluation thresholds, or controlled-test objectives—not achieved results or guarantees.
 20. A percentage objective must use exactly one complete grammatical form: "Target at least a X percent change during a defined pilot period, measured by ..." or "Evaluate whether the pilot can achieve at least a X percent change during a defined period, measured by ...". Include the metric, baseline plan, measurement method, and evaluation period. Never combine the openings or write "target an evaluate".
 21. Target users must be concrete roles, teams, organizations, or customer groups.
+21A. For civic-access, public-service, directory, accessibility, or assisted-navigation products, consider older adults, residents with limited digital literacy, people with accessibility needs, caregivers, and frontline staff. Include only groups directly served by the proposed workflow and never claim unsupported local prevalence.
 22. When allowed, distinguish end users, operational users, and the likely buyer or adopting organization.
 23. The differentiator must be a concrete mechanism, workflow advantage, technical capability, data advantage, or measurable operational benefit.
 24. The idea must explain why users would adopt it instead of keeping the current workflow, requesting a minor feature, or using a general-purpose alternative.

@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 
 import { AiModelsModule } from '../../ai-models/ai-models.module';
 import { AiModule } from '../../ai/ai.module';
+import { AlertsModule } from '../../alerts/alerts.module';
 import { CreditsModule } from '../../credits/credits.module';
 import { DataCollectionModule } from '../../data-collection/data-collection.module';
 import { NlpModule } from '../../nlp/nlp.module';
@@ -84,6 +85,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     PrismaModule,
     AiModelsModule,
     AiModule,
+    AlertsModule,
     NlpModule,
     PromptsModule,
     DataCollectionModule,
