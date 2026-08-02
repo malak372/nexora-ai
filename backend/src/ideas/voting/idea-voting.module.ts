@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../prisma/prisma.module';
+import { AuthModule } from '../../auth/auth.module';
 
 import { PublicationVotesController } from './controllers/publication-votes.controller';
+import { GuestPublicationVotesController } from './controllers/guest-publication-votes.controller';
 import { IdeaVotingService } from './services/idea-voting.service';
 
 /**
@@ -18,12 +20,12 @@ import { IdeaVotingService } from './services/idea-voting.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
 
-  controllers: [PublicationVotesController],
+  controllers: [PublicationVotesController, GuestPublicationVotesController],
 
   providers: [IdeaVotingService],
 
   exports: [IdeaVotingService],
 })
-export class IdeaVotingModule {}
+export class IdeaVotingModule { }

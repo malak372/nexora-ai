@@ -34,7 +34,7 @@ import { IdeaVotingService } from '../services/idea-voting.service';
 @Controller('users/publications')
 @UseGuards(JwtAuthGuard)
 export class PublicationVotesController {
-  constructor(private readonly votingService: IdeaVotingService) {}
+  constructor(private readonly votingService: IdeaVotingService) { }
 
   /**
    * Creates or updates the authenticated user's vote on a publication.
@@ -59,7 +59,7 @@ export class PublicationVotesController {
     publicationId: string,
     @Body() dto: VotePublicationDto,
   ) {
-    return this.votingService.upsertVote(user.id, publicationId, dto);
+    return this.votingService.upsertVote({ userId: user.id }, publicationId, dto);
   }
 
   /**
@@ -78,7 +78,7 @@ export class PublicationVotesController {
     @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
   ) {
-    return this.votingService.getMyVote(user.id, publicationId);
+    return this.votingService.getMyVote({ userId: user.id }, publicationId);
   }
 
   /**
@@ -97,6 +97,6 @@ export class PublicationVotesController {
     @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
     publicationId: string,
   ) {
-    return this.votingService.deleteVote(user.id, publicationId);
+    return this.votingService.deleteVote({ userId: user.id }, publicationId);
   }
 }

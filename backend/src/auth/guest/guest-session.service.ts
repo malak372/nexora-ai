@@ -20,7 +20,7 @@
  * @author Eman
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -149,6 +149,32 @@ export class GuestSessionService {
                 expiresAt: true,
             },
         });
+    }
+
+    /**
+     * Resolves and validates a guest session from its secure cookie token.
+     *
+     * @param sessionToken Raw token read from the HTTP-only cookie.
+     * @returns Minimal valid guest-session identity.
+     * @throws UnauthorizedException When the cookie is missing, unknown, or expired.
+     */
+    async requireValidSession(sessionToken?: string): Promise<{ id: string }> {
+        const normalizedToken = sessionToken?.trim();
+
+        if (!normalizedToken) {
+            throw new UnauthorizedException('A valid guest session is required.');
+        }
+
+        const session = await this.prisma.guestSession.findUnique({
+            where: { sessionToken: normalizedToken },
+            select: { id: true, expiresAt: true },
+        });
+
+        if (!session || this.isExpired(session.expiresAt, new Date())) {
+            throw new UnauthorizedException('The guest session is missing or expired.');
+        }
+
+        return { id: session.id };
     }
 
     /**
