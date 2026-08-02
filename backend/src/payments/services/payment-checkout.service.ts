@@ -27,6 +27,7 @@ import { PaymentGatewayFactory } from '../gateways/payment-gateway.factory';
 
 import type { CreatePaymentSessionInput } from '../types/create-payment-session.type';
 import type { PaymentSessionResult } from '../types/payment-session-result.type';
+import { PaymentProcessingService } from './payment-processing.service';
 
 /**
  * Supported user-facing payment-method keys.
@@ -115,6 +116,7 @@ export class PaymentCheckoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
+    private readonly paymentProcessingService: PaymentProcessingService,
   ) {}
 
   /**
@@ -203,10 +205,18 @@ export class PaymentCheckoutService {
   ): Promise<PaymentCheckoutResult> {
     await this.ensureEligibleUser(userId);
 
+    const paymentMethodKey = this.normalizePaymentMethodKey(
+      dto.paymentMethodKey,
+    );
+    const providerKey = this.resolveProviderKey(paymentMethodKey);
+
     const [settings, idea, existingPendingPayment] = await Promise.all([
       this.getSystemSettings(),
+
       this.prisma.idea.findUnique({
-        where: { id: dto.ideaId },
+        where: {
+          id: dto.ideaId,
+        },
         select: {
           id: true,
           userId: true,
@@ -214,6 +224,7 @@ export class PaymentCheckoutService {
           isUnlocked: true,
         },
       }),
+
       this.prisma.payment.findFirst({
         where: {
           userId,
@@ -221,7 +232,19 @@ export class PaymentCheckoutService {
           paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
           status: PaymentStatus.PENDING,
         },
-        select: { id: true },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        select: {
+          id: true,
+          amount: true,
+          currency: true,
+          paymentMethodKey: true,
+          providerKey: true,
+          paymentPurpose: true,
+          providerSessionId: true,
+          createdAt: true,
+        },
       }),
     ]);
 
@@ -244,11 +267,13 @@ export class PaymentCheckoutService {
     }
 
     if (idea.isUnlocked) {
-      throw new PaymentProcessingError(
-        PaymentErrorCode.IDEA_ALREADY_UNLOCKED,
-        'The selected idea has already been unlocked.',
-        { details: { ideaId: idea.id } },
-      );
+      return this.buildCompletedDirectUnlockResult({
+        paymentId: existingPendingPayment?.id ?? 'already-unlocked',
+        paymentMethodKey,
+        providerKey,
+        amount: settings.directUnlockPrice,
+        successUrl: dto.successUrl,
+      });
     }
 
     if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
@@ -265,22 +290,20 @@ export class PaymentCheckoutService {
     }
 
     if (existingPendingPayment) {
-      throw new PaymentProcessingError(
-        PaymentErrorCode.PAYMENT_SESSION_CREATION_FAILED,
-        'A pending direct-unlock payment already exists for the selected idea.',
+      const recovered = await this.reconcilePendingDirectUnlockPayment(
+        existingPendingPayment,
         {
-          details: {
-            ideaId: idea.id,
-            paymentId: existingPendingPayment.id,
-          },
+          ideaId: idea.id,
+          paymentMethodKey,
+          providerKey,
+          successUrl: dto.successUrl,
         },
       );
-    }
 
-    const paymentMethodKey = this.normalizePaymentMethodKey(
-      dto.paymentMethodKey,
-    );
-    const providerKey = this.resolveProviderKey(paymentMethodKey);
+      if (recovered) {
+        return recovered;
+      }
+    }
 
     const payment = await this.createPendingPayment({
       userId,
@@ -305,6 +328,166 @@ export class PaymentCheckoutService {
       successUrl: dto.successUrl,
       cancelUrl: dto.cancelUrl,
       ideaId: idea.id,
+    });
+  }
+
+  /**
+   * Reconciles a pending direct-unlock payment directly with its provider.
+   *
+   * This fixes the case where Stripe received the money but the local webhook
+   * was unavailable or delayed. Successful provider state is sent through the
+   * normal PaymentProcessingService, which performs the same idempotent
+   * fulfillment used by verified webhooks.
+   */
+  private async reconcilePendingDirectUnlockPayment(
+    payment: {
+      readonly id: string;
+      readonly amount: Prisma.Decimal;
+      readonly currency: string;
+      readonly paymentMethodKey: string;
+      readonly providerKey: string;
+      readonly paymentPurpose: PaymentPurpose;
+      readonly providerSessionId: string | null;
+      readonly createdAt: Date;
+    },
+    input: {
+      readonly ideaId: string;
+      readonly paymentMethodKey: string;
+      readonly providerKey: string;
+      readonly successUrl: string;
+    },
+  ): Promise<PaymentCheckoutResult | null> {
+    if (!payment.providerSessionId?.trim()) {
+      await this.markPendingCheckoutAsFailed(
+        payment.id,
+        'The previous checkout did not contain a provider session identifier.',
+      );
+      return null;
+    }
+
+    if (
+      payment.paymentMethodKey !== input.paymentMethodKey ||
+      payment.providerKey !== input.providerKey
+    ) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.PAYMENT_SESSION_CREATION_FAILED,
+        'A checkout is already active with another payment method.',
+        {
+          details: {
+            ideaId: input.ideaId,
+            paymentId: payment.id,
+            activePaymentMethodKey: payment.paymentMethodKey,
+          },
+        },
+      );
+    }
+
+    const gateway = this.paymentGatewayFactory.getGateway(payment.providerKey);
+
+    if (!gateway.inspectPaymentSession) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.PAYMENT_SESSION_CREATION_FAILED,
+        'The active payment provider cannot reconcile the existing checkout session.',
+        {
+          details: {
+            ideaId: input.ideaId,
+            paymentId: payment.id,
+            providerKey: payment.providerKey,
+          },
+        },
+      );
+    }
+
+    const inspection = await gateway.inspectPaymentSession(
+      payment.providerSessionId,
+    );
+
+    if (inspection.state === 'OPEN') {
+      return {
+        paymentId: payment.id,
+        paymentPurpose: payment.paymentPurpose,
+        paymentMethodKey: payment.paymentMethodKey,
+        providerKey: payment.providerKey,
+        status: PaymentStatus.PENDING,
+        amount: payment.amount.toFixed(2),
+        currency: payment.currency,
+        checkoutUrl: inspection.checkoutUrl,
+        providerSessionId: payment.providerSessionId,
+        ...(inspection.expiresAt
+          ? { expiresAt: inspection.expiresAt }
+          : {}),
+      };
+    }
+
+    const processingResult =
+      await this.paymentProcessingService.processConfirmation(
+        inspection.confirmation,
+      );
+
+    if (inspection.state === 'SUCCEEDED') {
+      return this.buildCompletedDirectUnlockResult({
+        paymentId: payment.id,
+        paymentMethodKey: payment.paymentMethodKey,
+        providerKey: payment.providerKey,
+        amount: payment.amount,
+        successUrl: input.successUrl,
+        providerSessionId: payment.providerSessionId,
+      });
+    }
+
+    if (processingResult.status === PaymentStatus.FAILED) {
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Returns a completed checkout response that works with the existing
+   * frontend redirect behavior. The success URL is returned only after the
+   * provider session was retrieved server-to-server and fulfillment completed.
+   */
+  private buildCompletedDirectUnlockResult(input: {
+    readonly paymentId: string;
+    readonly paymentMethodKey: string;
+    readonly providerKey: string;
+    readonly amount: Prisma.Decimal;
+    readonly successUrl: string;
+    readonly providerSessionId?: string;
+  }): PaymentCheckoutResult {
+    return {
+      paymentId: input.paymentId,
+      paymentPurpose: PaymentPurpose.DIRECT_UNLOCK,
+      paymentMethodKey: input.paymentMethodKey,
+      providerKey: input.providerKey,
+      status: PaymentStatus.SUCCEEDED,
+      amount: input.amount.toFixed(2),
+      currency: DEFAULT_PAYMENT_CURRENCY,
+      checkoutUrl: input.successUrl,
+      providerSessionId:
+        input.providerSessionId ?? `completed:${input.paymentId}`,
+    };
+  }
+
+  /**
+   * Marks an unusable pending checkout as failed so a clean provider session
+   * may be created. The conditional update avoids overwriting a webhook result
+   * that completed concurrently.
+   */
+  private async markPendingCheckoutAsFailed(
+    paymentId: string,
+    failureReason: string,
+  ): Promise<void> {
+    await this.prisma.payment.updateMany({
+      where: {
+        id: paymentId,
+        status: PaymentStatus.PENDING,
+      },
+      data: {
+        status: PaymentStatus.FAILED,
+        failedAt: new Date(),
+        failureReason,
+      },
     });
   }
 
