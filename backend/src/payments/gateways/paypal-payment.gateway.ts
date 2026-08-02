@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { PaymentStatus } from '@prisma/client';
+import { PaymentPurpose, PaymentStatus } from '@prisma/client';
 
 import { PaymentErrorCode } from '../errors/payment-error-code.enum';
 import { PaymentProcessingError } from '../errors/payment-processing.error';
@@ -758,9 +758,27 @@ export class PayPalPaymentGateway
    * Builds the checkout description.
    */
   private buildDescription(input: CreatePaymentSessionInput): string {
-    return input.creditsQuantity
-      ? `${input.creditsQuantity} Nexora AI generation credit(s).`
-      : 'Unlock advanced features for one Nexora AI idea.';
+    switch (input.paymentPurpose) {
+      case PaymentPurpose.BUY_CREDITS:
+        return `${input.creditsQuantity ?? 0} Nexora AI generation credit(s).`;
+
+      case PaymentPurpose.DIRECT_UNLOCK:
+        return 'Unlock advanced outputs for one Nexora AI project idea.';
+
+      case PaymentPurpose.ACCEPT_PUBLICATION:
+        return 'Open the complete protected opportunity brief and add it to the accepted ideas library.';
+
+      default:
+        throw new PaymentProcessingError(
+          PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+          'The PayPal payment purpose is not supported.',
+          {
+            details: {
+              paymentPurpose: input.paymentPurpose,
+            },
+          },
+        );
+    }
   }
 
   /**

@@ -92,10 +92,10 @@ export class IdeaEvidenceRecoveryService {
   ] as const;
 
   /** Recovery focuses on high-yield end-user sources instead of every source. */
-  private readonly maximumRecoverySources = 5;
+  private readonly maximumRecoverySources = 3;
 
   /** Keeps provider queries bounded and ensures the highest-value terms run first. */
-  private readonly maximumRecoveryKeywords = 24;
+  private readonly maximumRecoveryKeywords = 10;
 
   constructor(
     private readonly configService: ConfigService,
@@ -790,16 +790,16 @@ export class IdeaEvidenceRecoveryService {
     return {
       maxFetchedPosts: this.readPositiveConfig(
         'RECOVERY_MAX_FETCHED_POSTS',
-        40,
+        24,
       ),
-      maxSavedPosts: this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 20),
+      maxSavedPosts: this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 14),
       maxFetchedComments: this.readPositiveConfig(
         'RECOVERY_MAX_FETCHED_COMMENTS',
-        50,
+        30,
       ),
       maxSavedComments: this.readPositiveConfig(
         'RECOVERY_MAX_SAVED_COMMENTS',
-        25,
+        18,
       ),
     };
   }

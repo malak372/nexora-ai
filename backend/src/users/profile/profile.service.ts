@@ -16,6 +16,7 @@ import {
   getLocalAvatarFilename,
 } from '../utils/avatar-file-filter.util';
 import { UserValidationService } from '../validation/validation.service';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { RequestEmailChangeDto } from './dto/request-email-change.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailChangeDto } from './dto/verify-email-change.dto';
@@ -595,6 +596,89 @@ export class UserProfileService {
     });
 
     return this.buildProfile(updatedUser);
+  }
+
+  /**
+   * Soft-deletes a user account without breaking idea, publication, or payment
+   * relations that must remain available for data integrity and auditing.
+   */
+  async deleteAccount(userId: string, dto: DeleteAccountDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        passwordHash: true,
+        avatarUrl: true,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User was not found or is already deleted.');
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    const deletedAt = new Date();
+    const anonymizedEmail = `deleted+${user.id}@deleted.nexora.local`;
+    const unusablePasswordHash = await bcrypt.hash(randomUUID(), 12);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: deletedAt },
+      });
+
+      await tx.userDevice.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: deletedAt },
+      });
+
+      await tx.emailVerificationToken.deleteMany({ where: { userId } });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.emailChangeRequest.deleteMany({ where: { userId } });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          fullName: 'Deleted user',
+          email: anonymizedEmail,
+          passwordHash: unusablePasswordHash,
+          avatarUrl: null,
+          isActive: false,
+          isVerified: false,
+          deletedAt,
+          lockedUntil: null,
+        },
+      });
+    });
+
+    await this.clearProfileCaches(userId);
+    await this.safelyDeleteLocalAvatar(user.avatarUrl);
+
+    await this.auditService.createLog({
+      actorId: userId,
+      action: AuditAction.USER_UPDATE_PROFILE,
+      targetType: AuditTargetType.USER,
+      targetId: userId,
+      oldValue: { isActive: true },
+      newValue: { accountDeleted: true, deletedAt: deletedAt.toISOString() },
+    });
+
+    this.logger.log(`User account soft-deleted: ${userId}`);
+
+    return {
+      success: true,
+      message: 'Your account has been deleted successfully.',
+    };
   }
 
   async getFreeGenerations(userId: string) {

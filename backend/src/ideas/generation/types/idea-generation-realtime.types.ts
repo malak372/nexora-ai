@@ -30,6 +30,7 @@ export type IdeaGenerationRealtimeSnapshot = {
   readonly errorCode: string | null;
   readonly errorMessage: string | null;
   readonly completedAt: Date | null;
+  readonly updatedAt: Date;
   readonly stages: readonly IdeaGenerationRealtimeStagePayload[];
 };
 

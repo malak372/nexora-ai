@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { IdeaGenerationRunStatus } from '@prisma/client';
 
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
@@ -38,11 +39,18 @@ export class IdeaGenerationRunsController {
 
   /** Returns the newest queued/running/retrying/paused run for the user. */
   @Get('active')
+  @SkipThrottle()
   getMyActiveGenerationRun(@CurrentUser() user: AuthenticatedUser) {
     return this.queries.findActiveUserRun(user.id);
   }
 
+  /**
+   * Live progress is primarily delivered over WebSocket. This read endpoint is
+   * an idempotent recovery/snapshot endpoint, so excluding it from the global
+   * throttle prevents fallback polling from failing with HTTP 429.
+   */
   @Get(':runId')
+  @SkipThrottle()
   getMyGenerationRun(
     @CurrentUser() user: AuthenticatedUser,
     @Param('runId', new ParseUUIDPipe({ version: '4' })) runId: string,

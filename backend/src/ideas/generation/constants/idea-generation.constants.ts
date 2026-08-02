@@ -190,7 +190,7 @@ export const MIN_REUSABLE_COLLECTION_POSTS = 5;
  * Reuse is deliberately stricter than the absolute generation minimum so a
  * tiny historical test job cannot keep supplying weak data to new runs.
  */
-export const MIN_REUSABLE_COLLECTION_TEXTS = 20;
+export const MIN_REUSABLE_COLLECTION_TEXTS = 30;
 
 /**
  * Minimum total number of collected texts required before
@@ -200,7 +200,7 @@ export const MIN_REUSABLE_COLLECTION_TEXTS = 20;
  * - Social posts.
  * - Social comments.
  */
-export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 8;
+export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 30;
 
 /**
  * Maximum number of previously generated idea titles loaded
@@ -479,23 +479,44 @@ export const COLLECTION_JOB_RESOLUTION_TYPES = {
 export type CollectionJobResolutionType =
   (typeof COLLECTION_JOB_RESOLUTION_TYPES)[keyof typeof COLLECTION_JOB_RESOLUTION_TYPES];
 
-/** Maximum targeted evidence-recovery attempts per generation run. */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 4;
+/**
+ * Maximum targeted evidence-recovery attempts per generation run.
+ *
+ * One focused recovery pass is enough to test whether the initial signal can be
+ * strengthened. Repeating broad collection four times caused several minutes
+ * of duplicate network work without guaranteeing additional independent
+ * evidence.
+ */
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
-export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.2;
+export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.6;
 
 /** Minimum number of representative samples required before skipping recovery. */
-export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 1;
+export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 3;
+
+/** Minimum number of independent source families required before skipping recovery. */
+export const MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY = 2;
 
 /** Minimum deterministic quality score required for an AI idea candidate. */
-export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
+export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 60;
+
+/**
+ * Minimum score that may be promoted as a usable online fallback after the
+ * same model has completed its bounded quality revision.
+ *
+ * The strict 70-point threshold remains the preferred quality gate. This
+ * lower bound prevents structurally valid online candidates from being
+ * discarded solely for soft wording issues such as WEAK_PROBLEM or
+ * GENERIC_OBJECTIVES. Safety and factual-integrity issues remain blocking.
+ */
+export const IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE = 40;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */
-export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 2;
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -510,13 +531,13 @@ export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
  * Number of highest-ranked opportunities forwarded to the multi-model
  * idea-generation benchmark.
  */
-export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 2;
+export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 1;
 
 /**
  * Maximum ranked opportunities available to the benchmark after the initial
  * fast path is exhausted. Opportunities four and five are fallback-only.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 3;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 2;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -532,11 +553,12 @@ export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
  * Maximum number of startup candidates that one benchmark run may produce.
  *
  * Worst-case fallback configuration:
- * - Two opportunities are attempted on the fast path.
- * - One additional opportunity is attempted only when the initial batch
+ * - One opportunity is attempted on the fast path.
+ * - One additional opportunity is attempted only when the first opportunity
  *   does not produce enough accepted candidates.
- * - Two AI models are executed per opportunity.
- * - Up to six generated candidates are created before bounded fallbacks.
+ * - Three AI models are executed concurrently per opportunity.
+ * - Up to six generated candidates are created across the bounded fast and
+ *   fallback paths.
  */
 export const IDEA_BENCHMARK_MAX_CANDIDATES =
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT * IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;

@@ -28,7 +28,8 @@ export type IdeaQualityIssue = {
     | 'WEAK_BUDGET_ESTIMATION'
     | 'OVER_SCOPED_MVP'
     | 'UNSUPPORTED_MARKET_GENERALIZATION'
-    | 'INACCURATE_NLP_SUMMARY';
+    | 'INACCURATE_NLP_SUMMARY'
+    | 'AWKWARD_PRODUCT_COPY';
   readonly message: string;
   readonly penalty: number;
 };
@@ -247,6 +248,7 @@ export class IdeaQualityEvaluatorService {
     const hasMalformedMeasurableTarget = this.hasMalformedMeasurableTarget(
       idea.objectives,
     );
+    const hasAwkwardProductCopy = this.hasAwkwardProductCopy(output);
 
     if (genericTitle) {
       issues.push({
@@ -331,6 +333,15 @@ export class IdeaQualityEvaluatorService {
         message:
           'Remove malformed percentage wording. Prefer a non-numeric pilot objective that establishes a baseline first, identifies the metric and measurement method, and then evaluates directional improvement during a defined period.',
         penalty: 20,
+      });
+    }
+
+    if (hasAwkwardProductCopy) {
+      issues.push({
+        code: 'AWKWARD_PRODUCT_COPY',
+        message:
+          'Rewrite awkward product copy in natural, publication-ready English. Use “a unified primary user workflow” when related actions form one end-to-end job, and use “common navigation friction” or “recurring navigation friction” instead of malformed wording such as “commonly navigation friction”.',
+        penalty: 8,
       });
     }
 
@@ -514,6 +525,34 @@ export class IdeaQualityEvaluatorService {
     return evaluation.issues
       .map((issue, index) => `${index + 1}. ${issue.message}`)
       .join('\n');
+  }
+
+  /**
+   * Detects a small set of recurring copy-quality defects that are grammatically
+   * valid enough to pass JSON/schema validation but make the generated idea
+   * sound machine-written or internally inconsistent.
+   */
+  private hasAwkwardProductCopy(output: ParsedIdeaAiOutput): boolean {
+    const idea = output.coreIdea;
+    const text = this.normalize(
+      [
+        idea.title,
+        idea.problemStatement,
+        ...idea.objectives,
+        ...idea.targetUsers,
+        idea.limitedAbstract ?? '',
+        idea.partialAbstract ?? '',
+        idea.fullAbstract ?? '',
+      ].join(' '),
+    );
+
+    return (
+      /commonly\s+navigation\s+friction/iu.test(text) ||
+      /implement\s+one\s+primary\s+user\s+workflow/iu.test(text) ||
+      /one\s+primary\s+workflow\s+(?:featuring|including|covering)\s+(?:[^,.]+,\s*){2,}/iu.test(
+        text,
+      )
+    );
   }
 
   /**

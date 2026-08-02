@@ -387,6 +387,48 @@ export class PaymentCheckoutService {
   /**
    * Creates the internal PENDING payment record.
    */
+  /**
+   * Validates purpose-specific payment fields before Prisma reaches the
+   * database constraint. This provides a readable application error for
+   * future regressions while PostgreSQL remains the final integrity guard.
+   */
+  private validatePendingPaymentPurpose(input: {
+    readonly ideaId: string | null;
+    readonly publicationId: string | null;
+    readonly paymentPurpose: PaymentPurpose;
+    readonly creditsAmount: number;
+    readonly bonusCreditsAmount: number;
+    readonly activatesPremium: boolean;
+  }): void {
+    const isCreditPurchase =
+      input.paymentPurpose === PaymentPurpose.BUY_CREDITS &&
+      input.ideaId === null &&
+      input.publicationId === null &&
+      input.creditsAmount > 0;
+
+    const isDirectUnlock =
+      input.paymentPurpose === PaymentPurpose.DIRECT_UNLOCK &&
+      input.ideaId !== null &&
+      input.publicationId === null &&
+      input.creditsAmount === 0 &&
+      input.bonusCreditsAmount === 0;
+
+    const isPublicationAcceptance =
+      input.paymentPurpose === PaymentPurpose.ACCEPT_PUBLICATION &&
+      input.ideaId === null &&
+      input.publicationId !== null &&
+      input.creditsAmount === 0 &&
+      input.bonusCreditsAmount === 0 &&
+      input.activatesPremium === false;
+
+    if (!isCreditPurchase && !isDirectUnlock && !isPublicationAcceptance) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+        'Payment fields are inconsistent with the selected payment purpose.',
+      );
+    }
+  }
+
   private createPendingPayment(input: {
     readonly userId: string;
     readonly ideaId: string | null;
@@ -406,6 +448,8 @@ export class PaymentCheckoutService {
     readonly acceptanceRegion: string | null;
     readonly idempotencyKey?: string;
   }): Promise<PendingPayment> {
+    this.validatePendingPaymentPurpose(input);
+
     return this.prisma.payment.create({
       data: {
         userId: input.userId,

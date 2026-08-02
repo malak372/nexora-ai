@@ -82,7 +82,6 @@ const FORM_STEPS = [
  *   city: string,
  *   region: string,
  *   language: string,
- *   radiusKm: number,
  *   forceRefresh: boolean
  * }}
  */
@@ -93,7 +92,6 @@ const INITIAL_DRAFT = {
     city: '',
     region: '',
     language: 'ANY',
-    radiusKm: 25,
     forceRefresh: false,
 };
 
@@ -362,7 +360,6 @@ export default function GuestGenerateIdeaPage() {
                     }
                     : {}),
 
-                radiusKm: Number(draft.radiusKm),
                 language: draft.language,
                 forceRefresh: draft.forceRefresh,
             });

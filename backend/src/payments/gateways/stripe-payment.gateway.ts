@@ -506,6 +506,9 @@ export class StripePaymentGateway implements PaymentGateway {
       case PaymentPurpose.DIRECT_UNLOCK:
         return 'Nexora AI Idea Unlock';
 
+      case PaymentPurpose.ACCEPT_PUBLICATION:
+        return 'Nexora AI Protected Opportunity Access';
+
       default:
         throw new PaymentProcessingError(
           PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
@@ -520,14 +523,32 @@ export class StripePaymentGateway implements PaymentGateway {
   }
 
   /**
-   * Returns a safe product description for Stripe Checkout.
+   * Returns a safe and purpose-specific product description for Stripe
+   * Checkout. Keeping this mapping explicit prevents one payment purpose from
+   * being presented as another product in the hosted checkout page.
    */
   private getProductDescription(input: CreatePaymentSessionInput): string {
-    if (input.paymentPurpose === PaymentPurpose.BUY_CREDITS) {
-      return `${input.creditsQuantity ?? 0} premium idea-generation credit(s).`;
-    }
+    switch (input.paymentPurpose) {
+      case PaymentPurpose.BUY_CREDITS:
+        return `${input.creditsQuantity ?? 0} premium idea-generation credit(s).`;
 
-    return 'Unlock advanced features for one Nexora AI project idea.';
+      case PaymentPurpose.DIRECT_UNLOCK:
+        return 'Unlock advanced outputs for one Nexora AI project idea.';
+
+      case PaymentPurpose.ACCEPT_PUBLICATION:
+        return 'Open the complete protected opportunity brief and add it to the accepted ideas library.';
+
+      default:
+        throw new PaymentProcessingError(
+          PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+          'The Stripe payment purpose is not supported.',
+          {
+            details: {
+              paymentPurpose: input.paymentPurpose,
+            },
+          },
+        );
+    }
   }
 
   /**

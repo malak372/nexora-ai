@@ -4,6 +4,7 @@
  * @author Malak
  */
 import {
+  AlertTriangle,
   Camera,
   CheckCircle2,
   MailCheck,
@@ -12,17 +13,20 @@ import {
   LoaderCircle,
   Save,
   ShieldCheck,
+  Trash2,
   UserRound,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 
-import { getStoredUser, updateStoredUser } from '../../../auth/shared/auth.storage';
+import { clearAuthSession, getStoredUser, updateStoredUser } from '../../../auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../../../utils/mediaUrl';
 import {
   changeMyPassword,
+  deleteMyAccount,
   getMyProfile,
   removeProfileAvatar,
   cancelEmailChange,
@@ -206,6 +210,7 @@ function EmailVerificationDialog({
 
 export default function ProfileSettingsPage() {
   const shouldReduceMotion = useReducedMotion();
+  const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [profile, setProfile] = useState(getStoredUser() || {});
   const [fullName, setFullName] = useState(getStoredUser()?.fullName || '');
@@ -220,6 +225,9 @@ export default function ProfileSettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -547,8 +555,107 @@ export default function ProfileSettingsPage() {
         </form>
       </motion.div>
 
+
+
+      <motion.section
+        className="profile-settings-danger"
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.2 }}
+        transition={{ duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="profile-settings-danger__icon"><Trash2 size={22} /></div>
+        <div className="profile-settings-danger__copy">
+          <span>Danger zone</span>
+          <h2>Delete your Nexora account</h2>
+          <p>
+            This closes your account, signs you out everywhere, and removes your personal
+            profile information. Existing project records are preserved anonymously for data integrity.
+          </p>
+        </div>
+        <button type="button" onClick={() => { setError(''); setDeleteDialogOpen(true); }}>
+          <Trash2 size={17} /> Delete account
+        </button>
+      </motion.section>
+
       {notice ? <p className="profile-settings__notice"><CheckCircle2 size={17} /> {notice}</p> : null}
       {error ? <p className="profile-settings__error">{error}</p> : null}
+
+
+
+      {deleteDialogOpen ? createPortal(
+        <motion.div
+          className="delete-account-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <button
+            type="button"
+            className="delete-account-dialog__backdrop"
+            aria-label="Close delete account dialog"
+            onClick={() => !deletingAccount && setDeleteDialogOpen(false)}
+          />
+          <motion.form
+            className="delete-account-dialog__card"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 28, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              try {
+                setDeletingAccount(true);
+                setError('');
+                await deleteMyAccount(deletePassword);
+                clearAuthSession();
+                navigate('/login', { replace: true, state: { accountDeleted: true } });
+              } catch (requestError) {
+                setError(requestError.message);
+              } finally {
+                setDeletingAccount(false);
+              }
+            }}
+          >
+            <button
+              type="button"
+              className="delete-account-dialog__close"
+              aria-label="Close"
+              disabled={deletingAccount}
+              onClick={() => setDeleteDialogOpen(false)}
+            ><X size={18} /></button>
+            <div className="delete-account-dialog__icon"><AlertTriangle size={26} /></div>
+            <span>Final confirmation</span>
+            <h2 id="delete-account-title">Delete your account?</h2>
+            <p>This action cannot be undone. Enter your current password to confirm.</p>
+            <label>
+              Current password
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)}
+                placeholder="Enter your current password"
+                minLength={6}
+                required
+                autoFocus
+              />
+            </label>
+            {error ? <p className="delete-account-dialog__error">{error}</p> : null}
+            <div className="delete-account-dialog__actions">
+              <button type="button" disabled={deletingAccount} onClick={() => setDeleteDialogOpen(false)}>
+                Keep my account
+              </button>
+              <button type="submit" className="is-danger" disabled={deletingAccount || deletePassword.length < 6}>
+                {deletingAccount ? <LoaderCircle className="profile-settings__spin" size={17} /> : <Trash2 size={17} />}
+                {deletingAccount ? 'Deleting...' : 'Delete permanently'}
+              </button>
+            </div>
+          </motion.form>
+        </motion.div>,
+        document.body,
+      ) : null}
 
       {selectedFile ? (
         <AvatarCropDialog

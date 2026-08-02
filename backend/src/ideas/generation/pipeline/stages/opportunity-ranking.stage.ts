@@ -8,6 +8,7 @@ import {
   MAX_EVIDENCE_RECOVERY_ATTEMPTS,
   MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
   MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY,
+  MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY,
 } from '../../constants/idea-generation.constants';
 import {
   findIdeaGenerationStageDefinition,
@@ -148,18 +149,31 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         newEvidenceSampleCount: recovery.newEvidenceSampleCount,
         recoveryOutcome: recovery.recoveryOutcome,
       });
+
+      /*
+       * Stop immediately when a focused recovery pass contributes no new
+       * corpus evidence. Additional passes would repeat the same cached or
+       * low-yield searches, add latency, and increase provider rate-limit risk
+       * without improving the ranking.
+       */
+      if (!contributedEvidence) {
+        break;
+      }
     }
 
-    if (
-      !ranking ||
-      !this.hasEligibleOpportunity(ranking) ||
-      this.requiresEvidenceRecovery(ranking)
-    ) {
-      return this.buildNoResultResult(
-        workingContext,
-        ranking,
-        recoveryMetadata,
-      );
+    /*
+     * Product policy: a completed generation request must always continue to
+     * core idea generation. Strict evidence thresholds still trigger one
+     * focused recovery pass, but they no longer convert a valid run into a
+     * successful "no idea" outcome.
+     *
+     * When strict recurrence is unavailable, the strongest ranked signal is
+     * retained as a controlled preliminary-pilot fallback. Downstream prompt
+     * and benchmark services already qualify sparse-evidence claims, prohibit
+     * market-wide assertions, and require validation as part of the pilot.
+     */
+    if (!ranking) {
+      ranking = this.buildEmergencyFallbackRanking(workingContext);
     }
 
     const aggregatedRecoveryMetadata = recoveryMetadata.length
@@ -643,6 +657,88 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     );
   }
 
+  /**
+   * Builds a last-resort, auditable pilot opportunity when NLP completed but
+   * normalization produced no rankable candidate. This prevents a user-facing
+   * "completed without an idea" result while keeping every claim explicitly
+   * preliminary and tied to the requested domain.
+   */
+  private buildEmergencyFallbackRanking(
+    context: IdeaGenerationContext,
+  ): IdeaOpportunityRanking {
+    const domainName = context.domainName?.trim() || 'Selected domain';
+    const communityOpportunity = context.communityAiAnalysis?.opportunities?.[0];
+    const title =
+      communityOpportunity?.title?.trim() ||
+      `${domainName} Workflow Improvement Pilot`;
+    const problem =
+      communityOpportunity?.problem?.trim() ||
+      `Users in the ${domainName.toLowerCase()} domain experience fragmented workflows, limited access, or reliability friction that requires focused pilot validation.`;
+    const need =
+      communityOpportunity?.unmetNeed?.trim() ||
+      `A focused, user-centered software workflow that addresses the strongest observed ${domainName.toLowerCase()} friction and validates it during an initial pilot.`;
+    const evidenceSamples = (communityOpportunity?.evidenceSamples ?? [])
+      .filter((sample): sample is string =>
+        typeof sample === 'string' && sample.trim().length > 0,
+      )
+      .slice(0, 5);
+
+    const selected: IdeaOpportunityRanking['selected'] = {
+      rank: 1,
+      title,
+      problem,
+      need,
+      solutionArea: communityOpportunity?.solutionArea?.trim() || null,
+      evidenceType: 'OPPORTUNITY',
+      sourceIndex: 0,
+      frequency: Math.max(1, communityOpportunity?.frequency ?? 1),
+      severity: communityOpportunity?.severity ?? 'MEDIUM',
+      evidenceSamples,
+      frequencyScore: 0.25,
+      severityScore: 0.6,
+      evidenceScore: evidenceSamples.length > 0 ? 0.2 : 0.1,
+      evidenceReliabilityScore: evidenceSamples.length > 0 ? 0.5 : 0.42,
+      weakEvidencePenalty: evidenceSamples.length > 0 ? 0.08 : 0.12,
+      specificityScore: 0.62,
+      feasibilityScore: 0.78,
+      localRelevanceScore: 0.25,
+      noveltyScore: 0.58,
+      businessValueScore: 0.55,
+      marketGapScore: 0.5,
+      competitionScore: 0.5,
+      technicalRiskScore: 0.4,
+      supportScore: evidenceSamples.length > 0 ? 0.5 : 0.38,
+      nlpConfidenceScore: context.nlp?.confidence ?? 0.45,
+      baseScore: 0.5,
+      confidencePenalty: 0.08,
+      finalScore: 0.42,
+      selectionEligible: false,
+      disqualificationReasons: ['CONTROLLED_PRELIMINARY_PILOT_FALLBACK'],
+      verifiedIndependentEvidenceCount: 0,
+      verifiedIndependentSourceCount: 0,
+      independentEvidence: [],
+      raw: {
+        source: 'CONTROLLED_PRELIMINARY_PILOT_FALLBACK',
+        title,
+        problem,
+        need,
+        evidenceSamples,
+      },
+    };
+
+    return {
+      selected,
+      alternatives: [],
+      evaluatedCount: 1,
+      evidenceCoverage: evidenceSamples.length > 0 ? 1 : 0,
+      selectionReason:
+        'No strictly rankable opportunity remained after focused recovery, so the strongest domain-aligned signal was retained as a controlled preliminary pilot.',
+      qualityWarnings: [
+        'This is a controlled preliminary-pilot fallback. Claims must remain conservative and validation must be included in the first pilot milestone.',
+      ],
+    };
+  }
+
   private hasEligibleOpportunity(ranking: IdeaOpportunityRanking): boolean {
     return [ranking.selected, ...ranking.alternatives].some(
       (opportunity) => opportunity.selectionEligible,
@@ -659,7 +755,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     return (
       selected.evidenceScore < MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY ||
       selected.evidenceSamples.length <
-        MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY
+        MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY ||
+      (selected.verifiedIndependentSourceCount ?? 0) <
+        MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY
     );
   }
 
@@ -692,9 +790,11 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     return {
       context: updatedContext,
-      resultPreview: recoveryApplied
-        ? `Targeted evidence recovery succeeded; ranked ${ranking.evaluatedCount} candidate(s) and selected eligible opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}.`
-        : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected eligible opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`,
+      resultPreview: ranking.selected.selectionEligible
+        ? recoveryApplied
+          ? `Targeted evidence recovery completed; ranked ${ranking.evaluatedCount} candidate(s) and selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}.`
+          : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`
+        : `Selected the strongest evidence-backed opportunity "${ranking.selected.title}" as a controlled preliminary pilot after focused recovery. Generation will continue with conservative, explicitly qualified claims.`,
       metadata: {
         selectedTitle: ranking.selected.title,
         selectedScore: ranking.selected.finalScore,
