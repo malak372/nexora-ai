@@ -11,6 +11,7 @@
  */
 
 import {
+    ArrowLeft,
     CheckCircle2,
     Layers3,
     Search,
@@ -426,9 +427,14 @@ export default function RegisterPage() {
                                     Your workspace awaits
                                 </span>
 
-                                <span className="nx-register__secure-label">
-                                    Secure / 01
-                                </span>
+                                <Link
+                                    to="/"
+                                    className="nx-register__back-home"
+                                    aria-label="Back to Nexora home page"
+                                >
+                                    <ArrowLeft size={14} aria-hidden="true" />
+                                    Back to home
+                                </Link>
                             </div>
 
                             <h2>

@@ -263,7 +263,7 @@
     background: rgba(115, 84, 226, 0.1);
 }
 
-.nx-story-item > span:nth-child(2) {
+.nx-story-item>span:nth-child(2) {
     min-width: 0;
     display: grid;
     gap: 4px;
@@ -324,7 +324,7 @@
     font-weight: 800;
 }
 
-.nx-login__story-footer > div:last-child {
+.nx-login__story-footer>div:last-child {
     display: grid;
     gap: 5px;
 }
@@ -333,7 +333,7 @@
     font-size: 0.77rem;
 }
 
-.nx-login__story-footer > div:last-child > span {
+.nx-login__story-footer>div:last-child>span {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -369,7 +369,7 @@
     gap: 16px;
 }
 
-.nx-auth-card__topline > span:first-child {
+.nx-auth-card__topline>span:first-child {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -623,7 +623,7 @@
     transition: all 180ms ease;
 }
 
-.nx-check input:checked + .nx-check__box {
+.nx-check input:checked+.nx-check__box {
     border-color: var(--nx-violet);
     color: #fff;
     background: var(--nx-violet);
@@ -728,6 +728,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-pulse {
+
     0%,
     100% {
         box-shadow: 0 0 0 5px rgba(42, 195, 125, 0.1);
@@ -739,6 +740,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-shine {
+
     0%,
     18% {
         transform: translateX(0) rotate(18deg);
@@ -909,6 +911,7 @@ input:-webkit-autofill:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
     *,
     *::before,
     *::after {
@@ -960,13 +963,11 @@ input:-webkit-autofill:focus {
     pointer-events: none;
     transform: rotate(17deg);
     background:
-        linear-gradient(
-            90deg,
+        linear-gradient(90deg,
             transparent,
             rgba(255, 255, 255, 0.27),
             rgba(148, 111, 255, 0.09),
-            transparent
-        );
+            transparent);
     filter: blur(9px);
     animation: nx-beam-sweep 13s ease-in-out infinite;
 }
@@ -1022,22 +1023,101 @@ input:-webkit-autofill:focus {
     animation: nx-particle-float 14s ease-in-out infinite;
 }
 
-.nx-login__particles span:nth-child(1) { left: 8%; top: 18%; animation-delay: -2s; }
-.nx-login__particles span:nth-child(2) { left: 14%; top: 74%; animation-delay: -8s; }
-.nx-login__particles span:nth-child(3) { left: 27%; top: 11%; animation-delay: -5s; }
-.nx-login__particles span:nth-child(4) { left: 35%; top: 63%; animation-delay: -11s; }
-.nx-login__particles span:nth-child(5) { left: 47%; top: 27%; animation-delay: -4s; }
-.nx-login__particles span:nth-child(6) { left: 56%; top: 84%; animation-delay: -9s; }
-.nx-login__particles span:nth-child(7) { left: 64%; top: 15%; animation-delay: -6s; }
-.nx-login__particles span:nth-child(8) { left: 72%; top: 66%; animation-delay: -12s; }
-.nx-login__particles span:nth-child(9) { left: 83%; top: 32%; animation-delay: -3s; }
-.nx-login__particles span:nth-child(10) { left: 91%; top: 79%; animation-delay: -7s; }
-.nx-login__particles span:nth-child(11) { left: 21%; top: 45%; animation-delay: -10s; }
-.nx-login__particles span:nth-child(12) { left: 42%; top: 91%; animation-delay: -1s; }
-.nx-login__particles span:nth-child(13) { left: 59%; top: 48%; animation-delay: -13s; }
-.nx-login__particles span:nth-child(14) { left: 77%; top: 8%; animation-delay: -5s; }
-.nx-login__particles span:nth-child(15) { left: 88%; top: 53%; animation-delay: -9s; }
-.nx-login__particles span:nth-child(16) { left: 4%; top: 92%; animation-delay: -4s; }
+.nx-login__particles span:nth-child(1) {
+    left: 8%;
+    top: 18%;
+    animation-delay: -2s;
+}
+
+.nx-login__particles span:nth-child(2) {
+    left: 14%;
+    top: 74%;
+    animation-delay: -8s;
+}
+
+.nx-login__particles span:nth-child(3) {
+    left: 27%;
+    top: 11%;
+    animation-delay: -5s;
+}
+
+.nx-login__particles span:nth-child(4) {
+    left: 35%;
+    top: 63%;
+    animation-delay: -11s;
+}
+
+.nx-login__particles span:nth-child(5) {
+    left: 47%;
+    top: 27%;
+    animation-delay: -4s;
+}
+
+.nx-login__particles span:nth-child(6) {
+    left: 56%;
+    top: 84%;
+    animation-delay: -9s;
+}
+
+.nx-login__particles span:nth-child(7) {
+    left: 64%;
+    top: 15%;
+    animation-delay: -6s;
+}
+
+.nx-login__particles span:nth-child(8) {
+    left: 72%;
+    top: 66%;
+    animation-delay: -12s;
+}
+
+.nx-login__particles span:nth-child(9) {
+    left: 83%;
+    top: 32%;
+    animation-delay: -3s;
+}
+
+.nx-login__particles span:nth-child(10) {
+    left: 91%;
+    top: 79%;
+    animation-delay: -7s;
+}
+
+.nx-login__particles span:nth-child(11) {
+    left: 21%;
+    top: 45%;
+    animation-delay: -10s;
+}
+
+.nx-login__particles span:nth-child(12) {
+    left: 42%;
+    top: 91%;
+    animation-delay: -1s;
+}
+
+.nx-login__particles span:nth-child(13) {
+    left: 59%;
+    top: 48%;
+    animation-delay: -13s;
+}
+
+.nx-login__particles span:nth-child(14) {
+    left: 77%;
+    top: 8%;
+    animation-delay: -5s;
+}
+
+.nx-login__particles span:nth-child(15) {
+    left: 88%;
+    top: 53%;
+    animation-delay: -9s;
+}
+
+.nx-login__particles span:nth-child(16) {
+    left: 4%;
+    top: 92%;
+    animation-delay: -4s;
+}
 
 .nx-login__story {
     position: relative;
@@ -1097,9 +1177,20 @@ input:-webkit-autofill:focus {
         0 0 22px rgba(114, 85, 229, 0.55);
 }
 
-.nx-signal-map__node--one { top: 12px; left: 116px; }
-.nx-signal-map__node--two { right: 25px; bottom: 53px; }
-.nx-signal-map__node--three { left: 26px; bottom: 58px; }
+.nx-signal-map__node--one {
+    top: 12px;
+    left: 116px;
+}
+
+.nx-signal-map__node--two {
+    right: 25px;
+    bottom: 53px;
+}
+
+.nx-signal-map__node--three {
+    left: 26px;
+    bottom: 58px;
+}
 
 .nx-story-item {
     overflow: hidden;
@@ -1179,6 +1270,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-beam-sweep {
+
     0%,
     15% {
         transform: translateX(-30%) rotate(17deg);
@@ -1197,6 +1289,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-particle-float {
+
     0%,
     100% {
         transform: translate3d(0, 0, 0) scale(0.75);
@@ -1210,6 +1303,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-story-glow {
+
     0%,
     100% {
         transform: translate3d(0, 0, 0) scale(1);
@@ -1227,6 +1321,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-card-spotlight {
+
     0%,
     100% {
         transform: translate3d(0, 0, 0) scale(1);
@@ -1238,6 +1333,7 @@ input:-webkit-autofill:focus {
 }
 
 @keyframes nx-button-gradient {
+
     0%,
     100% {
         background-position: 0% 50%;
@@ -1255,6 +1351,7 @@ input:-webkit-autofill:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
     .nx-login__gradient-flow,
     .nx-login__mesh,
     .nx-login__beam,
@@ -1318,15 +1415,12 @@ input:-webkit-autofill:focus {
      * The dots stay soft and lightweight in the background.
      */
     background-image:
-        radial-gradient(
-            circle,
+        radial-gradient(circle,
             rgba(105, 79, 210, 0.72) 0 2.2px,
-            transparent 2.8px
-        );
+            transparent 2.8px);
     background-size: 28px 28px;
     background-position:
-        calc(var(--nx-pointer-x) - 14px)
-        calc(var(--nx-pointer-y) - 14px);
+        calc(var(--nx-pointer-x) - 14px) calc(var(--nx-pointer-y) - 14px);
     filter: drop-shadow(0 0 3px rgba(99, 72, 195, 0.16));
     opacity: 0.68;
 
@@ -1335,23 +1429,19 @@ input:-webkit-autofill:focus {
      * The fade keeps the effect blended into the page background.
      */
     mask-image:
-        radial-gradient(
-            circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
+        radial-gradient(circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
             #000 0%,
             rgba(0, 0, 0, 0.96) 24%,
             rgba(0, 0, 0, 0.55) 56%,
             rgba(0, 0, 0, 0.12) 80%,
-            transparent 100%
-        );
+            transparent 100%);
     -webkit-mask-image:
-        radial-gradient(
-            circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
+        radial-gradient(circle 170px at var(--nx-pointer-x) var(--nx-pointer-y),
             #000 0%,
             rgba(0, 0, 0, 0.96) 24%,
             rgba(0, 0, 0, 0.55) 56%,
             rgba(0, 0, 0, 0.12) 80%,
-            transparent 100%
-        );
+            transparent 100%);
 }
 
 /**
@@ -1368,17 +1458,16 @@ input:-webkit-autofill:focus {
     border-radius: 50%;
     transform: translate(-50%, -50%);
     background:
-        radial-gradient(
-            circle,
+        radial-gradient(circle,
             rgba(75, 42, 151, 0.055) 0%,
             rgba(104, 65, 204, 0.03) 35%,
-            transparent 72%
-        );
+            transparent 72%);
     filter: blur(10px);
     animation: nx-cursor-signal-breathe 2.8s ease-in-out infinite;
 }
 
 @keyframes nx-cursor-signal-breathe {
+
     0%,
     100% {
         transform: translate(-50%, -50%) scale(0.96);
@@ -1395,7 +1484,8 @@ input:-webkit-autofill:focus {
  * Hide only on devices that do not have a precise hovering pointer.
  * Resizing a desktop browser no longer disables the effect.
  */
-@media (hover: none), (pointer: coarse) {
+@media (hover: none),
+(pointer: coarse) {
     .nx-login__cursor-pixels {
         display: none;
     }
@@ -1468,7 +1558,7 @@ input:-webkit-autofill:focus {
 }
 
 .nx-kicker,
-.nx-auth-card__topline > span:first-child {
+.nx-auth-card__topline>span:first-child {
     color: #6950cf;
 }
 
@@ -1547,18 +1637,16 @@ input:-webkit-autofill:focus {
         inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.nx-check input:checked + .nx-check__box {
+.nx-check input:checked+.nx-check__box {
     border-color: #7357df;
     background: linear-gradient(135deg, #7557df, #62a9dd);
 }
 
 .nx-login__cursor-pixels::before {
     background-image:
-        radial-gradient(
-            circle,
+        radial-gradient(circle,
             rgba(105, 79, 210, 0.66) 0 2px,
-            transparent 2.7px
-        );
+            transparent 2.7px);
     background-size: 28px 28px;
     filter: drop-shadow(0 0 4px rgba(98, 169, 221, 0.18));
     opacity: 0.75;
@@ -1574,12 +1662,10 @@ input:-webkit-autofill:focus {
  */
 .nx-form__submit {
     background:
-        linear-gradient(
-            135deg,
+        linear-gradient(135deg,
             #7657df 0%,
             #6c5bdc 52%,
-            #68a9dd 100%
-        );
+            #68a9dd 100%);
     background-size: 100% 100%;
     box-shadow:
         0 14px 30px rgba(93, 72, 194, 0.22),
@@ -1593,12 +1679,10 @@ input:-webkit-autofill:focus {
 
 .nx-form__submit:hover:not(:disabled) {
     background:
-        linear-gradient(
-            135deg,
+        linear-gradient(135deg,
             #6e50d5 0%,
             #6250d2 52%,
-            #5d9fd4 100%
-        );
+            #5d9fd4 100%);
     transform: translateY(-2px);
     filter: saturate(1.04);
     box-shadow:
@@ -1614,4 +1698,49 @@ input:-webkit-autofill:focus {
         0 10px 22px rgba(93, 72, 194, 0.2),
         0 5px 14px rgba(104, 169, 221, 0.12),
         inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* Discovery badge shine — matches the Register page effect. */
+.nx-kicker {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.nx-kicker::after {
+    position: absolute;
+    top: -60%;
+    bottom: -60%;
+    left: -35%;
+    width: 25%;
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(118, 87, 223, 0.28),
+            rgba(98, 169, 221, 0.2),
+            transparent);
+    content: '';
+    filter: blur(4px);
+    transform: rotate(18deg);
+    animation: nx-login-kicker-shine 4.2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes nx-login-kicker-shine {
+
+    0%,
+    18% {
+        transform: translateX(0) rotate(18deg);
+    }
+
+    55%,
+    100% {
+        transform: translateX(760%) rotate(18deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nx-kicker::after {
+        animation: none;
+        opacity: 0;
+    }
 }

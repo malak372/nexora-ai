@@ -38,8 +38,9 @@ export const PUBLIC_NAVIGATION_ITEMS = [
     {
         id: 'discover',
         label: 'Discover',
-        path: ROUTES.DISCOVER,
-        type: 'route',
+        path: ROUTES.HOME,
+        sectionId: 'featured-ideas',
+        type: 'section',
     },
     {
         id: 'how-it-works',

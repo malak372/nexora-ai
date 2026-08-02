@@ -1,22 +1,10 @@
 /**
- * Provides API operations for email verification.
- *
- * This module communicates with the backend endpoints responsible for:
- * - Verifying an email address through a secure token.
- * - Requesting a new verification email.
- *
- * UI state, routing, and presentation remain inside the verification page.
+ * Provides API operations for email verification by a six-digit code.
  *
  * @author Eman
  */
-
 import { apiClient } from '../../../../../api/client';
-/**
- * Extracts a readable message from an API error.
- *
- * @param {unknown} error - Error returned by Axios or JavaScript.
- * @returns {string} A safe message suitable for the interface.
- */
+
 export function getEmailVerificationErrorMessage(error) {
     const responseMessage = error?.response?.data?.message;
 
@@ -24,10 +12,7 @@ export function getEmailVerificationErrorMessage(error) {
         return responseMessage.join(' ');
     }
 
-    if (
-        typeof responseMessage === 'string' &&
-        responseMessage.trim()
-    ) {
+    if (typeof responseMessage === 'string' && responseMessage.trim()) {
         return responseMessage;
     }
 
@@ -43,54 +28,29 @@ export function getEmailVerificationErrorMessage(error) {
 }
 
 /**
- * Verifies a user's email address.
+ * Verifies an email address using a six-digit verification code.
  *
- * The backend expects the email and verification token as query parameters.
- *
- * Endpoint:
- * GET /auth/email/verify?email=...&token=...
- *
- * @async
- * @param {{
- *     email: string,
- *     token: string
- * }} payload - Verification values received from the email link.
- *
- * @returns {Promise<Object>} Verification response returned by the backend.
- *
- * @throws {Error}
- * Throws a normalized error when verification fails.
+ * @param {{ email: string, code: string }} payload
+ * @returns {Promise<Object>}
  */
 export async function verifyEmail(payload) {
     try {
-        const response = await apiClient.get('/auth/email/verify', {
-            params: {
-                email: payload.email.trim().toLowerCase(),
-                token: payload.token.trim(),
-            },
+        const response = await apiClient.post('/auth/email/verify', {
+            email: payload.email.trim().toLowerCase(),
+            code: payload.code.replace(/\D/g, '').slice(0, 6),
         });
 
         return response.data;
     } catch (error) {
-        throw new Error(
-            getEmailVerificationErrorMessage(error),
-        );
+        throw new Error(getEmailVerificationErrorMessage(error));
     }
 }
 
 /**
- * Requests a new verification email.
+ * Requests a new email verification code.
  *
- * Endpoint:
- * POST /auth/email/resend-verification
- *
- * @async
- * @param {string} email - Account email address.
- *
- * @returns {Promise<Object>} Resend response returned by the backend.
- *
- * @throws {Error}
- * Throws a normalized error when the request fails.
+ * @param {string} email
+ * @returns {Promise<Object>}
  */
 export async function resendVerificationEmail(email) {
     try {
@@ -103,8 +63,6 @@ export async function resendVerificationEmail(email) {
 
         return response.data;
     } catch (error) {
-        throw new Error(
-            getEmailVerificationErrorMessage(error),
-        );
+        throw new Error(getEmailVerificationErrorMessage(error));
     }
 }

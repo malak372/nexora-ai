@@ -463,47 +463,35 @@ Please do not reply.
   }
 
   /**
-   * Sends an email-verification link.
+   * Sends an email-verification code.
    *
    * Used after registration or when a user requests another
    * verification email.
    *
    * @param email Recipient email address.
-   * @param verificationLink Email-verification URL.
+   * @param verificationCode Six-digit verification code.
+   * @param expiresInMinutes Code lifetime in minutes.
    */
   async sendVerificationEmail(
     email: string,
-    verificationLink: string,
+    verificationCode: string,
+    expiresInMinutes: number,
   ): Promise<void> {
+    const safeCode = this.escapeHtml(verificationCode);
+
     await this.sendEmail({
       to: email,
-      subject: 'Verify your Nexora AI email',
-      text: `
-Nexora AI Email Verification
-
-Please verify your email address using the link below:
-
-${verificationLink}
-
-If you did not create this account, you can safely ignore this email.
-
-This email was sent automatically by Nexora AI.
-Please do not reply.
-      `.trim(),
+      subject: 'Your Nexora AI verification code',
+      text: `Nexora AI email verification code: ${verificationCode}. The code expires in ${expiresInMinutes} minutes. If you did not create this account, ignore this email.`,
       html: this.buildEmailTemplate(
-        'Email Verification',
+        'Verify your email',
         `
-          <p>
-            Please verify your email address by clicking
-            the button below:
-          </p>
-
-          ${this.buildActionButton('Verify Email', verificationLink)}
-
-          <p>
-            If you did not create this account, you can
-            safely ignore this email.
-          </p>
+          <p>Enter this code in Nexora AI to verify your email address:</p>
+          <div style="font-size:32px;font-weight:800;letter-spacing:10px;text-align:center;padding:20px;background:#f1f5f9;border-radius:10px;margin:22px 0;color:#0f172a;">
+            ${safeCode}
+          </div>
+          <p>This code expires in <strong>${expiresInMinutes} minutes</strong>.</p>
+          <p>If you did not create this account, you can safely ignore this email.</p>
         `,
       ),
     });

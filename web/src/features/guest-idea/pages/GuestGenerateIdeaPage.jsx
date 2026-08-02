@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 
 import { getAvailableDomains } from '../../domains/api/domains.api';
+import { getAvailableLanguages } from '../api/publicMetadataApi';
 import {
     ensureGuestSession,
     generateGuestIdea,
@@ -59,6 +60,36 @@ const TERMINAL_STATUSES = new Set([
     'FAILED',
     'CANCELLED',
 ]);
+
+/**
+ * Minimum description length that allows Nexora to infer the domain.
+ *
+ * @type {number}
+ */
+const MIN_DESCRIPTION_WORDS = 4;
+
+/**
+ * Maximum description length accepted by the guest flow.
+ *
+ * @type {number}
+ */
+const MAX_DESCRIPTION_WORDS = 120;
+
+/**
+ * Counts whitespace-separated words inside a text value.
+ *
+ * @param {string} value - Text to inspect.
+ * @returns {number} Number of meaningful words.
+ */
+function countWords(value) {
+    const normalizedValue = value.trim();
+
+    if (!normalizedValue) {
+        return 0;
+    }
+
+    return normalizedValue.split(/\s+/u).filter(Boolean).length;
+}
 
 /**
  * Labels displayed inside the guest generation stepper.
@@ -124,6 +155,11 @@ export default function GuestGenerateIdeaPage() {
     const [domains, setDomains] = useState([]);
 
     /**
+     * Available language options read from the backend database enum.
+     */
+    const [languages, setLanguages] = useState([]);
+
+    /**
      * Indicates whether the initial guest session and domains are loading.
      */
     const [loading, setLoading] = useState(true);
@@ -158,10 +194,12 @@ export default function GuestGenerateIdeaPage() {
 
         async function initializePage() {
             try {
-                const [session, domainItems] = await Promise.all([
-                    ensureGuestSession(),
-                    getAvailableDomains(),
-                ]);
+                const [session, domainItems, languageItems] =
+                    await Promise.all([
+                        ensureGuestSession(),
+                        getAvailableDomains(),
+                        getAvailableLanguages(),
+                    ]);
 
                 if (!isMounted) {
                     return;
@@ -171,6 +209,11 @@ export default function GuestGenerateIdeaPage() {
                 setDomains(
                     Array.isArray(domainItems)
                         ? domainItems
+                        : [],
+                );
+                setLanguages(
+                    Array.isArray(languageItems)
+                        ? languageItems
                         : [],
                 );
             } catch (requestError) {
@@ -235,13 +278,34 @@ export default function GuestGenerateIdeaPage() {
     );
 
     /**
-     * Determines whether the guest can continue from the current form step.
+     * Current number of words in the written guest problem signal.
      */
-    const canContinue = [
-        draft.description.trim().length >= 20,
+    const descriptionWordCount = countWords(draft.description);
 
-        Boolean(draft.domainId) ||
-        draft.description.trim().length >= 20,
+    /**
+     * Indicates whether the description is detailed enough for automatic
+     * domain inference and remains within the guest word limit.
+     */
+    const hasValidDescription =
+        descriptionWordCount >= MIN_DESCRIPTION_WORDS &&
+        descriptionWordCount <= MAX_DESCRIPTION_WORDS;
+
+    /**
+     * Indicates whether the guest exceeded the allowed description size.
+     */
+    const descriptionExceedsLimit =
+        descriptionWordCount > MAX_DESCRIPTION_WORDS;
+
+    /**
+     * A domain is required whenever the written description does not satisfy
+     * the minimum word requirement.
+     */
+    const domainIsRequired = !hasValidDescription;
+
+    const canContinue = [
+        !descriptionExceedsLimit,
+
+        !domainIsRequired || Boolean(draft.domainId),
 
         Boolean(draft.country.trim()),
 
@@ -301,6 +365,12 @@ export default function GuestGenerateIdeaPage() {
      */
     const handleContinue = () => {
         if (!canContinue) {
+            if (descriptionExceedsLimit) {
+                setError(
+                    `Keep the description within ${MAX_DESCRIPTION_WORDS} words before continuing.`,
+                );
+            }
+
             return;
         }
 
@@ -335,12 +405,32 @@ export default function GuestGenerateIdeaPage() {
             return;
         }
 
+        if (descriptionExceedsLimit) {
+            setError(
+                `Description must not exceed ${MAX_DESCRIPTION_WORDS} words.`,
+            );
+            setStep(0);
+            return;
+        }
+
+        if (domainIsRequired && !draft.domainId) {
+            setError(
+                `Choose a domain or write at least ${MIN_DESCRIPTION_WORDS} words.`,
+            );
+            setStep(1);
+            return;
+        }
+
         setSubmitting(true);
         setError('');
 
         try {
             const queuedRun = await generateGuestIdea({
-                description: draft.description.trim(),
+                ...(draft.description.trim()
+                    ? {
+                        description: draft.description.trim(),
+                    }
+                    : {}),
 
                 ...(draft.domainId
                     ? {
@@ -756,18 +846,29 @@ export default function GuestGenerateIdeaPage() {
                                 }
                             />
 
-                            <div className="guest-field-meta">
+                            <div
+                                className={[
+                                    'guest-field-meta',
+                                    descriptionExceedsLimit
+                                        ? 'limit-exceeded'
+                                        : hasValidDescription
+                                            ? 'ready'
+                                            : '',
+                                ]
+                                    .filter(Boolean)
+                                    .join(' ')}
+                            >
                                 <span>
-                                    Use a real problem, not a
-                                    solution
+                                    {descriptionExceedsLimit
+                                        ? `Reduce the description to ${MAX_DESCRIPTION_WORDS} words.`
+                                        : hasValidDescription
+                                            ? 'Detailed enough — you can continue.'
+                                            : `Write at least ${MIN_DESCRIPTION_WORDS} words, or choose a domain instead.`}
                                 </span>
 
                                 <b>
-                                    {
-                                        draft.description
-                                            .length
-                                    }
-                                    /2000
+                                    {descriptionWordCount}/
+                                    {MAX_DESCRIPTION_WORDS} words
                                 </b>
                             </div>
                         </div>
@@ -784,42 +885,44 @@ export default function GuestGenerateIdeaPage() {
                             </h2>
 
                             <p>
-                                Keep automatic discovery
-                                selected, or narrow the analysis
-                                to one software domain.
+                                {hasValidDescription
+                                    ? 'Choose a software domain to narrow the analysis, or skip this step and let Nexora infer it from your written signal.'
+                                    : `Select the software domain that should guide generation. A domain is required because the written signal contains fewer than ${MIN_DESCRIPTION_WORDS} words.`}
                             </p>
 
-                            <button
-                                type="button"
-                                className={[
-                                    'guest-auto-domain',
-                                    !draft.domainId
-                                        ? 'selected'
-                                        : '',
-                                ]
-                                    .filter(Boolean)
-                                    .join(' ')}
-                                onClick={() =>
-                                    updateDraft({
-                                        domainId: '',
-                                    })
-                                }
-                            >
-                                <Sparkles />
+                            {hasValidDescription ? (
+                                <button
+                                    type="button"
+                                    className={[
+                                        'guest-auto-domain',
+                                        !draft.domainId
+                                            ? 'selected'
+                                            : '',
+                                    ]
+                                        .filter(Boolean)
+                                        .join(' ')}
+                                    onClick={() =>
+                                        updateDraft({
+                                            domainId: '',
+                                        })
+                                    }
+                                >
+                                    <Sparkles />
 
-                                <span>
-                                    <b>
-                                        Let Nexora choose
-                                    </b>
+                                    <span>
+                                        <b>
+                                            Let Nexora choose
+                                        </b>
 
-                                    <small>
-                                        Recommended from your
-                                        written signal
-                                    </small>
-                                </span>
+                                        <small>
+                                            Optional — inferred from
+                                            your written signal
+                                        </small>
+                                    </span>
 
-                                <Check />
-                            </button>
+                                    <Check />
+                                </button>
+                            ) : null}
 
                             <div className="guest-domain-grid">
                                 {domains.map((domain) => {
@@ -939,17 +1042,20 @@ export default function GuestGenerateIdeaPage() {
                                             })
                                         }
                                     >
-                                        <option value="ANY">
-                                            Auto detect
-                                        </option>
-
-                                        <option value="AR">
-                                            Arabic
-                                        </option>
-
-                                        <option value="EN">
-                                            English
-                                        </option>
+                                        {languages.map(
+                                            (language) => (
+                                                <option
+                                                    key={
+                                                        language.code
+                                                    }
+                                                    value={
+                                                        language.code
+                                                    }
+                                                >
+                                                    {language.name}
+                                                </option>
+                                            ),
+                                        )}
                                     </select>
                                 </label>
                             </div>
@@ -977,7 +1083,8 @@ export default function GuestGenerateIdeaPage() {
                                     </small>
 
                                     <p>
-                                        {draft.description}
+                                        {draft.description ||
+                                            'No written signal — generation will use the selected domain.'}
                                     </p>
                                 </article>
 
@@ -1051,7 +1158,15 @@ export default function GuestGenerateIdeaPage() {
                                 disabled={!canContinue}
                                 onClick={handleContinue}
                             >
-                                Continue
+                                {step === 0
+                                    ? hasValidDescription
+                                        ? 'Continue'
+                                        : 'Choose domain instead'
+                                    : step === 1 &&
+                                        hasValidDescription &&
+                                        !draft.domainId
+                                        ? 'Skip domain'
+                                        : 'Continue'}
 
                                 <ArrowRight />
                             </button>

@@ -1,5 +1,7 @@
 import { LanguageCode } from '@prisma/client';
 
+import { GuestDescriptionOrDomainConstraint } from '../validators/guest-description-or-domain.validator';
+
 import { Transform, type TransformFnParams, Type } from 'class-transformer';
 
 import {
@@ -14,6 +16,7 @@ import {
   Max,
   MaxLength,
   Min,
+  Validate,
 } from 'class-validator';
 
 /**
@@ -26,8 +29,16 @@ import {
  * Guest generation always resolves to GUEST_FREE.
  *
  * @author Malak
+ * @author Eman
  */
 export class GenerateGuestIdeaDto {
+  /**
+   * Internal validation marker used to enforce that the guest either selects
+   * a domain or provides a sufficiently detailed description.
+   */
+  @Validate(GuestDescriptionOrDomainConstraint)
+  readonly guestDescriptionOrDomainIsValid = true;
+
   /**
    * Software domain selected by the guest.
    */

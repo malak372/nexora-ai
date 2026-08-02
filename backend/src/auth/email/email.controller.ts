@@ -1,11 +1,9 @@
 import {
   Body,
   Controller,
-  Get,
   HttpCode,
   HttpStatus,
   Post,
-  Query,
   Req,
 } from '@nestjs/common';
 
@@ -32,19 +30,19 @@ import { AuthEmailService } from './email.service';
  */
 @Controller('auth/email')
 export class EmailController {
-  constructor(private readonly authEmailService: AuthEmailService) {}
+  constructor(private readonly authEmailService: AuthEmailService) { }
 
   /**
    * Verifies a user's email address using a valid
-   * email-verification token.
+   * email-verification code.
    *
    * Rate limit:
    * - Maximum 10 requests per minute per client.
    *
    * Endpoint:
-   * GET /auth/email/verify
+   * POST /auth/email/verify
    *
-   * @param query Validated email and verification token.
+   * @param query Validated email and verification code.
    * @param request Current HTTP request.
    * @returns Email-verification result.
    */
@@ -54,10 +52,10 @@ export class EmailController {
       ttl: 60_000,
     },
   })
-  @Get('verify')
+  @Post('verify')
   @HttpCode(HttpStatus.OK)
-  verifyEmail(@Query() query: VerifyEmailDto, @Req() request: Request) {
-    return this.authEmailService.verifyEmail(query.email, query.token, {
+  verifyEmail(@Body() dto: VerifyEmailDto, @Req() request: Request) {
+    return this.authEmailService.verifyEmail(dto.email, dto.code, {
       ipAddress: request.ip,
       userAgent: request.get('user-agent'),
     });

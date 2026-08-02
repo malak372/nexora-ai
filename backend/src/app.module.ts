@@ -26,6 +26,7 @@ import { NlpModule } from './nlp/nlp.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PromptsModule } from './prompts/prompts.module';
+import { PublicMetadataModule } from './public-metadata/public-metadata.module';
 import { UsersModule } from './users/users.module';
 
 /**
@@ -95,6 +96,7 @@ import { UsersModule } from './users/users.module';
     AiChatModule,
     NlpModule,
     PromptsModule,
+    PublicMetadataModule,
     AlertsModule,
     ComplaintsModule,
     DomainsModule,
@@ -120,4 +122,4 @@ import { UsersModule } from './users/users.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
