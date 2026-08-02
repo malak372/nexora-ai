@@ -8,8 +8,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { AccountStatus } from '@prisma/client';
-
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.type';
@@ -69,14 +67,6 @@ export class PublicationAcceptancesController {
     publicationId: string,
     @Body() dto: CreatePublicationAcceptanceDto,
   ) {
-    if (user.accountStatus === AccountStatus.PREMIUM) {
-      return this.acceptanceService.acceptBasicForPremium(
-        user.id,
-        publicationId,
-        dto.clientRequestId,
-      );
-    }
-
     return this.paymentCheckoutService.createPublicationAcceptanceCheckout(
       user.id,
       publicationId,

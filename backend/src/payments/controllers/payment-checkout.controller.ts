@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type
 
 import { CreateDirectUnlockPaymentDto } from '../dto/create-direct-unlock-payment.dto';
 import { PurchaseCreditsDto } from '../dto/purchase-credits.dto';
+import { GetPaymentPricingQueryDto } from '../dto/get-payment-pricing-query.dto';
 
 import { PaymentCheckoutService } from '../services/payment-checkout.service';
 
@@ -39,6 +40,15 @@ export class PaymentCheckoutController {
   constructor(
     private readonly paymentCheckoutService: PaymentCheckoutService,
   ) {}
+
+  @Get('pricing')
+  getPricing(@CurrentUser() user:AuthenticatedUser,@Query() query:GetPaymentPricingQueryDto){ return this.paymentCheckoutService.getPaymentPricing(user.id,query.creditsQuantity??1); }
+
+  @Get(':paymentId/status')
+  getPaymentState(@CurrentUser() user:AuthenticatedUser,@Param('paymentId',new ParseUUIDPipe({version:'4'})) paymentId:string){ return this.paymentCheckoutService.getPaymentState(user.id,paymentId); }
+
+  @Post(':paymentId/reconcile')
+  reconcilePayment(@CurrentUser() user:AuthenticatedUser,@Param('paymentId',new ParseUUIDPipe({version:'4'})) paymentId:string){ return this.paymentCheckoutService.reconcilePayment(user.id,paymentId); }
 
   /**
    * Creates a checkout session for purchasing

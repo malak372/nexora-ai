@@ -45,6 +45,8 @@ export class SettingsService {
           directUnlockPrice: 10,
           premiumActivationFee: 5,
           publishedIdeaPrice: 15,
+          normalAcceptancePrice: 15,
+          premiumAcceptancePrice: 5,
           publicationAdvancedCreditCost: 1,
           bonusThreshold: 0,
           bonusCredits: 0,
@@ -79,10 +81,9 @@ export class SettingsService {
         body.premiumActivationFee,
         currentSettings.premiumActivationFee,
       ) ||
-      this.changed(
-        body.publishedIdeaPrice,
-        currentSettings.publishedIdeaPrice,
-      ) ||
+      this.changed(body.publishedIdeaPrice, currentSettings.publishedIdeaPrice) ||
+      this.changed(body.normalAcceptancePrice, currentSettings.normalAcceptancePrice) ||
+      this.changed(body.premiumAcceptancePrice, currentSettings.premiumAcceptancePrice) ||
       this.changed(
         body.publicationAdvancedCreditCost,
         currentSettings.publicationAdvancedCreditCost,
@@ -110,9 +111,9 @@ export class SettingsService {
         ...(body.premiumActivationFee !== undefined && {
           premiumActivationFee: body.premiumActivationFee,
         }),
-        ...(body.publishedIdeaPrice !== undefined && {
-          publishedIdeaPrice: body.publishedIdeaPrice,
-        }),
+        ...(body.publishedIdeaPrice !== undefined && { publishedIdeaPrice: body.publishedIdeaPrice }),
+        ...(body.normalAcceptancePrice !== undefined && { normalAcceptancePrice: body.normalAcceptancePrice }),
+        ...(body.premiumAcceptancePrice !== undefined && { premiumAcceptancePrice: body.premiumAcceptancePrice }),
         ...(body.publicationAdvancedCreditCost !== undefined && {
           publicationAdvancedCreditCost: body.publicationAdvancedCreditCost,
         }),
@@ -160,6 +161,8 @@ export class SettingsService {
       directUnlockPrice: Prisma.Decimal | number | string;
       premiumActivationFee: Prisma.Decimal | number | string;
       publishedIdeaPrice: Prisma.Decimal | number | string;
+      normalAcceptancePrice: Prisma.Decimal | number | string;
+      premiumAcceptancePrice: Prisma.Decimal | number | string;
     },
   >(settings: T) {
     return {
@@ -168,6 +171,8 @@ export class SettingsService {
       directUnlockPrice: toNumber(settings.directUnlockPrice),
       premiumActivationFee: toNumber(settings.premiumActivationFee),
       publishedIdeaPrice: toNumber(settings.publishedIdeaPrice),
+      normalAcceptancePrice: toNumber(settings.normalAcceptancePrice),
+      premiumAcceptancePrice: toNumber(settings.premiumAcceptancePrice),
     };
   }
 
@@ -185,6 +190,8 @@ export class SettingsService {
     directUnlockPrice: number;
     premiumActivationFee: number;
     publishedIdeaPrice: number;
+    normalAcceptancePrice: number;
+    premiumAcceptancePrice: number;
     publicationAdvancedCreditCost: number;
     bonusThreshold: number;
     bonusCredits: number;
@@ -194,6 +201,8 @@ export class SettingsService {
       directUnlockPrice: settings.directUnlockPrice,
       premiumActivationFee: settings.premiumActivationFee,
       publishedIdeaPrice: settings.publishedIdeaPrice,
+      normalAcceptancePrice: settings.normalAcceptancePrice,
+      premiumAcceptancePrice: settings.premiumAcceptancePrice,
       publicationAdvancedCreditCost: settings.publicationAdvancedCreditCost,
       bonusThreshold: settings.bonusThreshold,
       bonusCredits: settings.bonusCredits,

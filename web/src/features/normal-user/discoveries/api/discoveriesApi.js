@@ -93,7 +93,7 @@ export async function acceptPublication(
         {
           clientRequestId: createUuidV4(),
           paymentMethodKey,
-          successUrl: `${origin}/normal/discover/${publicationId}?accepted=1`,
+          successUrl: `${origin}/normal/payments/success`,
           cancelUrl: `${origin}/normal/discover/${publicationId}?cancelled=1`,
         },
       ),

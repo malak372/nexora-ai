@@ -20,10 +20,11 @@ import {
   motion,
   useReducedMotion,
 } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { createDirectUnlockCheckout } from '../api/directUnlockApi';
+import { getPaymentPricing } from '../api/paymentFlowApi';
 import '../styles/direct-unlock.css';
 
 const PAYMENT_METHODS = [
@@ -58,6 +59,9 @@ export default function DirectUnlockPage() {
   const [method, setMethod] = useState('card');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [pricing, setPricing] = useState(null);
+
+  useEffect(() => { getPaymentPricing().then(setPricing).catch((e) => setError(e.message)); }, []);
 
   const checkout = async () => {
     setBusy(true);
@@ -69,7 +73,7 @@ export default function DirectUnlockPage() {
       const result = await createDirectUnlockCheckout({
         ideaId,
         paymentMethodKey: method,
-        successUrl: `${origin}/normal/ideas/${ideaId}/unlock/success`,
+        successUrl: `${origin}/normal/payments/success`,
         cancelUrl: `${origin}/normal/ideas/${ideaId}/unlock`,
       });
 
@@ -241,6 +245,7 @@ export default function DirectUnlockPage() {
           </span>
 
           <h2>Unlock this idea</h2>
+          <div className="unlock-backend-price">{pricing ? `${pricing.directUnlockPrice} ${pricing.currency}` : 'Loading price…'}</div>
 
           <p>
             Choose a payment method. Nexora sends you to the provider's secure

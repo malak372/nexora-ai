@@ -6,19 +6,19 @@
 
 ALTER TABLE "idea_publication_votes"
   ALTER COLUMN "user_id" DROP NOT NULL,
-  ADD COLUMN "guest_session_id" UUID;
+  ADD COLUMN "guest_session_id" TEXT;
 
 -- Publication ratings
 
 ALTER TABLE "idea_publication_ratings"
   ALTER COLUMN "user_id" DROP NOT NULL,
-  ADD COLUMN "guest_session_id" UUID;
+  ADD COLUMN "guest_session_id" TEXT;
 
 -- Publication feedback
 
 ALTER TABLE "idea_publication_feedback"
   ALTER COLUMN "user_id" DROP NOT NULL,
-  ADD COLUMN "guest_session_id" UUID;
+  ADD COLUMN "guest_session_id" TEXT;
 
 -- Guest-session foreign keys
 
