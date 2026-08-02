@@ -273,6 +273,10 @@ model GuestSession {
   ideas           Idea[]
   promptHistories PromptHistory[]
 
+    publicationVotes    IdeaPublicationVote[]
+  publicationRatings  IdeaPublicationRating[]
+  publicationFeedback IdeaPublicationFeedback[]
+
   @@index([expiresAt])
   @@map("guest_sessions")
 }
@@ -1165,50 +1169,107 @@ model IdeaPublicationAudience {
 }
 
 model IdeaPublicationVote {
-  id            String          @id @default(uuid())
-  publicationId String          @map("publication_id")
-  userId        String          @map("user_id")
-  value         IdeaVoteValue
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String          @id @default(uuid())
+  publicationId  String          @map("publication_id")
+  userId         String?         @map("user_id")
+  guestSessionId String?         @map("guest_session_id")
+  value          IdeaVoteValue
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  publication  IdeaPublication @relation(
+    fields: [publicationId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  user         User?         @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  guestSession GuestSession? @relation(
+    fields: [guestSessionId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   @@unique([publicationId, userId])
+  @@unique([publicationId, guestSessionId])
   @@index([userId])
+  @@index([guestSessionId])
   @@map("idea_publication_votes")
 }
 
 model IdeaPublicationRating {
-  id            String          @id @default(uuid())
-  publicationId String          @map("publication_id")
-  userId        String          @map("user_id")
-  value         Int
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  publication   IdeaPublication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String          @id @default(uuid())
+  publicationId  String          @map("publication_id")
+  userId         String?         @map("user_id")
+  guestSessionId String?         @map("guest_session_id")
+  value          Int
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  publication IdeaPublication @relation(
+    fields: [publicationId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  user User? @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  guestSession GuestSession? @relation(
+    fields: [guestSessionId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   @@unique([publicationId, userId])
+  @@unique([publicationId, guestSessionId])
   @@index([publicationId])
   @@index([userId])
+  @@index([guestSessionId])
   @@map("idea_publication_ratings")
 }
 
 model IdeaPublicationFeedback {
-  id            String                    @id @default(uuid())
-  publicationId String                    @map("publication_id")
-  userId        String                    @map("user_id")
-  comment       String
-  status        PublicationFeedbackStatus @default(VISIBLE)
-  createdAt     DateTime                  @default(now()) @map("created_at")
-  updatedAt     DateTime                  @updatedAt @map("updated_at")
-  publication   IdeaPublication           @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String                    @id @default(uuid())
+  publicationId  String                    @map("publication_id")
+  userId         String?                   @map("user_id")
+  guestSessionId String?                   @map("guest_session_id")
+  comment        String
+  status         PublicationFeedbackStatus @default(VISIBLE)
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  publication IdeaPublication @relation(
+    fields: [publicationId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  user User? @relation(
+    fields: [userId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  guestSession GuestSession? @relation(
+    fields: [guestSessionId],
+    references: [id],
+    onDelete: Cascade
+  )
 
   @@unique([publicationId, userId])
+  @@unique([publicationId, guestSessionId])
   @@index([publicationId, status])
   @@index([userId])
+  @@index([guestSessionId])
   @@map("idea_publication_feedback")
 }
 

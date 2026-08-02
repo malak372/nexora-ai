@@ -41,6 +41,7 @@ import {
 
 import {
     resendVerificationEmail,
+    verifyEmail,
 } from '../EmailVerification/api/email-verification.api';
 
 /**
@@ -218,6 +219,11 @@ export default function RegisterForm() {
         useState(false);
     const [resendMessage, setResendMessage] = useState('');
     const [resendError, setResendError] = useState('');
+    const [verificationCode, setVerificationCode] = useState('');
+    const [verificationError, setVerificationError] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [isVerified, setIsVerified] = useState(false);
+    const [legalModal, setLegalModal] = useState(null);
 
     const passwordChecks = useMemo(
         () => getPasswordChecks(formValues.password),
@@ -298,6 +304,51 @@ export default function RegisterForm() {
         }));
         setResendMessage('');
         setResendError('');
+        setVerificationCode('');
+        setVerificationError('');
+        setIsVerified(false);
+    }
+
+
+    function handleVerificationCodeChange(event) {
+        setVerificationCode(
+            event.target.value.replace(/\D/g, '').slice(0, 6),
+        );
+        setVerificationError('');
+    }
+
+    async function handleVerifyEmail(event) {
+        event.preventDefault();
+
+        if (verificationCode.length !== 6 || isVerifying) {
+            return;
+        }
+
+        setIsVerifying(true);
+        setVerificationError('');
+        setResendMessage('');
+
+        try {
+            const result = await verifyEmail({
+                email: verificationModal.email,
+                code: verificationCode,
+            });
+
+            setIsVerified(true);
+            setVerificationModal((currentModal) => ({
+                ...currentModal,
+                message:
+                    result?.message ||
+                    'Your email was verified successfully. Your Nexora workspace is ready.',
+            }));
+        } catch (error) {
+            setVerificationError(
+                error?.message ||
+                'The verification code is invalid or has expired.',
+            );
+        } finally {
+            setIsVerifying(false);
+        }
     }
 
     async function handleResendVerification() {
@@ -323,6 +374,8 @@ export default function RegisterForm() {
                 emailDeliveryFailed: false,
                 message: successMessage,
             }));
+            setVerificationCode('');
+            setVerificationError('');
             setResendMessage(successMessage);
         } catch (error) {
             setResendError(
@@ -772,13 +825,21 @@ export default function RegisterForm() {
 
                         <span>
                             I agree to the{' '}
-                            <Link to="/terms">
+                            <button
+                                type="button"
+                                className="register-legal-link"
+                                onClick={() => setLegalModal('terms')}
+                            >
                                 Terms of Service
-                            </Link>{' '}
+                            </button>{' '}
                             and{' '}
-                            <Link to="/privacy">
+                            <button
+                                type="button"
+                                className="register-legal-link"
+                                onClick={() => setLegalModal('privacy')}
+                            >
                                 Privacy Policy
-                            </Link>
+                            </button>
                             .
                         </span>
                     </label>
@@ -839,46 +900,121 @@ export default function RegisterForm() {
                 </p>
             </form>
 
-            {verificationModal.isOpen && (
-                <div className="register-verification-modal">
+            {legalModal && (
+                <div className="register-legal-modal">
                     <button
                         type="button"
-                        className="register-verification-modal__backdrop"
-                        onClick={handleCloseVerificationModal}
-                        aria-label="Close verification message"
+                        className="register-legal-modal__backdrop"
+                        onClick={() => setLegalModal(null)}
+                        aria-label="Close legal information"
                     />
 
                     <section
-                        className={
-                            `register-verification-modal__card ` +
-                            (
-                                verificationModal.emailDeliveryFailed
-                                    ? 'register-verification-modal__card--error'
-                                    : 'register-verification-modal__card--success'
-                            )
-                        }
+                        className="register-legal-modal__card"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="register-legal-title"
+                    >
+                        <div className="register-legal-modal__header">
+                            <div>
+                                <p>Nexora AI</p>
+                                <h2 id="register-legal-title">
+                                    {legalModal === 'terms'
+                                        ? 'Terms of Service'
+                                        : 'Privacy Policy'}
+                                </h2>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setLegalModal(null)}
+                                aria-label="Close"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="register-legal-modal__content">
+                            {legalModal === 'terms' ? (
+                                <>
+                                    <h3>Using Nexora responsibly</h3>
+                                    <p>
+                                        Nexora AI helps users discover, generate, evaluate, and manage software project ideas. You must provide accurate account information and use the platform only for lawful, academic, research, or business purposes.
+                                    </p>
+                                    <h3>Your account and generated content</h3>
+                                    <p>
+                                        You are responsible for protecting your login credentials and for reviewing AI-generated output before relying on it. Generated ideas may contain incomplete or inaccurate information and do not replace legal, financial, technical, or professional advice.
+                                    </p>
+                                    <h3>Acceptable use</h3>
+                                    <p>
+                                        You may not misuse the service, attempt unauthorized access, disrupt platform operation, scrape protected data, violate intellectual-property rights, or use Nexora to create harmful or illegal content.
+                                    </p>
+                                    <h3>Availability and changes</h3>
+                                    <p>
+                                        Features, limits, pricing, and supported AI providers may change as the graduation project evolves. We may suspend access when necessary to protect users, data, or platform security.
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <h3>Information we process</h3>
+                                    <p>
+                                        Nexora may process your name, email address, account type, authentication data, generated ideas, publication activity, feedback, voting, ratings, payment records, and technical usage information needed to operate the platform.
+                                    </p>
+                                    <h3>Why we use it</h3>
+                                    <p>
+                                        We use this information to create and secure your account, deliver idea-generation features, save your workspace, support publications and interactions, process payments, improve reliability, and prevent abuse.
+                                    </p>
+                                    <h3>AI and service providers</h3>
+                                    <p>
+                                        Content submitted for generation may be sent to configured AI or infrastructure providers solely to perform the requested service. Payment details are handled by the selected payment provider and are not stored as raw card data by Nexora.
+                                    </p>
+                                    <h3>Your choices</h3>
+                                    <p>
+                                        You may review or update your profile information and request account deletion through supported settings. Some records may be retained when required for security, audit, payment, or legal obligations.
+                                    </p>
+                                </>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="register-legal-modal__accept"
+                            onClick={() => setLegalModal(null)}
+                        >
+                            I understand
+                        </button>
+                    </section>
+                </div>
+            )}
+
+            {verificationModal.isOpen && (
+                <div className="register-verification-modal">
+                    <div className="register-verification-modal__backdrop" />
+
+                    <section
+                        className={`register-verification-modal__card ${verificationModal.emailDeliveryFailed
+                                ? 'register-verification-modal__card--error'
+                                : 'register-verification-modal__card--success'
+                            }`}
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="register-verification-title"
                     >
                         <span className="register-verification-modal__icon">
-                            {verificationModal.emailDeliveryFailed ? (
+                            {isVerified ? (
+                                <CheckCircle2 size={30} aria-hidden="true" />
+                            ) : verificationModal.emailDeliveryFailed ? (
                                 <AlertTriangle size={30} aria-hidden="true" />
                             ) : (
-                                <CheckCircle2 size={30} aria-hidden="true" />
+                                <Mail size={30} aria-hidden="true" />
                             )}
                         </span>
 
                         <p className="register-verification-modal__eyebrow">
-                            {verificationModal.emailDeliveryFailed
-                                ? 'Email delivery failed'
-                                : 'Verification code sent'}
+                            {isVerified ? 'Email verified' : 'Secure verification'}
                         </p>
 
                         <h2 id="register-verification-title">
-                            {verificationModal.emailDeliveryFailed
-                                ? 'Your account is ready.'
-                                : 'Enter the code.'}
+                            {isVerified ? 'Your workspace is ready.' : 'Enter your verification code.'}
                         </h2>
 
                         <p className="register-verification-modal__message">
@@ -890,59 +1026,107 @@ export default function RegisterForm() {
                             <span>{verificationModal.email}</span>
                         </div>
 
-                        <Link
-                            className="register-verification-modal__primary"
-                            to="/verify-email"
-                            state={{
-                                email: verificationModal.email,
-                                registrationMessage: verificationModal.message,
-                            }}
-                        >
-                            Enter verification code
-                            <ArrowRight size={18} aria-hidden="true" />
-                        </Link>
+                        {!isVerified ? (
+                            <form
+                                className="register-verification-modal__form"
+                                onSubmit={handleVerifyEmail}
+                            >
+                                <label htmlFor="register-verification-code">
+                                    Six-digit code
+                                </label>
+                                <input
+                                    id="register-verification-code"
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    autoComplete="one-time-code"
+                                    maxLength={6}
+                                    value={verificationCode}
+                                    onChange={handleVerificationCodeChange}
+                                    placeholder="000000"
+                                    disabled={isVerifying}
+                                    autoFocus
+                                />
 
-                        <button
-                            type="button"
-                            className="register-verification-modal__secondary"
-                            onClick={handleResendVerification}
-                            disabled={isResendingVerification}
-                        >
-                            {isResendingVerification ? (
-                                <>
-                                    <LoaderCircle
-                                        className="register-verification-modal__spinner"
-                                        size={18}
-                                        aria-hidden="true"
-                                    />
-                                    Sending code...
-                                </>
-                            ) : (
-                                <>
-                                    <RefreshCw size={18} aria-hidden="true" />
-                                    Resend verification code
-                                </>
-                            )}
-                        </button>
+                                <button
+                                    type="submit"
+                                    className="register-verification-modal__primary"
+                                    disabled={isVerifying || verificationCode.length !== 6}
+                                >
+                                    {isVerifying ? (
+                                        <>
+                                            <LoaderCircle
+                                                className="register-verification-modal__spinner"
+                                                size={18}
+                                            />
+                                            Verifying...
+                                        </>
+                                    ) : (
+                                        <>
+                                            Verify email
+                                            <ArrowRight size={18} aria-hidden="true" />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+                        ) : (
+                            <Link
+                                className="register-verification-modal__primary"
+                                to="/login"
+                            >
+                                Continue to sign in
+                                <ArrowRight size={18} aria-hidden="true" />
+                            </Link>
+                        )}
 
-                        <p className="register-verification-modal__signin">
-                            Already verified? <Link to="/login">Sign in</Link>
-                        </p>
+                        {!isVerified && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="register-verification-modal__secondary"
+                                    onClick={handleResendVerification}
+                                    disabled={isResendingVerification}
+                                >
+                                    {isResendingVerification ? (
+                                        <>
+                                            <LoaderCircle
+                                                className="register-verification-modal__spinner"
+                                                size={18}
+                                            />
+                                            Sending code...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <RefreshCw size={18} aria-hidden="true" />
+                                            Resend verification code
+                                        </>
+                                    )}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="register-verification-modal__edit"
+                                    onClick={handleCloseVerificationModal}
+                                >
+                                    Edit registration details
+                                </button>
+                            </>
+                        )}
+
+                        {verificationError && (
+                            <p className="register-verification-modal__feedback register-verification-modal__feedback--error" role="alert">
+                                {verificationError}
+                            </p>
+                        )}
 
                         {resendMessage && (
-                            <p
-                                className="register-verification-modal__feedback"
-                                role="status"
-                            >
+                            <p className="register-verification-modal__feedback" role="status">
                                 {resendMessage}
                             </p>
                         )}
 
                         {resendError && (
-                            <p
-                                className="register-verification-modal__feedback register-verification-modal__feedback--error"
-                                role="alert"
-                            >
+                            <p className="register-verification-modal__feedback register-verification-modal__feedback--error" role="alert">
                                 {resendError}
                             </p>
                         )}
