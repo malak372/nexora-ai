@@ -11,6 +11,7 @@ import { PaymentProcessingError } from '../errors/payment-processing.error';
 import type { CreatePaymentSessionInput } from '../types/create-payment-session.type';
 import type { PaymentConfirmation } from '../types/payment-confirmation.type';
 import type { PaymentSessionResult } from '../types/payment-session-result.type';
+import type { PaymentSessionInspectionResult } from '../types/payment-session-inspection-result.type';
 import type { PaymentWebhookInput } from '../types/payment-webhook-input.type';
 
 import type { PaymentGateway } from './payment-gateway.interface';
@@ -172,6 +173,122 @@ export class StripePaymentGateway implements PaymentGateway {
         },
       );
     }
+  }
+
+
+  /**
+   * Retrieves one Stripe Checkout Session using the server-side Stripe secret.
+   *
+   * This is a trusted reconciliation path for local development and delayed
+   * webhooks. A paid session is normalized into the same confirmation contract
+   * used by webhook processing, so fulfillment remains centralized and
+   * idempotent inside PaymentProcessingService.
+   */
+  async inspectPaymentSession(
+    providerSessionId: string,
+  ): Promise<PaymentSessionInspectionResult> {
+    const normalizedSessionId = providerSessionId.trim();
+
+    if (!normalizedSessionId) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_SESSION_RESPONSE,
+        'A Stripe checkout-session identifier is required for reconciliation.',
+        {
+          details: {
+            providerKey: this.providerKey,
+          },
+        },
+      );
+    }
+
+    let session: Stripe.Checkout.Session;
+
+    try {
+      session = await this.stripe.checkout.sessions.retrieve(
+        normalizedSessionId,
+      );
+    } catch (error) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.PAYMENT_SESSION_CREATION_FAILED,
+        'Stripe checkout-session reconciliation failed.',
+        {
+          cause: error,
+          details: {
+            providerKey: this.providerKey,
+            providerSessionId: normalizedSessionId,
+          },
+        },
+      );
+    }
+
+    if (
+      session.payment_status === 'paid' ||
+      session.payment_status === 'no_payment_required'
+    ) {
+      return {
+        state: 'SUCCEEDED',
+        confirmation: this.normalizeRetrievedSession(
+          session,
+          PaymentStatus.SUCCEEDED,
+        ),
+      };
+    }
+
+    if (session.status === 'expired') {
+      return {
+        state: 'FAILED',
+        confirmation: this.normalizeRetrievedSession(
+          session,
+          PaymentStatus.FAILED,
+          'Stripe checkout session expired before payment completion.',
+        ),
+      };
+    }
+
+    if (!session.url?.trim()) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_SESSION_RESPONSE,
+        'Stripe returned an open checkout session without a checkout URL.',
+        {
+          details: {
+            providerKey: this.providerKey,
+            providerSessionId: session.id,
+          },
+        },
+      );
+    }
+
+    return {
+      state: 'OPEN',
+      checkoutUrl: session.url,
+      ...(session.expires_at
+        ? { expiresAt: new Date(session.expires_at * 1_000) }
+        : {}),
+    };
+  }
+
+  /**
+   * Converts a Stripe session retrieved through the trusted provider API into
+   * the normalized confirmation consumed by PaymentProcessingService.
+   */
+  private normalizeRetrievedSession(
+    session: Stripe.Checkout.Session,
+    status: PaymentStatus,
+    failureReason?: string,
+  ): PaymentConfirmation {
+    return {
+      providerKey: this.providerKey,
+      paymentId: this.getInternalPaymentId(session),
+      providerPaymentId: this.getProviderPaymentId(session),
+      providerSessionId: session.id,
+      status,
+      amount: this.getSessionAmount(session),
+      currency: this.getSessionCurrency(session),
+      providerEventId: `stripe-session-reconciliation:${session.id}:${status}`,
+      ...(failureReason ? { failureReason } : {}),
+      occurredAt: new Date(),
+      metadata: this.normalizeMetadata(session.metadata),
+    };
   }
 
   /**

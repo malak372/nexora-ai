@@ -1,6 +1,7 @@
 import type { CreatePaymentSessionInput } from '../types/create-payment-session.type';
 import type { PaymentConfirmation } from '../types/payment-confirmation.type';
 import type { PaymentSessionResult } from '../types/payment-session-result.type';
+import type { PaymentSessionInspectionResult } from '../types/payment-session-inspection-result.type';
 import type { PaymentWebhookInput } from '../types/payment-webhook-input.type';
 
 /**
@@ -48,6 +49,23 @@ export interface PaymentGateway {
   createPaymentSession(
     input: CreatePaymentSessionInput,
   ): Promise<PaymentSessionResult>;
+
+
+  /**
+   * Inspects an existing provider-hosted checkout session directly through the
+   * provider API.
+   *
+   * This optional recovery operation is useful when a verified webhook has not
+   * yet reached the application. Implementations must use trusted server
+   * credentials and must never accept a browser-provided payment status.
+   *
+   * @param providerSessionId Existing provider checkout-session identifier.
+   * @returns Current provider session state and, when final, a normalized
+   * payment confirmation suitable for PaymentProcessingService.
+   */
+  inspectPaymentSession?(
+    providerSessionId: string,
+  ): Promise<PaymentSessionInspectionResult>;
 
   /**
    * Verifies and normalizes an incoming provider webhook.
