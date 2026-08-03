@@ -28,7 +28,6 @@ import PublicPublicationDetailsPage from '../features/home/pages/PublicPublicati
 import NotFoundPage from '../pages/public/NotFoundPage';
 
 import { normalUserRoutes } from './normal-user.routes';
-import { premiumUserRoutes } from './premium-user.routes';
 
 export default function AppRoutes() {
     return (
@@ -69,9 +68,6 @@ export default function AppRoutes() {
 
             {/* Normal user pages */}
             {normalUserRoutes}
-
-            {/* Premium user pages */}
-            {premiumUserRoutes}
 
             {/* This route must always stay last */}
             <Route

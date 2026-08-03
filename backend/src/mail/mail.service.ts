@@ -36,7 +36,7 @@ type EmailOptions = {
 };
 
 /**
- * Service responsible for sending Nexora AI application emails.
+ * Service responsible for sending Voxidence application emails.
  *
  * Centralizes email-delivery logic used across the system,
  * including:
@@ -144,7 +144,7 @@ export class MailService {
   }
 
   /**
-   * Builds a consistent HTML layout for Nexora AI emails.
+   * Builds a consistent HTML layout for Voxidence emails.
    *
    * The provided title and content must already be escaped when
    * they contain dynamic or user-provided values.
@@ -211,7 +211,7 @@ export class MailService {
               color:#6b7280;
             ">
               This is an automated message from
-              <strong>Nexora AI</strong>.
+              <strong>Voxidence</strong>.
               Please do not reply to this email.
             </p>
 
@@ -221,7 +221,7 @@ export class MailService {
               font-size:13px;
               color:#6b7280;
             ">
-              Need help? You can contact the Nexora AI team
+              Need help? You can contact the Voxidence team
               through the Complaints or Contact Us section
               in the platform.
             </p>
@@ -367,13 +367,13 @@ export class MailService {
 
     await this.sendEmail({
       to: email,
-      subject: 'Reset your Nexora AI password',
+      subject: 'Reset your Voxidence password',
       text: `
-Nexora AI Password Reset
+Voxidence Password Reset
 
 Hello,
 
-A password reset request was received for your Nexora AI account.
+A password reset request was received for your Voxidence account.
 
 If you requested this change, open the link below:
 ${resetLink}
@@ -382,17 +382,17 @@ This link expires in 15 minutes.
 
 If you did not request this password reset, you can safely ignore this email.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
-        'Nexora AI Password Reset',
+        'Voxidence Password Reset',
         `
           <p>Hello,</p>
 
           <p>
             A password reset request was received for your
-            Nexora AI account.
+            Voxidence account.
           </p>
 
           <p>
@@ -433,22 +433,22 @@ Please do not reply.
 
     await this.sendEmail({
       to: email,
-      subject: 'Welcome to Nexora AI',
+      subject: 'Welcome to Voxidence',
       text: `
-Welcome to Nexora AI, ${fullName.trim() || 'User'}!
+Welcome to Voxidence, ${fullName.trim() || 'User'}!
 
 Your account has been created and verified successfully.
 
 You now have 3 free idea generations to start discovering software project ideas.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
         `Welcome, ${safeFullName}`,
         `
           <p>
-            Your Nexora AI account has been created and
+            Your Voxidence account has been created and
             verified successfully.
           </p>
 
@@ -481,12 +481,12 @@ Please do not reply.
 
     await this.sendEmail({
       to: email,
-      subject: 'Your Nexora AI verification code',
-      text: `Nexora AI email verification code: ${verificationCode}. The code expires in ${expiresInMinutes} minutes. If you did not create this account, ignore this email.`,
+      subject: 'Your Voxidence verification code',
+      text: `Voxidence email verification code: ${verificationCode}. The code expires in ${expiresInMinutes} minutes. If you did not create this account, ignore this email.`,
       html: this.buildEmailTemplate(
         'Verify your email',
         `
-          <p>Enter this code in Nexora AI to verify your email address:</p>
+          <p>Enter this code in Voxidence to verify your email address:</p>
           <div style="font-size:32px;font-weight:800;letter-spacing:10px;text-align:center;padding:20px;background:#f1f5f9;border-radius:10px;margin:22px 0;color:#0f172a;">
             ${safeCode}
           </div>
@@ -511,13 +511,13 @@ Please do not reply.
 
     await this.sendEmail({
       to: currentEmail,
-      subject: 'Approve your Nexora AI email change',
-      text: `Hello ${fullName}, use code ${code} to approve changing your Nexora AI sign-in email to ${newEmail}. The code expires in ${expiresInMinutes} minutes. If you did not request this, do not share the code.`,
+      subject: 'Approve your Voxidence email change',
+      text: `Hello ${fullName}, use code ${code} to approve changing your Voxidence sign-in email to ${newEmail}. The code expires in ${expiresInMinutes} minutes. If you did not request this, do not share the code.`,
       html: this.buildEmailTemplate(
         'Approve your email change',
         `
           <p>Hello <strong>${safeName}</strong>,</p>
-          <p>A request was made to change your Nexora AI sign-in email to:</p>
+          <p>A request was made to change your Voxidence sign-in email to:</p>
           <p style="font-weight:700;">${safeNewEmail}</p>
           <p>Use this code to approve the request:</p>
           <div style="font-size:30px;font-weight:700;letter-spacing:8px;text-align:center;padding:18px;background:#f1f5f9;border-radius:8px;margin:20px 0;">
@@ -542,14 +542,14 @@ Please do not reply.
 
     await this.sendEmail({
       to: newEmail,
-      subject: 'Verify your new Nexora AI email',
-      text: `Hello ${fullName}, your Nexora AI new-email verification code is ${code}. It expires in ${expiresInMinutes} minutes.`,
+      subject: 'Verify your new Voxidence email',
+      text: `Hello ${fullName}, your Voxidence new-email verification code is ${code}. It expires in ${expiresInMinutes} minutes.`,
       html: this.buildEmailTemplate(
         'Verify your new email',
         `
           <p>Hello <strong>${safeName}</strong>,</p>
           <p>The current account email approved this change.</p>
-          <p>Use this code to verify this address as your new Nexora AI sign-in email:</p>
+          <p>Use this code to verify this address as your new Voxidence sign-in email:</p>
           <div style="font-size:30px;font-weight:700;letter-spacing:8px;text-align:center;padding:18px;background:#f1f5f9;border-radius:8px;margin:20px 0;">
             ${safeCode}
           </div>
@@ -571,16 +571,16 @@ Please do not reply.
 
     await this.sendEmail({
       to: oldEmail,
-      subject: 'Your Nexora AI email was changed',
-      text: `Hello ${fullName}, the sign-in email for your Nexora AI account was changed to ${newEmail}. If this was not you, contact support immediately.`,
+      subject: 'Your Voxidence email was changed',
+      text: `Hello ${fullName}, the sign-in email for your Voxidence account was changed to ${newEmail}. If this was not you, contact support immediately.`,
       html: this.buildEmailTemplate(
         'Your email was changed',
         `
           <p>Hello <strong>${safeName}</strong>,</p>
-          <p>The sign-in email for your Nexora AI account was changed to:</p>
+          <p>The sign-in email for your Voxidence account was changed to:</p>
           <p style="font-weight:700;">${safeNewEmail}</p>
           <p>If you made this change, no further action is required.</p>
-          <p><strong>If you did not make this change, contact Nexora AI support immediately and change your password.</strong></p>
+          <p><strong>If you did not make this change, contact Voxidence support immediately and change your password.</strong></p>
         `,
       ),
     });
@@ -620,9 +620,9 @@ Please do not reply.
 
     await this.sendEmail({
       to: email,
-      subject: 'Nexora AI Payment Receipt',
+      subject: 'Voxidence Payment Receipt',
       text: `
-Nexora AI Payment Receipt
+Voxidence Payment Receipt
 
 Your payment has been completed successfully.
 
@@ -631,9 +631,9 @@ Payment Method: ${formattedMethod}
 Purpose: ${formattedPurpose}
 Transaction Reference: ${transactionReference?.trim() || 'N/A'}
 
-Thank you for using Nexora AI.
+Thank you for using Voxidence.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -664,7 +664,7 @@ Please do not reply.
           </p>
 
           <p>
-            Thank you for using Nexora AI.
+            Thank you for using Voxidence.
           </p>
         `,
       ),
@@ -700,7 +700,7 @@ Please do not reply.
     transactionReference?: string,
   ): Promise<void> {
     const safeFailureReason =
-      'Your payment could not be completed. Please verify your payment details or try again using another available payment method. If the problem persists, contact your payment provider or Nexora AI support.';
+      'Your payment could not be completed. Please verify your payment details or try again using another available payment method. If the problem persists, contact your payment provider or Voxidence support.';
 
     const formattedAmount = this.formatAmount(amount, currency);
 
@@ -713,9 +713,9 @@ Please do not reply.
 
     await this.sendEmail({
       to: email,
-      subject: 'Nexora AI Payment Failed',
+      subject: 'Voxidence Payment Failed',
       text: `
-Nexora AI Payment Failed
+Voxidence Payment Failed
 
 Unfortunately, your payment could not be completed.
 
@@ -729,7 +729,7 @@ No credits were added and no idea was unlocked.
 
 Please try again or use another available payment method.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -799,9 +799,9 @@ Please do not reply.
   ): Promise<void> {
     await this.sendEmail({
       to: email,
-      subject: 'Credits Added to Your Nexora AI Account',
+      subject: 'Credits Added to Your Voxidence Account',
       text: `
-Nexora AI Credits Added
+Voxidence Credits Added
 
 Your credits have been added successfully.
 
@@ -811,7 +811,7 @@ Current Balance: ${currentBalance}
 
 You can now use your credits to generate premium project ideas.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -870,10 +870,10 @@ Please do not reply.
       to: email,
       subject:
         currentBalance === 0
-          ? 'Credit Balance Exhausted - Nexora AI'
-          : 'Low Credit Balance - Nexora AI',
+          ? 'Credit Balance Exhausted - Voxidence'
+          : 'Low Credit Balance - Voxidence',
       text: `
-Nexora AI Credit Balance
+Voxidence Credit Balance
 
 ${balanceMessage}
 
@@ -881,7 +881,7 @@ Current Balance: ${currentBalance} credits
 
 Please purchase more credits to continue generating premium project ideas.
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -924,7 +924,7 @@ Please do not reply.
     message: string,
     fullName?: string,
   ): Promise<void> {
-    const normalizedSubject = subject.trim() || 'Nexora AI Notification';
+    const normalizedSubject = subject.trim() || 'Voxidence Notification';
 
     const normalizedMessage = message.trim();
 
@@ -945,9 +945,9 @@ Hello ${recipientName},
 ${normalizedMessage}
 
 Regards,
-Nexora AI Team
+Voxidence Team
 
-This email was sent automatically by Nexora AI.
+This email was sent automatically by Voxidence.
 Please do not reply.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -961,7 +961,7 @@ Please do not reply.
 
           <p style="margin-top:24px;">
             Regards,<br />
-            <strong>Nexora AI Team</strong>
+            <strong>Voxidence Team</strong>
           </p>
         `,
       ),
@@ -1006,25 +1006,25 @@ Please do not reply.
 
     await this.sendEmail({
       to: email,
-      subject: `Nexora AI Support - ${normalizedSubject}`,
+      subject: `Voxidence Support - ${normalizedSubject}`,
       text: `
 Dear ${recipientName},
 
-Thank you for contacting Nexora AI.
+Thank you for contacting Voxidence.
 
 We have reviewed your inquiry regarding:
 ${normalizedSubject}
 
-The Nexora AI Support Team has provided the following reply:
+The Voxidence Support Team has provided the following reply:
 
 ${normalizedReply}
 
-If you require additional assistance, please submit another Contact Us request through the Nexora AI platform.
+If you require additional assistance, please submit another Contact Us request through the Voxidence platform.
 
 Sincerely,
-Nexora AI Support Team
+Voxidence Support Team
 
-This email was sent by Nexora AI Support.
+This email was sent by Voxidence Support.
 Please do not reply directly to this email.
       `.trim(),
       html: this.buildEmailTemplate(
@@ -1034,7 +1034,7 @@ Please do not reply directly to this email.
 
           <p>
             Thank you for contacting
-            <strong>Nexora AI</strong>.
+            <strong>Voxidence</strong>.
             We have reviewed your inquiry regarding:
           </p>
 
@@ -1047,7 +1047,7 @@ Please do not reply directly to this email.
           </p>
 
           <p>
-            The Nexora AI Support Team has provided
+            The Voxidence Support Team has provided
             the following reply:
           </p>
 
@@ -1066,12 +1066,12 @@ Please do not reply directly to this email.
           <p>
             If you require additional assistance or have
             further questions, please submit another Contact Us
-            request through the Nexora AI platform.
+            request through the Voxidence platform.
           </p>
 
           <p>
             Sincerely,<br />
-            <strong>Nexora AI Support Team</strong>
+            <strong>Voxidence Support Team</strong>
           </p>
         `,
       ),
