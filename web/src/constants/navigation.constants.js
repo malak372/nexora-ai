@@ -1,5 +1,5 @@
 /**
- * Centralized public navigation configuration for the Nexora web application.
+ * Centralized public navigation configuration for the Voxidence web application.
  *
  * The configuration defines:
  * - Public application routes.
@@ -33,13 +33,7 @@ export const PUBLIC_NAVIGATION_ITEMS = [
         id: 'home',
         label: 'Home',
         path: ROUTES.HOME,
-        type: 'route',
-    },
-    {
-        id: 'discover',
-        label: 'Discover',
-        path: ROUTES.HOME,
-        sectionId: 'featured-ideas',
+        sectionId: 'home',
         type: 'section',
     },
     {
@@ -61,6 +55,13 @@ export const PUBLIC_NAVIGATION_ITEMS = [
         label: 'Domains',
         path: ROUTES.HOME,
         sectionId: 'domains',
+        type: 'section',
+    },
+    {
+        id: 'discover',
+        label: 'Discover',
+        path: ROUTES.HOME,
+        sectionId: 'featured-ideas',
         type: 'section',
     },
     {

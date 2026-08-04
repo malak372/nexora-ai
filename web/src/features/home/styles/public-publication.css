@@ -1,0 +1,145 @@
+/**
+ * Voxidence guest publication experience.
+ * Premium public-detail styling using the Voxidence mint, blush and ivory palette.
+ *
+ * @author Eman
+ */
+.guest-publication-page {
+    position: relative;
+    min-height: calc(100vh - 84px);
+    overflow: hidden;
+    padding: clamp(42px, 6vw, 82px) 0 clamp(70px, 8vw, 110px);
+    background:
+        radial-gradient(circle at 8% 8%, rgba(92, 189, 185, .14), transparent 24rem),
+        radial-gradient(circle at 94% 16%, rgba(224, 171, 184, .13), transparent 22rem),
+        linear-gradient(180deg, #f8fbfa 0%, #fffdfc 52%, #f4f9f7 100%);
+}
+
+.guest-publication-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .22;
+    background-image: radial-gradient(rgba(47, 119, 116, .16) .7px, transparent .7px);
+    background-size: 25px 25px;
+    mask-image: linear-gradient(to bottom, #000, transparent 90%);
+}
+
+.guest-publication-page>.nexora-container {
+    position: relative;
+    z-index: 1;
+}
+
+.guest-publication-page>.nexora-container>a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid #dcebe7;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .82);
+    color: #2f7774 !important;
+    box-shadow: 0 10px 28px rgba(42, 77, 67, .07);
+    transition: transform .22s ease, box-shadow .22s ease, background .22s ease;
+}
+
+.guest-publication-page>.nexora-container>a:hover {
+    transform: translateY(-2px);
+    background: #fff;
+    box-shadow: 0 16px 34px rgba(42, 77, 67, .11);
+}
+
+.guest-publication-page article {
+    border-color: rgba(255, 255, 255, .94) !important;
+    background: rgba(255, 255, 255, .86) !important;
+    box-shadow: 0 30px 80px rgba(42, 77, 67, .12) !important;
+    backdrop-filter: blur(22px);
+}
+
+.guest-publication-page article header {
+    position: relative;
+    background: linear-gradient(135deg, rgba(245, 251, 249, .94), rgba(255, 249, 251, .88));
+}
+
+.guest-publication-page article header::after {
+    content: '';
+    position: absolute;
+    inset-inline: 8%;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(92, 189, 185, .55), transparent);
+}
+
+.guest-publication-page h1,
+.guest-publication-page h2,
+.guest-publication-page h3 {
+    color: #233633 !important;
+    letter-spacing: -.035em;
+}
+
+.guest-publication-page p,
+.guest-publication-page li,
+.guest-publication-page textarea {
+    color: #526965;
+}
+
+.guest-publication-page aside {
+    border-color: #dfece9 !important;
+    background: linear-gradient(180deg, #f8fcfb, #fffafb) !important;
+    box-shadow: inset 0 1px rgba(255, 255, 255, .95);
+}
+
+.guest-publication-page textarea {
+    border-color: #dceae7 !important;
+    border-radius: 16px !important;
+    background: #fff !important;
+    transition: border-color .22s ease, box-shadow .22s ease;
+}
+
+.guest-publication-page textarea:focus {
+    border-color: #5cbdb9 !important;
+    box-shadow: 0 0 0 4px rgba(92, 189, 185, .12);
+}
+
+.guest-publication-page button {
+    transition: transform .22s ease, box-shadow .22s ease, background .22s ease, border-color .22s ease;
+}
+
+.guest-publication-page button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.guest-publication-page .nexora-button-primary {
+    border: 1px solid rgba(92, 189, 185, .22);
+    background: linear-gradient(105deg, #67c1bb 0%, #5cbdb9 58%, #d89bab 100%);
+    color: #fff;
+    box-shadow: 0 15px 34px rgba(92, 189, 185, .22);
+}
+
+.guest-publication-state {
+    display: grid;
+    place-items: center;
+}
+
+@media (max-width: 767px) {
+    .guest-publication-page {
+        padding-top: 28px;
+    }
+
+    .guest-publication-page article {
+        border-radius: 24px !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .guest-publication-page *,
+    .guest-publication-page *::before,
+    .guest-publication-page *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}

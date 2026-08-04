@@ -1,6 +1,6 @@
 /**
  * Renders the final value proposition and backend-connected Contact Us section
- * on the Nexora public landing page.
+ * on the Voxidence public landing page.
  *
  * Guest messages are submitted to the public POST /contact endpoint. The
  * component provides client-side validation that mirrors the backend DTO,
@@ -8,7 +8,7 @@
  * accessible success and error feedback.
  *
  * @component
- * @returns {JSX.Element} The Nexora contact section.
+ * @returns {JSX.Element} The Voxidence contact section.
  *
  * @author Eman
  */
@@ -105,7 +105,7 @@ function resolveSubmitError(error) {
 }
 
 /**
- * Displays Nexora's main landing-page call-to-action and contact form.
+ * Displays Voxidence's main landing-page call-to-action and contact form.
  *
  * @returns {JSX.Element}
  */
@@ -226,281 +226,229 @@ export default function HomeCtaSection() {
     return (
         <section
             id="contact"
-            className="scroll-mt-24 py-24 sm:py-32"
+            className="vox-contact-section scroll-mt-24"
             aria-labelledby="contact-heading"
         >
-            <div className="nexora-container">
-                <div className="contact-panel relative overflow-hidden rounded-[2.5rem] border border-white/90 px-6 py-12 shadow-[0_28px_70px_rgba(96,73,134,0.12)] sm:px-10 lg:px-14 lg:py-14">
-                    <div
-                        className="contact-orb"
-                        aria-hidden="true"
-                    />
+            <div className="vox-contact-container">
+                <div className="vox-contact-header">
+                    <span className="vox-contact-eyebrow">
+                        <Sparkles size={16} aria-hidden="true" />
+                        Start a meaningful conversation
+                    </span>
 
-                    <div
-                        className="contact-orb contact-orb-secondary"
-                        aria-hidden="true"
-                    />
+                    <h2 id="contact-heading">
+                        Let&apos;s turn your question into
+                        <span> a clearer next step.</span>
+                    </h2>
 
-                    <div className="relative z-10 grid gap-12 lg:grid-cols-[.88fr_1.12fr] lg:items-start">
-                        <div className="lg:sticky lg:top-28">
-                            <span className="inline-flex items-center gap-2 rounded-full border border-white/90 bg-white/70 px-4 py-2 text-sm font-bold text-[#7656c6] backdrop-blur-xl">
-                                <Sparkles
-                                    size={16}
-                                    aria-hidden="true"
-                                />
+                    <p>
+                        Share your question, feedback, or collaboration idea.
+                        The Voxidence team will review the context and reply to
+                        the email you provide.
+                    </p>
+                </div>
 
-                                Built for meaningful innovation
+                <div className="vox-contact-layout">
+                    <div className="vox-contact-copy">
+                        <div className="vox-contact-copy__top">
+                            <span className="vox-contact-copy__icon">
+                                <MessageSquareText size={22} aria-hidden="true" />
                             </span>
 
-                            <h2
-                                id="contact-heading"
-                                className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-[#29213d] sm:text-5xl"
-                            >
-                                Better project ideas begin with better evidence.
-                            </h2>
-
-                            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#716a81]">
-                                Nexora helps students, builders, and innovators
-                                move beyond guesswork and discover software
-                                opportunities grounded in real community needs.
-                            </p>
-
-                            <div className="mt-8 space-y-3">
-                                {VALUE_POINTS.map((point) => (
-                                    <div
-                                        key={point}
-                                        className="flex items-center gap-3 text-sm font-semibold text-[#352b47] sm:text-base"
-                                    >
-                                        <CheckCircle2
-                                            className="shrink-0 text-[#5da68b]"
-                                            size={19}
-                                            aria-hidden="true"
-                                        />
-
-                                        <span>{point}</span>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="mt-9 flex items-start gap-4 rounded-[1.5rem] border border-white/80 bg-white/55 p-5 backdrop-blur-xl">
-                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#eee8fb] text-[#7656c6]">
-                                    <MessageSquareText
-                                        size={21}
-                                        aria-hidden="true"
-                                    />
-                                </div>
-
-                                <div>
-                                    <p className="font-extrabold text-[#342947]">
-                                        Your message stays organized
-                                    </p>
-
-                                    <p className="mt-1 text-sm leading-6 text-[#7a7287]">
-                                        Every inquiry is securely submitted to
-                                        Nexora and managed through our backend.
-                                    </p>
-                                </div>
+                            <div>
+                                <p className="vox-contact-copy__label">Why contact us</p>
+                                <h3>Bring us the context. We will help clarify the direction.</h3>
                             </div>
                         </div>
 
-                        <div className="contact-card rounded-[2rem] border border-white/95 bg-white/76 p-6 backdrop-blur-2xl sm:p-9">
-                            <div className="flex items-start justify-between gap-4">
-                                <div>
-                                    <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#80778c]">
-                                        Contact us
-                                    </p>
+                        <p className="vox-contact-copy__description">
+                            Ask about the platform, share feedback, or tell us
+                            about a collaboration you are exploring. A clear
+                            message helps us respond with a useful next step.
+                        </p>
 
-                                    <h3 className="mt-2 text-2xl font-extrabold text-[#2a223d] sm:text-3xl">
-                                        Tell us how we can help.
-                                    </h3>
+                        <div className="vox-contact-values">
+                            {VALUE_POINTS.slice(0, 3).map((point) => (
+                                <div key={point}>
+                                    <CheckCircle2 size={18} aria-hidden="true" />
+                                    <span>{point}</span>
                                 </div>
+                            ))}
+                        </div>
 
-                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8060ce] to-[#64a6d8] text-white shadow-[0_14px_30px_rgba(106,82,176,0.22)]">
-                                    <Send
-                                        size={23}
-                                        aria-hidden="true"
-                                    />
-                                </div>
+                        <div className="vox-contact-note">
+                            <Mail size={18} aria-hidden="true" />
+                            <div>
+                                <strong>Your message stays connected</strong>
+                                <span>
+                                    We keep your inquiry linked to the reply
+                                    email you provide, so the conversation stays
+                                    easy to follow.
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="contact-card vox-contact-form-card">
+                        <div className="vox-contact-form-card__header">
+                            <div>
+                                <p>Contact Voxidence</p>
+                                <h3>Tell us how we can help.</h3>
                             </div>
 
-                            <form
-                                className="mt-8 space-y-5"
-                                onSubmit={handleSubmit}
-                                noValidate
-                            >
-                                <div className="grid gap-5 sm:grid-cols-2">
-                                    <ContactField
-                                        id="contact-full-name"
-                                        label="Full name"
-                                        name="fullName"
-                                        value={formValues.fullName}
-                                        error={fieldErrors.fullName}
-                                        placeholder="Your full name"
-                                        autoComplete="name"
-                                        minLength={2}
-                                        maxLength={100}
-                                        onChange={handleFieldChange}
-                                        disabled={isSubmitting}
-                                    />
+                            <span>
+                                <Send size={21} aria-hidden="true" />
+                            </span>
+                        </div>
 
-                                    <ContactField
-                                        id="contact-email"
-                                        label="Email address"
-                                        name="email"
-                                        type="email"
-                                        value={formValues.email}
-                                        error={fieldErrors.email}
-                                        placeholder="you@example.com"
-                                        autoComplete="email"
-                                        maxLength={150}
-                                        onChange={handleFieldChange}
-                                        disabled={isSubmitting}
-                                    />
-                                </div>
-
+                        <form
+                            className="vox-contact-form"
+                            onSubmit={handleSubmit}
+                            noValidate
+                        >
+                            <div className="vox-contact-form__row">
                                 <ContactField
-                                    id="contact-subject"
-                                    label="Subject"
-                                    name="subject"
-                                    value={formValues.subject}
-                                    error={fieldErrors.subject}
-                                    placeholder="What would you like to discuss?"
-                                    minLength={3}
-                                    maxLength={150}
+                                    id="contact-full-name"
+                                    label="Full name"
+                                    name="fullName"
+                                    value={formValues.fullName}
+                                    error={fieldErrors.fullName}
+                                    placeholder="Your full name"
+                                    autoComplete="name"
+                                    minLength={2}
+                                    maxLength={100}
                                     onChange={handleFieldChange}
                                     disabled={isSubmitting}
                                 />
 
-                                <div>
-                                    <div className="mb-2 flex items-center justify-between gap-3">
-                                        <label
-                                            htmlFor="contact-message"
-                                            className="text-sm font-extrabold text-[#403451]"
-                                        >
-                                            Message
-                                        </label>
+                                <ContactField
+                                    id="contact-email"
+                                    label="Email address"
+                                    name="email"
+                                    type="email"
+                                    value={formValues.email}
+                                    error={fieldErrors.email}
+                                    placeholder="you@example.com"
+                                    autoComplete="email"
+                                    maxLength={150}
+                                    onChange={handleFieldChange}
+                                    disabled={isSubmitting}
+                                />
+                            </div>
 
-                                        <span className="text-xs font-semibold text-[#91889d]">
-                                            {messageLength}/2000
-                                        </span>
-                                    </div>
+                            <ContactField
+                                id="contact-subject"
+                                label="Subject"
+                                name="subject"
+                                value={formValues.subject}
+                                error={fieldErrors.subject}
+                                placeholder="What would you like to discuss?"
+                                minLength={3}
+                                maxLength={150}
+                                onChange={handleFieldChange}
+                                disabled={isSubmitting}
+                            />
 
-                                    <textarea
-                                        id="contact-message"
-                                        name="message"
-                                        rows={6}
-                                        value={formValues.message}
-                                        onChange={handleFieldChange}
-                                        placeholder="Share the details of your question, feedback, or request..."
-                                        minLength={10}
-                                        maxLength={2000}
-                                        disabled={isSubmitting}
-                                        aria-invalid={Boolean(
-                                            fieldErrors.message
-                                        )}
-                                        aria-describedby={
-                                            fieldErrors.message
-                                                ? 'contact-message-error'
-                                                : undefined
-                                        }
-                                        className={`contact-form-control min-h-[10rem] resize-y ${fieldErrors.message
-                                            ? 'contact-form-control-error'
-                                            : ''
-                                            }`}
-                                    />
-
-                                    {fieldErrors.message && (
-                                        <p
-                                            id="contact-message-error"
-                                            className="contact-field-error"
-                                        >
-                                            {fieldErrors.message}
-                                        </p>
-                                    )}
+                            <div className="vox-contact-field">
+                                <div className="vox-contact-field__label-row">
+                                    <label htmlFor="contact-message">Message</label>
+                                    <span>{messageLength}/2000</span>
                                 </div>
 
-                                {(formValues.email.trim() || submitState.replyEmail) && (
-                                    <small className="flex items-center gap-2 text-sm font-semibold text-[#716a81]">
-                                        <Mail
-                                            size={14}
-                                            aria-hidden="true"
-                                        />
-
-                                        Reply will be sent to{' '}
-                                        <span className="break-all text-[#403451]">
-                                            {formValues.email.trim() || submitState.replyEmail}
-                                        </span>
-                                    </small>
-                                )}
-
-                                {submitState.status === 'success' && (
-                                    <div
-                                        className="contact-feedback contact-feedback-success"
-                                        role="status"
-                                        aria-live="polite"
-                                    >
-                                        <CheckCircle2
-                                            size={20}
-                                            aria-hidden="true"
-                                        />
-
-                                        <div>
-                                            <p>{submitState.message}</p>
-
-                                            {submitState.referenceId && (
-                                                <p className="mt-1 break-all text-xs font-semibold opacity-75">
-                                                    Reference:{' '}
-                                                    {submitState.referenceId}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {submitState.status === 'error' && (
-                                    <div
-                                        className="contact-feedback contact-feedback-error"
-                                        role="alert"
-                                        aria-live="assertive"
-                                    >
-                                        <CircleAlert
-                                            size={20}
-                                            aria-hidden="true"
-                                        />
-
-                                        <p>{submitState.message}</p>
-                                    </div>
-                                )}
-
-                                <button
-                                    type="submit"
+                                <textarea
+                                    id="contact-message"
+                                    name="message"
+                                    rows={4}
+                                    value={formValues.message}
+                                    onChange={handleFieldChange}
+                                    placeholder="Share the details of your question, feedback, or request..."
+                                    minLength={10}
+                                    maxLength={2000}
                                     disabled={isSubmitting}
-                                    className="nexora-button-primary group w-full gap-3"
+                                    aria-invalid={Boolean(fieldErrors.message)}
+                                    aria-describedby={
+                                        fieldErrors.message
+                                            ? 'contact-message-error'
+                                            : undefined
+                                    }
+                                    className={`contact-form-control ${
+                                        fieldErrors.message
+                                            ? 'contact-form-control-error'
+                                            : ''
+                                    }`}
+                                />
+
+                                {fieldErrors.message && (
+                                    <p
+                                        id="contact-message-error"
+                                        className="contact-field-error"
+                                    >
+                                        {fieldErrors.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {(formValues.email.trim() || submitState.replyEmail) && (
+                                <small className="vox-contact-reply-note">
+                                    <Mail size={14} aria-hidden="true" />
+                                    Reply will be sent to{' '}
+                                    <span>
+                                        {formValues.email.trim() || submitState.replyEmail}
+                                    </span>
+                                </small>
+                            )}
+
+                            {submitState.status === 'success' && (
+                                <div
+                                    className="contact-feedback contact-feedback-success"
+                                    role="status"
+                                    aria-live="polite"
                                 >
-                                    {isSubmitting ? (
-                                        <>
-                                            <LoaderCircle
-                                                className="animate-spin"
-                                                size={19}
-                                                aria-hidden="true"
-                                            />
+                                    <CheckCircle2 size={20} aria-hidden="true" />
+                                    <div>
+                                        <p>{submitState.message}</p>
+                                        {submitState.referenceId && (
+                                            <p className="vox-contact-reference">
+                                                Reference: {submitState.referenceId}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
-                                            Sending message...
-                                        </>
-                                    ) : (
-                                        <>
-                                            Send message
+                            {submitState.status === 'error' && (
+                                <div
+                                    className="contact-feedback contact-feedback-error"
+                                    role="alert"
+                                    aria-live="assertive"
+                                >
+                                    <CircleAlert size={20} aria-hidden="true" />
+                                    <p>{submitState.message}</p>
+                                </div>
+                            )}
 
-                                            <ArrowUpRight
-                                                className="transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"
-                                                size={19}
-                                                aria-hidden="true"
-                                            />
-                                        </>
-                                    )}
-                                </button>
-                            </form>
-                        </div>
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="vox-contact-submit"
+                            >
+                                {isSubmitting ? (
+                                    <>
+                                        <LoaderCircle
+                                            className="animate-spin"
+                                            size={18}
+                                            aria-hidden="true"
+                                        />
+                                        Sending message...
+                                    </>
+                                ) : (
+                                    <>
+                                        Send message
+                                        <ArrowUpRight size={18} aria-hidden="true" />
+                                    </>
+                                )}
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -508,42 +456,25 @@ export default function HomeCtaSection() {
     );
 }
 
-/**
- * Reusable labelled input used by the contact form.
- *
- * @param {{
- *   id: string,
- *   label: string,
- *   error?: string,
- * }} props Field properties.
- * @returns {JSX.Element}
- */
 function ContactField({ id, label, error, ...inputProps }) {
     const errorId = `${id}-error`;
 
     return (
-        <div>
-            <label
-                htmlFor={id}
-                className="mb-2 block text-sm font-extrabold text-[#403451]"
-            >
-                {label}
-            </label>
+        <div className="vox-contact-field">
+            <label htmlFor={id}>{label}</label>
 
             <input
                 id={id}
                 {...inputProps}
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? errorId : undefined}
-                className={`contact-form-control ${error ? 'contact-form-control-error' : ''
-                    }`}
+                className={`contact-form-control ${
+                    error ? 'contact-form-control-error' : ''
+                }`}
             />
 
             {error && (
-                <p
-                    id={errorId}
-                    className="contact-field-error"
-                >
+                <p id={errorId} className="contact-field-error">
                     {error}
                 </p>
             )}
