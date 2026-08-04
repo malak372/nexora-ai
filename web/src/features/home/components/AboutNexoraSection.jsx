@@ -1,9 +1,9 @@
 /**
- * Renders the About Voxidence section on the public landing page.
+ * Displays Voxidence's story, mission, and core differentiators.
  *
- * The section introduces Nexora's mission and explains how the platform
- * differs from traditional idea-generation tools by starting from public
- * evidence, community needs, and comparative AI evaluation.
+ * The section keeps the same connected visual language used by the hero and
+ * workflow sections while presenting the About content in a balanced,
+ * compact editorial layout.
  *
  * @component
  * @returns {JSX.Element} The public About Voxidence section.
@@ -12,10 +12,12 @@
  */
 
 import {
+    ArrowUpRight,
     BrainCircuit,
     DatabaseZap,
     Globe2,
     ShieldCheck,
+    Sparkles,
 } from 'lucide-react';
 
 import {
@@ -23,11 +25,6 @@ import {
     ABOUT_NEXORA_FEATURES,
 } from '../constants/home.constants';
 
-/**
- * Maps About-section icon identifiers to Lucide React components.
- *
- * @type {Object.<string, import('lucide-react').LucideIcon>}
- */
 const ABOUT_ICONS = {
     evidence: DatabaseZap,
     intelligence: BrainCircuit,
@@ -35,114 +32,104 @@ const ABOUT_ICONS = {
     trust: ShieldCheck,
 };
 
-/**
- * Displays a single Nexora differentiator card.
- *
- * @param {Object} props - Component properties.
- * @param {Object} props.feature - Feature configuration.
- * @param {string} props.feature.id - Stable feature identifier.
- * @param {string} props.feature.title - Feature title.
- * @param {string} props.feature.description - Feature description.
- * @param {string} props.feature.icon - Icon identifier.
- * @param {boolean} [props.feature.offset=false] - Applies a vertical offset.
- *
- * @returns {JSX.Element} A Nexora feature card.
- */
-function AboutFeatureCard({ feature }) {
+function AboutFeatureCard({ feature, index }) {
     const Icon = ABOUT_ICONS[feature.icon] || BrainCircuit;
 
     return (
-        <article
-            className={`about-feature-card group rounded-[2rem] border border-white/90 bg-white/70 p-7 backdrop-blur-xl ${feature.offset ? 'sm:translate-y-8' : ''
-                }`}
-        >
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#eee6ff] to-[#dff3ff] text-[#7656c6] transition duration-300 group-hover:scale-110 group-hover:from-[#8564d1] group-hover:to-[#67a6d5] group-hover:text-white">
-                <Icon
-                    size={25}
-                    aria-hidden="true"
-                />
-            </span>
+        <article className="vox-about-feature group">
+            <div className="vox-about-feature-head">
+                <span className="vox-about-feature-icon">
+                    <Icon size={20} aria-hidden="true" />
+                </span>
 
-            <h3 className="mt-6 text-xl font-extrabold text-[#2d243f]">
-                {feature.title}
-            </h3>
+                <span className="vox-about-feature-index">
+                    {String(index + 1).padStart(2, '0')}
+                </span>
+            </div>
 
-            <p className="mt-3 text-sm leading-7 text-[#756e83]">
-                {feature.description}
-            </p>
+            <div className="vox-about-feature-copy">
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+            </div>
+
+            <ArrowUpRight
+                className="vox-about-feature-arrow"
+                size={17}
+                aria-hidden="true"
+            />
         </article>
     );
 }
 
-/**
- * Displays Nexora's mission, platform approach, and key differentiators.
- *
- * @returns {JSX.Element}
- */
 export default function AboutNexoraSection() {
     return (
         <section
             id="about"
-            className="about-nexora-section relative scroll-mt-24 overflow-hidden py-24 sm:py-32"
+            className="vox-about-section scroll-mt-28"
             aria-labelledby="about-nexora-heading"
         >
-            {/* Decorative background elements */}
-            <div
-                className="about-nexora-orb about-nexora-orb-one"
-                aria-hidden="true"
-            />
+            <div className="vox-about-container">
+                <div className="vox-about-panel">
+                    <div
+                        className="vox-about-orb vox-about-orb-left"
+                        aria-hidden="true"
+                    />
+                    <div
+                        className="vox-about-orb vox-about-orb-right"
+                        aria-hidden="true"
+                    />
 
-            <div
-                className="about-nexora-orb about-nexora-orb-two"
-                aria-hidden="true"
-            />
-
-            <div className="nexora-container relative z-10">
-                <div className="grid gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-                    {/* Section introduction */}
-                    <div>
-                        <p className="nexora-eyebrow">
-                            {ABOUT_NEXORA_CONTENT.eyebrow}
-                        </p>
-
-                        <h2
-                            id="about-nexora-heading"
-                            className="nexora-section-title mt-5"
-                        >
-                            {ABOUT_NEXORA_CONTENT.titlePrefix}{' '}
-
-                            <span className="nexora-gradient-text">
-                                {ABOUT_NEXORA_CONTENT.highlightedTitle}
+                    <header className="vox-about-refined__header">
+                        <div className="vox-about-refined__heading">
+                            <span className="vox-about-refined__eyebrow">
+                                <Sparkles size={14} aria-hidden="true" />
+                                Why Voxidence
                             </span>
-                        </h2>
 
-                        <p className="mt-6 max-w-xl text-lg leading-8 text-[#716a81]">
-                            {ABOUT_NEXORA_CONTENT.description}
-                        </p>
-
-                        <p className="mt-5 max-w-xl leading-8 text-[#7a7288]">
-                            {ABOUT_NEXORA_CONTENT.secondaryDescription}
-                        </p>
-
-                        <div className="about-mission-card mt-9 rounded-[2rem] border border-white/90 bg-white/70 p-6 backdrop-blur-xl">
-                            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#8264c8]">
-                                {ABOUT_NEXORA_CONTENT.missionLabel}
-                            </p>
-
-                            <p className="mt-3 text-lg font-bold leading-8 text-[#302642]">
-                                {ABOUT_NEXORA_CONTENT.mission}
-                            </p>
+                            <h2 id="about-nexora-heading">
+                                Ideas should begin with{' '}
+                                <span>real human needs.</span>
+                            </h2>
                         </div>
-                    </div>
+                    </header>
 
-                    {/* Nexora differentiators */}
-                    <div className="grid gap-5 sm:grid-cols-2">
-                        {ABOUT_NEXORA_FEATURES.map((feature) => (
-                            <AboutFeatureCard
-                                key={feature.id}
-                                feature={feature}
-                            />
-                        ))}
+                    <div className="vox-about-layout">
+                        <article className="vox-about-story-card">
+                            <span className="vox-about-story-kicker">
+                                The Voxidence difference
+                            </span>
+
+                            <p className="vox-about-story-lead">
+                                {ABOUT_NEXORA_CONTENT.secondaryDescription}
+                            </p>
+
+                            <div className="vox-about-story-points">
+                                <div>
+                                    <strong>Listen first</strong>
+                                    <span>Start with real community signals.</span>
+                                </div>
+
+                                <div>
+                                    <strong>Validate deeply</strong>
+                                    <span>Turn repeated needs into reliable direction.</span>
+                                </div>
+                            </div>
+
+                            <div className="vox-about-mission-strip">
+                                <span>{ABOUT_NEXORA_CONTENT.missionLabel}</span>
+                                <p>{ABOUT_NEXORA_CONTENT.mission}</p>
+                            </div>
+                        </article>
+
+                        <div className="vox-about-feature-grid">
+                            {ABOUT_NEXORA_FEATURES.map((feature, index) => (
+                                <AboutFeatureCard
+                                    key={feature.id}
+                                    feature={feature}
+                                    index={index}
+                                />
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>

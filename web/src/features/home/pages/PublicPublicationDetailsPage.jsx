@@ -42,6 +42,8 @@ import {
     publicPublicationQueryKeys,
 } from '../api/publications.api';
 
+import '../styles/public-publication.css';
+
 function formatDate(value) {
     if (!value) {
         return 'Recently published';
@@ -200,14 +202,14 @@ export default function PublicPublicationDetailsPage() {
 
     if (isLoading) {
         return (
-            <main className="min-h-[70vh] bg-[#fbf9ff] py-16">
+            <main className="guest-publication-page guest-publication-state">
                 <div className="nexora-container">
-                    <div className="mx-auto max-w-4xl animate-pulse rounded-[2rem] border border-[#ebe3f6] bg-white p-8 shadow-soft sm:p-12">
-                        <div className="h-4 w-40 rounded-full bg-[#eee8f7]" />
-                        <div className="mt-8 h-10 w-4/5 rounded-full bg-[#e9e2f3]" />
-                        <div className="mt-8 h-4 w-full rounded-full bg-[#f0ebf6]" />
-                        <div className="mt-3 h-4 w-11/12 rounded-full bg-[#f0ebf6]" />
-                        <div className="mt-3 h-4 w-3/4 rounded-full bg-[#f0ebf6]" />
+                    <div className="mx-auto max-w-4xl animate-pulse rounded-[2rem] border border-[#e1eeeb] bg-white p-8 shadow-soft sm:p-12">
+                        <div className="h-4 w-40 rounded-full bg-[#e6f0ed]" />
+                        <div className="mt-8 h-10 w-4/5 rounded-full bg-[#e2eeeb]" />
+                        <div className="mt-8 h-4 w-full rounded-full bg-[#edf4f2]" />
+                        <div className="mt-3 h-4 w-11/12 rounded-full bg-[#edf4f2]" />
+                        <div className="mt-3 h-4 w-3/4 rounded-full bg-[#edf4f2]" />
                     </div>
                 </div>
             </main>
@@ -216,14 +218,14 @@ export default function PublicPublicationDetailsPage() {
 
     if (isError || !data) {
         return (
-            <main className="min-h-[70vh] bg-[#fbf9ff] py-16">
+            <main className="guest-publication-page guest-publication-state">
                 <div className="nexora-container">
-                    <div className="mx-auto flex max-w-3xl flex-col items-center rounded-[2rem] border border-[#ebe3f6] bg-white p-10 text-center shadow-soft">
-                        <Lightbulb size={36} className="text-[#7656c6]" aria-hidden="true" />
-                        <h1 className="mt-5 text-2xl font-black text-[#2b233d]">
+                    <div className="mx-auto flex max-w-3xl flex-col items-center rounded-[2rem] border border-[#e1eeeb] bg-white p-10 text-center shadow-soft">
+                        <Lightbulb size={36} className="text-[#2f7774]" aria-hidden="true" />
+                        <h1 className="mt-5 text-2xl font-black text-[#233633]">
                             This public idea is unavailable.
                         </h1>
-                        <p className="mt-3 text-[#756e83]">
+                        <p className="mt-3 text-[#71837f]">
                             It may have been archived, hidden, or changed to a non-public visibility.
                         </p>
                         <Link to={`${ROUTES.HOME}#featured-ideas`} className="nexora-button-primary mt-7">
@@ -239,31 +241,31 @@ export default function PublicPublicationDetailsPage() {
     const targetUsers = normalizeTextList(data.publicTargetUsers);
 
     return (
-        <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(222,207,255,0.35),transparent_30%),linear-gradient(180deg,#ffffff_0%,#fbf9ff_100%)] py-12 sm:py-16">
+        <main className="guest-publication-page">
             <div className="nexora-container">
                 <Link
                     to={`${ROUTES.HOME}#featured-ideas`}
-                    className="inline-flex items-center gap-2 text-sm font-extrabold text-[#7656c6]"
+                    className="inline-flex items-center gap-2 text-sm font-extrabold text-[#2f7774]"
                 >
                     <ArrowLeft size={17} aria-hidden="true" />
                     Back to Discover
                 </Link>
 
                 <article className="mx-auto mt-8 max-w-5xl overflow-hidden rounded-[2.25rem] border border-white bg-white/85 shadow-[0_28px_70px_rgba(96,73,134,0.12)] backdrop-blur-xl">
-                    <header className="border-b border-[#eee8f5] p-7 sm:p-11">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-[#e3d8fa] bg-[#f5f0ff] px-3.5 py-2 text-xs font-extrabold text-[#7555c7]">
+                    <header className="border-b border-[#e7f0ed] p-7 sm:p-11">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-[#d9ece8] bg-[#eef8f6] px-3.5 py-2 text-xs font-extrabold text-[#2f7774]">
                             <Lightbulb size={15} aria-hidden="true" />
                             Public software idea
                         </span>
 
-                        <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight text-[#2b233d] sm:text-5xl">
+                        <h1 className="mt-6 max-w-4xl text-3xl font-black leading-tight text-[#233633] sm:text-5xl">
                             {data.publicTitle || 'Untitled software idea'}
                         </h1>
 
-                        <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#7b7288]">
+                        <div className="mt-7 flex flex-wrap gap-x-6 gap-y-3 text-sm font-semibold text-[#71837f]">
                             <span className="inline-flex items-center gap-2">
                                 <UserRound size={17} aria-hidden="true" />
-                                {data.publisher?.fullName || 'Nexora creator'}
+                                {data.publisher?.fullName || 'Voxidence creator'}
                             </span>
                             <span className="inline-flex items-center gap-2">
                                 <CalendarDays size={17} aria-hidden="true" />
@@ -283,16 +285,16 @@ export default function PublicPublicationDetailsPage() {
                     <div className="grid gap-8 p-7 sm:p-11 lg:grid-cols-[1.35fr_0.65fr]">
                         <div className="space-y-9">
                             <section>
-                                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">Problem</p>
-                                <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#554b63]">
+                                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">Problem</p>
+                                <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#526965]">
                                     {data.publicProblem || data.publicAbstract || 'No public problem statement was provided.'}
                                 </p>
                             </section>
 
                             {data.publicAbstract && data.publicAbstract !== data.publicProblem && (
                                 <section>
-                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">Abstract</p>
-                                    <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#554b63]">
+                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">Abstract</p>
+                                    <p className="mt-4 whitespace-pre-line text-base leading-8 text-[#526965]">
                                         {data.publicAbstract}
                                     </p>
                                 </section>
@@ -300,13 +302,13 @@ export default function PublicPublicationDetailsPage() {
 
                             {objectives.length > 0 && (
                                 <section>
-                                    <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">
+                                    <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">
                                         <Target size={16} aria-hidden="true" />
                                         Objectives
                                     </p>
                                     <ul className="mt-4 space-y-3">
                                         {objectives.map((objective, index) => (
-                                            <li key={`${objective}-${index}`} className="rounded-2xl bg-[#faf8fe] px-4 py-3 text-sm font-semibold leading-6 text-[#554b63]">
+                                            <li key={`${objective}-${index}`} className="rounded-2xl bg-[#f7fbfa] px-4 py-3 text-sm font-semibold leading-6 text-[#526965]">
                                                 {objective}
                                             </li>
                                         ))}
@@ -315,8 +317,8 @@ export default function PublicPublicationDetailsPage() {
                             )}
                         </div>
 
-                        <aside className="h-fit rounded-[1.75rem] border border-[#e8e0f4] bg-[#faf8fe] p-6">
-                            <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">
+                        <aside className="h-fit rounded-[1.75rem] border border-[#e2efec] bg-[#f7fbfa] p-6">
+                            <p className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">
                                 <UsersRound size={16} aria-hidden="true" />
                                 Target users
                             </p>
@@ -324,31 +326,31 @@ export default function PublicPublicationDetailsPage() {
                             {targetUsers.length > 0 ? (
                                 <ul className="mt-5 space-y-3">
                                     {targetUsers.map((user, index) => (
-                                        <li key={`${user}-${index}`} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#554b63] shadow-sm">
+                                        <li key={`${user}-${index}`} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-[#526965] shadow-sm">
                                             {user}
                                         </li>
                                     ))}
                                 </ul>
                             ) : (
-                                <p className="mt-4 text-sm leading-6 text-[#756e83]">
+                                <p className="mt-4 text-sm leading-6 text-[#71837f]">
                                     Target-user details were not included in the public snapshot.
                                 </p>
                             )}
 
                             {(data.allowRatings !== false || data.allowVoting !== false || data.allowFeedback !== false) && (
-                                <div className="mt-7 border-t border-[#e8e0f4] pt-6">
-                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8464c8]">Community interaction</p>
-                                    <p className="mt-2 text-sm leading-6 text-[#756e83]">You can participate as a guest because the publisher enabled these options.</p>
+                                <div className="mt-7 border-t border-[#e2efec] pt-6">
+                                    <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4d8a80]">Community interaction</p>
+                                    <p className="mt-2 text-sm leading-6 text-[#71837f]">You can participate as a guest because the publisher enabled these options.</p>
 
                                     {data.allowRatings !== false && (
                                         <div className="mt-5">
                                             <div className="flex items-center justify-between gap-3">
-                                                <p className="text-sm font-extrabold text-[#554b63]">
+                                                <p className="text-sm font-extrabold text-[#526965]">
                                                     Rate this idea
                                                 </p>
 
                                                 {rating > 0 && (
-                                                    <span className="text-xs font-bold text-[#7656c6]">
+                                                    <span className="text-xs font-bold text-[#2f7774]">
                                                         Your rating: {rating}/5
                                                     </span>
                                                 )}
@@ -372,8 +374,8 @@ export default function PublicPublicationDetailsPage() {
                                                                 size={23}
                                                                 className={
                                                                     isSelected
-                                                                        ? 'fill-[#8b6bd1] text-[#8b6bd1]'
-                                                                        : 'text-[#cfc5df]'
+                                                                        ? 'fill-[#5cbdb9] text-[#5cbdb9]'
+                                                                        : 'text-[#c7d8d4]'
                                                                 }
                                                             />
                                                         </button>
@@ -382,7 +384,7 @@ export default function PublicPublicationDetailsPage() {
                                             </div>
 
                                             {rating > 0 && (
-                                                <p className="mt-2 text-xs font-semibold text-[#756e83]">
+                                                <p className="mt-2 text-xs font-semibold text-[#71837f]">
                                                     You can select another star to update your rating.
                                                 </p>
                                             )}
@@ -391,10 +393,10 @@ export default function PublicPublicationDetailsPage() {
 
                                     {data.allowVoting !== false && (
                                         <div className="mt-5 grid grid-cols-2 gap-2">
-                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('UP')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'UP' ? 'border-[#8b6bd1] bg-[#f2edff] text-[#6d4fba]' : 'border-[#ddd4eb] bg-white text-[#665b73]'}`}>
+                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('UP')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'UP' ? 'border-[#5cbdb9] bg-[#edf8f6] text-[#2f7774]' : 'border-[#dceae7] bg-white text-[#607570]'}`}>
                                                 <ThumbsUp size={17} /> {data.upvotesCount || 0}
                                             </button>
-                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('DOWN')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'DOWN' ? 'border-[#8b6bd1] bg-[#f2edff] text-[#6d4fba]' : 'border-[#ddd4eb] bg-white text-[#665b73]'}`}>
+                                            <button type="button" disabled={!guestReady || busy === 'vote'} onClick={() => saveVote('DOWN')} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold ${vote === 'DOWN' ? 'border-[#5cbdb9] bg-[#edf8f6] text-[#2f7774]' : 'border-[#dceae7] bg-white text-[#607570]'}`}>
                                                 <ThumbsDown size={17} /> {data.downvotesCount || 0}
                                             </button>
                                         </div>
@@ -402,8 +404,8 @@ export default function PublicPublicationDetailsPage() {
 
                                     {data.allowFeedback !== false && (
                                         <form className="mt-5" onSubmit={saveFeedback}>
-                                            <label className="text-sm font-extrabold text-[#554b63]" htmlFor="guest-feedback">Feedback</label>
-                                            <textarea id="guest-feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} maxLength={1000} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#ddd4eb] bg-white p-3 text-sm text-[#554b63] outline-none focus:border-[#8b6bd1]" placeholder="Share useful feedback with the publisher…" />
+                                            <label className="text-sm font-extrabold text-[#526965]" htmlFor="guest-feedback">Feedback</label>
+                                            <textarea id="guest-feedback" value={feedback} onChange={(event) => setFeedback(event.target.value)} maxLength={1000} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#dceae7] bg-white p-3 text-sm text-[#526965] outline-none focus:border-[#5cbdb9]" placeholder="Share useful feedback with the publisher…" />
                                             <button type="submit" disabled={!guestReady || busy === 'feedback' || !feedback.trim()} className="nexora-button-primary mt-3 w-full disabled:opacity-50">
                                                 <Send size={16} /> Save feedback
                                             </button>

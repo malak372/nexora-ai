@@ -1,5 +1,5 @@
 /**
- * Renders the public domains discovery section on the Nexora landing page.
+ * Renders the public domains discovery section on the Voxidence landing page.
  *
  * The section retrieves the available domains from the backend and presents
  * them in a responsive grid. Static landing-page domains are used as a
@@ -259,26 +259,28 @@ function DomainCard({ domain }) {
     const Icon = getDomainIcon(domain.icon);
 
     return (
-        <article className="domain-card group relative min-h-[190px] overflow-hidden rounded-[1.35rem] border border-white/90 bg-white/72 p-5 backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:bg-white/88 hover:shadow-[0_20px_45px_rgba(96,73,134,0.12)]">
+        <article className="vox-domain-card group">
             <div
-                className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#8d70d7]/45 to-transparent"
+                className="vox-domain-card__line"
                 aria-hidden="true"
             />
 
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#eee6ff] to-[#e2f3ff] text-[#7556c1] shadow-[0_8px_18px_rgba(117,86,193,0.08)] transition duration-300 group-hover:scale-110">
+            <span className="vox-domain-card__icon">
                 <Icon
-                    size={22}
+                    size={20}
                     aria-hidden="true"
                 />
             </span>
 
-            <h3 className="mt-5 font-extrabold text-[#302642]">
-                {domain.title}
-            </h3>
+            <div className="vox-domain-card__copy">
+                <h3 className="vox-domain-card__title">
+                    {domain.title}
+                </h3>
 
-            <p className="mt-1 text-sm leading-6 text-[#777083]">
-                {domain.label}
-            </p>
+                <p className="vox-domain-card__description">
+                    {domain.label}
+                </p>
+            </div>
         </article>
     );
 }
@@ -293,20 +295,20 @@ function DomainCard({ domain }) {
 function DomainSkeleton({ index }) {
     return (
         <div
-            className="domain-card animate-pulse rounded-2xl border border-white/90 bg-white/55 p-5"
+            className="vox-domain-card vox-domain-card--skeleton animate-pulse"
             aria-hidden="true"
             key={index}
         >
-            <div className="h-11 w-11 rounded-xl bg-[#eae3f5]" />
-            <div className="mt-5 h-4 w-2/3 rounded-full bg-[#e8e1f2]" />
-            <div className="mt-3 h-3 w-full rounded-full bg-[#eee9f5]" />
-            <div className="mt-2 h-3 w-4/5 rounded-full bg-[#eee9f5]" />
+            <div className="h-11 w-11 rounded-xl bg-[#e8f4f2]" />
+            <div className="mt-5 h-4 w-2/3 rounded-full bg-[#e4efec]" />
+            <div className="mt-3 h-3 w-full rounded-full bg-[#eef7f5]" />
+            <div className="mt-2 h-3 w-4/5 rounded-full bg-[#eef7f5]" />
         </div>
     );
 }
 
 /**
- * Displays the supported Nexora opportunity domains in a responsive grid.
+ * Displays the supported Voxidence opportunity domains in a responsive grid.
  *
  * Backend data is preferred when available. Static values are retained as a
  * graceful fallback so that the public landing page remains visually complete
@@ -348,187 +350,111 @@ export default function DomainsSection() {
     return (
         <section
             id="domains"
-            className="scroll-mt-24 py-24 sm:py-28"
+            className="vox-domains-section scroll-mt-24"
             aria-labelledby="domains-heading"
             aria-busy={isLoading}
         >
-            <div className="nexora-container">
-                <div className="domains-panel relative overflow-hidden rounded-[2.5rem] border border-white/90 px-6 py-14 shadow-[0_28px_70px_rgba(96,73,134,0.11)] sm:px-10 lg:px-14">
-                    {/* Decorative background elements */}
-                    <div
-                        className="domains-panel-orb domains-panel-orb-one"
-                        aria-hidden="true"
-                    />
+            <div className="vox-domains-container">
+                <div className="vox-domains-header">
+                    <div className="vox-domains-heading">
+                        <div className="vox-domains-kicker-row">
+                            <p className="vox-domains-eyebrow">Explore opportunities</p>
 
-                    <div
-                        className="domains-panel-orb domains-panel-orb-two"
-                        aria-hidden="true"
-                    />
-
-                    <div className="relative z-10 grid gap-12 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
-                        {/* Section introduction */}
-                        <div>
-                            <p className="nexora-eyebrow">
-                                Explore opportunities
-                            </p>
-
-                            <h2
-                                id="domains-heading"
-                                className="mt-5 text-4xl font-black tracking-tight text-[#29213d] sm:text-5xl"
-                            >
-                                One platform. Many directions.
-                            </h2>
-
-                            <p className="mt-5 max-w-xl leading-8 text-[#716a81]">
-                                Explore opportunity areas available across
-                                Nexora. The platform reads its live domain
-                                catalog directly from the backend and supports
-                                a growing range of community needs.
-                            </p>
-
-                            {isError && (
-                                <p
-                                    className="mt-6 flex max-w-lg items-start gap-2 text-sm font-semibold leading-6 text-[#81788f]"
-                                    role="alert"
-                                >
-                                    <span
-                                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#d05d75]"
-                                        aria-hidden="true"
-                                    />
-
-                                    Domains could not be loaded from the server.
-                                    Please try again shortly.
-                                </p>
+                            {!isLoading && !isError && normalizedDomains.length > 0 && (
+                                <span className="vox-domains-count" aria-label={`${normalizedDomains.length} domains available`}>
+                                    <strong>{normalizedDomains.length}</strong>
+                                    <span>live domains</span>
+                                </span>
                             )}
                         </div>
 
-                        {/* Database-backed domain cards */}
-                        <div>
-                            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p className="text-sm font-extrabold text-[#342947]">
-                                        Available domains
-                                    </p>
+                        <div className="vox-domains-title-row">
+                            <h2 id="domains-heading" className="vox-domains-title">
+                                Explore the domains where community needs become software opportunities.
+                            </h2>
+                        </div>
 
-                                    <p className="mt-1 text-sm text-[#81798e]">
-                                        Live opportunity areas from Nexora
-                                    </p>
-                                </div>
+                        <p className="vox-domains-intro">
+                            Choose a focus area to see where real community evidence can
+                            lead to a meaningful, locally relevant software direction.
+                        </p>
+                    </div>
+                </div>
 
-                                {!isLoading && !isError && normalizedDomains.length > 0 && (
-                                    <span className="rounded-full border border-white/90 bg-white/60 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-[#7b6f91] backdrop-blur-xl">
-                                        {normalizedDomains.length} available
-                                    </span>
+                {isError && (
+                    <p className="vox-domains-error" role="alert">
+                        Domains could not be loaded from the server. Please try again shortly.
+                    </p>
+                )}
+
+                <div className="vox-domains-content">
+                    {isLoading && (
+                        <div className="vox-domains-grid">
+                            {Array.from({ length: 6 }, (_, index) => (
+                                <DomainSkeleton
+                                    key={`domain-skeleton-${index}`}
+                                    index={index}
+                                />
+                            ))}
+                        </div>
+                    )}
+
+                    {!isLoading && !isError && normalizedDomains.length === 0 && (
+                        <div className="vox-domains-empty">
+                            <CircleHelp size={30} aria-hidden="true" />
+                            <h3>No domains are available yet</h3>
+                            <p>
+                                New opportunity domains will appear here as soon as
+                                they are enabled in Voxidence.
+                            </p>
+                        </div>
+                    )}
+
+                    {!isLoading && !isError && normalizedDomains.length > 0 && (
+                        <>
+                            <div className="vox-domains-grid">
+                                {initialDomains.map((domain) => (
+                                    <DomainCard key={domain.id} domain={domain} />
+                                ))}
+
+                                {hasMoreDomains && (
+                                    <ExploreMoreCard
+                                        remainingCount={remainingDomains.length}
+                                        isExpanded={isExpanded}
+                                        onClick={toggleExpandedDomains}
+                                    />
                                 )}
                             </div>
 
-                            {isLoading && (
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {Array.from(
-                                        { length: 6 },
-                                        (_, index) => (
-                                            <DomainSkeleton
-                                                key={`domain-skeleton-${index}`}
-                                                index={index}
-                                            />
-                                        ),
-                                    )}
-                                </div>
-                            )}
+                            {hasMoreDomains && isExpanded && (
+                                <div id="additional-domains" className="vox-domains-more">
+                                    <div className="vox-domains-more__header">
+                                        <div>
+                                            <p>More Voxidence domains</p>
+                                            <span>Additional live domains from the database</span>
+                                        </div>
 
-                            {!isLoading && !isError && normalizedDomains.length === 0 && (
-                                <div className="rounded-[1.5rem] border border-white/90 bg-white/65 px-6 py-10 text-center backdrop-blur-xl">
-                                    <CircleHelp
-                                        className="mx-auto text-[#8165cd]"
-                                        size={30}
-                                        aria-hidden="true"
-                                    />
-
-                                    <h3 className="mt-4 text-lg font-extrabold text-[#302642]">
-                                        No domains are available yet
-                                    </h3>
-
-                                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#777083]">
-                                        New opportunity domains will appear here
-                                        as soon as they are enabled in Nexora.
-                                    </p>
-                                </div>
-                            )}
-
-                            {!isLoading && !isError && normalizedDomains.length > 0 && (
-                                <>
-                                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                        {initialDomains.map((domain) => (
-                                            <DomainCard
-                                                key={domain.id}
-                                                domain={domain}
-                                            />
-                                        ))}
-
-                                        {hasMoreDomains && (
-                                            <ExploreMoreCard
-                                                remainingCount={
-                                                    remainingDomains.length
-                                                }
-                                                isExpanded={isExpanded}
-                                                onClick={
-                                                    toggleExpandedDomains
-                                                }
-                                            />
-                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={toggleExpandedDomains}
+                                            className="vox-domains-collapse"
+                                            aria-expanded="true"
+                                            aria-controls="additional-domains"
+                                        >
+                                            Show less
+                                            <ChevronUp size={17} aria-hidden="true" />
+                                        </button>
                                     </div>
 
-                                    {hasMoreDomains && isExpanded && (
-                                        <div
-                                            id="additional-domains"
-                                            className="mt-7 rounded-[1.75rem] border border-white/90 bg-white/45 p-4 shadow-[0_18px_45px_rgba(96,73,134,0.07)] backdrop-blur-xl sm:p-5"
-                                        >
-                                            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                                                <div>
-                                                    <p className="font-extrabold text-[#342947]">
-                                                        More Nexora domains
-                                                    </p>
-
-                                                    <p className="mt-1 text-sm text-[#81798e]">
-                                                        Additional live domains
-                                                        from the database
-                                                    </p>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={
-                                                        toggleExpandedDomains
-                                                    }
-                                                    className="inline-flex items-center gap-2 rounded-full border border-white/90 bg-white/75 px-4 py-2 text-sm font-bold text-[#6f57b9] transition hover:bg-white"
-                                                    aria-expanded="true"
-                                                    aria-controls="additional-domains"
-                                                >
-                                                    Show less
-
-                                                    <ChevronUp
-                                                        size={17}
-                                                        aria-hidden="true"
-                                                    />
-                                                </button>
-                                            </div>
-
-                                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                                {remainingDomains.map(
-                                                    (domain) => (
-                                                        <DomainCard
-                                                            key={domain.id}
-                                                            domain={domain}
-                                                        />
-                                                    ),
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
+                                    <div className="vox-domains-grid">
+                                        {remainingDomains.map((domain) => (
+                                            <DomainCard key={domain.id} domain={domain} />
+                                        ))}
+                                    </div>
+                                </div>
                             )}
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
         </section>
@@ -553,32 +479,34 @@ function ExploreMoreCard({
         <button
             type="button"
             onClick={onClick}
-            className="domain-card group relative min-h-[190px] overflow-hidden rounded-[1.35rem] border border-[#d9cdf3] bg-gradient-to-br from-[#f2ebff]/90 via-white/80 to-[#e8f6ff]/90 p-5 text-left shadow-[0_16px_38px_rgba(98,77,143,0.09)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_rgba(98,77,143,0.16)]"
+            className="vox-domain-card vox-domain-card--more group"
             aria-expanded={isExpanded}
             aria-controls="additional-domains"
         >
             <div
-                className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[#8062d0]/70 to-transparent"
+                className="vox-domain-card__line"
                 aria-hidden="true"
             />
 
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#8062d0] to-[#64a5d8] text-white shadow-[0_10px_22px_rgba(117,86,193,0.18)] transition duration-300 group-hover:scale-110">
+            <span className="vox-domain-card__icon vox-domain-card__icon--more">
                 <Layers3
-                    size={22}
+                    size={20}
                     aria-hidden="true"
                 />
             </span>
 
-            <h3 className="mt-5 font-extrabold text-[#302642]">
-                {isExpanded ? 'Hide More' : 'Explore More'}
-            </h3>
+            <div className="vox-domain-card__copy">
+                <h3 className="vox-domain-card__title">
+                    {isExpanded ? 'Hide More' : 'Explore More'}
+                </h3>
 
-            <p className="mt-1 text-sm leading-6 text-[#777083]">
-                {remainingCount} additional domain
-                {remainingCount === 1 ? '' : 's'} available
-            </p>
+                <p className="vox-domain-card__description">
+                    {remainingCount} additional domain
+                    {remainingCount === 1 ? '' : 's'} available
+                </p>
+            </div>
 
-            <span className="mt-5 inline-flex items-center gap-2 text-sm font-extrabold text-[#7155bf]">
+            <span className="vox-domain-card__action">
                 {isExpanded ? 'Show less' : 'View all domains'}
 
                 {isExpanded ? (

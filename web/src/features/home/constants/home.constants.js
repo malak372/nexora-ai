@@ -1,5 +1,5 @@
 /**
- * Centralized content configuration for the Nexora public landing page.
+ * Centralized content configuration for the Voxidence public landing page.
  *
  * This file stores the textual content and presentation metadata used by
  * the home-page sections. Keeping this data outside the React components
@@ -22,17 +22,22 @@
  * }}
  */
 export const HERO_CONTENT = {
-    badge: 'AI-powered project discovery',
-    titlePrefix: 'Turn real community needs into',
-    highlightedTitle: 'software worth building.',
+    badge: 'Community voices, verified into direction',
+    titlePrefix: 'Hear what communities need.',
+    highlightedTitle: 'Build what truly matters.',
     description:
-        'Nexora AI listens across digital communities, detects repeated challenges, and transforms them into practical, evidence-driven software project ideas.',
+        'Voxidence listens across real public conversations, reveals the needs that keep resurfacing, and transforms verified evidence into focused software opportunities ready to explore.',
     primaryActionLabel: 'Explore the Process',
-    secondaryActionLabel: 'Contact Us',
+    secondaryActionLabel: 'Discover Ideas',
+    trustPoints: [
+        'Real community evidence',
+        'Multi-model comparison',
+        'Locally relevant outcomes',
+    ],
 };
 
 /**
- * Key Nexora platform highlights displayed below the hero actions.
+ * Key Voxidence platform highlights displayed below the hero actions.
  *
  * Each item contains a stable identifier, a short highlighted value,
  * and a supporting description.
@@ -45,26 +50,26 @@ export const HERO_CONTENT = {
  */
 export const HERO_HIGHLIGHTS = [
     {
-        id: 'sources',
-        title: '12+',
-        description: 'Community sources',
+        id: 'signals',
+        title: 'Real signals',
+        description: 'Community evidence first',
     },
     {
         id: 'models',
-        title: 'Multi-AI',
-        description: 'Idea comparison',
+        title: 'Multi-model',
+        description: 'Stronger AI comparison',
     },
     {
-        id: 'local',
-        title: 'Local-first',
-        description: 'Relevant solutions',
+        id: 'outcomes',
+        title: 'Build-ready',
+        description: 'Clear project direction',
     },
 ];
 
 /**
  * Content used by the visual process card inside the hero section.
  *
- * The steps describe how Nexora transforms public conversations into
+ * The steps describe how Voxidence transforms public conversations into
  * structured and actionable software-project directions.
  *
  * The icon and variant values are resolved by HeroProcessCard.
@@ -82,31 +87,34 @@ export const HERO_HIGHLIGHTS = [
  * }}
  */
 export const HERO_PROCESS_CONTENT = {
-    eyebrow: 'Nexora Intelligence',
-    title: 'A signal becomes a solution',
-
+    eyebrow: 'Voxidence Intelligence',
+    title: 'From scattered voices to one clear direction',
     steps: [
         {
             id: 'community-needs',
-            title: 'Real conversations',
-            description:
-                'Public feedback reveals repeated frustrations, unmet needs, and emerging opportunities.',
+            title: 'Community signals',
+            description: 'Repeated conversations expose real frustrations, gaps, and unmet needs.',
             icon: 'users',
             variant: 'neutral',
         },
         {
-            id: 'ai-analysis',
-            title: 'Evidence-based analysis',
-            description:
-                'NLP and multiple AI models rank themes, compare candidates, and reduce weak ideas.',
+            id: 'evidence-extraction',
+            title: 'Evidence extraction',
+            description: 'NLP organizes patterns, urgency, context, and supporting evidence.',
             icon: 'database',
             variant: 'primary',
         },
         {
+            id: 'comparative-judge',
+            title: 'Comparative AI judge',
+            description: 'Multiple candidates are generated, scored, and compared for strength.',
+            icon: 'judge',
+            variant: 'rose',
+        },
+        {
             id: 'project-idea',
-            title: 'Build-ready direction',
-            description:
-                'The strongest opportunity becomes a structured software idea with clear users and value.',
+            title: 'Build-ready opportunity',
+            description: 'The strongest direction becomes a structured, evidence-backed project idea.',
             icon: 'lightbulb',
             variant: 'gradient',
         },
@@ -114,7 +122,7 @@ export const HERO_PROCESS_CONTENT = {
 };
 
 /**
- * Workflow stages displayed in the "How Nexora Works" section.
+ * Workflow stages displayed in the "How Voxidence Works" section.
  *
  * Each step contains a visible sequence number, title, description,
  * and an icon key resolved by HowItWorksSection.
@@ -131,7 +139,7 @@ export const HOW_IT_WORKS_STEPS = [
         number: '01',
         title: 'Listen to communities',
         description:
-            'Nexora gathers public conversations from relevant digital platforms and community spaces.',
+            'Voxidence gathers relevant public conversations from trusted digital communities and open platforms.',
         icon: 'radar',
     },
     {
@@ -158,7 +166,7 @@ export const HOW_IT_WORKS_STEPS = [
 ];
 
 /**
- * Main content displayed in the About Nexora section.
+ * Main content displayed in the About Voxidence section.
  *
  * @type {{
  *     eyebrow: string,
@@ -171,20 +179,20 @@ export const HOW_IT_WORKS_STEPS = [
  * }}
  */
 export const ABOUT_NEXORA_CONTENT = {
-    eyebrow: 'About Nexora',
+    eyebrow: 'Why Voxidence',
     titlePrefix: 'Ideas should begin with',
     highlightedTitle: 'real human needs.',
     description:
-        'Nexora AI is an intelligent software-project discovery platform that turns public community feedback into structured and meaningful project opportunities.',
+        'Voxidence is an evidence-intelligence platform that transforms real community voices into structured software opportunities with purpose, context, and measurable relevance.',
     secondaryDescription:
-        'Instead of generating ideas from isolated prompts, Nexora studies repeated challenges, analyzes evidence, compares multiple AI candidates, and selects directions that are practical, relevant, and worth exploring.',
+        'Rather than guessing from a blank prompt, Voxidence listens first. It identifies repeated challenges, evaluates the evidence, compares multiple AI-generated directions, and surfaces the opportunities most worth building.',
     missionLabel: 'Our mission',
     mission:
         'Help students, developers, and innovators build software that responds to genuine problems rather than assumptions.',
 };
 
 /**
- * Key platform differentiators displayed in the About Nexora section.
+ * Key platform differentiators displayed in the About Voxidence section.
  *
  * The offset property controls the staggered vertical card layout on
  * supported screen sizes without relying on each item's array position.
@@ -288,7 +296,7 @@ export const DOMAIN_ITEMS = [
  * Featured software ideas displayed on the public landing page.
  *
  * These records are presentation examples and can later be replaced by
- * public idea records retrieved from the Nexora backend.
+ * public idea records retrieved from the Voxidence backend.
  *
  * @type {Array<{
  *     id: string,

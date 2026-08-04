@@ -1,12 +1,11 @@
 /**
- * Renders the latest public software ideas on the Nexora landing page.
+ * Renders a compact selection of public Voxidence discoveries.
  *
- * Publications are loaded from the public backend endpoint, so the section
- * always reflects published ideas stored in the database instead of static
- * frontend examples.
+ * Publications are loaded from the public backend endpoint and remain fully
+ * connected to the existing publication-details route.
  *
  * @component
- * @returns {JSX.Element} The featured public ideas section.
+ * @returns {JSX.Element} The public discoveries section.
  *
  * @author Eman
  */
@@ -14,7 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
-    ArrowUpRight,
+    ArrowRight,
     CalendarDays,
     Lightbulb,
     MessageSquareText,
@@ -31,25 +30,7 @@ import {
     publicPublicationQueryKeys,
 } from '../api/publications.api';
 
-const FEATURED_PUBLICATIONS_LIMIT = 6;
-
-const IDEA_VARIANTS = [
-    {
-        icon: 'from-[#8b6bd8] to-[#a98be8]',
-        badge: 'border-[#e3d8fa] bg-[#f5f0ff] text-[#7555c7]',
-        glow: 'bg-[#d9c8ff]/45',
-    },
-    {
-        icon: 'from-[#5e9ed0] to-[#79b8df]',
-        badge: 'border-[#d7ebf8] bg-[#eff9ff] text-[#4d8ebd]',
-        glow: 'bg-[#ccecff]/45',
-    },
-    {
-        icon: 'from-[#c779aa] to-[#df9fc0]',
-        badge: 'border-[#f2dbea] bg-[#fff3f9] text-[#a9618a]',
-        glow: 'bg-[#ffd8eb]/45',
-    },
-];
+const FEATURED_PUBLICATIONS_LIMIT = 3;
 
 function formatPublishedDate(value) {
     if (!value) {
@@ -69,119 +50,96 @@ function formatPublishedDate(value) {
     }).format(date);
 }
 
-function getObjectivesPreview(objectives) {
-    if (!Array.isArray(objectives) || objectives.length === 0) {
-        return null;
-    }
+function getDirection(publication) {
+    const objectives = Array.isArray(publication.publicObjectives)
+        ? publication.publicObjectives
+        : [];
 
     const firstObjective = objectives.find(
         (objective) => typeof objective === 'string' && objective.trim(),
     );
 
-    return firstObjective?.trim() || null;
+    return (
+        firstObjective?.trim() ||
+        publication.publicAbstract ||
+        'Open this publication to explore the complete opportunity direction.'
+    );
 }
 
-function FeaturedIdeaCard({
-    publication,
-    index,
-    shouldReduceMotion,
-}) {
-    const variant = IDEA_VARIANTS[index % IDEA_VARIANTS.length];
-    const direction =
-        getObjectivesPreview(publication.publicObjectives) ||
+function DiscoveryCard({ publication, index, shouldReduceMotion }) {
+    const title = publication.publicTitle || 'Untitled software idea';
+    const summary =
+        publication.publicProblem ||
         publication.publicAbstract ||
-        'Open the publication to explore this software opportunity.';
+        'A public software opportunity discovered through Voxidence.';
 
     return (
         <motion.article
-            initial={
-                shouldReduceMotion
-                    ? undefined
-                    : { opacity: 0, y: 30 }
-            }
-            whileInView={
-                shouldReduceMotion
-                    ? undefined
-                    : { opacity: 1, y: 0 }
-            }
-            viewport={{ once: true, amount: 0.2 }}
+            initial={shouldReduceMotion ? undefined : { opacity: 0, y: 20 }}
+            whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.25 }}
             transition={{
-                duration: 0.55,
+                duration: 0.48,
                 delay: index * 0.08,
+                ease: [0.22, 1, 0.36, 1],
             }}
-            className="featured-idea-card group relative overflow-hidden rounded-[2rem] border border-white/90 bg-white/75 p-6 backdrop-blur-xl"
+            className="vox-discovery-card group"
         >
-            <div
-                className={`absolute -right-16 -top-16 h-40 w-40 rounded-full blur-3xl ${variant.glow}`}
-                aria-hidden="true"
-            />
+            <div className="vox-discovery-card__topline" aria-hidden="true" />
 
-            <div className="relative z-10 flex h-full flex-col">
-                <div className="flex items-start justify-between gap-5">
-                    <span
-                        className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-[0_14px_30px_rgba(98,75,145,0.18)] ${variant.icon}`}
-                    >
-                        <Lightbulb size={25} aria-hidden="true" />
-                    </span>
+            <div className="vox-discovery-card__header">
+                <span className="vox-discovery-card__icon">
+                    <Lightbulb size={19} aria-hidden="true" />
+                </span>
 
-                    <span
-                        className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${variant.badge}`}
-                    >
-                        Public idea
-                    </span>
-                </div>
+                <span className="vox-discovery-card__badge">
+                    Public discovery
+                </span>
+            </div>
 
-                <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-bold text-[#8b8297]">
-                    <span className="inline-flex items-center gap-1.5">
-                        <UserRound size={14} aria-hidden="true" />
-                        {publication.publisher?.fullName || 'Nexora creator'}
-                    </span>
+            <div className="vox-discovery-card__meta">
+                <span>
+                    <UserRound size={13} aria-hidden="true" />
+                    {publication.publisher?.fullName || 'Voxidence creator'}
+                </span>
 
-                    <span className="inline-flex items-center gap-1.5">
-                        <CalendarDays size={14} aria-hidden="true" />
-                        {formatPublishedDate(publication.publishedAt)}
-                    </span>
-                </div>
+                <span>
+                    <CalendarDays size={13} aria-hidden="true" />
+                    {formatPublishedDate(publication.publishedAt)}
+                </span>
+            </div>
 
-                <h3 className="mt-4 min-h-[3.5rem] text-xl font-black leading-7 text-[#2b233d]">
-                    {publication.publicTitle || 'Untitled software idea'}
-                </h3>
+            <h3>{title}</h3>
 
-                <p className="mt-4 min-h-[7rem] line-clamp-4 text-sm leading-7 text-[#756e83]">
-                    {publication.publicProblem ||
-                        publication.publicAbstract ||
-                        'A public software opportunity shared through Nexora.'}
-                </p>
+            <p className="vox-discovery-card__summary">
+                {summary}
+            </p>
 
-                <div className="mt-6 border-t border-[#eee8f5] pt-5">
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#8464c8]">
-                        Proposed direction
-                    </p>
+            <div className="vox-discovery-card__direction">
+                <span>Selected direction</span>
+                <p>{getDirection(publication)}</p>
+            </div>
 
-                    <p className="mt-2 min-h-[4.5rem] line-clamp-3 text-sm font-semibold leading-6 text-[#40364f]">
-                        {direction}
-                    </p>
-                </div>
-
-                <div className="mt-5 flex items-center gap-4 text-xs font-bold text-[#8b8297]">
-                    <span className="inline-flex items-center gap-1.5">
+            <div className="vox-discovery-card__footer">
+                <div className="vox-discovery-card__signals">
+                    <span>
                         <Star size={14} aria-hidden="true" />
                         {Number(publication.averageRating || 0).toFixed(1)}
                     </span>
 
-                    <span className="inline-flex items-center gap-1.5">
+                    <span>
                         <MessageSquareText size={14} aria-hidden="true" />
-                        {publication.feedbackCount || 0} feedback
+                        {publication.feedbackCount || 0}
                     </span>
                 </div>
 
                 <Link
                     to={buildRoute.publicationDetails(publication.id)}
-                    className="mt-auto inline-flex items-center gap-2 pt-7 text-sm font-extrabold text-[#7656c6] transition duration-300 group-hover:gap-3"
-                    aria-label={`Preview ${publication.publicTitle || 'this idea'}`}
+                    className="vox-discovery-card__link"
+                    aria-label={`Open ${title}`}
                 >
-                    Preview idea
-                    <ArrowUpRight size={17} aria-hidden="true" />
+                    Open idea
+                    <ArrowRight size={16} aria-hidden="true" />
                 </Link>
             </div>
         </motion.article>
@@ -190,22 +148,19 @@ function FeaturedIdeaCard({
 
 function FeaturedIdeasSkeleton() {
     return (
-        <div className="mt-14 grid gap-6 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading public ideas">
+        <div className="vox-discoveries-grid" aria-label="Loading public ideas">
             {[0, 1, 2].map((item) => (
                 <div
                     key={item}
-                    className="featured-idea-card min-h-[430px] animate-pulse rounded-[2rem] border border-white/90 bg-white/75 p-6"
+                    className="vox-discovery-card vox-discovery-card--skeleton"
+                    aria-hidden="true"
                 >
-                    <div className="h-14 w-14 rounded-2xl bg-[#eee8f7]" />
-                    <div className="mt-7 h-3 w-2/3 rounded-full bg-[#eee8f7]" />
-                    <div className="mt-5 h-7 w-5/6 rounded-full bg-[#e8e1f2]" />
-                    <div className="mt-5 h-3 w-full rounded-full bg-[#f0ebf6]" />
-                    <div className="mt-3 h-3 w-11/12 rounded-full bg-[#f0ebf6]" />
-                    <div className="mt-3 h-3 w-4/5 rounded-full bg-[#f0ebf6]" />
-                    <div className="mt-10 h-px bg-[#eee8f5]" />
-                    <div className="mt-6 h-3 w-1/3 rounded-full bg-[#e8e1f2]" />
-                    <div className="mt-4 h-3 w-full rounded-full bg-[#f0ebf6]" />
-                    <div className="mt-3 h-3 w-3/4 rounded-full bg-[#f0ebf6]" />
+                    <div className="h-10 w-10 rounded-2xl bg-[#eaf5f3]" />
+                    <div className="mt-5 h-3 w-2/3 rounded-full bg-[#eaf5f3]" />
+                    <div className="mt-5 h-6 w-4/5 rounded-full bg-[#e1eeeb]" />
+                    <div className="mt-4 h-3 w-full rounded-full bg-[#edf6f4]" />
+                    <div className="mt-2 h-3 w-5/6 rounded-full bg-[#edf6f4]" />
+                    <div className="mt-7 h-16 rounded-2xl bg-[#f4f9f8]" />
                 </div>
             ))}
         </div>
@@ -240,47 +195,52 @@ export default function FeaturedIdeasSection() {
     return (
         <section
             id="featured-ideas"
-            className="featured-ideas-section relative scroll-mt-24 overflow-hidden py-24 sm:py-32"
+            className="vox-discoveries-section"
             aria-labelledby="featured-ideas-heading"
         >
-            <div className="featured-ideas-orb featured-ideas-orb-one" aria-hidden="true" />
-            <div className="featured-ideas-orb featured-ideas-orb-two" aria-hidden="true" />
+            <div className="vox-discoveries-container">
+                <header className="vox-discoveries-header">
+                    <div className="vox-discoveries-heading">
+                        <div className="vox-discoveries-eyebrow-row">
+                            <span className="vox-discoveries-eyebrow">
+                                <Sparkles size={15} aria-hidden="true" />
+                                Community discoveries
+                            </span>
 
-            <div className="nexora-container relative z-10">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="max-w-3xl">
-                        <p className="nexora-eyebrow">Featured opportunities</p>
+                            <span className="vox-discoveries-live">
+                                <span aria-hidden="true" />
+                                Live publications
+                            </span>
+                        </div>
 
-                        <h2 id="featured-ideas-heading" className="nexora-section-title mt-5">
-                            Discover ideas published by the Nexora community.
+                        <h2 id="featured-ideas-heading">
+                            Explore ideas shaped by real community evidence.
                         </h2>
 
-                        <p className="nexora-section-description mt-5">
-                            Explore real public software ideas created from community evidence and shared by Nexora users.
+                        <p>
+                            A curated look at public software opportunities discovered,
+                            evaluated, and shared through Voxidence.
                         </p>
                     </div>
-
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#e2d7f6] bg-white/75 px-4 py-2 text-sm font-bold text-[#7656c6] shadow-sm backdrop-blur-xl">
-                        <Sparkles size={16} aria-hidden="true" />
-                        Live from public publications
-                    </div>
-                </div>
+                </header>
 
                 {isLoading && <FeaturedIdeasSkeleton />}
 
                 {!isLoading && isError && (
-                    <div className="featured-ideas-state mt-14 text-center">
-                        <Lightbulb size={30} aria-hidden="true" />
-                        <h3>Public ideas could not be loaded.</h3>
-                        <p>Make sure the backend is running, then try again.</p>
+                    <div className="vox-discoveries-state">
+                        <Lightbulb size={27} aria-hidden="true" />
+                        <div>
+                            <h3>Public ideas could not be loaded.</h3>
+                            <p>Make sure the backend is running, then try again.</p>
+                        </div>
                         <button
                             type="button"
                             onClick={() => refetch()}
                             disabled={isFetching}
-                            className="nexora-button-secondary mt-5 inline-flex items-center gap-2"
+                            className="vox-discoveries-retry"
                         >
                             <RefreshCw
-                                size={17}
+                                size={16}
                                 className={isFetching ? 'animate-spin' : ''}
                                 aria-hidden="true"
                             />
@@ -290,20 +250,22 @@ export default function FeaturedIdeasSection() {
                 )}
 
                 {!isLoading && !isError && publications.length === 0 && (
-                    <div className="featured-ideas-state mt-14 text-center">
-                        <Lightbulb size={30} aria-hidden="true" />
-                        <h3>No public ideas yet.</h3>
-                        <p>The first published public ideas will appear here automatically.</p>
-                        <Link to={ROUTES.REGISTER} className="nexora-button-primary mt-5 inline-flex">
+                    <div className="vox-discoveries-state">
+                        <Lightbulb size={27} aria-hidden="true" />
+                        <div>
+                            <h3>No public ideas yet.</h3>
+                            <p>The first published discoveries will appear here automatically.</p>
+                        </div>
+                        <Link to={ROUTES.REGISTER} className="vox-discoveries-retry">
                             Create an account
                         </Link>
                     </div>
                 )}
 
                 {!isLoading && !isError && publications.length > 0 && (
-                    <div className="mt-14 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="vox-discoveries-grid">
                         {publications.map((publication, index) => (
-                            <FeaturedIdeaCard
+                            <DiscoveryCard
                                 key={publication.id}
                                 publication={publication}
                                 index={index}

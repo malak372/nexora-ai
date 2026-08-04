@@ -1,5 +1,5 @@
 /**
- * Renders the shared layout used by Nexora public pages.
+ * Renders the shared layout used by Voxidence public pages.
  *
  * The layout provides the common public-page structure:
  * - A persistent navigation bar.
@@ -18,6 +18,8 @@ import { Outlet } from 'react-router-dom';
 import Footer from '../components/layout/Footer';
 import Navbar from '../components/layout/Navbar';
 
+import './public-theme.css';
+
 /**
  * Displays the common structure for all public routes.
  *
@@ -25,7 +27,7 @@ import Navbar from '../components/layout/Navbar';
  */
 export default function PublicLayout() {
     return (
-        <div className="flex min-h-screen flex-col bg-nexora-background text-nexora-text">
+        <div className="vox-public-shell flex min-h-screen flex-col">
             <Navbar />
 
             <main

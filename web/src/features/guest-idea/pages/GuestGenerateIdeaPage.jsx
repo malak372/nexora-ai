@@ -66,7 +66,7 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 /**
- * Minimum description length that allows Nexora to infer the domain.
+ * Minimum description length that allows Voxidence to infer the domain.
  *
  * @type {number}
  */
@@ -102,7 +102,7 @@ function countWords(value) {
  */
 
 /**
- * General guest-facing messages shown while Nexora creates the idea.
+ * General guest-facing messages shown while Voxidence creates the idea.
  *
  * These messages intentionally avoid exposing internal pipeline stages,
  * provider names, model decisions, or technical processing details.
@@ -589,7 +589,7 @@ export default function GuestGenerateIdeaPage() {
 
                     <p>
                         We’re sorry, your one-time guest generation has
-                        already been used. Create a free Nexora account to
+                        already been used. Create a free Voxidence account to
                         unlock more idea attempts, keep your discoveries, and
                         continue building from your personal workspace.
                     </p>
@@ -706,7 +706,7 @@ export default function GuestGenerateIdeaPage() {
                             </div>
 
                             <p className="guest-eyebrow">
-                                Nexora intelligence is working
+                                Voxidence intelligence is working
                             </p>
 
                             <h1>
@@ -749,7 +749,7 @@ export default function GuestGenerateIdeaPage() {
                             </span>
 
                             <p className="guest-eyebrow">
-                                Your first Nexora idea is ready
+                                Your first Voxidence idea is ready
                             </p>
 
                             <h1>{run.idea.title}</h1>
@@ -835,21 +835,21 @@ export default function GuestGenerateIdeaPage() {
         <section className="guest-generator-page">
             <div className="guest-generator-shell">
                 <header className="guest-generator-header">
-                    <button
-                        type="button"
-                        className="guest-back-home"
-                        onClick={() => navigate('/')}
-                    >
-                        <ArrowLeft />
+                    <div className="guest-generator-toolbar">
+                        <button
+                            type="button"
+                            className="guest-back-home"
+                            onClick={() => navigate('/')}
+                        >
+                            <ArrowLeft />
+                            Back home
+                        </button>
 
-                        Back home
-                    </button>
-
-                    <span className="guest-eyebrow">
-                        <WandSparkles />
-
-                        One free guest idea
-                    </span>
+                        <span className="guest-eyebrow">
+                            <WandSparkles />
+                            One free guest idea
+                        </span>
+                    </div>
 
                     <h1>
                         Describe the problem.
@@ -970,7 +970,7 @@ export default function GuestGenerateIdeaPage() {
 
                             <p>
                                 {hasValidDescription
-                                    ? 'Choose a software domain to narrow the analysis, or skip this step and let Nexora infer it from your written signal.'
+                                    ? 'Choose a software domain to narrow the analysis, or skip this step and let Voxidence infer it from your written signal.'
                                     : `Select the software domain that should guide generation. A domain is required because the written signal contains fewer than ${MIN_DESCRIPTION_WORDS} words.`}
                             </p>
 
@@ -995,7 +995,7 @@ export default function GuestGenerateIdeaPage() {
 
                                     <span>
                                         <b>
-                                            Let Nexora choose
+                                            Let Voxidence choose
                                         </b>
 
                                         <small>
@@ -1155,7 +1155,7 @@ export default function GuestGenerateIdeaPage() {
                             <h2>Ready for discovery.</h2>
 
                             <p>
-                                Review your signal before Nexora
+                                Review your signal before Voxidence
                                 starts the evidence and AI
                                 pipeline.
                             </p>

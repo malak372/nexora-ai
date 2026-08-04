@@ -1,234 +1,224 @@
-/**
- * Renders the primary hero section of the Nexora public landing page.
- *
- * The section introduces the platform, presents the main call-to-action
- * buttons, displays key platform highlights, and includes the visual
- * AI process card.
- *
- * Framer Motion is used to provide subtle entrance animations while
- * respecting the user's reduced-motion accessibility preference.
- *
- * @component
- * @returns {JSX.Element} The main landing-page hero section.
- *
- * @author Eman
- */
-
 import { motion, useReducedMotion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
 import {
-    ArrowDownRight,
-    ArrowUpRight,
+    ArrowRight,
+    BrainCircuit,
+    CheckCircle2,
+    DatabaseZap,
+    Lightbulb,
+    MessageCircleMore,
+    Scale,
     Sparkles,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-import {
-    HERO_CONTENT,
-    HERO_HIGHLIGHTS,
-} from '../constants/home.constants';
-import HeroProcessCard from './HeroProcessCard';
+import VoxidenceMark from '../../../components/brand/VoxidenceMark';
+import { HERO_CONTENT } from '../constants/home.constants';
 
-/**
- * Smoothly scrolls the page to a specific section.
- *
- * The optional chaining operator prevents runtime errors when the
- * requested section does not exist in the current document.
- *
- * @param {string} sectionId - The ID of the destination section.
- * @returns {void}
- */
 function scrollToSection(sectionId) {
-    document.getElementById(sectionId)?.scrollIntoView({
+    const section = document.getElementById(sectionId);
+
+    if (!section) {
+        return;
+    }
+
+    const top = section.getBoundingClientRect().top + window.scrollY - 105;
+
+    window.scrollTo({
+        top,
         behavior: 'smooth',
-        block: 'start',
     });
 }
 
-/**
- * Displays the introductory content of the Nexora landing page.
- *
- * The hero includes:
- * - An AI-powered platform badge.
- * - The main Nexora heading and description.
- * - Navigation buttons for the process and discovery sections.
- * - Key platform highlights.
- * - A visual representation of the AI discovery workflow.
- *
- * @returns {JSX.Element}
- */
+const orbitSignals = [
+    {
+        id: 'voice',
+        eyebrow: 'Listen',
+        label: 'Community voices',
+        icon: MessageCircleMore,
+        className: 'vox-orbit-node vox-orbit-node-one',
+    },
+    {
+        id: 'evidence',
+        eyebrow: 'Verify',
+        label: 'Evidence patterns',
+        icon: DatabaseZap,
+        className: 'vox-orbit-node vox-orbit-node-two',
+    },
+    {
+        id: 'judge',
+        eyebrow: 'Compare',
+        label: 'AI directions',
+        icon: Scale,
+        className: 'vox-orbit-node vox-orbit-node-three',
+    },
+    {
+        id: 'idea',
+        eyebrow: 'Shape',
+        label: 'Project opportunity',
+        icon: Lightbulb,
+        className: 'vox-orbit-node vox-orbit-node-four',
+    },
+];
+
 export default function HeroSection() {
     const navigate = useNavigate();
-    /**
-     * Detects whether the user prefers reduced animation.
-     *
-     * When enabled, entrance animations are disabled to improve
-     * accessibility and user comfort.
-     */
     const shouldReduceMotion = useReducedMotion();
-
-    /**
-     * Shared animation configuration for the hero textual content.
-     *
-     * An empty configuration is used when reduced motion is enabled.
-     */
-    const reveal = shouldReduceMotion
-        ? {}
-        : {
-            initial: {
-                opacity: 0,
-                y: 28,
-            },
-            animate: {
-                opacity: 1,
-                y: 0,
-            },
-            transition: {
-                duration: 0.75,
-            },
-        };
 
     return (
         <section
             id="home"
-            className="hero-grid relative isolate overflow-hidden"
+            className="vox-hero-stage"
             aria-labelledby="hero-heading"
         >
-            {/* Decorative animated background elements */}
-            <div
-                className="hero-orb hero-orb-one"
-                aria-hidden="true"
-            />
+            <div className="vox-hero-ambient" aria-hidden="true">
+                <span className="vox-ambient-glow vox-ambient-glow-one" />
+                <span className="vox-ambient-glow vox-ambient-glow-two" />
+                <span className="vox-ambient-glow vox-ambient-glow-three" />
+                <span className="vox-ambient-grid" />
+            </div>
 
-            <div
-                className="hero-orb hero-orb-two"
-                aria-hidden="true"
-            />
-
-            <div
-                className="hero-orb hero-orb-three"
-                aria-hidden="true"
-            />
-
-            <div
-                className="hero-noise"
-                aria-hidden="true"
-            />
-
-            <div className="nexora-container grid min-h-[calc(100vh-80px)] items-center gap-16 py-20 lg:grid-cols-[1.05fr_.95fr] lg:py-24">
-                {/* Hero textual content */}
+            <div className="vox-hero-shell">
                 <motion.div
-                    {...reveal}
-                    className="relative z-10"
+                    initial={shouldReduceMotion ? undefined : { opacity: 0, y: 22 }}
+                    animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+                    transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+                    className="vox-hero-copy"
                 >
-                    {/* Platform badge */}
-                    <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-[#ded1ff] bg-white/80 px-4 py-2 text-sm font-bold text-[#7555c7] shadow-[0_12px_35px_rgba(126,87,194,0.12)] backdrop-blur-xl">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#eee6ff] to-[#dff3ff]">
-                            <Sparkles
-                                size={15}
-                                className="text-[#7c5bd4]"
-                                aria-hidden="true"
-                            />
-                        </span>
-
+                    <div className="vox-hero-badge">
+                        <span className="vox-hero-badge-dot" />
+                        <Sparkles size={15} aria-hidden="true" />
                         {HERO_CONTENT.badge}
                     </div>
 
-                    {/* Main hero heading */}
-                    <h1
-                        id="hero-heading"
-                        className="max-w-4xl text-5xl font-black leading-[1.02] tracking-[-0.045em] text-[#211b33] sm:text-6xl lg:text-[4.7rem]"
-                    >
-                        {HERO_CONTENT.titlePrefix}{' '}
-
-                        <span className="nexora-gradient-text">
-                            {HERO_CONTENT.highlightedTitle}
-                        </span>
+                    <h1 id="hero-heading" className="vox-hero-heading">
+                        Real voices reveal
+                        <span>the ideas worth building.</span>
                     </h1>
 
-                    {/* Hero description */}
-                    <p className="mt-7 max-w-2xl text-lg leading-8 text-[#6f6881] sm:text-xl">
-                        {HERO_CONTENT.description}
+                    <p className="vox-hero-lead">
+                        Voxidence listens to recurring community needs, connects them
+                        with evidence, and turns them into focused software opportunities
+                        with purpose, context, and local relevance.
                     </p>
 
-                    {/* Hero actions */}
-                    <div className="mt-10 flex flex-wrap gap-4">
-                        <button
-                            type="button"
-                            onClick={() => scrollToSection('how-it-works')}
-                            className="nexora-button-primary group gap-3 px-6 py-3.5"
-                            aria-label={HERO_CONTENT.primaryActionLabel}
-                        >
-                            {HERO_CONTENT.primaryActionLabel}
-
-                            <ArrowDownRight
-                                className="transition-transform duration-300 group-hover:translate-x-1 group-hover:translate-y-1"
-                                size={19}
-                                aria-hidden="true"
-                            />
-                        </button>
-
+                    <div className="vox-hero-actions">
                         <button
                             type="button"
                             onClick={() => navigate('/generate')}
-                            className="nexora-button-secondary group gap-3 px-6 py-3.5"
-                            aria-label="Generate a free idea"
+                            className="vox-hero-button vox-hero-button-primary group"
                         >
-                            Generate Free Idea
-
-                            <ArrowUpRight
-                                className="transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"
-                                size={19}
+                            <span className="vox-hero-button-mark" aria-hidden="true">
+                                <VoxidenceMark size={20} />
+                            </span>
+                            Generate your free idea
+                            <ArrowRight
+                                size={18}
+                                className="vox-hero-button-arrow"
                                 aria-hidden="true"
                             />
                         </button>
+
+                        <button
+                            type="button"
+                            onClick={() => scrollToSection('how-it-works')}
+                            className="vox-hero-button vox-hero-button-secondary"
+                        >
+                            Explore how it works
+                            <ArrowRight size={18} aria-hidden="true" />
+                        </button>
                     </div>
 
-                    {/* Platform highlights */}
-                    <div className="mt-12 grid max-w-2xl grid-cols-3 gap-3 sm:gap-5">
-                        {HERO_HIGHLIGHTS.map((highlight) => (
-                            <article
-                                key={highlight.id}
-                                className="hero-highlight-card rounded-2xl border border-white/90 bg-white/65 p-4 backdrop-blur-xl"
-                            >
-                                <p className="text-lg font-extrabold text-[#2a223d] sm:text-2xl">
-                                    {highlight.title}
-                                </p>
-
-                                <p className="mt-1 text-xs leading-5 text-[#746d84] sm:text-sm">
-                                    {highlight.description}
-                                </p>
-                            </article>
+                    <div className="vox-hero-trust">
+                        {HERO_CONTENT.trustPoints.map((point) => (
+                            <span key={point}>
+                                <CheckCircle2 size={16} aria-hidden="true" />
+                                {point}
+                            </span>
                         ))}
                     </div>
                 </motion.div>
 
-                {/* Nexora process visualization */}
                 <motion.div
-                    initial={
-                        shouldReduceMotion
-                            ? undefined
-                            : {
-                                opacity: 0,
-                                scale: 0.94,
-                                rotate: 1.5,
-                            }
-                    }
-                    animate={
-                        shouldReduceMotion
-                            ? undefined
-                            : {
-                                opacity: 1,
-                                scale: 1,
-                                rotate: 0,
-                            }
-                    }
-                    transition={{
-                        duration: 0.85,
-                        delay: 0.12,
-                    }}
-                    className="relative z-10 lg:-top-20"
+                    initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96, x: 24 }}
+                    animate={shouldReduceMotion ? undefined : { opacity: 1, scale: 1, x: 0 }}
+                    transition={{ duration: 0.86, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+                    className="vox-signal-universe"
+                    aria-label="Animated Voxidence evidence-intelligence visualization"
                 >
-                    <HeroProcessCard />
+                    <div className="vox-universe-topline">
+                        <div>
+                            <span className="vox-universe-kicker">Live evidence flow</span>
+                            <strong>From signal to selected direction</strong>
+                        </div>
+                        <span className="vox-universe-live">
+                            <i />
+                            Active
+                        </span>
+                    </div>
+
+                    <div className="vox-universe-stage">
+                        <div className="vox-universe-beam" aria-hidden="true" />
+                        <div className="vox-universe-halo vox-universe-halo-one" aria-hidden="true" />
+                        <div className="vox-universe-halo vox-universe-halo-two" aria-hidden="true" />
+                        <div className="vox-universe-halo vox-universe-halo-three" aria-hidden="true" />
+                        <div className="vox-universe-orbit vox-universe-orbit-one" aria-hidden="true" />
+                        <div className="vox-universe-orbit vox-universe-orbit-two" aria-hidden="true" />
+                        <div className="vox-universe-orbit vox-universe-orbit-three" aria-hidden="true" />
+
+                        {orbitSignals.map((signal) => {
+                            const Icon = signal.icon;
+
+                            return (
+                                <div key={signal.id} className={signal.className}>
+                                    <span className="vox-orbit-node-icon">
+                                        <Icon size={17} aria-hidden="true" />
+                                    </span>
+                                    <span className="vox-orbit-node-copy">
+                                        <small>{signal.eyebrow}</small>
+                                        <strong>{signal.label}</strong>
+                                    </span>
+                                </div>
+                            );
+                        })}
+
+                        <div className="vox-universe-core">
+                            <div className="vox-universe-core-glow" aria-hidden="true" />
+                            <div className="vox-universe-core-mark">
+                                <VoxidenceMark size={54} />
+                            </div>
+
+                            <div className="vox-universe-wave" aria-hidden="true">
+                                <i /><i /><i /><i /><i /><i /><i />
+                            </div>
+
+                        </div>
+
+                        <div className="vox-universe-card vox-universe-card-top">
+                            <span className="vox-universe-card-icon">
+                                <BrainCircuit size={16} aria-hidden="true" />
+                            </span>
+                            <span>
+                                <small>Signal confidence</small>
+                                <strong>92% recurring need</strong>
+                            </span>
+                        </div>
+
+                        <div className="vox-universe-card vox-universe-card-bottom">
+                            <span className="vox-universe-card-icon vox-universe-card-icon-rose">
+                                <Lightbulb size={16} aria-hidden="true" />
+                            </span>
+                            <span>
+                                <small>Selected outcome</small>
+                                <strong>Evidence-backed idea</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="vox-universe-footer">
+                        <span><i /> Public signals</span>
+                        <span><i /> NLP evidence</span>
+                        <span><i /> Comparative AI</span>
+                    </div>
                 </motion.div>
             </div>
         </section>
