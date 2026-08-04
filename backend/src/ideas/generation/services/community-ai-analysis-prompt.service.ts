@@ -27,10 +27,12 @@ export class CommunityAiAnalysisPromptService {
       systemInstruction: this.buildSystemInstruction(),
       userPrompt: JSON.stringify({
         task: `Analyze cleaned community evidence and extract ${COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES}-${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concrete, non-duplicated software opportunities when the supplied evidence supports that many. Return fewer rather than inventing unsupported opportunities.`,
-        domain: {
-          id: context.domainId,
-          name: context.domainName,
-        },
+        primaryDomain: { id: context.domainId, name: context.domainName },
+        selectedDomains: context.selectedDomains.map((domain) => ({
+          id: domain.id,
+          name: domain.name,
+          keywords: domain.keywords,
+        })),
         location: context.location,
         requestedKeywords: context.keywords,
         evidenceRules: {
@@ -46,6 +48,8 @@ export class CommunityAiAnalysisPromptService {
           doNotParaphraseEvidence: true,
           distinguishObservedProblemFromProposedSolution: true,
           scoresArePreliminaryEstimates: true,
+          requireDistinctProblemFamilies: true,
+          requireDomainCoverageWhenEvidenceSupportsIt: true,
         },
         nlpSummary: {
           totalTextsAnalyzed: context.nlp.totalTextsAnalyzed,
@@ -72,12 +76,14 @@ export class CommunityAiAnalysisPromptService {
 
   private buildSystemInstruction(): string {
     return [
-      'You are Nexora AI community research analyst.',
+      'You are Voxidence community research analyst.',
       'Extract evidence-grounded software opportunities from the supplied cleaned community data.',
       'Do not generate finished project ideas, product names, architectures, or implementation plans.',
       'Identify recurring problems, unmet needs, affected users, and solution areas only.',
       `Return between ${COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES} and ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} materially distinct opportunities when evidence supports that range; return fewer only when additional opportunities would be unsupported or duplicative.`,
       'Cover different problem families and user jobs instead of producing wording variations of one complaint.',
+      'When selectedDomains contains multiple domains, assign every opportunity to exactly one selected domain using domainName and return at least one evidence-backed opportunity per selected domain whenever supplied evidence supports it.',
+      'Do not invent an opportunity merely to fill a missing domain. Add a quality warning naming any domain whose supplied evidence was insufficient.',
       'Do not combine unrelated problem dimensions into one opportunity title, problem, or unmet need unless the same evidence sample directly supports every included dimension.',
       'A single evidence quote may ground only one returned opportunity. When one quote mentions multiple issues, select the most concrete actionable user problem as the primary opportunity and mention the secondary issue only as context or a risk; do not emit a second opportunity backed by the same quote.',
       'Two opportunities must not contain the same normalized evidence quote. If their evidenceSamples overlap exactly, merge them into one atomic opportunity and choose the title/problem pair that best matches the dominant user job.',
@@ -91,8 +97,8 @@ export class CommunityAiAnalysisPromptService {
       'Use cautious wording when evidence is limited.',
       'Return one JSON object only. Do not wrap it in Markdown.',
       'Use these exact root keys: summary, dominantProblems, unmetNeeds, opportunities, overallConfidence, qualityWarnings.',
-      'Every opportunity must use these exact keys: title, problem, unmetNeed, solutionArea, affectedUsers, evidenceSamples, frequency, severity, confidence, problemImportance, localEvidenceAvailable, localEvidenceSamples, localRelevance, technicalFeasibility, marketPotential, innovationPotential, risks.',
-      'dominantProblems, unmetNeeds, affectedUsers, evidenceSamples, localEvidenceSamples, risks, and qualityWarnings must be arrays of strings.',
+      'Every opportunity must use these exact keys: domainName, title, problem, unmetNeed, solutionArea, affectedUsers, evidenceSamples, frequency, severity, confidence, problemImportance, localEvidenceAvailable, localEvidenceSamples, localRelevance, technicalFeasibility, marketPotential, innovationPotential, risks.',
+      'domainName must exactly equal one selectedDomains.name value. dominantProblems, unmetNeeds, affectedUsers, evidenceSamples, localEvidenceSamples, risks, and qualityWarnings must be arrays of strings.',
       'Set localEvidenceAvailable to true only when a supplied evidence quote explicitly mentions the requested country, city, or region.',
       'When localEvidenceAvailable is false, localEvidenceSamples must be empty, localRelevance must not exceed 25, and risks must not invent location-specific infrastructure, expertise, economic, or regulatory claims.',
       'Every evidenceSamples item must be copied verbatim from one supplied cleanedCommunitySamples value. Do not paraphrase, summarize, translate, combine, or rewrite evidence text.',

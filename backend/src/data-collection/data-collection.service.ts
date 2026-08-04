@@ -274,6 +274,7 @@ export class DataCollectionService {
               () => collector.collect(collectorInput),
               {
                 platform: dataSource.key,
+                timeoutMs: collectionMode === 'FAST_GENERATION' ? 12_000 : undefined,
               },
             );
 

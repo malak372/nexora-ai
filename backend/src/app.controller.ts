@@ -17,7 +17,7 @@ export class AppController {
    * Returns the default application response.
    *
    * Endpoint:
-   * GET /api/v1
+   * GET /api
    */
   @Get()
   getHello(): string {

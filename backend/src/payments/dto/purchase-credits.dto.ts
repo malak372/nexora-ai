@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 
-import { IsInt, IsString, IsUrl, Matches, Max, Min } from 'class-validator';
+import { IsInt, IsIn, IsString, IsUrl, Max, Min } from 'class-validator';
 
 import {
   MAX_CREDITS_PER_PURCHASE,
@@ -28,12 +28,11 @@ export class PurchaseCreditsDto {
   /**
    * User-facing payment-method registry key.
    *
-   * Examples:
-   * - card
-   * - paypal
+   * Supported value:
+   * - card (Stripe Checkout)
    */
   @IsString()
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  @IsIn(['card'])
   paymentMethodKey!: string;
 
   /**

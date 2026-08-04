@@ -10,6 +10,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 
 import {
   getIdeaGenerationStageDefinitions,
+  IDEA_GENERATION_STAGE_KEYS,
   type IdeaGenerationStageDefinition,
   type IdeaGenerationStageKey,
 } from '../constants/idea-generation-stages.constants';
@@ -21,12 +22,17 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 import {
   IdeaGenerationCancelledError,
   IdeaGenerationStageService,
+  type ExecuteIdeaGenerationStageResult,
 } from './idea-generation-stage.service';
 
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
 import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 import { IdeaGenerationDatabaseRetryService } from '../services/idea-generation-database-retry.service';
-import { GENERATION_PAUSED_RETRY_DELAY_MS } from '../constants/idea-generation.constants';
+import {
+  GENERATION_PAUSED_RETRY_DELAY_MS,
+  IDEA_GENERATION_EXECUTION_DEADLINE_MS,
+  IDEA_GENERATION_FINALIZATION_RESERVE_MS,
+} from '../constants/idea-generation.constants';
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 
 /**
@@ -175,6 +181,9 @@ export class IdeaGenerationPipelineService {
   async executePipeline(
     input: ExecuteIdeaGenerationPipelineInput,
   ): Promise<IdeaGenerationPipelineResult> {
+    const pipelineStartedAt = Date.now();
+    const deadlineAt = pipelineStartedAt + IDEA_GENERATION_EXECUTION_DEADLINE_MS;
+
     this.validateContext(input.context);
 
     const resolvedStages = this.resolvePipelineStages(
@@ -204,6 +213,11 @@ export class IdeaGenerationPipelineService {
 
     try {
       for (const resolvedStage of resolvedStages) {
+        this.assertExecutionBudget(
+          currentContext.runId,
+          resolvedStage.definition.key,
+          deadlineAt,
+        );
         const persistedStage = await this.databaseRetry.execute(
           () =>
             this.prisma.ideaGenerationStage.findUnique({
@@ -250,6 +264,7 @@ export class IdeaGenerationPipelineService {
         const stageResult = await this.executeResolvedStage(
           currentContext,
           resolvedStage,
+          deadlineAt,
         );
 
         currentContext = stageResult.context;
@@ -257,6 +272,8 @@ export class IdeaGenerationPipelineService {
 
         processedStages.push(stageResult.summary);
       }
+
+      this.assertPersistedIdeaBeforeCompletion(currentContext);
 
       const completedRun = await this.runService.completeRun(
         currentContext.runId,
@@ -306,17 +323,64 @@ export class IdeaGenerationPipelineService {
   }
 
   /**
+   * Rejects additional expensive work when the run has consumed its execution
+   * budget. The reserve protects persistence and finalization from being
+   * starved by external AI or collection calls.
+   */
+  private assertExecutionBudget(
+    runId: string,
+    stageKey: IdeaGenerationStageKey,
+    deadlineAt: number,
+  ): void {
+    const remainingMs = deadlineAt - Date.now();
+    const requiredReserveMs = this.requiresFinalizationReserve(stageKey)
+      ? IDEA_GENERATION_FINALIZATION_RESERVE_MS
+      : 0;
+
+    if (remainingMs > requiredReserveMs) {
+      return;
+    }
+
+    throw new ConflictException({
+      code: 'IDEA_GENERATION_DEADLINE_EXCEEDED',
+      message:
+        `Generation run "${runId}" reached its bounded execution deadline before stage "${stageKey}". ` +
+        'The run was not marked completed because no persisted final idea may be skipped.',
+      details: {
+        stageKey,
+        remainingMs: Math.max(0, remainingMs),
+        requiredReserveMs,
+      },
+    });
+  }
+
+  /**
+   * Enforces the core integrity rule: a run cannot become COMPLETED unless an
+   * actual idea was persisted and linked to the run.
+   */
+  private assertPersistedIdeaBeforeCompletion(
+    context: IdeaGenerationContext,
+  ): void {
+    if (!context.ideaId?.trim() || !context.coreIdea?.title?.trim()) {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_COMPLETED_WITHOUT_IDEA',
+        message:
+          'The pipeline produced no persisted idea. Completion was blocked to preserve generation integrity.',
+      });
+    }
+  }
+
+  /**
    * Resolves the correct pipeline definitions and matches them
    * with executable stage implementations.
    *
-   * Premium-credit generation receives:
-   * - Core stages.
-   * - Premium-output stages.
+   * Every generation type receives the same compact runtime stages:
+   * - Core evidence, AI, validation, and persistence stages.
    * - Finalization.
    *
-   * Guest-free and normal-free generation receive:
-   * - Core stages.
-   * - Finalization.
+   * Premium fields are returned in the same structured core AI response and
+   * validated atomically; separate premium checkpoint stages are intentionally
+   * excluded because they add database writes without generating new content.
    *
    * @param context Current generation context.
    * @param implementations Registered stage implementations.
@@ -500,11 +564,13 @@ export class IdeaGenerationPipelineService {
    *
    * @param context Current generation context.
    * @param resolvedStage Definition and implementation.
+   * @param deadlineAt Absolute fast-pipeline deadline.
    * @returns Updated context and final stage summary.
    */
   private async executeResolvedStage(
     context: IdeaGenerationContext,
     resolvedStage: ResolvedPipelineStage,
+    deadlineAt: number,
   ): Promise<{
     context: IdeaGenerationContext;
     summary: IdeaGenerationPipelineStageResult;
@@ -525,12 +591,16 @@ export class IdeaGenerationPipelineService {
       await this.markStageRunning(context.runId, definition, attempt);
 
       try {
-        const result = await this.stageService.executeStage({
-          stage: implementation,
-          context,
-          startProgressPercent,
-          completedProgressPercent,
-        });
+        const result = await this.executeStageWithinBudget(
+          {
+            stage: implementation,
+            context,
+            startProgressPercent,
+            completedProgressPercent,
+          },
+          definition.key,
+          deadlineAt,
+        );
 
         if (!result.executed) {
           await this.markStageSkipped(context.runId, definition, attempt);
@@ -605,6 +675,79 @@ export class IdeaGenerationPipelineService {
       lastError ??
       new Error(`Stage "${definition.key}" failed without an execution error.`)
     );
+  }
+
+  /**
+   * Executes every stage inside the remaining fast-pipeline budget.
+   *
+   * Collector and AI adapters still keep their own shorter timeouts. Expensive
+   * external-I/O stages must also preserve a deterministic reserve for output
+   * validation, persistence, finalization, and realtime publication.
+   */
+  private async executeStageWithinBudget(
+    input: Parameters<IdeaGenerationStageService['executeStage']>[0],
+    stageKey: IdeaGenerationStageKey,
+    deadlineAt: number,
+  ): Promise<ExecuteIdeaGenerationStageResult> {
+    const reserveMs = this.requiresFinalizationReserve(stageKey)
+      ? IDEA_GENERATION_FINALIZATION_RESERVE_MS
+      : 0;
+    const remainingExecutionMs = deadlineAt - Date.now() - reserveMs;
+
+    if (remainingExecutionMs <= 0) {
+      throw this.createStageDeadlineError(stageKey, remainingExecutionMs);
+    }
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        this.stageService.executeStage(input),
+        new Promise<never>((_resolve, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(
+              this.createStageDeadlineError(stageKey, remainingExecutionMs),
+            );
+          }, remainingExecutionMs);
+
+          timeoutHandle.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  /**
+   * Identifies expensive stages that must leave time for validation,
+   * persistence, and finalization. Every stage is deadline-bounded, but only
+   * these external-I/O stages consume the protected reserve.
+   */
+  private requiresFinalizationReserve(stageKey: IdeaGenerationStageKey): boolean {
+    return (
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION
+    );
+  }
+
+  /** Creates one consistent deadline error for stage and run tracking. */
+  private createStageDeadlineError(
+    stageKey: IdeaGenerationStageKey,
+    remainingExecutionMs: number,
+  ): ConflictException {
+    return new ConflictException({
+      code: 'IDEA_GENERATION_STAGE_DEADLINE_EXCEEDED',
+      message:
+        `Stage "${stageKey}" exceeded the remaining fast-pipeline budget. ` +
+        'The run was not marked completed because a persisted final idea is required.',
+      details: {
+        stageKey,
+        remainingExecutionMs: Math.max(0, remainingExecutionMs),
+      },
+    });
   }
 
   /**

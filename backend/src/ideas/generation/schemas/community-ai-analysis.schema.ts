@@ -27,6 +27,7 @@ export function buildCommunityAiAnalysisSchema(): AiJsonSchema {
           type: 'object',
           additionalProperties: true,
           properties: {
+            domainName: { type: 'string', minLength: 2, maxLength: 120 },
             title: { type: 'string', minLength: 3, maxLength: 180 },
             problem: { type: 'string', minLength: 12, maxLength: 1_000 },
             unmetNeed: { type: 'string', minLength: 8, maxLength: 700 },

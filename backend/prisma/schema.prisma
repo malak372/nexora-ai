@@ -104,6 +104,7 @@ model User {
   ideas                       Idea[]
   passwordResetTokens         PasswordResetToken[]
   payments                    Payment[]
+  invoices                    Invoice[]
   promptHistories             PromptHistory[]
   refreshTokens               RefreshToken[]
   savedGenerationSearches     SavedGenerationSearch[]
@@ -183,7 +184,7 @@ model SystemSetting {
   bonusCredits Int @default(0) @map("bonus_credits")
 
   updatedById        String?  @map("updated_by")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
   ideaPromptTemplate String?  @map("idea_prompt_template")
 
   /// Guarantees that only one global settings row exists.
@@ -382,6 +383,7 @@ model Payment {
   idea                           Idea?                      @relation(fields: [ideaId], references: [id])
   publication                    IdeaPublication?           @relation(fields: [publicationId], references: [id])
   user                           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice                        Invoice?
 
   @@index([userId])
   @@index([ideaId])
@@ -392,6 +394,37 @@ model Payment {
   @@index([paymentPurpose])
   @@index([createdAt])
   @@map("payments")
+}
+
+model Invoice {
+  id                   String         @id @default(uuid())
+  invoiceNumber        String         @unique @map("invoice_number")
+  paymentId            String         @unique @map("payment_id")
+  userId               String         @map("user_id")
+  status               InvoiceStatus  @default(ISSUED)
+  providerKey          String         @map("provider_key")
+  paymentMethodKey     String         @map("payment_method_key")
+  paymentPurpose       PaymentPurpose @map("payment_purpose")
+  amount               Decimal        @db.Decimal(10, 2)
+  currency             String
+  customerName         String         @map("customer_name")
+  customerEmail        String         @map("customer_email")
+  providerPaymentId    String?        @map("provider_payment_id")
+  providerSessionId    String?        @map("provider_session_id")
+  transactionReference String?        @map("transaction_reference")
+  providerInvoiceUrl   String?        @map("provider_invoice_url")
+  providerReceiptUrl   String?        @map("provider_receipt_url")
+  issuedAt             DateTime       @map("issued_at")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, issuedAt])
+  @@index([status])
+  @@index([providerKey])
+  @@map("invoices")
 }
 
 model CreditTransaction {
@@ -1437,6 +1470,12 @@ enum ExternalServiceCategory {
   PAYMENT
   DATA_COLLECTION
   OTHER
+}
+
+enum InvoiceStatus {
+  ISSUED
+  VOID
+  REFUNDED
 }
 
 enum PaymentStatus {

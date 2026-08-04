@@ -138,6 +138,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const parsedOutput = this.outputParserService.parseOrThrow(rawOutput);
 
     this.validateOutputForGenerationType(context, parsedOutput);
+    this.validateProblemSolutionPortfolio(context, parsedOutput);
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -161,6 +162,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
 
         targetUsersCount: parsedOutput.coreIdea.targetUsers.length,
 
+        problemSolutionPairsCount: this.parseProblemSolutionPairs(
+          parsedOutput.coreIdea.problemStatement,
+        ).length,
+
+        coveredDomains: this.parseProblemSolutionPairs(
+          parsedOutput.coreIdea.problemStatement,
+        ).map((pair) => pair.domainName),
+
         hasLimitedAbstract: Boolean(parsedOutput.coreIdea.limitedAbstract),
 
         hasPartialAbstract: Boolean(parsedOutput.coreIdea.partialAbstract),
@@ -178,6 +187,122 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         outputValidated: true,
       },
     };
+  }
+
+  /**
+   * Enforces the readable multi-problem contract after provider schema parsing.
+   *
+   * The database remains backward compatible because the portfolio is stored in
+   * the existing problemStatement string as numbered entries. Every entry must
+   * expose one problem and one directly corresponding solution response.
+   */
+  private validateProblemSolutionPortfolio(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const pairs = this.parseProblemSolutionPairs(
+      parsedOutput.coreIdea.problemStatement,
+    );
+
+    const distinctEvidenceProblems = new Set(
+      (context.communityAiAnalysis?.opportunities ?? []).map((opportunity) =>
+        this.normalizeComparableText(opportunity.problem),
+      ),
+    ).size;
+
+    const minimumPairCount = Math.max(
+      1,
+      context.selectedDomains.length,
+      distinctEvidenceProblems >= 2 ? 2 : 1,
+    );
+
+    if (pairs.length < minimumPairCount || pairs.length > 6) {
+      this.throwInvalidOutput(
+        `The generated idea must contain between ${minimumPairCount} and 6 explicit problem-solution pairs.`,
+        {
+          minimumPairCount,
+          actualPairCount: pairs.length,
+        },
+      );
+    }
+
+    const missingDomains = context.selectedDomains.filter((domain) => {
+      const expected = this.normalizeComparableText(domain.name);
+
+      return !pairs.some((pair) => {
+        const actual = this.normalizeComparableText(pair.domainName);
+        return actual === expected || actual.includes(expected) || expected.includes(actual);
+      });
+    });
+
+    if (missingDomains.length > 0) {
+      this.throwInvalidOutput(
+        'The generated problem-solution portfolio omitted one or more selected domains.',
+        {
+          missingDomains: missingDomains.map((domain) => domain.name),
+        },
+      );
+    }
+
+    if (parsedOutput.coreIdea.objectives.length < pairs.length) {
+      this.throwInvalidOutput(
+        'Every problem-solution pair requires a corresponding implementation objective.',
+        {
+          problemSolutionPairsCount: pairs.length,
+          objectivesCount: parsedOutput.coreIdea.objectives.length,
+        },
+      );
+    }
+  }
+
+  /**
+   * Parses the application-enforced readable portfolio format.
+   *
+   * Supported entry example:
+   * 1. [Education] Problem: ... | Solution response: ...
+   */
+  private parseProblemSolutionPairs(problemStatement: string): Array<{
+    domainName: string;
+    problem: string;
+    solutionResponse: string;
+  }> {
+    const normalized = problemStatement
+      .trim()
+      .replace(
+        /\s+(?=\d+[.)]\s*\[[^\]]+\]\s*Problem:)/gi,
+        '\n',
+      );
+
+    return normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) =>
+        line.match(
+          /^(?:\d+[.)-]?\s*)?\[([^\]]+)\]\s*Problem:\s*(.+?)\s*\|\s*Solution response:\s*(.+)$/i,
+        ),
+      )
+      .filter((match): match is RegExpMatchArray => Boolean(match))
+      .map((match) => ({
+        domainName: match[1]?.trim() ?? '',
+        problem: match[2]?.trim() ?? '',
+        solutionResponse: match[3]?.trim() ?? '',
+      }))
+      .filter(
+        (pair) =>
+          pair.domainName.length > 0 &&
+          pair.problem.length >= 10 &&
+          pair.solutionResponse.length >= 10,
+      );
+  }
+
+  /** Normalizes domain and problem text for stable coverage comparison. */
+  private normalizeComparableText(value: string): string {
+    return value
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
   }
 
   /**

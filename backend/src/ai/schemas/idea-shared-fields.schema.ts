@@ -19,9 +19,10 @@ export const IdeaSharedFields = {
   title: z.string().trim().min(3).max(200),
 
   /**
-   * Description of the real problem addressed by the project.
+   * Readable portfolio of one or more evidence-backed problems and their
+   * directly corresponding solution responses.
    */
-  problemStatement: z.string().trim().min(20).max(1_500),
+  problemStatement: z.string().trim().min(20).max(3_000),
 
   /**
    * Main project goals and expected outcomes.

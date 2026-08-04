@@ -71,6 +71,33 @@ export const IDEA_GENERATION_LOCK_TTL_MS = 5 * 60 * 1000;
 export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
 
 /**
+ * Target wall-clock budget for one complete generation run.
+ *
+ * This is a strict application budget, not a guarantee that third-party
+ * providers will respond. The pipeline must never mark a run completed unless
+ * a persisted idea exists and FinalizationStage succeeds.
+ */
+export const IDEA_GENERATION_TARGET_BUDGET_MS = 60_000;
+
+/**
+ * Internal execution deadline leaves two seconds for persistence, finalization,
+ * realtime publication, and HTTP/WebSocket propagation.
+ */
+export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 57_000;
+
+/** Maximum provider time allocated to one core-generation candidate. */
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 16_000;
+
+/** Local core-model fallback is disabled inside the strict minute path. */
+export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
+
+/**
+ * Maximum number of milliseconds reserved for deterministic cleanup and
+ * persistence after the AI phase.
+ */
+export const IDEA_GENERATION_FINALIZATION_RESERVE_MS = 6_000;
+
+/**
  * Maximum duration a running generation may remain without
  * receiving a heartbeat before it is considered stale.
  *
@@ -85,14 +112,14 @@ export const GENERATION_STALE_AFTER_MS = 2 * 60 * 1000;
  * This value includes the initial execution attempt.
  * Individual stages may override it when required.
  */
-export const DEFAULT_STAGE_MAX_ATTEMPTS = 2;
+export const DEFAULT_STAGE_MAX_ATTEMPTS = 1;
 
 /**
  * Default delay between pipeline-stage execution attempts.
  *
- * Current value: one second.
+ * Current value: 250 milliseconds.
  */
-export const DEFAULT_STAGE_RETRY_DELAY_MS = 1_000;
+export const DEFAULT_STAGE_RETRY_DELAY_MS = 250;
 /** Maximum number of database reconnect attempts before a run is paused. */
 /**
  * Maximum immediate retries for one critical database operation.
@@ -100,13 +127,13 @@ export const DEFAULT_STAGE_RETRY_DELAY_MS = 1_000;
  * A prolonged outage is handled by the persisted RETRYING/PAUSED lifecycle;
  * keeping this bounded prevents a single request from blocking for minutes.
  */
-export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 7;
+export const GENERATION_DATABASE_RETRY_MAX_ATTEMPTS = 2;
 
 /** Initial delay used by exponential database retry backoff. */
-export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 2_000;
+export const GENERATION_DATABASE_RETRY_BASE_DELAY_MS = 150;
 
 /** Maximum delay between database retry attempts. */
-export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 30_000;
+export const GENERATION_DATABASE_RETRY_MAX_DELAY_MS = 500;
 
 /** Delay before a paused generation run becomes eligible for recovery. */
 export const GENERATION_PAUSED_RETRY_DELAY_MS = 60_000;
@@ -482,12 +509,11 @@ export type CollectionJobResolutionType =
 /**
  * Maximum targeted evidence-recovery attempts per generation run.
  *
- * One focused recovery pass is enough to test whether the initial signal can be
- * strengthened. Repeating broad collection four times caused several minutes
- * of duplicate network work without guaranteeing additional independent
- * evidence.
+ * The strict one-minute path disables secondary evidence recollection. The
+ * initial bounded parallel collection must either provide sufficient evidence
+ * or the run fails without consuming an entitlement.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 0;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.6;
@@ -499,24 +525,13 @@ export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 3;
 export const MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY = 2;
 
 /** Minimum deterministic quality score required for an AI idea candidate. */
-export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 60;
-
-/**
- * Minimum score that may be promoted as a usable online fallback after the
- * same model has completed its bounded quality revision.
- *
- * The strict 70-point threshold remains the preferred quality gate. This
- * lower bound prevents structurally valid online candidates from being
- * discarded solely for soft wording issues such as WEAK_PROBLEM or
- * GENERIC_OBJECTIVES. Safety and factual-integrity issues remain blocking.
- */
-export const IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE = 40;
+export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
 
 /**
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */
-export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 0;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -525,7 +540,7 @@ export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
  * selected providers fail, but it should attempt this many models first for
  * every opportunity.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
@@ -537,7 +552,7 @@ export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 1;
  * Maximum ranked opportunities available to the benchmark after the initial
  * fast path is exhausted. Opportunities four and five are fallback-only.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 2;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 1;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -580,7 +595,7 @@ export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = IDEA_BENCHMARK_MAX_CANDIDATES;
  * many redesign attempts before the benchmark advances to the next model or
  * ranked opportunity.
  */
-export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 0;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.
@@ -589,18 +604,17 @@ export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
  * attempts are exhausted so a temporary provider outage does not fail an
  * otherwise usable generation run.
  */
-export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 2;
+export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 1;
 
 /**
  * Number of same-model retries used for transient benchmark failures.
  *
- * The initial provider request is not included in this value. A value of one
- * means every benchmark model may receive one additional request after a
+ * The initial provider request is not included in this value. A value of zero means the fast path never repeats the same provider request after a
  * temporary network, timeout, rate-limit, or provider-availability failure.
  * After the retry is exhausted, IdeaGenerationBenchmarkService continues with
  * the next healthy model from the ordered fallback rotation.
  */
-export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 1;
+export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 0;
 
 /**
  * Number of recent generation runs inspected when rotating AI model

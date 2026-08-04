@@ -4,6 +4,7 @@ import { Transform, type TransformFnParams, Type } from 'class-transformer';
 
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -61,6 +62,27 @@ export class GenerateIdeaDto {
   @IsOptional()
   @IsUUID('4')
   domainId?: string;
+
+  /**
+   * Optional ordered list of concrete domains used for cross-domain generation.
+   *
+   * The first domain remains the primary persistence domain. Every selected
+   * domain contributes its name and keywords to evidence collection, AI
+   * opportunity extraction, and the final problem-to-solution portfolio.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @IsUUID('4', { each: true })
+  @Transform(({ value }: TransformFnParams): unknown => {
+    if (!Array.isArray(value)) {
+      return value;
+    }
+
+    return [...new Set(value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean))];
+  })
+  domainIds?: string[];
 
   /**
    * Requested generation entitlement.

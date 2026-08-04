@@ -27,15 +27,16 @@ import {
   IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION,
 } from '../constants/idea-judge.constants';
 import {
+  IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK,
   IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS,
   IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
   IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
   IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
+  IDEA_CORE_MODEL_TIMEOUT_MS,
   IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
   IDEA_MIN_ACCEPTED_QUALITY_SCORE,
-  IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE,
   IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
 } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
@@ -123,7 +124,9 @@ type AcceptedModelAttempt = {
  * Important guarantees:
  * - The initial benchmark group is interleaved by provider.
  * - Every candidate is evaluated using one provider-independent quality gate.
- * - A weak response receives one bounded revision attempt on the same model.
+ * - Candidate requests run in a bounded parallel fast path.
+ * - The first structurally valid, quality-approved candidate can complete
+ *   selection without waiting for slower providers.
  * - A response that still fails the quality gate is persisted as rejected and
  *   excluded from winner selection.
  * - The comparative judge is used when at least two candidates survive.
@@ -183,20 +186,21 @@ export class IdeaGenerationBenchmarkService {
     }
 
     /*
-     * Ollama must not participate in the normal comparative benchmark.
-     * Otherwise several failed online assignments could each be replaced by
-     * the same local model, producing duplicate Qwen candidates and weakening
-     * provider diversity. The local model is retained separately and executed
-     * exactly once only when every online candidate attempt fails.
+     * Ollama never participates in the strict minute path. A local model may
+     * remain configured for other workloads, but an unbounded local fallback
+     * would violate the generation deadline and hide provider availability
+     * problems.
      */
     const onlineModels = eligibleModels.filter(
       (model) =>
         normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA,
     );
-    const localFallbackModel = eligibleModels.find(
-      (model) =>
-        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA,
-    );
+    const localFallbackModel = IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK
+      ? eligibleModels.find(
+          (model) =>
+            normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA,
+        )
+      : undefined;
 
     const orderedModels =
       onlineModels.length > 0
@@ -208,6 +212,13 @@ export class IdeaGenerationBenchmarkService {
       where: { runId: context.runId },
     });
 
+    /*
+     * Fast-path policy:
+     * - Two provider-diverse candidates are launched in parallel.
+     * - No same-model retry or quality-revision loop is allowed.
+     * - One accepted candidate is sufficient.
+     * - Comparative judging runs only when two candidates finish inside budget.
+     */
     const successfulCandidates: IdeaBenchmarkCandidate[] = [];
     const conceptDirections = this.buildConceptDirections(context);
     let attemptedCandidateCount = 0;
@@ -637,7 +648,7 @@ export class IdeaGenerationBenchmarkService {
 
       const usableAttempt = qualityApprovedAttempt.quality.accepted
         ? qualityApprovedAttempt
-        : this.promoteUsableOnlineFallback(model, qualityApprovedAttempt);
+        : null;
 
       if (!usableAttempt) {
         const errorMessage = this.buildQualityRejectionMessage(
@@ -1049,16 +1060,112 @@ export class IdeaGenerationBenchmarkService {
       //    healthy ONLINE model from the provider-diverse rotation.
       // The shorter timeout prevents one unavailable model from holding the
       // complete parallel batch for several minutes.
-      timeoutMs: 90_000,
+      timeoutMs: IDEA_CORE_MODEL_TIMEOUT_MS,
       maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
+    this.assertCandidateProblemSolutionPortfolio(context, parsedOutput);
     const quality = this.qualityEvaluatorService.evaluate(
       parsedOutput,
       qualityContext,
     );
 
     return { aiResult, parsedOutput, quality };
+  }
+
+  /**
+   * Rejects a candidate before quality scoring when it ignores the requested
+   * multi-problem or multi-domain portfolio contract. This allows the parallel
+   * benchmark to select another valid candidate instead of discovering the
+   * omission only after winner selection.
+   */
+  private assertCandidateProblemSolutionPortfolio(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): void {
+    const pairs = this.parseCandidateProblemSolutionPairs(
+      parsedOutput.coreIdea.problemStatement,
+    );
+
+    const distinctEvidenceProblems = new Set(
+      (context.communityAiAnalysis?.opportunities ?? []).map((opportunity) =>
+        this.normalizePortfolioText(opportunity.problem),
+      ),
+    ).size;
+
+    const minimumPairCount = Math.max(
+      1,
+      context.selectedDomains.length,
+      distinctEvidenceProblems >= 2 ? 2 : 1,
+    );
+
+    if (pairs.length < minimumPairCount || pairs.length > 6) {
+      throw new ServiceUnavailableException(
+        `PROBLEM_SOLUTION_PORTFOLIO_REJECTED: expected ${minimumPairCount}-6 explicit pairs but received ${pairs.length}.`,
+      );
+    }
+
+    const missingDomains = context.selectedDomains.filter((domain) => {
+      const expected = this.normalizePortfolioText(domain.name);
+      return !pairs.some((pair) => {
+        const actual = this.normalizePortfolioText(pair.domainName);
+        return actual === expected || actual.includes(expected) || expected.includes(actual);
+      });
+    });
+
+    if (missingDomains.length > 0) {
+      throw new ServiceUnavailableException(
+        `PROBLEM_SOLUTION_PORTFOLIO_REJECTED: candidate omitted selected domain(s): ${missingDomains.map((domain) => domain.name).join(', ')}.`,
+      );
+    }
+
+    if (parsedOutput.coreIdea.objectives.length < pairs.length) {
+      throw new ServiceUnavailableException(
+        'PROBLEM_SOLUTION_PORTFOLIO_REJECTED: every pair requires a corresponding objective.',
+      );
+    }
+  }
+
+  /** Parses numbered `[Domain] Problem | Solution response` entries. */
+  private parseCandidateProblemSolutionPairs(problemStatement: string): Array<{
+    domainName: string;
+    problem: string;
+    solutionResponse: string;
+  }> {
+    const normalized = problemStatement
+      .trim()
+      .replace(/\s+(?=\d+[.)]\s*\[[^\]]+\]\s*Problem:)/gi, '\n');
+
+    return normalized
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) =>
+        line.match(
+          /^(?:\d+[.)-]?\s*)?\[([^\]]+)\]\s*Problem:\s*(.+?)\s*\|\s*Solution response:\s*(.+)$/i,
+        ),
+      )
+      .filter((match): match is RegExpMatchArray => Boolean(match))
+      .map((match) => ({
+        domainName: match[1]?.trim() ?? '',
+        problem: match[2]?.trim() ?? '',
+        solutionResponse: match[3]?.trim() ?? '',
+      }))
+      .filter(
+        (pair) =>
+          pair.domainName.length > 0 &&
+          pair.problem.length >= 10 &&
+          pair.solutionResponse.length >= 10,
+      );
+  }
+
+  /** Normalizes portfolio labels for stable selected-domain comparison. */
+  private normalizePortfolioText(value: string): string {
+    return value
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
   }
 
   /**
@@ -1312,8 +1419,14 @@ export class IdeaGenerationBenchmarkService {
                 : '- QUALITY QUALIFIER: this opportunity is a controlled evidence-backed fallback. Keep claims conservative, explicitly qualify uncertainty, and frame validation as part of the pilot.',
             ]
           : []),
-        '- Do not switch to, merge with, or replace it using an alternative opportunity.',
-        '- All candidates must solve the same observed problem, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
+        ...(context.selectedDomains.length > 1
+          ? [
+              `- CROSS-DOMAIN COVERAGE: combine compatible evidence-backed problems across ${context.selectedDomains.map((domain) => domain.name).join(', ')} into one coherent workflow.`,
+              '- Include at least one problem and corresponding solution response per selected domain when evidence supports it.',
+              '- Do not invent a problem for a domain whose evidence is absent or weak.',
+            ]
+          : ['- Do not switch to, merge with, or replace it using an alternative opportunity.']),
+        '- All candidates must solve the same supported problem portfolio, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
         '- Produce one coherent commercially viable software product, not a feature list or a minor patch.',
         ...(effectiveEvidenceSamples.length === 1
           ? [
@@ -1422,7 +1535,10 @@ export class IdeaGenerationBenchmarkService {
       'Reject evidence from unrelated developer programs, cloud-credit claims, repository governance records, political news, and AI research reports even when they contain broad words such as student, education, platform, or system.',
       'A GitHub issue that already specifies proposed implementation, routes, components, files to modify, infrastructure, tests, phases, or expected impact is a solution blueprint, not independent community-demand evidence. Do not copy, repackage, or productize that implementation plan. Use only independent user-observed pain that remains after removing the prescribed solution.',
       'Keep the JSON concise. Use short arrays, avoid repeating the abstract in advanced outputs, and keep each advanced-output section focused on implementation decisions rather than generic prose.',
-      'Preserve the selected opportunity as one immutable evidence unit: title, problem, need, solution area, severity, frequency, and evidence samples must remain mutually consistent. Never combine a title from one opportunity with a need, severity, or evidence sample from another.',
+      'Preserve every used opportunity as an immutable evidence unit: its title, problem, need, solution area, severity, frequency, domain label, and evidence samples must remain mutually consistent. Multiple units may be combined only when they form one coherent workflow.',
+      context.selectedDomains.length > 1
+        ? `The final problemStatement must expose at least one evidence-backed problem and one corresponding solution response for each supported selected domain, plus additional domain-labeled pairs when distinct evidence supports them: ${context.selectedDomains.map((domain) => domain.name).join(', ')}.`
+        : 'The final problemStatement may expose several distinct evidence-backed problems when they belong to the same user journey.',
       'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',
       'When directEvidenceCount or frequency equals 1, use singular and qualified wording such as one report indicates or a limited evidence sample suggests. Never use frequently, recurring discussions, common, widespread, or equivalent market-wide language.',
       'When directEvidenceCount equals 1, the solution scope must remain proportional to one observed case: prefer one narrow user workflow and one primary product surface. Do not escalate a simple taxonomy, access, storage, or usability complaint into an enterprise SDK, telemetry platform, compliance suite, or CI/CD product unless host integration is strictly necessary and explicitly justified.',
@@ -1520,56 +1636,6 @@ export class IdeaGenerationBenchmarkService {
       .trim();
 
     return normalized ? normalized : null;
-  }
-
-  /**
-   * Promotes a structurally valid online response after its single bounded
-   * quality revision, while keeping factual and platform-safety violations as
-   * hard rejections.
-   *
-   * This prevents soft style penalties from causing every hosted model to be
-   * discarded and unnecessarily invoking Ollama. The original score and issue
-   * list are preserved for diagnostics and winner selection.
-   */
-  private promoteUsableOnlineFallback(
-    model: AiModel,
-    attempt: AcceptedModelAttempt,
-  ): AcceptedModelAttempt | null {
-    if (
-      normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA ||
-      attempt.quality.score < IDEA_MIN_USABLE_FALLBACK_QUALITY_SCORE ||
-      this.hasBlockingQualityIssue(attempt.quality)
-    ) {
-      return null;
-    }
-
-    this.logger.warn(
-      `Online model "${model.displayName ?? model.modelName}" scored ${attempt.quality.score}, below the preferred ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}-point gate, but produced a structurally valid candidate. It was retained as a degraded-quality online fallback instead of invoking Ollama.`,
-    );
-
-    return {
-      ...attempt,
-      quality: {
-        ...attempt.quality,
-        accepted: true,
-      },
-    };
-  }
-
-  /** Returns true for issues that must never be softened into acceptance. */
-  private hasBlockingQualityIssue(quality: IdeaQualityEvaluation): boolean {
-    const blockingCodes = new Set<IdeaQualityEvaluation['issues'][number]['code']>([
-      'UNSUPPORTED_LOCAL_CLAIM',
-      'UNSUPPORTED_PLATFORM_ACCESS',
-      'MALFORMED_MEASURABLE_TARGET',
-      'UNSUPPORTED_IMPACT_TARGET',
-      'UNSUPPORTED_ROOT_CAUSE',
-      'UNSUPPORTED_CONFIGURATION_STORAGE_ASSUMPTION',
-      'COMMON_TITLE_MISSPELLING',
-      'INACCURATE_NLP_SUMMARY',
-    ]);
-
-    return quality.issues.some((issue) => blockingCodes.has(issue.code));
   }
 
   /** Converts deterministic issues into one concise rejection reason. */

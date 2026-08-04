@@ -102,6 +102,8 @@ export class PromptBuildingStage implements IdeaGenerationStage {
           : undefined,
 
       opportunityRanking: context.opportunityRanking ?? undefined,
+
+      selectedDomains: context.selectedDomains,
     });
 
     const promptHistory = await this.promptHistoryService.savePrompt({

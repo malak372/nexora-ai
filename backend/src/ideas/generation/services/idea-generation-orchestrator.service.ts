@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
-import { IdeaGenerationRunStatus, IdeaGenerationType } from '@prisma/client';
+import { IdeaGenerationRunStatus, IdeaGenerationType, LanguageCode } from '@prisma/client';
 
 import type { GenerateGuestIdeaDto } from '../dto/generate-guest-idea.dto';
 import type { GenerateIdeaDto } from '../dto/generate-idea.dto';
@@ -16,6 +16,7 @@ import {
   createIdeaGenerationContext,
   type IdeaGenerationContext,
   type IdeaGenerationLocation,
+  type SelectedGenerationDomain,
 } from '../types/idea-generation-context.type';
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
@@ -109,6 +110,9 @@ type ExecuteOwnedIdeaGenerationInput = {
    * Software-domain identifier.
    */
   domainId: string;
+
+  /** Ordered domains participating in this generation run. */
+  selectedDomains: SelectedGenerationDomain[];
 
   /**
    * User-provided generation keywords.
@@ -227,6 +231,7 @@ export class IdeaGenerationOrchestratorService {
       owner: context.owner,
       generationType: context.generationType,
       domainId: context.domainId,
+      selectedDomains: context.selectedDomains ?? [],
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
@@ -247,14 +252,88 @@ export class IdeaGenerationOrchestratorService {
    * @param input Authenticated user and validated request DTO.
    * @returns Complete pipeline result.
    */
+  /**
+   * Resolves the primary domain for a registered-user request.
+   *
+   * For cross-domain generation, the first selected domain owns collection-job
+   * compatibility and idea persistence. Additional selected domains are preserved as first-class generation
+   * constraints and also contribute bounded collection keywords.
+   */
   private resolveDomainForUser(userId: string, dto: GenerateIdeaDto) {
     return this.domainResolutionService.resolve({
       userId,
-      domainId: dto.domainId,
+      domainId: dto.domainIds?.[0] ?? dto.domainId,
       description: dto.description,
       keywords: dto.keywords,
       language: dto.language,
     });
+  }
+
+  /**
+   * Resolves the ordered cross-domain profile used by collection and AI.
+   *
+   * The primary domain remains the persisted Idea.domainId. The remaining
+   * domains are first-class prompt constraints rather than loose keywords.
+   */
+  private async buildCrossDomainProfile(
+    dto: GenerateIdeaDto,
+    primaryDomainId: string,
+  ): Promise<{
+    readonly selectedDomains: SelectedGenerationDomain[];
+    readonly keywords: string[];
+  }> {
+    const requestedIds = [...new Set([
+      primaryDomainId,
+      ...(dto.domainIds ?? []),
+    ].filter(Boolean))].slice(0, 3);
+
+    const domains = await this.prisma.domain.findMany({
+      where: { id: { in: requestedIds }, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        domainKeywords: {
+          where: { language: { in: [dto.language, LanguageCode.ANY] } },
+          select: { keyword: true },
+          orderBy: { createdAt: 'asc' },
+          take: 10,
+        },
+      },
+    });
+
+    const byId = new Map(domains.map((domain) => [domain.id, domain]));
+    const selectedDomains = requestedIds
+      .map((id) => byId.get(id))
+      .filter((domain): domain is (typeof domains)[number] => Boolean(domain))
+      .map((domain) => ({
+        id: domain.id,
+        name: domain.name,
+        keywords: this.normalizeStringArray(
+          domain.domainKeywords.map((entry) => entry.keyword),
+        ).slice(0, 8),
+      }));
+
+    if (selectedDomains.length === 0) {
+      throw new NotFoundException('No selected generation domain is active.');
+    }
+
+    const userKeywords = this.normalizeStringArray(dto.keywords);
+    const domainKeywords = selectedDomains.flatMap((domain) => [
+      domain.name,
+      ...domain.keywords,
+    ]);
+    const bridgeKeyword = selectedDomains.length > 1
+      ? `coherent cross-domain workflow combining ${selectedDomains.map((domain) => domain.name).join(' and ')}`
+      : selectedDomains[0].name;
+
+    return {
+      selectedDomains,
+      keywords: [...new Set([
+        ...userKeywords,
+        bridgeKeyword,
+        ...domainKeywords,
+      ])].slice(0, 30),
+    };
   }
 
   private resolveDomainForGuest(dto: GenerateGuestIdeaDto) {
@@ -276,6 +355,10 @@ export class IdeaGenerationOrchestratorService {
       userId,
     };
     const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
+    const domainProfile = await this.buildCrossDomainProfile(
+      input.dto,
+      resolvedDomain.domainId,
+    );
 
     return this.executeOwnedGeneration({
       owner,
@@ -284,7 +367,9 @@ export class IdeaGenerationOrchestratorService {
 
       domainId: resolvedDomain.domainId,
 
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      selectedDomains: domainProfile.selectedDomains,
+
+      keywords: domainProfile.keywords,
 
       requestedDataSourceKeys: [],
 
@@ -344,6 +429,8 @@ export class IdeaGenerationOrchestratorService {
 
       domainId: resolvedDomain.domainId,
 
+      selectedDomains: [],
+
       keywords: this.normalizeStringArray(input.dto.keywords),
 
       requestedDataSourceKeys: [],
@@ -382,12 +469,17 @@ export class IdeaGenerationOrchestratorService {
     await this.assertUserCanQueueGeneration(userId, input.dto.generationType);
 
     const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
+    const domainProfile = await this.buildCrossDomainProfile(
+      input.dto,
+      resolvedDomain.domainId,
+    );
 
     return this.queueOwnedGeneration({
       owner: { type: IDEA_OWNER_TYPES.USER, userId },
       generationType: input.dto.generationType,
       domainId: resolvedDomain.domainId,
-      keywords: this.normalizeStringArray(input.dto.keywords),
+      selectedDomains: domainProfile.selectedDomains,
+      keywords: domainProfile.keywords,
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
       location: {
@@ -463,6 +555,7 @@ export class IdeaGenerationOrchestratorService {
       },
       generationType: IdeaGenerationType.GUEST_FREE,
       domainId: resolvedDomain.domainId,
+      selectedDomains: [],
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
@@ -604,6 +697,8 @@ export class IdeaGenerationOrchestratorService {
       generationType: input.generationType,
 
       domainId: input.domainId,
+
+      selectedDomains: input.selectedDomains,
 
       keywords: input.keywords,
 

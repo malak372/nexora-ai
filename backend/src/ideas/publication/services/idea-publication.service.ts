@@ -372,6 +372,95 @@ export class IdeaPublicationService {
     return archivedPublication;
   }
 
+
+  /**
+   * Re-publishes an archived publication without deleting its history.
+   *
+   * Existing ratings, votes, feedback, acceptances, and revisions remain
+   * attached to the same publication record. The publication becomes
+   * discoverable again and receives a new immutable revision that represents
+   * the restored public snapshot.
+   *
+   * @param userId Authenticated publication-owner identifier.
+   * @param ideaId Related owned idea identifier.
+   * @returns Re-published publication.
+   *
+   * @throws NotFoundException When no owned publication exists.
+   * @throws BadRequestException When the publication is not archived or its
+   * public snapshot is incomplete.
+   */
+  async repost(userId: string, ideaId: string) {
+    const publication = await this.findOwnedByIdea(userId, ideaId);
+
+    if (publication.status === IdeaPublicationStatus.PUBLISHED) {
+      return publication;
+    }
+
+    if (publication.status !== IdeaPublicationStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'Only archived publications can be re-published.',
+      );
+    }
+
+    if (!publication.publicAbstract?.trim()) {
+      throw new BadRequestException(
+        'A public abstract is required before re-publishing.',
+      );
+    }
+
+    if (
+      publication.visibility === IdeaPublicationVisibility.SELECTED_AUDIENCE &&
+      publication.audiences.length === 0
+    ) {
+      throw new BadRequestException(
+        'At least one audience is required for selected-audience visibility.',
+      );
+    }
+
+    const republished = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ideaPublication.update({
+        where: {
+          id: publication.id,
+        },
+        data: {
+          status: IdeaPublicationStatus.PUBLISHED,
+          publishedAt: new Date(),
+          archivedAt: null,
+        },
+      });
+
+      const latest = await tx.ideaPublicationRevision.aggregate({
+        where: {
+          publicationId: publication.id,
+        },
+        _max: {
+          version: true,
+        },
+      });
+
+      await tx.ideaPublicationRevision.create({
+        data: {
+          publicationId: publication.id,
+          version: (latest._max.version ?? 0) + 1,
+          publicTitle: publication.publicTitle,
+          publicAbstract: publication.publicAbstract ?? '',
+          publicProblem: publication.publicProblem,
+          publicObjectives: publication.publicObjectives,
+          publicTargetUsers: publication.publicTargetUsers,
+        },
+      });
+
+      return updated;
+    });
+
+    await Promise.all([
+      this.cacheManager.del(userCacheKeys.summary(userId)),
+      this.publicationCache.invalidateDiscovery(republished.id),
+    ]);
+
+    return republished;
+  }
+
   /**
    * Permanently deletes a user-owned publication draft.
    *

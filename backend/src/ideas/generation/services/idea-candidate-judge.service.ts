@@ -19,8 +19,10 @@ import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
+  IDEA_JUDGE_ALLOW_LOCAL_FALLBACK,
   IDEA_JUDGE_MAX_ATTEMPTS,
   IDEA_JUDGE_MAX_OUTPUT_TOKENS,
+  IDEA_JUDGE_REQUEST_TIMEOUT_MS,
   IDEA_JUDGE_RESPONSE_SCHEMA_NAME,
   IDEA_JUDGE_TEMPERATURE,
 } from '../constants/idea-judge.constants';
@@ -35,9 +37,9 @@ import { IdeaCandidateJudgePromptService } from './idea-candidate-judge-prompt.s
 /**
  * Executes AI-only comparative evaluation for all successful candidates.
  *
- * This service never calculates a hybrid score and never falls back to a
- * deterministic ranking. When two or more valid candidates exist, a valid AI
- * judge decision is required before the workflow can select a winner.
+ * The service performs one bounded online comparison. When the judge cannot
+ * finish inside its budget, the benchmark keeps deterministic quality ranking
+ * as the non-blocking source of truth.
  *
  * Legal and regulatory results remain preliminary risk indicators only.
  *
@@ -72,7 +74,9 @@ export class IdeaCandidateJudgeService {
     }
 
     const prompt = this.promptService.build(context, candidates);
-    const localFallbackModel = await this.findLocalFallbackModel();
+    const localFallbackModel = IDEA_JUDGE_ALLOW_LOCAL_FALLBACK
+      ? await this.findLocalFallbackModel()
+      : null;
     const onlineExcludedModelIds = localFallbackModel
       ? [localFallbackModel.id]
       : [];
@@ -107,6 +111,9 @@ export class IdeaCandidateJudgeService {
           estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
           maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
           temperature: IDEA_JUDGE_TEMPERATURE,
+          timeoutMs: IDEA_JUDGE_REQUEST_TIMEOUT_MS,
+          maxRetriesPerModel: 0,
+          maxModelsPerOperation: 1,
           strategy:
             attempt === 1
               ? AiRoutingStrategy.BALANCED
@@ -166,6 +173,9 @@ export class IdeaCandidateJudgeService {
           estimatedOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
           maxOutputTokens: IDEA_JUDGE_MAX_OUTPUT_TOKENS,
           temperature: IDEA_JUDGE_TEMPERATURE,
+          timeoutMs: IDEA_JUDGE_REQUEST_TIMEOUT_MS,
+          maxRetriesPerModel: 0,
+          maxModelsPerOperation: 1,
           allowProviderFallbackOnInvalidPrompt: true,
         });
 

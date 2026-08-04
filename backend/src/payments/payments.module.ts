@@ -13,8 +13,8 @@ import { AdminPaymentsController } from './controllers/admin-payments.controller
 import { PaymentCheckoutController } from './controllers/payment-checkout.controller';
 import { PaymentWebhooksController } from './controllers/payment-webhooks.controller';
 import { UserPaymentsController } from './controllers/user-payments.controller';
+import { UserInvoicesController } from './controllers/user-invoices.controller';
 
-import { PayPalPaymentGateway } from './gateways/paypal-payment.gateway';
 import { PaymentGatewayFactory } from './gateways/payment-gateway.factory';
 import type { PaymentGateway } from './gateways/payment-gateway.interface';
 import { StripePaymentGateway } from './gateways/stripe-payment.gateway';
@@ -27,6 +27,7 @@ import { PaymentNotificationService } from './services/payment-notification.serv
 import { PaymentProcessingService } from './services/payment-processing.service';
 import { PaymentWebhookService } from './services/payment-webhook.service';
 import { UserPaymentsService } from './services/user-payments.service';
+import { InvoiceService } from './services/invoice.service';
 
 /**
  * Shared payment-domain module.
@@ -47,9 +48,8 @@ import { UserPaymentsService } from './services/user-payments.service';
  *
  * Email delivery is delegated to MailModule.
  *
- * Enabled payment gateways:
- * - Stripe.
- * - PayPal.
+ * Enabled payment gateway:
+ * - Stripe Checkout.
  *
  * @author Eman
  */
@@ -65,6 +65,7 @@ import { UserPaymentsService } from './services/user-payments.service';
 
   controllers: [
     UserPaymentsController,
+    UserInvoicesController,
     PaymentCheckoutController,
     AdminPaymentsController,
     PaymentWebhooksController,
@@ -72,6 +73,7 @@ import { UserPaymentsService } from './services/user-payments.service';
 
   providers: [
     UserPaymentsService,
+    InvoiceService,
     AdminPaymentsService,
 
     CreditPurchaseService,
@@ -83,7 +85,6 @@ import { UserPaymentsService } from './services/user-payments.service';
     PaymentWebhookService,
 
     StripePaymentGateway,
-    PayPalPaymentGateway,
 
     /**
      * Registers all enabled payment gateways as one collection.
@@ -94,15 +95,11 @@ import { UserPaymentsService } from './services/user-payments.service';
     {
       provide: PAYMENT_GATEWAYS,
 
-      inject: [StripePaymentGateway, PayPalPaymentGateway],
+      inject: [StripePaymentGateway],
 
       useFactory: (
         stripePaymentGateway: StripePaymentGateway,
-        payPalPaymentGateway: PayPalPaymentGateway,
-      ): readonly PaymentGateway[] => [
-        stripePaymentGateway,
-        payPalPaymentGateway,
-      ],
+      ): readonly PaymentGateway[] => [stripePaymentGateway],
     },
 
     PaymentGatewayFactory,

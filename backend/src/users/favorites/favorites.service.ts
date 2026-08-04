@@ -1,5 +1,10 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Cache } from 'cache-manager';
 
 import { AccountStatus } from '@prisma/client';
@@ -9,14 +14,17 @@ import { userCacheKeys } from '../cache/user-cache.keys';
 import { UserValidationService } from '../validation/validation.service';
 
 /**
- * Manages private favorites for authenticated users' generated ideas.
+ * Manages the authenticated user's private favorite-idea collection.
  *
- * Business rules:
- * - A user can favorite only an idea owned by the same user.
- * - The idea does not need to be published.
- * - Guest ideas cannot be favorited until they are transferred to a user.
- * - Favorites are private and are never exposed through public publications.
- * - Repeated add operations are idempotent.
+ * A favorite can represent:
+ * - An idea generated and owned by the authenticated user.
+ * - An idea accepted by the authenticated user through its publication.
+ *
+ * Accepted favorites expose only the safe publication snapshot. They never
+ * expose the source owner's private generation data or protected AI outputs.
+ *
+ * Repeated add operations are idempotent and the existing FavoriteIdea table
+ * is reused, so no database migration is required.
  *
  * @author Eman
  */
@@ -28,10 +36,12 @@ export class UserFavoritesService {
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
-  /** Adds one user-owned generated idea to private favorites. */
+  /**
+   * Adds an owned or accepted idea to the user's private favorites.
+   */
   async addFavorite(userId: string, ideaId: string) {
     await this.userValidationService.findUserOrThrow(userId);
-    await this.findOwnedIdeaOrThrow(userId, ideaId);
+    await this.ensureFavoriteAccess(userId, ideaId);
 
     const favorite = await this.prisma.favoriteIdea.upsert({
       where: {
@@ -61,7 +71,9 @@ export class UserFavoritesService {
     };
   }
 
-  /** Removes one user-owned generated idea from private favorites. */
+  /**
+   * Removes one favorite owned by the authenticated user.
+   */
   async removeFavorite(userId: string, ideaId: string) {
     await this.userValidationService.findUserOrThrow(userId);
 
@@ -83,15 +95,12 @@ export class UserFavoritesService {
     };
   }
 
-  /** Returns all non-deleted favorite ideas owned by the current user. */
+  /**
+   * Returns owned and accepted favorites in one safe, unified collection.
+   */
   async getFavorites(userId: string) {
     await this.userValidationService.findUserOrThrow(userId);
 
-    /*
-     * AI Chat is a Premium-only capability. Resolve the authenticated user's
-     * current account status once for the complete response instead of deriving
-     * chat access from idea unlock state or issuing one query per favorite.
-     */
     const [user, favorites] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
@@ -101,8 +110,17 @@ export class UserFavoritesService {
         where: {
           userId,
           idea: {
-            userId,
             deletedAt: null,
+            OR: [
+              { userId },
+              {
+                publication: {
+                  acceptances: {
+                    some: { userId },
+                  },
+                },
+              },
+            ],
           },
         },
         orderBy: {
@@ -114,6 +132,7 @@ export class UserFavoritesService {
           idea: {
             select: {
               id: true,
+              userId: true,
               title: true,
               generationType: true,
               selectedRegion: true,
@@ -138,9 +157,25 @@ export class UserFavoritesService {
               publication: {
                 select: {
                   id: true,
+                  ideaId: true,
                   status: true,
                   visibility: true,
+                  publicTitle: true,
+                  publicAbstract: true,
+                  publicProblem: true,
+                  publicObjectives: true,
+                  publicTargetUsers: true,
                   publishedAt: true,
+                  archivedAt: true,
+                  acceptances: {
+                    where: { userId },
+                    take: 1,
+                    select: {
+                      id: true,
+                      acceptedAt: true,
+                      advancedUnlockedAt: true,
+                    },
+                  },
                 },
               },
               generationRun: {
@@ -165,39 +200,120 @@ export class UserFavoritesService {
 
     const canUseAiChat = user.accountStatus === AccountStatus.PREMIUM;
 
-    return favorites.map((favorite) => ({
-      id: favorite.id,
-      favoritedAt: favorite.createdAt,
-      idea: {
-        ...favorite.idea,
-        fullAbstract: favorite.idea.isUnlocked
-          ? favorite.idea.fullAbstract
-          : null,
-        commentsCount: favorite.idea.isUnlocked
-          ? favorite.idea.commentsCount
-          : undefined,
-        isFavorite: true,
-        access: {
-          canViewAdvancedOutputs: favorite.idea.isUnlocked,
-          canViewFullAbstract: favorite.idea.isUnlocked,
-          canViewCommunityData: favorite.idea.isUnlocked,
-          canUseAiChat: favorite.idea.isUnlocked && canUseAiChat,
-          requiresDirectUnlock: !favorite.idea.isUnlocked,
+    return favorites.map((favorite) => {
+      const idea = favorite.idea;
+      const isOwned = idea.userId === userId;
+      const acceptance = idea.publication?.acceptances?.[0] ?? null;
+
+      if (isOwned) {
+        const {
+          userId: _ownerId,
+          publication,
+          ...safeOwnedIdea
+        } = idea;
+
+        return {
+          id: favorite.id,
+          favoritedAt: favorite.createdAt,
+          favoriteKind: 'OWNED',
+          idea: {
+            ...safeOwnedIdea,
+            publication: publication
+              ? {
+                  ...publication,
+                  acceptances: undefined,
+                }
+              : null,
+            fullAbstract: idea.isUnlocked ? idea.fullAbstract : null,
+            commentsCount: idea.isUnlocked ? idea.commentsCount : undefined,
+            isFavorite: true,
+            access: {
+              canViewAdvancedOutputs: idea.isUnlocked,
+              canViewFullAbstract: idea.isUnlocked,
+              canViewCommunityData: idea.isUnlocked,
+              canUseAiChat: idea.isUnlocked && canUseAiChat,
+              requiresDirectUnlock: !idea.isUnlocked,
+            },
+          },
+        };
+      }
+
+      if (!idea.publication || !acceptance) {
+        throw new ForbiddenException(
+          'Accepted favorite access is no longer available.',
+        );
+      }
+
+      const publication = idea.publication;
+      const hasAdvancedAccess = acceptance.advancedUnlockedAt !== null;
+
+      return {
+        id: favorite.id,
+        favoritedAt: favorite.createdAt,
+        favoriteKind: 'ACCEPTED',
+        idea: {
+          id: idea.id,
+          title: publication.publicTitle,
+          limitedAbstract: publication.publicAbstract,
+          problemStatement: publication.publicProblem,
+          objectives: publication.publicObjectives,
+          targetUsers: publication.publicTargetUsers,
+          selectedRegion: idea.selectedRegion,
+          domain: idea.domain,
+          createdAt: acceptance.acceptedAt,
+          updatedAt: idea.updatedAt,
+          isUnlocked: hasAdvancedAccess,
+          isFavorite: true,
+          publication: {
+            id: publication.id,
+            ideaId: publication.ideaId,
+            status: publication.status,
+            visibility: publication.visibility,
+            publishedAt: publication.publishedAt,
+            archivedAt: publication.archivedAt,
+          },
+          acceptance: {
+            id: acceptance.id,
+            acceptedAt: acceptance.acceptedAt,
+            advancedUnlockedAt: acceptance.advancedUnlockedAt,
+          },
+          acceptedAt: acceptance.acceptedAt,
+          hasAdvancedAccess,
+          __libraryKind: 'accepted',
+          access: {
+            canViewAdvancedOutputs: hasAdvancedAccess,
+            canViewFullAbstract: hasAdvancedAccess,
+            canViewCommunityData: true,
+            canUseAiChat: false,
+            requiresDirectUnlock: !hasAdvancedAccess,
+          },
         },
-      },
-    }));
+      };
+    });
   }
 
-  /** Ensures that the requested idea exists and belongs to the current user. */
-  private async findOwnedIdeaOrThrow(
+  /**
+   * Ensures the idea is either owned by the user or belongs to a publication
+   * the user previously accepted.
+   */
+  private async ensureFavoriteAccess(
     userId: string,
     ideaId: string,
   ): Promise<void> {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: ideaId,
-        userId,
         deletedAt: null,
+        OR: [
+          { userId },
+          {
+            publication: {
+              acceptances: {
+                some: { userId },
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -205,11 +321,13 @@ export class UserFavoritesService {
     });
 
     if (!idea) {
-      throw new NotFoundException('User-owned idea not found.');
+      throw new NotFoundException(
+        'Only an owned or accepted idea can be added to favorites.',
+      );
     }
   }
 
-  /** Invalidates user summaries affected by favorite changes. */
+  /** Invalidates dashboard data affected by favorite changes. */
   private async invalidateUserCaches(userId: string): Promise<void> {
     await this.cacheManager.del(userCacheKeys.summary(userId));
   }

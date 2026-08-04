@@ -5,7 +5,10 @@ import { LanguageCode } from '@prisma/client';
  *
  * @author Malak
  */
-export type CollectorCollectionMode = 'STANDARD' | 'TARGETED_RECOVERY';
+export type CollectorCollectionMode =
+  | 'STANDARD'
+  | 'FAST_GENERATION'
+  | 'TARGETED_RECOVERY';
 
 export type CollectorLimits = {
   readonly maxFetchedPosts?: number;

@@ -299,6 +299,14 @@ export type IdeaGenerationNoResultOutcome = {
   readonly collectionJobIds: readonly string[];
 };
 
+
+/** One concrete domain participating in a cross-domain generation request. */
+export type SelectedGenerationDomain = {
+  readonly id: string;
+  readonly name: string;
+  readonly keywords: readonly string[];
+};
+
 export type IdeaGenerationContext = {
   /**
    * Persisted IdeaGenerationRun identifier.
@@ -325,6 +333,15 @@ export type IdeaGenerationContext = {
    * data-source-selection stages.
    */
   domainName: string | null;
+
+  /**
+   * Ordered domains selected for the run.
+   *
+   * The first domain remains the primary database relation. The complete list
+   * is used to require evidence and at least one problem-solution contribution
+   * from every selected domain when the corpus can support it.
+   */
+  selectedDomains: SelectedGenerationDomain[];
 
   /**
    * User-supplied keywords.
@@ -475,6 +492,9 @@ export type CreateIdeaGenerationContextInput = {
    */
   domainId: string;
 
+  /** Ordered cross-domain profile resolved before pipeline execution. */
+  selectedDomains?: SelectedGenerationDomain[];
+
   /**
    * Optional user-provided keywords.
    */
@@ -518,6 +538,7 @@ export function createIdeaGenerationContext(
 
     domainId: input.domainId,
     domainName: null,
+    selectedDomains: input.selectedDomains ?? [],
 
     keywords: input.keywords ?? [],
 

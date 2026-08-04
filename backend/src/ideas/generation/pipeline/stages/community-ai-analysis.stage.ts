@@ -68,6 +68,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       recurringProblems: this.mergeJsonArrays(
         context.nlp.recurringProblems,
         analysis.opportunities.map((opportunity) => ({
+          domainName: opportunity.domainName,
           title: opportunity.title,
           problem: opportunity.problem,
           frequency: opportunity.frequency,
@@ -80,6 +81,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       extractedNeeds: this.mergeJsonArrays(
         context.nlp.extractedNeeds,
         analysis.opportunities.map((opportunity) => ({
+          domainName: opportunity.domainName,
           title: opportunity.unmetNeed,
           need: opportunity.unmetNeed,
           problem: opportunity.problem,
@@ -133,6 +135,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         apiModelId: analysis.apiModelId,
         attemptCount: analysis.attemptCount,
         qualityWarnings: analysis.qualityWarnings,
+        representedDomains: [...new Set(analysis.opportunities.map((item) => item.domainName))],
       },
     };
   }
@@ -141,6 +144,7 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     opportunity: CommunityAiOpportunity,
   ): Prisma.InputJsonObject {
     return {
+      domainName: opportunity.domainName,
       title: opportunity.title,
       problem: opportunity.problem,
       need: opportunity.unmetNeed,

@@ -1,6 +1,7 @@
 import { IdeaGenerationType } from '@prisma/client';
 
 import type { IdeaOpportunityRanking } from '../../ideas/generation/types/idea-opportunity-ranking.type';
+import type { SelectedGenerationDomain } from '../../ideas/generation/types/idea-generation-context.type';
 
 /**
  * Input required to generate a new idea prompt.
@@ -38,6 +39,9 @@ export type IdeaGenerationPromptInput = {
    * Deterministic opportunity ranking resolved before prompt construction.
    */
   readonly opportunityRanking?: IdeaOpportunityRanking;
+
+  /** Ordered domains that must contribute evidence-backed problems. */
+  readonly selectedDomains?: readonly SelectedGenerationDomain[];
 };
 
 /**

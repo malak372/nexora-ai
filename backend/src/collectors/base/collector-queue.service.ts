@@ -23,6 +23,9 @@ type QueueTaskMetadata = {
    * to string, so a separate enum union is not required here.
    */
   platform?: string;
+
+  /** Optional hard task budget used by fast idea generation. */
+  timeoutMs?: number;
 };
 
 /**
@@ -92,7 +95,16 @@ export class CollectorQueueService {
   private readonly maxQueueSize: number;
 
   constructor(private readonly configService: ConfigService) {
-    this.concurrency = this.getPositiveNumber('COLLECTOR_QUEUE_CONCURRENCY', 3);
+    const configuredConcurrency = this.getPositiveNumber(
+      'COLLECTOR_QUEUE_CONCURRENCY',
+      4,
+    );
+
+    /*
+     * The fast generation path selects at most four sources. A floor of four
+     * prevents the last source from waiting for a second 12-second queue wave.
+     */
+    this.concurrency = Math.max(4, configuredConcurrency);
 
     this.maxQueueSize = this.getPositiveNumber('COLLECTOR_QUEUE_MAX_SIZE', 100);
   }
@@ -112,6 +124,7 @@ export class CollectorQueueService {
     metadata?: QueueTaskMetadata | string,
   ): Promise<T> {
     const platform = this.resolvePlatform(metadata);
+    const timeoutMs = typeof metadata === 'object' ? metadata.timeoutMs : undefined;
 
     if (this.running >= this.concurrency) {
       if (this.queue.length >= this.maxQueueSize) {
@@ -140,7 +153,31 @@ export class CollectorQueueService {
         }. Running: ${this.running}`,
       );
 
-      return await task();
+      if (!timeoutMs || timeoutMs <= 0) {
+        return await task();
+      }
+
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      try {
+        return await Promise.race([
+          task(),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => {
+              reject(
+                new ServiceUnavailableException(
+                  `Collector task${platform ? ` for ${platform}` : ''} exceeded ${timeoutMs}ms.`,
+                ),
+              );
+            }, timeoutMs);
+            timeoutHandle.unref?.();
+          }),
+        ]);
+      } finally {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+      }
     } finally {
       this.running -= 1;
 

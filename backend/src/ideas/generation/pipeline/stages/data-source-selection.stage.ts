@@ -68,8 +68,23 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       domainId: context.domainId,
     });
 
+    const selectedDomains = context.selectedDomains.length > 0
+      ? context.selectedDomains.map((domain) =>
+          domain.id === selection.domain.id
+            ? { ...domain, name: selection.domain.name, keywords: selection.domain.keywords }
+            : domain,
+        )
+      : [{
+          id: selection.domain.id,
+          name: selection.domain.name,
+          keywords: selection.domain.keywords,
+        }];
+
     const mergedKeywords = mergeGenerationStringArrays(
-      [selection.domain.keywords, context.keywords],
+      [
+        selectedDomains.flatMap((domain) => [domain.name, ...domain.keywords]),
+        context.keywords,
+      ],
       {
         lowercase: true,
         maxItems: 40,
@@ -83,6 +98,8 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       domainId: selection.domain.id,
 
       domainName: selection.domain.name,
+
+      selectedDomains,
 
       keywords: mergedKeywords,
 
@@ -106,6 +123,7 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
         selectedDataSourcesCount: selection.dataSources.length,
 
         mergedKeywordsCount: mergedKeywords.length,
+        selectedDomains: selectedDomains.map(({ id, name }) => ({ id, name })),
       },
     };
   }

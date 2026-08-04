@@ -21,6 +21,7 @@ import type { PaymentProcessingResult } from '../types/payment-processing-result
 import { CreditPurchaseService } from './credit-purchase.service';
 import { DirectUnlockPaymentService } from './direct-unlock-payment.service';
 import { PaymentNotificationService } from './payment-notification.service';
+import { InvoiceService } from './invoice.service';
 
 /** Maximum time Prisma may wait for a payment transaction connection. */
 const PAYMENT_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
@@ -105,6 +106,8 @@ export class PaymentProcessingService {
     private readonly creditCacheService: CreditCacheService,
 
     private readonly paymentNotificationService: PaymentNotificationService,
+
+    private readonly invoiceService: InvoiceService,
   ) {}
 
   /**
@@ -152,6 +155,18 @@ export class PaymentProcessingService {
             payment.status === PaymentStatus.SUCCEEDED &&
             confirmation.status === PaymentStatus.SUCCEEDED
           ) {
+            /*
+             * A payment may have succeeded before invoices were introduced,
+             * or the original webhook may have committed payment fulfillment
+             * without creating its invoice. Repair the invoice idempotently
+             * before returning the already-processed result.
+             */
+            await this.invoiceService.ensureForAlreadySuccessfulPayment(
+              payment.id,
+              confirmation,
+              tx,
+            );
+
             return this.buildAlreadyProcessedSuccessResult(
               payment,
               confirmation,
@@ -523,6 +538,16 @@ export class PaymentProcessingService {
     if (claimResult.count === 0) {
       return this.resolveUnclaimedSuccess(tx, payment.id, confirmation);
     }
+
+    /*
+     * Generate the immutable invoice snapshot before business fulfillment
+     * returns. The unique paymentId constraint keeps webhook retries safe.
+     */
+    await this.invoiceService.createForSuccessfulPayment(
+      payment.id,
+      confirmation,
+      tx,
+    );
 
     switch (payment.paymentPurpose) {
       case PaymentPurpose.BUY_CREDITS: {
