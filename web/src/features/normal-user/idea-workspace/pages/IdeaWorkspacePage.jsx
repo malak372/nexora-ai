@@ -1,3 +1,11 @@
+/**
+ * Voxidence normal-user idea workspace.
+ *
+ * Visual identity is provided by idea-workspace.css using the current
+ * pearl, eucalyptus, and soft-rose palette. Existing API calls, permissions,
+ * navigation, section order, unlock logic, publication logic, and Framer
+ * Motion interactions remain unchanged.
+ */
 import {
   ArrowLeft,
   BriefcaseBusiness,

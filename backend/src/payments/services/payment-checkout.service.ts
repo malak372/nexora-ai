@@ -38,7 +38,6 @@ import { PaymentProcessingService } from './payment-processing.service';
  */
 const PAYMENT_METHOD_KEY = {
   CARD: 'card',
-  PAYPAL: 'paypal',
 } as const;
 
 /**
@@ -48,7 +47,6 @@ const PAYMENT_METHOD_KEY = {
  */
 const PAYMENT_PROVIDER_KEY = {
   STRIPE: 'stripe',
-  PAYPAL: 'paypal',
 } as const;
 
 /**
@@ -1309,15 +1307,13 @@ export class PaymentCheckoutService {
   }
 
   /**
-   * Maps a user-facing payment-method key to a backend gateway key.
+   * Maps the supported card payment method to Stripe Checkout.
    */
   private resolveProviderKey(paymentMethodKey: string): string {
     switch (paymentMethodKey) {
       case PAYMENT_METHOD_KEY.CARD:
         return PAYMENT_PROVIDER_KEY.STRIPE;
 
-      case PAYMENT_METHOD_KEY.PAYPAL:
-        return PAYMENT_PROVIDER_KEY.PAYPAL;
 
       default:
         throw new PaymentProcessingError(

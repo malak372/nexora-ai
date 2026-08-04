@@ -10,6 +10,7 @@ import { getAccessToken } from '../../features/auth/shared/auth.storage';
 import NormalHeader from './NormalHeader';
 import NormalSidebar from './NormalSidebar';
 import './normal-user-layout.css';
+import './normal-user-theme.css';
 
 export default function NormalUserLayout() {
   const navigate = useNavigate();

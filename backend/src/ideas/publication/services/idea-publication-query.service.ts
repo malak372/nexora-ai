@@ -154,7 +154,9 @@ export class IdeaPublicationQueryService {
      * viewerUserId is passed to findMany so each card can include the current
      * user's acceptance and advanced-access state without extra frontend calls.
      */
-    const result = await this.findMany(where, query, userId);
+    const result = await this.findMany(where, query, {
+      viewerUserId: userId,
+    });
 
     await this.publicationCache.set(cacheKey, result);
     return result;
@@ -180,6 +182,9 @@ export class IdeaPublicationQueryService {
         ...(query.visibility ? { visibility: query.visibility } : {}),
       },
       query,
+      {
+        includeAcceptors: true,
+      },
     );
   }
 
@@ -530,7 +535,10 @@ export class IdeaPublicationQueryService {
   private async findMany(
     where: Prisma.IdeaPublicationWhereInput,
     query: GetPublicationsQueryDto,
-    viewerUserId?: string,
+    options: {
+      readonly viewerUserId?: string;
+      readonly includeAcceptors?: boolean;
+    } = {},
   ) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -609,10 +617,10 @@ export class IdeaPublicationQueryService {
       }
     >();
 
-    if (viewerUserId && items.length > 0) {
+    if (options.viewerUserId && items.length > 0) {
       const acceptances = await this.prisma.ideaPublicationAcceptance.findMany({
         where: {
-          userId: viewerUserId,
+          userId: options.viewerUserId,
           publicationId: { in: items.map((item) => item.id) },
         },
         select: {
@@ -627,12 +635,109 @@ export class IdeaPublicationQueryService {
       });
     }
 
+
+    /*
+     * Acceptance totals are safe for discovery cards. Accepter identities are
+     * loaded only for the owner's "My Published Ideas" view.
+     */
+    const acceptanceSummaryByPublicationId = new Map<
+      string,
+      {
+        count: number;
+        acceptedBy: Array<{
+          id: string;
+          fullName: string;
+          userType: UserType | null;
+          acceptedAt: Date;
+          hasAdvancedAccess: boolean;
+        }>;
+      }
+    >();
+
+    if (items.length > 0) {
+      const publicationIds = items.map((item) => item.id);
+
+      if (options.includeAcceptors) {
+        const ownerAcceptances =
+          await this.prisma.ideaPublicationAcceptance.findMany({
+            where: {
+              publicationId: { in: publicationIds },
+            },
+            orderBy: {
+              acceptedAt: 'desc',
+            },
+            select: {
+              publicationId: true,
+              acceptedAt: true,
+              advancedUnlockedAt: true,
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  userType: true,
+                },
+              },
+            },
+          });
+
+        ownerAcceptances.forEach((acceptance) => {
+          const current = acceptanceSummaryByPublicationId.get(
+            acceptance.publicationId,
+          ) ?? {
+            count: 0,
+            acceptedBy: [],
+          };
+
+          current.count += 1;
+          current.acceptedBy.push({
+            id: acceptance.user.id,
+            fullName: acceptance.user.fullName,
+            userType: acceptance.user.userType,
+            acceptedAt: acceptance.acceptedAt,
+            hasAdvancedAccess: acceptance.advancedUnlockedAt !== null,
+          });
+
+          acceptanceSummaryByPublicationId.set(
+            acceptance.publicationId,
+            current,
+          );
+        });
+      } else {
+        const groupedAcceptances =
+          await this.prisma.ideaPublicationAcceptance.groupBy({
+            by: ['publicationId'],
+            where: {
+              publicationId: { in: publicationIds },
+            },
+            _count: {
+              _all: true,
+            },
+          });
+
+        groupedAcceptances.forEach((group) => {
+          acceptanceSummaryByPublicationId.set(group.publicationId, {
+            count: group._count._all,
+            acceptedBy: [],
+          });
+        });
+      }
+    }
+
     return {
       items: items.map((item) => {
         const acceptance = acceptanceByPublicationId.get(item.id) ?? null;
+        const acceptanceSummary =
+          acceptanceSummaryByPublicationId.get(item.id) ?? {
+            count: 0,
+            acceptedBy: [],
+          };
 
         return {
           ...item,
+          acceptanceCount: acceptanceSummary.count,
+          acceptedBy: options.includeAcceptors
+            ? acceptanceSummary.acceptedBy
+            : undefined,
           isAccepted: acceptance !== null,
           acceptanceId: acceptance?.id ?? null,
           hasAdvancedAccess: acceptance?.advancedUnlockedAt !== null && acceptance !== null,

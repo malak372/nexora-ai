@@ -15,6 +15,7 @@ import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
+  COMMUNITY_AI_ANALYSIS_ALLOW_LOCAL_FALLBACK,
   COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
   COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION,
   COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES,
@@ -70,7 +71,9 @@ export class CommunityAiAnalysisService {
   ): Promise<CommunityAiAnalysis | null> {
     const prompt = this.promptService.build(context);
     const preferredOnlineModel = await this.findPreferredOnlineModel();
-    const localFallbackModel = await this.findLocalFallbackModel();
+    const localFallbackModel = COMMUNITY_AI_ANALYSIS_ALLOW_LOCAL_FALLBACK
+      ? await this.findLocalFallbackModel()
+      : null;
     const excludedAiModelIds = new Set<string>(
       localFallbackModel ? [localFallbackModel.id] : [],
     );
@@ -245,7 +248,7 @@ export class CommunityAiAnalysisService {
     );
     const analysis = this.applyEvidenceGrounding(context, parsedAnalysis);
 
-    this.validateBusinessQuality(analysis);
+    this.validateBusinessQuality(analysis, context);
 
     return analysis;
   }
@@ -368,7 +371,10 @@ export class CommunityAiAnalysisService {
    * Rejects suspicious but schema-valid responses so the next attempt uses a
    * different model instead of polluting opportunity ranking.
    */
-  private validateBusinessQuality(analysis: CommunityAiAnalysis): void {
+  private validateBusinessQuality(
+    analysis: CommunityAiAnalysis,
+    context: IdeaGenerationContext,
+  ): void {
     if (
       analysis.overallConfidence < COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE
     ) {
@@ -403,8 +409,29 @@ export class CommunityAiAnalysisService {
     }
 
     const normalizedSignatures = new Set<string>();
+    const selectedDomainNames = new Set(
+      context.selectedDomains.map((domain) =>
+        this.normalizeComparableText(domain.name),
+      ),
+    );
+    const representedDomains = new Set<string>();
 
     for (const opportunity of credibleOpportunities) {
+      const normalizedDomain = this.normalizeComparableText(
+        opportunity.domainName,
+      );
+
+      if (
+        selectedDomainNames.size > 0 &&
+        !selectedDomainNames.has(normalizedDomain)
+      ) {
+        throw new Error(
+          `Opportunity "${opportunity.title}" references an unselected domain "${opportunity.domainName}".`,
+        );
+      }
+
+      representedDomains.add(normalizedDomain);
+
       const signature = this.normalizeComparableText(
         `${opportunity.problem} ${opportunity.unmetNeed} ${opportunity.solutionArea}`,
       );
@@ -432,6 +459,17 @@ export class CommunityAiAnalysisService {
       }
 
       normalizedSignatures.add(signature);
+    }
+
+    const missingDomains = context.selectedDomains.filter(
+      (domain) =>
+        !representedDomains.has(this.normalizeComparableText(domain.name)),
+    );
+
+    if (missingDomains.length > 0) {
+      throw new Error(
+        `No independently supported problem was found for selected domain(s): ${missingDomains.map((domain) => domain.name).join(', ')}. The run is stopped instead of fabricating cross-domain evidence.`,
+      );
     }
   }
 
@@ -470,6 +508,10 @@ export class CommunityAiAnalysisService {
     );
 
     return {
+      domainName: this.optionalString(
+        value.domainName ?? value.domain ?? value.category,
+        'Unassigned',
+      ),
       title: this.optionalString(
         value.title ?? value.name,
         this.deriveTitle(problem, unmetNeed),

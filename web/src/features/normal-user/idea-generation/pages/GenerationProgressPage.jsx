@@ -4,11 +4,12 @@
  * The backend remains authoritative for run status and percentage. Visual
  * interpolation only smooths abrupt server updates. Cancellation is cooperative:
  * after the request succeeds, the UI shows "Cancellation requested" until the
- * backend reaches CANCELLED at the next safe checkpoint.
+ * backend reaches CANCELLED at the next safe checkpoint. Visual styling uses
+ * the Voxidence eucalyptus-and-rose identity without changing pipeline data.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, LayoutDashboard, Radio, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Clock3, LayoutDashboard, Radio, RefreshCw, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 import { cancelGenerationRun } from '../api/ideaGenerationApi';
@@ -56,6 +57,7 @@ export default function GenerationProgressPage() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const pipeline = useMemo(
     () => getVisualPipeline(run?.stages ?? [], run?.currentStageKey ?? null),
@@ -71,6 +73,20 @@ export default function GenerationProgressPage() {
   const currentStageKey = run?.currentStageKey ?? null;
   const hasMovedBeyondPreparing = Boolean(currentStageKey) && !preparingStageKeys.includes(currentStageKey);
   const canCancel = !isTerminal && (preparingStage?.status === 'completed' || hasMovedBeyondPreparing);
+
+
+  useEffect(() => {
+    if (isTerminal) return undefined;
+
+    const startedAt = run?.startedAt ? new Date(run.startedAt).getTime() : Date.now();
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    };
+
+    updateElapsed();
+    const timerId = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timerId);
+  }, [isTerminal, run?.startedAt]);
 
   useEffect(() => {
     if (run?.cancelRequestedAt) setCancelRequested(true);
@@ -143,10 +159,21 @@ export default function GenerationProgressPage() {
       </div>
 
       <section className="nx-generation-progress__hero">
-        <div>
-          <span className="nx-kicker"><Radio size={14} />{connectionState === 'connected' ? 'Live pipeline' : 'Secure fallback updates'}</span>
-          <h1>Nexora is shaping your idea.</h1>
-          <p>Follow the live discovery journey. The current milestone receives focus while completed work remains quietly documented.</p>
+        <div className="nx-generation-progress__hero-copy">
+          <span className="nx-kicker">
+            <Radio size={14} />
+            {connectionState === 'connected' ? 'Live generation' : 'Reconnecting safely'}
+          </span>
+
+          <h1>Your idea is taking shape.</h1>
+
+          <div className="nx-generation-progress__current">
+            <span>{String(activeStage?.number ?? 1).padStart(2, '0')}</span>
+            <div>
+              <small>Now working on</small>
+              <strong>{activeStage?.title ?? 'Preparing'}</strong>
+            </div>
+          </div>
         </div>
 
         <div className="nx-progress-summary-card">
@@ -154,17 +181,26 @@ export default function GenerationProgressPage() {
             <strong>{Math.round(displayedProgress)}%</strong>
             <span>{run.status}</span>
           </div>
-          <div><small>Current milestone</small><b>{activeStage?.title ?? 'Preparing'}</b></div>
+
+          <div className="nx-progress-summary-card__copy">
+            <small>Elapsed time</small>
+            <b>{elapsedSeconds}s</b>
+            <span><Clock3 size={13} />Live backend progress</span>
+          </div>
         </div>
       </section>
 
       <section className="nx-horizontal-pipeline-card">
         <div className="nx-horizontal-pipeline-card__head">
           <div>
-            <span>IDEA PIPELINE</span>
-            <h2>From community signal to validated idea</h2>
+            <span>LIVE PIPELINE</span>
+            <h2>Generation progress</h2>
           </div>
-          <div className="nx-stage-counter"><b>{completedCount}</b><span>of {pipeline.length} complete</span></div>
+
+          <div className="nx-stage-counter">
+            <b>{completedCount}</b>
+            <span>of {pipeline.length} complete</span>
+          </div>
         </div>
 
         <div className="nx-horizontal-pipeline" role="list" aria-label="Idea-generation milestones">
@@ -178,7 +214,7 @@ export default function GenerationProgressPage() {
         </div>
 
         <div className="nx-pipeline-meta">
-          <p><ShieldCheck size={17} />You may leave this page. The backend continues the run securely.</p>
+          <p><Clock3 size={17} />You can leave this page while generation continues.</p>
           {!isTerminal ? (
             <button
               className={`nx-cancel-run ${cancelRequested ? 'is-requested' : ''}`}

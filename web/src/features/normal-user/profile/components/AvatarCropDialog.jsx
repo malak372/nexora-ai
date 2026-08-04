@@ -20,6 +20,7 @@ import {
   useReducedMotion,
 } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const OUTPUT_SIZE = 512;
 
@@ -91,6 +92,33 @@ export default function AvatarCropDialog({
       active = false;
     };
   }, [file]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth =
+      window.innerWidth - document.documentElement.clientWidth;
+
+    document.body.style.overflow = 'hidden';
+
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !saving) {
+        onCancel();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onCancel, saving]);
 
   const createCroppedFile = async () => {
     if (!previewSource) {
@@ -179,9 +207,14 @@ export default function AvatarCropDialog({
     );
   };
 
-  return (
+  return createPortal(
     <motion.div
       className="avatar-crop-dialog"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) {
+          onCancel();
+        }
+      }}
       role="dialog"
       aria-modal="true"
       aria-label="Crop profile image"
@@ -228,7 +261,7 @@ export default function AvatarCropDialog({
             <strong>Crop your photo</strong>
 
             <small>
-              The centered square becomes your Nexora avatar.
+              The centered square becomes your Voxidence avatar.
             </small>
           </div>
 
@@ -363,6 +396,7 @@ export default function AvatarCropDialog({
           hidden
         />
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

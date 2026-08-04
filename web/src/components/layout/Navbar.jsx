@@ -17,7 +17,7 @@
  * @author Eman
  */
 
-import { Menu, Sparkles, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import {
     useCallback,
     useEffect,
@@ -36,6 +36,7 @@ import {
     PUBLIC_NAVIGATION_ITEMS,
 } from '../../constants/navigation.constants';
 import { ROUTES } from '../../constants/routes.constants';
+import VoxidenceMark from '../brand/VoxidenceMark';
 
 /**
  * Scroll offset used when detecting the currently visible section.
@@ -378,7 +379,7 @@ export default function Navbar() {
     };
 
     return (
-        <header className="sticky top-0 z-50 border-b border-nexora-border/80 bg-nexora-background/90 shadow-[0_8px_30px_rgba(96,73,134,0.05)] backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-nexora-border/80 bg-nexora-background/90 shadow-[0_8px_30px_rgba(47, 119, 116,0.05)] backdrop-blur-xl">
             <div className="nexora-container">
                 <div className="flex h-20 items-center justify-between">
                     {/* Nexora brand */}
@@ -386,18 +387,15 @@ export default function Navbar() {
                         to={ROUTES.HOME}
                         onClick={closeMenu}
                         className="group flex items-center gap-3"
-                        aria-label="Go to Nexora home page"
+                        aria-label="Go to Voxidence home page"
                     >
-                        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8060ce] to-[#64a6d8] text-white shadow-soft transition duration-300 group-hover:-rotate-3 group-hover:scale-105">
-                            <Sparkles
-                                size={22}
-                                aria-hidden="true"
-                            />
+                        <span className="voxidence-brand-mark flex h-11 w-11 items-center justify-center rounded-2xl bg-[#5cbdb9] text-white shadow-soft transition duration-300 group-hover:-rotate-3 group-hover:scale-105">
+                            <VoxidenceMark size={25} />
                         </span>
 
                         <div>
                             <p className="text-xl font-extrabold tracking-tight text-nexora-text">
-                                Nexora AI
+                                Voxidence
                             </p>
 
                             <p className="text-xs font-medium text-nexora-muted">

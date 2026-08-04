@@ -14,7 +14,7 @@ export const IDEA_JUDGE_RESPONSE_SCHEMA_NAME = 'idea_candidate_evaluation';
  *
  * @author Malak
  */
-export const IDEA_JUDGE_MAX_OUTPUT_TOKENS = 2_048;
+export const IDEA_JUDGE_MAX_OUTPUT_TOKENS = 1_200;
 
 /**
  * Low temperature used to keep comparative decisions stable and repeatable.
@@ -72,10 +72,10 @@ export const IDEA_DETERMINISTIC_FINAL_SCORE_WEIGHT = 0.3;
 export const IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION = 65;
 
 /** Maximum number of candidates included in one comparative judge request. */
-export const IDEA_JUDGE_MAX_CANDIDATES = 3;
+export const IDEA_JUDGE_MAX_CANDIDATES = 2;
 
 /** Maximum number of bounded comparative-judge execution attempts. */
-export const IDEA_JUDGE_MAX_ATTEMPTS = 2;
+export const IDEA_JUDGE_MAX_ATTEMPTS = 1;
 
 /** Maximum characters retained from each long advanced-output summary. */
 export const IDEA_JUDGE_ADVANCED_OUTPUT_SUMMARY_MAX_CHARS = 280;
@@ -88,3 +88,10 @@ export const IDEA_JUDGE_RELEVANT_ADVANCED_OUTPUT_KEYS = new Set<string>([
   'implementation-timeline',
   'local-regulations',
 ]);
+
+
+/** Maximum time reserved for the optional comparative judge request. */
+export const IDEA_JUDGE_REQUEST_TIMEOUT_MS = 8_000;
+
+/** Local judge fallback is disabled inside the strict one-minute path. */
+export const IDEA_JUDGE_ALLOW_LOCAL_FALLBACK = false;

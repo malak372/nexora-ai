@@ -1,5 +1,5 @@
 /**
- * Premium notification center backed by /users/notifications.
+ * Normal-user notification center backed by /users/notifications.
  *
  * The page presents a refined activity inbox with:
  * - animated summary cards
@@ -89,7 +89,7 @@ function getMeta(type = '') {
       icon: Bell,
       label: key.replaceAll('_', ' ') || 'Update',
       className: 'is-system',
-      description: 'General Nexora activity',
+      description: 'General Voxidence activity',
     }
   );
 }
@@ -330,7 +330,7 @@ export default function NotificationsPage() {
             <div className="notifications-state">
               <LoaderCircle className="spin" size={28} />
               <h3>Loading your activity</h3>
-              <p>Gathering your latest Nexora updates.</p>
+              <p>Gathering your latest Voxidence updates.</p>
             </div>
           ) : error ? (
             <div className="notifications-state notifications-state--error">
@@ -400,7 +400,7 @@ export default function NotificationsPage() {
                       <strong>{item.title || meta.label}</strong>
 
                       <span className="notification-row__message">
-                        {item.message || 'A new Nexora update is ready.'}
+                        {item.message || 'A new Voxidence update is ready.'}
                       </span>
 
                       <small>{meta.description}</small>

@@ -220,8 +220,8 @@ export default function PublishIdeaPage() {
     },
     {
       value: 'REGISTERED_USERS',
-      title: 'Nexora members',
-      description: 'Visible to authenticated Nexora users only.',
+      title: 'Voxidence members',
+      description: 'Visible to authenticated Voxidence users only.',
       icon: UsersRound,
     },
     {
@@ -262,7 +262,7 @@ export default function PublishIdeaPage() {
         <div>
           <span><Sparkles size={14} /> PUBLICATION STUDIO</span>
           <h1>Prepare a clear story for the right audience.</h1>
-          <p>Shape a polished public snapshot while Nexora keeps advanced execution details protected.</p>
+          <p>Shape a polished public snapshot while Voxidence keeps advanced execution details protected.</p>
         </div>
         <ShieldCheck size={70} />
       </motion.section>

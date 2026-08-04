@@ -1,11 +1,26 @@
 /**
- * Nexora AI registration experience.
+ * Voxidence palette refinement.
+ *
+ * Only legacy blue and purple presentation colors were replaced. Existing
+ * spacing, card geometry, responsive behavior, and functional states remain
+ * unchanged.
+ */
+/**
+ * Voxidence registration experience.
  *
  * Extends the existing login design system and keeps the desktop
  * registration experience close to one viewport.
  *
  * @author Eman
  */
+
+
+:root {
+    --vox-pink-soft: #F3C9D3;
+    --vox-pink-detail: #D98FA0;
+    --vox-pink-deep: #C98293;
+    --vox-pink-glow: rgba(243, 201, 211, 0.24);
+}
 
 /* Page layout */
 
@@ -40,10 +55,10 @@
     background:
         linear-gradient(135deg,
             rgba(255, 255, 255, 0.78),
-            rgba(239, 233, 255, 0.75)),
-        rgba(245, 240, 255, 0.72);
+            rgba(235, 246, 245, 0.75)),
+        rgba(255, 248, 250, 0.76);
     box-shadow:
-        0 30px 80px rgba(74, 50, 149, 0.11),
+        0 30px 80px rgba(47, 119, 116, 0.11),
         inset 0 1px 0 rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
@@ -55,7 +70,7 @@
     right: 5%;
     width: 250px;
     height: 250px;
-    border: 1px solid rgba(111, 82, 229, 0.15);
+    border: 1px solid rgba(92, 189, 185, 0.15);
     border-radius: 50%;
     content: "";
     pointer-events: none;
@@ -68,7 +83,7 @@
     right: calc(5% + 42px);
     width: 166px;
     height: 166px;
-    border: 1px dashed rgba(111, 82, 229, 0.11);
+    border: 1px dashed rgba(92, 189, 185, 0.11);
     border-radius: 50%;
     content: "";
     pointer-events: none;
@@ -104,11 +119,11 @@
     border-radius: 14px;
     background:
         linear-gradient(135deg,
-            #7557df 0%,
-            #6654df 52%,
-            #62a9dd 100%);
+            #5cbdb9 0%,
+            #5cbdb9 52%,
+            #5cbdb9 100%);
     box-shadow:
-        0 13px 28px rgba(99, 75, 199, 0.22),
+        0 13px 28px rgba(92, 189, 185, 0.22),
         inset 0 1px 0 rgba(255, 255, 255, 0.38);
     color: #ffffff;
 }
@@ -119,7 +134,7 @@
 }
 
 .nx-register__brand-copy strong {
-    color: #211c34;
+    color: #34413f;
     font-size: 1.05rem;
     font-weight: 800;
     line-height: 1.2;
@@ -127,7 +142,7 @@
 }
 
 .nx-register__brand-copy small {
-    color: #7c768c;
+    color: #2f7774;
     font-size: 0.74rem;
     font-weight: 500;
 }
@@ -136,7 +151,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: #6e6b7f;
+    color: #2f7774;
     font-size: 0.74rem;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -167,11 +182,11 @@
     gap: 8px;
     width: fit-content;
     padding: 9px 13px;
-    border: 1px solid rgba(111, 82, 229, 0.15);
+    border: 1px solid rgba(92, 189, 185, 0.15);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.62);
-    box-shadow: 0 8px 24px rgba(84, 60, 170, 0.07);
-    color: #6043d4;
+    box-shadow: 0 8px 24px rgba(92, 189, 185, 0.07);
+    color: #5cbdb9;
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.07em;
@@ -181,7 +196,7 @@
 .nx-register__story h1 {
     max-width: 760px;
     margin: clamp(20px, 3vh, 30px) 0 16px;
-    color: #211c34;
+    color: #34413f;
     font-size: clamp(2.8rem, 4.8vw, 5rem);
     font-weight: 800;
     line-height: 0.96;
@@ -193,9 +208,9 @@
     color: transparent;
     background:
         linear-gradient(100deg,
-            #7357df 5%,
-            #684fd8 47%,
-            #62a9dd 100%);
+            #5cbdb9 5%,
+            #5cbdb9 47%,
+            #5cbdb9 100%);
     background-clip: text;
     -webkit-background-clip: text;
 }
@@ -203,7 +218,7 @@
 .nx-register__description {
     max-width: 680px;
     margin: 0;
-    color: #746e86;
+    color: #2f7774;
     font-size: clamp(0.92rem, 1vw, 1.05rem);
     line-height: 1.62;
 }
@@ -224,10 +239,10 @@
     min-width: 0;
     min-height: 92px;
     padding: 13px;
-    border: 1px solid rgba(101, 78, 178, 0.11);
+    border: 1px solid rgba(92, 189, 185, 0.11);
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.62);
-    box-shadow: 0 10px 26px rgba(65, 47, 130, 0.05);
+    box-shadow: 0 10px 26px rgba(47, 119, 116, 0.05);
     transition:
         border-color 180ms ease,
         background-color 180ms ease,
@@ -236,9 +251,9 @@
 }
 
 .nx-register__benefit:hover {
-    border-color: rgba(111, 82, 229, 0.24);
+    border-color: rgba(92, 189, 185, 0.24);
     background: rgba(255, 255, 255, 0.84);
-    box-shadow: 0 15px 30px rgba(65, 47, 130, 0.09);
+    box-shadow: 0 15px 30px rgba(47, 119, 116, 0.09);
     transform: translateY(-2px);
 }
 
@@ -252,19 +267,19 @@
     border-radius: 11px;
     background:
         linear-gradient(145deg,
-            rgba(117, 87, 223, 0.12),
-            rgba(98, 169, 221, 0.13));
-    color: #6e53d8;
+            rgba(92, 189, 185, 0.12),
+            rgba(92, 189, 185, 0.13));
+    color: #5cbdb9;
 }
 
 .nx-register__benefit:nth-child(2) .nx-register__benefit-icon {
-    background: rgba(98, 169, 221, 0.14);
-    color: #4f91c9;
+    background: rgba(92, 189, 185, 0.14);
+    color: #5cbdb9;
 }
 
 .nx-register__benefit:nth-child(3) .nx-register__benefit-icon {
-    background: rgba(190, 116, 225, 0.12);
-    color: #9a5ed1;
+    background: rgba(92, 189, 185, 0.12);
+    color: #5cbdb9;
 }
 
 .nx-register__benefit>div {
@@ -273,7 +288,7 @@
 
 .nx-register__benefit h2 {
     margin: 0 0 4px;
-    color: #292638;
+    color: #34413f;
     font-size: 0.76rem;
     font-weight: 800;
     line-height: 1.25;
@@ -283,7 +298,7 @@
     display: -webkit-box;
     margin: 0;
     overflow: hidden;
-    color: #777486;
+    color: #2f7774;
     font-size: 0.64rem;
     line-height: 1.38;
     -webkit-box-orient: vertical;
@@ -314,10 +329,10 @@
     width: 34px;
     height: 34px;
     margin-right: -7px;
-    border: 3px solid rgba(246, 241, 255, 0.95);
+    border: 3px solid rgba(255, 248, 250, 0.96);
     border-radius: 50%;
     background: #ffffff;
-    color: #6848d6;
+    color: #5cbdb9;
     font-size: 0.65rem;
     font-weight: 800;
 }
@@ -328,7 +343,7 @@
 }
 
 .nx-register__story-footer strong {
-    color: #282638;
+    color: #34413f;
     font-size: 0.77rem;
 }
 
@@ -337,7 +352,7 @@
     align-items: center;
     gap: 6px;
     margin: 0;
-    color: #7e7a8a;
+    color: #2f7774;
     font-size: 0.69rem;
 }
 
@@ -356,15 +371,15 @@
     max-height: calc(100svh - 44px);
     padding: clamp(24px, 3vh, 34px);
     overflow-y: auto;
-    border: 1px solid rgba(112, 88, 190, 0.11);
+    border: 1px solid rgba(92, 189, 185, 0.11);
     border-radius: 30px;
     background: rgba(255, 255, 255, 0.84);
     box-shadow:
-        0 30px 75px rgba(73, 54, 135, 0.09),
+        0 30px 75px rgba(47, 119, 116, 0.09),
         inset 0 1px 0 rgba(255, 255, 255, 0.96);
     scrollbar-width: thin;
     scrollbar-color:
-        rgba(111, 82, 229, 0.22) transparent;
+        rgba(92, 189, 185, 0.22) transparent;
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
 }
@@ -379,7 +394,7 @@
 
 .nx-register__form-card::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: rgba(111, 82, 229, 0.22);
+    background: rgba(92, 189, 185, 0.22);
 }
 
 /* Form heading */
@@ -399,7 +414,7 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    color: #5b3ed0;
+    color: #5cbdb9;
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.07em;
@@ -407,7 +422,7 @@
 }
 
 .nx-register__secure-label {
-    color: #aaa6b4;
+    color: var(--vox-pink-detail);
     font-size: 0.67rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -415,7 +430,7 @@
 
 .nx-register__form-heading h2 {
     margin: 18px 0 0;
-    color: #211c34;
+    color: #34413f;
     font-size: clamp(2rem, 2.8vw, 2.85rem);
     font-weight: 700;
     line-height: 1;
@@ -425,7 +440,7 @@
 .nx-register__form-heading>p {
     max-width: 460px;
     margin: 10px 0 0;
-    color: #746e86;
+    color: #2f7774;
     font-size: 0.82rem;
     line-height: 1.5;
 }
@@ -445,7 +460,7 @@
 
 .nx-register__form-card .register-label {
     margin: 0;
-    color: #282638;
+    color: #34413f;
     font-size: 0.72rem;
     font-weight: 800;
 }
@@ -460,13 +475,13 @@
     gap: 10px;
     min-height: 48px;
     padding: 0 14px;
-    border: 1px solid rgba(89, 70, 152, 0.15);
+    border: 1px solid rgba(47, 119, 116, 0.15);
     border-radius: 15px;
     background: rgba(255, 255, 255, 0.78);
     box-shadow:
-        0 9px 22px rgba(65, 47, 130, 0.035),
+        0 9px 22px rgba(47, 119, 116, 0.035),
         inset 0 1px 0 #ffffff;
-    color: #918da0;
+    color: #2f7774;
     transition:
         border-color 180ms ease,
         box-shadow 180ms ease,
@@ -475,15 +490,15 @@
 }
 
 .nx-register__form-card .register-input-shell:hover {
-    border-color: rgba(115, 87, 223, 0.3);
+    border-color: rgba(92, 189, 185, 0.3);
 }
 
 .nx-register__form-card .register-input-shell:focus-within {
-    border-color: rgba(115, 87, 223, 0.58);
+    border-color: rgba(92, 189, 185, 0.58);
     background: #ffffff;
     box-shadow:
-        0 0 0 4px rgba(115, 87, 223, 0.08),
-        0 13px 28px rgba(65, 47, 130, 0.07);
+        0 0 0 4px rgba(92, 189, 185, 0.08),
+        0 13px 28px rgba(47, 119, 116, 0.07);
     transform: translateY(-1px);
 }
 
@@ -501,13 +516,14 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: #242131;
+    color: #34413f;
     font: inherit;
     font-size: 0.82rem;
 }
 
 .nx-register__form-card .register-input-shell input::placeholder {
-    color: #aaa6b3;
+    color: #C98293;
+    opacity: 0.82;
 }
 
 .nx-register__form-card .register-password-toggle {
@@ -520,13 +536,13 @@
     border: 0;
     border-radius: 9px;
     background: transparent;
-    color: #918c9d;
+    color: #2f7774;
     cursor: pointer;
 }
 
 .nx-register__form-card .register-password-toggle:hover {
-    background: rgba(111, 82, 229, 0.08);
-    color: #5d3bd2;
+    background: rgba(92, 189, 185, 0.08);
+    color: #5cbdb9;
 }
 
 /* User type selector */
@@ -554,7 +570,7 @@
     justify-content: center;
     gap: 5px;
     padding: 8px 5px;
-    border: 1px solid rgba(101, 78, 178, 0.12);
+    border: 1px solid rgba(92, 189, 185, 0.12);
     border-radius: 13px;
     background: rgba(255, 255, 255, 0.68);
     color: inherit;
@@ -568,20 +584,20 @@
 }
 
 .nx-register__form-card .register-user-type-card:hover {
-    border-color: rgba(111, 82, 229, 0.28);
+    border-color: rgba(92, 189, 185, 0.28);
     background: rgba(255, 255, 255, 0.92);
     transform: translateY(-1px);
 }
 
 .nx-register__form-card .register-user-type-card-selected {
-    border-color: #7357df;
+    border-color: #5cbdb9;
     background:
         linear-gradient(145deg,
-            rgba(245, 241, 255, 0.96),
+            rgba(255, 248, 250, 0.96),
             rgba(255, 255, 255, 0.96));
     box-shadow:
-        0 0 0 3px rgba(115, 87, 223, 0.07),
-        0 7px 16px rgba(72, 51, 151, 0.06);
+        0 0 0 3px rgba(92, 189, 185, 0.07),
+        0 7px 16px rgba(47, 119, 116, 0.06);
 }
 
 .nx-register__form-card .register-user-type-icon {
@@ -592,14 +608,14 @@
     height: 28px;
     border-radius: 9px;
     background: #f2f3f7;
-    color: #777386;
+    color: #2f7774;
 }
 
 .nx-register__form-card .register-user-type-card-selected .register-user-type-icon {
     background:
         linear-gradient(135deg,
-            #7557df,
-            #62a9dd);
+            #5cbdb9,
+            #5cbdb9);
     color: #ffffff;
 }
 
@@ -612,7 +628,7 @@
 .nx-register__form-card .register-user-type-copy strong {
     display: block;
     overflow: hidden;
-    color: #29243c;
+    color: #34413f;
     font-size: 0.59rem;
     font-weight: 800;
     text-overflow: ellipsis;
@@ -633,7 +649,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #7357df;
+    background: #5cbdb9;
     color: #ffffff;
 }
 
@@ -656,7 +672,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: #9c98aa;
+    color: var(--vox-pink-detail);
     font-size: 0.56rem;
     font-weight: 600;
 }
@@ -692,7 +708,7 @@
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    color: #716e7d;
+    color: #2f7774;
     font-size: 0.65rem;
     line-height: 1.45;
     cursor: pointer;
@@ -714,7 +730,7 @@
     width: 17px;
     height: 17px;
     margin-top: 1px;
-    border: 1px solid rgba(100, 80, 165, 0.23);
+    border: 1px solid rgba(92, 189, 185, 0.23);
     border-radius: 5px;
     background: #ffffff;
     color: transparent;
@@ -725,17 +741,17 @@
 }
 
 .nx-register__form-card .register-checkbox-label input:checked+.register-custom-checkbox {
-    border-color: #7357df;
+    border-color: #5cbdb9;
     background:
         linear-gradient(135deg,
-            #7557df,
-            #62a9dd);
+            #5cbdb9,
+            #5cbdb9);
     color: #ffffff;
-    box-shadow: 0 6px 14px rgba(111, 82, 229, 0.22);
+    box-shadow: 0 6px 14px rgba(92, 189, 185, 0.22);
 }
 
 .nx-register__form-card .register-checkbox-label a {
-    color: #5737cf;
+    color: #5cbdb9;
     font-weight: 800;
     text-decoration: none;
 }
@@ -781,12 +797,12 @@
     border-radius: 15px;
     background:
         linear-gradient(135deg,
-            #7657df 0%,
-            #6c5bdc 52%,
-            #68a9dd 100%);
+            #5cbdb9 0%,
+            #5cbdb9 52%,
+            #5cbdb9 100%);
     box-shadow:
-        0 14px 30px rgba(93, 72, 194, 0.22),
-        0 7px 20px rgba(104, 169, 221, 0.14),
+        0 14px 30px rgba(92, 189, 185, 0.22),
+        0 7px 20px rgba(92, 189, 185, 0.14),
         inset 0 1px 0 rgba(255, 255, 255, 0.3);
     color: #ffffff;
     font: inherit;
@@ -802,13 +818,13 @@
 .nx-register__form-card .register-submit-button:hover:not(:disabled) {
     background:
         linear-gradient(135deg,
-            #6e50d5 0%,
-            #6250d2 52%,
-            #5d9fd4 100%);
+            #5cbdb9 0%,
+            #5cbdb9 52%,
+            #5cbdb9 100%);
     box-shadow:
-        0 18px 36px rgba(93, 72, 194, 0.25),
-        0 9px 24px rgba(104, 169, 221, 0.18),
-        0 0 0 4px rgba(105, 137, 218, 0.07),
+        0 18px 36px rgba(92, 189, 185, 0.25),
+        0 9px 24px rgba(92, 189, 185, 0.18),
+        0 0 0 4px rgba(92, 189, 185, 0.07),
         inset 0 1px 0 rgba(255, 255, 255, 0.32);
     filter: saturate(1.04);
     transform: translateY(-2px);
@@ -830,14 +846,14 @@
 
 .nx-register__form-card .register-login-link {
     margin: -2px 0 0;
-    color: #8f8b9a;
+    color: #2f7774;
     font-size: 0.68rem;
     text-align: center;
 }
 
 .nx-register__form-card .register-login-link a {
     margin-left: 4px;
-    color: #5737cf;
+    color: #5cbdb9;
     font-weight: 800;
     text-decoration: none;
 }
@@ -856,7 +872,7 @@
     margin-top: 16px;
     padding-top: 15px;
     border-top: 1px solid var(--nx-line);
-    color: #9692a2;
+    color: var(--vox-pink-detail);
     font-size: 0.62rem;
     text-align: center;
 }
@@ -1090,7 +1106,7 @@
     border-radius: 50%;
     background:
         radial-gradient(circle,
-            rgba(132, 96, 239, 0.2),
+            rgba(243, 201, 211, 0.2),
             transparent 70%);
     animation:
         nx-register-card-spotlight 9s ease-in-out infinite;
@@ -1117,7 +1133,7 @@
 
 .nx-register__signal-orbit {
     inset: 0;
-    border: 1px solid rgba(111, 82, 229, 0.2);
+    border: 1px solid rgba(92, 189, 185, 0.2);
     animation:
         nx-register-signal-spin 20s linear infinite;
 }
@@ -1125,7 +1141,7 @@
 .nx-register__signal-orbit--inner {
     inset: 48px;
     border-style: dashed;
-    border-color: rgba(111, 82, 229, 0.13);
+    border-color: rgba(92, 189, 185, 0.13);
     animation-duration: 14s;
     animation-direction: reverse;
 }
@@ -1133,10 +1149,10 @@
 .nx-register__signal-node {
     width: 11px;
     height: 11px;
-    background: #7657df;
+    background: #5cbdb9;
     box-shadow:
-        0 0 0 7px rgba(118, 87, 223, 0.11),
-        0 0 20px rgba(118, 87, 223, 0.45);
+        0 0 0 7px rgba(92, 189, 185, 0.11),
+        0 0 20px rgba(92, 189, 185, 0.45);
 }
 
 .nx-register__signal-node--one {
@@ -1171,8 +1187,8 @@
     background:
         linear-gradient(90deg,
             transparent,
-            rgba(118, 87, 223, 0.28),
-            rgba(98, 169, 221, 0.2),
+            rgba(92, 189, 185, 0.28),
+            rgba(92, 189, 185, 0.2),
             transparent);
     content: "";
     filter: blur(4px);
@@ -1197,7 +1213,7 @@
     width: 115px;
     height: 115px;
     border-radius: 50%;
-    background: rgba(122, 85, 233, 0.15);
+    background: rgba(243, 201, 211, 0.15);
     filter: blur(18px);
     opacity: 0;
     transform: scale(0.5);
@@ -1412,7 +1428,7 @@
     position: absolute;
     inset: 0;
     border: 0;
-    background: rgba(29, 25, 48, 0.14);
+    background: rgba(52, 65, 63, 0.14);
     backdrop-filter: blur(4px);
     pointer-events: auto;
 }
@@ -1431,7 +1447,7 @@
             rgba(248, 246, 255, 0.92));
 
     box-shadow:
-        0 24px 70px rgba(45, 35, 88, 0.22),
+        0 24px 70px rgba(52, 65, 63, 0.22),
         inset 0 1px 0 rgba(255, 255, 255, 0.95);
 
     text-align: left;
@@ -1450,7 +1466,7 @@
     top: -100px;
     right: -70px;
     border-radius: 50%;
-    background: rgba(112, 83, 230, 0.13);
+    background: rgba(243, 201, 211, 0.13);
     filter: blur(10px);
     pointer-events: none;
 }
@@ -1466,12 +1482,12 @@
 
     background:
         linear-gradient(145deg,
-            rgba(111, 78, 225, 0.14),
-            rgba(105, 169, 235, 0.14));
+            rgba(92, 189, 185, 0.14),
+            rgba(235, 246, 245, 0.14));
 
-    color: #6546d8;
+    color: #5cbdb9;
     box-shadow:
-        inset 0 0 0 1px rgba(101, 70, 216, 0.12);
+        inset 0 0 0 1px rgba(92, 189, 185, 0.12);
 }
 
 .register-verification-modal__card--error .register-verification-modal__icon {
@@ -1485,7 +1501,7 @@
 
 .register-verification-modal__eyebrow {
     margin: 0 0 8px;
-    color: #6850cf;
+    color: #5cbdb9;
     font-size: 0.72rem;
     font-weight: 800;
     letter-spacing: 0.13em;
@@ -1495,7 +1511,7 @@
 .register-verification-modal__card h2 {
     position: relative;
     margin: 0;
-    color: #19162b;
+    color: #34413f;
     font-size: 1.9rem;
     font-weight: 800;
     line-height: 1.08;
@@ -1504,7 +1520,7 @@
 
 .register-verification-modal__message {
     margin: 12px 0 0;
-    color: #777288;
+    color: #2f7774;
     font-size: 0.94rem;
     line-height: 1.55;
 }
@@ -1518,11 +1534,11 @@
     align-items: center;
     gap: 10px;
 
-    border: 1px solid rgba(104, 80, 207, 0.14);
+    border: 1px solid rgba(92, 189, 185, 0.14);
     border-radius: 14px;
 
     background: rgba(255, 255, 255, 0.72);
-    color: #443b69;
+    color: #2f7774;
     font-size: 0.9rem;
     font-weight: 700;
 
@@ -1543,8 +1559,8 @@
 
     background:
         linear-gradient(135deg,
-            #6f4fe1,
-            #607ce3);
+            #5cbdb9,
+            #5cbdb9);
 
     color: #fff;
     font: inherit;
@@ -1552,7 +1568,7 @@
     cursor: pointer;
 
     box-shadow:
-        0 14px 28px rgba(100, 78, 218, 0.24);
+        0 14px 28px rgba(92, 189, 185, 0.24);
 
     transition:
         transform 180ms ease,
@@ -1562,7 +1578,7 @@
 .register-verification-modal__primary:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow:
-        0 18px 34px rgba(100, 78, 218, 0.3);
+        0 18px 34px rgba(92, 189, 185, 0.3);
 }
 
 .register-verification-modal__primary:disabled {
@@ -1575,11 +1591,11 @@
     min-height: 45px;
     margin-top: 9px;
 
-    border: 1px solid rgba(80, 72, 109, 0.13);
+    border: 1px solid rgba(47, 119, 116, 0.13);
     border-radius: 14px;
 
     background: rgba(255, 255, 255, 0.55);
-    color: #575169;
+    color: #2f7774;
 
     font: inherit;
     font-size: 0.9rem;
@@ -1595,12 +1611,12 @@
 .register-verification-modal__signin {
     margin: 14px 0 0;
     text-align: center;
-    color: #8a8597;
+    color: #2f7774;
     font-size: 0.82rem;
 }
 
 .register-verification-modal__signin a {
-    color: #6546d8;
+    color: #5cbdb9;
     font-weight: 800;
 }
 
@@ -1673,11 +1689,11 @@
     gap: 6px;
     min-height: 32px;
     padding: 0 11px;
-    border: 1px solid rgba(99, 74, 207, 0.16);
+    border: 1px solid rgba(92, 189, 185, 0.16);
     border-radius: 999px;
-    color: #5b3ed0;
+    color: #5cbdb9;
     background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 8px 20px rgba(62, 43, 124, 0.06);
+    box-shadow: 0 8px 20px rgba(47, 119, 116, 0.06);
     font-size: 0.72rem;
     font-weight: 800;
     line-height: 1;
@@ -1688,9 +1704,9 @@
 }
 
 .nx-register__back-home:hover {
-    border-color: rgba(99, 74, 207, 0.28);
+    border-color: rgba(92, 189, 185, 0.28);
     background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 10px 24px rgba(62, 43, 124, 0.1);
+    box-shadow: 0 10px 24px rgba(47, 119, 116, 0.1);
     transform: translateY(-1px);
 }
 
@@ -1715,7 +1731,7 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: #6546d8;
+    color: #5cbdb9;
     font: inherit;
     font-weight: 800;
     text-decoration: underline;
@@ -1737,7 +1753,7 @@
     position: absolute;
     inset: 0;
     border: 0;
-    background: rgba(28, 23, 48, 0.28);
+    background: rgba(52, 65, 63, 0.28);
     backdrop-filter: blur(8px);
 }
 
@@ -1752,7 +1768,7 @@
     border: 1px solid rgba(255, 255, 255, 0.88);
     border-radius: 28px;
     background: linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(246, 242, 255, .96));
-    box-shadow: 0 30px 90px rgba(44, 33, 88, 0.28);
+    box-shadow: 0 30px 90px rgba(52, 65, 63, 0.28);
 }
 
 .register-legal-modal__header {
@@ -1761,12 +1777,12 @@
     justify-content: space-between;
     gap: 20px;
     padding: 24px 26px 18px;
-    border-bottom: 1px solid rgba(103, 80, 190, 0.12);
+    border-bottom: 1px solid rgba(92, 189, 185, 0.12);
 }
 
 .register-legal-modal__header p {
     margin: 0 0 5px;
-    color: #6b50d5;
+    color: #5cbdb9;
     font-size: .72rem;
     font-weight: 850;
     letter-spacing: .13em;
@@ -1775,7 +1791,7 @@
 
 .register-legal-modal__header h2 {
     margin: 0;
-    color: #211c34;
+    color: #34413f;
     font-size: clamp(1.55rem, 3vw, 2.15rem);
     letter-spacing: -.04em;
 }
@@ -1784,10 +1800,10 @@
     width: 38px;
     height: 38px;
     flex: 0 0 auto;
-    border: 1px solid rgba(98, 75, 183, 0.13);
+    border: 1px solid rgba(92, 189, 185, 0.13);
     border-radius: 12px;
     background: rgba(255, 255, 255, .72);
-    color: #5f5773;
+    color: #2f7774;
     font-size: 1.6rem;
     line-height: 1;
     cursor: pointer;
@@ -1800,13 +1816,13 @@
 
 .register-legal-modal__content h3 {
     margin: 0 0 7px;
-    color: #332b4c;
+    color: #34413f;
     font-size: 1rem;
 }
 
 .register-legal-modal__content p {
     margin: 0 0 21px;
-    color: #716b80;
+    color: #2f7774;
     font-size: .92rem;
     line-height: 1.7;
 }
@@ -1816,12 +1832,12 @@
     margin: 0 26px 24px;
     border: 0;
     border-radius: 14px;
-    background: linear-gradient(135deg, #6f4fe1, #607ce3);
+    background: linear-gradient(135deg, #5cbdb9, #5cbdb9);
     color: #fff;
     font: inherit;
     font-weight: 800;
     cursor: pointer;
-    box-shadow: 0 14px 28px rgba(100, 78, 218, .22);
+    box-shadow: 0 14px 28px rgba(92, 189, 185, .22);
 }
 
 .register-verification-modal__form {
@@ -1830,7 +1846,7 @@
 }
 
 .register-verification-modal__form label {
-    color: #4d4660;
+    color: #34413f;
     font-size: .78rem;
     font-weight: 800;
 }
@@ -1839,11 +1855,11 @@
     width: 100%;
     height: 58px;
     padding: 0 16px;
-    border: 1px solid rgba(104, 80, 207, .2);
+    border: 1px solid rgba(92, 189, 185, .2);
     border-radius: 15px;
     outline: none;
     background: rgba(255, 255, 255, .86);
-    color: #28223c;
+    color: #34413f;
     font: inherit;
     font-size: 1.55rem;
     font-weight: 850;
@@ -1853,8 +1869,8 @@
 }
 
 .register-verification-modal__form input:focus {
-    border-color: rgba(101, 70, 216, .52);
-    box-shadow: 0 0 0 4px rgba(101, 70, 216, .1);
+    border-color: rgba(92, 189, 185, .52);
+    box-shadow: 0 0 0 4px rgba(92, 189, 185, .1);
 }
 
 .register-verification-modal__form .register-verification-modal__primary {
@@ -1867,7 +1883,7 @@
     padding: 8px;
     border: 0;
     background: transparent;
-    color: #6755b5;
+    color: #5cbdb9;
     font: inherit;
     font-size: .84rem;
     font-weight: 800;

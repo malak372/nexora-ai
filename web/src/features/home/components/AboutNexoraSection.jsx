@@ -1,12 +1,12 @@
 /**
- * Renders the About Nexora section on the public landing page.
+ * Renders the About Voxidence section on the public landing page.
  *
  * The section introduces Nexora's mission and explains how the platform
  * differs from traditional idea-generation tools by starting from public
  * evidence, community needs, and comparative AI evaluation.
  *
  * @component
- * @returns {JSX.Element} The public About Nexora section.
+ * @returns {JSX.Element} The public About Voxidence section.
  *
  * @author Eman
  */

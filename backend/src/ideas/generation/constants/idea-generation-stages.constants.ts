@@ -134,13 +134,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.REQUEST_VALIDATION,
 
-      displayName: 'Request validation',
+      displayName: 'Validate request',
 
       sequence: 1,
 
       progressStart: 0,
 
-      progressEnd: 5,
+      progressEnd: 3,
 
       maxAttempts: 1,
 
@@ -150,13 +150,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.ENTITLEMENT_CHECK,
 
-      displayName: 'Entitlement check',
+      displayName: 'Verify access',
 
       sequence: 2,
 
-      progressStart: 5,
+      progressStart: 3,
 
-      progressEnd: 10,
+      progressEnd: 6,
 
       maxAttempts: 1,
 
@@ -166,13 +166,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.DATA_SOURCE_SELECTION,
 
-      displayName: 'Data-source selection',
+      displayName: 'Select evidence sources',
 
       sequence: 3,
 
-      progressStart: 10,
+      progressStart: 6,
 
-      progressEnd: 15,
+      progressEnd: 10,
 
       maxAttempts: 1,
 
@@ -182,13 +182,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION,
 
-      displayName: 'Collection and NLP resolution',
+      displayName: 'Collect community evidence',
 
       sequence: 4,
 
-      progressStart: 15,
+      progressStart: 10,
 
-      progressEnd: 20,
+      progressEnd: 30,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -198,13 +198,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
 
-      displayName: 'Collection validation checkpoint',
+      displayName: 'Confirm collected evidence',
 
       sequence: 5,
 
-      progressStart: 20,
+      progressStart: 30,
 
-      progressEnd: 35,
+      progressEnd: 34,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -214,13 +214,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS,
 
-      displayName: 'NLP validation checkpoint',
+      displayName: 'Normalize evidence',
 
       sequence: 6,
 
-      progressStart: 35,
+      progressStart: 34,
 
-      progressEnd: 46,
+      progressEnd: 40,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -230,13 +230,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS,
 
-      displayName: 'Community AI analysis',
+      displayName: 'AI evidence analysis',
 
       sequence: 7,
 
-      progressStart: 46,
+      progressStart: 40,
 
-      progressEnd: 51,
+      progressEnd: 50,
 
       maxAttempts: 1,
 
@@ -246,11 +246,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING,
 
-      displayName: 'Opportunity ranking',
+      displayName: 'Rank problem families',
 
       sequence: 8,
 
-      progressStart: 51,
+      progressStart: 50,
 
       progressEnd: 56,
 
@@ -262,13 +262,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.PROMPT_BUILDING,
 
-      displayName: 'Prompt building',
+      displayName: 'Build problem-solution brief',
 
       sequence: 9,
 
-      progressStart: 51,
+      progressStart: 56,
 
-      progressEnd: 56,
+      progressEnd: 61,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -278,13 +278,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION,
 
-      displayName: 'Core idea generation',
+      displayName: 'Generate candidate ideas',
 
       sequence: 10,
 
-      progressStart: 56,
+      progressStart: 61,
 
-      progressEnd: 67,
+      progressEnd: 80,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -294,13 +294,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.AI_OUTPUT_VALIDATION,
 
-      displayName: 'AI output validation',
+      displayName: 'Validate idea quality',
 
       sequence: 11,
 
-      progressStart: 67,
+      progressStart: 80,
 
-      progressEnd: 72,
+      progressEnd: 87,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -310,13 +310,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.DUPLICATE_CHECK,
 
-      displayName: 'Duplicate detection',
+      displayName: 'Check originality',
 
       sequence: 12,
 
-      progressStart: 72,
+      progressStart: 87,
 
-      progressEnd: 75,
+      progressEnd: 90,
 
       maxAttempts: 1,
 
@@ -326,13 +326,13 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
     {
       key: IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE,
 
-      displayName: 'Idea persistence',
+      displayName: 'Persist validated workspace',
 
       sequence: 13,
 
-      progressStart: 98,
+      progressStart: 94,
 
-      progressEnd: 99,
+      progressEnd: 98,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -586,11 +586,11 @@ export const IDEA_GENERATION_FINALIZATION_STAGE: IdeaGenerationStageDefinition =
   {
     key: IDEA_GENERATION_STAGE_KEYS.FINALIZATION,
 
-    displayName: 'Generation finalization',
+    displayName: 'Finalize workspace',
 
     sequence: 28,
 
-    progressStart: 99,
+    progressStart: 98,
 
     progressEnd: 100,
 
@@ -632,16 +632,20 @@ export const FREE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
  * Returns the correct pipeline-stage definitions for the
  * resolved generation policy.
  *
- * @param includePremiumStages Whether premium checkpoints are
- * required.
- * @returns Ordered stage definitions.
+ * @param includePremiumStages Retained for backward compatibility. Premium
+ * outputs are validated atomically instead of through sequential checkpoints.
+ * @returns Compact ordered stage definitions used by every account tier.
  */
 export function getIdeaGenerationStageDefinitions(
   includePremiumStages: boolean,
 ): readonly IdeaGenerationStageDefinition[] {
-  return includePremiumStages
-    ? ALL_IDEA_GENERATION_STAGES
-    : FREE_IDEA_GENERATION_STAGES;
+  /*
+   * Premium outputs already arrive in the core structured response and are
+   * validated before persistence. Keeping this parameter preserves the public
+   * API while both account tiers intentionally use the same compact runtime.
+   */
+  void includePremiumStages;
+  return FREE_IDEA_GENERATION_STAGES;
 }
 
 /**

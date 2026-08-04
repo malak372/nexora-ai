@@ -11,7 +11,7 @@
  * - Public uploads directory.
  * - Graceful application shutdown.
  * * @module main
- * @author Eman
+ * @author Nexora AI Team
  */
 
 import { ValidationPipe } from '@nestjs/common';

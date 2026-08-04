@@ -18,8 +18,7 @@
 
 import {
     Mail,
-    Sparkles,
-} from 'lucide-react';
+    } from 'lucide-react';
 import {
     Link,
     useLocation,
@@ -27,6 +26,7 @@ import {
 } from 'react-router-dom';
 
 import { ROUTES } from '../../constants/routes.constants';
+import VoxidenceMark from '../brand/VoxidenceMark';
 
 /**
  * Current year displayed in the copyright notice.
@@ -62,7 +62,7 @@ const FOOTER_SECTION_LINKS = [
     },
     {
         id: 'about',
-        label: 'About Nexora',
+        label: 'About Voxidence',
         sectionId: 'about',
     },
     {
@@ -124,22 +124,19 @@ export default function Footer() {
                         <Link
                             to={ROUTES.HOME}
                             className="group inline-flex items-center gap-3"
-                            aria-label="Go to Nexora home page"
+                            aria-label="Go to Voxidence home page"
                         >
-                            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8060ce] to-[#64a6d8] text-white shadow-soft transition duration-300 group-hover:-rotate-3 group-hover:scale-105">
-                                <Sparkles
-                                    size={21}
-                                    aria-hidden="true"
-                                />
+                            <span className="voxidence-brand-mark flex h-11 w-11 items-center justify-center rounded-2xl bg-[#5cbdb9] text-white shadow-soft transition duration-300 group-hover:-rotate-3 group-hover:scale-105">
+                                <VoxidenceMark size={24} />
                             </span>
 
                             <span className="text-xl font-extrabold text-nexora-text">
-                                Nexora AI
+                                Voxidence
                             </span>
                         </Link>
 
                         <p className="mt-5 max-w-md leading-7 text-nexora-muted">
-                            Nexora transforms real community feedback into
+                            Voxidence transforms real community feedback into
                             meaningful, evidence-driven, and locally relevant
                             software project ideas.
                         </p>
@@ -210,7 +207,7 @@ export default function Footer() {
                 {/* Footer bottom */}
                 <div className="mt-10 flex flex-col gap-3 border-t border-nexora-border pt-6 text-sm text-nexora-muted sm:flex-row sm:items-center sm:justify-between">
                     <p>
-                        © {CURRENT_YEAR} Nexora AI. All rights reserved.
+                        © {CURRENT_YEAR} Voxidence. All rights reserved.
                     </p>
 
                     <p>

@@ -1,6 +1,7 @@
 /**
  * Reusable premium card for owned and accepted ideas.
  *
+ * Card motion and interaction logic are preserved; appearance follows the Voxidence theme.
  * Accepted cards keep the same dimensions as standard cards while receiving
  * semantic accents, richer motion, and contextual actions.
  *
@@ -13,6 +14,7 @@ import {
   CheckCircle2,
   Clock3,
   Globe2,
+  Heart,
   LockKeyhole,
   MoreHorizontal,
   Sparkles,
@@ -102,6 +104,8 @@ export default function IdeaLibraryCard({
   idea,
   onOpen,
   onDelete,
+  onToggleFavorite,
+  favoriteProcessing = false,
 }) {
   const shouldReduceMotion = useReducedMotion();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -207,7 +211,42 @@ export default function IdeaLibraryCard({
           {status.label}
         </span>
 
-        <div className="idea-tile__menu">
+        <div className="idea-tile__top-actions">
+          <motion.button
+            type="button"
+            className={`idea-tile__favorite${
+              idea?.isFavorite ? ' is-active' : ''
+            }`}
+            aria-label={
+              idea?.isFavorite
+                ? 'Remove from favorite ideas'
+                : 'Add to favorite ideas'
+            }
+            title={
+              idea?.isFavorite
+                ? 'Remove from favorite ideas'
+                : 'Add to favorite ideas'
+            }
+            disabled={favoriteProcessing}
+            onClick={onToggleFavorite}
+            whileHover={
+              shouldReduceMotion || favoriteProcessing
+                ? undefined
+                : { y: -2, scale: 1.04 }
+            }
+            whileTap={
+              shouldReduceMotion || favoriteProcessing
+                ? undefined
+                : { scale: 0.94 }
+            }
+          >
+            <Heart
+              size={17}
+              fill={idea?.isFavorite ? 'currentColor' : 'none'}
+            />
+          </motion.button>
+
+          <div className="idea-tile__menu">
           <motion.button
             type="button"
             aria-label="Idea actions"
@@ -300,6 +339,7 @@ export default function IdeaLibraryCard({
               </motion.div>
             ) : null}
           </AnimatePresence>
+          </div>
         </div>
       </header>
 

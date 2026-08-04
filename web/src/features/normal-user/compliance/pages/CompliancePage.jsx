@@ -1,5 +1,5 @@
 /**
- * Premium complaint and compliance workspace.
+ * Voxidence normal-user complaint and compliance workspace.
  *
  * The page provides:
  * - A cinematic compliance hero with live case statistics.

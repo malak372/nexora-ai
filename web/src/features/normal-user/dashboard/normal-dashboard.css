@@ -1,19 +1,19 @@
 /**
- * Nexora normal-user dashboard.
+ * Voxidence normal-user dashboard.
  *
- * Soft creative visual system aligned with the authentication pages:
- * cream surfaces, lavender gradients, subtle pixel motion and elegant cards.
+ * Luxury eucalyptus-and-rose visual system aligned with the current
+ * Voxidence workspace while preserving layout, responsiveness, and motion.
  *
  * @author Malak
  */
 
 .normal-dashboard-page {
-  --nx-dashboard-ink: #171426;
-  --nx-dashboard-muted: #77758a;
-  --nx-dashboard-violet: #6f52e5;
-  --nx-dashboard-violet-dark: #4f34ca;
-  --nx-dashboard-lavender: #a690ff;
-  --nx-dashboard-border: rgba(77, 61, 140, 0.13);
+  --nx-dashboard-ink: #222a28;
+  --nx-dashboard-muted: #747d79;
+  --nx-dashboard-violet: #78b99a;
+  --nx-dashboard-violet-dark: #43866a;
+  --nx-dashboard-lavender: #b9e8d0;
+  --nx-dashboard-border: rgba(93, 108, 102, 0.13);
 
   width: min(1460px, 100%);
   margin: 0 auto;
@@ -26,7 +26,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #6b4fd8;
+  color: #2f7774;
   font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.11em;
@@ -46,13 +46,13 @@
   border-radius: 34px;
   background:
     radial-gradient(circle at 78% 16%,
-      rgba(166, 144, 255, 0.28),
+      rgba(185, 232, 208, 0.28),
       transparent 31%),
     radial-gradient(circle at 9% 100%,
-      rgba(233, 178, 255, 0.18),
+      rgba(243, 201, 211, 0.18),
       transparent 32%),
-    linear-gradient(145deg, #fffdf9 0%, #f8f3ff 100%);
-  box-shadow: 0 30px 76px rgba(74, 50, 149, 0.1);
+    linear-gradient(145deg, #fffdfc 0%, #fff7f9 100%);
+  box-shadow: 0 30px 76px rgba(62, 104, 84, 0.1);
   isolation: isolate;
 }
 
@@ -63,7 +63,7 @@
   height: 370px;
   right: -120px;
   top: -170px;
-  border: 58px solid rgba(111, 82, 229, 0.06);
+  border: 58px solid rgba(101, 173, 138, 0.06);
   border-radius: 50%;
 }
 
@@ -78,7 +78,7 @@
   position: absolute;
   width: 7px;
   height: 7px;
-  border: 1px solid rgba(111, 82, 229, 0.22);
+  border: 1px solid rgba(101, 173, 138, 0.22);
   border-radius: 2px;
   opacity: 0.45;
   animation: normal-dashboard-pixel 5s ease-in-out infinite;
@@ -182,14 +182,14 @@
 .normal-primary-button {
   color: #fff;
   background: linear-gradient(145deg,
-      #8469ed,
-      #5d3ed3);
-  box-shadow: 0 14px 30px rgba(91, 61, 208, 0.23);
+      #69b7b1,
+      #4fa9a4);
+  box-shadow: 0 14px 30px rgba(74, 142, 108, 0.23);
 }
 
 .normal-secondary-button {
-  border: 1px solid rgba(111, 82, 229, 0.18);
-  color: #5c3fd0;
+  border: 1px solid rgba(101, 173, 138, 0.18);
+  color: #2f7774;
   background: rgba(255, 255, 255, 0.76);
 }
 
@@ -198,7 +198,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #6548d6;
+  color: #2f7774;
   background: transparent;
 }
 
@@ -223,16 +223,16 @@
   display: grid;
   place-content: center;
   justify-items: center;
-  border: 1px solid rgba(111, 82, 229, 0.16);
+  border: 1px solid rgba(101, 173, 138, 0.16);
   border-radius: 50%;
   background:
     radial-gradient(circle,
       rgba(255, 255, 255, 0.94) 0 36%,
-      rgba(185, 164, 255, 0.22) 37% 52%,
+      rgba(243, 201, 211, 0.22) 37% 52%,
       transparent 53%);
   box-shadow:
-    0 25px 55px rgba(81, 55, 170, 0.14),
-    inset 0 0 0 22px rgba(111, 82, 229, 0.035);
+    0 25px 55px rgba(47, 119, 116, 0.14),
+    inset 0 0 0 22px rgba(101, 173, 138, 0.035);
   animation: normal-dashboard-breathe 4s ease-in-out infinite;
 }
 
@@ -240,7 +240,7 @@
 .normal-dashboard-hero__orb::after {
   content: '';
   position: absolute;
-  border: 1px dashed rgba(111, 82, 229, 0.2);
+  border: 1px dashed rgba(101, 173, 138, 0.2);
   border-radius: 50%;
 }
 
@@ -254,7 +254,7 @@
 }
 
 .normal-dashboard-hero__orb span {
-  color: #5434c3;
+  color: #2f7774;
   font-size: 58px;
   font-weight: 900;
   line-height: 1;
@@ -294,7 +294,7 @@
   border: 1px solid var(--nx-dashboard-border);
   border-radius: 29px;
   background: rgba(255, 253, 249, 0.88);
-  box-shadow: 0 22px 55px rgba(74, 50, 149, 0.065);
+  box-shadow: 0 22px 55px rgba(62, 104, 84, 0.065);
 }
 
 .normal-dashboard-launch__heading h2,
@@ -314,9 +314,9 @@
 
 .normal-launcher__input-shell {
   padding: 16px;
-  border: 1px solid rgba(77, 61, 140, 0.12);
+  border: 1px solid rgba(93, 108, 102, 0.12);
   border-radius: 22px;
-  background: #f7f4fa;
+  background: #fff9fa;
 }
 
 .normal-launcher__input-shell textarea {
@@ -326,7 +326,7 @@
   resize: vertical;
   border: 0;
   outline: 0;
-  color: #171426;
+  color: #222a28;
   background: transparent;
   font: inherit;
   line-height: 1.7;
@@ -352,7 +352,7 @@
   height: 48px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(111, 82, 229, 0.17);
+  border: 1px solid rgba(101, 173, 138, 0.17);
   border-radius: 15px;
   color: #6547d5;
   background: #fff;
@@ -384,7 +384,7 @@
 }
 
 .normal-launcher__examples button {
-  border: 1px solid rgba(77, 61, 140, 0.11);
+  border: 1px solid rgba(93, 108, 102, 0.11);
   color: #676173;
   background: #fff;
   cursor: pointer;
@@ -404,12 +404,12 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  border: 1px solid rgba(77, 61, 140, 0.1);
+  border: 1px solid rgba(93, 108, 102, 0.1);
   border-radius: 24px;
-  color: #171426;
+  color: #222a28;
   text-align: left;
   background: rgba(255, 253, 249, 0.92);
-  box-shadow: 0 16px 38px rgba(74, 50, 149, 0.055);
+  box-shadow: 0 16px 38px rgba(62, 104, 84, 0.055);
 }
 
 button.normal-metric-card {
@@ -418,7 +418,7 @@ button.normal-metric-card {
 
 button.normal-metric-card:hover {
   transform: translateY(-6px);
-  box-shadow: 0 26px 48px rgba(74, 50, 149, 0.1);
+  box-shadow: 0 26px 48px rgba(62, 104, 84, 0.1);
 }
 
 .normal-metric-card__index {
@@ -515,8 +515,8 @@ button.normal-metric-card:hover {
   grid-template-columns: minmax(200px, 0.52fr) minmax(0, 1.48fr);
   border: 1px solid var(--nx-dashboard-border);
   border-radius: 28px;
-  background: #fffdf9;
-  box-shadow: 0 20px 52px rgba(74, 50, 149, 0.065);
+  background: #fffdfc;
+  box-shadow: 0 20px 52px rgba(62, 104, 84, 0.065);
 }
 
 .normal-work-card__visual {
@@ -642,8 +642,8 @@ button.normal-metric-card:hover {
 .normal-dashboard-spinner {
   width: 48px;
   height: 48px;
-  border: 4px solid #e9e1f4;
-  border-top-color: #6f52e5;
+  border: 4px solid #dfe6e3;
+  border-top-color: #78b99a;
   border-radius: 50%;
   animation: normal-dashboard-spin 0.8s linear infinite;
 }
@@ -773,7 +773,7 @@ button.normal-metric-card:hover {
 .normal-dashboard-hero--core {
   min-height: 460px;
   grid-template-columns: minmax(0, 1.05fr) minmax(390px, .75fr);
-  background: radial-gradient(circle at 80% 45%, rgba(95, 91, 231, .18), transparent 30%), radial-gradient(circle at 70% 100%, rgba(92, 174, 235, .15), transparent 32%), linear-gradient(145deg, #fffdfa, #f6f1ff 72%, #eef8ff);
+  background: radial-gradient(circle at 80% 45%, rgba(243, 201, 211, .18), transparent 30%), radial-gradient(circle at 70% 100%, rgba(183, 221, 216, .15), transparent 32%), linear-gradient(145deg, #fffdfc, #fff7f9 72%, #f4fbf9);
 }
 
 .normal-dashboard-hero__mesh {
@@ -781,7 +781,7 @@ button.normal-metric-card:hover {
   inset: 0;
   z-index: -1;
   opacity: .32;
-  background-image: radial-gradient(circle, rgba(111, 82, 229, .22) 1px, transparent 1.5px);
+  background-image: radial-gradient(circle, rgba(101, 173, 138, .22) 1px, transparent 1.5px);
   background-size: 34px 34px;
   mask-image: linear-gradient(90deg, transparent, #000 45%, #000);
 }
@@ -792,14 +792,14 @@ button.normal-metric-card:hover {
   padding: 13px 15px;
   display: grid;
   gap: 3px;
-  border: 1px solid rgba(111, 82, 229, .13);
+  border: 1px solid rgba(101, 173, 138, .13);
   border-radius: 15px;
   background: rgba(255, 255, 255, .6);
 }
 
 .normal-dashboard-hero__access strong {
   font-size: 12px;
-  color: #5d43ce
+  color: #2f7774
 }
 
 .normal-dashboard-hero__access span {
@@ -816,15 +816,15 @@ button.normal-metric-card:hover {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(104, 79, 220, .12), transparent 58%);
+  background: radial-gradient(circle, rgba(92, 189, 185, .12), transparent 58%);
 }
 
 .normal-signal-core__ring {
   position: absolute;
   inset: 8%;
-  border: 1px solid rgba(111, 82, 229, .22);
+  border: 1px solid rgba(101, 173, 138, .22);
   border-radius: 50%;
-  box-shadow: 0 0 40px rgba(111, 82, 229, .08);
+  box-shadow: 0 0 40px rgba(101, 173, 138, .08);
 }
 
 .normal-signal-core__ring::before,
@@ -834,8 +834,8 @@ button.normal-metric-card:hover {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #8268ed;
-  box-shadow: 0 0 16px #8268ed
+  background: #d98fa0;
+  box-shadow: 0 0 16px #d98fa0
 }
 
 .normal-signal-core__ring::before {
@@ -846,8 +846,8 @@ button.normal-metric-card:hover {
 .normal-signal-core__ring::after {
   right: 8%;
   bottom: 23%;
-  background: #63a9e8;
-  box-shadow: 0 0 16px #63a9e8
+  background: #a8c8bd;
+  box-shadow: 0 0 16px #a8c8bd
 }
 
 .normal-signal-core__ring--two {
@@ -861,7 +861,7 @@ button.normal-metric-card:hover {
   width: 72px;
   height: 72%;
   border-radius: 50%;
-  background: linear-gradient(180deg, transparent, #6f52e5 28%, #5ca9e8 50%, #c45fc6 72%, transparent);
+  background: linear-gradient(180deg, transparent, #78b99a 28%, #5CBDB9 50%, #d98fa0 72%, transparent);
   filter: blur(13px);
   opacity: .55
 }
@@ -876,8 +876,8 @@ button.normal-metric-card:hover {
   border: 1px solid rgba(255, 255, 255, .8);
   border-radius: 38px;
   color: #fff;
-  background: linear-gradient(145deg, #8e5cdf, #665ce5 55%, #54a7df);
-  box-shadow: 0 28px 65px rgba(82, 55, 180, .34), inset 0 1px 0 rgba(255, 255, 255, .5)
+  background: linear-gradient(145deg, #69b7b1, #5cbdb9 55%, #4fa9a4);
+  box-shadow: 0 28px 65px rgba(47, 119, 116, .34), inset 0 1px 0 rgba(255, 255, 255, .5)
 }
 
 .normal-signal-core__brain svg:last-child {
@@ -895,9 +895,9 @@ button.normal-metric-card:hover {
   place-items: center;
   border: 1px solid rgba(255, 255, 255, .8);
   border-radius: 17px;
-  color: #6045cf;
+  color: #2f7774;
   background: rgba(255, 255, 255, .85);
-  box-shadow: 0 15px 35px rgba(61, 43, 127, .18);
+  box-shadow: 0 15px 35px rgba(52, 65, 63, .18);
   backdrop-filter: blur(10px)
 }
 
@@ -928,8 +928,8 @@ button.normal-metric-card:hover {
   width: 7px;
   height: 7px;
   border-radius: 2px;
-  background: #65a9e8;
-  box-shadow: 0 0 12px rgba(99, 169, 232, 0.6);
+  background: #f3c9d3;
+  box-shadow: 0 0 12px rgba(243, 201, 211, 0.6);
 }
 
 .normal-signal-core>i:nth-of-type(1) {
@@ -978,16 +978,16 @@ button.normal-metric-card:hover {
   display: grid;
   justify-items: center;
   padding: 10px 16px;
-  border: 1px solid rgba(111, 82, 229, .12);
+  border: 1px solid rgba(101, 173, 138, .12);
   border-radius: 16px;
   background: rgba(255, 255, 255, .8);
-  box-shadow: 0 15px 30px rgba(75, 53, 143, .1);
+  box-shadow: 0 15px 30px rgba(79, 102, 92, .1);
   backdrop-filter: blur(12px)
 }
 
 .normal-signal-core__counter strong {
   font-size: 24px;
-  color: #5638c7
+  color: #2f7774
 }
 
 .normal-signal-core__counter span {
@@ -997,7 +997,7 @@ button.normal-metric-card:hover {
 }
 
 .normal-dashboard-launch--v4 .normal-launcher__input-shell {
-  background: linear-gradient(145deg, #faf8ff, #f1f7ff)
+  background: linear-gradient(145deg, #fff9fa, #f1faf7)
 }
 
 .normal-dashboard-metrics--v4 {
@@ -1017,7 +1017,7 @@ button.normal-metric-card:hover {
   grid-template-columns: 42px 1fr 20px;
   align-items: center;
   gap: 11px;
-  border: 1px solid rgba(77, 61, 140, .11);
+  border: 1px solid rgba(93, 108, 102, .11);
   border-radius: 20px;
   color: #625b73;
   background: rgba(255, 255, 255, .74);
@@ -1029,8 +1029,8 @@ button.normal-metric-card:hover {
 
 .normal-dashboard-quick-links button:hover {
   transform: translateY(-4px);
-  border-color: rgba(111, 82, 229, .25);
-  box-shadow: 0 18px 35px rgba(74, 50, 149, .09)
+  border-color: rgba(101, 173, 138, .25);
+  box-shadow: 0 18px 35px rgba(62, 104, 84, .09)
 }
 
 .normal-dashboard-quick-links button>svg:first-child {
@@ -1038,8 +1038,8 @@ button.normal-metric-card:hover {
   height: 42px;
   padding: 11px;
   border-radius: 13px;
-  color: #684bd8;
-  background: #eee9ff
+  color: #2f7774;
+  background: #eaf5f2
 }
 
 .normal-dashboard-quick-links b,
@@ -1091,19 +1091,17 @@ button.normal-metric-card:hover {
   }
 }
 
-/* ========================================================================== */
-/* V6 — polished latest-workspace card                                         */
-/* ========================================================================== */
+
 .normal-work-card.normal-work-card--polished,
 .normal-work-card.normal-work-card--empty {
   display: grid;
   grid-template-columns: minmax(300px, 28%) minmax(0, 1fr);
   min-height: 360px;
   overflow: hidden;
-  border: 1px solid rgba(111, 91, 155, .12);
+  border: 1px solid rgba(47, 119, 116, .12);
   border-radius: 28px;
   background: rgba(255, 253, 249, .9);
-  box-shadow: 0 26px 70px rgba(65, 48, 124, .11);
+  box-shadow: 0 26px 70px rgba(52, 65, 63, .11);
 }
 
 .normal-work-card--polished .normal-work-card__visual,
@@ -1116,7 +1114,7 @@ button.normal-metric-card:hover {
   isolation: isolate;
   background:
     radial-gradient(circle at 50% 46%, rgba(255, 255, 255, .18), transparent 30%),
-    linear-gradient(145deg, #7653e5 0%, #6239d2 58%, #5b45cf 100%);
+    linear-gradient(145deg, #69b7b1 0%, #5cbdb9 58%, #4fa9a4 100%);
 }
 
 .normal-work-card--polished .normal-work-card__visual::before,
@@ -1180,7 +1178,7 @@ button.normal-metric-card:hover {
   border-radius: 23px;
   color: #fff;
   background: linear-gradient(145deg, rgba(255, 255, 255, .24), rgba(255, 255, 255, .1));
-  box-shadow: 0 22px 45px rgba(38, 19, 97, .22), inset 0 1px 0 rgba(255, 255, 255, .28);
+  box-shadow: 0 22px 45px rgba(47, 119, 116, .22), inset 0 1px 0 rgba(255, 255, 255, .28);
   backdrop-filter: blur(12px);
 }
 
@@ -1240,7 +1238,7 @@ button.normal-metric-card:hover {
   max-width: 950px;
   margin-top: 25px;
   padding: 18px 19px;
-  border: 1px solid rgba(111, 82, 229, .11);
+  border: 1px solid rgba(101, 173, 138, .11);
   border-radius: 17px;
   background: linear-gradient(135deg, rgba(247, 243, 255, .92), rgba(245, 250, 255, .82));
 }
@@ -1306,7 +1304,7 @@ button.normal-metric-card:hover {
   gap: 8px;
   min-height: 50px;
   padding: 0 19px;
-  border: 1px solid rgba(111, 82, 229, .2);
+  border: 1px solid rgba(101, 173, 138, .2);
   border-radius: 15px;
   color: #603ed4;
   background: rgba(255, 255, 255, .86);
@@ -1316,7 +1314,7 @@ button.normal-metric-card:hover {
 }
 
 .normal-work-card__open:hover {
-  background: #f7f3ff;
+  background: #FFF7F9;
 }
 
 @media (max-width: 980px) {
@@ -1350,9 +1348,6 @@ button.normal-metric-card:hover {
   }
 }
 
-/* ========================================================================== */
-/* V8 — scroll-reveal dashboard metrics and modern workspace surfaces          */
-/* ========================================================================== */
 
 .normal-dashboard-metrics--v4>div {
   min-width: 0;
@@ -1385,7 +1380,7 @@ button.normal-metric-card:hover {
   right: -58px;
   top: -58px;
   border-radius: 50%;
-  background: var(--metric-glow, rgba(111, 82, 229, 0.16));
+  background: var(--metric-glow, rgba(101, 173, 138, 0.16));
   filter: blur(2px);
   transition: transform 0.35s ease, opacity 0.35s ease;
 }
@@ -1441,14 +1436,14 @@ button.normal-metric-card:hover {
 .normal-dashboard-metrics--v4 .normal-metric-card__arrow {
   color: #6d647d;
   background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(111, 82, 229, 0.08);
+  border: 1px solid rgba(101, 173, 138, 0.08);
   transition: transform 0.25s ease, color 0.25s ease, background 0.25s ease;
 }
 
 .normal-dashboard-metrics--v4 .normal-metric-card:hover .normal-metric-card__arrow {
   transform: rotate(8deg) translate(2px, -2px);
   color: #fff;
-  background: #6f52e5;
+  background: #78b99a;
 }
 
 .normal-dashboard-metrics--v4 .normal-metric-card__index {
@@ -1501,7 +1496,7 @@ button.normal-metric-card:hover {
 .normal-dashboard-latest .normal-work-card--polished,
 .normal-dashboard-latest .normal-work-card--empty {
   border-radius: 34px;
-  border-color: rgba(111, 82, 229, 0.12);
+  border-color: rgba(101, 173, 138, 0.12);
   background:
     radial-gradient(circle at 94% 8%, rgba(110, 174, 240, 0.12), transparent 27%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(249, 246, 255, 0.9));
@@ -1547,7 +1542,7 @@ button.normal-metric-card:hover {
   overflow: hidden;
   grid-template-columns: 50px minmax(0, 1fr) 32px;
   gap: 14px;
-  border: 1px solid rgba(111, 82, 229, 0.1);
+  border: 1px solid rgba(101, 173, 138, 0.1);
   border-radius: 24px;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(247, 244, 255, 0.78));
@@ -1566,13 +1561,13 @@ button.normal-metric-card:hover {
   right: -38px;
   top: -42px;
   border-radius: 50%;
-  background: rgba(111, 82, 229, 0.07);
+  background: rgba(101, 173, 138, 0.07);
   transition: transform 0.3s ease;
 }
 
 .normal-dashboard-quick-links button:hover {
   transform: translateY(-7px);
-  border-color: rgba(111, 82, 229, 0.24);
+  border-color: rgba(101, 173, 138, 0.24);
   box-shadow: 0 26px 55px rgba(66, 49, 130, 0.12);
 }
 
@@ -1586,8 +1581,8 @@ button.normal-metric-card:hover {
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: 16px;
-  color: #684bd8;
-  background: linear-gradient(145deg, #f0ebff, #eef7ff);
+  color: #2f7774;
+  background: linear-gradient(145deg, #edf2f0, #F2FAF8);
   box-shadow: 0 10px 22px rgba(89, 65, 184, 0.1);
 }
 
@@ -1604,7 +1599,7 @@ button.normal-metric-card:hover {
 .normal-dashboard-quick-links button:hover>svg:last-child {
   transform: translateX(4px);
   color: #fff;
-  background: #6f52e5;
+  background: #78b99a;
 }
 
 .normal-dashboard-quick-links b {
@@ -1634,9 +1629,6 @@ button.normal-metric-card:hover {
   }
 }
 
-/* ========================================================================== */
-/* V9 — richer dashboard hierarchy, metric cards and latest workspace          */
-/* ========================================================================== */
 
 .normal-dashboard-page--v4 {
   gap: clamp(24px, 3vw, 38px);
@@ -1662,8 +1654,8 @@ button.normal-metric-card:hover {
   z-index: -1;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(111, 82, 229, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(111, 82, 229, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(101, 173, 138, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(101, 173, 138, 0.035) 1px, transparent 1px);
   background-size: 34px 34px;
   mask-image: linear-gradient(90deg, rgba(0, 0, 0, .42), transparent 72%);
 }
@@ -1682,7 +1674,7 @@ button.normal-metric-card:hover {
 
 .normal-dashboard-hero--core .normal-eyebrow {
   padding: 8px 12px;
-  border: 1px solid rgba(111, 82, 229, 0.11);
+  border: 1px solid rgba(101, 173, 138, 0.11);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.68);
   box-shadow: 0 8px 22px rgba(85, 62, 170, 0.07);
@@ -1691,7 +1683,7 @@ button.normal-metric-card:hover {
 
 .normal-dashboard-launch--v4 {
   border-radius: 30px;
-  border: 1px solid rgba(111, 82, 229, 0.11);
+  border: 1px solid rgba(101, 173, 138, 0.11);
   background:
     radial-gradient(circle at 96% 0%, rgba(94, 174, 238, 0.12), transparent 28%),
     linear-gradient(145deg, rgba(255, 255, 255, .94), rgba(249, 246, 255, .86));
@@ -1857,9 +1849,7 @@ button.normal-metric-card:hover {
   }
 }
 
-/* ========================================================================== */
-/* V10 — clearer and richer latest-workspace visual                            */
-/* ========================================================================== */
+
 .normal-dashboard-latest .normal-section-heading .normal-eyebrow {
   color: #5f42cd;
 }
@@ -2065,9 +2055,6 @@ button.normal-metric-card:hover {
   }
 }
 
-/* ========================================================================== */
-/* V10 — clearer and richer latest-workspace visual                            */
-/* ========================================================================== */
 .normal-dashboard-latest .normal-section-heading .normal-eyebrow {
   color: #5f42cd;
 }
@@ -2371,6 +2358,7 @@ button.normal-metric-card:hover {
     justify-content: flex-start
   }
 }
+
 /* Dashboard information and backend contact section */
 .normal-dashboard-info-grid {
   display: grid;
@@ -2398,7 +2386,7 @@ button.normal-metric-card:hover {
   background:
     radial-gradient(circle at 12% 22%, rgba(121, 92, 229, .24), transparent 30%),
     radial-gradient(circle at 92% 90%, rgba(91, 190, 231, .18), transparent 34%),
-    linear-gradient(145deg, #fdfbff, #f4efff 58%, #eef8ff);
+    linear-gradient(145deg, #fdfbff, #f4efff 58%, #f4fbf9);
 }
 
 .normal-ai-story-card h2,
@@ -2423,10 +2411,10 @@ button.normal-metric-card:hover {
   display: grid;
   place-items: center;
   color: #fff;
-  border: 1px solid rgba(255,255,255,.6);
+  border: 1px solid rgba(255, 255, 255, .6);
   border-radius: 50%;
   background: linear-gradient(145deg, #8063e8, #4e8fda);
-  box-shadow: 0 24px 54px rgba(83, 62, 181, .27), inset 0 1px 0 rgba(255,255,255,.4);
+  box-shadow: 0 24px 54px rgba(83, 62, 181, .27), inset 0 1px 0 rgba(255, 255, 255, .4);
 }
 
 .normal-ai-story-card__orb svg:last-child {
@@ -2506,19 +2494,561 @@ button.normal-metric-card:hover {
   cursor: pointer;
 }
 
-.normal-contact-card button:disabled { opacity: .65; cursor: wait; }
-.normal-contact-card__email { display: flex; align-items: center; gap: 7px; color: #7a738b; }
-.normal-contact-card__notice { padding: 10px 12px; border-radius: 12px; font-size: .84rem; }
-.normal-contact-card__notice.is-error { color: #a43c48; background: #fff1f3; }
-.normal-contact-card__notice.is-success { color: #277653; background: #eefaf5; }
-.normal-contact-spin { animation: normal-contact-spin .8s linear infinite; }
-@keyframes normal-contact-spin { to { transform: rotate(360deg); } }
+.normal-contact-card button:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.normal-contact-card__email {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #7a738b;
+}
+
+.normal-contact-card__notice {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: .84rem;
+}
+
+.normal-contact-card__notice.is-error {
+  color: #a43c48;
+  background: #fff1f3;
+}
+
+.normal-contact-card__notice.is-success {
+  color: #277653;
+  background: #eefaf5;
+}
+
+.normal-contact-spin {
+  animation: normal-contact-spin .8s linear infinite;
+}
+
+@keyframes normal-contact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 @media (max-width: 980px) {
-  .normal-dashboard-info-grid { grid-template-columns: 1fr; }
+  .normal-dashboard-info-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
-  .normal-ai-story-card { grid-template-columns: 1fr; }
-  .normal-ai-story-card__orb { width: 132px; }
+  .normal-ai-story-card {
+    grid-template-columns: 1fr;
+  }
+
+  .normal-ai-story-card__orb {
+    width: 132px;
+  }
+}
+
+
+
+
+/**
+ * Final dashboard palette.
+ *
+ * Presentation only: existing component order, responsive breakpoints,
+ * navigation, API data, and Framer Motion animations remain unchanged.
+ */
+.normal-dashboard-page {
+  --vox-dashboard-ink: #34413f;
+  --vox-dashboard-muted: #718078;
+  --vox-dashboard-green: #5cbdb9;
+  --vox-dashboard-green-light: #69b7b1;
+  --vox-dashboard-green-deep: #4fa9a4;
+  --vox-dashboard-green-dark: #2f7774;
+  --vox-dashboard-green-soft: #eaf5f2;
+  --vox-dashboard-rose: #d98fa0;
+  --vox-dashboard-rose-soft: #f3c9d3;
+  --vox-dashboard-rose-pale: #fff6f8;
+  --vox-dashboard-pearl: #fffdfc;
+  color: var(--vox-dashboard-ink);
+}
+
+.normal-dashboard-page .normal-eyebrow {
+  color: var(--vox-dashboard-green-dark);
+}
+
+.normal-dashboard-page .normal-eyebrow svg {
+  color: var(--vox-dashboard-rose);
+}
+
+.normal-dashboard-hero.normal-dashboard-hero--core {
+  border-color: rgba(47, 119, 116, 0.13);
+  background:
+    radial-gradient(circle at 82% 38%, rgba(183, 221, 216, 0.36), transparent 31%),
+    radial-gradient(circle at 18% 8%, rgba(243, 201, 211, 0.27), transparent 31%),
+    radial-gradient(circle at 66% 100%, rgba(243, 201, 211, 0.18), transparent 34%),
+    linear-gradient(145deg, #fffdfc 0%, #fff8fa 56%, #f4fbf9 100%);
+  box-shadow:
+    0 34px 86px rgba(47, 119, 116, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.normal-dashboard-hero__mesh {
+  opacity: 0.3;
+  background-image: radial-gradient(circle, rgba(92, 189, 185, 0.2) 1px, transparent 1.5px);
+}
+
+.normal-dashboard-hero h1 span {
+  color: transparent;
+  background: linear-gradient(100deg, #2f7774, #5cbdb9 56%, #d98fa0);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.normal-dashboard-page .normal-primary-button {
+  color: #fff;
+  background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
+  box-shadow:
+    0 15px 32px rgba(47, 119, 116, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.normal-dashboard-page .normal-primary-button:hover {
+  box-shadow:
+    0 19px 38px rgba(47, 119, 116, 0.28),
+    0 0 0 4px rgba(243, 201, 211, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.normal-dashboard-page .normal-secondary-button {
+  border: 1px solid rgba(217, 143, 160, 0.28);
+  color: #2f7774;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .9), rgba(255, 246, 248, .88));
+  box-shadow: 0 10px 25px rgba(52, 65, 63, 0.06);
+}
+
+.normal-dashboard-page .normal-secondary-button:hover {
+  border-color: rgba(92, 189, 185, 0.34);
+  background: linear-gradient(145deg, rgba(255, 246, 248, .96), rgba(234, 245, 242, .96));
+  box-shadow:
+    0 14px 30px rgba(47, 119, 116, 0.11),
+    0 0 0 3px rgba(243, 201, 211, 0.12);
+}
+
+.normal-dashboard-page .normal-text-button {
+  color: #2f7774;
+}
+
+.normal-dashboard-hero__access {
+  border-color: rgba(217, 143, 160, 0.18);
+  background: linear-gradient(145deg, rgba(255, 255, 255, .72), rgba(255, 246, 248, .62));
+  box-shadow: 0 12px 30px rgba(52, 65, 63, 0.05);
+}
+
+.normal-dashboard-hero__access strong {
+  color: #2f7774;
+}
+
+.normal-signal-core {
+  background: radial-gradient(circle, rgba(92, 189, 185, .15), rgba(243, 201, 211, .08) 42%, transparent 66%);
+}
+
+.normal-signal-core__ring {
+  border-color: rgba(92, 189, 185, 0.24);
+  box-shadow: 0 0 44px rgba(92, 189, 185, 0.1);
+}
+
+.normal-signal-core__ring::before {
+  background: #d98fa0;
+  box-shadow: 0 0 16px rgba(217, 143, 160, 0.66);
+}
+
+.normal-signal-core__ring::after {
+  background: #69b7b1;
+  box-shadow: 0 0 16px rgba(105, 183, 177, 0.58);
+}
+
+.normal-signal-core__beam {
+  background: linear-gradient(180deg, transparent, #69b7b1 28%, #5cbdb9 50%, #d98fa0 72%, transparent);
+}
+
+.normal-signal-core__brain {
+  color: #fff;
+  background: linear-gradient(145deg, #69b7b1 0%, #5cbdb9 55%, #4fa9a4 100%);
+  box-shadow:
+    0 30px 68px rgba(47, 119, 116, 0.3),
+    0 0 0 8px rgba(243, 201, 211, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.normal-signal-core__node {
+  color: #2f7774;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .92), rgba(255, 246, 248, .86));
+  box-shadow: 0 16px 38px rgba(52, 65, 63, 0.15);
+}
+
+.normal-signal-core>i {
+  background: #f3c9d3;
+  box-shadow: 0 0 13px rgba(217, 143, 160, 0.48);
+}
+
+.normal-signal-core__counter strong {
+  color: #2f7774;
+}
+
+.normal-dashboard-launch {
+  border-color: rgba(47, 119, 116, 0.12);
+  background: linear-gradient(145deg, rgba(255, 253, 252, .94), rgba(255, 248, 250, .9) 52%, rgba(245, 251, 249, .9));
+  box-shadow:
+    0 24px 62px rgba(47, 119, 116, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.normal-dashboard-launch--v4 .normal-launcher__input-shell,
+.normal-launcher__input-shell {
+  border-color: rgba(217, 143, 160, 0.18);
+  background: linear-gradient(145deg, #fff9fa, #f4fbf9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .88),
+    0 12px 30px rgba(52, 65, 63, .05);
+}
+
+.normal-launcher__input-shell:focus-within {
+  border-color: rgba(217, 143, 160, 0.64);
+  box-shadow:
+    0 0 0 4px rgba(243, 201, 211, 0.24),
+    0 16px 34px rgba(47, 119, 116, 0.09);
+}
+
+.normal-dashboard-metrics .normal-metric-card,
+.normal-work-card.normal-work-card--polished,
+.normal-work-card.normal-work-card--empty,
+.normal-ai-story-card,
+.normal-contact-card,
+.normal-active-generation,
+.normal-dashboard-state {
+  border-color: rgba(47, 119, 116, 0.12);
+  background: linear-gradient(145deg, rgba(255, 253, 252, .96), rgba(255, 248, 250, .9) 52%, rgba(245, 251, 249, .9));
+  box-shadow:
+    0 24px 64px rgba(47, 119, 116, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, .92);
+}
+
+.normal-dashboard-metrics .normal-metric-card:hover {
+  border-color: rgba(217, 143, 160, 0.28);
+  box-shadow:
+    0 25px 58px rgba(47, 119, 116, 0.13),
+    0 0 0 4px rgba(243, 201, 211, 0.1);
+}
+
+.normal-work-card--polished .normal-work-card__visual,
+.normal-work-card--empty .normal-work-card__visual,
+.normal-ai-story-card__orb,
+.normal-active-generation__icon,
+.normal-contact-card button[type='submit'] {
+  color: #fff;
+  background: linear-gradient(145deg, #69b7b1, #5cbdb9 55%, #4fa9a4);
+}
+
+.normal-work-card__visual-orbit::after {
+  background: #f3c9d3;
+  box-shadow: 0 0 16px rgba(243, 201, 211, 0.9);
+}
+
+.normal-direct-unlock-hint {
+  border-color: rgba(217, 143, 160, 0.16);
+  background: linear-gradient(145deg, #fff6f8, #eaf5f2);
+}
+
+.normal-contact-card input:focus,
+.normal-contact-card textarea:focus {
+  border-color: rgba(217, 143, 160, 0.66);
+  box-shadow: 0 0 0 4px rgba(243, 201, 211, 0.22);
+}
+
+.normal-active-generation__progress i span {
+  background: linear-gradient(90deg, #d98fa0, #5cbdb9);
+}
+
+.normal-dashboard-spinner {
+  border-color: rgba(92, 189, 185, 0.2);
+  border-top-color: #2f7774;
+}
+
+
+
+
+/**
+ * Latest workspace card.
+ *
+ * Removes the remaining purple and blue edge decoration while preserving the
+ * existing card dimensions, layout, orbit animations, hover motion, and content
+ * order. The surface now uses pearl, eucalyptus, and soft rose exclusively.
+ */
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card--polished,
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card--empty {
+  overflow: hidden;
+  border: 1px solid rgba(47, 119, 116, 0.14);
+  background:
+    radial-gradient(circle at 3% 100%,
+      rgba(243, 201, 211, 0.18),
+      transparent 29%),
+    radial-gradient(circle at 100% 0%,
+      rgba(183, 221, 216, 0.2),
+      transparent 31%),
+    linear-gradient(135deg,
+      #fffdfc 0%,
+      #fff8fa 54%,
+      #f4fbf9 100%);
+  box-shadow:
+    0 38px 96px rgba(47, 119, 116, 0.13),
+    0 8px 24px rgba(52, 65, 63, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+/**
+ * Replaces the former purple decorative circle at the card's lower-right edge.
+ */
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__body::after {
+  width: 190px;
+  height: 190px;
+  right: -78px;
+  bottom: -98px;
+  background:
+    radial-gradient(circle,
+      rgba(183, 221, 216, 0.2),
+      rgba(243, 201, 211, 0.1) 48%,
+      transparent 72%);
+  opacity: 0.8;
+}
+
+/**
+ * Animated visual panel.
+ *
+ * The original orbit, grid, glow, pulse, and floating-icon animations remain
+ * active. Only their purple-and-blue colors are replaced.
+ */
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 24% 18%,
+      rgba(243, 201, 211, 0.42),
+      transparent 26%),
+    radial-gradient(circle at 82% 78%,
+      rgba(183, 221, 216, 0.5),
+      transparent 31%),
+    linear-gradient(145deg,
+      #69b7b1 0%,
+      #5cbdb9 48%,
+      #4fa9a4 100%);
+  box-shadow:
+    inset -20px -22px 55px rgba(47, 119, 116, 0.18),
+    inset 20px 18px 42px rgba(255, 255, 255, 0.1);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual::before {
+  background-image:
+    radial-gradient(circle,
+      rgba(255, 255, 255, 0.26) 1.2px,
+      transparent 1.5px);
+}
+
+.normal-dashboard-page .normal-work-card__visual-grid {
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.055) 1px,
+      transparent 1px),
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.055) 1px,
+      transparent 1px);
+}
+
+.normal-dashboard-page .normal-work-card__visual-glow--one {
+  background: rgba(243, 201, 211, 0.66);
+}
+
+.normal-dashboard-page .normal-work-card__visual-glow--two {
+  background: rgba(183, 221, 216, 0.7);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit {
+  border-color: rgba(255, 255, 255, 0.58);
+  filter: drop-shadow(0 0 8px rgba(183, 221, 216, 0.28));
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit--outer {
+  box-shadow: inset 0 0 24px rgba(243, 201, 211, 0.1);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit--middle {
+  border-color: rgba(243, 201, 211, 0.62);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit--inner {
+  border-color: rgba(220, 242, 238, 0.78);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit::after {
+  background: #ffffff;
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.13),
+    0 0 18px rgba(255, 255, 255, 0.98),
+    0 0 32px rgba(183, 221, 216, 0.82);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-orbit::before {
+  background: #f3c9d3;
+  box-shadow: 0 0 17px rgba(217, 143, 160, 0.86);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__visual-pulse {
+  border-color: rgba(255, 255, 255, 0.26);
+  background:
+    radial-gradient(circle,
+      rgba(255, 255, 255, 0.2),
+      rgba(183, 221, 216, 0.1) 54%,
+      transparent 72%);
+  box-shadow: 0 0 45px rgba(47, 119, 116, 0.2);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__icon {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.48);
+  background:
+    linear-gradient(145deg,
+      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0.1)),
+    rgba(47, 119, 116, 0.18);
+  box-shadow:
+    0 24px 48px rgba(47, 119, 116, 0.26),
+    0 0 32px rgba(243, 201, 211, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+/**
+ * Open workspace button.
+ *
+ * Uses the same eucalyptus gradient as the Voxidence mark and Upgrade button.
+ * A rose ring appears on hover, while the existing Framer Motion x-offset and
+ * tap-scale animations remain controlled by LatestIdeaCard.jsx.
+ */
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open {
+  position: relative;
+  min-height: 52px;
+  padding-inline: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 16px;
+  color: #ffffff;
+  background:
+    linear-gradient(135deg,
+      #69b7b1 0%,
+      #5cbdb9 52%,
+      #4fa9a4 100%);
+  box-shadow:
+    0 15px 34px rgba(47, 119, 116, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease;
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open::before {
+  position: absolute;
+  top: -70%;
+  bottom: -70%;
+  left: -28%;
+  width: 22%;
+  background: rgba(243, 201, 211, 0.5);
+  content: "";
+  filter: blur(7px);
+  pointer-events: none;
+  transform: rotate(18deg);
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open:hover::before {
+  transform: translateX(650%) rotate(18deg);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open:hover {
+  border-color: rgba(255, 255, 255, 0.68);
+  background:
+    linear-gradient(135deg,
+      #72c2bc 0%,
+      #5cbdb9 48%,
+      #459d98 100%);
+  box-shadow:
+    0 19px 40px rgba(47, 119, 116, 0.3),
+    0 0 0 4px rgba(243, 201, 211, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  filter: saturate(1.04);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open:active {
+  box-shadow:
+    0 9px 22px rgba(47, 119, 116, 0.22),
+    0 0 0 3px rgba(243, 201, 211, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-work-card__open>* {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .normal-dashboard-page .normal-dashboard-latest .normal-work-card__open::before {
+    display: none;
+  }
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint__icon {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.5), transparent 28%),
+    linear-gradient(145deg, #73c6c0 0%, #5cbdb9 54%, #d98fa0 100%);
+  box-shadow:
+    0 10px 24px rgba(47, 119, 116, 0.18),
+    0 0 0 5px rgba(92, 189, 185, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transform: translateZ(0);
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint__icon::after {
+  content: "";
+  position: absolute;
+  inset: -55% -120%;
+  background: linear-gradient(110deg, transparent 38%, rgba(255, 255, 255, 0.68) 50%, transparent 62%);
+  transform: translateX(-48%) rotate(8deg);
+  animation: normalUnlockIconShine 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint__icon svg {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(47, 119, 116, 0.2));
+}
+
+@keyframes normalUnlockIconShine {
+
+  0%,
+  58% {
+    transform: translateX(-48%) rotate(8deg);
+  }
+
+  82%,
+  100% {
+    transform: translateX(48%) rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .normal-dashboard-page .normal-dashboard-latest .normal-direct-unlock-hint__icon::after {
+    animation: none;
+  }
 }

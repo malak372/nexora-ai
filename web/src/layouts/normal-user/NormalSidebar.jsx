@@ -6,6 +6,7 @@
 import {
   Bell,
   BookOpenCheck,
+  ReceiptText,
   Compass,
   FileWarning,
   LayoutDashboard,
@@ -28,6 +29,7 @@ const items = [
   ['/normal/published', 'Published ideas', BookOpenCheck],
   ['/normal/compliance', 'Compliance', FileWarning],
   ['/normal/notifications', 'Notifications', Bell],
+  ['/normal/billing', 'Billing & invoices', ReceiptText],
   ['/normal/preferences', 'Preferences', SlidersHorizontal],
   ['/normal/settings/profile', 'Settings', Settings],
 ];
@@ -52,7 +54,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
 
       <aside className={`normal-drawer ${isOpen ? 'is-open' : ''}`}>
         <div className="normal-drawer__head">
-          <strong>Nexora workspace</strong>
+          <strong>Voxidence workspace</strong>
           <button type="button" onClick={onClose}><X size={19} /></button>
         </div>
 
@@ -72,7 +74,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
         <div className="normal-drawer__user">
           <span>{(user?.fullName || user?.email || 'N')[0].toUpperCase()}</span>
           <div>
-            <b>{user?.fullName || 'Nexora user'}</b>
+            <b>{user?.fullName || 'Voxidence user'}</b>
             <small>{user?.email || 'Normal account'}</small>
           </div>
           <button type="button" onClick={logout}><LogOut size={18} /></button>

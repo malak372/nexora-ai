@@ -1,13 +1,14 @@
 /**
- * Premium creator publishing desk.
+ * Voxidence normal-user creator publishing desk.
  *
- * Displays live publications, provides search and pagination, and opens a
- * private audience-insights ledger for each publication.
+ * Displays both live and archived publications. Owners keep access to audience
+ * insights after stopping publication, can filter by lifecycle state, and can
+ * re-publish an archived item without losing engagement history.
  *
  * @author Malak
  */
-
 import {
+  Archive,
   ArrowLeft,
   ArrowRight,
   BarChart3,
@@ -32,6 +33,7 @@ import { useNavigate } from 'react-router-dom';
 
 import {
   getMyPublishedIdeas,
+  repostPublication,
   stopPublication,
 } from '../api/publishedIdeasApi';
 import PublishedIdeaCard from '../components/PublishedIdeaCard';
@@ -39,6 +41,12 @@ import PublicationInsightsPanel from '../components/PublicationInsightsPanel';
 import '../styles/published.css';
 
 const PAGE_SIZE = 8;
+
+const FILTERS = [
+  { value: 'ALL', label: 'All publications' },
+  { value: 'PUBLISHED', label: 'Still published' },
+  { value: 'ARCHIVED', label: 'Stopped' },
+];
 
 export default function PublishedIdeasPage() {
   const navigate = useNavigate();
@@ -52,14 +60,12 @@ export default function PublishedIdeasPage() {
   });
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [page, setPage] = useState(1);
-  const [
-    selectedPublication,
-    setSelectedPublication,
-  ] = useState(null);
+  const [selectedPublication, setSelectedPublication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [stoppingId, setStoppingId] = useState('');
+  const [processingId, setProcessingId] = useState('');
 
   const params = useMemo(
     () => ({
@@ -68,117 +74,148 @@ export default function PublishedIdeasPage() {
       sortBy: 'publishedAt',
       sortOrder: 'desc',
       ...(search ? { search } : {}),
+      ...(statusFilter !== 'ALL' ? { status: statusFilter } : {}),
     }),
-    [page, search],
+    [page, search, statusFilter],
   );
 
-  const loadPublished = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const loadPublished = useCallback(
+    async (forceRefresh = false) => {
+      setLoading(true);
+      setError('');
 
-    try {
-      const result =
-        await getMyPublishedIdeas(params);
+      try {
+        const result = await getMyPublishedIdeas(params, {
+          forceRefresh,
+        });
 
-      setItems(result.items);
-      setPagination(result.pagination);
-    } catch (requestError) {
-      setError(
-        requestError?.message ||
-          'Published ideas could not be loaded.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [params]);
+        setItems(result.items);
+        setPagination(result.pagination);
+      } catch (requestError) {
+        setError(
+          requestError?.message ||
+            'Your publications could not be loaded.',
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [params],
+  );
 
   useEffect(() => {
     void loadPublished();
   }, [loadPublished]);
 
+  const updatePublicationStatus = (publicationId, nextStatus) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === publicationId
+          ? {
+              ...item,
+              status: nextStatus,
+              archivedAt:
+                nextStatus === 'ARCHIVED'
+                  ? new Date().toISOString()
+                  : null,
+              publishedAt:
+                nextStatus === 'PUBLISHED'
+                  ? new Date().toISOString()
+                  : item.publishedAt,
+            }
+          : item,
+      ),
+    );
+
+    setSelectedPublication((current) =>
+      current?.id === publicationId
+        ? {
+            ...current,
+            status: nextStatus,
+          }
+        : current,
+    );
+  };
+
   const handleStop = async (publication) => {
     const confirmed = window.confirm(
       `Stop publishing “${
-        publication.publicTitle ||
-        'this publication'
-      }”? It will disappear from Discover but remain archived in the backend.`,
+        publication.publicTitle || 'this publication'
+      }”? It will leave Discover, while accepted users and your owner ledger keep access.`,
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
-      setStoppingId(publication.id);
+      setProcessingId(publication.id);
       setError('');
 
-      await stopPublication(
-        publication.ideaId,
-      );
+      await stopPublication(publication.ideaId);
 
-      setItems((current) =>
-        current.filter(
-          (item) =>
-            item.id !== publication.id,
-        ),
-      );
-
-      setPagination((current) => ({
-        ...current,
-        total: Math.max(
-          0,
-          Number(current.total ?? 0) - 1,
-        ),
-      }));
-
-      setSelectedPublication((current) =>
-        current?.id === publication.id
-          ? null
-          : current,
-      );
+      if (statusFilter === 'PUBLISHED') {
+        setItems((current) =>
+          current.filter((item) => item.id !== publication.id),
+        );
+      } else {
+        updatePublicationStatus(publication.id, 'ARCHIVED');
+      }
     } catch (requestError) {
       setError(
         requestError?.message ||
           'The publication could not be stopped.',
       );
     } finally {
-      setStoppingId('');
+      setProcessingId('');
+    }
+  };
+
+  const handleRepost = async (publication) => {
+    const confirmed = window.confirm(
+      `Re-publish “${
+        publication.publicTitle || 'this publication'
+      }”? It will become discoverable again with the same comments, ratings, votes, and acceptances.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setProcessingId(publication.id);
+      setError('');
+
+      await repostPublication(publication.ideaId);
+
+      if (statusFilter === 'ARCHIVED') {
+        setItems((current) =>
+          current.filter((item) => item.id !== publication.id),
+        );
+      } else {
+        updatePublicationStatus(publication.id, 'PUBLISHED');
+      }
+    } catch (requestError) {
+      setError(
+        requestError?.message ||
+          'The publication could not be re-published.',
+      );
+    } finally {
+      setProcessingId('');
     }
   };
 
   return (
     <motion.section
       className="published-page reveal-page"
-      initial={
-        shouldReduceMotion
-          ? undefined
-          : {
-              opacity: 0,
-            }
-      }
-      animate={{
-        opacity: 1,
-      }}
-      transition={{
-        duration: 0.35,
-      }}
+      initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35 }}
     >
       <motion.header
         className="published-page__header"
         initial={
           shouldReduceMotion
             ? undefined
-            : {
-                opacity: 0,
-                y: 24,
-                scale: 0.985,
-              }
+            : { opacity: 0, y: 24, scale: 0.985 }
         }
-        animate={{
-          opacity: 1,
-          y: 0,
-          scale: 1,
-        }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{
           duration: 0.66,
           ease: [0.22, 1, 0.36, 1],
@@ -195,191 +232,162 @@ export default function PublishedIdeasPage() {
           </span>
 
           <h1>
-            Published ideas,
+            Publication history,
             <em>community signals.</em>
           </h1>
 
           <p>
-            Manage every live publication and understand how the community
-            responds through ratings, votes, and written feedback.
+            Manage live and stopped publications without losing accepted-user
+            access, ratings, votes, comments, or owner-only insights.
           </p>
 
           <div className="published-page__chips">
             <span>
               <TrendingUp size={14} />
-              Live performance
+              Persistent engagement history
             </span>
-
             <span>
               <Sparkles size={14} />
-              Owner-only insights
+              Re-publish anytime
             </span>
           </div>
         </div>
 
         <div className="published-page__stat">
           <span>
-            <BarChart3 size={20} />
+            {statusFilter === 'ARCHIVED' ? (
+              <Archive size={20} />
+            ) : (
+              <BarChart3 size={20} />
+            )}
           </span>
 
           <div>
-            <small>Currently live</small>
-            <strong>
-              {pagination.total ?? 0}
-            </strong>
+            <small>
+              {statusFilter === 'ALL'
+                ? 'Matching publications'
+                : statusFilter === 'PUBLISHED'
+                  ? 'Currently live'
+                  : 'Stopped publications'}
+            </small>
+            <strong>{pagination.total ?? 0}</strong>
             <em>publications</em>
           </div>
         </div>
       </motion.header>
 
-      <motion.form
-        className="published-search"
-        initial={
-          shouldReduceMotion
-            ? undefined
-            : {
-                opacity: 0,
-                y: 18,
-              }
-        }
-        whileInView={{
-          opacity: 1,
-          y: 0,
-        }}
-        viewport={{
-          once: true,
-          amount: 0.25,
-        }}
-        transition={{
-          duration: 0.48,
-        }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          setPage(1);
-          setSearch(searchInput.trim());
-        }}
-      >
-        <Search size={18} />
+      <section className="published-toolbar">
+        <form
+          className="published-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setPage(1);
+            setSearch(searchInput.trim());
+          }}
+        >
+          <Search size={18} />
+          <input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search your publication history..."
+          />
+          <button type="submit">Search</button>
+        </form>
 
-        <input
-          value={searchInput}
-          onChange={(event) =>
-            setSearchInput(event.target.value)
-          }
-          placeholder="Search your published ideas..."
-        />
-
-        <button type="submit">
-          Search
-        </button>
-      </motion.form>
+        <div className="published-status-filter" aria-label="Publication status filter">
+          {FILTERS.map((filter) => (
+            <button
+              type="button"
+              key={filter.value}
+              className={statusFilter === filter.value ? 'active' : ''}
+              onClick={() => {
+                setStatusFilter(filter.value);
+                setPage(1);
+              }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {loading ? (
         <div className="published-grid">
-          {Array.from({ length: 4 }).map(
-            (_, index) => (
-              <div
-                key={index}
-                className="published-skeleton"
-              />
-            ),
-          )}
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="published-skeleton" />
+          ))}
         </div>
       ) : error ? (
         <div className="published-state published-state--error">
           <RefreshCw size={28} />
-          <h2>Published ideas unavailable</h2>
+          <h2>Publication history unavailable</h2>
           <p>{error}</p>
-
-          <button
-            type="button"
-            onClick={loadPublished}
-          >
+          <button type="button" onClick={() => loadPublished(true)}>
             Try again
           </button>
         </div>
       ) : items.length === 0 ? (
         <div className="published-state">
-          <Send size={30} />
-          <h2>No published ideas yet</h2>
-
+          {statusFilter === 'ARCHIVED' ? (
+            <Archive size={30} />
+          ) : (
+            <Send size={30} />
+          )}
+          <h2>
+            {statusFilter === 'ARCHIVED'
+              ? 'No stopped publications'
+              : statusFilter === 'PUBLISHED'
+                ? 'No live publications'
+                : 'No publications yet'}
+          </h2>
           <p>
-            Publish one of your completed ideas to start receiving
-            ratings, votes, and feedback.
+            {statusFilter === 'ARCHIVED'
+              ? 'Stopped publications will remain here with their full engagement history.'
+              : 'Publish one of your completed ideas to start receiving community activity.'}
           </p>
-
-          <button
-            type="button"
-            onClick={() =>
-              navigate('/normal/ideas')
-            }
-          >
+          <button type="button" onClick={() => navigate('/normal/ideas')}>
             Open My Ideas
           </button>
         </div>
       ) : (
         <div className="published-grid">
-          {items.map(
-            (publication, index) => (
-              <PublishedIdeaCard
-                key={publication.id}
-                publication={publication}
-                index={index}
-                onEdit={() =>
-                  publication.ideaId &&
-                  navigate(
-                    `/normal/ideas/${publication.ideaId}/publish`,
-                  )
-                }
-                onInsights={() =>
-                  setSelectedPublication(
-                    publication,
-                  )
-                }
-                onStop={() =>
-                  handleStop(publication)
-                }
-                stopping={
-                  stoppingId === publication.id
-                }
-              />
-            ),
-          )}
+          {items.map((publication, index) => (
+            <PublishedIdeaCard
+              key={publication.id}
+              publication={publication}
+              index={index}
+              onEdit={() =>
+                publication.ideaId &&
+                navigate(`/normal/ideas/${publication.ideaId}/publish`)
+              }
+              onInsights={() => setSelectedPublication(publication)}
+              onStop={() => handleStop(publication)}
+              onRepost={() => handleRepost(publication)}
+              processing={processingId === publication.id}
+            />
+          ))}
         </div>
       )}
 
-      {!loading &&
-      !error &&
-      pagination.totalPages > 1 ? (
+      {!loading && !error && pagination.totalPages > 1 ? (
         <nav className="published-pagination">
           <button
             type="button"
             disabled={page <= 1}
-            onClick={() =>
-              setPage(
-                (current) => current - 1,
-              )
-            }
+            onClick={() => setPage((current) => current - 1)}
           >
             <ArrowLeft size={17} />
             Previous
           </button>
 
           <span>
-            Page <strong>{page}</strong> of{' '}
-            {pagination.totalPages}
+            Page <strong>{page}</strong> of {pagination.totalPages}
           </span>
 
           <button
             type="button"
-            disabled={
-              page >= pagination.totalPages
-            }
-            onClick={() =>
-              setPage(
-                (current) => current + 1,
-              )
-            }
+            disabled={page >= pagination.totalPages}
+            onClick={() => setPage((current) => current + 1)}
           >
             Next
             <ArrowRight size={17} />
@@ -391,9 +399,7 @@ export default function PublishedIdeasPage() {
         {selectedPublication ? (
           <PublicationInsightsPanel
             publication={selectedPublication}
-            onClose={() =>
-              setSelectedPublication(null)
-            }
+            onClose={() => setSelectedPublication(null)}
           />
         ) : null}
       </AnimatePresence>

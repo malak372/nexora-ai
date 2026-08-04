@@ -1,5 +1,5 @@
 /**
- * Controlled login form for Nexora AI.
+ * Controlled login form for Voxidence.
  *
  * Provides:
  * - Client-side validation.

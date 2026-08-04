@@ -34,10 +34,6 @@ import { NlpAnalysisStage } from './pipeline/stages/nlp-analysis.stage';
 import { OpportunityRankingStage } from './pipeline/stages/opportunity-ranking.stage';
 import { PromptBuildingStage } from './pipeline/stages/prompt-building.stage';
 import { RequestValidationStage } from './pipeline/stages/request-validation.stage';
-import {
-  PREMIUM_OUTPUT_STAGE_PROVIDERS,
-  PREMIUM_OUTPUT_STAGE_REGISTRATIONS,
-} from './providers/premium-output-stage.providers';
 import { CommunityAiAnalysisPromptService } from './services/community-ai-analysis-prompt.service';
 import { CommunityAiAnalysisService } from './services/community-ai-analysis.service';
 import { CollectionJobResolverService } from './services/collection-job-resolver.service';
@@ -76,6 +72,10 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
  * Owns generation endpoints, run monitoring, pipeline infrastructure,
  * executable stages, entitlement handling, AI output parsing, duplicate
  * detection, transactional persistence, and generation locking.
+ *
+ * Premium outputs are generated in the same structured core response. The
+ * module intentionally avoids registering fourteen no-op premium checkpoint
+ * stages so normal and premium runs share the same bounded fast path.
  *
  * @author malak
  */
@@ -148,7 +148,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaPersistenceStage,
     FinalizationStage,
 
-    ...PREMIUM_OUTPUT_STAGE_PROVIDERS,
 
     {
       provide: IDEA_GENERATION_STAGES,
@@ -166,7 +165,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         AiOutputValidationStage,
         DuplicateCheckStage,
         IdeaPersistenceStage,
-        ...PREMIUM_OUTPUT_STAGE_REGISTRATIONS.map(({ token }) => token),
         FinalizationStage,
       ],
       useFactory: (
@@ -183,42 +181,23 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         aiOutputValidationStage: AiOutputValidationStage,
         duplicateCheckStage: DuplicateCheckStage,
         ideaPersistenceStage: IdeaPersistenceStage,
-        ...remainingStages: IdeaGenerationStage[]
-      ): readonly IdeaGenerationStage[] => {
-        const finalizationStage = remainingStages.at(-1);
-
-        if (!finalizationStage) {
-          throw new Error(
-            'Finalization stage is missing from the idea-generation stage registry.',
-          );
-        }
-
-        const premiumStages = remainingStages.slice(0, -1);
-
-        if (
-          premiumStages.length !== PREMIUM_OUTPUT_STAGE_REGISTRATIONS.length
-        ) {
-          throw new Error('Premium-output stage registry is incomplete.');
-        }
-
-        return [
-          requestValidationStage,
-          entitlementCheckStage,
-          dataSourceSelectionStage,
-          collectionJobResolutionStage,
-          dataCollectionStage,
-          nlpAnalysisStage,
-          communityAiAnalysisStage,
-          opportunityRankingStage,
-          promptBuildingStage,
-          coreIdeaGenerationStage,
-          aiOutputValidationStage,
-          duplicateCheckStage,
-          ideaPersistenceStage,
-          ...premiumStages,
-          finalizationStage,
-        ];
-      },
+        finalizationStage: FinalizationStage,
+      ): readonly IdeaGenerationStage[] => [
+        requestValidationStage,
+        entitlementCheckStage,
+        dataSourceSelectionStage,
+        collectionJobResolutionStage,
+        dataCollectionStage,
+        nlpAnalysisStage,
+        communityAiAnalysisStage,
+        opportunityRankingStage,
+        promptBuildingStage,
+        coreIdeaGenerationStage,
+        aiOutputValidationStage,
+        duplicateCheckStage,
+        ideaPersistenceStage,
+        finalizationStage,
+      ],
     },
   ],
   exports: [

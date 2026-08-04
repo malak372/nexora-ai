@@ -112,6 +112,14 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       keywords: context.keywords.length > 0 ? context.keywords : undefined,
 
       forceRefresh: context.forceRefresh,
+
+      collectionMode: 'FAST_GENERATION',
+      collectorLimits: {
+        maxFetchedPosts: 18,
+        maxSavedPosts: 8,
+        maxFetchedComments: 36,
+        maxSavedComments: 18,
+      },
     });
 
     const nlpContext = this.mapNlpContext(
@@ -160,6 +168,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         forceRefresh: context.forceRefresh,
 
         selectedPlatformId: result.selectedPlatformId ?? null,
+        collectionMode: 'FAST_GENERATION',
+        collectionSourceCount: context.selectedDataSources.length,
 
         totalTextsAnalyzed: result.nlpOutput.totalTextsAnalyzed,
 

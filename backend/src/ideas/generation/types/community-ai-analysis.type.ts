@@ -4,6 +4,8 @@
  * opportunity ranking.
  */
 export type CommunityAiOpportunity = {
+  /** Selected domain most directly supported by this opportunity. */
+  readonly domainName: string;
   readonly title: string;
   readonly problem: string;
   readonly unmetNeed: string;

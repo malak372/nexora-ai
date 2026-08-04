@@ -23,25 +23,26 @@ export const IDEA_TITLE_OUTPUT_PROPERTY = {
 } as const;
 
 /**
- * Problem-statement schema used by guest and registered free idea
- * generation.
+ * Multi-problem portfolio schema used by guest and registered free idea
+ * generation. The string remains backward compatible with the current database
+ * while containing numbered problem-to-solution entries.
  */
 export const FREE_PROBLEM_STATEMENT_OUTPUT_PROPERTY = {
   type: 'string',
   minLength: 20,
-  maxLength: 1_200,
+  maxLength: 3_000,
 } as const;
 
 /**
  * Problem-statement schema used by premium idea generation.
  *
- * Premium generation allows a longer description because it returns a
- * complete project-planning result.
+ * Premium uses the same maximum so cross-domain problem-to-solution entries
+ * remain consistent across account tiers.
  */
 export const PREMIUM_PROBLEM_STATEMENT_OUTPUT_PROPERTY = {
   type: 'string',
   minLength: 20,
-  maxLength: 1_500,
+  maxLength: 3_000,
 } as const;
 
 /**

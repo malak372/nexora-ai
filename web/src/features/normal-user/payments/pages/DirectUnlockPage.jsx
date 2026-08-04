@@ -1,7 +1,5 @@
 /**
- * Premium direct-unlock checkout page using provider-hosted test environments.
- *
- * Stripe opens Test Checkout and PayPal opens Sandbox Checkout.
+ * Premium direct-unlock checkout page using Stripe-hosted Test Checkout.
  *
  * @author Malak
  */
@@ -14,7 +12,6 @@ import {
   LockKeyhole,
   ShieldCheck,
   Sparkles,
-  WalletCards,
 } from 'lucide-react';
 import {
   motion,
@@ -35,13 +32,6 @@ const PAYMENT_METHODS = [
     description: 'Visa or Mastercard through Stripe Test Checkout',
     icon: CreditCard,
     badge: 'Most popular',
-  },
-  {
-    key: 'paypal',
-    title: 'PayPal',
-    description: 'Continue securely through PayPal Sandbox Checkout',
-    icon: WalletCards,
-    badge: 'Sandbox',
   },
 ];
 
@@ -255,7 +245,7 @@ export default function DirectUnlockPage() {
           <div className="unlock-backend-price">{pricing ? `${pricing.directUnlockPrice} ${pricing.currency}` : 'Loading price…'}</div>
 
           <p>
-            Choose a payment method. Nexora sends you to the provider's secure
+            Choose a payment method. Voxidence sends you to the provider's secure
             checkout and unlocks access only after verified confirmation.
           </p>
 

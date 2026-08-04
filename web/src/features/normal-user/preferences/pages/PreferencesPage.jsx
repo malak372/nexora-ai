@@ -183,7 +183,7 @@ export default function PreferencesPage() {
             Personalization studio
           </span>
 
-          <h1>Shape a Nexora experience that feels made for you.</h1>
+          <h1>Shape a Voxidence experience that feels made for you.</h1>
 
           <p>
             Fine-tune discovery, localization, and generation defaults so every
@@ -249,7 +249,7 @@ export default function PreferencesPage() {
                 <span>Step 01</span>
                 <h2>Set your local context</h2>
                 <p>
-                  These defaults help Nexora localize ideas, opportunities, and
+                  These defaults help Voxidence localize ideas, opportunities, and
                   generation results.
                 </p>
               </div>
@@ -318,7 +318,7 @@ export default function PreferencesPage() {
                 <span>Step 02</span>
                 <h2>Choose what you care about</h2>
                 <p>
-                  Select at least three interests. Nexora uses them to tune
+                  Select at least three interests. Voxidence uses them to tune
                   discovery and future generation suggestions.
                 </p>
               </div>

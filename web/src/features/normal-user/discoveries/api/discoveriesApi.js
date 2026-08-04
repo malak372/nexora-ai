@@ -173,6 +173,16 @@ export async function setRating(publicationId, value) {
   }
 }
 
+export async function deleteRating(publicationId) {
+  try {
+    return unwrap(
+      await normalUserApi.delete(`/users/publications/${publicationId}/rating`),
+    );
+  } catch (error) {
+    throwApiError(error, 'Rating could not be removed.');
+  }
+}
+
 export async function getMyVote(publicationId) {
   try {
     return unwrap(
@@ -197,6 +207,16 @@ export async function setVote(publicationId, value) {
   }
 }
 
+export async function deleteVote(publicationId) {
+  try {
+    return unwrap(
+      await normalUserApi.delete(`/users/publications/${publicationId}/vote`),
+    );
+  } catch (error) {
+    throwApiError(error, 'Vote could not be removed.');
+  }
+}
+
 export async function getMyFeedback(publicationId) {
   try {
     return unwrap(
@@ -218,6 +238,16 @@ export async function setFeedback(publicationId, comment) {
     );
   } catch (error) {
     throwApiError(error, 'Feedback could not be saved.');
+  }
+}
+
+export async function deleteFeedback(publicationId) {
+  try {
+    return unwrap(
+      await normalUserApi.delete(`/users/publications/${publicationId}/feedback`),
+    );
+  } catch (error) {
+    throwApiError(error, 'Feedback could not be deleted.');
   }
 }
 

@@ -41,7 +41,7 @@ export class IdeaVotingService {
     publicationId: string,
     dto: VotePublicationDto,
   ) {
-    const publication = await this.ensureVotingAllowed(publicationId);
+    const publication = await this.ensureVotingAllowed(actor, publicationId);
 
     if (
       this.isRegisteredActor(actor) &&
@@ -110,7 +110,7 @@ export class IdeaVotingService {
   }
 
   async getMyVote(actor: PublicationEngagementActor, publicationId: string) {
-    await this.ensurePublished(publicationId);
+    await this.ensureAccessible(actor, publicationId);
 
     if (this.isRegisteredActor(actor)) {
       const userId = actor.userId;
@@ -140,7 +140,7 @@ export class IdeaVotingService {
   }
 
   async deleteVote(actor: PublicationEngagementActor, publicationId: string) {
-    await this.ensurePublished(publicationId);
+    await this.ensureAccessible(actor, publicationId);
 
     const existing = await this.getMyVote(actor, publicationId);
 
@@ -174,25 +174,45 @@ export class IdeaVotingService {
     updatedAt: true,
   } satisfies Prisma.IdeaPublicationVoteSelect;
 
-  private async ensureVotingAllowed(publicationId: string) {
-    const publication = await this.prisma.ideaPublication.findUnique({
+  /**
+   * Ensures that voting is enabled for a live publication or for an archived
+   * publication previously accepted by the authenticated actor.
+   *
+   * Guest sessions may vote only while a publication is live.
+   */
+  private async ensureVotingAllowed(
+    actor: PublicationEngagementActor,
+    publicationId: string,
+  ) {
+    const publication = await this.prisma.ideaPublication.findFirst({
       where: {
         id: publicationId,
+        isHidden: false,
+        OR: [
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+          },
+          ...(this.isRegisteredActor(actor)
+            ? [
+                {
+                  acceptances: {
+                    some: {
+                      userId: actor.userId,
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
-        status: true,
         allowVoting: true,
-        isHidden: true,
         publisherId: true,
       },
     });
 
-    if (
-      !publication ||
-      publication.status !== IdeaPublicationStatus.PUBLISHED ||
-      publication.isHidden
-    ) {
-      throw new NotFoundException('Published publication not found');
+    if (!publication) {
+      throw new NotFoundException('Publication not found or no longer accessible');
     }
 
     if (!publication.allowVoting) {
@@ -202,23 +222,41 @@ export class IdeaVotingService {
     return publication;
   }
 
-  private async ensurePublished(publicationId: string) {
-    const publication = await this.prisma.ideaPublication.findUnique({
+  /**
+   * Ensures that the actor may read or remove their existing vote.
+   */
+  private async ensureAccessible(
+    actor: PublicationEngagementActor,
+    publicationId: string,
+  ) {
+    const publication = await this.prisma.ideaPublication.findFirst({
       where: {
         id: publicationId,
+        isHidden: false,
+        OR: [
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+          },
+          ...(this.isRegisteredActor(actor)
+            ? [
+                {
+                  acceptances: {
+                    some: {
+                      userId: actor.userId,
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
-        status: true,
-        isHidden: true,
+        id: true,
       },
     });
 
-    if (
-      !publication ||
-      publication.status !== IdeaPublicationStatus.PUBLISHED ||
-      publication.isHidden
-    ) {
-      throw new NotFoundException('Published publication not found');
+    if (!publication) {
+      throw new NotFoundException('Publication not found or no longer accessible');
     }
   }
 

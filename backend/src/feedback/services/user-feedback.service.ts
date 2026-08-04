@@ -77,7 +77,7 @@ export class UserFeedbackService {
     publicationId: string,
     dto: UpsertPublicationRatingDto,
   ) {
-    await this.ensurePublicationAllowsRatings(publicationId);
+    await this.ensurePublicationAllowsRatings(actor, publicationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
       let rating;
@@ -144,7 +144,7 @@ export class UserFeedbackService {
    * Returns the current actor's rating for a publication.
    */
   async getMyRating(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublishedPublicationExists(publicationId);
+    await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
     if (this.isUserActor(actor)) {
       const userId = actor.userId;
@@ -177,7 +177,7 @@ export class UserFeedbackService {
    * Deletes the current actor's rating and recalculates publication totals.
    */
   async deleteRating(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublishedPublicationExists(publicationId);
+    await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
     const existing = await this.getMyRating(actor, publicationId);
 
@@ -215,7 +215,7 @@ export class UserFeedbackService {
     publicationId: string,
     dto: UpsertPublicationFeedbackDto,
   ) {
-    await this.ensurePublicationAllowsFeedback(publicationId);
+    await this.ensurePublicationAllowsFeedback(actor, publicationId);
 
     const result = await this.prisma.$transaction(async (tx) => {
       let feedback;
@@ -281,7 +281,7 @@ export class UserFeedbackService {
    * Returns the current actor's feedback for a publication.
    */
   async getMyFeedback(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublishedPublicationExists(publicationId);
+    await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
     if (this.isUserActor(actor)) {
       const userId = actor.userId;
@@ -314,7 +314,7 @@ export class UserFeedbackService {
    * Deletes the current actor's feedback and recalculates its count.
    */
   async deleteFeedback(actor: FeedbackActor, publicationId: string) {
-    await this.ensurePublishedPublicationExists(publicationId);
+    await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
     const existing = await this.getMyFeedback(actor, publicationId);
 
@@ -406,14 +406,37 @@ export class UserFeedbackService {
   }
 
   /**
-   * Ensures that the requested publication is publicly available.
+   * Ensures that the actor may still access the publication.
+   *
+   * Live publications remain available to registered users and guests.
+   * After archiving, only authenticated users with a recorded acceptance keep
+   * access. This preserves the accepted-user workspace without exposing the
+   * archived publication through public discovery.
    */
-  private async ensurePublishedPublicationExists(publicationId: string) {
+  private async ensurePublicationAccessibleToActor(
+    actor: FeedbackActor,
+    publicationId: string,
+  ) {
     const publication = await this.prisma.ideaPublication.findFirst({
       where: {
         id: publicationId,
-        status: IdeaPublicationStatus.PUBLISHED,
         isHidden: false,
+        OR: [
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+          },
+          ...(this.isUserActor(actor)
+            ? [
+                {
+                  acceptances: {
+                    some: {
+                      userId: actor.userId,
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
         id: true,
@@ -421,27 +444,45 @@ export class UserFeedbackService {
     });
 
     if (!publication) {
-      throw new NotFoundException('Published idea not found');
+      throw new NotFoundException('Publication not found or no longer accessible');
     }
   }
 
   /**
-   * Ensures that rating is enabled for the requested publication.
+   * Ensures that rating is enabled and the actor keeps publication access.
    */
-  private async ensurePublicationAllowsRatings(publicationId: string) {
+  private async ensurePublicationAllowsRatings(
+    actor: FeedbackActor,
+    publicationId: string,
+  ) {
     const publication = await this.prisma.ideaPublication.findFirst({
       where: {
         id: publicationId,
-        status: IdeaPublicationStatus.PUBLISHED,
+        isHidden: false,
+        OR: [
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+          },
+          ...(this.isUserActor(actor)
+            ? [
+                {
+                  acceptances: {
+                    some: {
+                      userId: actor.userId,
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
         allowRatings: true,
-        isHidden: true,
       },
     });
 
-    if (!publication || publication.isHidden) {
-      throw new NotFoundException('Published publication not found');
+    if (!publication) {
+      throw new NotFoundException('Publication not found or no longer accessible');
     }
 
     if (!publication.allowRatings) {
@@ -452,22 +493,40 @@ export class UserFeedbackService {
   }
 
   /**
-   * Ensures that feedback is enabled for the requested publication.
+   * Ensures that feedback is enabled and the actor keeps publication access.
    */
-  private async ensurePublicationAllowsFeedback(publicationId: string) {
+  private async ensurePublicationAllowsFeedback(
+    actor: FeedbackActor,
+    publicationId: string,
+  ) {
     const publication = await this.prisma.ideaPublication.findFirst({
       where: {
         id: publicationId,
-        status: IdeaPublicationStatus.PUBLISHED,
+        isHidden: false,
+        OR: [
+          {
+            status: IdeaPublicationStatus.PUBLISHED,
+          },
+          ...(this.isUserActor(actor)
+            ? [
+                {
+                  acceptances: {
+                    some: {
+                      userId: actor.userId,
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
       },
       select: {
         allowFeedback: true,
-        isHidden: true,
       },
     });
 
-    if (!publication || publication.isHidden) {
-      throw new NotFoundException('Published publication not found');
+    if (!publication) {
+      throw new NotFoundException('Publication not found or no longer accessible');
     }
 
     if (!publication.allowFeedback) {

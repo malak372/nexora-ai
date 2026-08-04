@@ -1,5 +1,5 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
-import { IsString, IsUrl, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsString, IsUrl, IsUUID, MaxLength } from 'class-validator';
 
 /**
  * Creates a direct-payment checkout for advanced publication outputs.
@@ -12,8 +12,9 @@ export class CreatePublicationAdvancedUnlockDto {
   @IsUUID('4')
   clientRequestId!: string;
 
-  /** User-facing payment method: card or paypal. */
+  /** Stripe card payment-method key. */
   @IsString()
+  @IsIn(['card'])
   @MaxLength(30)
   @Transform(({ value }: TransformFnParams): unknown =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,

@@ -1,6 +1,7 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
 
 import {
+  IsIn,
   IsOptional,
   IsString,
   IsUrl,
@@ -29,11 +30,12 @@ export class CreatePublicationAcceptanceDto {
   clientRequestId!: string;
 
   /**
-   * User-facing payment-method key.
+   * Stripe card payment-method key.
    *
    * The value is normalized before validation and processing.
    */
   @IsString()
+  @IsIn(['card'])
   @MaxLength(30)
   @Transform(({ value }: TransformFnParams): unknown =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,

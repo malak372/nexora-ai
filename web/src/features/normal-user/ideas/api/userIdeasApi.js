@@ -146,4 +146,95 @@ export async function deleteMyIdea(ideaId) {
   }
 }
 
-export { normalizeIdeasListResponse };
+/**
+ * Normalizes the unified favorites endpoint.
+ */
+function normalizeFavoritesResponse(response) {
+  const body = response?.data;
+  const payload = body?.data ?? body;
+  const records = Array.isArray(payload) ? payload : [];
+
+  return records.map((record) => ({
+    favoriteId: record?.id,
+    favoritedAt: record?.favoritedAt,
+    favoriteKind: record?.favoriteKind,
+    ...(record?.idea ?? {}),
+    isFavorite: true,
+    __libraryKind:
+      record?.favoriteKind === 'ACCEPTED'
+        ? 'accepted'
+        : record?.idea?.__libraryKind,
+  }));
+}
+
+/**
+ * Returns all owned and accepted favorite ideas.
+ */
+export async function getMyFavoriteIdeas(options = {}) {
+  const cacheKey = createRequestCacheKey('my-favorite-ideas');
+
+  try {
+    return await cachedRequest(
+      cacheKey,
+      async () => {
+        const response = await normalUserApi.get('/users/favorites');
+        return normalizeFavoritesResponse(response);
+      },
+      {
+        ttlMs: 2 * 60 * 1000,
+        force: Boolean(options.force),
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, 'Favorite ideas could not be loaded.'),
+    );
+  }
+}
+
+/**
+ * Adds an owned or accepted idea to favorites.
+ */
+export async function addIdeaToFavorites(ideaId) {
+  try {
+    const response = await normalUserApi.post(
+      `/users/ideas/${ideaId}/favorite`,
+    );
+
+    invalidateRequestCache('my-ideas:');
+    invalidateRequestCache('my-favorite-ideas:');
+    invalidateRequestCache('dashboard-summary:');
+
+    return response?.data?.data ?? response?.data;
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, 'The idea could not be added to favorites.'),
+    );
+  }
+}
+
+/**
+ * Removes an owned or accepted idea from favorites.
+ */
+export async function removeIdeaFromFavorites(ideaId) {
+  try {
+    const response = await normalUserApi.delete(
+      `/users/ideas/${ideaId}/favorite`,
+    );
+
+    invalidateRequestCache('my-ideas:');
+    invalidateRequestCache('my-favorite-ideas:');
+    invalidateRequestCache('dashboard-summary:');
+
+    return response?.data?.data ?? response?.data;
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, 'The idea could not be removed from favorites.'),
+    );
+  }
+}
+
+export {
+  normalizeFavoritesResponse,
+  normalizeIdeasListResponse,
+};

@@ -1,14 +1,14 @@
 /**
- * Nexora normal-user discovery dashboard.
+ * Voxidence normal-user discovery dashboard.
  *
- * Payment is intentionally absent from the dashboard. Users generate and review
- * the free result first; Direct Unlock is offered only inside the idea workspace.
- * Upgrade to Premium remains available in the global header.
+ * Preserves the existing data flow, routing, payment boundaries, animations,
+ * component order, and Direct Unlock rules while applying the current
+ * Voxidence eucalyptus-and-rose visual identity.
  */
 import {
   ArrowRight,
   BookOpenCheck,
-  Bookmark,
+  Heart,
   BrainCircuit,
   CheckCircle2,
   Lightbulb,
@@ -110,7 +110,7 @@ export default function NormalDashboardPage() {
   };
 
   if (isLoading) {
-    return <div className="normal-dashboard-state" role="status"><span className="normal-dashboard-spinner" /><strong>Preparing your Nexora workspace...</strong></div>;
+    return <div className="normal-dashboard-state" role="status"><span className="normal-dashboard-spinner" /><strong>Preparing your Voxidence workspace...</strong></div>;
   }
 
   if (error) {
@@ -124,7 +124,7 @@ export default function NormalDashboardPage() {
         <div className="normal-dashboard-hero__copy">
           <span className="normal-eyebrow"><Sparkles size={14} />Intelligent discovery workspace</span>
           <h1>Welcome back, <span>{getFirstName(summary?.fullName)}.</span></h1>
-          <p>Describe a real need. Nexora listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.</p>
+          <p>Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.</p>
           <div className="normal-dashboard-hero__actions">
             <motion.button className="normal-primary-button" type="button" onClick={() => navigate('/normal/generate')} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />Start discovering</motion.button>
             <button className="normal-secondary-button" type="button" onClick={() => navigate('/normal/ideas')}>Open my ideas <ArrowRight size={17} /></button>
@@ -132,7 +132,7 @@ export default function NormalDashboardPage() {
           <div className="normal-dashboard-hero__access"><strong>{accessMessage}</strong><span>Review the result first. Direct payment appears only when you choose to unlock that specific idea.</span></div>
         </div>
 
-        <div className="normal-signal-core" aria-label="Animated Nexora intelligence pipeline">
+        <div className="normal-signal-core" aria-label="Animated Voxidence intelligence pipeline">
           <motion.div className="normal-signal-core__ring normal-signal-core__ring--one" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 24, ease: 'linear' }} />
           <motion.div className="normal-signal-core__ring normal-signal-core__ring--two" animate={{ rotate: -360 }} transition={{ repeat: Infinity, duration: 17, ease: 'linear' }} />
           <motion.div className="normal-signal-core__beam" animate={{ scaleY: [0.72, 1.12, 0.72], opacity: [0.35, 0.9, 0.35] }} transition={{ repeat: Infinity, duration: 3 }} />
@@ -146,7 +146,7 @@ export default function NormalDashboardPage() {
       </motion.section>
 
       <motion.section className="normal-dashboard-launch normal-dashboard-launch--v4" {...reveal}>
-        <div className="normal-dashboard-launch__heading"><span className="normal-eyebrow">AI discovery prompt</span><h2>What should Nexora investigate?</h2><p>Type naturally or speak. Domain and evidence sources are resolved automatically by the backend.</p></div>
+        <div className="normal-dashboard-launch__heading"><span className="normal-eyebrow">AI discovery prompt</span><h2>What should Voxidence investigate?</h2><p>Type naturally or speak. Domain and evidence sources are resolved automatically by the backend.</p></div>
         <IdeaLauncher compact />
       </motion.section>
 
@@ -155,8 +155,8 @@ export default function NormalDashboardPage() {
         {...metricsContainer}
       >
         <motion.div {...metricItem}><MetricCard icon={Lightbulb} label="Ideas created" value={summary?.ideasCount ?? 0} helper="All generated idea workspaces" tone="violet" index="01" onClick={() => navigate('/normal/ideas')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label="Validated ideas" value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper="Passed the Nexora quality pipeline" tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={Bookmark} label="Saved ideas" value={summary?.favoriteIdeasCount ?? 0} helper="Your shortlisted opportunities" tone="mint" index="03" onClick={() => navigate('/normal/favorites')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label="Validated ideas" value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper="Passed the Voxidence quality pipeline" tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={Heart} label="Favorite ideas" value={summary?.favoriteIdeasCount ?? 0} helper="Owned and accepted ideas you love" tone="mint" index="03" onClick={() => navigate('/normal/ideas?view=favorites')} /></motion.div>
         <motion.div {...metricItem}><MetricCard icon={BookOpenCheck} label="Published ideas" value={summary?.publishedIdeasCount ?? 0} helper="Ideas shared with the community" tone="amber" index="04" onClick={() => navigate('/normal/published')} /></motion.div>
       </motion.section>
 

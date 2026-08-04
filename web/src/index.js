@@ -15,6 +15,8 @@ import './index.css';
 
 const rootElement = document.getElementById('root');
 
+document.title = 'Voxidence';
+
 if (!rootElement) {
   throw new Error('Root element was not found.');
 }

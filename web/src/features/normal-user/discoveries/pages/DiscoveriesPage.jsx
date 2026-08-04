@@ -1,5 +1,5 @@
 /**
- * Premium community discovery gallery for authenticated Nexora users.
+ * Premium community discovery gallery for authenticated Voxidence users.
  *
  * Loads published ideas, provides search and sorting, highlights one featured
  * publication, and reveals the remaining community ideas in an animated grid.
@@ -15,6 +15,7 @@ import {
   Star,
   ThumbsUp,
   TrendingUp,
+  UsersRound,
 } from 'lucide-react';
 import {
   motion,
@@ -203,7 +204,7 @@ export default function DiscoveriesPage() {
           </h1>
 
           <p>
-            Explore public opportunities created through Nexora's
+            Explore public opportunities created through Voxidence's
             evidence-driven generation workflow and shared by creators
             across the community.
           </p>
@@ -404,7 +405,7 @@ export default function DiscoveriesPage() {
               <p>
                 {featuredPublication?.publicAbstract ||
                   featuredPublication?.publicProblem ||
-                  'A public software opportunity shared with the Nexora community.'}
+                  'A public software opportunity shared with the Voxidence community.'}
               </p>
 
               <div className="discover-featured__metrics">
@@ -422,6 +423,12 @@ export default function DiscoveriesPage() {
                   {featuredPublication?.upvotesCount ??
                     0}{' '}
                   upvotes
+                </strong>
+
+                <strong>
+                  <UsersRound size={14} />
+                  {featuredPublication?.acceptanceCount ?? 0}{' '}
+                  accepted
                 </strong>
               </div>
 
@@ -447,7 +454,7 @@ export default function DiscoveriesPage() {
                 <small>Community gallery</small>
                 <h2>More discoveries</h2>
                 <p>
-                  Explore ideas shared by Nexora creators.
+                  Explore ideas shared by Voxidence creators.
                 </p>
               </div>
             </div>

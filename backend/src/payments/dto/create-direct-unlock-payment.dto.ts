@@ -1,4 +1,4 @@
-import { IsString, IsUrl, IsUUID, Matches } from 'class-validator';
+import { IsIn, IsString, IsUrl, IsUUID, Matches } from 'class-validator';
 
 /**
  * DTO used by an authenticated user to create
@@ -21,12 +21,11 @@ export class CreateDirectUnlockPaymentDto {
   /**
    * User-facing payment-method registry key.
    *
-   * Examples:
-   * - card
-   * - paypal
+   * Supported value:
+   * - card (Stripe Checkout)
    */
   @IsString()
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  @IsIn(['card'])
   paymentMethodKey!: string;
 
   /**

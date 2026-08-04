@@ -272,7 +272,7 @@
   border: 0;
   border-radius: 13px;
   padding: 0 14px;
-  background: linear-gradient(135deg,#35206f,#6244dd 58%,#7659ef);
+  background: linear-gradient(135deg,#35206f,#2f7774 58%,#7659ef);
   color: #fff;
   font-size: .78rem;
   font-weight: 850;
@@ -417,7 +417,7 @@
 }
 
 .discover-featured__content > span {
-  color: #6952dc;
+  color: #69b7b1;
   font-size: .69rem;
   font-weight: 900;
   letter-spacing: .12em;
@@ -453,7 +453,7 @@
   padding: 0 11px;
   border: 1px solid rgba(100,80,219,.1);
   border-radius: 11px;
-  background: linear-gradient(145deg,#f1edff,#eef8ff);
+  background: linear-gradient(145deg,#FFF5F7,#eef8ff);
   color: #5e4cda;
   font-size: .72rem;
 }
@@ -501,13 +501,13 @@
   height: 42px;
   place-items: center;
   border-radius: 14px;
-  background: linear-gradient(145deg,#f0ebff,#edf7ff);
-  color: #624bd7;
+  background: linear-gradient(145deg,#FFF5F7,#edf7ff);
+  color: #2f7774;
 }
 
 .discover-section-title small {
   display: block;
-  color: #6e57dc;
+  color: #3f8f89;
   font-size: .58rem;
   font-weight: 900;
   letter-spacing: .11em;
@@ -669,8 +669,8 @@
   height: 35px;
   place-items: center;
   border-radius: 11px;
-  background: linear-gradient(145deg,#f0ebff,#edf7ff);
-  color: #604ce0;
+  background: linear-gradient(145deg,#FFF5F7,#edf7ff);
+  color: #2f7774;
   font-size: .7rem;
   font-weight: 900;
 }
@@ -698,7 +698,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #6753e5;
+  color: #2f7774;
   font-size: .67rem;
   font-weight: 850;
 }
@@ -777,7 +777,7 @@
   border: 1px dashed rgba(86,68,151,.2);
   border-radius: 27px;
   background: rgba(255,255,255,.78);
-  color: #6550e8;
+  color: #2f7774;
   text-align: center;
 }
 
@@ -911,4 +911,1116 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+.discovery-story__metrics .is-accepted-count {
+  background: linear-gradient(145deg, #ece8ff, #eaf7ff);
+  color: #5547c8;
+}
+
+.discovery-story__metrics .is-accepted-count small {
+  color: inherit;
+  font-size: .62rem;
+  font-weight: 800;
+  opacity: .72;
+}
+.discover-page{--vx-ink:#36413d;--vx-muted:#78827e;--vx-eucalyptus:#2f7774;--vx-mint:#69b7b1;--vx-pearl:#faf9f6;--vx-rose:#f3c9d3}.discover-head{background:radial-gradient(circle at 85% 10%,rgba(183,221,216,.38),transparent 29%),radial-gradient(circle at 8% 92%,rgba(243,201,211,.34),transparent 31%),linear-gradient(145deg,#fff,#faf9f6 58%,#eaf5f2);border-color:rgba(47,119,116,.14);box-shadow:0 30px 80px rgba(47,119,116,.12)}.discover-head__copy>span,.discover-head h1 em,.discover-controls svg{color:#2f7774}.discover-controls input:focus,.discover-controls select:focus{border-color:#69b7b1;box-shadow:0 0 0 4px rgba(105,183,177,.15)}.discover-featured,.discovery-story{border-color:rgba(47,119,116,.12);box-shadow:0 24px 60px rgba(73,83,79,.1)}.discover-featured__action,.discovery-story__action{background:linear-gradient(135deg,#2f7774,#69b7b1);box-shadow:0 14px 30px rgba(47,119,116,.24)}
+
+
+
+/* ========================================================================== */
+/* V11 — Voxidence Discover hero refinement                                   */
+/* ========================================================================== */
+
+/**
+ * Discover page foundation.
+ *
+ * Keeps the existing discovery logic, cards, controls, animations, and
+ * responsive breakpoints unchanged. This layer only refines the hero hierarchy,
+ * contrast, spacing, and Voxidence eucalyptus-and-rose visual identity.
+ */
+.discover-page {
+  --discover-ink: #34413f;
+  --discover-muted: #718078;
+  --discover-eucalyptus: #2f7774;
+  --discover-mint: #69b7b1;
+  --discover-mint-deep: #4fa9a4;
+  --discover-mint-soft: #b7ddd8;
+  --discover-rose: #d98fa0;
+  --discover-rose-soft: #f3c9d3;
+  --discover-pearl: #fffdfc;
+  --discover-ivory: #faf9f6;
+
+  color: var(--discover-ink);
+}
+
+/**
+ * Hero shell.
+ *
+ * Replaces the washed-out oversized presentation with a compact editorial hero.
+ * The copy remains dominant, while the availability card becomes a supporting
+ * glass panel instead of competing with the headline.
+ */
+.discover-page .discover-head {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 285px);
+  align-items: center;
+  gap: clamp(30px, 4vw, 58px);
+  min-height: 440px;
+  overflow: hidden;
+  padding: clamp(40px, 5.2vw, 72px);
+  border: 1px solid rgba(47, 119, 116, 0.14);
+  border-radius: 38px;
+  color: var(--discover-ink);
+  background:
+    radial-gradient(
+      circle at 91% 11%,
+      rgba(183, 221, 216, 0.42),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 7% 94%,
+      rgba(243, 201, 211, 0.38),
+      transparent 34%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 253, 252, 0.99) 0%,
+      rgba(255, 248, 250, 0.96) 48%,
+      rgba(244, 251, 249, 0.98) 100%
+    );
+  box-shadow:
+    0 34px 90px rgba(47, 119, 116, 0.13),
+    0 10px 30px rgba(52, 65, 63, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+/**
+ * Decorative grid is softened so it adds depth without reducing readability.
+ */
+.discover-page .discover-head__grid {
+  z-index: -3;
+  opacity: 0.22;
+  background-image:
+    linear-gradient(rgba(47, 119, 116, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47, 119, 116, 0.055) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.84),
+      rgba(0, 0, 0, 0.42) 60%,
+      transparent 88%
+    );
+}
+
+/**
+ * Decorative ambient orbs use the current brand palette only.
+ */
+.discover-page .discover-head__orb--one {
+  top: -150px;
+  right: 5%;
+  width: 390px;
+  height: 390px;
+  background:
+    radial-gradient(
+      circle,
+      rgba(183, 221, 216, 0.48),
+      rgba(105, 183, 177, 0.14) 48%,
+      transparent 70%
+    );
+  filter: blur(2px);
+}
+
+.discover-page .discover-head__orb--two {
+  left: -150px;
+  bottom: -185px;
+  width: 420px;
+  height: 420px;
+  background:
+    radial-gradient(
+      circle,
+      rgba(243, 201, 211, 0.48),
+      rgba(217, 143, 160, 0.12) 48%,
+      transparent 70%
+    );
+  filter: blur(2px);
+}
+
+/**
+ * Hero copy.
+ */
+.discover-page .discover-head__copy {
+  max-width: 980px;
+}
+
+.discover-page .discover-head__copy > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(47, 119, 116, 0.13);
+  border-radius: 999px;
+  color: var(--discover-eucalyptus);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow:
+    0 8px 20px rgba(47, 119, 116, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  font-size: 0.69rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+}
+
+.discover-page .discover-head__copy > span svg {
+  color: var(--discover-eucalyptus);
+}
+
+/**
+ * Main heading.
+ *
+ * The entire title remains dark and readable. Only the final line carries a
+ * restrained eucalyptus-to-rose gradient.
+ */
+.discover-page .discover-head h1 {
+  max-width: 980px;
+  margin: 22px 0 0;
+  color: var(--discover-ink);
+  font-size: clamp(3rem, 6vw, 6rem);
+  font-weight: 560;
+  line-height: 0.94;
+  letter-spacing: -0.068em;
+  text-wrap: balance;
+}
+
+.discover-page .discover-head h1 em {
+  display: block;
+  margin-top: 10px;
+  color: transparent;
+  background:
+    linear-gradient(
+      90deg,
+      var(--discover-eucalyptus) 0%,
+      var(--discover-mint-deep) 58%,
+      var(--discover-rose) 100%
+    );
+  -webkit-background-clip: text;
+  background-clip: text;
+  font-style: normal;
+}
+
+/**
+ * Supporting description.
+ */
+.discover-page .discover-head p {
+  max-width: 760px;
+  margin: 24px 0 0;
+  color: var(--discover-muted);
+  font-size: clamp(0.98rem, 1.25vw, 1.12rem);
+  line-height: 1.78;
+}
+
+/**
+ * Benefit chips.
+ */
+.discover-page .discover-head__chips {
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.discover-page .discover-head__chips span {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(47, 119, 116, 0.12);
+  color: #51635d;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.8),
+      rgba(234, 245, 242, 0.62)
+    );
+  box-shadow:
+    0 8px 18px rgba(47, 119, 116, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  font-size: 0.72rem;
+}
+
+.discover-page .discover-head__chips span svg {
+  color: var(--discover-eucalyptus);
+}
+
+.discover-page .discover-head__chips span:hover {
+  color: var(--discover-eucalyptus);
+  border-color: rgba(217, 143, 160, 0.28);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 246, 248, 0.9),
+      rgba(234, 245, 242, 0.8)
+    );
+  box-shadow:
+    0 12px 24px rgba(47, 119, 116, 0.08),
+    0 0 0 4px rgba(243, 201, 211, 0.1);
+}
+
+/**
+ * Availability card.
+ */
+.discover-page .discover-head__stat {
+  align-self: end;
+  min-height: 164px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 15px;
+  padding: 23px;
+  border: 1px solid rgba(47, 119, 116, 0.14);
+  border-radius: 24px;
+  color: var(--discover-ink);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(183, 221, 216, 0.25),
+      transparent 38%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.86),
+      rgba(255, 248, 250, 0.74)
+    );
+  box-shadow:
+    0 22px 52px rgba(47, 119, 116, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(18px);
+}
+
+.discover-page .discover-head__stat:hover {
+  transform: translateY(-5px);
+  border-color: rgba(217, 143, 160, 0.24);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(183, 221, 216, 0.32),
+      transparent 42%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.94),
+      rgba(255, 246, 248, 0.82)
+    );
+  box-shadow:
+    0 28px 62px rgba(47, 119, 116, 0.15),
+    0 0 0 4px rgba(243, 201, 211, 0.09);
+}
+
+.discover-page .discover-head__stat-icon {
+  width: 50px;
+  height: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 16px;
+  color: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      var(--discover-mint) 0%,
+      #5cbdb9 55%,
+      var(--discover-mint-deep) 100%
+    );
+  box-shadow:
+    0 13px 28px rgba(47, 119, 116, 0.23),
+    0 0 0 5px rgba(243, 201, 211, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.discover-page .discover-head__stat small,
+.discover-page .discover-head__stat span {
+  color: var(--discover-muted);
+}
+
+.discover-page .discover-head__stat small {
+  font-size: 0.63rem;
+  letter-spacing: 0.11em;
+}
+
+.discover-page .discover-head__stat strong {
+  margin-top: 7px;
+  color: var(--discover-eucalyptus);
+  font-size: 2.4rem;
+  font-weight: 760;
+  letter-spacing: -0.05em;
+}
+
+.discover-page .discover-head__stat span {
+  margin-top: 5px;
+  font-size: 0.72rem;
+}
+
+.discover-page .discover-head__stat > i {
+  right: -50px;
+  bottom: -62px;
+  width: 155px;
+  height: 155px;
+  background:
+    radial-gradient(
+      circle,
+      rgba(243, 201, 211, 0.24),
+      rgba(183, 221, 216, 0.13) 50%,
+      transparent 70%
+    );
+}
+
+/**
+ * Responsive hero refinements.
+ */
+@media (max-width: 1100px) {
+  .discover-page .discover-head {
+    grid-template-columns: 1fr;
+    align-items: start;
+    min-height: 0;
+  }
+
+  .discover-page .discover-head__stat {
+    width: min(100%, 360px);
+    align-self: start;
+  }
+}
+
+@media (max-width: 700px) {
+  .discover-page .discover-head {
+    padding: 34px 24px;
+    border-radius: 28px;
+  }
+
+  .discover-page .discover-head h1 {
+    font-size: clamp(2.65rem, 13vw, 4.2rem);
+    line-height: 0.98;
+  }
+
+  .discover-page .discover-head__chips {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discover-page .discover-head__chips span {
+    justify-content: center;
+  }
+
+  .discover-page .discover-head__stat {
+    min-height: 138px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-page .discover-head__orb,
+  .discover-page .discover-head__chips span,
+  .discover-page .discover-head__stat {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+
+
+/* ========================================================================== */
+/* V12 — compact Voxidence Discover hero                                      */
+/* ========================================================================== */
+
+/**
+ * Reduces the hero footprint while preserving its existing structure,
+ * decorative motion, availability counter, and responsive behavior.
+ */
+.discover-page .discover-head {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 265px);
+  align-items: center;
+  gap: clamp(22px, 3vw, 38px);
+  min-height: 315px;
+  padding: clamp(28px, 3.4vw, 46px);
+  border-radius: 30px;
+}
+
+/**
+ * Keeps the headline prominent without occupying most of the viewport.
+ */
+.discover-page .discover-head__copy {
+  max-width: 800px;
+}
+
+.discover-page .discover-head__copy > span {
+  min-height: 30px;
+  padding-inline: 11px;
+  font-size: 0.64rem;
+}
+
+.discover-page .discover-head h1 {
+  max-width: 760px;
+  margin-top: 15px;
+  font-size: clamp(2.55rem, 4.45vw, 4.55rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.discover-page .discover-head h1 em {
+  margin-top: 6px;
+}
+
+/**
+ * Tightens supporting copy and benefits without making the hero feel crowded.
+ */
+.discover-page .discover-head p {
+  max-width: 700px;
+  margin-top: 17px;
+  font-size: clamp(0.92rem, 1.05vw, 1rem);
+  line-height: 1.62;
+}
+
+.discover-page .discover-head__chips {
+  gap: 8px;
+  margin-top: 19px;
+}
+
+.discover-page .discover-head__chips span {
+  min-height: 34px;
+  padding-inline: 11px;
+  font-size: 0.68rem;
+}
+
+/**
+ * Makes the availability counter a compact supporting element.
+ */
+.discover-page .discover-head__stat {
+  min-height: 126px;
+  gap: 12px;
+  padding: 17px;
+  border-radius: 20px;
+}
+
+.discover-page .discover-head__stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+
+.discover-page .discover-head__stat strong {
+  margin-top: 5px;
+  font-size: 1.95rem;
+}
+
+.discover-page .discover-head__stat span {
+  font-size: 0.68rem;
+}
+
+/**
+ * Reduces ambient decoration so the compact hero remains visually balanced.
+ */
+.discover-page .discover-head__orb--one {
+  top: -190px;
+  width: 340px;
+  height: 340px;
+}
+
+.discover-page .discover-head__orb--two {
+  bottom: -215px;
+  width: 360px;
+  height: 360px;
+}
+
+@media (max-width: 1100px) {
+  .discover-page .discover-head {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 235px);
+    min-height: 300px;
+  }
+
+  .discover-page .discover-head__stat {
+    width: 100%;
+    max-width: 235px;
+  }
+}
+
+@media (max-width: 860px) {
+  .discover-page .discover-head {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .discover-page .discover-head__stat {
+    width: min(100%, 320px);
+    max-width: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .discover-page .discover-head {
+    padding: 28px 21px;
+    border-radius: 25px;
+  }
+
+  .discover-page .discover-head h1 {
+    font-size: clamp(2.35rem, 12vw, 3.65rem);
+  }
+
+  .discover-page .discover-head p {
+    margin-top: 15px;
+  }
+
+  .discover-page .discover-head__chips {
+    margin-top: 17px;
+  }
+
+  .discover-page .discover-head__stat {
+    min-height: 116px;
+  }
+}
+
+
+
+/* ========================================================================== */
+/* V13 — Voxidence featured discovery and gallery cards                       */
+/* ========================================================================== */
+
+/**
+ * Featured discovery.
+ *
+ * Replaces the remaining purple and electric-blue treatment with the current
+ * eucalyptus, soft-rose, pearl, and deep-ink palette. Existing orbit, mesh,
+ * beam, hover, and button animations remain unchanged.
+ */
+.discover-page .discover-featured {
+  border-color: rgba(47, 119, 116, 0.14);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(183, 221, 216, 0.22),
+      transparent 34%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(255, 253, 252, 0.98),
+      rgba(255, 248, 250, 0.94) 52%,
+      rgba(244, 251, 249, 0.97)
+    );
+  box-shadow:
+    0 28px 74px rgba(47, 119, 116, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.97);
+}
+
+.discover-page .discover-featured__visual {
+  background:
+    radial-gradient(
+      circle at 50% 48%,
+      rgba(243, 201, 211, 0.34),
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 80% 18%,
+      rgba(183, 221, 216, 0.34),
+      transparent 28%
+    ),
+    linear-gradient(
+      145deg,
+      #2f7774 0%,
+      #4fa9a4 48%,
+      #69b7b1 100%
+    );
+}
+
+.discover-page .discover-featured__mesh {
+  opacity: 0.34;
+  background-image:
+    radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.24) 1px,
+      transparent 1px
+    );
+}
+
+.discover-page .discover-featured__orbit {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.discover-page .discover-featured__orbit::after {
+  background: #f3c9d3;
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.12),
+    0 0 22px rgba(217, 143, 160, 0.76);
+}
+
+.discover-page .discover-featured__core {
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0.11)
+    ),
+    rgba(47, 119, 116, 0.2);
+  box-shadow:
+    0 0 52px rgba(243, 201, 211, 0.24),
+    0 20px 42px rgba(47, 119, 116, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.discover-page .discover-featured__content > span {
+  color: #2f7774;
+}
+
+.discover-page .discover-featured__content h2 {
+  color: #34413f;
+}
+
+.discover-page .discover-featured__content p {
+  color: #718078;
+}
+
+.discover-page .discover-featured__metrics strong {
+  border-color: rgba(47, 119, 116, 0.12);
+  color: #2f7774;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 246, 248, 0.94),
+      rgba(234, 245, 242, 0.92)
+    );
+}
+
+.discover-page .discover-featured__content button {
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  color: #ffffff;
+  background:
+    linear-gradient(
+      135deg,
+      #69b7b1 0%,
+      #5cbdb9 52%,
+      #4fa9a4 100%
+    );
+  box-shadow:
+    0 15px 34px rgba(47, 119, 116, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.discover-page .discover-featured__content button:hover {
+  box-shadow:
+    0 19px 40px rgba(47, 119, 116, 0.3),
+    0 0 0 4px rgba(243, 201, 211, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/**
+ * Discovery gallery cards.
+ *
+ * Keeps the rotating color variation, but constrains every variation to the
+ * Voxidence palette so the cards still feel distinct without introducing
+ * purple, electric blue, orange, or unrelated accent colors.
+ */
+.discover-page .discovery-story {
+  --story-a: #2f7774;
+  --story-b: #69b7b1;
+  border-color: rgba(47, 119, 116, 0.12);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 253, 252, 0.98),
+      rgba(255, 248, 250, 0.94) 54%,
+      rgba(244, 251, 249, 0.96)
+    );
+  box-shadow:
+    0 21px 50px rgba(47, 119, 116, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.discover-page .discovery-story--2 {
+  --story-a: #4fa9a4;
+  --story-b: #79c7c1;
+}
+
+.discover-page .discovery-story--3 {
+  --story-a: #5cbdb9;
+  --story-b: #d98fa0;
+}
+
+.discover-page .discovery-story--4 {
+  --story-a: #2f7774;
+  --story-b: #f3c9d3;
+}
+
+.discover-page .discovery-story:hover {
+  box-shadow:
+    0 32px 72px rgba(47, 119, 116, 0.14),
+    0 0 0 1px rgba(217, 143, 160, 0.14);
+}
+
+.discover-page .discovery-story__art {
+  background:
+    radial-gradient(
+      circle at 74% 20%,
+      rgba(255, 255, 255, 0.22),
+      transparent 28%
+    ),
+    linear-gradient(
+      135deg,
+      var(--story-a),
+      var(--story-b)
+    );
+}
+
+.discover-page .discovery-story__planet {
+  border-color: rgba(255, 255, 255, 0.38);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0.12)
+    );
+  box-shadow:
+    0 14px 30px rgba(47, 119, 116, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.discover-page .discovery-story__author > span {
+  color: #2f7774;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 246, 248, 0.96),
+      rgba(234, 245, 242, 0.94)
+    );
+}
+
+.discover-page .discovery-story__author strong,
+.discover-page .discovery-story h2 {
+  color: #34413f;
+}
+
+.discover-page .discovery-story__author small,
+.discover-page .discovery-story p {
+  color: #718078;
+}
+
+.discover-page .discovery-story__label {
+  color: #2f7774;
+}
+
+.discover-page .discovery-story__label.is-accepted {
+  color: #2f7774;
+}
+
+.discover-page .discovery-story__metrics span {
+  border-color: rgba(47, 119, 116, 0.1);
+  color: #51635d;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 253, 252, 0.98),
+      rgba(234, 245, 242, 0.78)
+    );
+}
+
+.discover-page .discovery-story__metrics .is-accepted-count {
+  border-color: rgba(217, 143, 160, 0.2);
+  color: #2f7774;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 246, 248, 0.98),
+      rgba(234, 245, 242, 0.92)
+    );
+}
+
+.discover-page .discovery-story__content > button {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(47, 119, 116, 0.13);
+  color: #2f7774;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 246, 248, 0.96),
+      rgba(234, 245, 242, 0.94)
+    );
+  box-shadow:
+    0 10px 24px rgba(47, 119, 116, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.discover-page .discovery-story__content > button:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.54);
+  background:
+    linear-gradient(
+      135deg,
+      #69b7b1 0%,
+      #5cbdb9 52%,
+      #4fa9a4 100%
+    );
+  box-shadow:
+    0 15px 32px rgba(47, 119, 116, 0.22),
+    0 0 0 4px rgba(243, 201, 211, 0.14);
+}
+
+/**
+ * Search and section controls.
+ *
+ * Removes the remaining purple search and focus accents visible around the
+ * gallery area.
+ */
+.discover-page .discover-search:focus-within {
+  border-color: rgba(92, 189, 185, 0.38);
+  box-shadow:
+    0 16px 36px rgba(47, 119, 116, 0.1),
+    0 0 0 4px rgba(243, 201, 211, 0.12);
+}
+
+.discover-page .discover-search button,
+.discover-page .discover-search__hint {
+  background:
+    linear-gradient(
+      135deg,
+      #69b7b1 0%,
+      #5cbdb9 52%,
+      #4fa9a4 100%
+    );
+}
+
+.discover-page .discover-state {
+  border-color: rgba(47, 119, 116, 0.18);
+  color: #2f7774;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 253, 252, 0.96),
+      rgba(244, 251, 249, 0.9)
+    );
+}
+
+
+
+/* ========================================================================== */
+/* V15 — refined multicolor Discover palette                                  */
+/* ========================================================================== */
+
+/**
+ * Discovery card palette.
+ *
+ * Expands the gallery beyond green and rose while keeping every accent muted,
+ * elegant, and compatible with the Voxidence pearl, eucalyptus, and ink base.
+ *
+ * The card order cycles through:
+ * 1. Eucalyptus + Dusty Rose
+ * 2. Deep Teal + Powder Blue
+ * 3. Plum + Blush
+ * 4. Terracotta + Warm Sand
+ * 5. Sage + Soft Gold
+ * 6. Slate Blue + Mist
+ */
+.discover-page .discovery-story {
+  --story-a: #2f7774;
+  --story-b: #d98fa0;
+  --story-c: #f3c9d3;
+  --story-glow: rgba(243, 201, 211, 0.4);
+}
+
+.discover-page .discovery-story:nth-child(6n + 1) {
+  --story-a: #2f7774;
+  --story-b: #5cbdb9;
+  --story-c: #d98fa0;
+  --story-glow: rgba(243, 201, 211, 0.42);
+}
+
+.discover-page .discovery-story:nth-child(6n + 2) {
+  --story-a: #2f6f78;
+  --story-b: #6fa7b8;
+  --story-c: #c9e1e8;
+  --story-glow: rgba(201, 225, 232, 0.48);
+}
+
+.discover-page .discovery-story:nth-child(6n + 3) {
+  --story-a: #755b73;
+  --story-b: #a67b96;
+  --story-c: #edc7d8;
+  --story-glow: rgba(237, 199, 216, 0.48);
+}
+
+.discover-page .discovery-story:nth-child(6n + 4) {
+  --story-a: #a8664f;
+  --story-b: #cf8f72;
+  --story-c: #efd2bd;
+  --story-glow: rgba(239, 210, 189, 0.5);
+}
+
+.discover-page .discovery-story:nth-child(6n + 5) {
+  --story-a: #6f8b79;
+  --story-b: #a9b99f;
+  --story-c: #dccb8e;
+  --story-glow: rgba(220, 203, 142, 0.42);
+}
+
+.discover-page .discovery-story:nth-child(6n + 6) {
+  --story-a: #64758f;
+  --story-b: #8fa7bd;
+  --story-c: #d9e3ea;
+  --story-glow: rgba(217, 227, 234, 0.5);
+}
+
+/**
+ * Art surface.
+ *
+ * Uses three coordinated stops rather than a flat two-color gradient so each
+ * card feels more dimensional without looking disconnected from the page.
+ */
+.discover-page .discovery-story__art {
+  background:
+    radial-gradient(
+      circle at 78% 16%,
+      rgba(255, 255, 255, 0.32),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 18% 84%,
+      var(--story-glow),
+      transparent 35%
+    ),
+    linear-gradient(
+      135deg,
+      var(--story-a) 0%,
+      var(--story-b) 56%,
+      var(--story-c) 100%
+    );
+}
+
+/**
+ * Card frame and soft accent glow.
+ */
+.discover-page .discovery-story {
+  border-color:
+    color-mix(in srgb, var(--story-a) 17%, transparent);
+  box-shadow:
+    0 22px 52px rgba(52, 65, 63, 0.08),
+    0 0 0 1px color-mix(in srgb, var(--story-b) 5%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.discover-page .discovery-story:hover {
+  box-shadow:
+    0 34px 76px color-mix(in srgb, var(--story-a) 17%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--story-b) 18%, transparent);
+}
+
+/**
+ * Keeps decorative motion visible across light and dark palettes.
+ */
+.discover-page .discovery-story__mesh {
+  opacity: 0.38;
+}
+
+.discover-page .discovery-story__beam {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.32),
+      transparent
+    );
+}
+
+.discover-page .discovery-story__ring {
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
+.discover-page .discovery-story__planet {
+  border-color: rgba(255, 255, 255, 0.4);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.34),
+      rgba(255, 255, 255, 0.14)
+    );
+  box-shadow:
+    0 14px 32px rgba(52, 65, 63, 0.18),
+    0 0 0 5px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+/**
+ * Matches labels, metrics, and actions to each card accent while preserving
+ * readable text contrast on the shared pearl content surface.
+ */
+.discover-page .discovery-story__label,
+.discover-page .discovery-story__metrics svg {
+  color: var(--story-a);
+}
+
+.discover-page .discovery-story__metrics span {
+  border-color:
+    color-mix(in srgb, var(--story-a) 12%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--story-c) 14%, #fffdfc),
+      color-mix(in srgb, var(--story-b) 8%, #f4fbf9)
+    );
+}
+
+.discover-page .discovery-story__content > button {
+  color: var(--story-a);
+  border-color:
+    color-mix(in srgb, var(--story-a) 18%, transparent);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--story-c) 16%, #fffdfc),
+      color-mix(in srgb, var(--story-b) 10%, #f4fbf9)
+    );
+}
+
+.discover-page .discovery-story__content > button:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.56);
+  background:
+    linear-gradient(
+      135deg,
+      var(--story-a),
+      var(--story-b) 58%,
+      var(--story-c)
+    );
+  box-shadow:
+    0 15px 34px color-mix(in srgb, var(--story-a) 25%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--story-c) 14%, transparent);
+}
+
+/**
+ * Featured card receives a richer multicolor composition that still starts from
+ * the Voxidence green identity.
+ */
+.discover-page .discover-featured__visual {
+  background:
+    radial-gradient(
+      circle at 20% 18%,
+      rgba(255, 255, 255, 0.2),
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 82% 20%,
+      rgba(201, 225, 232, 0.48),
+      transparent 29%
+    ),
+    radial-gradient(
+      circle at 28% 82%,
+      rgba(243, 201, 211, 0.46),
+      transparent 34%
+    ),
+    linear-gradient(
+      135deg,
+      #2f7774 0%,
+      #4fa9a4 34%,
+      #755b73 68%,
+      #d98fa0 100%
+    );
 }

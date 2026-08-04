@@ -17,7 +17,6 @@ import PublishedIdeasPage from '../features/normal-user/published/pages/Publishe
 import IdeaWorkspacePage from '../features/normal-user/idea-workspace/pages/IdeaWorkspacePage';
 import BusinessModelPage from '../features/normal-user/business-models/pages/BusinessModelPage';
 import DirectUnlockPage from '../features/normal-user/payments/pages/DirectUnlockPage';
-import DirectUnlockSuccessPage from '../features/normal-user/payments/pages/DirectUnlockSuccessPage';
 import PaymentResultPage from '../features/normal-user/payments/pages/PaymentResultPage';
 import PublishIdeaPage from '../features/normal-user/publication/pages/PublishIdeaPage';
 import ProfileSettingsPage from '../features/normal-user/profile/pages/ProfileSettingsPage';
@@ -25,6 +24,7 @@ import CompliancePage from '../features/normal-user/compliance/pages/ComplianceP
 import NotificationsPage from '../features/normal-user/notifications/pages/NotificationsPage';
 import PreferencesPage from '../features/normal-user/preferences/pages/PreferencesPage';
 import UpgradePage from '../features/normal-user/upgrade/pages/UpgradePage';
+import BillingHistoryPage from '../features/normal-user/billing/pages/BillingHistoryPage';
 
 function TemporaryNormalPage({ title }) {
     return (
@@ -44,7 +44,6 @@ export const normalUserRoutes = (
         <Route path="ideas/:ideaId" element={<IdeaWorkspacePage />} />
         <Route path="ideas/:ideaId/business-model" element={<BusinessModelPage />} />
         <Route path="ideas/:ideaId/unlock" element={<DirectUnlockPage />} />
-        <Route path="ideas/:ideaId/unlock/success" element={<DirectUnlockSuccessPage />} />
         <Route path="payments/success" element={<PaymentResultPage />} />
         <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />
         <Route path="discover" element={<DiscoveriesPage />} />
@@ -57,6 +56,7 @@ export const normalUserRoutes = (
         <Route path="credits" element={<UpgradePage />} />
         <Route path="preferences" element={<PreferencesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="billing" element={<BillingHistoryPage />} />
         <Route path="settings/profile" element={<ProfileSettingsPage />} />
         <Route path="support" element={<Navigate to="/normal/compliance" replace />} />
     </Route>

@@ -305,12 +305,19 @@
   margin-top: 20px;
 }
 
-.bm-board.is-bmc,
-.bm-board.is-lean {
+.bm-board.is-bmc {
   grid-template-columns: 1.05fr 1fr 1.24fr 1fr 1.05fr;
   grid-template-areas:
     "partners activities value relationships segments"
     "partners resources value channels segments"
+    "costs costs costs revenue revenue";
+}
+
+.bm-board.is-lean {
+  grid-template-columns: 1.05fr 1fr 1.24fr 1fr 1.05fr;
+  grid-template-areas:
+    "problem solution value advantage segments"
+    "problem metrics value channels segments"
     "costs costs costs revenue revenue";
 }
 
@@ -341,13 +348,49 @@
 .bm-board.is-vpc {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
-    "jobs products"
-    "pains relievers"
-    "gains creators";
+    "products jobs"
+    "relievers pains"
+    "creators gains";
 }
 
 .bm-board.is-dynamic {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+
+.bm-board.is-vpc {
+  position: relative;
+  padding-top: 38px;
+}
+
+.bm-board.is-vpc::before,
+.bm-board.is-vpc::after {
+  position: absolute;
+  top: 0;
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(47, 119, 116, 0.16);
+  border-radius: 999px;
+  background: rgba(234, 245, 242, 0.78);
+  color: #2f7774;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bm-board.is-vpc::before {
+  left: 0;
+  width: calc(50% - 6px);
+  content: "Value Map";
+}
+
+.bm-board.is-vpc::after {
+  right: 0;
+  width: calc(50% - 6px);
+  content: "Customer Profile";
 }
 
 /* Every possible named area. */
@@ -672,5 +715,180 @@
   .bm-card,
   .bm-template-list > button {
     transition: none !important;
+  }
+}
+
+.bm-page {
+  color: #36413d;
+}
+
+.bm-back {
+  color: #78827e;
+}
+
+.bm-back:hover {
+  color: #2f7774;
+}
+
+.bm-hero {
+  border-color: rgba(47, 119, 116, 0.13);
+  background:
+    radial-gradient(circle at 86% 12%, rgba(183, 221, 216, 0.42), transparent 29%),
+    radial-gradient(circle at 13% 93%, rgba(243, 201, 211, 0.28), transparent 32%),
+    linear-gradient(135deg, #ffffff, #fbfaf7 58%, #eaf5f2);
+  box-shadow:
+    0 28px 74px rgba(47, 82, 76, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.bm-hero > div:first-child > span,
+.bm-kicker,
+.bm-studio > header span {
+  color: #2f7774;
+}
+
+.bm-hero h1,
+.bm-hero__summary strong,
+.bm-template-list strong,
+.bm-studio > header h2,
+.bm-empty h2 {
+  color: #36413d;
+}
+
+.bm-hero p,
+.bm-templates > p,
+.bm-template-list small,
+.bm-studio > header p,
+.bm-empty p {
+  color: #78827e;
+}
+
+.bm-hero__summary article,
+.bm-templates,
+.bm-studio {
+  border-color: rgba(47, 119, 116, 0.11);
+  background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(248,251,249,.95));
+  box-shadow:
+    0 24px 62px rgba(47, 82, 76, 0.08),
+    inset 0 1px 0 rgba(255,255,255,.95);
+}
+
+.bm-hero__summary small {
+  color: #8b9490;
+}
+
+.bm-template-list > button {
+  border-color: rgba(47, 119, 116, 0.11);
+  background: linear-gradient(145deg, #fff, #f8fbf9);
+}
+
+.bm-template-list > button:hover {
+  border-color: rgba(47, 119, 116, 0.3);
+  box-shadow: 0 15px 31px rgba(47, 82, 76, 0.1);
+}
+
+.bm-template-list > button.active {
+  border-color: rgba(47, 119, 116, 0.44);
+  background: linear-gradient(145deg, #fff6f8, #eaf5f2);
+  box-shadow: 0 16px 35px rgba(47, 119, 116, 0.13);
+}
+
+.bm-template-list > button > span:first-child {
+  background: #f2f6f4;
+  color: #78827e;
+}
+
+.bm-template-list button.active > span:first-child {
+  background: #eaf5f2;
+  color: #2f7774;
+}
+
+.bm-template-list button.active i,
+.bm-generate,
+.bm-studio > header button,
+.bm-modal__shell header button:first-child {
+  background: linear-gradient(135deg, #244744, #2f7774 58%, #69b7b1);
+  box-shadow: 0 14px 30px rgba(47, 119, 116, 0.23);
+}
+
+.bm-studio > header {
+  border-bottom-color: rgba(47, 119, 116, 0.1);
+}
+
+.bm-board {
+  align-items: stretch;
+  grid-auto-flow: row dense;
+}
+
+.bm-card {
+  min-width: 0;
+  overflow: hidden;
+  border-color: var(--card-border, rgba(47, 119, 116, 0.18));
+  background: linear-gradient(150deg, #fff 8%, var(--card-end, #eef7f4));
+  box-shadow:
+    0 14px 34px rgba(47, 82, 76, 0.075),
+    inset 0 1px 0 rgba(255,255,255,.96);
+}
+
+.bm-card h3 {
+  color: var(--card-title, #2f7774);
+}
+
+.bm-card p,
+.bm-card li {
+  color: #5f6b66;
+  overflow-wrap: anywhere;
+}
+
+.bm-card--eucalyptus { --card-title:#2f7774; --card-border:rgba(47,119,116,.28); --card-number:rgba(47,119,116,.14); --card-end:#eaf5f2; }
+.bm-card--rose { --card-title:#b66579; --card-border:rgba(182,101,121,.25); --card-number:rgba(182,101,121,.13); --card-end:#fff1f4; }
+.bm-card--sage { --card-title:#5f7f70; --card-border:rgba(95,127,112,.25); --card-number:rgba(95,127,112,.13); --card-end:#edf5f0; }
+.bm-card--pearl { --card-title:#52645d; --card-border:rgba(82,100,93,.20); --card-number:rgba(82,100,93,.11); --card-end:#f7f5ef; }
+.bm-card--teal { --card-title:#3f8f8a; --card-border:rgba(63,143,138,.25); --card-number:rgba(63,143,138,.13); --card-end:#e9f7f5; }
+.bm-card--blush { --card-title:#9e6875; --card-border:rgba(158,104,117,.23); --card-number:rgba(158,104,117,.12); --card-end:#fbf0f2; }
+.bm-card--mint { --card-title:#3e806b; --card-border:rgba(62,128,107,.24); --card-number:rgba(62,128,107,.12); --card-end:#e9f7f1; }
+.bm-card--stone { --card-title:#69736f; --card-border:rgba(105,115,111,.20); --card-number:rgba(105,115,111,.11); --card-end:#f1f3f1; }
+.bm-card--seafoam { --card-title:#4b938e; --card-border:rgba(75,147,142,.24); --card-number:rgba(75,147,142,.12); --card-end:#eaf8f6; }
+
+.bm-board.is-bmc .bm-card,
+.bm-board.is-lean .bm-card {
+  min-height: 220px;
+}
+
+.bm-board.is-bmc .bm-area--partners,
+.bm-board.is-bmc .bm-area--value,
+.bm-board.is-bmc .bm-area--segments,
+.bm-board.is-lean .bm-area--problem,
+.bm-board.is-lean .bm-area--value,
+.bm-board.is-lean .bm-area--segments {
+  min-height: 450px;
+}
+
+.bm-modal {
+  background: rgba(36, 71, 68, 0.42);
+}
+
+.bm-modal__shell {
+  border-color: rgba(47, 119, 116, 0.16);
+  background: #fbfcfa;
+  box-shadow: 0 34px 100px rgba(36, 71, 68, 0.22);
+}
+
+.bm-modal__shell > header {
+  border-bottom-color: rgba(47, 119, 116, 0.11);
+}
+
+@media (max-width: 1320px) and (min-width: 1181px) {
+  .bm-layout {
+    grid-template-columns: 285px minmax(0, 1fr);
+  }
+
+  .bm-board.is-bmc,
+  .bm-board.is-lean {
+    font-size: 0.94rem;
+  }
+
+  .bm-card {
+    padding: 18px;
   }
 }

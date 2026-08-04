@@ -87,6 +87,18 @@ export class UserPublicationsController {
   }
 
   /**
+   * Re-publishes an archived publication while preserving all historical
+   * engagement, acceptances, and revisions.
+   */
+  @Post('ideas/:ideaId/publication/repost')
+  repost(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('ideaId', new ParseUUIDPipe({ version: '4' })) ideaId: string,
+  ) {
+    return this.publicationService.repost(user.id, ideaId);
+  }
+
+  /**
    * Deletes an owned publication while it is still a draft.
    */
   @Delete('ideas/:ideaId/publication')

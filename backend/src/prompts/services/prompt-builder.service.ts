@@ -367,6 +367,7 @@ export class PromptBuilderService {
       this.buildEvidenceGroundingDirective(),
       this.buildOutputQualityDirective(collectionJob),
       this.buildOpportunitySelectionDirective(input),
+      this.buildProblemSolutionPortfolioDirective(input),
       this.buildDiversityDirective(recentIdeas),
       this.buildLocalGroundingDirective({
         domain: collectionJob.domain.name,
@@ -490,7 +491,7 @@ export class PromptBuilderService {
       '- The benchmark will generate distinct candidates from the highest-ranked opportunities below.',
       '- The selected opportunity remains the default direction when no candidate-specific assignment is appended.',
       '- Derive a concrete user workflow and root cause from the evidence samples; never use a generic NLP label as the product concept.',
-      '- Cover the selected primary problem completely before adding secondary capabilities.',
+      '- Cover every selected evidence-backed problem completely. Secondary capabilities are allowed only when they connect the same end-to-end workflow.',
       '- Alternatives may be used only as supporting capabilities when they are compatible with the same user workflow.',
       '- A candidate-specific benchmark assignment may intentionally select a lower-ranked shortlisted opportunity to create concept diversity.',
       '- Do not generate a thin middleware, dashboard, wrapper, tracker, or document proxy unless the evidence proves that this is the complete product opportunity and the differentiator is substantial.',
@@ -505,6 +506,42 @@ export class PromptBuilderService {
       '<untrusted_shortlisted_opportunities>',
       this.stringifyPromptData(alternatives),
       '</untrusted_shortlisted_opportunities>',
+    ].join('\n');
+  }
+
+  /**
+   * Requires one coherent idea to expose multiple explicit problem-solution
+   * pairs. For cross-domain requests, each selected domain must contribute at
+   * least one pair when the supplied evidence supports it.
+   */
+  private buildProblemSolutionPortfolioDirective(
+    input: PromptBuilderInput,
+  ): string {
+    if (input.purpose !== 'IDEA_GENERATION') {
+      return '';
+    }
+
+    const domains = input.selectedDomains ?? [];
+    const domainNames = domains.map((domain) => domain.name);
+
+    return [
+      'APPLICATION-ENFORCED PROBLEM-SOLUTION PORTFOLIO:',
+      '- Return one coherent software product, but it may solve several compatible evidence-backed problems.',
+      '- The problemStatement must contain 1-6 numbered entries using this exact readable pattern: "[Domain] Problem: ... | Solution response: ...". Use at least two entries whenever the supplied evidence contains two genuinely distinct problems.',
+      '- Each problem must have one directly corresponding solution response. Do not list a problem without a solution and do not add a solution unsupported by the supplied evidence.',
+      '- objectives must align one-to-one with the numbered problem-solution entries and describe the concrete capability that resolves each problem.',
+      '- The abstract must explain how the pairs connect into one end-to-end workflow instead of an unrelated feature bundle.',
+      ...(domainNames.length > 1
+        ? [
+            `- Selected domains: ${domainNames.join(', ')}.`,
+            '- Include at least one distinct evidence-backed problem-solution pair for every selected domain, and include additional pairs when that domain contains more than one independently supported problem.',
+            '- When a selected domain lacks sufficient evidence, do not fabricate a problem. State the limitation cautiously in the abstract and use only supported domains.',
+          ]
+        : [
+            `- Selected domain: ${domainNames[0] ?? 'the resolved generation domain'}.`,
+            '- Include multiple distinct problems only when they belong to the same user journey or product workflow.',
+          ]),
+      '- Never merge duplicate wording variants of the same problem merely to increase the count.',
     ].join('\n');
   }
 

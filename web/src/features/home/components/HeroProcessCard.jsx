@@ -1,7 +1,7 @@
 /**
  * Renders the visual process card displayed in the Nexora landing-page hero.
  *
- * The component explains how Nexora transforms public community signals into
+ * The component explains how Voxidence transforms public community signals into
  * structured software project opportunities through three connected stages.
  *
  * Process content is loaded from the centralized HERO_PROCESS_CONTENT
@@ -120,7 +120,7 @@ function ProcessStep({ step }) {
 }
 
 /**
- * Displays the complete Nexora AI transformation workflow.
+ * Displays the complete Voxidence transformation workflow.
  *
  * The card contains:
  * - A section heading.

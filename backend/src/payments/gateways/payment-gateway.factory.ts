@@ -18,7 +18,7 @@ import type { PaymentGateway } from './payment-gateway.interface';
  * - Reject unsupported or invalid provider keys.
  *
  * Application services depend on this factory instead of depending
- * directly on Stripe, PayPal, or any future provider implementation.
+ * directly on Stripe or any future provider implementation.
  *
  * @author Eman
  */

@@ -5,11 +5,14 @@
  * protected basic brief together with every advanced output returned for the
  * authenticated acceptance. No price or access decision is made in the UI.
  *
- * @author Nexora Team
+ * @author Voxidence Team
  */
 import {
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Globe2,
   Layers3,
@@ -70,7 +73,9 @@ function WorkspaceContent({ value }) {
       <ul className="accepted-workspace-list">
         {value.map((item, index) => (
           <li key={`${String(item)}-${index}`}>
-            <CheckCircle2 size={17} />
+            <span className="accepted-workspace-list__icon">
+              <CheckCircle2 size={16} />
+            </span>
             <span>{String(item)}</span>
           </li>
         ))}
@@ -83,7 +88,10 @@ function WorkspaceContent({ value }) {
       <div className="accepted-workspace-structured">
         {Object.entries(value).map(([key, item]) => (
           <article key={key}>
-            <strong>{humanizeKey(key)}</strong>
+            <div className="accepted-workspace-structured__header">
+              <span />
+              <strong>{humanizeKey(key)}</strong>
+            </div>
             <WorkspaceContent value={item} />
           </article>
         ))}
@@ -97,7 +105,11 @@ function WorkspaceContent({ value }) {
     return <WorkspaceContent value={lines} />;
   }
 
-  return <p className="accepted-workspace-copy">{lines[0] || 'Not available yet.'}</p>;
+  return (
+    <p className="accepted-workspace-copy">
+      {lines[0] || 'Not available yet.'}
+    </p>
+  );
 }
 
 export default function AcceptedIdeaWorkspacePage() {
@@ -133,15 +145,23 @@ export default function AcceptedIdeaWorkspacePage() {
         const nextAcceptance =
           acceptancePayload?.acceptance ?? acceptancePayload;
 
-        if (!nextAcceptance?.advancedUnlockedAt && !nextAcceptance?.hasAdvancedAccess) {
-          throw new Error('Advanced access is required before opening this workspace.');
+        if (
+          !nextAcceptance?.advancedUnlockedAt &&
+          !nextAcceptance?.hasAdvancedAccess
+        ) {
+          throw new Error(
+            'Advanced access is required before opening this workspace.',
+          );
         }
 
         setPublication(nextPublication);
         setAcceptance(nextAcceptance);
       } catch (requestError) {
         if (mounted) {
-          setError(requestError?.message || 'The accepted workspace could not be loaded.');
+          setError(
+            requestError?.message ||
+              'The accepted workspace could not be loaded.',
+          );
         }
       } finally {
         if (mounted) setLoading(false);
@@ -158,12 +178,16 @@ export default function AcceptedIdeaWorkspacePage() {
 
     const advancedOutputs = Array.isArray(publication.advancedOutputs)
       ? publication.advancedOutputs
-          .filter((output) => hasMeaningfulContent(getOutputContent(output)))
+          .filter((output) =>
+            hasMeaningfulContent(getOutputContent(output)),
+          )
           .filter(
             (output, index, items) =>
               items.findIndex(
                 (candidate) =>
-                  (candidate.outputKey || candidate.key || candidate.id) ===
+                  (candidate.outputKey ||
+                    candidate.key ||
+                    candidate.id) ===
                   (output.outputKey || output.key || output.id),
               ) === index,
           )
@@ -176,6 +200,7 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'The accepted opportunity narrative',
         icon: FileText,
         content: publication.publicAbstract,
+        group: 'Core brief',
       },
       {
         key: 'problem',
@@ -183,6 +208,7 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'The validated need behind the idea',
         icon: Layers3,
         content: publication.publicProblem,
+        group: 'Core brief',
       },
       {
         key: 'objectives',
@@ -190,6 +216,7 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'What the solution is designed to achieve',
         icon: Rocket,
         content: normalizeList(publication.publicObjectives),
+        group: 'Core brief',
       },
       {
         key: 'users',
@@ -197,25 +224,46 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'The audience this opportunity serves',
         icon: Globe2,
         content: normalizeList(publication.publicTargetUsers),
+        group: 'Core brief',
       },
       ...advancedOutputs.map((output) => ({
         key: output.outputKey || output.key,
-        title: output.title || humanizeKey(output.outputKey || output.key),
+        title:
+          output.title ||
+          humanizeKey(output.outputKey || output.key),
         caption: 'Advanced execution output',
         icon: Sparkles,
         content: getOutputContent(output),
+        group: 'Advanced package',
       })),
     ];
   }, [publication]);
 
-  const current = sections.find((section) => section.key === activeKey) ?? sections[0];
+  const currentIndex = Math.max(
+    0,
+    sections.findIndex((section) => section.key === activeKey),
+  );
+  const current = sections[currentIndex] ?? sections[0];
+  const advancedCount = Math.max(0, sections.length - 4);
+
+  function openRelativeSection(offset) {
+    if (!sections.length) return;
+    const nextIndex = Math.min(
+      sections.length - 1,
+      Math.max(0, currentIndex + offset),
+    );
+    setActiveKey(sections[nextIndex].key);
+  }
 
   if (loading) {
     return (
       <section className="accepted-workspace-state">
-        <WandSparkles className="accepted-workspace-spin" />
-        <h1>Preparing your accepted-idea workspace</h1>
-        <p>Loading the basic brief and all unlocked advanced outputs.</p>
+        <div className="accepted-workspace-state__orb">
+          <WandSparkles className="accepted-workspace-spin" />
+        </div>
+        <span>ADVANCED WORKSPACE</span>
+        <h1>Preparing your accepted idea</h1>
+        <p>Loading the complete brief and unlocked execution outputs.</p>
       </section>
     );
   }
@@ -223,11 +271,18 @@ export default function AcceptedIdeaWorkspacePage() {
   if (error || !publication || !current) {
     return (
       <section className="accepted-workspace-state accepted-workspace-state--error">
-        <LockKeyhole />
+        <div className="accepted-workspace-state__orb">
+          <LockKeyhole />
+        </div>
+        <span>ACCESS NOTICE</span>
         <h1>Workspace unavailable</h1>
         <p>{error || 'The accepted workspace could not be opened.'}</p>
-        <button type="button" onClick={() => navigate(`/normal/discover/${publicationId}`)}>
-          <ArrowLeft size={17} /> Return to accepted brief
+        <button
+          type="button"
+          onClick={() => navigate(`/normal/discover/${publicationId}`)}
+        >
+          <ArrowLeft size={17} />
+          Return to accepted brief
         </button>
       </section>
     );
@@ -237,66 +292,143 @@ export default function AcceptedIdeaWorkspacePage() {
 
   return (
     <main className="accepted-workspace-page">
+      <div className="accepted-workspace-ambient accepted-workspace-ambient--one" />
+      <div className="accepted-workspace-ambient accepted-workspace-ambient--two" />
+
       <header className="accepted-workspace-topbar">
-        <button type="button" onClick={() => navigate('/normal/ideas?view=accepted')}>
-          <ArrowLeft size={17} /> Accepted ideas
+        <button
+          type="button"
+          className="accepted-workspace-back"
+          onClick={() => navigate('/normal/ideas?view=accepted')}
+        >
+          <ArrowLeft size={17} />
+          Accepted ideas
         </button>
-        <div>
-          <span><CheckCircle2 size={15} /> ADVANCED ACCESS UNLOCKED</span>
+
+        <div className="accepted-workspace-topbar__identity">
+          <span>ADVANCED ACCESS UNLOCKED</span>
           <strong>{publication.publicTitle}</strong>
+        </div>
+
+        <div className="accepted-workspace-topbar__meta">
+          <div>
+            <small>Sections</small>
+            <strong>{sections.length}</strong>
+          </div>
+          <div>
+            <small>Advanced</small>
+            <strong>{advancedCount}</strong>
+          </div>
         </div>
       </header>
 
       <section className="accepted-workspace-shell">
         <aside className="accepted-workspace-sidebar">
           <div className="accepted-workspace-sidebar__heading">
-            <Sparkles size={21} />
+            <div className="accepted-workspace-sidebar__mark">
+              <Sparkles size={21} />
+            </div>
             <div>
-              <strong>Idea workspace</strong>
-              <span>{sections.length} sections available</span>
+              <span>VOXIDENCE WORKSPACE</span>
+              <strong>Idea document</strong>
+              <p>{sections.length} curated sections</p>
             </div>
           </div>
 
           <nav>
             {sections.map((section, index) => {
               const Icon = section.icon;
+              const isActive = section.key === current.key;
+
               return (
                 <button
                   type="button"
                   key={section.key}
-                  className={section.key === current.key ? 'active' : ''}
+                  className={isActive ? 'active' : ''}
                   onClick={() => setActiveKey(section.key)}
                 >
                   <small>{String(index + 1).padStart(2, '0')}</small>
-                  <i><Icon size={18} /></i>
+
+                  <i>
+                    <Icon size={18} />
+                  </i>
+
                   <span>
                     <strong>{section.title}</strong>
                     <em>{section.caption}</em>
                   </span>
+
+                  <ArrowRight size={15} />
                 </button>
               );
             })}
           </nav>
+
+          <div className="accepted-workspace-sidebar__footer">
+            <CheckCircle2 size={17} />
+            <div>
+              <strong>Verified access</strong>
+              <span>
+                Accepted{' '}
+                {acceptance?.acceptedAt
+                  ? new Date(acceptance.acceptedAt).toLocaleDateString()
+                  : 'opportunity'}
+              </span>
+            </div>
+          </div>
         </aside>
 
         <article className="accepted-workspace-document">
-          <header>
+          <div className="accepted-workspace-document__hero">
             <div>
-              <span>PREMIUM IDEA DOCUMENT</span>
+              <span>{current.group}</span>
               <h1>{current.title}</h1>
               <p>{current.caption}</p>
             </div>
-            <b>{String(sections.indexOf(current) + 1).padStart(2, '0')}</b>
-          </header>
 
-          <div className="accepted-workspace-content">
-            <i><CurrentIcon size={22} /></i>
-            <WorkspaceContent value={current.content} />
+            <div className="accepted-workspace-document__number">
+              {String(currentIndex + 1).padStart(2, '0')}
+            </div>
           </div>
 
-          <footer>
-            <span>Accepted {acceptance?.acceptedAt ? new Date(acceptance.acceptedAt).toLocaleDateString() : 'opportunity'}</span>
-            <span>{Math.max(0, sections.length - 4)} advanced outputs unlocked</span>
+          <div className="accepted-workspace-content">
+            <div className="accepted-workspace-content__icon">
+              <CurrentIcon size={22} />
+            </div>
+
+            <div className="accepted-workspace-content__body">
+              <WorkspaceContent value={current.content} />
+            </div>
+          </div>
+
+          <footer className="accepted-workspace-document__footer">
+            <div>
+              <span>
+                Section {currentIndex + 1} of {sections.length}
+              </span>
+              <strong>{advancedCount} advanced outputs unlocked</strong>
+            </div>
+
+            <div className="accepted-workspace-document__actions">
+              <button
+                type="button"
+                disabled={currentIndex === 0}
+                onClick={() => openRelativeSection(-1)}
+              >
+                <ChevronLeft size={18} />
+                Previous
+              </button>
+
+              <button
+                type="button"
+                className="is-primary"
+                disabled={currentIndex === sections.length - 1}
+                onClick={() => openRelativeSection(1)}
+              >
+                Next section
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </footer>
         </article>
       </section>

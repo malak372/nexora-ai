@@ -97,8 +97,39 @@ export class IdeaGenerationSelectionService {
           domain.domainKeywords.map((item) => item.keyword),
         ),
       },
-      dataSources,
+      dataSources: this.selectFastEvidenceSources(dataSources),
     };
+  }
+
+  /**
+   * Keeps the collection phase inside the one-minute application budget by
+   * selecting a bounded, provider-diverse set of evidence-rich sources.
+   */
+  private selectFastEvidenceSources<T extends { readonly key: string }>(
+    sources: readonly T[],
+  ): T[] {
+    const priority = [
+      'reddit',
+      'stack-overflow',
+      'github',
+      'hacker-news',
+      'dev-to',
+      'product-hunt',
+      'google-play',
+      'app-store',
+      'youtube',
+      'forum',
+      'news',
+      'blog',
+    ];
+    const rank = new Map(priority.map((key, index) => [key, index]));
+
+    return [...sources]
+      .sort((left, right) =>
+        (rank.get(left.key) ?? Number.MAX_SAFE_INTEGER) -
+        (rank.get(right.key) ?? Number.MAX_SAFE_INTEGER),
+      )
+      .slice(0, 4);
   }
 
   private normalizeKeywords(keywords: readonly string[]): string[] {

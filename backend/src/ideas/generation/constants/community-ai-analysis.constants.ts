@@ -12,8 +12,8 @@ export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
 /**
  * Maximum generated tokens for one community-analysis response.
  *
- * The value intentionally fits the configured local Qwen fallback
- * while remaining sufficient for a compact structured response.
+ * The value is sufficient for a compact structured response while keeping the
+ * community-analysis stage inside the bounded fast-generation budget.
  */
 export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 1_400;
 
@@ -26,8 +26,7 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
 /**
  * Maximum evidence samples included from each persisted NLP group.
  *
- * Bounding the sample count reduces prompt size and improves local
- * fallback latency.
+ * Bounding the sample count reduces prompt size and provider latency.
  */
 export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 8;
 
@@ -39,8 +38,8 @@ export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH = 450;
 /**
  * Preferred minimum number of grounded opportunities.
  *
- * Fewer opportunities may still be accepted when the available
- * evidence cannot safely support three distinct candidates.
+ * Fewer opportunities may still be accepted when the available evidence cannot
+ * safely support three distinct candidates.
  */
 export const COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES = 3;
 
@@ -64,10 +63,18 @@ export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
 /**
  * Maximum duration of one provider request.
  *
- * The longer timeout gives the local Ollama fallback enough time to
- * return valid structured JSON on consumer hardware.
+ * The bounded timeout prevents the community-analysis stage from becoming a
+ * bottleneck in the one-minute generation path.
  */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 75_000;
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 8_000;
+
+/**
+ * Disables the explicit Ollama fallback in the strict fast-generation path.
+ *
+ * Deterministic NLP remains available as the non-blocking fallback whenever
+ * online AI analysis fails or exceeds its bounded attempts.
+ */
+export const COMMUNITY_AI_ANALYSIS_ALLOW_LOCAL_FALLBACK = false;
 
 /**
  * Maximum entries retained from one persisted NLP summary array.
