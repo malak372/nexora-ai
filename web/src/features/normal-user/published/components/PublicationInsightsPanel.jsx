@@ -17,6 +17,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   UserRound,
+  UsersRound,
   X,
 } from 'lucide-react';
 import {
@@ -25,6 +26,7 @@ import {
   useReducedMotion,
 } from 'framer-motion';
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { getReceivedFeedback } from '../api/publishedIdeasApi';
 
@@ -117,7 +119,26 @@ export default function PublicationInsightsPanel({
     void loadResponses();
   }, [loadResponses]);
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  return createPortal(
     <motion.div
       className="insights-backdrop"
       role="presentation"
@@ -223,6 +244,12 @@ export default function PublicationInsightsPanel({
               label: 'written reviews',
               tone: 'feedback',
             },
+            {
+              icon: UsersRound,
+              value: summary?.acceptanceCount ?? 0,
+              label: 'accepted this idea',
+              tone: 'accepted',
+            },
           ].map((metric) => {
             const Icon = metric.icon;
 
@@ -249,6 +276,46 @@ export default function PublicationInsightsPanel({
               </motion.article>
             );
           })}
+        </section>
+
+        <section className="publication-acceptors">
+          <div className="publication-acceptors__heading">
+            <div>
+              <span><UsersRound size={18} /></span>
+              <div>
+                <h3>People who accepted this idea</h3>
+                <p>Visible only to the publication owner.</p>
+              </div>
+            </div>
+            <strong>{summary?.acceptanceCount ?? 0}</strong>
+          </div>
+
+          {Array.isArray(summary?.acceptedBy) &&
+          summary.acceptedBy.length > 0 ? (
+            <div className="publication-acceptors__list">
+              {summary.acceptedBy.map((person) => (
+                <article key={person.id}>
+                  <span>{initials(person.fullName)}</span>
+                  <div>
+                    <strong>{person.fullName || 'Nexora user'}</strong>
+                    <small>
+                      {person.userType || 'MEMBER'} · Accepted{' '}
+                      {formatDate(person.acceptedAt)}
+                    </small>
+                  </div>
+                  {person.hasAdvancedAccess ? (
+                    <em>Advanced unlocked</em>
+                  ) : (
+                    <em>Basic access</em>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="publication-acceptors__empty">
+              No one has accepted this idea yet.
+            </p>
+          )}
         </section>
 
         <div className="insights-panel__section-title">
@@ -457,6 +524,7 @@ export default function PublicationInsightsPanel({
           </nav>
         ) : null}
       </motion.aside>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

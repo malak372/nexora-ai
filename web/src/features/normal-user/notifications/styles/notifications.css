@@ -1,8 +1,3 @@
-/* ==========================================================================
-   Nexora premium notification center
-   Refined, animated, and visually aligned with the Nexora workspace.
-   ========================================================================== */
-
 .notifications-page {
   width: 100%;
   min-height: 100%;
@@ -900,4 +895,251 @@
     animation: none;
     transition: none;
   }
+}
+
+
+.notifications-page {
+  color: #34413f;
+}
+
+.notifications-command {
+  border-color: rgba(92, 189, 185, 0.18);
+  background:
+    radial-gradient(circle at 87% 5%, rgba(183, 221, 216, 0.38), transparent 31%),
+    radial-gradient(circle at 10% 112%, rgba(243, 201, 211, 0.28), transparent 35%),
+    linear-gradient(135deg, rgba(255, 253, 252, 0.98), rgba(255, 248, 250, 0.94) 54%, rgba(245, 251, 249, 0.97));
+  box-shadow:
+    0 28px 72px rgba(73, 83, 79, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.notifications-command::before {
+  background: radial-gradient(circle, rgba(92, 189, 185, 0.2), transparent 68%);
+}
+
+.notifications-command::after {
+  background-image:
+    linear-gradient(rgba(92, 189, 185, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(217, 143, 160, 0.045) 1px, transparent 1px);
+}
+
+.notifications-command__icon {
+  border-color: rgba(217, 143, 160, 0.26);
+  color: #2f7774;
+  background: linear-gradient(145deg, #fff6f8, #eaf5f2);
+  box-shadow:
+    0 13px 30px rgba(47, 119, 116, 0.14),
+    0 0 0 5px rgba(243, 201, 211, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.notifications-command__eyebrow,
+.notifications-panel-actions > div:first-child > span {
+  color: #2f7774;
+}
+
+.notifications-command h1,
+.notifications-command__summary strong,
+.notification-row__content > strong,
+.notifications-state h3 {
+  color: #34413f;
+}
+
+.notifications-command p,
+.notifications-toolbar__result,
+.notifications-panel-actions p,
+.notification-row__message,
+.notification-row__content small,
+.notifications-state p {
+  color: #78827e;
+}
+
+.notifications-command__summary article {
+  border-color: rgba(92, 189, 185, 0.15);
+  background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(250,249,246,.9));
+  box-shadow:
+    0 15px 38px rgba(73, 83, 79, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.notifications-command__summary article::before {
+  background: radial-gradient(circle, rgba(217, 143, 160, 0.2), transparent 68%);
+}
+
+.notifications-command__summary article:nth-child(2)::before {
+  background: radial-gradient(circle, rgba(92, 189, 185, 0.22), transparent 68%);
+}
+
+.notifications-command__summary article:hover {
+  border-color: rgba(92, 189, 185, 0.34);
+  box-shadow:
+    0 22px 48px rgba(47, 119, 116, 0.14),
+    0 0 0 4px rgba(243, 201, 211, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
+}
+
+.notifications-command__summary article > i {
+  background: #d98fa0;
+  box-shadow: 0 0 0 5px rgba(217, 143, 160, 0.14);
+}
+
+.notifications-command__summary article:nth-child(2) > i {
+  background: #5cbdb9;
+  box-shadow: 0 0 0 5px rgba(92, 189, 185, 0.14);
+}
+
+.notifications-filters,
+.notifications-panel-actions,
+.notifications-list,
+.notifications-state {
+  border-color: rgba(92, 189, 185, 0.12);
+  background: rgba(255, 253, 252, 0.76);
+  box-shadow: 0 12px 32px rgba(73, 83, 79, 0.065);
+}
+
+.notifications-filters button {
+  color: #78827e;
+}
+
+.notifications-filters button:hover {
+  color: #2f7774;
+  background: linear-gradient(145deg, rgba(255, 246, 248, 0.96), rgba(234, 245, 242, 0.96));
+}
+
+.notifications-filters button.is-active {
+  border-color: rgba(92, 189, 185, 0.24);
+  color: #2f7774;
+  background: linear-gradient(145deg, #fff6f8, #eaf5f2);
+  box-shadow:
+    0 9px 22px rgba(47, 119, 116, 0.11),
+    0 0 0 3px rgba(243, 201, 211, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+}
+
+.notifications-panel-actions {
+  background: linear-gradient(135deg, rgba(255,255,255,.88), rgba(255,246,248,.74), rgba(234,245,242,.72));
+}
+
+.notifications-panel-actions::before {
+  background: radial-gradient(circle, rgba(217, 143, 160, 0.12), transparent 68%);
+}
+
+.notifications-action {
+  border-color: rgba(92, 189, 185, 0.18);
+  color: #49534f;
+  background: linear-gradient(145deg, #fffdfc, #faf9f6);
+}
+
+.notifications-action:hover:not(:disabled) {
+  border-color: rgba(92, 189, 185, 0.38);
+  color: #2f7774;
+  background: linear-gradient(145deg, #fff6f8, #eaf5f2);
+  box-shadow: 0 10px 24px rgba(47, 119, 116, 0.11);
+}
+
+.notifications-action.is-primary {
+  border-color: rgba(92, 189, 185, 0.34);
+  color: #fff;
+  background: linear-gradient(135deg, #69b7b1, #5cbdb9 55%, #4fa9a4);
+  box-shadow: 0 13px 28px rgba(47, 119, 116, 0.2);
+}
+
+.notifications-action.is-primary:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(135deg, #5cbdb9, #4fa9a4);
+  box-shadow:
+    0 16px 34px rgba(47, 119, 116, 0.25),
+    0 0 0 4px rgba(243, 201, 211, 0.16);
+}
+
+.notification-row {
+  --tone: #5cbdb9;
+  border-color: rgba(92, 189, 185, 0.11);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 5%, #fffdfc), #fffdfc 64%);
+  box-shadow:
+    0 14px 34px rgba(73, 83, 79, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.notification-row:hover {
+  border-color: color-mix(in srgb, var(--tone) 38%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 9%, #fffdfc), #ffffff 70%);
+  box-shadow:
+    0 20px 42px rgba(73, 83, 79, 0.11),
+    0 0 0 3px rgba(243, 201, 211, 0.09);
+}
+
+.notification-row.is-unread {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 10%, #fffaf9), #fffdfc 72%);
+}
+
+.notification-row.is-generation { --tone: #5cbdb9; }
+.notification-row.is-idea { --tone: #d98fa0; }
+.notification-row.is-publication { --tone: #79a99f; }
+.notification-row.is-feedback { --tone: #c98293; }
+.notification-row.is-payment { --tone: #91aaa2; }
+.notification-row.is-security { --tone: #4f8f89; }
+.notification-row.is-system { --tone: #7f978c; }
+
+.notification-row__icon {
+  border-color: color-mix(in srgb, var(--tone) 22%, transparent);
+  color: color-mix(in srgb, var(--tone) 82%, #34413f);
+  background: color-mix(in srgb, var(--tone) 11%, #fffdfc);
+}
+
+.notification-row__category {
+  color: color-mix(in srgb, var(--tone) 76%, #34413f);
+  background: color-mix(in srgb, var(--tone) 10%, #fffdfc);
+}
+
+.notification-row__time,
+.notification-row__end {
+  color: #78827e;
+}
+
+.notification-row__unread {
+  background: #d98fa0;
+  box-shadow:
+    0 0 0 5px rgba(217, 143, 160, 0.13),
+    0 0 18px rgba(217, 143, 160, 0.26);
+}
+
+.notification-row__open {
+  color: #2f7774;
+  background: #eaf5f2;
+}
+
+.notification-row:hover .notification-row__open {
+  color: #fff;
+  background: linear-gradient(145deg, #69b7b1, #4fa9a4);
+}
+
+.notifications-state svg,
+.notifications-loading svg {
+  color: #5cbdb9;
+}
+
+.notifications-error button {
+  color: #2f7774;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notifications-command__icon,
+  .notifications-command::before,
+  .notifications-panel-actions::before {
+    animation: none !important;
+  }
+}
+
+/* Voxidence activity-stream heading refinement */
+.notifications-panel__heading > div > span {
+  color: #2f7774;
+  text-shadow: 0 4px 18px rgba(47, 119, 116, 0.12);
+}
+
+.notifications-panel__heading {
+  border-bottom-color: rgba(92, 189, 185, 0.12);
+  background:
+    radial-gradient(circle at 8% 20%, rgba(243, 201, 211, 0.13), transparent 32%),
+    linear-gradient(180deg, rgba(250, 253, 252, 0.96), rgba(255, 253, 252, 0.94));
 }

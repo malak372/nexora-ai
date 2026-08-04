@@ -80,7 +80,6 @@ function normalizeFeedbackResponse(envelope, params) {
 export async function getMyPublishedIdeas(params = {}, options = {}) {
   const requestParams = {
     ...params,
-    status: 'PUBLISHED',
   };
 
   const key = createRequestCacheKey(
@@ -172,6 +171,30 @@ export async function stopPublication(ideaId) {
   } catch (error) {
     throw new Error(
       getApiErrorMessage(error, 'The publication could not be stopped.'),
+    );
+  }
+}
+
+
+export async function repostPublication(ideaId) {
+  if (!ideaId) {
+    throw new Error('The publication is missing its idea identifier.');
+  }
+
+  try {
+    const response = await normalUserApi.post(
+      `/users/ideas/${ideaId}/publication/repost`,
+    );
+
+    invalidatePublishedIdeasCache();
+    invalidateRequestCache('dashboard-summary:');
+    invalidateRequestCache('idea-workspace:');
+    invalidateRequestCache('discoveries:');
+
+    return unwrapEnvelope(response);
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, 'The publication could not be re-published.'),
     );
   }
 }

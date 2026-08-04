@@ -37,6 +37,7 @@ import {
   uploadProfileAvatar,
 } from '../api/profileApi';
 import AvatarCropDialog from '../components/AvatarCropDialog';
+import ActiveSessionsSection from '../components/ActiveSessionsSection';
 import '../styles/profile-settings.css';
 
 const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -44,7 +45,7 @@ const MAX_SIZE = 5 * 1024 * 1024;
 
 function getInitials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'NX';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'VO';
 }
 
 
@@ -283,7 +284,7 @@ export default function ProfileSettingsPage() {
         <div className="profile-settings-page__orb profile-settings-page__orb--two" />
         <div className="profile-settings-page__grid" aria-hidden="true" />
         <span><UserRound size={16} /> Profile settings</span>
-        <h1>Your Nexora identity</h1>
+        <h1>Your Voxidence identity</h1>
         <p>Manage your photo, display name, and account password.</p>
       </motion.header>
 
@@ -320,7 +321,7 @@ export default function ProfileSettingsPage() {
         </div>
 
         <div className="profile-settings-card__identity">
-          <strong>{profile.fullName || 'Nexora user'}</strong>
+          <strong>{profile.fullName || 'Voxidence user'}</strong>
           <span>{profile.email || 'Authenticated account'}</span>
           <small><ShieldCheck size={15} /> JPEG, PNG, or WebP · maximum 5 MB · cropped to a square</small>
         </div>
@@ -557,6 +558,25 @@ export default function ProfileSettingsPage() {
 
 
 
+
+
+      <motion.div
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 24 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.16 }}
+        transition={{ duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <ActiveSessionsSection
+          onSignedOutEverywhere={() => {
+            clearAuthSession();
+            navigate('/login', {
+              replace: true,
+              state: { sessionsRevoked: true },
+            });
+          }}
+        />
+      </motion.div>
+
       <motion.section
         className="profile-settings-danger"
         initial={shouldReduceMotion ? undefined : { opacity: 0, y: 24 }}
@@ -567,7 +587,7 @@ export default function ProfileSettingsPage() {
         <div className="profile-settings-danger__icon"><Trash2 size={22} /></div>
         <div className="profile-settings-danger__copy">
           <span>Danger zone</span>
-          <h2>Delete your Nexora account</h2>
+          <h2>Delete your Voxidence account</h2>
           <p>
             This closes your account, signs you out everywhere, and removes your personal
             profile information. Existing project records are preserved anonymously for data integrity.

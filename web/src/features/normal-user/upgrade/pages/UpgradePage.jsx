@@ -1,8 +1,9 @@
 /**
  * Premium credit purchase experience.
  *
- * Users may choose any quantity supported by the backend, while common
- * quantities remain available as quick-select shortcuts.
+ * Users may choose any quantity supported by the backend and complete payment
+ * securely through Stripe Checkout. Common quantities remain available as
+ * quick-select shortcuts.
  *
  * @author Malak
  */
@@ -19,7 +20,6 @@ import {
   ShieldCheck,
   Sparkles,
   UsersRound,
-  WalletCards,
 } from 'lucide-react';
 import {
   motion,
@@ -46,7 +46,7 @@ const BENEFITS = [
     icon: BotMessageSquare,
     title: 'AI Chat for unlocked ideas',
     description:
-      'Use Nexora AI Chat while your account is Premium to explore and refine ideas that are already unlocked.',
+      'Use Voxidence Chat while your account is Premium to explore and refine ideas that are already unlocked.',
   },
   {
     icon: Eye,
@@ -82,13 +82,6 @@ const PAYMENT_METHODS = [
     badge: 'Most popular',
     icon: CreditCard,
   },
-  {
-    key: 'paypal',
-    title: 'PayPal',
-    description: 'Continue securely through PayPal Checkout',
-    badge: 'Secure',
-    icon: WalletCards,
-  },
 ];
 
 export default function UpgradePage() {
@@ -102,7 +95,25 @@ export default function UpgradePage() {
   const [error, setError] = useState('');
   const [pricing, setPricing] = useState(null);
 
-  useEffect(() => { let active=true; getPaymentPricing(credits).then((value)=>{if(active)setPricing(value)}).catch((e)=>{if(active)setError(e.message)}); return()=>{active=false}; }, [credits]);
+  useEffect(() => {
+    let active = true;
+
+    getPaymentPricing(credits)
+      .then((value) => {
+        if (active) {
+          setPricing(value);
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setError(requestError.message);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [credits]);
 
   const totalLabel = useMemo(
     () =>
@@ -208,7 +219,7 @@ export default function UpgradePage() {
         <div className="upgrade-story__content">
           <span className="upgrade-story__eyebrow">
             <Crown size={16} />
-            Nexora premium credits
+            Voxidence premium credits
           </span>
 
           <h1>
@@ -471,7 +482,7 @@ export default function UpgradePage() {
             <small>
               {isAlreadyPremium
                 ? 'Your account is already Premium, so the activation fee is not charged again.'
-                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is added once when this Normal account becomes Premium.` : 'Loading the current activation fee from Nexora settings…'}
+                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is added once when this Normal account becomes Premium.` : 'Loading the current activation fee from Voxidence settings…'}
             </small>
           </div>
         </div>

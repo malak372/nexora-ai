@@ -25,7 +25,10 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
+
+import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
 import {
   acceptPublication,
@@ -174,6 +177,28 @@ export default function PublicationDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { getPaymentPricing().then(setPaymentPricing).catch(() => undefined); }, []);
+
+  useEffect(() => {
+    const overlayOpen = paymentOpen || advancedPaymentOpen || reportOpen;
+    if (!overlayOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function handleEscape(event) {
+      if (event.key !== 'Escape') return;
+      setPaymentOpen(false);
+      setAdvancedPaymentOpen(false);
+      setReportOpen(false);
+    }
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [advancedPaymentOpen, paymentOpen, reportOpen]);
 
   const effectiveAcceptance = acceptance ?? publication?.acceptance ?? null;
   const accepted = Boolean(
@@ -473,6 +498,8 @@ export default function PublicationDetailPage() {
                     type="button"
                     key={value}
                     className={value <= rating ? 'active' : ''}
+                    aria-pressed={value <= rating}
+                    data-rating-value={value}
                     disabled={busyAction === 'rating'}
                     onClick={() => handleRating(value)}
                     aria-label={`Rate ${value} out of 5`}
@@ -492,7 +519,8 @@ export default function PublicationDetailPage() {
               <div className="vote-row">
                 <button
                   type="button"
-                  className={vote === 'UP' ? 'active' : ''}
+                  className={`vote-button vote-button--up ${vote === 'UP' ? 'active' : ''}`}
+                  aria-pressed={vote === 'UP'}
                   disabled={busyAction === 'vote'}
                   onClick={() => handleVote('UP')}
                 >
@@ -500,7 +528,8 @@ export default function PublicationDetailPage() {
                 </button>
                 <button
                   type="button"
-                  className={vote === 'DOWN' ? 'active' : ''}
+                  className={`vote-button vote-button--down ${vote === 'DOWN' ? 'active' : ''}`}
+                  aria-pressed={vote === 'DOWN'}
                   disabled={busyAction === 'vote'}
                   onClick={() => handleVote('DOWN')}
                 >
@@ -589,7 +618,15 @@ export default function PublicationDetailPage() {
           {advancedOutputsAvailable ? (
             <section className={`publication-advanced-card ${hasAdvancedAccess ? 'is-unlocked' : ''}`}>
               <div className="publication-advanced-card__visual" aria-hidden="true">
-                {hasAdvancedAccess ? <CheckCircle2 size={28} /> : <Sparkles size={28} />}
+                {hasAdvancedAccess ? (
+                  <CheckCircle2 size={28} />
+                ) : (
+                  <VoxidenceMark
+                    size={34}
+                    className="publication-advanced-card__brand-mark"
+                    title="Voxidence advanced evidence mark"
+                  />
+                )}
               </div>
 
               <div className="publication-advanced-card__copy">
@@ -671,8 +708,9 @@ export default function PublicationDetailPage() {
       {errorMessage ? <p className="publication-error">{errorMessage}</p> : null}
 
 
-      {paymentOpen ? (
-        <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose payment method">
+      {paymentOpen
+        ? createPortal(
+          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose payment method">
           <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setPaymentOpen(false)} />
           <section className="publication-payment-modal__panel">
             <header>
@@ -690,9 +728,6 @@ export default function PublicationDetailPage() {
               <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
                 <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
               </button>
-              <button type="button" className={paymentMethod === 'paypal' ? 'active' : ''} onClick={() => setPaymentMethod('paypal')}>
-                <i className="is-paypal">PP</i><span><strong>PayPal</strong><small>Continue securely in PayPal Sandbox</small></span><b>{paymentMethod === 'paypal' ? 'Selected' : 'Choose'}</b>
-              </button>
             </div>
             <footer>
               <div><ShieldCheck size={17} /><span><strong>Secure provider checkout</strong><small>Access is granted only after verified payment confirmation.</small></span></div>
@@ -702,16 +737,19 @@ export default function PublicationDetailPage() {
               </button>
             </footer>
           </section>
-        </div>
-      ) : null}
+          </div>,
+          document.body,
+        )
+        : null}
 
 
-      {advancedPaymentOpen ? (
-        <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose advanced-output payment method">
+      {advancedPaymentOpen
+        ? createPortal(
+          <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose advanced-output payment method">
           <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setAdvancedPaymentOpen(false)} />
           <section className="publication-payment-modal__panel publication-payment-modal__panel--advanced">
             <header>
-              <div className="publication-payment-modal__icon"><Sparkles size={24} /></div>
+              <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
               <div>
                 <span>ADVANCED OPPORTUNITY ACCESS</span>
                 <h2>Open the complete idea workspace</h2>
@@ -736,28 +774,28 @@ export default function PublicationDetailPage() {
               <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
                 <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
               </button>
-              <button type="button" className={paymentMethod === 'paypal' ? 'active' : ''} onClick={() => setPaymentMethod('paypal')}>
-                <i className="is-paypal">PP</i><span><strong>PayPal</strong><small>Continue securely in PayPal Sandbox</small></span><b>{paymentMethod === 'paypal' ? 'Selected' : 'Choose'}</b>
-              </button>
             </div>
 
             <footer>
               <div><ShieldCheck size={17} /><span><strong>Verified fulfillment</strong><small>The workspace opens only after backend reconciliation succeeds.</small></span></div>
               <button type="button" disabled={busyAction === 'advanced-unlock'} onClick={handleAdvancedUnlock}>
-                {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <Sparkles />}
+                {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
                 {busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment'}
               </button>
             </footer>
           </section>
-        </div>
-      ) : null}
+          </div>,
+          document.body,
+        )
+        : null}
 
-      {reportOpen ? (
-        <div className="publication-report-modal" role="dialog" aria-modal="true" aria-label="Report publication">
+      {reportOpen
+        ? createPortal(
+          <div className="publication-report-modal" role="dialog" aria-modal="true" aria-label="Report publication">
           <button type="button" className="publication-report-modal__backdrop" aria-label="Close report" onClick={() => setReportOpen(false)} />
           <form onSubmit={handleReport}>
             <header>
-              <div><span>TRUST & SAFETY</span><h2>Report this publication</h2><p>Your report is private and reviewed by the Nexora moderation team.</p></div>
+              <div><span>TRUST & SAFETY</span><h2>Report this publication</h2><p>Your report is private and reviewed by the Voxidence moderation team.</p></div>
               <button type="button" onClick={() => setReportOpen(false)}><X size={19} /></button>
             </header>
             <label>
@@ -780,8 +818,10 @@ export default function PublicationDetailPage() {
               <button type="submit" className="is-primary" disabled={busyAction === 'report'}><Flag size={16} /> Submit report</button>
             </footer>
           </form>
-        </div>
-      ) : null}
+          </div>,
+          document.body,
+        )
+        : null}
     </main>
   );
 }

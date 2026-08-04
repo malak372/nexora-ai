@@ -175,12 +175,12 @@ const TEMPLATE_LAYOUTS = {
     label: 'Value Proposition Canvas',
     className: 'is-vpc',
     order: [
-      'customerJobs',
-      'pains',
-      'gains',
       'productsAndServices',
       'painRelievers',
       'gainCreators',
+      'customerJobs',
+      'pains',
+      'gains',
     ],
     areas: {
       customerJobs: 'jobs',
@@ -194,15 +194,15 @@ const TEMPLATE_LAYOUTS = {
 };
 
 const ACCENTS = [
-  'violet',
-  'blue',
-  'mint',
-  'amber',
+  'eucalyptus',
   'rose',
-  'indigo',
-  'cyan',
-  'lime',
-  'plum',
+  'sage',
+  'pearl',
+  'teal',
+  'blush',
+  'mint',
+  'stone',
+  'seafoam',
 ];
 
 function normalizeKey(value) {
@@ -297,20 +297,13 @@ function buildSections(content, templateKey) {
   return [...ordered, ...remaining].map((entry, index) => ({
     ...entry,
     label: prettify(entry.originalKey),
-    area:
-      layout.areas[entry.key] ||
-      `extra-${index + 1}`,
+    area: layout.areas[entry.key] || null,
     accent: ACCENTS[index % ACCENTS.length],
     number: String(index + 1).padStart(2, '0'),
   }));
 }
 
 function buildPrintableHtml(model, sections, templateKey) {
-  const templateName =
-    model?.businessModelTemplate?.name ||
-    TEMPLATE_LAYOUTS[templateKey]?.label ||
-    'Business Model';
-
   const cards = sections
     .map((section) => {
       const items = normalizeItems(section.value);
@@ -338,42 +331,43 @@ function buildPrintableHtml(model, sections, templateKey) {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>${escapeHtml(templateName)} · Nexora AI</title>
+<title>Voxidence Business Model</title>
 <style>
 @page{size:A4 landscape;margin:9mm}
 *{box-sizing:border-box}
-body{margin:0;padding:0;font-family:Inter,Arial,sans-serif;color:#211a38;background:#fff}
-header{display:flex;justify-content:space-between;align-items:flex-end;padding:0 0 6mm;border-bottom:1px solid #e6e0f0}
-header span{color:#654bd7;font-size:9pt;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+body{margin:0;padding:0;font-family:Inter,Arial,sans-serif;color:#36413d;background:#fff}
+header{display:flex;justify-content:space-between;align-items:flex-end;padding:0 0 6mm;border-bottom:1px solid #dce9e5}
+header span{color:#2f7774;font-size:9pt;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
 header h1{margin:2mm 0 0;font-size:22pt;letter-spacing:-.04em}
-header small{color:#8c8598}
+header small{color:#78827e}
 .grid{display:grid;gap:3.4mm;padding-top:5mm}
-.grid.is-bmc,.grid.is-lean{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"partners activities value relationships segments" "partners resources value channels segments" "costs costs costs revenue revenue"}
+.grid.is-bmc{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"partners activities value relationships segments" "partners resources value channels segments" "costs costs costs revenue revenue"}
+.grid.is-lean{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"problem solution value advantage segments" "problem metrics value channels segments" "costs costs costs revenue revenue"}
 .grid.is-saas{grid-template-columns:1fr 1.35fr 1fr;grid-template-areas:"segments workflow retention" "acquisition workflow subscriptions" "infrastructure metrics economics"}
 .grid.is-marketplace{grid-template-columns:1fr 1.25fr 1fr;grid-template-areas:"demand exchange supply" "acquisition exchange trust" "liquidity operations revenue"}
 .grid.is-impact{grid-template-columns:1fr 1.2fr 1fr;grid-template-areas:"problem intervention beneficiaries" "partners value metrics" "costs sustainability sustainability"}
-.grid.is-vpc{grid-template-columns:repeat(2,1fr);grid-template-areas:"jobs products" "pains relievers" "gains creators"}
+.grid.is-vpc{grid-template-columns:repeat(2,1fr);grid-template-areas:"products jobs" "relievers pains" "creators gains"}
 .grid.is-dynamic{grid-template-columns:repeat(3,1fr)}
-.card{position:relative;min-height:42mm;padding:5mm;border:1px solid #e3ddec;border-radius:11px;background:linear-gradient(145deg,#fff,#faf8ff);break-inside:avoid}
-.card h2{margin:0 0 4mm;padding-right:11mm;color:#5440b8;font-size:10pt}
-.card p,.card li{font-size:8pt;line-height:1.42;color:#625c6f}
+.card{position:relative;min-height:42mm;padding:5mm;border:1px solid #dce9e5;border-radius:11px;background:linear-gradient(145deg,#fff,#f7fbf9);break-inside:avoid}
+.card h2{margin:0 0 4mm;padding-right:11mm;color:#2f7774;font-size:10pt}
+.card p,.card li{font-size:8pt;line-height:1.42;color:#5f6b66}
 .card ul{margin:0;padding-left:4mm}
-.number{position:absolute;right:4mm;top:3.5mm;color:#ded7f1;font-size:15pt;font-weight:900}
-${sections.map((section) => `.area-${section.area}{grid-area:${section.area}}`).join('')}
-footer{margin-top:5mm;padding-top:3mm;border-top:1px solid #e8e3f0;color:#918a9d;font-size:8pt;text-align:center}
+.number{position:absolute;right:4mm;top:3.5mm;color:#cfe2dd;font-size:15pt;font-weight:900}
+${sections.filter((section) => section.area).map((section) => `.area-${section.area}{grid-area:${section.area}}`).join('')}
+footer{margin-top:5mm;padding-top:3mm;border-top:1px solid #dce9e5;color:#87918d;font-size:8pt;text-align:center}
 </style>
 </head>
 <body>
 <header>
-  <div><span>Nexora AI · ${escapeHtml(
-    TEMPLATE_LAYOUTS[templateKey]?.label || 'Business model',
-  )}</span><h1>${escapeHtml(templateName)}</h1></div>
+  <div><span>Voxidence · Business Model Studio</span><h1>${escapeHtml(
+    TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
+  )}</h1></div>
   <small>Version ${escapeHtml(model?.version || 1)}</small>
 </header>
 <main class="grid ${escapeHtml(
     TEMPLATE_LAYOUTS[templateKey]?.className || 'is-dynamic',
   )}">${cards}</main>
-<footer>Nexora AI · Ideas built from real needs</footer>
+<footer>Voxidence · Ideas built from real needs</footer>
 </body>
 </html>`;
 }
@@ -622,7 +616,7 @@ export default function BusinessModelPage() {
                   return (
                     <motion.section
                       key={section.originalKey}
-                      className={`bm-card bm-card--${section.accent} bm-area--${section.area}`}
+                      className={`bm-card bm-card--${section.accent}${section.area ? ` bm-area--${section.area}` : ''}`}
                       initial={
                         shouldReduceMotion
                           ? undefined

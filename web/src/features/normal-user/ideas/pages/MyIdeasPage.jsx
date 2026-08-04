@@ -1,6 +1,7 @@
 /**
  * Private idea library.
  *
+ * Visual styling is provided by the Voxidence eucalyptus, pearl, and soft-rose theme.
  * Displays generated, unlocked, free, and accepted ideas in one unified
  * library. Search, date filtering, pagination, deletion, and accepted-item
  * normalization are handled inside this page.
@@ -12,6 +13,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Grid2X2,
+  Heart,
   RefreshCw,
   Search,
 } from 'lucide-react';
@@ -19,7 +21,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getAcceptedPublications } from '../../accepted/api/acceptedPublicationsApi';
-import { deleteMyIdea, getMyIdeas } from '../api/userIdeasApi';
+import {
+  addIdeaToFavorites,
+  deleteMyIdea,
+  getMyFavoriteIdeas,
+  getMyIdeas,
+  removeIdeaFromFavorites,
+} from '../api/userIdeasApi';
 import IdeaLibraryCard from '../components/IdeaLibraryCard';
 import '../styles/ideas.css';
 
@@ -40,6 +48,11 @@ const FILTERS = [
     value: 'accepted',
     label: 'Accepted',
     icon: CheckCircle2,
+  },
+  {
+    value: 'favorites',
+    label: 'Favorite ideas',
+    icon: Heart,
   },
 ];
 
@@ -259,6 +272,9 @@ export default function MyIdeasPage() {
   const [error, setError] =
     useState('');
 
+  const [favoriteProcessingId, setFavoriteProcessingId] =
+    useState('');
+
   /**
    * Builds backend query parameters for standard idea filters.
    */
@@ -296,6 +312,40 @@ export default function MyIdeasPage() {
       const hasDateRange = Boolean(
         fromDate || toDate,
       );
+
+      if (filter === 'favorites') {
+        const favoriteItems = await getMyFavoriteIdeas({ force });
+
+        const filtered = favoriteItems.filter((item) => {
+          const query = search.trim().toLowerCase();
+          const matchesSearch =
+            !query ||
+            String(item?.title ?? '').toLowerCase().includes(query) ||
+            String(item?.problemStatement ?? '').toLowerCase().includes(query) ||
+            String(item?.domain?.name ?? '').toLowerCase().includes(query);
+
+          return (
+            matchesSearch &&
+            (!hasDateRange ||
+              matchesDateRange(item, fromDate, toDate))
+          );
+        });
+
+        const start = (page - 1) * PAGE_SIZE;
+
+        setItems(filtered.slice(start, start + PAGE_SIZE));
+        setPagination({
+          page,
+          limit: PAGE_SIZE,
+          total: filtered.length,
+          totalPages: Math.max(
+            1,
+            Math.ceil(filtered.length / PAGE_SIZE),
+          ),
+        });
+
+        return;
+      }
 
       if (filter === 'accepted') {
         const acceptedParams = {
@@ -661,8 +711,72 @@ export default function MyIdeasPage() {
     }
   }
 
+  /**
+   * Adds or removes an owned/accepted idea from the private favorites list.
+   *
+   * @param {object} idea
+   */
+  async function handleToggleFavorite(idea) {
+    const sourceIdeaId =
+      idea?.publication?.ideaId ??
+      idea?.id;
+
+    if (!sourceIdeaId) {
+      setError('This idea cannot be added to favorites yet.');
+      return;
+    }
+
+    try {
+      setFavoriteProcessingId(sourceIdeaId);
+      setError('');
+
+      if (idea?.isFavorite) {
+        await removeIdeaFromFavorites(sourceIdeaId);
+      } else {
+        await addIdeaToFavorites(sourceIdeaId);
+      }
+
+      if (filter === 'favorites' && idea?.isFavorite) {
+        setItems((current) =>
+          current.filter((item) => item !== idea),
+        );
+
+        setPagination((current) => ({
+          ...current,
+          total: Math.max(
+            0,
+            Number(current.total ?? 0) - 1,
+          ),
+        }));
+
+        return;
+      }
+
+      setItems((current) =>
+        current.map((item) =>
+          item === idea
+            ? {
+                ...item,
+                isFavorite: !idea?.isFavorite,
+              }
+            : item,
+        ),
+      );
+    } catch (requestError) {
+      setError(
+        requestError.message ||
+          'The favorite status could not be updated.',
+      );
+    } finally {
+      setFavoriteProcessingId('');
+    }
+  }
+
   const isAcceptedView =
     filter === 'accepted';
+
+  const isFavoritesView =
+    filter === 'favorites';
 
   return (
     <section className="ideas-page reveal-page">
@@ -685,11 +799,15 @@ export default function MyIdeasPage() {
           className={`ideas-page__count${
             isAcceptedView
               ? ' ideas-page__count--accepted'
-              : ''
+              : isFavoritesView
+                ? ' ideas-page__count--favorites'
+                : ''
           }`}
         >
           {isAcceptedView ? (
             <CheckCircle2 size={18} />
+          ) : isFavoritesView ? (
+            <Heart size={18} fill="currentColor" />
           ) : (
             <Grid2X2 size={18} />
           )}
@@ -702,7 +820,9 @@ export default function MyIdeasPage() {
           <span>
             {isAcceptedView
               ? 'accepted'
-              : 'ideas'}
+              : isFavoritesView
+                ? 'favorites'
+                : 'ideas'}
           </span>
         </div>
       </header>
@@ -844,7 +964,9 @@ export default function MyIdeasPage() {
                   option.value ===
                   'accepted'
                     ? ' is-accepted-filter'
-                    : ''
+                    : option.value === 'favorites'
+                      ? ' is-favorites-filter'
+                      : ''
                 }`}
                 onClick={() =>
                   handleFilterChange(option.value)
@@ -983,6 +1105,13 @@ export default function MyIdeasPage() {
                       handleDelete(
                         idea,
                       )
+              }
+              onToggleFavorite={() =>
+                handleToggleFavorite(idea)
+              }
+              favoriteProcessing={
+                favoriteProcessingId ===
+                (idea?.publication?.ideaId ?? idea?.id)
               }
             />
           ))}

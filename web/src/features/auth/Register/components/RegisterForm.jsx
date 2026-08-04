@@ -339,7 +339,7 @@ export default function RegisterForm() {
                 ...currentModal,
                 message:
                     result?.message ||
-                    'Your email was verified successfully. Your Nexora workspace is ready.',
+                    'Your email was verified successfully. Your Voxidence workspace is ready.',
             }));
         } catch (error) {
             setVerificationError(
@@ -917,7 +917,7 @@ export default function RegisterForm() {
                     >
                         <div className="register-legal-modal__header">
                             <div>
-                                <p>Nexora AI</p>
+                                <p>Voxidence</p>
                                 <h2 id="register-legal-title">
                                     {legalModal === 'terms'
                                         ? 'Terms of Service'
@@ -938,7 +938,7 @@ export default function RegisterForm() {
                                 <>
                                     <h3>Using Nexora responsibly</h3>
                                     <p>
-                                        Nexora AI helps users discover, generate, evaluate, and manage software project ideas. You must provide accurate account information and use the platform only for lawful, academic, research, or business purposes.
+                                        Voxidence helps users discover, generate, evaluate, and manage software project ideas. You must provide accurate account information and use the platform only for lawful, academic, research, or business purposes.
                                     </p>
                                     <h3>Your account and generated content</h3>
                                     <p>

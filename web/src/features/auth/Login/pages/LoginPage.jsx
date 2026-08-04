@@ -1,5 +1,5 @@
 /**
- * Nexora AI creative login page.
+ * Voxidence creative login page.
  *
  * Renders an animated authentication experience, authenticates the user,
  * persists the session, and redirects them to the proper workspace.
@@ -27,6 +27,7 @@ import { ROUTES } from '../../../../constants/routes.constants';
 import { saveAuthSession } from '../../shared/auth.storage';
 import { login } from '../api/login.api';
 import LoginForm from '../components/LoginForm';
+import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
 import '../styles/login-page.css';
 
@@ -34,17 +35,17 @@ const storyItems = [
     {
         icon: Radar,
         title: 'Hear what others miss',
-        text: 'Reveal repeating needs hidden inside real community conversations.',
+        text: 'Reveal recurring needs hidden in real conversations.',
     },
     {
         icon: BrainCircuit,
         title: 'Turn noise into direction',
-        text: 'Transform raw signals into focused and validated software opportunities.',
+        text: 'Turn raw signals into focused, validated opportunities.',
     },
     {
         icon: Layers3,
         title: 'Build with confidence',
-        text: 'Move from discovery to evaluation and planning in one intelligent workspace.',
+        text: 'Move from discovery to confident planning in one workspace.',
     },
 ];
 
@@ -217,19 +218,15 @@ export default function LoginPage() {
                                 whileHover={{ rotate: 10, scale: 1.08 }}
                                 whileTap={{ scale: 0.96 }}
                             >
-                                <Sparkles size={22} aria-hidden="true" />
+                                <VoxidenceMark size={24} />
                             </motion.span>
 
                             <span className="nx-brand__copy">
-                                <strong>Nexora AI</strong>
+                                <strong>Voxidence</strong>
                                 <small>Ideas built from real needs</small>
                             </span>
                         </Link>
 
-                        <span className="nx-brand__status">
-                            <span />
-                            Intelligence online
-                        </span>
                     </header>
 
                     <div className="nx-signal-map" aria-hidden="true">
@@ -266,7 +263,7 @@ export default function LoginPage() {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.29 }}
                         >
-                            Nexora listens to real community needs, discovers
+                            Voxidence listens to real community needs, discovers
                             the patterns others overlook, and transforms them
                             into software ideas backed by evidence—not guesswork.
                         </motion.p>
@@ -318,7 +315,7 @@ export default function LoginPage() {
 
                     <footer className="nx-login__story-footer">
                         <div className="nx-login__mini-orbit" aria-hidden="true">
-                            <span>NX</span>
+                            <span>VX</span>
                             <span>AI</span>
                             <span>+</span>
                         </div>
@@ -347,11 +344,11 @@ export default function LoginPage() {
                     <div className="nx-login__mobile-brand">
                         <Link className="nx-brand__link" to={ROUTES.HOME}>
                             <span className="nx-brand__symbol">
-                                <Sparkles size={21} aria-hidden="true" />
+                                <VoxidenceMark size={21} />
                             </span>
 
                             <span className="nx-brand__copy">
-                                <strong>Nexora AI</strong>
+                                <strong>Voxidence</strong>
                                 <small>Ideas built from real needs</small>
                             </span>
                         </Link>

@@ -1,5 +1,5 @@
 /**
- * Verifies a provider payment and waits until the related Nexora access is
+ * Verifies a provider payment and waits until the related Voxidence access is
  * fully applied. The backend remains the only authority for payment success.
  */
 
@@ -12,6 +12,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { updateStoredUser } from '../../../auth/shared/auth.storage';
@@ -50,18 +51,18 @@ function isFulfillmentComplete(payment) {
 
 function getProcessingMessage(payment) {
   if (payment?.paymentPurpose === 'DIRECT_UNLOCK') {
-    return 'Your payment is verified. Nexora is generating and attaching the advanced idea outputs now.';
+    return 'Your payment is verified. Voxidence is generating and attaching the advanced idea outputs now.';
   }
 
   if (payment?.paymentPurpose === 'ACCEPT_PUBLICATION') {
-    return 'Your payment is verified. Nexora is opening the accepted publication details now.';
+    return 'Your payment is verified. Voxidence is opening the accepted publication details now.';
   }
 
   if (payment?.paymentPurpose === 'UNLOCK_PUBLICATION_ADVANCED') {
-    return 'Your payment is verified. Nexora is attaching the advanced publication outputs now.';
+    return 'Your payment is verified. Voxidence is attaching the advanced publication outputs now.';
   }
 
-  return 'Nexora is verifying the provider session and applying your access safely.';
+  return 'Voxidence is verifying the provider session and applying your access safely.';
 }
 
 export default function PaymentResultPage() {
@@ -80,7 +81,7 @@ export default function PaymentResultPage() {
     loading: true,
     error: '',
     payment: null,
-    processingMessage: 'Nexora is verifying the provider session and applying your access safely.',
+    processingMessage: 'Voxidence is verifying the provider session and applying your access safely.',
   });
 
   const confirmPayment = useCallback(async () => {
@@ -256,7 +257,7 @@ export default function PaymentResultPage() {
     navigate('/normal/dashboard');
   };
 
-  return (
+  return createPortal(
     <main className="payment-result-page">
       <section className={`payment-result-pop ${state.error ? 'is-error' : ''}`}>
         {state.loading ? (
@@ -308,7 +309,7 @@ export default function PaymentResultPage() {
             </h1>
             <p>
               The backend verified the provider payment and completed the related
-              Nexora access.
+              Voxidence access.
             </p>
             <div className="payment-result-facts">
               <b>
@@ -325,5 +326,7 @@ export default function PaymentResultPage() {
         )}
       </section>
     </main>
+    ,
+    document.body,
   );
 }

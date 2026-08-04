@@ -4,6 +4,9 @@
  * Displays the authenticated user's name and optional profile image. When the
  * backend does not provide an image URL, the component falls back to initials.
  * Secondary account actions remain inside the profile menu.
+ *
+ * The header keeps the Voxidence eucalyptus-and-rose identity consistent
+ * across search focus, premium upgrade, user identity, and menu interactions.
  */
 import {
   Bell,
@@ -15,6 +18,7 @@ import {
   Lightbulb,
   LogOut,
   Menu,
+  ReceiptText,
   Settings,
   SlidersHorizontal,
   Search,
@@ -27,6 +31,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
+import VoxidenceMark from '../../components/brand/VoxidenceMark';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -38,7 +43,7 @@ const PRIMARY_ITEMS = [
 
 function getInitials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return 'NX';
+  if (!parts.length) return 'VX';
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 }
 
@@ -49,7 +54,7 @@ export default function NormalHeader({ onOpenMenu }) {
   const [user, setUser] = useState(() => getStoredUser() ?? {});
   const [headerSearch, setHeaderSearch] = useState('');
 
-  const displayName = user.fullName || user.name || 'Nexora user';
+  const displayName = user.fullName || user.name || 'Voxidence user';
   const accessLabel = user.accountStatus === 'PREMIUM' ? 'Premium access' : 'Normal access';
   const imageUrl = resolveMediaUrl(user.avatarUrl || user.profileImageUrl || user.photoUrl || '');
   const initials = getInitials(displayName);
@@ -95,13 +100,13 @@ export default function NormalHeader({ onOpenMenu }) {
       >
         <div className="normal-header__ambient" aria-hidden="true"><i /><i /></div>
 
-        <NavLink className="normal-header__brand" to="/normal/dashboard" aria-label="Nexora workspace home">
+        <NavLink className="normal-header__brand" to="/normal/dashboard" aria-label="Voxidence workspace home">
           <motion.span className="normal-header__brand-mark" whileHover={{ rotate: 8, scale: 1.06 }}>
-            <Sparkles size={20} />
+            <VoxidenceMark size={22} />
             <i />
           </motion.span>
           <div className="normal-header__brand-copy">
-            <strong>Nexora AI</strong>
+            <strong>Voxidence</strong>
             <small>Ideas built from real needs</small>
           </div>
         </NavLink>
@@ -163,12 +168,14 @@ export default function NormalHeader({ onOpenMenu }) {
           </motion.button>
 
           <div className="normal-header__profile-wrap" ref={menuRef}>
-            <button
+            <motion.button
               type="button"
               className="normal-header__profile"
               onClick={() => setMenuOpen((open) => !open)}
               aria-expanded={menuOpen}
               aria-haspopup="menu"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.97 }}
             >
               <span className="normal-header__avatar" aria-hidden="true">
                 {imageUrl ? <img src={imageUrl} alt="" /> : initials}
@@ -179,7 +186,7 @@ export default function NormalHeader({ onOpenMenu }) {
                 <small>{accessLabel}</small>
               </div>
               <ChevronDown className={menuOpen ? 'is-rotated' : ''} size={14} />
-            </button>
+            </motion.button>
 
             <AnimatePresence>
               {menuOpen ? (
@@ -195,10 +202,13 @@ export default function NormalHeader({ onOpenMenu }) {
                       {imageUrl ? <img src={imageUrl} alt="" /> : initials}
                       <i className="normal-header__online-dot normal-header__online-dot--menu" title="Online" />
                     </span>
-                    <div><b>{displayName}</b><small>{user.email || 'Manage your Nexora experience'}</small></div>
+                    <div><b>{displayName}</b><small>{user.email || 'Manage your Voxidence experience'}</small></div>
                   </div>
                   <button type="button" onClick={() => navigateFromMenu('/normal/compliance')}>
                     <ShieldAlert size={16} /><span><b>Complaints</b><small>Cases and admin replies</small></span>
+                  </button>
+                  <button type="button" onClick={() => navigateFromMenu('/normal/billing')}>
+                    <ReceiptText size={16} /><span><b>Billing & invoices</b><small>Payments and downloadable records</small></span>
                   </button>
                   <button type="button" onClick={() => navigateFromMenu('/normal/preferences')}>
                     <SlidersHorizontal size={16} /><span><b>Preferences</b><small>Discovery defaults</small></span>

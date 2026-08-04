@@ -44,14 +44,14 @@ export default function DashboardContactSection() {
 
     try {
       await createContactMessage({
-        fullName: user.fullName || user.name || 'Nexora user',
+        fullName: user.fullName || user.name || 'Voxidence user',
         email: user.email,
         subject: form.subject.trim(),
         message: form.message.trim(),
       });
 
       setForm(INITIAL_FORM);
-      setSuccess('Your message was sent to the Nexora team successfully.');
+      setSuccess('Your message was sent to the Voxidence team successfully.');
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Your message could not be sent.'));
     } finally {
@@ -67,10 +67,10 @@ export default function DashboardContactSection() {
           <Sparkles size={21} />
         </div>
         <div>
-          <span className="normal-eyebrow"><Sparkles size={14} /> About Nexora AI</span>
+          <span className="normal-eyebrow"><Sparkles size={14} /> About Voxidence</span>
           <h2>AI that starts with real community needs.</h2>
           <p>
-            Nexora collects public signals, analyzes repeated problems with NLP,
+            Voxidence collects public signals, analyzes repeated problems with NLP,
             compares multiple AI-generated candidates, and returns one structured,
             validated software opportunity.
           </p>
@@ -86,7 +86,7 @@ export default function DashboardContactSection() {
         <div className="normal-contact-card__heading">
           <span className="normal-eyebrow"><MessageSquareText size={14} /> Contact us</span>
           <h2>Need help or have feedback?</h2>
-          <p>Your message is stored directly in the Nexora backend for the team to review.</p>
+          <p>Your message is stored directly in the Voxidence backend for the team to review.</p>
         </div>
 
         <form onSubmit={submit}>

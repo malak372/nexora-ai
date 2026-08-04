@@ -1,5 +1,5 @@
 /**
- * Displays the Nexora registration experience.
+ * Displays the Voxidence registration experience.
  *
  * Reuses the animated identity of the sign-in page while presenting
  * a compact account-creation flow for new users.
@@ -23,6 +23,7 @@ import { useRef } from 'react';
 import { Link } from 'react-router-dom';
 
 import RegisterForm from '../components/RegisterForm';
+import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
 import '../../Login/styles/login-page.css';
 import '../styles/register-page.css';
@@ -196,7 +197,7 @@ export default function RegisterPage() {
                         <Link
                             to="/"
                             className="nx-register__brand"
-                            aria-label="Go to Nexora home page"
+                            aria-label="Go to Voxidence home page"
                         >
                             <motion.span
                                 className="nx-register__brand-mark"
@@ -208,26 +209,17 @@ export default function RegisterPage() {
                                     scale: 0.96,
                                 }}
                             >
-                                <Sparkles
-                                    size={21}
-                                    aria-hidden="true"
-                                />
+                                <VoxidenceMark size={23} />
                             </motion.span>
 
                             <span className="nx-register__brand-copy">
-                                <strong>Nexora AI</strong>
+                                <strong>Voxidence</strong>
 
                                 <small>
                                     Ideas built from real needs
                                 </small>
                             </span>
                         </Link>
-
-                        <span className="nx-register__status">
-                            <span aria-hidden="true" />
-
-                            Intelligence online
-                        </span>
                     </header>
 
                     <div
@@ -302,7 +294,7 @@ export default function RegisterPage() {
                                 delay: 0.29,
                             }}
                         >
-                            Nexora listens to real community needs, discovers
+                            Voxidence listens to real community needs, discovers
                             the patterns others overlook, and transforms them
                             into software ideas backed by evidence—not
                             guesswork.
@@ -372,7 +364,7 @@ export default function RegisterPage() {
                             className="nx-register__mini-avatars"
                             aria-hidden="true"
                         >
-                            <span>NX</span>
+                            <span>VX</span>
                             <span>AI</span>
                             <span>+</span>
                         </div>

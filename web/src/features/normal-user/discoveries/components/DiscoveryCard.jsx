@@ -13,13 +13,14 @@ import {
   ThumbsDown,
   ThumbsUp,
   UserRound,
+  UsersRound,
 } from 'lucide-react';
 import {
   motion,
   useReducedMotion,
 } from 'framer-motion';
 
-function getInitials(value = 'Nexora') {
+function getInitials(value = 'Voxidence') {
   return value
     .split(' ')
     .filter(Boolean)
@@ -38,7 +39,7 @@ export default function DiscoveryCard({
 
   const publisherName =
     publication?.publisher?.fullName ||
-    'Nexora creator';
+    'Voxidence creator';
 
   const isAccepted = Boolean(
     publication?.isAccepted ||
@@ -49,7 +50,7 @@ export default function DiscoveryCard({
   const abstract =
     publication?.publicAbstract ||
     publication?.publicProblem ||
-    'A software opportunity shared with the Nexora community for discovery and collaboration.';
+    'A software opportunity shared with the Voxidence community for discovery and collaboration.';
 
   return (
     <motion.article
@@ -101,7 +102,7 @@ export default function DiscoveryCard({
 
         <span className="discovery-story__planet">
           {getInitials(
-            publication?.publicTitle || 'NX',
+            publication?.publicTitle || 'VX',
           )}
         </span>
 
@@ -118,7 +119,7 @@ export default function DiscoveryCard({
             <strong>{publisherName}</strong>
             <small>
               <UserRound size={12} />
-              Published in Nexora
+              Published in Voxidence
             </small>
           </div>
         </div>
@@ -156,6 +157,12 @@ export default function DiscoveryCard({
           <span>
             <MessageCircleMore size={15} />
             {publication?.feedbackCount ?? 0}
+          </span>
+
+          <span className="is-accepted-count">
+            <UsersRound size={15} />
+            {publication?.acceptanceCount ?? 0}
+            <small>accepted</small>
           </span>
         </div>
 

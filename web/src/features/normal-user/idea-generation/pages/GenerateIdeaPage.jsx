@@ -1,41 +1,200 @@
 /**
- * Four-step idea generation flow.
- * Data sources are deliberately not user-selectable; the backend resolves the
- * strongest active sources from the request context.
+ * Four-step Voxidence idea-generation flow.
+ *
+ * Preserves speech recognition, multi-domain selection, draft persistence,
+ * validation, submission, routing, and step order. The page also performs a
+ * server-backed entitlement check before allowing a normal free generation.
+ * Data sources remain backend-resolved from the request context.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Globe2, MapPin, Mic, MicOff, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Crown, Globe2, Layers3, LockKeyhole, MapPin, Mic, MicOff, Sparkles, WandSparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 import { getAvailableDomains, startIdeaGeneration } from '../api/ideaGenerationApi';
+import { getNormalUserSummary } from '../../dashboard/api/dashboardApi';
 import { GENERATION_TYPES, LANGUAGE_OPTIONS } from '../constants/generation.constants';
 import { useGenerationDraftStore } from '../store/generationDraft.store';
 import { normalizeGenerationStartResponse } from '../utils/pipeline.utils';
 import { saveActiveGenerationRunId } from '../store/activeGenerationRun.storage';
 import '../styles/generation.css';
 
-const STEPS = [['Signal', 'Describe the real problem'], ['Focus', 'Let Nexora understand the domain'], ['Ground', 'Add local context'], ['Launch', 'Review and generate']];
+const STEPS = [['Signal', 'Describe the real problem'], ['Focus', 'Blend up to three domains'], ['Ground', 'Add local context'], ['Launch', 'Review and generate']];
+const MAX_SELECTED_DOMAINS = 3;
 const list = value => Array.isArray(value) ? value : value?.data ?? value?.items ?? value?.results ?? [];
 
 export default function GenerateIdeaPage() {
   const navigate = useNavigate(); const [params] = useSearchParams(); const { draft, updateDraft, resetDraft } = useGenerationDraftStore();
-  const recognitionRef = useRef(null); const [step, setStep] = useState(0); const [domains, setDomains] = useState([]); const [loadingDomains, setLoadingDomains] = useState(true); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState(''); const [listening, setListening] = useState(false); const [voiceError, setVoiceError] = useState('');
+  const recognitionRef = useRef(null); const [step, setStep] = useState(0); const [domains, setDomains] = useState([]); const [loadingDomains, setLoadingDomains] = useState(true); const [submitting, setSubmitting] = useState(false); const [error, setError] = useState(''); const [listening, setListening] = useState(false); const [voiceError, setVoiceError] = useState(''); const [checkingEntitlement, setCheckingEntitlement] = useState(true); const [generationBlocked, setGenerationBlocked] = useState(false); const [remainingFreeGenerations, setRemainingFreeGenerations] = useState(null);
+
+  /**
+   * Loads the current generation allowance from the backend-backed dashboard
+   * summary. The modal blocks the complete wizard when no normal generation
+   * remains, preventing the user from completing a form that cannot be sent.
+   */
+  useEffect(() => {
+    let active = true;
+
+    getNormalUserSummary({ force: true })
+      .then((summary) => {
+        if (!active) return;
+
+        const remaining = Number(summary?.remainingFreeGenerations ?? 0);
+        setRemainingFreeGenerations(remaining);
+        setGenerationBlocked(remaining <= 0);
+      })
+      .catch(() => {
+        // The generation endpoint remains authoritative. A summary failure does
+        // not permanently block the user because submission errors are handled
+        // below using the backend error code.
+      })
+      .finally(() => {
+        if (active) setCheckingEntitlement(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => { const problem = params.get('problem'); if (problem && !draft.description) updateDraft({ description: problem.slice(0, 2000) }); }, [params, draft.description, updateDraft]);
   useEffect(() => { let active = true; getAvailableDomains().then(value => { if (active) setDomains(list(value)); }).catch(() => { }).finally(() => { if (active) setLoadingDomains(false); }); return () => { active = false; recognitionRef.current?.stop(); }; }, []);
-  const selectedDomain = useMemo(() => domains.find(domain => String(domain.id) === String(draft.domainId)), [domains, draft.domainId]);
+  const selectedDomainIds = useMemo(() => {
+    const stored = Array.isArray(draft.domainIds) ? draft.domainIds : [];
+    return stored.length ? stored : draft.domainId ? [draft.domainId] : [];
+  }, [draft.domainId, draft.domainIds]);
+  const selectedDomains = useMemo(() => domains.filter(domain => selectedDomainIds.some(id => String(id) === String(domain.id))), [domains, selectedDomainIds]);
   const hasSignal = draft.description.trim().length >= 10;
-  const canContinue = step === 0 ? hasSignal : step === 1 ? (hasSignal || Boolean(draft.domainId)) : step === 2 ? Boolean(draft.country.trim()) : true;
+  const canContinue = step === 0 ? hasSignal : step === 1 ? (hasSignal || selectedDomainIds.length > 0) : step === 2 ? Boolean(draft.country.trim()) : true;
+
+  const toggleDomain = (domainId) => {
+    const exists = selectedDomainIds.some((id) => String(id) === String(domainId));
+    const nextDomainIds = exists
+      ? selectedDomainIds.filter((id) => String(id) !== String(domainId))
+      : selectedDomainIds.length < MAX_SELECTED_DOMAINS
+        ? [...selectedDomainIds, domainId]
+        : selectedDomainIds;
+
+    updateDraft({
+      domainIds: nextDomainIds,
+      domainId: nextDomainIds[0] ?? '',
+    });
+  };
   const toggleVoice = () => { setVoiceError(''); if (listening) { recognitionRef.current?.stop(); return; } const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SpeechRecognition) { setVoiceError('Voice typing is not supported here. Use Chrome or Edge.'); return; } const recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = draft.language === 'AR' ? 'ar' : draft.language === 'EN' ? 'en-US' : navigator.language || 'en-US'; let committed = draft.description; recognition.onstart = () => setListening(true); recognition.onend = () => setListening(false); recognition.onerror = e => { setListening(false); setVoiceError(e.error === 'not-allowed' ? 'Allow microphone access to use voice typing.' : 'Voice typing stopped. Please try again.'); }; recognition.onresult = event => { let interim = ''; for (let i = event.resultIndex; i < event.results.length; i += 1) { const transcript = event.results[i][0].transcript; if (event.results[i].isFinal) committed = `${committed} ${transcript}`.trim(); else interim += transcript; } updateDraft({ description: `${committed} ${interim}`.trim().slice(0, 2000) }); }; recognitionRef.current = recognition; recognition.start(); };
-  const submit = async () => { setError(''); setSubmitting(true); try { const response = await startIdeaGeneration({ ...(draft.domainId ? { domainId: draft.domainId } : {}), generationType: GENERATION_TYPES.NORMAL_FREE, ...(draft.description.trim() ? { description: draft.description.trim() } : {}), country: draft.country.trim(), ...(draft.city.trim() ? { city: draft.city.trim() } : {}), ...(draft.region.trim() ? { region: draft.region.trim() } : {}), language: draft.language, forceRefresh: Boolean(draft.forceRefresh), keywords: draft.keywords }); const result = normalizeGenerationStartResponse(response); if (!result.runId) throw new Error('Generation started without a run identifier.'); saveActiveGenerationRunId(result.runId); resetDraft(); navigate(`/normal/generation/${result.runId}`); } catch (e) { setError(e?.response?.data?.message || e?.message || 'Idea generation could not be started.'); } finally { setSubmitting(false); } };
+  const submit = async () => {
+    if (generationBlocked || checkingEntitlement) return;
+
+    setError('');
+    setSubmitting(true);
+
+    try {
+      const response = await startIdeaGeneration({
+        ...(selectedDomainIds.length
+          ? { domainIds: selectedDomainIds, domainId: selectedDomainIds[0] }
+          : {}),
+        generationType: GENERATION_TYPES.NORMAL_FREE,
+        ...(draft.description.trim()
+          ? { description: draft.description.trim() }
+          : {}),
+        country: draft.country.trim(),
+        ...(draft.city.trim() ? { city: draft.city.trim() } : {}),
+        ...(draft.region.trim() ? { region: draft.region.trim() } : {}),
+        language: draft.language,
+        forceRefresh: Boolean(draft.forceRefresh),
+        keywords: draft.keywords,
+      });
+
+      const result = normalizeGenerationStartResponse(response);
+
+      if (!result.runId) {
+        throw new Error('Generation started without a run identifier.');
+      }
+
+      saveActiveGenerationRunId(result.runId);
+      resetDraft();
+      navigate(`/normal/generation/${result.runId}`);
+    } catch (requestError) {
+      const responseBody = requestError?.response?.data;
+      const backendCode =
+        responseBody?.code ??
+        responseBody?.error?.code ??
+        responseBody?.details?.code;
+
+      if (backendCode === 'FREE_LIMIT_REACHED') {
+        setRemainingFreeGenerations(0);
+        setGenerationBlocked(true);
+        return;
+      }
+
+      setError(
+        responseBody?.message ||
+        requestError?.message ||
+        'Idea generation could not be started.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return <div className="nx-generation-page"><section className="nx-generation-shell">
-    <header className="nx-generation-hero"><span className="nx-kicker"><WandSparkles size={14} />Signal discovery studio</span><h1>Start with the problem.<br /><span>Nexora finds the opportunity.</span></h1><p>Begin with a written or spoken signal, or skip straight to a domain. Nexora keeps collection strategy and evidence ranking intelligent and automatic.</p></header>
+    <header className="nx-generation-hero"><span className="nx-kicker"><WandSparkles size={14} />Signal discovery studio</span><h1>Start with the problem.<br /><span>Voxidence finds the opportunity.</span></h1><p>Begin with a written or spoken signal, or skip straight to a domain. Voxidence keeps collection strategy and evidence ranking intelligent and automatic.</p></header>
     <div className="nx-step-rail">{STEPS.map(([title, caption], index) => <div key={title} className={`nx-step ${index === step ? 'is-current' : ''} ${index < step ? 'is-complete' : ''}`}><span>{index < step ? <Check size={15} /> : index + 1}</span><div><b>{title}</b><small>{caption}</small></div>{index < STEPS.length - 1 ? <i /> : null}</div>)}</div>
     <div className="nx-generation-card">
-      {step === 0 ? <section className="nx-panel nx-panel--signal"><div className="nx-panel__head"><div><span className="nx-kicker"><Sparkles size={14} />Tell us what you noticed</span><h2>What real problem should Nexora investigate?</h2><p>Describe the frustration, who experiences it, and why current solutions are not enough.</p></div><span className="nx-private-note">Private workspace</span></div><div className="nx-speech-field"><textarea value={draft.description} maxLength={2000} onChange={e => updateDraft({ description: e.target.value })} placeholder="Example: Students in Nablus struggle to coordinate shared transport because schedules change and there is no trusted real-time matching system…" /><button type="button" className={listening ? 'is-listening' : ''} onClick={toggleVoice}>{listening ? <MicOff size={20} /> : <Mic size={20} />}<span>{listening ? 'Listening…' : 'Speak to type'}</span></button><small>{draft.description.length}/2000</small></div>{voiceError ? <p className="nx-inline-error">{voiceError}</p> : null}<div className="nx-signal-tips"><span>Include who is affected</span><span>Explain the repeated pain</span><span>Mention the location when relevant</span></div><div className="nx-skip-signal"><div><b>No description yet?</b><small>Continue directly to domain selection. You can generate without typing or recording.</small></div><button type="button" onClick={() => setStep(1)}>Choose a domain instead <ArrowRight size={16} /></button></div></section> : null}
-      {step === 1 ? <section className="nx-panel"><span className="nx-kicker"><Globe2 size={14} />Opportunity focus</span><h2>Choose a domain, or let Nexora resolve it.</h2><p>{hasSignal ? 'Your description is the primary signal. You may keep automatic resolution or select a domain for sharper focus.' : 'Choose one domain to continue. Automatic detection needs a written or spoken signal.'}</p><div className="nx-auto-domain"><button type="button" disabled={!hasSignal} className={`${!draft.domainId && hasSignal ? 'is-selected' : ''} ${!hasSignal ? 'is-disabled' : ''}`} onClick={() => updateDraft({ domainId: '' })}><Sparkles size={20} /><div><b>Auto-detect the best domain</b><small>{hasSignal ? 'Recommended · resolved from your problem and keywords' : 'Add a description first to use automatic detection'}</small></div><Check size={17} /></button></div><div className="nx-domain-grid">{loadingDomains ? <p>Loading domains…</p> : domains.map(domain => <button type="button" key={domain.id} className={String(draft.domainId) === String(domain.id) ? 'is-selected' : ''} onClick={() => updateDraft({ domainId: domain.id })}><span>{domain.icon || '✦'}</span><b>{domain.name ?? domain.displayName}</b><small>{domain.description ?? 'Software opportunity domain'}</small></button>)}</div></section> : null}
-      {step === 2 ? <section className="nx-panel"><span className="nx-kicker"><MapPin size={14} />Local intelligence</span><h2>Where should the solution create impact?</h2><p>This context improves local relevance, regulation checks, and market assumptions.</p><div className="nx-location-grid"><label><span>Country *</span><input value={draft.country} maxLength={100} onChange={e => updateDraft({ country: e.target.value })} /></label><label><span>City</span><input value={draft.city} maxLength={100} onChange={e => updateDraft({ city: e.target.value })} placeholder="Nablus" /></label><label><span>Region</span><input value={draft.region} maxLength={100} onChange={e => updateDraft({ region: e.target.value })} placeholder="West Bank" /></label><label><span>Community language</span><select value={draft.language} onChange={e => updateDraft({ language: e.target.value })}>{LANGUAGE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div><div className="nx-source-note"><Sparkles size={18} /><div><b>No manual data-source selection</b><p>Nexora's backend chooses active sources according to the resolved domain, language, location, availability, and evidence quality.</p></div></div></section> : null}
-      {step === 3 ? <section className="nx-panel"><span className="nx-kicker"><Sparkles size={14} />Ready to discover</span><h2>Review the signal before launching.</h2><div className="nx-review-layout"><article className="nx-review-problem"><span>Discovery input</span><p>{draft.description || `Direct domain discovery: ${selectedDomain?.name ?? selectedDomain?.displayName ?? 'Selected domain'}`}</p></article><div className="nx-review-facts"><article><span>Domain</span><b>{selectedDomain?.name ?? selectedDomain?.displayName ?? 'Auto-detected by Nexora'}</b></article><article><span>Location</span><b>{[draft.city, draft.region, draft.country].filter(Boolean).join(', ')}</b></article><article><span>Language</span><b>{LANGUAGE_OPTIONS.find(item => item.value === draft.language)?.label}</b></article><article><span>Source strategy</span><b>Backend intelligence</b></article></div></div><label className="nx-refresh-toggle"><input type="checkbox" checked={draft.forceRefresh} onChange={e => updateDraft({ forceRefresh: e.target.checked })} /><span><b>Collect fresh evidence</b><small>Turn this on only when you do not want to reuse a recent matching collection.</small></span></label><div className="nx-normal-generation-note"><div><Sparkles size={20} /></div><span><b>Normal idea generation</b><small>Your available free generation creates the core validated idea. After it is ready, you can open it first and choose Direct Unlock only when you want the advanced workspace.</small></span></div></section> : null}
+      {step === 0 ? <section className="nx-panel nx-panel--signal"><div className="nx-panel__head"><div><span className="nx-kicker"><Sparkles size={14} />Tell us what you noticed</span><h2>What real problem should Voxidence investigate?</h2><p>Describe the frustration, who experiences it, and why current solutions are not enough.</p></div><span className="nx-private-note">Private workspace</span></div><div className="nx-speech-field"><textarea value={draft.description} maxLength={2000} onChange={e => updateDraft({ description: e.target.value })} placeholder="Example: Students in Nablus struggle to coordinate shared transport because schedules change and there is no trusted real-time matching system…" /><div className="nx-speech-field__actions"><button type="button" className={`nx-voice-button ${listening ? 'is-listening' : ''}`} onClick={toggleVoice}>{listening ? <MicOff size={20} /> : <Mic size={20} />}<span>{listening ? 'Listening…' : 'Speak to type'}</span></button><button type="button" className="nx-domain-shortcut" onClick={() => setStep(1)}><Layers3 size={19} /><span>Choose domains instead</span><ArrowRight size={16} /></button></div><small>{draft.description.length}/2000</small></div>{voiceError ? <p className="nx-inline-error">{voiceError}</p> : null}<div className="nx-signal-tips"><span>Include who is affected</span><span>Explain the repeated pain</span><span>Mention the location when relevant</span></div></section> : null}
+      {step === 1 ? <section className="nx-panel nx-panel--domains"><span className="nx-kicker"><Globe2 size={14} />Opportunity focus</span><h2>Blend domains into one stronger opportunity.</h2><p>{hasSignal ? 'Your description remains the primary signal. Select up to three domains so Voxidence can combine related pains, evidence, and business opportunities.' : 'Select one to three domains. Voxidence will search for a meaningful cross-domain problem and generate one coherent business idea.'}</p><div className="nx-domain-selection-head"><div><b>{selectedDomainIds.length} of {MAX_SELECTED_DOMAINS} domains selected</b><small>Choose complementary areas rather than unrelated categories.</small></div>{selectedDomainIds.length ? <button type="button" onClick={() => updateDraft({ domainIds: [], domainId: '' })}>Clear selection</button> : null}</div><div className="nx-auto-domain"><button type="button" disabled={!hasSignal} className={`${selectedDomainIds.length === 0 && hasSignal ? 'is-selected' : ''} ${!hasSignal ? 'is-disabled' : ''}`} onClick={() => updateDraft({ domainIds: [], domainId: '' })}><Sparkles size={20} /><div><b>Auto-detect the best domain blend</b><small>{hasSignal ? 'Recommended · Voxidence resolves the strongest combination from your signal' : 'Add a description first to use automatic detection'}</small></div><Check size={17} /></button></div><div className="nx-domain-grid">{loadingDomains ? <p>Loading domains…</p> : domains.map(domain => { const isSelected = selectedDomainIds.some(id => String(id) === String(domain.id)); const isBlocked = !isSelected && selectedDomainIds.length >= MAX_SELECTED_DOMAINS; return <button type="button" key={domain.id} disabled={isBlocked} className={`${isSelected ? 'is-selected' : ''} ${isBlocked ? 'is-blocked' : ''}`} onClick={() => toggleDomain(domain.id)}><span>{domain.icon || '✦'}</span><div><b>{domain.name ?? domain.displayName}</b><small>{domain.description ?? 'Software opportunity domain'}</small></div><i>{isSelected ? <Check size={14} /> : null}</i></button>; })}</div></section> : null}
+      {step === 2 ? <section className="nx-panel"><span className="nx-kicker"><MapPin size={14} />Local intelligence</span><h2>Where should the solution create impact?</h2><p>This context improves local relevance, regulation checks, and market assumptions.</p><div className="nx-location-grid"><label><span>Country *</span><input value={draft.country} maxLength={100} onChange={e => updateDraft({ country: e.target.value })} /></label><label><span>City</span><input value={draft.city} maxLength={100} onChange={e => updateDraft({ city: e.target.value })} placeholder="Nablus" /></label><label><span>Region</span><input value={draft.region} maxLength={100} onChange={e => updateDraft({ region: e.target.value })} placeholder="West Bank" /></label><label><span>Community language</span><select value={draft.language} onChange={e => updateDraft({ language: e.target.value })}>{LANGUAGE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></div><div className="nx-source-note"><Sparkles size={18} /><div><b>No manual data-source selection</b><p>Voxidence's backend chooses active sources according to the resolved domain, language, location, availability, and evidence quality.</p></div></div></section> : null}
+      {step === 3 ? <section className="nx-panel"><span className="nx-kicker"><Sparkles size={14} />Ready to discover</span><h2>Review the signal before launching.</h2><div className="nx-review-layout"><article className="nx-review-problem"><span>Discovery input</span><p>{draft.description || `Cross-domain discovery: ${selectedDomains.map(domain => domain.name ?? domain.displayName).join(' + ') || 'Automatic domain blend'}`}</p></article><div className="nx-review-facts"><article><span>Domain blend</span><b>{selectedDomains.length ? selectedDomains.map(domain => domain.name ?? domain.displayName).join(' + ') : 'Auto-detected by Voxidence'}</b></article><article><span>Location</span><b>{[draft.city, draft.region, draft.country].filter(Boolean).join(', ')}</b></article><article><span>Language</span><b>{LANGUAGE_OPTIONS.find(item => item.value === draft.language)?.label}</b></article><article><span>Source strategy</span><b>Backend intelligence</b></article></div></div><label className="nx-refresh-toggle"><input type="checkbox" checked={draft.forceRefresh} onChange={e => updateDraft({ forceRefresh: e.target.checked })} /><span><b>Collect fresh evidence</b><small>Turn this on only when you do not want to reuse a recent matching collection.</small></span></label><div className="nx-normal-generation-note"><div className="nx-normal-generation-note__mark"><VoxidenceMark size={23} /></div><span><b>Normal idea generation</b><small>Your available free generation creates the core validated idea. After it is ready, you can open it first and choose Direct Unlock only when you want the advanced workspace.</small></span></div></section> : null}
       {error ? <div className="nx-form-error">{Array.isArray(error) ? error.join(' ') : error}</div> : null}
-      <footer className="nx-wizard-actions"><button type="button" className="nx-back-button" onClick={() => step === 0 ? navigate('/normal/dashboard') : setStep(v => v - 1)}><ArrowLeft size={17} />{step === 0 ? 'Back to home' : 'Previous'}</button>{step < STEPS.length - 1 ? <button type="button" className="nx-next-button" disabled={!canContinue} onClick={() => setStep(v => v + 1)}>Continue <ArrowRight size={18} /></button> : <button type="button" className="nx-next-button" disabled={submitting} onClick={submit}>{submitting ? 'Launching intelligence…' : 'Generate validated idea'} <Sparkles size={18} /></button>}</footer>
+      <footer className="nx-wizard-actions"><button type="button" className="nx-back-button" onClick={() => step === 0 ? navigate('/normal/dashboard') : setStep(v => v - 1)}><ArrowLeft size={17} />{step === 0 ? 'Back to home' : 'Previous'}</button>{step < STEPS.length - 1 ? <button type="button" className="nx-next-button" disabled={!canContinue} aria-disabled={!canContinue} onClick={() => setStep(v => v + 1)}>Continue <ArrowRight size={18} /></button> : <button type="button" className="nx-next-button" disabled={submitting || checkingEntitlement || generationBlocked} aria-busy={submitting || checkingEntitlement} onClick={submit}>{submitting ? 'Launching intelligence…' : 'Generate validated idea'} <Sparkles size={18} /></button>}</footer>
     </div>
+      {generationBlocked ? (
+        <div className="nx-generation-blocker" role="dialog" aria-modal="true" aria-labelledby="generation-blocker-title">
+          <motion.div
+            className="nx-generation-blocker__card"
+            initial={{ opacity: 0, y: 28, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 170, damping: 20 }}
+          >
+            <motion.span
+              className="nx-generation-blocker__mark"
+              animate={{ rotate: [0, 4, -4, 0], scale: [1, 1.04, 1] }}
+              transition={{ duration: 3, repeat: Infinity, repeatDelay: 0.8 }}
+            >
+              <VoxidenceMark size={34} />
+            </motion.span>
+
+            <span className="nx-generation-blocker__eyebrow">
+              <LockKeyhole size={15} />
+              Generation access
+            </span>
+
+            <h2 id="generation-blocker-title">Your free discoveries are complete.</h2>
+            <p>
+              You have used all normal idea generations available on this
+              account. Your existing ideas stay available, and you can upgrade
+              to continue creating new evidence-based workspaces.
+            </p>
+
+            <div className="nx-generation-blocker__status">
+              <span><b>{remainingFreeGenerations ?? 0}</b><small>free generations remaining</small></span>
+              <i />
+              <span><Crown size={18} /><small>Premium generation available after upgrade</small></span>
+            </div>
+
+            <div className="nx-generation-blocker__actions">
+              <button type="button" className="is-secondary" onClick={() => navigate('/normal/ideas')}>
+                View my ideas
+              </button>
+              <button type="button" className="is-primary" onClick={() => navigate('/normal/credits?intent=upgrade')}>
+                Upgrade workspace
+                <ArrowRight size={18} />
+              </button>
+            </div>
+
+            <button type="button" className="nx-generation-blocker__home" onClick={() => navigate('/normal/dashboard')}>
+              Back to dashboard
+            </button>
+          </motion.div>
+        </div>
+      ) : null}
   </section></div>;
 }

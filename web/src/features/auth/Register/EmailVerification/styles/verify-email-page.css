@@ -1,16 +1,16 @@
 /**
  * Email-verification page styles.
  *
- * These styles extend the shared Nexora authentication design while
+ * These styles extend the shared Voxidence authentication design while
  * providing distinct waiting, verifying, success, and error states.
  *
  * @author Eman
  */
 
 .nx-verify {
-    --nx-verify-primary: #6941c6;
-    --nx-verify-primary-dark: #53389e;
-    --nx-verify-primary-soft: rgba(105, 65, 198, 0.1);
+    --nx-verify-primary: #5cbdb9;
+    --nx-verify-primary-dark: #2f7774;
+    --nx-verify-primary-soft: rgba(92, 189, 185, 0.1);
     --nx-verify-success: #12b76a;
     --nx-verify-success-dark: #027a48;
     --nx-verify-success-soft: #ecfdf3;
@@ -19,25 +19,29 @@
     --nx-verify-danger-soft: #fff4f2;
     --nx-verify-warning: #f79009;
     --nx-verify-warning-soft: #fffaeb;
-    --nx-verify-text: #101828;
-    --nx-verify-muted: #667085;
-    --nx-verify-border: rgba(152, 162, 179, 0.24);
+    --nx-verify-text: #34413f;
+    --nx-verify-muted: #2f7774;
+    --nx-verify-border: rgba(92, 189, 185, 0.24);
     --nx-verify-card:
         rgba(255, 255, 255, 0.88);
+    --nx-verify-pink-soft: #F3C9D3;
+    --nx-verify-pink-detail: #D98FA0;
+    --nx-verify-pink-deep: #C98293;
+    --nx-verify-pink-glow: rgba(243, 201, 211, 0.24);
 
     position: relative;
     min-height: 100vh;
     overflow: hidden;
     background:
         radial-gradient(circle at 12% 18%,
-            rgba(127, 86, 217, 0.15),
+            rgba(92, 189, 185, 0.15),
             transparent 31%),
         radial-gradient(circle at 88% 80%,
-            rgba(105, 65, 198, 0.14),
+            rgba(243, 201, 211, 0.22),
             transparent 32%),
         linear-gradient(135deg,
             #f8f9fc 0%,
-            #f4f3ff 50%,
+            #fff7f9 50%,
             #f9fafb 100%);
 }
 
@@ -81,14 +85,14 @@
     justify-content: center;
     width: 44px;
     height: 44px;
-    border: 1px solid rgba(105, 65, 198, 0.16);
+    border: 1px solid rgba(92, 189, 185, 0.16);
     border-radius: 14px;
     background:
         linear-gradient(145deg,
             rgba(255, 255, 255, 0.96),
-            rgba(244, 240, 255, 0.9));
+            rgba(255, 247, 249, 0.94));
     box-shadow:
-        0 10px 24px rgba(105, 65, 198, 0.1),
+        0 10px 24px rgba(92, 189, 185, 0.1),
         inset 0 1px rgba(255, 255, 255, 0.92);
     color: var(--nx-verify-primary);
 }
@@ -118,10 +122,10 @@
     gap: 9px;
     min-height: 35px;
     padding: 8px 13px;
-    border: 1px solid rgba(105, 65, 198, 0.14);
+    border: 1px solid rgba(92, 189, 185, 0.14);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 5px 16px rgba(16, 24, 40, 0.04);
+    box-shadow: 0 5px 16px rgba(52, 65, 63, 0.04);
     color: var(--nx-verify-muted);
     font-size: 0.71rem;
     font-weight: 650;
@@ -157,8 +161,8 @@
             rgba(255, 255, 255, 0.94),
             rgba(248, 249, 252, 0.88));
     box-shadow:
-        0 32px 80px rgba(16, 24, 40, 0.12),
-        0 12px 30px rgba(16, 24, 40, 0.07),
+        0 32px 80px rgba(52, 65, 63, 0.12),
+        0 12px 30px rgba(52, 65, 63, 0.07),
         inset 0 1px rgba(255, 255, 255, 0.96);
     text-align: center;
     backdrop-filter: blur(28px);
@@ -172,9 +176,9 @@
     z-index: -2;
     background:
         linear-gradient(135deg,
-            rgba(105, 65, 198, 0.04),
+            rgba(92, 189, 185, 0.04),
             transparent 38%,
-            rgba(127, 86, 217, 0.04));
+            rgba(243, 201, 211, 0.10));
     content: "";
 }
 
@@ -185,7 +189,7 @@
     z-index: -1;
     width: 330px;
     height: 330px;
-    border: 1px solid rgba(105, 65, 198, 0.09);
+    border: 1px solid rgba(92, 189, 185, 0.09);
     border-radius: 50%;
     content: "";
 }
@@ -200,7 +204,7 @@
     border-radius: 50%;
     background:
         radial-gradient(circle,
-            rgba(105, 65, 198, 0.14),
+            rgba(243, 201, 211, 0.25),
             transparent 68%);
     pointer-events: none;
     transform: translateX(-50%);
@@ -214,14 +218,14 @@
     width: 78px;
     height: 78px;
     margin-bottom: 22px;
-    border: 1px solid rgba(105, 65, 198, 0.16);
+    border: 1px solid rgba(92, 189, 185, 0.16);
     border-radius: 24px;
     background:
         linear-gradient(145deg,
             #ffffff,
-            #f4f0ff);
+            #fff7f9);
     box-shadow:
-        0 14px 32px rgba(105, 65, 198, 0.15),
+        0 14px 32px rgba(92, 189, 185, 0.15),
         inset 0 1px rgba(255, 255, 255, 0.95);
     color: var(--nx-verify-primary);
 }
@@ -230,7 +234,7 @@
     position: absolute;
     inset: -8px;
     z-index: -1;
-    border: 1px solid rgba(105, 65, 198, 0.09);
+    border: 1px solid rgba(92, 189, 185, 0.09);
     border-radius: 29px;
     content: "";
 }
@@ -241,7 +245,7 @@
     gap: 7px;
     margin: 0 0 13px;
     padding: 7px 11px;
-    border: 1px solid rgba(105, 65, 198, 0.13);
+    border: 1px solid rgba(92, 189, 185, 0.13);
     border-radius: 999px;
     background: var(--nx-verify-primary-soft);
     color: var(--nx-verify-primary-dark);
@@ -277,9 +281,9 @@
     min-height: 45px;
     margin-top: 22px;
     padding: 10px 15px;
-    border: 1px solid rgba(105, 65, 198, 0.13);
+    border: 1px solid rgba(92, 189, 185, 0.13);
     border-radius: 14px;
-    background: rgba(244, 240, 255, 0.72);
+    background: rgba(255, 247, 249, 0.82);
     color: var(--nx-verify-primary-dark);
     font-size: 0.8rem;
     font-weight: 700;
@@ -328,9 +332,9 @@
     background:
         linear-gradient(135deg,
             var(--nx-verify-primary),
-            #7f56d9);
+            #5cbdb9);
     box-shadow:
-        0 13px 27px rgba(105, 65, 198, 0.24),
+        0 13px 27px rgba(92, 189, 185, 0.24),
         inset 0 1px rgba(255, 255, 255, 0.22);
     color: #ffffff;
     font: inherit;
@@ -346,7 +350,7 @@
 
 .nx-verify-card__primary:hover:not(:disabled) {
     box-shadow:
-        0 17px 34px rgba(105, 65, 198, 0.3),
+        0 17px 34px rgba(92, 189, 185, 0.3),
         inset 0 1px rgba(255, 255, 255, 0.24);
     transform: translateY(-2px);
 }
@@ -362,7 +366,7 @@
 
 .nx-verify-card__primary:focus-visible,
 .nx-verify-card__secondary:focus-visible {
-    outline: 4px solid rgba(105, 65, 198, 0.18);
+    outline: 4px solid rgba(92, 189, 185, 0.18);
     outline-offset: 3px;
 }
 
@@ -384,7 +388,7 @@
 }
 
 .nx-verify-card__secondary:hover {
-    background: rgba(105, 65, 198, 0.06);
+    background: rgba(92, 189, 185, 0.06);
     color: var(--nx-verify-primary);
 }
 
@@ -427,7 +431,7 @@
     border: 1px solid #d0d5dd;
     border-radius: 50%;
     background: #ffffff;
-    color: #98a2b3;
+    color: #5cbdb9;
     font-size: 0.67rem;
     font-weight: 800;
     transition:
@@ -456,7 +460,7 @@
     border-color: var(--nx-verify-primary);
     background: #ffffff;
     color: var(--nx-verify-primary);
-    box-shadow: 0 0 0 5px rgba(105, 65, 198, 0.09);
+    box-shadow: 0 0 0 5px rgba(92, 189, 185, 0.09);
 }
 
 .nx-verify-card__steps>i.is-complete {
@@ -468,7 +472,7 @@
     grid-template-columns: repeat(3, 1fr);
     width: min(400px, 100%);
     margin: 8px 0 0;
-    color: #98a2b3;
+    color: #5cbdb9;
     font-size: 0.63rem;
     font-weight: 650;
     text-align: center;
@@ -477,7 +481,7 @@
 /* State variants */
 
 .nx-verify-card--verifying .nx-verify-card__icon {
-    border-color: rgba(105, 65, 198, 0.22);
+    border-color: rgba(92, 189, 185, 0.22);
     color: var(--nx-verify-primary);
 }
 
@@ -555,7 +559,7 @@
     border-radius: 50%;
     background:
         radial-gradient(circle,
-            rgba(105, 65, 198, 0.12),
+            rgba(92, 189, 185, 0.12),
             transparent 67%);
     content: "";
     opacity: var(--nx-pointer-visible, 0);
@@ -789,7 +793,7 @@
 }
 
 .nx-verify-code-form label {
-    color: rgba(15, 23, 42, 0.72);
+    color: rgba(52, 65, 63, 0.72);
     font-size: 0.78rem;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -803,13 +807,13 @@
     align-items: center;
     gap: 10px;
     padding: 0 15px;
-    border: 1px solid rgba(100, 116, 139, 0.22);
+    border: 1px solid rgba(47, 119, 116, 0.22);
     border-radius: 15px;
     background: rgba(248, 250, 252, 0.86);
 }
 
 .nx-verify-code-form__email-shell svg {
-    color: #64748b;
+    color: #2f7774;
     flex: 0 0 auto;
 }
 
@@ -818,18 +822,18 @@
     border: 0;
     outline: 0;
     background: transparent;
-    color: #0f172a;
+    color: #34413f;
     font: inherit;
 }
 
 .nx-verify-code-form__code {
     width: 100%;
     height: 72px;
-    border: 1px solid rgba(99, 102, 241, 0.28);
+    border: 1px solid rgba(235, 246, 245, 0.28);
     border-radius: 18px;
     outline: none;
-    background: linear-gradient(145deg, rgba(248, 250, 252, 0.96), rgba(238, 242, 255, 0.92));
-    color: #111827;
+    background: linear-gradient(145deg, rgba(248, 250, 252, 0.96), rgba(235, 246, 245, 0.92));
+    color: #34413f;
     font-size: clamp(1.65rem, 5vw, 2.25rem);
     font-weight: 850;
     letter-spacing: 0.42em;
@@ -839,8 +843,8 @@
 }
 
 .nx-verify-code-form__code:focus {
-    border-color: rgba(79, 70, 229, 0.72);
-    box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.11);
+    border-color: rgba(92, 189, 185, 0.72);
+    box-shadow: 0 0 0 5px rgba(235, 246, 245, 0.11);
     transform: translateY(-1px);
 }
 

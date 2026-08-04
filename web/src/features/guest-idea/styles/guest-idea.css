@@ -23,15 +23,15 @@
     padding: 70px 20px 90px;
     background:
         radial-gradient(circle at 10% 10%,
-            rgba(218, 204, 255, 0.58),
+            rgba(220, 232, 226, 0.58),
             transparent 30%),
         radial-gradient(circle at 90% 12%,
-            rgba(197, 231, 255, 0.58),
+            rgba(220, 232, 226, 0.58),
             transparent 30%),
         linear-gradient(135deg,
-            #ffffff,
-            #faf7ff 52%,
-            #f5fbff);
+            #FFFDFC,
+            #FFFDFC 52%,
+            #FFFDFC);
 }
 
 .guest-progress-page,
@@ -62,7 +62,7 @@
     margin-bottom: 28px;
     border: 0;
     background: transparent;
-    color: #756d84;
+    color: #49534F;
     font-weight: 700;
     cursor: pointer;
 }
@@ -81,7 +81,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: #7557c6;
+    color: #49534F;
     font-size: 0.82rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -96,7 +96,7 @@
 .guest-progress-card h1,
 .guest-limit-card h1 {
     margin: 18px 0;
-    color: #241d35;
+    color: #49534F;
     font-size: clamp(2.4rem, 5vw, 4.9rem);
     line-height: 1.02;
     letter-spacing: -0.05em;
@@ -104,8 +104,8 @@
 
 .guest-generator-header h1 span {
     background: linear-gradient(110deg,
-            #7658ca,
-            #609fd4);
+            #49534F,
+            #49534F);
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
@@ -116,7 +116,7 @@
 .guest-limit-card>p {
     max-width: 720px;
     margin: 0 auto;
-    color: #716a80;
+    color: #49534F;
     font-size: 1.08rem;
     line-height: 1.8;
 }
@@ -137,7 +137,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #a29aaa;
+    color: #A9BEB4;
     font-weight: 700;
 }
 
@@ -146,10 +146,10 @@
     width: 34px;
     height: 34px;
     place-items: center;
-    border: 1px solid #e9e1f4;
+    border: 1px solid #BCC5C2;
     border-radius: 50%;
-    background: #ffffff;
-    box-shadow: 0 8px 20px rgba(79, 60, 110, 0.07);
+    background: #FFFDFC;
+    box-shadow: 0 8px 20px rgba(73, 83, 79, 0.07);
 }
 
 .guest-stepper svg {
@@ -157,16 +157,16 @@
 }
 
 .guest-stepper .active {
-    color: #5f43ad;
+    color: #49534F;
 }
 
 .guest-stepper .active span,
 .guest-stepper .done span {
     border-color: transparent;
     background: linear-gradient(135deg,
-            #7658ca,
-            #609fd4);
-    color: #ffffff;
+            #49534F,
+            #49534F);
+    color: #FFFDFC;
 }
 
 /* 
@@ -179,10 +179,10 @@
     max-width: 930px;
     margin: auto;
     padding: 42px;
-    border: 1px solid rgba(224, 214, 242, 0.9);
+    border: 1px solid rgba(220, 232, 226, 0.9);
     border-radius: 32px;
-    background: rgba(255, 255, 255, 0.88);
-    box-shadow: 0 30px 90px rgba(77, 56, 116, 0.14);
+    background: rgba(255, 253, 252, 0.88);
+    box-shadow: 0 30px 90px rgba(73, 83, 79, 0.14);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
 }
@@ -204,9 +204,9 @@
     place-items: center;
     border-radius: 16px;
     background: linear-gradient(135deg,
-            #eee7ff,
-            #e5f4ff);
-    color: #7153c4;
+            #BCC5C2,
+            #FAF9F6);
+    color: #49534F;
 }
 
 .guest-panel h2 {
@@ -217,7 +217,7 @@
 
 .guest-panel>p {
     margin-bottom: 25px;
-    color: #777081;
+    color: #49534F;
     line-height: 1.7;
 }
 
@@ -229,10 +229,10 @@
     width: 100%;
     min-height: 190px;
     padding: 22px;
-    border: 1px solid #e5dcef;
+    border: 1px solid #BCC5C2;
     border-radius: 22px;
-    background: #fcfbff;
-    color: #2b243b;
+    background: #FFFDFC;
+    color: #49534F;
     font: inherit;
     line-height: 1.7;
     outline: none;
@@ -245,15 +245,15 @@
 .guest-panel textarea:focus,
 .guest-location-grid input:focus,
 .guest-location-grid select:focus {
-    border-color: #8b6bd2;
-    box-shadow: 0 0 0 5px rgba(118, 88, 200, 0.1);
+    border-color: #49534F;
+    box-shadow: 0 0 0 5px rgba(73, 83, 79, 0.1);
 }
 
 .guest-field-meta {
     display: flex;
     justify-content: space-between;
     margin-top: 10px;
-    color: #91899b;
+    color: #A9BEB4;
     font-size: 0.82rem;
 }
 
@@ -267,9 +267,9 @@
     align-items: center;
     gap: 14px;
     padding: 18px;
-    border: 1px solid #e5ddef;
+    border: 1px solid #BCC5C2;
     border-radius: 18px;
-    background: #ffffff;
+    background: #FFFDFC;
     text-align: left;
     cursor: pointer;
 }
@@ -282,14 +282,14 @@
 }
 
 .guest-auto-domain small {
-    color: #8a8294;
+    color: #A9BEB4;
 }
 
 .guest-auto-domain.selected,
 .guest-domain-grid button.selected {
-    border-color: #8060cf;
-    background: #f7f3ff;
-    box-shadow: 0 0 0 4px rgba(118, 88, 200, 0.08);
+    border-color: #49534F;
+    background: #FAF9F6;
+    box-shadow: 0 0 0 4px rgba(73, 83, 79, 0.08);
 }
 
 .guest-domain-grid {
@@ -304,10 +304,10 @@
     align-items: center;
     gap: 10px;
     padding: 17px;
-    border: 1px solid #ece5f3;
+    border: 1px solid #BCC5C2;
     border-radius: 17px;
-    background: #ffffff;
-    color: #352d46;
+    background: #FFFDFC;
+    color: #49534F;
     text-align: left;
     cursor: pointer;
     transition:
@@ -320,7 +320,7 @@
 .guest-domain-grid button:hover,
 .guest-auto-domain:hover {
     transform: translateY(-2px);
-    border-color: #cdbde8;
+    border-color: #BCC5C2;
 }
 
 /* 
@@ -345,10 +345,10 @@
 .guest-location-grid select {
     width: 100%;
     padding: 14px;
-    border: 1px solid #e7dfef;
+    border: 1px solid #BCC5C2;
     border-radius: 15px;
-    background: #ffffff;
-    color: #2b243b;
+    background: #FFFDFC;
+    color: #49534F;
     font: inherit;
     outline: none;
     transition:
@@ -369,13 +369,13 @@
 .guest-review article,
 .guest-review>div {
     padding: 22px;
-    border: 1px solid #ebe4f2;
+    border: 1px solid #BCC5C2;
     border-radius: 20px;
-    background: #fcfbff;
+    background: #FFFDFC;
 }
 
 .guest-review article p {
-    color: #4b4358;
+    color: #49534F;
     line-height: 1.7;
 }
 
@@ -391,7 +391,7 @@
 }
 
 .guest-review small {
-    color: #928a9e;
+    color: #A9BEB4;
 }
 
 /* 
@@ -426,11 +426,11 @@
 
 .guest-primary {
     background: linear-gradient(110deg,
-            #7658ca,
-            #9470d9 48%,
-            #609fd4);
-    color: #ffffff;
-    box-shadow: 0 15px 35px rgba(112, 81, 185, 0.22);
+            #49534F,
+            #49534F 48%,
+            #49534F);
+    color: #FFFDFC;
+    box-shadow: 0 15px 35px rgba(73, 83, 79, 0.22);
 }
 
 .guest-primary:hover:not(:disabled),
@@ -439,7 +439,7 @@
 }
 
 .guest-primary:hover:not(:disabled) {
-    box-shadow: 0 18px 42px rgba(112, 81, 185, 0.3);
+    box-shadow: 0 18px 42px rgba(73, 83, 79, 0.3);
 }
 
 .guest-primary:disabled {
@@ -448,9 +448,9 @@
 }
 
 .guest-secondary {
-    border-color: #ded4ec;
-    background: #ffffff;
-    color: #5e4d76;
+    border-color: #DCE8E2;
+    background: #FFFDFC;
+    color: #49534F;
 }
 
 /* 
@@ -476,9 +476,9 @@
     place-items: center;
     border-radius: 24px;
     background: linear-gradient(135deg,
-            #eee7ff,
-            #e4f4ff);
-    color: #7153c4;
+            #BCC5C2,
+            #FAF9F6);
+    color: #49534F;
 }
 
 .guest-progress-bar {
@@ -486,7 +486,7 @@
     margin: 30px 0 10px;
     overflow: hidden;
     border-radius: 999px;
-    background: #eee8f5;
+    background: #BCC5C2;
 }
 
 .guest-progress-bar span {
@@ -494,8 +494,8 @@
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg,
-            #7658ca,
-            #609fd4);
+            #49534F,
+            #49534F);
 }
 
 .guest-progress-bar--indeterminate span {
@@ -514,7 +514,7 @@
     justify-content: center;
     gap: 9px;
     margin-top: 8px;
-    color: #7d748b;
+    color: #A9BEB4;
     font-size: 0.9rem;
     line-height: 1.5;
 }
@@ -522,7 +522,7 @@
 .guest-progress-note svg {
     width: 17px;
     height: 17px;
-    color: #7658ca;
+    color: #49534F;
 }
 
 @keyframes guest-progress-slide {
@@ -552,10 +552,10 @@
     gap: 14px;
     margin-top: 26px;
     padding: 18px;
-    border: 1px solid #e7ddf6;
+    border: 1px solid #DCE8E2;
     border-radius: 18px;
-    background: #f8f5ff;
-    color: #654c9f;
+    background: #FAF9F6;
+    color: #49534F;
     text-align: left;
 }
 
@@ -566,7 +566,7 @@
 }
 
 .guest-preview-lock span {
-    color: #7d7487;
+    color: #A9BEB4;
 }
 
 .guest-result-actions {
@@ -576,7 +576,7 @@
 .guest-trust-note {
     display: block;
     margin-top: 18px;
-    color: #8b8492;
+    color: #49534F;
 }
 
 /* 
@@ -586,10 +586,10 @@
 .guest-error {
     margin-top: 18px;
     padding: 13px 16px;
-    border: 1px solid #ffd8df;
+    border: 1px solid #DCE8E2;
     border-radius: 14px;
-    background: #fff2f4;
-    color: #a73e53;
+    background: #FAF9F6;
+    color: #A73E53;
 }
 
 .guest-idea-loading {
@@ -598,7 +598,7 @@
     place-items: center;
     align-content: center;
     gap: 12px;
-    color: #6e56ad;
+    color: #49534F;
 }
 
 .guest-spin {
@@ -663,11 +663,11 @@
 
 /* Guest description word-limit feedback. */
 .guest-field-meta.ready {
-    color: #4f7c63;
+    color: #49534F;
 }
 
 .guest-field-meta.limit-exceeded {
-    color: #b34352;
+    color: #B34352;
 }
 
 .guest-field-meta.limit-exceeded b {
@@ -691,7 +691,7 @@
     width: 430px;
     height: 300px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(119, 88, 202, 0.22), transparent 68%);
+    background: radial-gradient(circle, rgba(73, 83, 79, 0.22), transparent 68%);
     transform: translateX(-50%);
     pointer-events: none;
 }
@@ -700,7 +700,7 @@
     width: 70px;
     height: 70px;
     border-radius: 22px;
-    box-shadow: 0 18px 38px rgba(105, 78, 175, 0.18);
+    box-shadow: 0 18px 38px rgba(73, 83, 79, 0.18);
 }
 
 .guest-limit-icon svg {
@@ -727,10 +727,10 @@
     align-items: center;
     gap: 7px;
     padding: 9px 13px;
-    border: 1px solid #e6ddf4;
+    border: 1px solid #BCC5C2;
     border-radius: 999px;
-    background: rgba(248, 245, 255, 0.86);
-    color: #695284;
+    background: rgba(250, 249, 246, 0.86);
+    color: #49534F;
     font-size: 0.9rem;
     font-weight: 750;
 }
@@ -738,7 +738,7 @@
 .guest-limit-benefits svg {
     width: 15px;
     height: 15px;
-    color: #6c52bd;
+    color: #49534F;
 }
 
 .guest-limit-actions {
@@ -761,7 +761,7 @@
     margin-top: 22px;
     border: 0;
     background: transparent;
-    color: #81798a;
+    color: #A9BEB4;
     font: inherit;
     font-size: 0.92rem;
     font-weight: 700;
@@ -769,7 +769,7 @@
 }
 
 .guest-limit-home:hover {
-    color: #654bb0;
+    color: #49534F;
 }
 
 .guest-limit-home svg {

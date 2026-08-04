@@ -1,8 +1,12 @@
 /**
  * Highlights the most recent generated idea.
  *
- * The free preview is presented first. Direct Unlock is described as an optional
- * one-time action inside the idea workspace, never as a prerequisite to inspect
+ * Preserves the existing navigation, workspace warm-up, unlock-state messaging,
+ * responsive structure, and Framer Motion behavior. Visual styling is provided
+ * by the documented Voxidence eucalyptus-and-rose rules in normal-dashboard.css.
+ *
+ * The free preview is presented first. Direct Unlock remains an optional
+ * one-time action inside the idea workspace, never a prerequisite for reviewing
  * the generated result.
  */
 import {
@@ -27,7 +31,7 @@ export default function LatestIdeaCard({ idea }) {
         <div className="normal-work-card__body">
           <span className="normal-eyebrow">Your next workspace</span>
           <h3>Your first validated idea starts here.</h3>
-          <p>Describe one meaningful problem and let Nexora transform it into a structured software opportunity.</p>
+          <p>Describe one meaningful problem and let Voxidence transform it into a structured software opportunity.</p>
           <button className="normal-work-card__open" type="button" onClick={() => navigate('/normal/generate')}>
             Generate an idea <ArrowUpRight size={17} />
           </button>
