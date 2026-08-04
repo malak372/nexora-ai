@@ -13,6 +13,7 @@ import {
   BookOpenCheck,
   ChevronDown,
   Compass,
+  Coins,
   Crown,
   LayoutDashboard,
   Lightbulb,
@@ -32,6 +33,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
 import VoxidenceMark from '../../components/brand/VoxidenceMark';
+import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -53,9 +55,10 @@ export default function NormalHeader({ onOpenMenu }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(() => getStoredUser() ?? {});
   const [headerSearch, setHeaderSearch] = useState('');
+  const { isPremium, creditBalance } = useAccountAccess();
 
   const displayName = user.fullName || user.name || 'Voxidence user';
-  const accessLabel = user.accountStatus === 'PREMIUM' ? 'Premium access' : 'Normal access';
+  const accessLabel = isPremium ? `Premium · ${creditBalance} credits` : 'Normal access';
   const imageUrl = resolveMediaUrl(user.avatarUrl || user.profileImageUrl || user.photoUrl || '');
   const initials = getInitials(displayName);
 
@@ -147,13 +150,16 @@ export default function NormalHeader({ onOpenMenu }) {
 
           <motion.button
             type="button"
-            className="normal-upgrade-button"
-            onClick={() => navigate('/normal/credits?intent=upgrade')}
+            className={`normal-upgrade-button ${isPremium ? 'is-premium' : ''}`}
+            onClick={() => navigate('/normal/credits')}
             whileHover={{ y: -2, scale: 1.015 }}
             whileTap={{ scale: 0.975 }}
           >
-            <span className="normal-upgrade-button__icon"><Crown size={16} /></span>
-            <span className="normal-upgrade-button__copy"><b>Upgrade</b><small>Premium workspace</small></span>
+            <span className="normal-upgrade-button__icon">{isPremium ? <Coins size={16} /> : <Crown size={16} />}</span>
+            <span className="normal-upgrade-button__copy">
+              <b>{isPremium ? 'Buy more credits' : 'Upgrade'}</b>
+              <small>{isPremium ? `${creditBalance} credits remaining` : 'Premium workspace'}</small>
+            </span>
           </motion.button>
 
           <motion.button

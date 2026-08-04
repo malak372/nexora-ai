@@ -25,6 +25,7 @@ import NotificationsPage from '../features/normal-user/notifications/pages/Notif
 import PreferencesPage from '../features/normal-user/preferences/pages/PreferencesPage';
 import UpgradePage from '../features/normal-user/upgrade/pages/UpgradePage';
 import BillingHistoryPage from '../features/normal-user/billing/pages/BillingHistoryPage';
+import AiChatPage from '../features/normal-user/ai-chat/pages/AiChatPage';
 
 function TemporaryNormalPage({ title }) {
     return (
@@ -43,6 +44,7 @@ export const normalUserRoutes = (
         <Route path="ideas" element={<MyIdeasPage />} />
         <Route path="ideas/:ideaId" element={<IdeaWorkspacePage />} />
         <Route path="ideas/:ideaId/business-model" element={<BusinessModelPage />} />
+        <Route path="ideas/:ideaId/chat" element={<AiChatPage />} />
         <Route path="ideas/:ideaId/unlock" element={<DirectUnlockPage />} />
         <Route path="payments/success" element={<PaymentResultPage />} />
         <Route path="ideas/:ideaId/publish" element={<PublishIdeaPage />} />

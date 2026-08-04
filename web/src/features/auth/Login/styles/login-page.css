@@ -387,6 +387,39 @@
     text-transform: uppercase;
 }
 
+
+.nx-auth-card__back-home {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 11px;
+    border: 1px solid rgba(92, 189, 185, 0.16);
+    border-radius: 999px;
+    color: #5cbdb9;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 8px 20px rgba(47, 119, 116, 0.06);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 180ms ease, background-color 180ms ease,
+        border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.nx-auth-card__back-home:hover {
+    border-color: rgba(92, 189, 185, 0.28);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 24px rgba(47, 119, 116, 0.1);
+    transform: translateY(-1px);
+}
+
+.nx-auth-card__back-home:active {
+    transform: translateY(0);
+}
+
 .nx-auth-card__step {
     color: #d98fa0;
     font-size: 0.7rem;
@@ -1872,5 +1905,17 @@ input:-webkit-autofill:focus {
 @media (prefers-reduced-motion: reduce) {
     .nx-form__submit:hover:not(:disabled) {
         transform: none;
+    }
+}
+
+@media (max-width: 520px) {
+    .nx-auth-card__topline {
+        align-items: flex-start;
+    }
+
+    .nx-auth-card__back-home {
+        min-height: 30px;
+        padding: 0 9px;
+        font-size: 0.67rem;
     }
 }

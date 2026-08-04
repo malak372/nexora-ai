@@ -8,6 +8,7 @@
  */
 import {
   ArrowLeft,
+  Bot,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
@@ -25,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
+import useAccountAccess from '../../shared/hooks/useAccountAccess';
 
 import '../styles/idea-workspace.css';
 
@@ -137,6 +139,7 @@ export default function IdeaWorkspacePage() {
   const { ideaId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isPremium } = useAccountAccess();
 
   const [idea, setIdea] = useState(null);
   const [outputs, setOutputs] = useState([]);
@@ -240,10 +243,10 @@ export default function IdeaWorkspacePage() {
 
   const createdDate = idea.createdAt
     ? new Date(idea.createdAt).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
     : 'Not available';
 
   return (
@@ -338,6 +341,21 @@ export default function IdeaWorkspacePage() {
               <ChevronRight size={17} />
             </button>
           )}
+
+          {isPremium && idea.isUnlocked ? (
+            <button
+              className="workspace-premium-chat"
+              type="button"
+              onClick={() => navigate(`/normal/ideas/${ideaId}/chat`)}
+            >
+              <Bot size={17} />
+              <span>
+                <strong>AI Chat</strong>
+                <small>Discuss this idea</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -481,7 +499,7 @@ export default function IdeaWorkspacePage() {
                 Math.max(
                   1,
                   sections.findIndex((section) => section.key === current.key) +
-                    1,
+                  1,
                 ),
               ).padStart(2, '0')}
             </span>

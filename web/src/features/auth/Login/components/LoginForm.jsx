@@ -271,7 +271,12 @@ export default function LoginForm({
                 <div className="nx-field__label-row">
                     <label htmlFor="login-password">Password</label>
 
-                    <Link to={ROUTES.FORGOT_PASSWORD}>
+                    <Link
+                        to={ROUTES.FORGOT_PASSWORD}
+                        state={{
+                            email: values.email.trim().toLowerCase(),
+                        }}
+                    >
                         Forgot password?
                     </Link>
                 </div>

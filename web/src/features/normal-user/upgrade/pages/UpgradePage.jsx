@@ -117,8 +117,7 @@ export default function UpgradePage() {
 
   const totalLabel = useMemo(
     () =>
-      `${credits} premium credit${
-        credits === 1 ? '' : 's'
+      `${credits} premium credit${credits === 1 ? '' : 's'
       }`,
     [credits],
   );
@@ -143,7 +142,7 @@ export default function UpgradePage() {
         creditsQuantity: Number(credits),
         paymentMethodKey: method,
         successUrl: `${origin}/normal/payments/success`,
-        cancelUrl: `${origin}/normal/upgrade?payment=cancelled`,
+        cancelUrl: `${origin}/normal/credits?payment=cancelled`,
       });
 
       if (!result?.checkoutUrl) {
@@ -161,7 +160,7 @@ export default function UpgradePage() {
     } catch (requestError) {
       const message = String(
         requestError?.message ||
-          'Checkout could not be created.',
+        'Checkout could not be created.',
       );
 
       if (
@@ -197,10 +196,10 @@ export default function UpgradePage() {
           shouldReduceMotion
             ? undefined
             : {
-                opacity: 0,
-                x: -26,
-                scale: 0.985,
-              }
+              opacity: 0,
+              x: -26,
+              scale: 0.985,
+            }
         }
         animate={{
           opacity: 1,
@@ -237,42 +236,42 @@ export default function UpgradePage() {
               const BenefitIcon = benefit.icon;
 
               return (
-              <motion.article
-                key={benefit.title}
-                initial={
-                  shouldReduceMotion
-                    ? undefined
-                    : {
+                <motion.article
+                  key={benefit.title}
+                  initial={
+                    shouldReduceMotion
+                      ? undefined
+                      : {
                         opacity: 0,
                         y: 18,
                       }
-                }
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                }}
-                transition={{
-                  duration: 0.42,
-                  delay: shouldReduceMotion
-                    ? 0
-                    : 0.18 + index * 0.08,
-                }}
-              >
-                <span>
-                  <BenefitIcon size={16} />
-                </span>
+                  }
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                  }}
+                  transition={{
+                    duration: 0.42,
+                    delay: shouldReduceMotion
+                      ? 0
+                      : 0.18 + index * 0.08,
+                  }}
+                >
+                  <span>
+                    <BenefitIcon size={16} />
+                  </span>
 
-                <div>
-                  <small>
-                    {String(index + 1).padStart(
-                      2,
-                      '0',
-                    )}
-                  </small>
-                  <strong>{benefit.title}</strong>
-                  <p>{benefit.description}</p>
-                </div>
-              </motion.article>
+                  <div>
+                    <small>
+                      {String(index + 1).padStart(
+                        2,
+                        '0',
+                      )}
+                    </small>
+                    <strong>{benefit.title}</strong>
+                    <p>{benefit.description}</p>
+                  </div>
+                </motion.article>
               );
             })}
           </div>
@@ -297,10 +296,10 @@ export default function UpgradePage() {
           shouldReduceMotion
             ? undefined
             : {
-                opacity: 0,
-                x: 26,
-                scale: 0.985,
-              }
+              opacity: 0,
+              x: 26,
+              scale: 0.985,
+            }
         }
         animate={{
           opacity: 1,
@@ -464,9 +463,8 @@ export default function UpgradePage() {
         </div>
 
         <div
-          className={`upgrade-activation-fee ${
-            isAlreadyPremium ? 'is-inactive' : 'is-applicable'
-          }`}
+          className={`upgrade-activation-fee ${isAlreadyPremium ? 'is-inactive' : 'is-applicable'
+            }`}
         >
           <span>
             <Crown size={16} />
