@@ -43,7 +43,7 @@ const CURRENT_YEAR = new Date().getFullYear();
  * @type {string}
  */
 const CONTACT_EMAIL =
-    process.env.REACT_APP_CONTACT_EMAIL || 'ainexora0@gmail.com';
+    process.env.REACT_APP_CONTACT_EMAIL || 'voxidence@gmail.com';
 
 /**
  * Footer links that navigate to sections inside the public home page.

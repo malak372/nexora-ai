@@ -9,6 +9,7 @@
  * The About, Domains, How It Works, and Contact content are sections
  * inside HomePage and therefore do not require separate routes.
  *
+ * @author Eman
  * @component
  * @returns {JSX.Element} The application route tree.
  */
