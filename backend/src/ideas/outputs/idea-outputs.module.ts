@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AiModule } from '../../ai/ai.module';
+import { CreditsModule } from '../../credits/credits.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PromptsModule } from '../../prompts/prompts.module';
 
@@ -22,7 +23,7 @@ import { IdeaUnlockService } from './services/idea-unlock.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AiModule, PromptsModule, IdeaGenerationModule],
+  imports: [PrismaModule, AiModule, CreditsModule, PromptsModule, IdeaGenerationModule],
   controllers: [IdeaOutputsController],
   providers: [
     IdeaOutputsService,
@@ -35,4 +36,4 @@ import { IdeaUnlockService } from './services/idea-unlock.service';
     IdeaUnlockService,
   ],
 })
-export class IdeaOutputsModule {}
+export class IdeaOutputsModule { }

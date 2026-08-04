@@ -22,6 +22,8 @@ import PublicLayout from '../layouts/PublicLayout';
 import LoginPage from '../features/auth/Login/pages/LoginPage';
 import RegisterPage from '../features/auth/Register/pages/RegisterPage';
 import VerifyEmailPage from '../features/auth/Register/EmailVerification/pages/VerifyEmailPage';
+import ForgotPasswordPage from '../features/auth/PasswordRecovery/pages/ForgotPasswordPage';
+import ResetPasswordPage from '../features/auth/PasswordRecovery/pages/ResetPasswordPage';
 import HomePage from '../pages/public/HomePage';
 import GuestGenerateIdeaPage from '../features/guest-idea/pages/GuestGenerateIdeaPage';
 import PublicPublicationDetailsPage from '../features/home/pages/PublicPublicationDetailsPage';
@@ -63,6 +65,16 @@ export default function AppRoutes() {
                 <Route
                     path="/verify-email"
                     element={<VerifyEmailPage />}
+                />
+
+                <Route
+                    path="/forgot-password"
+                    element={<ForgotPasswordPage />}
+                />
+
+                <Route
+                    path="/reset-password"
+                    element={<ResetPasswordPage />}
                 />
             </Route>
 

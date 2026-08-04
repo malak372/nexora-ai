@@ -11,6 +11,7 @@
  */
 
 import {
+    ArrowLeft,
     ArrowUpRight,
     BrainCircuit,
     CheckCircle2,
@@ -25,6 +26,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { ROUTES } from '../../../../constants/routes.constants';
 import { saveAuthSession } from '../../shared/auth.storage';
+import { markPremiumWelcomePending } from '../../../normal-user/shared/components/PremiumWelcomeCelebration';
 import { login } from '../api/login.api';
 import LoginForm from '../components/LoginForm';
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
@@ -116,6 +118,7 @@ export default function LoginPage() {
             });
 
             saveAuthSession(session, values.rememberMe);
+            markPremiumWelcomePending(session.user);
 
             navigate(getDestinationByUser(session.user), {
                 replace: true,
@@ -123,7 +126,7 @@ export default function LoginPage() {
         } catch (error) {
             setServerError(
                 error?.message ||
-                    'Invalid email or password.',
+                'Invalid email or password.',
             );
         } finally {
             setIsSubmitting(false);
@@ -372,7 +375,14 @@ export default function LoginPage() {
                                 Your workspace awaits
                             </span>
 
-                            <span className="nx-auth-card__step">SECURE / 01</span>
+                            <Link
+                                to={ROUTES.HOME}
+                                className="nx-auth-card__back-home"
+                                aria-label="Back to Voxidence home page"
+                            >
+                                <ArrowLeft size={14} aria-hidden="true" />
+                                Back to home
+                            </Link>
                         </div>
 
                         <div className="nx-auth-card__heading">

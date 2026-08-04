@@ -9,7 +9,9 @@ import {
   ArrowRight,
   BookOpenCheck,
   Heart,
+  Bot,
   BrainCircuit,
+  Coins,
   CheckCircle2,
   Lightbulb,
   RefreshCw,
@@ -70,12 +72,15 @@ export default function NormalDashboardPage() {
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
+  const isPremium = Boolean(summary?.isPremium || summary?.accountStatus === 'PREMIUM');
+  const creditBalance = Number(summary?.creditBalance ?? 0);
   const freeGenerations = Number(summary?.remainingFreeGenerations ?? 0);
   const accessMessage = useMemo(() => {
+    if (isPremium) return `${creditBalance} premium credit${creditBalance === 1 ? '' : 's'} remaining`;
     if (freeGenerations > 1) return `${freeGenerations} free discoveries ready`;
     if (freeGenerations === 1) return 'One free discovery remains';
     return 'Generate and unlock only the idea you choose';
-  }, [freeGenerations]);
+  }, [creditBalance, freeGenerations, isPremium]);
 
   const reveal = reduceMotion ? {} : {
     initial: { opacity: 0, y: 34, filter: 'blur(10px)' },
@@ -122,14 +127,14 @@ export default function NormalDashboardPage() {
       <motion.section className="normal-dashboard-hero normal-dashboard-hero--core" {...reveal}>
         <div className="normal-dashboard-hero__mesh" aria-hidden="true" />
         <div className="normal-dashboard-hero__copy">
-          <span className="normal-eyebrow"><Sparkles size={14} />Intelligent discovery workspace</span>
+          <span className="normal-eyebrow"><Sparkles size={14} />{isPremium ? 'Premium intelligence workspace' : 'Intelligent discovery workspace'}</span>
           <h1>Welcome back, <span>{getFirstName(summary?.fullName)}.</span></h1>
           <p>Describe a real need. Voxidence listens across communities, finds repeated evidence, compares multiple AI candidates, and returns one validated software direction.</p>
           <div className="normal-dashboard-hero__actions">
             <motion.button className="normal-primary-button" type="button" onClick={() => navigate('/normal/generate')} whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}><Rocket size={18} />Start discovering</motion.button>
             <button className="normal-secondary-button" type="button" onClick={() => navigate('/normal/ideas')}>Open my ideas <ArrowRight size={17} /></button>
           </div>
-          <div className="normal-dashboard-hero__access"><strong>{accessMessage}</strong><span>Review the result first. Direct payment appears only when you choose to unlock that specific idea.</span></div>
+          <div className="normal-dashboard-hero__access"><strong>{accessMessage}</strong><span>{isPremium ? 'Each premium generation includes all advanced outputs immediately, plus contextual AI Chat for unlocked ideas.' : 'Review the result first. Direct payment appears only when you choose to unlock that specific idea.'}</span></div>
         </div>
 
         <div className="normal-signal-core" aria-label="Animated Voxidence intelligence pipeline">
@@ -141,7 +146,7 @@ export default function NormalDashboardPage() {
             <motion.div key={label} className={`normal-signal-core__node normal-signal-core__node--${index + 1}`} animate={{ y: [0, -7, 0], rotate: [0, index % 2 ? 3 : -3, 0] }} transition={{ repeat: Infinity, duration: 3.2 + index * 0.35, delay: index * 0.22 }} title={label}><Icon size={19} /></motion.div>
           ))}
           {Array.from({ length: 9 }, (_, index) => <motion.i key={index} style={{ '--i': index }} animate={{ opacity: [0.18, 0.85, 0.18], y: [0, -14, 0] }} transition={{ repeat: Infinity, duration: 2.5 + index * 0.1, delay: index * 0.14 }} />)}
-          <div className="normal-signal-core__counter"><strong>{freeGenerations}</strong><span>free discoveries</span></div>
+          <div className="normal-signal-core__counter"><strong>{isPremium ? creditBalance : freeGenerations}</strong><span>{isPremium ? 'premium credits' : 'free discoveries'}</span></div>
         </div>
       </motion.section>
 
@@ -157,7 +162,7 @@ export default function NormalDashboardPage() {
         <motion.div {...metricItem}><MetricCard icon={Lightbulb} label="Ideas created" value={summary?.ideasCount ?? 0} helper="All generated idea workspaces" tone="violet" index="01" onClick={() => navigate('/normal/ideas')} /></motion.div>
         <motion.div {...metricItem}><MetricCard icon={CheckCircle2} label="Validated ideas" value={summary?.validatedIdeasCount ?? summary?.ideasCount ?? 0} helper="Passed the Voxidence quality pipeline" tone="blue" index="02" onClick={() => navigate('/normal/ideas?status=validated')} /></motion.div>
         <motion.div {...metricItem}><MetricCard icon={Heart} label="Favorite ideas" value={summary?.favoriteIdeasCount ?? 0} helper="Owned and accepted ideas you love" tone="mint" index="03" onClick={() => navigate('/normal/ideas?view=favorites')} /></motion.div>
-        <motion.div {...metricItem}><MetricCard icon={BookOpenCheck} label="Published ideas" value={summary?.publishedIdeasCount ?? 0} helper="Ideas shared with the community" tone="amber" index="04" onClick={() => navigate('/normal/published')} /></motion.div>
+        <motion.div {...metricItem}><MetricCard icon={isPremium ? Coins : BookOpenCheck} label={isPremium ? "Premium credits" : "Published ideas"} value={isPremium ? creditBalance : (summary?.publishedIdeasCount ?? 0)} helper={isPremium ? "Credits available for complete idea generation" : "Ideas shared with the community"} tone="amber" index="04" onClick={() => navigate(isPremium ? '/normal/credits' : '/normal/published')} /></motion.div>
       </motion.section>
 
 
@@ -185,6 +190,7 @@ export default function NormalDashboardPage() {
       <motion.section className="normal-dashboard-latest" {...reveal}>
         <div className="normal-section-heading"><div><span className="normal-eyebrow">Continue building</span><h2>Your latest workspace</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>View all ideas <ArrowRight size={17} /></button></div>
         <LatestIdeaCard idea={summary?.latestIdea ?? null} />
+        {isPremium && summary?.latestIdea?.isUnlocked ? <button className="normal-text-button" type="button" onClick={() => navigate(`/normal/ideas/${summary.latestIdea.id}/chat`)}><Bot size={17} />Open AI Chat for this idea</button> : null}
       </motion.section>
 
       <motion.div {...reveal}>

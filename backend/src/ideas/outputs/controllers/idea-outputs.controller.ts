@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 
@@ -10,6 +11,7 @@ import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 
 import { IdeaOutputsService } from '../services/idea-outputs.service';
+import { IdeaUnlockService } from '../services/idea-unlock.service';
 
 /**
  * Controller used by authenticated users to retrieve advanced outputs
@@ -29,7 +31,23 @@ import { IdeaOutputsService } from '../services/idea-outputs.service';
 @Controller('users/ideas/:ideaId/outputs')
 @UseGuards(JwtAuthGuard)
 export class IdeaOutputsController {
-  constructor(private readonly ideaOutputsService: IdeaOutputsService) {}
+  constructor(
+    private readonly ideaOutputsService: IdeaOutputsService,
+    private readonly ideaUnlockService: IdeaUnlockService,
+  ) { }
+
+  /** Premium-only credit unlock for one owned NORMAL_FREE idea. */
+  @Post('unlock-with-credit')
+  unlockWithCredit(
+    @CurrentUser('id') userId: string,
+    @Param(
+      'ideaId',
+      new ParseUUIDPipe({ version: '4' }),
+    )
+    ideaId: string,
+  ) {
+    return this.ideaUnlockService.unlockIdeaWithCredit(userId, ideaId);
+  }
 
   /**
    * Retrieves all successfully generated advanced outputs for one

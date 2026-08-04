@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, UnlockMethod } from '@prisma/client';
 
 import type { ParsedIdeaUnlockAiOutput } from '../../generation/types/idea-ai-output.type';
 
@@ -12,18 +12,17 @@ export type IdeaOutputDatabaseClient = Prisma.TransactionClient;
 /**
  * Input required to persist parsed direct-unlock outputs.
  *
- * @author Malak
  */
 export type PersistIdeaUnlockOutputInput = {
   readonly ideaId: string;
   readonly userId: string;
   readonly output: ParsedIdeaUnlockAiOutput;
+  readonly unlockMethod?: UnlockMethod;
 };
 
 /**
  * Result returned after acquiring a durable direct-unlock claim.
  *
- * @author Malak
  */
 export type BeginIdeaUnlockResult = {
   readonly ideaId: string;
@@ -45,7 +44,6 @@ export type WaitForIdeaUnlockResult = {
 /**
  * Result returned after successfully persisting an unlocked idea.
  *
- * @author Malak
  */
 export type PersistedIdeaUnlockResult = {
   readonly ideaId: string;
@@ -55,7 +53,6 @@ export type PersistedIdeaUnlockResult = {
 /**
  * Public API representation of one completed generated output.
  *
- * @author Malak
  */
 export type IdeaOutputResponse = {
   id: string;
@@ -70,7 +67,6 @@ export type IdeaOutputResponse = {
 /**
  * Input received from successful direct-payment fulfillment.
  *
- * @author Malak
  */
 export type UnlockPaidIdeaInput = {
   readonly ideaId: string;
@@ -81,7 +77,6 @@ export type UnlockPaidIdeaInput = {
 /**
  * Direct-unlock workflow result.
  *
- * @author Malak
  */
 export type UnlockPaidIdeaResult = {
   readonly paymentId: string;
@@ -89,4 +84,13 @@ export type UnlockPaidIdeaResult = {
   readonly alreadyUnlocked: boolean;
   readonly completedNow: boolean;
   readonly unlockedAt: Date;
+};
+
+/** Result returned when a Premium user spends one credit to unlock a free idea. */
+export type UnlockIdeaWithCreditResult = {
+  readonly ideaId: string;
+  readonly alreadyUnlocked: boolean;
+  readonly completedNow: boolean;
+  readonly unlockedAt: Date;
+  readonly creditBalance: number;
 };

@@ -19,6 +19,7 @@ import { COMPLETED_RUN_STATUSES, TERMINAL_RUN_STATUSES } from '../constants/gene
 import { useIdeaGenerationSocket } from '../hooks/useIdeaGenerationSocket';
 import { clearActiveGenerationRunId } from '../store/activeGenerationRun.storage';
 import { getVisualPipeline } from '../utils/pipeline.utils';
+import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import '../styles/generation.css';
 
 function useSmoothBackendProgress(value) {
@@ -53,6 +54,7 @@ export default function GenerationProgressPage() {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId);
+  const { isPremium } = useAccountAccess();
   const displayedProgress = useSmoothBackendProgress(run?.progressPercent);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
@@ -243,6 +245,7 @@ export default function GenerationProgressPage() {
         <CompletionCelebration
           ideaId={run.ideaId}
           ideaTitle={run.idea?.title}
+          isPremium={isPremium}
           onOpenIdea={(ideaId) => navigate(`/normal/ideas/${ideaId}`, { replace: true })}
         />
       ) : null}

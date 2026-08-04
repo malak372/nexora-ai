@@ -20,8 +20,12 @@ import {
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { createDirectUnlockCheckout } from '../api/directUnlockApi';
+import {
+  createDirectUnlockCheckout,
+  unlockIdeaWithCredit,
+} from '../api/directUnlockApi';
 import { getPaymentPricing } from '../api/paymentFlowApi';
+import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { storePaymentReturnReference } from '../utils/paymentReturn.storage';
 import '../styles/direct-unlock.css';
 
@@ -46,21 +50,36 @@ export default function DirectUnlockPage() {
   const { ideaId } = useParams();
   const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
+  const { isPremium, creditBalance, refresh } = useAccountAccess();
 
   const [method, setMethod] = useState('card');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pricing, setPricing] = useState(null);
 
-  useEffect(() => { getPaymentPricing().then(setPricing).catch((e) => setError(e.message)); }, []);
+  useEffect(() => {
+    if (!isPremium) {
+      getPaymentPricing().then(setPricing).catch((e) => setError(e.message));
+    }
+  }, [isPremium]);
 
   const checkout = async () => {
     setBusy(true);
     setError('');
 
     try {
-      const origin = window.location.origin;
+      if (isPremium) {
+        await unlockIdeaWithCredit(ideaId);
+        await refresh();
+        window.dispatchEvent(new Event('credits:updated'));
+        navigate(`/normal/ideas/${ideaId}`, {
+          replace: true,
+          state: { unlockedWithCredit: true },
+        });
+        return;
+      }
 
+      const origin = window.location.origin;
       const result = await createDirectUnlockCheckout({
         ideaId,
         paymentMethodKey: method,
@@ -84,7 +103,9 @@ export default function DirectUnlockPage() {
     } catch (requestError) {
       setError(
         requestError?.message ||
-          'Unable to open secure checkout.',
+        (isPremium
+          ? 'Unable to unlock this idea with a credit.'
+          : 'Unable to open secure checkout.'),
       );
       setBusy(false);
     }
@@ -97,8 +118,8 @@ export default function DirectUnlockPage() {
         shouldReduceMotion
           ? undefined
           : {
-              opacity: 0,
-            }
+            opacity: 0,
+          }
       }
       animate={{
         opacity: 1,
@@ -125,10 +146,10 @@ export default function DirectUnlockPage() {
             shouldReduceMotion
               ? undefined
               : {
-                  opacity: 0,
-                  x: -26,
-                  scale: 0.985,
-                }
+                opacity: 0,
+                x: -26,
+                scale: 0.985,
+              }
           }
           animate={{
             opacity: 1,
@@ -147,7 +168,7 @@ export default function DirectUnlockPage() {
           <div className="unlock-story__content">
             <span className="unlock-story__eyebrow">
               <Sparkles size={15} />
-              Direct unlock
+              {isPremium ? 'Premium credit unlock' : 'Direct unlock'}
             </span>
 
             <h1>
@@ -156,8 +177,9 @@ export default function DirectUnlockPage() {
             </h1>
 
             <p>
-              Unlock the full execution package for this idea through a secure,
-              provider-hosted checkout.
+              {isPremium
+                ? 'Spend one credit to unlock the advanced features and AI Chat for this free idea.'
+                : 'Unlock the full execution package for this idea through a secure, provider-hosted checkout.'}
             </p>
 
             <div className="unlock-benefits">
@@ -168,9 +190,9 @@ export default function DirectUnlockPage() {
                     shouldReduceMotion
                       ? undefined
                       : {
-                          opacity: 0,
-                          y: 18,
-                        }
+                        opacity: 0,
+                        y: 18,
+                      }
                   }
                   animate={{
                     opacity: 1,
@@ -201,12 +223,12 @@ export default function DirectUnlockPage() {
           <div className="unlock-story__trust">
             <span>
               <ShieldCheck size={15} />
-              Provider verified
+              {isPremium ? 'No direct payment' : 'Provider verified'}
             </span>
 
             <span>
               <LockKeyhole size={15} />
-              Secure redirect
+              {isPremium ? '1 credit only' : 'Secure redirect'}
             </span>
           </div>
         </motion.article>
@@ -217,10 +239,10 @@ export default function DirectUnlockPage() {
             shouldReduceMotion
               ? undefined
               : {
-                  opacity: 0,
-                  x: 26,
-                  scale: 0.985,
-                }
+                opacity: 0,
+                x: 26,
+                scale: 0.985,
+              }
           }
           animate={{
             opacity: 1,
@@ -238,18 +260,25 @@ export default function DirectUnlockPage() {
           </div>
 
           <span className="unlock-checkout__eyebrow">
-            Secure checkout
+            {isPremium ? 'Premium credit access' : 'Secure checkout'}
           </span>
 
           <h2>Unlock this idea</h2>
-          <div className="unlock-backend-price">{pricing ? `${pricing.directUnlockPrice} ${pricing.currency}` : 'Loading price…'}</div>
+          <div className="unlock-backend-price">
+            {isPremium
+              ? `1 credit · ${creditBalance} available`
+              : pricing
+                ? `${pricing.directUnlockPrice} ${pricing.currency}`
+                : 'Loading price…'}
+          </div>
 
           <p>
-            Choose a payment method. Voxidence sends you to the provider's secure
-            checkout and unlocks access only after verified confirmation.
+            {isPremium
+              ? 'Premium users do not pay directly here. Confirming will deduct one credit and generate the advanced workspace.'
+              : "Choose a payment method. Voxidence sends you to the provider's secure checkout and unlocks access only after verified confirmation."}
           </p>
 
-          <div className="unlock-methods">
+          {!isPremium ? <div className="unlock-methods">
             {PAYMENT_METHODS.map((paymentMethod) => {
               const Icon = paymentMethod.icon;
               const isSelected =
@@ -265,15 +294,15 @@ export default function DirectUnlockPage() {
                     shouldReduceMotion
                       ? undefined
                       : {
-                          y: -3,
-                        }
+                        y: -3,
+                      }
                   }
                   whileTap={
                     shouldReduceMotion
                       ? undefined
                       : {
-                          scale: 0.99,
-                        }
+                        scale: 0.99,
+                      }
                   }
                 >
                   <input
@@ -313,7 +342,7 @@ export default function DirectUnlockPage() {
                 </motion.label>
               );
             })}
-          </div>
+          </div> : null}
 
           {error ? (
             <div className="unlock-error">
@@ -330,15 +359,15 @@ export default function DirectUnlockPage() {
               shouldReduceMotion || busy
                 ? undefined
                 : {
-                    y: -3,
-                  }
+                  y: -3,
+                }
             }
             whileTap={
               shouldReduceMotion || busy
                 ? undefined
                 : {
-                    scale: 0.985,
-                  }
+                  scale: 0.985,
+                }
             }
           >
             {busy ? (
@@ -347,12 +376,12 @@ export default function DirectUnlockPage() {
                   size={18}
                   className="unlock-spin"
                 />
-                Opening secure checkout…
+                {isPremium ? 'Unlocking advanced workspace…' : 'Opening secure checkout…'}
               </>
             ) : (
               <>
-                Continue to payment
-                <CreditCard size={18} />
+                {isPremium ? 'Use 1 credit' : 'Continue to payment'}
+                {isPremium ? <Sparkles size={18} /> : <CreditCard size={18} />}
               </>
             )}
           </motion.button>
@@ -361,9 +390,11 @@ export default function DirectUnlockPage() {
             <ShieldCheck size={15} />
 
             <span>
-              <strong>Protected payment flow</strong>
+              <strong>{isPremium ? 'Credit-protected unlock' : 'Protected payment flow'}</strong>
               <small>
-                Access is granted only after the provider webhook is verified.
+                {isPremium
+                  ? 'One credit is deducted only for this free idea. Failed generation is refunded automatically.'
+                  : 'Access is granted only after the provider webhook is verified.'}
               </small>
             </span>
           </div>

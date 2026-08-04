@@ -5,6 +5,7 @@
  */
 import {
   Bell,
+  Coins,
   BookOpenCheck,
   ReceiptText,
   Compass,
@@ -20,8 +21,9 @@ import {
 import { NavLink, useNavigate } from 'react-router-dom';
 
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
+import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 
-const items = [
+const baseItems = [
   ['/normal/dashboard', 'Home', LayoutDashboard],
   ['/normal/generate', 'Generate idea', Sparkles],
   ['/normal/ideas', 'My ideas', Lightbulb],
@@ -37,6 +39,11 @@ const items = [
 export default function NormalSidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
   const user = getStoredUser();
+  const { isPremium, creditBalance } = useAccountAccess();
+  const items = [
+    ...baseItems,
+    ['/normal/credits', isPremium ? `Buy credits (${creditBalance})` : 'Upgrade to Premium', Coins],
+  ];
 
   const logout = () => {
     clearAuthSession();
@@ -75,7 +82,7 @@ export default function NormalSidebar({ isOpen, onClose }) {
           <span>{(user?.fullName || user?.email || 'N')[0].toUpperCase()}</span>
           <div>
             <b>{user?.fullName || 'Voxidence user'}</b>
-            <small>{user?.email || 'Normal account'}</small>
+            <small>{isPremium ? `Premium · ${creditBalance} credits` : (user?.email || 'Normal account')}</small>
           </div>
           <button type="button" onClick={logout}><LogOut size={18} /></button>
         </div>

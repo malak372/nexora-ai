@@ -1,37 +1,53 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AccountStatus,
   AiRoutingStrategy,
   ApiRequestType,
+  CreditTransactionType,
   IdeaGenerationType,
   PromptType,
+  UnlockMethod,
 } from '@prisma/client';
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
+import { PREMIUM_IDEA_CREDIT_COST } from '../../../credits/constants/credit.constants';
+import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PromptBuilderService } from '../../../prompts/services/prompt-builder.service';
 import { PromptHistoryService } from '../../../prompts/services/prompt-history.service';
 import { IdeaUnlockOutputParserService } from '../../generation/services/idea-unlock-output-parser.service';
 
 import type {
+  UnlockIdeaWithCreditResult,
   UnlockPaidIdeaInput,
   UnlockPaidIdeaResult,
 } from '../types/idea-output.type';
 import { IdeaOutputPersistenceService } from './idea-output-persistence.service';
 
-/**
- * Executes the complete advanced-output workflow for one successfully paid
- * NORMAL_FREE idea.
- *
- * A durable database claim is acquired before the AI request. This prevents
- * concurrent webhook deliveries from issuing duplicate paid AI calls. The
- * claim is marked FAILED when generation fails and can later be retried safely.
- */
+type UnlockWorkflowInput = {
+  readonly ideaId: string;
+  readonly userId: string;
+  readonly unlockMethod: UnlockMethod;
+  readonly paymentId?: string;
+  readonly consumeCredit: boolean;
+};
+
+type UnlockWorkflowResult = {
+  readonly ideaId: string;
+  readonly alreadyUnlocked: boolean;
+  readonly completedNow: boolean;
+  readonly unlockedAt: Date;
+  readonly creditBalance?: number;
+};
+
+/** Generates advanced outputs for an eligible free idea. */
 @Injectable()
 export class IdeaUnlockService {
   constructor(
@@ -41,11 +57,56 @@ export class IdeaUnlockService {
     private readonly aiExecution: AiExecutionService,
     private readonly parser: IdeaUnlockOutputParserService,
     private readonly persistence: IdeaOutputPersistenceService,
-  ) {}
+    private readonly creditBalanceService: CreditBalanceService,
+  ) { }
 
-  async unlockPaidIdea(
-    input: UnlockPaidIdeaInput,
-  ): Promise<UnlockPaidIdeaResult> {
+  async unlockPaidIdea(input: UnlockPaidIdeaInput): Promise<UnlockPaidIdeaResult> {
+    const result = await this.executeUnlock({
+      ideaId: input.ideaId,
+      userId: input.userId,
+      paymentId: input.paymentId,
+      unlockMethod: UnlockMethod.DIRECT_PAYMENT,
+      consumeCredit: false,
+    });
+
+    return {
+      paymentId: input.paymentId,
+      ideaId: result.ideaId,
+      alreadyUnlocked: result.alreadyUnlocked,
+      completedNow: result.completedNow,
+      unlockedAt: result.unlockedAt,
+    };
+  }
+
+  /** Premium users unlock one NORMAL_FREE idea by spending one credit. */
+  async unlockIdeaWithCredit(
+    userId: string,
+    ideaId: string,
+  ): Promise<UnlockIdeaWithCreditResult> {
+    const result = await this.executeUnlock({
+      ideaId,
+      userId,
+      unlockMethod: UnlockMethod.CREDIT_GENERATION,
+      consumeCredit: true,
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { creditBalance: true },
+    });
+
+    return {
+      ideaId: result.ideaId,
+      alreadyUnlocked: result.alreadyUnlocked,
+      completedNow: result.completedNow,
+      unlockedAt: result.unlockedAt,
+      creditBalance: user?.creditBalance ?? result.creditBalance ?? 0,
+    };
+  }
+
+  private async executeUnlock(
+    input: UnlockWorkflowInput,
+  ): Promise<UnlockWorkflowResult> {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: input.ideaId,
@@ -56,6 +117,14 @@ export class IdeaUnlockService {
         id: true,
         collectionJobId: true,
         generationType: true,
+        isUnlocked: true,
+        unlockedAt: true,
+        user: {
+          select: {
+            accountStatus: true,
+            creditBalance: true,
+          },
+        },
       },
     });
 
@@ -63,10 +132,36 @@ export class IdeaUnlockService {
       throw new NotFoundException('The selected idea was not found.');
     }
 
+    if (!idea.user) {
+      throw new BadRequestException('The selected idea has no registered owner.');
+    }
+
     if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
       throw new BadRequestException(
-        'Only a registered-user free idea can be unlocked by direct payment.',
+        'Only a registered-user free idea can be unlocked.',
       );
+    }
+
+    if (idea.isUnlocked && idea.unlockedAt) {
+      return {
+        ideaId: idea.id,
+        alreadyUnlocked: true,
+        completedNow: false,
+        unlockedAt: idea.unlockedAt,
+        creditBalance: idea.user.creditBalance,
+      };
+    }
+
+    if (input.consumeCredit) {
+      if (idea.user.accountStatus !== AccountStatus.PREMIUM) {
+        throw new ForbiddenException(
+          'Only Premium users can unlock a free idea with credits.',
+        );
+      }
+
+      if (idea.user.creditBalance < PREMIUM_IDEA_CREDIT_COST) {
+        throw new BadRequestException('Insufficient credit balance.');
+      }
     }
 
     if (!idea.collectionJobId) {
@@ -75,24 +170,15 @@ export class IdeaUnlockService {
       );
     }
 
-    let claim = await this.persistence.beginDirectUnlock(
-      idea.id,
-      input.userId,
-    );
+    let claim = await this.persistence.beginDirectUnlock(idea.id, input.userId);
 
-    if (claim.alreadyUnlocked) {
-      if (!claim.unlockedAt) {
-        throw new BadRequestException(
-          'The idea has an inconsistent unlock state.',
-        );
-      }
-
+    if (claim.alreadyUnlocked && claim.unlockedAt) {
       return {
-        paymentId: input.paymentId,
         ideaId: claim.ideaId,
         alreadyUnlocked: true,
         completedNow: false,
         unlockedAt: claim.unlockedAt,
+        creditBalance: idea.user.creditBalance,
       };
     }
 
@@ -105,11 +191,11 @@ export class IdeaUnlockService {
 
       if (concurrentResult.completed && concurrentResult.unlockedAt) {
         return {
-          paymentId: input.paymentId,
           ideaId: idea.id,
           alreadyUnlocked: true,
           completedNow: false,
           unlockedAt: concurrentResult.unlockedAt,
+          creditBalance: idea.user.creditBalance,
         };
       }
 
@@ -123,11 +209,11 @@ export class IdeaUnlockService {
 
       if (claim.alreadyUnlocked && claim.unlockedAt) {
         return {
-          paymentId: input.paymentId,
           ideaId: idea.id,
           alreadyUnlocked: true,
           completedNow: false,
           unlockedAt: claim.unlockedAt,
+          creditBalance: idea.user.creditBalance,
         };
       }
 
@@ -138,7 +224,20 @@ export class IdeaUnlockService {
       }
     }
 
+    let creditWasConsumed = false;
+    let balanceAfter: number | undefined;
+
     try {
+      if (input.consumeCredit) {
+        const creditResult = await this.creditBalanceService.consumeForIdeaGeneration(
+          input.userId,
+          idea.id,
+          PREMIUM_IDEA_CREDIT_COST,
+        );
+        creditWasConsumed = true;
+        balanceAfter = creditResult.balanceAfter;
+      }
+
       const prompt = await this.promptBuilder.buildIdeaPrompt({
         purpose: 'IDEA_UNLOCK',
         collectionJobId: idea.collectionJobId,
@@ -175,21 +274,29 @@ export class IdeaUnlockService {
         ideaId: idea.id,
         userId: input.userId,
         output: parsed,
+        unlockMethod: input.unlockMethod,
       });
 
       return {
-        paymentId: input.paymentId,
         ideaId: persisted.ideaId,
         alreadyUnlocked: false,
         completedNow: true,
         unlockedAt: persisted.unlockedAt,
+        creditBalance: balanceAfter,
       };
     } catch (error) {
-      await this.persistence.markDirectUnlockFailed(
-        idea.id,
-        input.userId,
-        error,
-      );
+      await this.persistence.markDirectUnlockFailed(idea.id, input.userId, error);
+
+      if (creditWasConsumed) {
+        await this.creditBalanceService.adjustBalance({
+          userId: input.userId,
+          ideaId: idea.id,
+          amount: PREMIUM_IDEA_CREDIT_COST,
+          type: CreditTransactionType.REFUND,
+          description: 'Credit refunded because advanced-output generation failed.',
+          activatePremium: false,
+        });
+      }
 
       throw error;
     }

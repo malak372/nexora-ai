@@ -63,7 +63,7 @@ type OutputDatabaseClient = PrismaService | IdeaOutputDatabaseClient;
  */
 @Injectable()
 export class IdeaOutputPersistenceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async beginDirectUnlock(
     ideaId: string,
@@ -90,7 +90,7 @@ export class IdeaOutputPersistenceService {
 
       if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
         throw new BadRequestException(
-          'Only a registered-user free idea can be unlocked by direct payment.',
+          'Only a registered-user free idea can be unlocked.',
         );
       }
 
@@ -353,7 +353,7 @@ export class IdeaOutputPersistenceService {
 
     if (idea.generationType !== IdeaGenerationType.NORMAL_FREE) {
       throw new BadRequestException(
-        'Only a registered-user free idea can be unlocked by direct payment.',
+        'Only a registered-user free idea can be unlocked.',
       );
     }
 
@@ -428,7 +428,7 @@ export class IdeaOutputPersistenceService {
       data: {
         fullAbstract: input.output.fullAbstract,
         isUnlocked: true,
-        unlockMethod: UnlockMethod.DIRECT_PAYMENT,
+        unlockMethod: input.unlockMethod ?? UnlockMethod.DIRECT_PAYMENT,
         unlockedAt,
       },
     });
