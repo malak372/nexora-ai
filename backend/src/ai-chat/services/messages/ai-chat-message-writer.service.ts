@@ -55,7 +55,7 @@ export class AiChatMessageWriterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiChatAccessService: AiChatAccessService,
-  ) {}
+  ) { }
 
   /**
    * Creates one complete conversation turn atomically.
@@ -91,7 +91,7 @@ export class AiChatMessageWriterService {
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
-        await transaction.$queryRaw`
+        await transaction.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtextextended(${sessionId}, 0)
           )

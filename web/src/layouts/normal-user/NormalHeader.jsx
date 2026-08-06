@@ -105,8 +105,7 @@ export default function NormalHeader({ onOpenMenu }) {
 
         <NavLink className="normal-header__brand" to="/normal/dashboard" aria-label="Voxidence workspace home">
           <motion.span className="normal-header__brand-mark" whileHover={{ rotate: 8, scale: 1.06 }}>
-            <VoxidenceMark size={22} />
-            <i />
+            <VoxidenceMark size={46} />
           </motion.span>
           <div className="normal-header__brand-copy">
             <strong>Voxidence</strong>

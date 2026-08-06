@@ -11,6 +11,7 @@ import {
 import { CurrentUser } from '../../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../../../auth/types/authenticated-user.type';
+import { AccountStatus } from '@prisma/client';
 
 import { PaymentCheckoutService } from '../../../payments/services/payment-checkout.service';
 
@@ -39,7 +40,7 @@ export class PublicationAcceptancesController {
   constructor(
     private readonly acceptanceService: IdeaPublicationAcceptanceService,
     private readonly paymentCheckoutService: PaymentCheckoutService,
-  ) {}
+  ) { }
 
   /**
    * Accepts one published idea.
@@ -68,6 +69,14 @@ export class PublicationAcceptancesController {
     publicationId: string,
     @Body() dto: CreatePublicationAcceptanceDto,
   ) {
+    if (user.accountStatus === AccountStatus.PREMIUM) {
+      return this.acceptanceService.acceptBasicForPremium(
+        user.id,
+        publicationId,
+        dto.clientRequestId,
+      );
+    }
+
     return this.paymentCheckoutService.createPublicationAcceptanceCheckout(
       user.id,
       publicationId,

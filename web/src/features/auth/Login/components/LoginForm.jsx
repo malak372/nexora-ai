@@ -15,6 +15,7 @@ import {
     AlertTriangle,
     ArrowRight,
     Check,
+    Clock3,
     Eye,
     EyeOff,
     LoaderCircle,
@@ -23,7 +24,7 @@ import {
     X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ROUTES } from '../../../../constants/routes.constants';
@@ -70,11 +71,81 @@ function validate(values) {
     return errors;
 }
 
+function getLockDeadlineTimestamp(serverError) {
+    if (serverError?.type !== 'locked') {
+        return null;
+    }
+
+    const lockedUntilTimestamp = Date.parse(serverError?.lockedUntil);
+
+    if (
+        Number.isFinite(lockedUntilTimestamp) &&
+        lockedUntilTimestamp > Date.now()
+    ) {
+        return lockedUntilTimestamp;
+    }
+
+    const seconds = Number(serverError?.remainingSeconds);
+
+    if (Number.isFinite(seconds) && seconds > 0) {
+        return Date.now() + Math.ceil(seconds) * 1000;
+    }
+
+    const minutes = Number(serverError?.remainingMinutes);
+
+    if (Number.isFinite(minutes) && minutes > 0) {
+        return Date.now() + Math.ceil(minutes * 60) * 1000;
+    }
+
+    return null;
+}
+
+function getRemainingLockSeconds(deadlineTimestamp) {
+    if (!Number.isFinite(deadlineTimestamp)) {
+        return 0;
+    }
+
+    return Math.max(
+        0,
+        Math.ceil((deadlineTimestamp - Date.now()) / 1000),
+    );
+}
+
+function formatCountdown(totalSeconds) {
+    const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const seconds = safeSeconds % 60;
+
+    return [hours, minutes, seconds]
+        .map((value) => String(value).padStart(2, '0'))
+        .join(':');
+}
+
+function formatLockDuration(totalMinutes) {
+    const safeMinutes = Math.max(1, Math.ceil(Number(totalMinutes) || 1));
+
+    if (safeMinutes < 60) {
+        return `${safeMinutes} ${safeMinutes === 1 ? 'minute' : 'minutes'}`;
+    }
+
+    const hours = Math.floor(safeMinutes / 60);
+    const remainingMinutes = safeMinutes % 60;
+    const hoursText = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+
+    if (remainingMinutes === 0) {
+        return hoursText;
+    }
+
+    return `${hoursText} and ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'
+        }`;
+}
+
 export default function LoginForm({
     isSubmitting = false,
     onDismissError,
     onSubmit,
-    serverError = '',
+    serverError = null,
 }) {
     const [values, setValues] = useState({
         email: '',
@@ -84,6 +155,58 @@ export default function LoginForm({
     const [errors, setErrors] = useState({});
     const [showPassword, setShowPassword] = useState(false);
     const [touched, setTouched] = useState({});
+    const lockDeadlineRef = useRef(null);
+    const lockDismissedRef = useRef(false);
+    const [lockSecondsRemaining, setLockSecondsRemaining] = useState(0);
+    const [showInitialLockDuration, setShowInitialLockDuration] = useState(false);
+
+    useEffect(() => {
+        lockDismissedRef.current = false;
+        lockDeadlineRef.current = getLockDeadlineTimestamp(serverError);
+        setLockSecondsRemaining(
+            getRemainingLockSeconds(lockDeadlineRef.current),
+        );
+
+        if (serverError?.type !== 'locked' || !serverError?.justLocked) {
+            setShowInitialLockDuration(false);
+            return undefined;
+        }
+
+        setShowInitialLockDuration(true);
+
+        const durationMessageTimer = window.setTimeout(() => {
+            setShowInitialLockDuration(false);
+        }, 4500);
+
+        return () => window.clearTimeout(durationMessageTimer);
+    }, [serverError]);
+
+    useEffect(() => {
+        if (serverError?.type !== 'locked') {
+            return undefined;
+        }
+
+        const updateCountdown = () => {
+            const remainingSeconds = getRemainingLockSeconds(
+                lockDeadlineRef.current,
+            );
+
+            setLockSecondsRemaining(remainingSeconds);
+
+            if (remainingSeconds === 0 && !lockDismissedRef.current) {
+                lockDismissedRef.current = true;
+                onDismissError?.();
+            }
+        };
+
+        updateCountdown();
+        const timer = window.setInterval(updateCountdown, 1000);
+
+        return () => window.clearInterval(timer);
+    }, [onDismissError, serverError?.type]);
+
+    const isAccountLocked =
+        serverError?.type === 'locked' && lockSecondsRemaining > 0;
 
     const isEmailFormatValid = useMemo(
         () =>
@@ -187,8 +310,35 @@ export default function LoginForm({
                         </span>
 
                         <span className="nx-form__alert-copy">
-                            <strong>Sign in failed</strong>
-                            <small>{serverError}</small>
+                            <strong>
+                                {serverError?.title ||
+                                    'Sign in failed'}
+                            </strong>
+                            {serverError?.type !== 'locked' && (
+                                <small>
+                                    {serverError?.message || serverError}
+                                </small>
+                            )}
+
+                            {serverError?.type === 'locked' &&
+                                showInitialLockDuration && (
+                                    <small>
+                                        Your account has been locked for{' '}
+                                        {formatLockDuration(
+                                            serverError?.lockDurationMinutes,
+                                        )}.
+                                    </small>
+                                )}
+
+                            {serverError?.type === 'locked' && (
+                                <span className="nx-form__lock-countdown">
+                                    <Clock3 size={15} aria-hidden="true" />
+                                    <span>Unlocks in</span>
+                                    <strong>
+                                        {formatCountdown(lockSecondsRemaining)}
+                                    </strong>
+                                </span>
+                            )}
                         </span>
 
                         <button
@@ -236,7 +386,7 @@ export default function LoginForm({
                         onChange={handleChange}
                         placeholder="name@example.com"
                         autoComplete="username"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isAccountLocked}
                         aria-invalid={Boolean(errors.email && touched.email)}
                         aria-describedby={
                             errors.email ? 'login-email-error' : undefined
@@ -302,7 +452,7 @@ export default function LoginForm({
                         onChange={handleChange}
                         placeholder="Enter your password"
                         autoComplete="current-password"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isAccountLocked}
                         aria-invalid={Boolean(errors.password && touched.password)}
                         aria-describedby={
                             errors.password
@@ -322,7 +472,7 @@ export default function LoginForm({
                                 ? 'Hide password'
                                 : 'Show password'
                         }
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isAccountLocked}
                     >
                         {showPassword ? (
                             <EyeOff size={19} aria-hidden="true" />
@@ -354,7 +504,7 @@ export default function LoginForm({
                         type="checkbox"
                         checked={values.rememberMe}
                         onChange={handleChange}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isAccountLocked}
                     />
 
                     <span className="nx-check__box" aria-hidden="true">
@@ -373,9 +523,9 @@ export default function LoginForm({
             <motion.button
                 className="nx-form__submit"
                 type="submit"
-                disabled={isSubmitting}
-                whileHover={isSubmitting ? undefined : { y: -2 }}
-                whileTap={isSubmitting ? undefined : { scale: 0.985 }}
+                disabled={isSubmitting || isAccountLocked}
+                whileHover={isSubmitting || isAccountLocked ? undefined : { y: -2 }}
+                whileTap={isSubmitting || isAccountLocked ? undefined : { scale: 0.985 }}
             >
                 <span className="nx-form__submit-shine" aria-hidden="true" />
 

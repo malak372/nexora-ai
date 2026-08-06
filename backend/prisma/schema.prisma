@@ -69,14 +69,19 @@ model User {
   isVerified                  Boolean                     @default(false) @map("is_verified")
   createdAt                   DateTime                    @default(now()) @map("created_at")
   updatedAt                   DateTime                    @updatedAt @map("updated_at")
+
   failedLoginAttempts         Int                         @default(0) @map("failed_login_attempts")
+  failedLoginWindowStartedAt  DateTime?                   @map("failed_login_window_started_at")
+  loginLockLevel              Int                         @default(0) @map("login_lock_level")
+
+  lockedAt                    DateTime?                   @map("locked_at")
   lockedUntil                 DateTime?                   @map("locked_until")
+  lockDurationMinutes         Int?                        @map("lock_duration_minutes")
+
   emailVerifiedAt             DateTime?                   @map("email_verified_at")
   lastLoginAt                 DateTime?                   @map("last_login_at")
   passwordChangedAt           DateTime?                   @map("password_changed_at")
   userType                    UserType
-  failedLoginWindowStartedAt  DateTime?                   @map("failed_login_window_started_at")
-  loginLockLevel              Int                         @default(0) @map("login_lock_level")
   deletedAt                   DateTime?                   @map("deleted_at")
   verificationEmailSentAt     DateTime?                   @map("verification_email_sent_at")
   premiumActivatedAt          DateTime?                   @map("premium_activated_at")

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -19,6 +20,7 @@ import { GeneratePublicationDescriptionDto } from '../dto/generate-publication-d
 import { GetAcceptedPublicationsQueryDto } from '../dto/get-accepted-publications-query.dto';
 import { GetPublicationsQueryDto } from '../dto/get-publications-query.dto';
 import { UpsertIdeaPublicationDto } from '../dto/upsert-idea-publication.dto';
+import { UpdatePublicationAcceptanceSettingDto } from '../dto/update-publication-acceptance-setting.dto';
 import { IdeaPublicationAiService } from '../services/idea-publication-ai.service';
 import { IdeaPublicationQueryService } from '../services/idea-publication-query.service';
 import { IdeaPublicationService } from '../services/idea-publication.service';
@@ -35,7 +37,7 @@ export class UserPublicationsController {
     private readonly publicationService: IdeaPublicationService,
     private readonly queryService: IdeaPublicationQueryService,
     private readonly publicationAiService: IdeaPublicationAiService,
-  ) {}
+  ) { }
 
   /**
    * Creates or updates the safe public snapshot of an owned idea.
@@ -73,6 +75,15 @@ export class UserPublicationsController {
     @Param('ideaId', new ParseUUIDPipe({ version: '4' })) ideaId: string,
   ) {
     return this.publicationService.publish(user.id, ideaId);
+  }
+
+  @Patch('ideas/:ideaId/publication/acceptance-setting')
+  updateAcceptanceSetting(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('ideaId', new ParseUUIDPipe({ version: '4' })) ideaId: string,
+    @Body() dto: UpdatePublicationAcceptanceSettingDto,
+  ) {
+    return this.publicationService.setAcceptanceEnabled(user.id, ideaId, dto.allowAdoption);
   }
 
   /**

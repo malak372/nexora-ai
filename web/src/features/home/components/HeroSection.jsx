@@ -1,18 +1,47 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
     ArrowRight,
-    BrainCircuit,
     CheckCircle2,
-    DatabaseZap,
-    Lightbulb,
-    MessageCircleMore,
-    Scale,
     Sparkles,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import VoxidenceMark from '../../../components/brand/VoxidenceMark';
+import SoftBulbMark from '../../../components/brand/SoftBulbMark';
 import { HERO_CONTENT } from '../constants/home.constants';
+
+const HERO_STAGES = [
+    {
+        id: 'collect',
+        label: '01 · Collect',
+        title: 'Collect real community signals',
+        description: 'Public conversations, reviews, developer communities, and recurring needs flow into one evidence source.',
+        image: '/images/hero-stages/01-collect-signals(1).svg',
+    },
+    {
+        id: 'process',
+        label: '02 · Process',
+        title: 'Turn signals into structured evidence',
+        description: 'The pipeline cleans the data, runs NLP analysis, detects patterns, and prepares grounded context.',
+        image: '/images/hero-stages/02-evidence-pipeline(1).svg',
+    },
+    {
+        id: 'compare',
+        label: '03 · Compare',
+        title: 'Compare AI directions with evidence',
+        description: 'Multiple candidate directions are scored against signal strength, community demand, and potential impact.',
+        image: '/images/hero-stages/03-compare-directions(1).svg',
+    },
+    {
+        id: 'select',
+        label: '04 · Select',
+        title: 'Shape the strongest project opportunity',
+        description: 'The selected direction becomes a focused, evidence-backed project brief that is ready to build.',
+        image: '/images/hero-stages/04-selected-opportunity(1).svg',
+    },
+];
+
+const STAGE_DURATION_MS = 4800;
 
 function scrollToSection(sectionId) {
     const section = document.getElementById(sectionId);
@@ -29,40 +58,27 @@ function scrollToSection(sectionId) {
     });
 }
 
-const orbitSignals = [
-    {
-        id: 'voice',
-        eyebrow: 'Listen',
-        label: 'Community voices',
-        icon: MessageCircleMore,
-        className: 'vox-orbit-node vox-orbit-node-one',
-    },
-    {
-        id: 'evidence',
-        eyebrow: 'Verify',
-        label: 'Evidence patterns',
-        icon: DatabaseZap,
-        className: 'vox-orbit-node vox-orbit-node-two',
-    },
-    {
-        id: 'judge',
-        eyebrow: 'Compare',
-        label: 'AI directions',
-        icon: Scale,
-        className: 'vox-orbit-node vox-orbit-node-three',
-    },
-    {
-        id: 'idea',
-        eyebrow: 'Shape',
-        label: 'Project opportunity',
-        icon: Lightbulb,
-        className: 'vox-orbit-node vox-orbit-node-four',
-    },
-];
-
 export default function HeroSection() {
     const navigate = useNavigate();
     const shouldReduceMotion = useReducedMotion();
+    const [activeStageIndex, setActiveStageIndex] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
+
+    useEffect(() => {
+        if (shouldReduceMotion || isPaused) {
+            return undefined;
+        }
+
+        const intervalId = window.setInterval(() => {
+            setActiveStageIndex((currentIndex) => (
+                currentIndex + 1
+            ) % HERO_STAGES.length);
+        }, STAGE_DURATION_MS);
+
+        return () => window.clearInterval(intervalId);
+    }, [isPaused, shouldReduceMotion]);
+
+    const activeStage = HERO_STAGES[activeStageIndex];
 
     return (
         <section
@@ -108,7 +124,7 @@ export default function HeroSection() {
                             className="vox-hero-button vox-hero-button-primary group"
                         >
                             <span className="vox-hero-button-mark" aria-hidden="true">
-                                <VoxidenceMark size={20} />
+                                <SoftBulbMark size={21} />
                             </span>
                             Generate your free idea
                             <ArrowRight
@@ -139,85 +155,52 @@ export default function HeroSection() {
                 </motion.div>
 
                 <motion.div
-                    initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96, x: 24 }}
+                    initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.97, x: 24 }}
                     animate={shouldReduceMotion ? undefined : { opacity: 1, scale: 1, x: 0 }}
                     transition={{ duration: 0.86, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
-                    className="vox-signal-universe"
-                    aria-label="Animated Voxidence evidence-intelligence visualization"
+                    className="vox-stage-showcase"
+                    onMouseEnter={() => setIsPaused(true)}
+                    onMouseLeave={() => setIsPaused(false)}
+                    aria-label="Voxidence project stages slideshow"
                 >
-                    <div className="vox-universe-topline">
-                        <div>
-                            <span className="vox-universe-kicker">Live evidence flow</span>
-                            <strong>From signal to selected direction</strong>
-                        </div>
-                        <span className="vox-universe-live">
-                            <i />
-                            Active
-                        </span>
+                    <div className="vox-stage-showcase-frame">
+                        <AnimatePresence mode="wait" initial={false}>
+                            <motion.img
+                                key={activeStage.id}
+                                src={activeStage.image}
+                                alt={activeStage.title}
+                                className="vox-stage-showcase-image"
+                                initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035, filter: 'blur(8px)' }}
+                                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.985, filter: 'blur(5px)' }}
+                                transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+                            />
+                        </AnimatePresence>
+
                     </div>
 
-                    <div className="vox-universe-stage">
-                        <div className="vox-universe-beam" aria-hidden="true" />
-                        <div className="vox-universe-halo vox-universe-halo-one" aria-hidden="true" />
-                        <div className="vox-universe-halo vox-universe-halo-two" aria-hidden="true" />
-                        <div className="vox-universe-halo vox-universe-halo-three" aria-hidden="true" />
-                        <div className="vox-universe-orbit vox-universe-orbit-one" aria-hidden="true" />
-                        <div className="vox-universe-orbit vox-universe-orbit-two" aria-hidden="true" />
-                        <div className="vox-universe-orbit vox-universe-orbit-three" aria-hidden="true" />
-
-                        {orbitSignals.map((signal) => {
-                            const Icon = signal.icon;
-
-                            return (
-                                <div key={signal.id} className={signal.className}>
-                                    <span className="vox-orbit-node-icon">
-                                        <Icon size={17} aria-hidden="true" />
-                                    </span>
-                                    <span className="vox-orbit-node-copy">
-                                        <small>{signal.eyebrow}</small>
-                                        <strong>{signal.label}</strong>
-                                    </span>
-                                </div>
-                            );
-                        })}
-
-                        <div className="vox-universe-core">
-                            <div className="vox-universe-core-glow" aria-hidden="true" />
-                            <div className="vox-universe-core-mark">
-                                <VoxidenceMark size={54} />
-                            </div>
-
-                            <div className="vox-universe-wave" aria-hidden="true">
-                                <i /><i /><i /><i /><i /><i /><i />
-                            </div>
-
-                        </div>
-
-                        <div className="vox-universe-card vox-universe-card-top">
-                            <span className="vox-universe-card-icon">
-                                <BrainCircuit size={16} aria-hidden="true" />
-                            </span>
-                            <span>
-                                <small>Signal confidence</small>
-                                <strong>92% recurring need</strong>
-                            </span>
-                        </div>
-
-                        <div className="vox-universe-card vox-universe-card-bottom">
-                            <span className="vox-universe-card-icon vox-universe-card-icon-rose">
-                                <Lightbulb size={16} aria-hidden="true" />
-                            </span>
-                            <span>
-                                <small>Selected outcome</small>
-                                <strong>Evidence-backed idea</strong>
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="vox-universe-footer">
-                        <span><i /> Public signals</span>
-                        <span><i /> NLP evidence</span>
-                        <span><i /> Comparative AI</span>
+                    <div className="vox-stage-showcase-controls" aria-label="Choose a project stage">
+                        {HERO_STAGES.map((stage, index) => (
+                            <button
+                                key={stage.id}
+                                type="button"
+                                className={index === activeStageIndex ? 'is-active' : ''}
+                                onClick={() => setActiveStageIndex(index)}
+                                aria-label={`Show ${stage.title}`}
+                                aria-current={index === activeStageIndex ? 'true' : undefined}
+                            >
+                                <i aria-hidden="true">
+                                    {index === activeStageIndex && !shouldReduceMotion && !isPaused && (
+                                        <motion.b
+                                            key={`${activeStage.id}-progress`}
+                                            initial={{ scaleX: 0 }}
+                                            animate={{ scaleX: 1 }}
+                                            transition={{ duration: STAGE_DURATION_MS / 1000, ease: 'linear' }}
+                                        />
+                                    )}
+                                </i>
+                            </button>
+                        ))}
                     </div>
                 </motion.div>
             </div>

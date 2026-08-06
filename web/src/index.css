@@ -3616,6 +3616,7 @@ footer::before {
 .vox-public-footer button {
   text-underline-offset: 4px;
 }
+
 /* Public navigation system V7 — @author Eman */
 .vox-public-header {
   height: 76px;
@@ -3625,33 +3626,59 @@ footer::before {
   box-shadow: 0 10px 34px rgba(33, 58, 51, .045) !important;
   backdrop-filter: blur(22px) saturate(140%) !important;
 }
-.vox-public-header .nexora-container { width: min(1220px, calc(100% - 44px)); }
-.vox-public-header-inner { height: 76px !important; gap: 28px; }
-.vox-public-brand { min-width: 252px; text-decoration: none !important; }
+
+.vox-public-header .nexora-container {
+  width: min(1220px, calc(100% - 44px));
+}
+
+.vox-public-header-inner {
+  height: 76px !important;
+  gap: 28px;
+}
+
+.vox-public-brand {
+  min-width: 252px;
+  text-decoration: none !important;
+}
+
 .vox-public-brand-mark,
 .vox-public-footer .nexora-brand-mark {
   background: linear-gradient(145deg, #4f8376, #315f55) !important;
   box-shadow: 0 12px 28px rgba(46, 96, 83, .20) !important;
 }
-.vox-public-brand p:first-of-type { color: #24332e !important; }
-.vox-public-brand p:last-of-type { color: #76837e !important; }
-.vox-public-nav { flex: 1; justify-content: center; gap: 8px !important; }
-.vox-public-nav > a,
-.vox-public-nav > button {
+
+.vox-public-brand p:first-of-type {
+  color: #24332e !important;
+}
+
+.vox-public-brand p:last-of-type {
+  color: #76837e !important;
+}
+
+.vox-public-nav {
+  flex: 1;
+  justify-content: center;
+  gap: 8px !important;
+}
+
+.vox-public-nav>a,
+.vox-public-nav>button {
   padding: 10px 13px;
   border-radius: 12px;
   color: #64736e !important;
   font-size: .91rem !important;
   white-space: nowrap;
 }
-.vox-public-nav > a:hover,
-.vox-public-nav > button:hover {
+
+.vox-public-nav>a:hover,
+.vox-public-nav>button:hover {
   color: #315f55 !important;
   background: rgba(74, 126, 112, .07);
   transform: none !important;
 }
-.vox-public-nav > a::after,
-.vox-public-nav > button::after {
+
+.vox-public-nav>a::after,
+.vox-public-nav>button::after {
   left: 13px !important;
   right: 13px !important;
   bottom: 4px !important;
@@ -3659,21 +3686,105 @@ footer::before {
   background: #4f8376 !important;
   box-shadow: none !important;
 }
-.vox-public-actions { min-width: 230px; justify-content: flex-end; }
-.vox-public-actions > a:first-child:hover {
+
+.vox-public-actions {
+  min-width: 230px;
+  justify-content: flex-end;
+}
+
+.vox-public-actions>a:first-child:hover {
   color: #315f55 !important;
   background: rgba(74, 126, 112, .07) !important;
 }
+
 .vox-public-header .nexora-button-primary {
   background: linear-gradient(135deg, #3d786b, #6ca79b) !important;
   color: #fff !important;
   box-shadow: 0 14px 30px rgba(54, 112, 98, .18) !important;
 }
+
 .vox-public-header .nexora-button-primary:hover {
   background: linear-gradient(135deg, #315f55, #5d9488) !important;
   color: #fff !important;
 }
+
 @media (max-width: 1080px) {
-  .vox-public-brand { min-width: auto; }
-  .vox-public-header .nexora-container { width: min(100% - 28px, 1220px); }
+  .vox-public-brand {
+    min-width: auto;
+  }
+
+  .vox-public-header .nexora-container {
+    width: min(100% - 28px, 1220px);
+  }
+}
+
+/* ===== Shared official Voxidence icon finish ===== */
+.voxidence-mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 22%;
+  line-height: 0;
+  isolation: isolate;
+}
+
+.voxidence-mark>img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.voxidence-mark__shine {
+  position: absolute;
+  z-index: 2;
+  top: -28%;
+  bottom: -28%;
+  left: -70%;
+  width: 34%;
+  pointer-events: none;
+  opacity: 0;
+  transform: rotate(16deg);
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.18),
+      rgba(255, 255, 255, 0.92),
+      rgba(255, 255, 255, 0.18),
+      transparent);
+  filter: blur(0.4px);
+  animation: voxidence-icon-light-sweep 5.8s ease-in-out infinite;
+}
+
+@keyframes voxidence-icon-light-sweep {
+
+  0%,
+  58% {
+    left: -70%;
+    opacity: 0;
+  }
+
+  64% {
+    opacity: 0.82;
+  }
+
+  78% {
+    left: 136%;
+    opacity: 0;
+  }
+
+  100% {
+    left: 136%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voxidence-mark__shine {
+    animation: none;
+    display: none;
+  }
 }

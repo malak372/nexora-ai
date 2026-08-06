@@ -1909,3 +1909,18 @@
         margin-inline: 18px;
     }
 }
+
+/* Official Voxidence mark: identical to Home and the normal-user header. */
+.nx-register__brand-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+}
+
+.nx-register__brand-mark .voxidence-mark {
+    width: 46px !important;
+    height: 46px !important;
+}

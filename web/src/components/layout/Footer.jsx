@@ -86,12 +86,14 @@ export default function Footer() {
                             className="vox-footer__brand"
                             aria-label="Go to Voxidence home page"
                         >
-                            <span className="vox-footer__mark">
-                                <VoxidenceMark size={24} />
-                            </span>
+                            <VoxidenceMark
+                                size={54}
+                                className="vox-footer__brand-mark"
+                            />
 
-                            <span>
+                            <span className="vox-footer__brand-copy">
                                 <strong>Voxidence</strong>
+
                                 <small>
                                     Community voices. Verified direction.
                                 </small>
@@ -129,7 +131,9 @@ export default function Footer() {
                     </nav>
 
                     <div className="vox-footer__contact">
-                        <p className="vox-footer__label">Start a conversation</p>
+                        <p className="vox-footer__label">
+                            Start a conversation
+                        </p>
 
                         <p className="vox-footer__contact-copy">
                             Have a question, feedback, or collaboration in mind?
@@ -142,6 +146,7 @@ export default function Footer() {
                             <span>
                                 <Mail size={17} aria-hidden="true" />
                             </span>
+
                             {CONTACT_EMAIL}
                         </a>
 
@@ -158,6 +163,7 @@ export default function Footer() {
 
                 <div className="vox-footer__bottom">
                     <p>© {CURRENT_YEAR} Voxidence. All rights reserved.</p>
+
                     <p>
                         From community signal to evidence-backed direction.
                     </p>

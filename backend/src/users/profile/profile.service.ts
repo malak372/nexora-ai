@@ -656,7 +656,9 @@ export class UserProfileService {
           isActive: false,
           isVerified: false,
           deletedAt,
+          lockedAt: null,
           lockedUntil: null,
+          lockDurationMinutes: null,
         },
       });
     });

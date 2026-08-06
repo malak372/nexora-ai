@@ -24,6 +24,9 @@ const LOGIN_LOCK_DURATIONS_MINUTES = [30, 120, 1_440] as const;
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password';
 
+const ACCOUNT_TEMPORARILY_LOCKED_CODE =
+  'ACCOUNT_TEMPORARILY_LOCKED';
+
 /**
  * Minimal user information required for failed-login processing.
  */
@@ -56,7 +59,7 @@ export class AuthLoginService {
     private readonly prisma: PrismaService,
     private readonly authTokenService: AuthTokenService,
     private readonly authAuditService: AuthAuditService,
-  ) {}
+  ) { }
 
   /**
    * Authenticates an active and verified user.
@@ -102,6 +105,9 @@ export class AuthLoginService {
           {
             id: user.id,
             email: user.email,
+            loginLockLevel: user.loginLockLevel,
+            lockedAt: user.lockedAt,
+            lockDurationMinutes: user.lockDurationMinutes,
           },
           user.lockedUntil,
           now,
@@ -127,6 +133,9 @@ export class AuthLoginService {
         {
           id: user.id,
           email: user.email,
+          loginLockLevel: user.loginLockLevel,
+          lockedAt: user.lockedAt,
+          lockDurationMinutes: user.lockDurationMinutes,
         },
         user.lockedUntil,
         now,
@@ -166,7 +175,9 @@ export class AuthLoginService {
         failedLoginAttempts: 0,
         failedLoginWindowStartedAt: null,
         loginLockLevel: 0,
+        lockedAt: null,
         lockedUntil: null,
+        lockDurationMinutes: null,
         lastLoginAt: now,
       },
     });
@@ -241,9 +252,16 @@ export class AuthLoginService {
       data: {
         failedLoginAttempts: nextFailedAttempts,
         failedLoginWindowStartedAt: nextWindowStartedAt,
+        lockedAt: null,
         lockedUntil: null,
+        lockDurationMinutes: null,
       },
     });
+
+    const attemptsRemaining = Math.max(
+      0,
+      MAX_FAILED_LOGIN_ATTEMPTS - nextFailedAttempts,
+    );
 
     await this.logFailedLogin({
       userId: user.id,
@@ -251,6 +269,17 @@ export class AuthLoginService {
       message: INVALID_CREDENTIALS_MESSAGE,
       meta,
     });
+
+    if (attemptsRemaining === 2 || attemptsRemaining === 1) {
+      throw new UnauthorizedException({
+        code: 'LOGIN_ATTEMPTS_WARNING',
+        message:
+          attemptsRemaining === 1
+            ? 'Invalid email or password. You have 1 attempt remaining before your account is temporarily locked.'
+            : 'Invalid email or password. You have 2 attempts remaining before your account is temporarily locked.',
+        attemptsRemaining,
+      });
+    }
 
     throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
   }
@@ -279,7 +308,9 @@ export class AuthLoginService {
         failedLoginAttempts: 0,
         failedLoginWindowStartedAt: null,
         loginLockLevel: user.loginLockLevel + 1,
+        lockedAt: now,
         lockedUntil,
+        lockDurationMinutes,
       },
     });
 
@@ -297,41 +328,95 @@ export class AuthLoginService {
       ...meta,
     });
 
-    throw new UnauthorizedException(
-      `Account locked for ${formattedDuration} due to multiple failed login attempts.`,
-    );
+    throw new UnauthorizedException({
+      code: ACCOUNT_TEMPORARILY_LOCKED_CODE,
+      message: 'Your account is temporarily locked.',
+      justLocked: true,
+      lockDurationMinutes,
+      remainingSeconds: lockDurationMinutes * 60,
+      remainingMinutes: lockDurationMinutes,
+      lockedAt: now.toISOString(),
+      lockedUntil: lockedUntil.toISOString(),
+    });
   }
 
   /**
    * Rejects a login attempt made while an account is locked.
    */
   private async rejectLockedAccount(
-    user: Pick<FailedLoginUser, 'id' | 'email'>,
+    user: {
+      readonly id: string;
+      readonly email: string;
+      readonly loginLockLevel: number;
+      readonly lockedAt: Date | null;
+      readonly lockDurationMinutes: number | null;
+    },
     lockedUntil: Date,
     now: Date,
     meta?: AuthRequestMeta,
   ): Promise<never> {
+    const remainingMilliseconds = Math.max(
+      0,
+      lockedUntil.getTime() - now.getTime(),
+    );
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil(remainingMilliseconds / 1_000),
+    );
     const remainingMinutes = Math.max(
       1,
-      Math.ceil(
-        (lockedUntil.getTime() - now.getTime()) / MILLISECONDS_PER_MINUTE,
-      ),
+      Math.ceil(remainingMilliseconds / MILLISECONDS_PER_MINUTE),
     );
 
-    const formattedDuration = this.formatLockDuration(remainingMinutes);
+    /**
+     * Repair old/incomplete lock rows that only contain locked_until.
+     * The duration that created the current lock is represented by
+     * loginLockLevel - 1 because the level is incremented when locking.
+     */
+    const currentLockLevel = Math.max(user.loginLockLevel - 1, 0);
+    const resolvedLockDurationMinutes =
+      user.lockDurationMinutes ??
+      this.getLockDurationMinutes(currentLockLevel);
+    const resolvedLockedAt =
+      user.lockedAt ??
+      new Date(
+        lockedUntil.getTime() -
+        resolvedLockDurationMinutes * MILLISECONDS_PER_MINUTE,
+      );
+
+    await this.prisma.user.update({
+      where: {
+        id: user.id,
+      },
+      data: {
+        // A locked account always starts with a clean failed-attempt window.
+        // Keeping these values at zero prevents the old threshold count from
+        // appearing in the database while the countdown is active.
+        failedLoginAttempts: 0,
+        failedLoginWindowStartedAt: null,
+        lockedAt: resolvedLockedAt,
+        lockedUntil,
+        lockDurationMinutes: resolvedLockDurationMinutes,
+      },
+    });
 
     await this.logFailedLogin({
       userId: user.id,
       email: user.email,
-      message:
-        `Login attempted while account was locked. ` +
-        `Remaining lock time: ${formattedDuration}`,
+      message: 'Login attempted while account was temporarily locked',
       meta,
     });
 
-    throw new UnauthorizedException(
-      `Account is temporarily locked. Try again in ${formattedDuration}.`,
-    );
+    throw new UnauthorizedException({
+      code: ACCOUNT_TEMPORARILY_LOCKED_CODE,
+      message: 'Your account is temporarily locked.',
+      justLocked: false,
+      remainingSeconds,
+      remainingMinutes,
+      lockDurationMinutes: resolvedLockDurationMinutes,
+      lockedAt: resolvedLockedAt.toISOString(),
+      lockedUntil: lockedUntil.toISOString(),
+    });
   }
 
   /**

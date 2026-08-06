@@ -16,6 +16,7 @@ import { io } from 'socket.io-client';
 import {
     getAccessToken,
 } from '../../../auth/shared/auth.storage';
+
 import {
     extractApiData,
     getApiErrorMessage,
@@ -62,14 +63,12 @@ const normalizeCollection = (payload) => ({
  *
  * Sessions are ordered from the most recently updated session to the oldest.
  *
- * @param {string} ideaId - Identifier of the idea whose sessions are requested.
+ * @param {string} ideaId
  *
  * @returns {Promise<{
  *   items: Array,
  *   pagination: Object|null
  * }>}
- *
- * @throws {Error} When the chat sessions cannot be loaded.
  */
 export async function listChatSessions(ideaId) {
     try {
@@ -101,15 +100,10 @@ export async function listChatSessions(ideaId) {
 /**
  * Creates a new AI Chat session for an idea.
  *
- * The title is optional. When no title is provided, the backend can generate
- * or assign a default session title.
+ * @param {string} ideaId
+ * @param {string} [title]
  *
- * @param {string} ideaId - Identifier of the related idea.
- * @param {string} [title] - Optional title for the chat session.
- *
- * @returns {Promise<Object>} The newly created chat session.
- *
- * @throws {Error} When the chat session cannot be created.
+ * @returns {Promise<Object>}
  */
 export async function createChatSession(
     ideaId,
@@ -137,19 +131,42 @@ export async function createChatSession(
 }
 
 /**
+ * Deletes one AI Chat session owned by the current user.
+ *
+ * @param {string} sessionId
+ *
+ * @returns {Promise<void>}
+ */
+export async function deleteChatSession(sessionId) {
+    try {
+        await normalUserApi.delete(
+            `/chat/sessions/${sessionId}`,
+        );
+    } catch (error) {
+        throw new Error(
+            getApiErrorMessage(
+                error,
+                'The AI chat session could not be deleted.',
+            ),
+        );
+    }
+}
+
+/**
  * Loads the message history for a specific AI Chat session.
  *
- * Messages are returned from oldest to newest to preserve the natural
- * conversation order.
+ * Messages are returned from oldest to newest.
  *
- * @param {string} sessionId - Identifier of the requested chat session.
+ * A deleted session can return 404 if its messages were being loaded
+ * at the same time it was removed. The page component handles that
+ * stale request safely and ignores its result.
+ *
+ * @param {string} sessionId
  *
  * @returns {Promise<{
  *   items: Array,
  *   pagination: Object|null
  * }>}
- *
- * @throws {Error} When the chat messages cannot be loaded.
  */
 export async function listChatMessages(sessionId) {
     try {
@@ -180,9 +197,6 @@ export async function listChatMessages(sessionId) {
 
 /**
  * Creates an authenticated Socket.IO connection to the AI Chat namespace.
- *
- * The access token is included in the socket authentication object so the
- * backend can verify that the connected user has PREMIUM access.
  *
  * @returns {import('socket.io-client').Socket}
  */

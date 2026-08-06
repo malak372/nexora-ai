@@ -8,7 +8,11 @@
  * @author Malak
  */
 
-import { getApiErrorMessage, normalUserApi } from '../../shared/api/normalUserApi';
+import {
+  getApiErrorMessage,
+  normalUserApi,
+} from '../../shared/api/normalUserApi';
+
 import {
   cachedRequest,
   createRequestCacheKey,
@@ -61,7 +65,10 @@ function normalizePublishedResponse(envelope, params) {
 
 function normalizeFeedbackResponse(envelope, params) {
   const responses =
-    envelope.data ?? envelope.responses ?? envelope.items ?? [];
+    envelope.data ??
+    envelope.responses ??
+    envelope.items ??
+    [];
 
   return {
     publication: envelope.publication ?? null,
@@ -77,7 +84,10 @@ function normalizeFeedbackResponse(envelope, params) {
   };
 }
 
-export async function getMyPublishedIdeas(params = {}, options = {}) {
+export async function getMyPublishedIdeas(
+  params = {},
+  options = {},
+) {
   const requestParams = {
     ...params,
   };
@@ -91,9 +101,12 @@ export async function getMyPublishedIdeas(params = {}, options = {}) {
     return await cachedRequest(
       key,
       async () => {
-        const response = await normalUserApi.get('/users/publications/mine', {
-          params: requestParams,
-        });
+        const response = await normalUserApi.get(
+          '/users/publications/mine',
+          {
+            params: requestParams,
+          },
+        );
 
         return normalizePublishedResponse(
           unwrapEnvelope(response),
@@ -109,7 +122,10 @@ export async function getMyPublishedIdeas(params = {}, options = {}) {
     );
   } catch (error) {
     throw new Error(
-      getApiErrorMessage(error, 'Published ideas could not be loaded.'),
+      getApiErrorMessage(
+        error,
+        'Published ideas could not be loaded.',
+      ),
     );
   }
 }
@@ -120,13 +136,18 @@ export async function getReceivedFeedback(
   options = {},
 ) {
   if (!publicationId) {
-    throw new Error('A publication identifier is required.');
+    throw new Error(
+      'A publication identifier is required.',
+    );
   }
 
-  const key = createRequestCacheKey(FEEDBACK_CACHE_NAMESPACE, {
-    publicationId,
-    ...params,
-  });
+  const key = createRequestCacheKey(
+    FEEDBACK_CACHE_NAMESPACE,
+    {
+      publicationId,
+      ...params,
+    },
+  );
 
   try {
     return await cachedRequest(
@@ -134,10 +155,15 @@ export async function getReceivedFeedback(
       async () => {
         const response = await normalUserApi.get(
           `/users/publications/${publicationId}/received-feedback`,
-          { params },
+          {
+            params,
+          },
         );
 
-        return normalizeFeedbackResponse(unwrapEnvelope(response), params);
+        return normalizeFeedbackResponse(
+          unwrapEnvelope(response),
+          params,
+        );
       },
       {
         ttlMs: FEEDBACK_CACHE_TTL_MS,
@@ -148,14 +174,19 @@ export async function getReceivedFeedback(
     );
   } catch (error) {
     throw new Error(
-      getApiErrorMessage(error, 'Audience responses could not be loaded.'),
+      getApiErrorMessage(
+        error,
+        'Audience responses could not be loaded.',
+      ),
     );
   }
 }
 
 export async function stopPublication(ideaId) {
   if (!ideaId) {
-    throw new Error('The publication is missing its idea identifier.');
+    throw new Error(
+      'The publication is missing its idea identifier.',
+    );
   }
 
   try {
@@ -170,15 +201,19 @@ export async function stopPublication(ideaId) {
     return unwrapEnvelope(response);
   } catch (error) {
     throw new Error(
-      getApiErrorMessage(error, 'The publication could not be stopped.'),
+      getApiErrorMessage(
+        error,
+        'The publication could not be stopped.',
+      ),
     );
   }
 }
 
-
 export async function repostPublication(ideaId) {
   if (!ideaId) {
-    throw new Error('The publication is missing its idea identifier.');
+    throw new Error(
+      'The publication is missing its idea identifier.',
+    );
   }
 
   try {
@@ -194,24 +229,79 @@ export async function repostPublication(ideaId) {
     return unwrapEnvelope(response);
   } catch (error) {
     throw new Error(
-      getApiErrorMessage(error, 'The publication could not be re-published.'),
+      getApiErrorMessage(
+        error,
+        'The publication could not be re-published.',
+      ),
     );
   }
 }
 
-/** Clears published lists after publish, archive, or visibility changes. */
-export function invalidatePublishedIdeasCache() {
-  invalidateRequestCache(`${PUBLISHED_CACHE_NAMESPACE}:`);
+export async function updatePublicationAcceptanceSetting(
+  ideaId,
+  allowAdoption,
+) {
+  if (!ideaId) {
+    throw new Error(
+      'The publication is missing its idea identifier.',
+    );
+  }
+
+  try {
+    const response = await normalUserApi.patch(
+      `/users/ideas/${ideaId}/publication/acceptance-setting`,
+      {
+        allowAdoption: Boolean(allowAdoption),
+      },
+    );
+
+    invalidatePublishedIdeasCache();
+    invalidateRequestCache('publication-discovery:');
+    invalidateRequestCache('discoveries:');
+    invalidateRequestCache('idea-workspace:');
+
+    return unwrapEnvelope(response);
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(
+        error,
+        'The acceptance setting could not be updated.',
+      ),
+    );
+  }
 }
 
-/** Clears feedback for one publication, or every feedback cache entry. */
-export function invalidatePublicationFeedbackCache(publicationId) {
+/**
+ * Clears published lists after publishing, archiving,
+ * reposting, or changing acceptance settings.
+ */
+export function invalidatePublishedIdeasCache() {
+  invalidateRequestCache(
+    `${PUBLISHED_CACHE_NAMESPACE}:`,
+  );
+}
+
+/**
+ * Clears feedback for one publication,
+ * or every feedback cache entry.
+ */
+export function invalidatePublicationFeedbackCache(
+  publicationId,
+) {
   if (!publicationId) {
-    invalidateRequestCache(`${FEEDBACK_CACHE_NAMESPACE}:`);
+    invalidateRequestCache(
+      `${FEEDBACK_CACHE_NAMESPACE}:`,
+    );
+
     return;
   }
 
   invalidateRequestCache(
-    createRequestCacheKey(FEEDBACK_CACHE_NAMESPACE, { publicationId }),
+    createRequestCacheKey(
+      FEEDBACK_CACHE_NAMESPACE,
+      {
+        publicationId,
+      },
+    ),
   );
 }
