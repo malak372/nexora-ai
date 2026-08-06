@@ -272,28 +272,14 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
    * Builds YouTube search queries.
    */
   private buildSearchQueries(input: CollectorInput): string[] {
-    const domainKeywords = this.getDomainKeywords(input);
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
 
-    if (!domainKeywords.length) {
-      return [];
-    }
-
-    const problemQueries = CollectorQueryBuilderUtil.buildProblemQueries(
-      domainKeywords,
-      this.getProblemWords(),
-    );
-
-    const userQueries = (input.keywords ?? [])
-      .map((keyword) => this.cleanNormalizedText(keyword))
-      .filter(Boolean);
-
-    /*
-     * Raw domain-only queries such as "education" mostly return news,
-     * speeches, and generic videos. Prefer explicit user/recovery queries and
-     * problem-focused combinations so collected comments are more likely to
-     * contain recurring user pain points.
-     */
-    return this.unique([...userQueries, ...problemQueries]).filter(Boolean);
+    return CollectorQueryBuilderUtil.buildYouTubeAnchoredQueries({
+      domainName: input.domainName,
+      maxQueries: isBoundedMode ? 3 : this.maxSearchQueries,
+    });
   }
 
   /**
@@ -334,9 +320,31 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       `${video.snippet?.title ?? ''} ${video.snippet?.description ?? ''}`,
     );
 
-    return CollectorLanguageUtil.matchesRequestedLanguage(
+    const languageMatches = CollectorLanguageUtil.matchesRequestedLanguage(
       content,
       input.language,
+    );
+
+    if (!languageMatches) {
+      return false;
+    }
+
+    if (input.collectionMode !== 'TARGETED_RECOVERY') {
+      return true;
+    }
+
+    const normalized = this.cleanNormalizedText(content);
+    const domainName = this.cleanNormalizedText(input.domainName ?? '');
+    const recoveryAnchors = domainName.includes('smart cit')
+      ? ['smart city', 'municipal', 'public transport', 'street light', 'parking']
+      : domainName.includes('transport')
+        ? ['public transport', 'bus', 'route', 'fare', 'transit']
+        : domainName.includes('logistic')
+          ? ['logistics', 'delivery', 'shipment', 'warehouse', 'driver']
+          : [domainName];
+
+    return recoveryAnchors.some(
+      (anchor) => anchor && normalized.includes(this.cleanNormalizedText(anchor)),
     );
   }
 

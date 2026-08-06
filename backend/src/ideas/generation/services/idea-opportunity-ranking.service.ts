@@ -698,9 +698,13 @@ export class IdeaOpportunityRankingService {
       return null;
     }
 
+    const repairedProblem = this.repairTruncatedDescriptorFromEvidence(
+      workingCandidate.problem,
+      evidenceSamples,
+    );
     const alignedDescriptors = this.deriveAlignedDescriptors(
       finalTitle,
-      workingCandidate.problem,
+      repairedProblem,
       workingCandidate.need,
       workingCandidate.solutionArea,
       isCommunityAiCandidate,
@@ -728,6 +732,40 @@ export class IdeaOpportunityRankingService {
       ),
       evidenceSamples: boundedEvidenceSamples,
     };
+  }
+
+  private repairTruncatedDescriptorFromEvidence(
+    problem: string | null,
+    evidenceSamples: readonly string[],
+  ): string | null {
+    const normalized = problem?.replace(/\s+/gu, ' ').trim() ?? '';
+    const lastWord =
+      normalized.split(/\s+/u).at(-1)?.replace(/[^\p{L}\p{N}-]+/gu, '') ?? '';
+    const looksTruncated =
+      normalized.length > 0 &&
+      !/[.!?]["')\]]?$/u.test(normalized) &&
+      normalized.length < 170 &&
+      lastWord.length <= 4;
+
+    if (!looksTruncated) {
+      return problem;
+    }
+
+    for (const sample of evidenceSamples) {
+      const match = sample
+        .replace(/\s+/gu, ' ')
+        .match(
+          /(?:problem statement|problem|issue|pain point)\s*:?\s*(.+?)(?=\s+(?:proposed solution|solution|alternatives considered|feature summary|mockups|additional context)\b|$)/iu,
+        );
+      const extracted = match?.[1]?.replace(/\s+/gu, ' ').trim();
+      if (extracted && extracted.length >= 35) {
+        return extracted.length <= 260
+          ? extracted
+          : extracted.slice(0, extracted.lastIndexOf(' ', 260)).trim();
+      }
+    }
+
+    return problem;
   }
 
   /**

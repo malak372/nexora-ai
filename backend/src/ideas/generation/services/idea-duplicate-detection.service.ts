@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
+  DUPLICATE_DETECTION_BATCH_SIZE,
   DUPLICATE_DETECTION_CANDIDATE_LIMIT,
   IDEA_GENERATION_ERROR_CODES,
   IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
@@ -30,6 +31,14 @@ export type IdeaDuplicateReason =
   | 'SEMANTIC_OVERLAP'
   | 'SAME_PROBLEM_FAMILY';
 
+/**
+ * Raw similarity result.
+ *
+ * `isDuplicate` includes compound similarity signals used by benchmark
+ * redesign. The final pipeline stage applies a stricter decisive threshold so
+ * moderate same-problem-family overlap cannot fail a successfully redesigned
+ * paid generation.
+ */
 export type IdeaDuplicateCheckResult = {
   readonly isDuplicate: boolean;
   readonly highestSimilarity: number;
@@ -80,15 +89,60 @@ export class IdeaDuplicateDetectionService {
     }
 
     const client = database ?? this.prisma;
+    const rawTitle = idea.title.trim().slice(0, MAX_DUPLICATE_TITLE_LENGTH);
 
     /*
-     * Duplicate detection is intentionally global. Domain and location remain
-     * useful ranking signals, but they must never allow a materially repeated
-     * idea to be persisted in another country, region, city, or domain.
+     * Phase 1: global exact-title lookup.
+     *
+     * This query is intentionally narrow and avoids loading large JSON and
+     * abstract fields unless a true exact-title collision exists.
+     */
+    const exactTitleMatch = await client.idea.findFirst({
+      where: {
+        deletedAt: null,
+        title: {
+          equals: rawTitle,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (exactTitleMatch) {
+      return {
+        isDuplicate: true,
+        highestSimilarity: 1,
+        titleSimilarity: 1,
+        semanticSimilarity: 1,
+        workflowSimilarity: 1,
+        sameProblemFamily: true,
+        familyPenalty: 0,
+        duplicateReasons: ['EXACT_OR_NEAR_TITLE', 'SEMANTIC_OVERLAP'],
+        matchedIdea: this.mapStoredIdeaToCandidate(exactTitleMatch),
+      };
+    }
+
+    /*
+     * Phase 2: one bounded database query, then in-memory comparison.
+     *
+     * Semantic duplicate detection is scoped to the same domain because that
+     * is where materially equivalent ideas are most likely. Exact-title
+     * protection remains global through phase 1.
      */
     const storedIdeas = await client.idea.findMany({
       where: {
         deletedAt: null,
+        domainId: normalizedDomainId,
       },
       select: {
         id: true,
@@ -117,73 +171,87 @@ export class IdeaDuplicateDetectionService {
     let highestSameProblemFamily = false;
 
     const newFingerprint = this.buildFingerprint(idea);
+    const normalizedTitleTokens = this.toTokenSet(normalizedTitle);
 
-    for (const candidate of candidates) {
-      const titleSimilarity = this.calculateDiceSimilarity(
-        this.toTokenSet(normalizedTitle),
-        this.toTokenSet(
-          this.normalizeText(candidate.title, MAX_DUPLICATE_TITLE_LENGTH),
+    /*
+     * Bounded parallel batches:
+     *
+     * - A single database query is used.
+     * - At most eight comparisons are scheduled per batch.
+     * - Cheap title/problem checks reject weak candidates before the expensive
+     *   abstract, workflow, capability, and family comparisons.
+     * - A decisive duplicate exits immediately and skips remaining batches.
+     *
+     * The work is CPU-bound, so Promise.all does not create extra Node.js
+     * threads; the bounded batches mainly prevent one huge synchronous loop
+     * and keep memory/event-loop pressure predictable.
+     */
+    for (
+      let offset = 0;
+      offset < candidates.length;
+      offset += DUPLICATE_DETECTION_BATCH_SIZE
+    ) {
+      const batch = candidates.slice(
+        offset,
+        offset + DUPLICATE_DETECTION_BATCH_SIZE,
+      );
+
+      const comparisons = await Promise.all(
+        batch.map((candidate) =>
+          Promise.resolve().then(() =>
+            this.compareCandidate(
+              idea,
+              candidate,
+              newFingerprint,
+              normalizedTitleTokens,
+            ),
+          ),
         ),
       );
 
-      const candidateFingerprint = this.buildCandidateFingerprint(candidate);
-      const semanticSimilarity = this.calculateWeightedSemanticSimilarity(
-        newFingerprint,
-        candidateFingerprint,
-      );
-      const workflowSimilarity = this.calculateWorkflowSimilarity(
-        newFingerprint,
-        candidateFingerprint,
-      );
-      const capabilitySimilarity = this.calculateCapabilitySimilarity(
-        idea,
-        candidate,
-      );
-      const sameProblemFamily = this.belongsToSameProblemFamily(
-        idea,
-        candidate,
-      );
-
-      /*
-       * Problem-family equality is diagnostic context, not an automatic
-       * duplicate score. A generation is expected to address the assigned
-       * opportunity family, so it is rejected only when the family also shares
-       * a strongly similar problem representation and workflow.
-       */
-      const familyCompoundDuplicate =
-        sameProblemFamily &&
-        semanticSimilarity >= 0.68 &&
-        workflowSimilarity >= 0.7;
-      const capabilityWorkflowDuplicate =
-        capabilitySimilarity >= 0.72 && workflowSimilarity >= 0.58;
-      const candidateIsDuplicate =
-        titleSimilarity >= 0.9 ||
-        semanticSimilarity >= 0.82 ||
-        familyCompoundDuplicate ||
-        capabilityWorkflowDuplicate;
-      const combinedSimilarity = Math.max(
-        titleSimilarity,
-        semanticSimilarity,
-        familyCompoundDuplicate || capabilityWorkflowDuplicate
-          ? Math.max(workflowSimilarity, capabilitySimilarity)
-          : 0,
-      );
-
-      if (
-        combinedSimilarity > highestSimilarity ||
-        (candidateIsDuplicate && matchedIdea === null)
-      ) {
-        highestSimilarity = combinedSimilarity;
-        highestTitleSimilarity = titleSimilarity;
-        highestSemanticSimilarity = semanticSimilarity;
-        highestWorkflowSimilarity = workflowSimilarity;
-        highestCapabilitySimilarity = capabilitySimilarity;
-        highestSameProblemFamily = sameProblemFamily;
-        matchedIdea = candidate;
+      for (const comparison of comparisons) {
+        if (
+          comparison.combinedSimilarity > highestSimilarity ||
+          (comparison.isDuplicate && matchedIdea === null)
+        ) {
+          highestSimilarity = comparison.combinedSimilarity;
+          highestTitleSimilarity = comparison.titleSimilarity;
+          highestSemanticSimilarity = comparison.semanticSimilarity;
+          highestWorkflowSimilarity = comparison.workflowSimilarity;
+          highestCapabilitySimilarity = comparison.capabilitySimilarity;
+          highestSameProblemFamily = comparison.sameProblemFamily;
+          matchedIdea = comparison.candidate;
+        }
       }
 
-      if (titleSimilarity === 1) {
+      const decisiveDuplicate = comparisons.find(
+        (comparison) =>
+          comparison.titleSimilarity >= 0.995 ||
+          comparison.semanticSimilarity >= 0.94 ||
+          (comparison.sameProblemFamily &&
+            comparison.semanticSimilarity >= 0.86 &&
+            comparison.workflowSimilarity >= 0.84) ||
+          (comparison.capabilitySimilarity >= 0.88 &&
+            comparison.workflowSimilarity >= 0.8),
+      );
+
+      if (decisiveDuplicate) {
+        matchedIdea = decisiveDuplicate.candidate;
+        highestSimilarity = decisiveDuplicate.combinedSimilarity;
+        highestTitleSimilarity = decisiveDuplicate.titleSimilarity;
+        highestSemanticSimilarity = decisiveDuplicate.semanticSimilarity;
+        highestWorkflowSimilarity = decisiveDuplicate.workflowSimilarity;
+        highestCapabilitySimilarity = decisiveDuplicate.capabilitySimilarity;
+        highestSameProblemFamily = decisiveDuplicate.sameProblemFamily;
         break;
+      }
+
+      /*
+       * Yield between batches so WebSocket heartbeat, cancellation, and other
+       * requests are not starved by a long CPU-only comparison loop.
+       */
+      if (offset + DUPLICATE_DETECTION_BATCH_SIZE < candidates.length) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
       }
     }
 
@@ -231,6 +299,55 @@ export class IdeaDuplicateDetectionService {
     };
   }
 
+  /**
+   * Performs the narrow race-protection check used inside idea persistence.
+   *
+   * The dedicated duplicate-check pipeline stage has already completed the
+   * bounded semantic comparison immediately before persistence. Repeating that
+   * full comparison inside the serializable transaction loads up to forty large
+   * idea records again and extends the transaction without improving the normal
+   * result. Persistence therefore rechecks only a global case-insensitive exact
+   * title collision, which protects the most likely concurrent race while
+   * keeping the transaction short.
+   */
+  async assertNoExactTitleDuplicate(
+    idea: CoreIdeaAiOutput,
+    database?: IdeaDuplicateDetectionDatabaseClient,
+  ): Promise<void> {
+    const client = database ?? this.prisma;
+    const title = idea.title.trim().slice(0, MAX_DUPLICATE_TITLE_LENGTH);
+
+    const match = await client.idea.findFirst({
+      where: {
+        deletedAt: null,
+        title: {
+          equals: title,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+      },
+    });
+
+    if (!match) {
+      return;
+    }
+
+    throw new ConflictException({
+      code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
+      message:
+        'An idea with the same title already exists on the platform and cannot be generated again.',
+      details: {
+        matchedIdeaId: match.id,
+        matchedTitle: match.title,
+        duplicateReasons: ['EXACT_OR_NEAR_TITLE'],
+        titleSimilarity: 1,
+      },
+    });
+  }
+
   async assertNotDuplicate(
     domainId: string,
     collectionJobId: string,
@@ -261,6 +378,127 @@ export class IdeaDuplicateDetectionService {
         semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
     });
+  }
+
+  private compareCandidate(
+    idea: CoreIdeaAiOutput,
+    candidate: DuplicateIdeaCandidate,
+    newFingerprint: Record<string, Set<string>>,
+    normalizedTitleTokens: Set<string>,
+  ): {
+    readonly candidate: DuplicateIdeaCandidate;
+    readonly isDuplicate: boolean;
+    readonly combinedSimilarity: number;
+    readonly titleSimilarity: number;
+    readonly semanticSimilarity: number;
+    readonly workflowSimilarity: number;
+    readonly capabilitySimilarity: number;
+    readonly sameProblemFamily: boolean;
+  } {
+    const candidateTitleTokens = this.toTokenSet(
+      this.normalizeText(candidate.title, MAX_DUPLICATE_TITLE_LENGTH),
+    );
+    const titleSimilarity = this.calculateDiceSimilarity(
+      normalizedTitleTokens,
+      candidateTitleTokens,
+    );
+
+    /*
+     * Cheap pre-filter. A very weak title match does not immediately reject a
+     * candidate because rebranded duplicates may still share the same problem.
+     */
+    const problemSimilarity = this.calculateDiceSimilarity(
+      newFingerprint.problem,
+      this.tokenize(candidate.problemStatement),
+    );
+
+    if (titleSimilarity < 0.18 && problemSimilarity < 0.28) {
+      return {
+        candidate,
+        isDuplicate: false,
+        combinedSimilarity: Math.max(titleSimilarity, problemSimilarity),
+        titleSimilarity,
+        semanticSimilarity: problemSimilarity * 0.35,
+        workflowSimilarity: 0,
+        capabilitySimilarity: 0,
+        sameProblemFamily: false,
+      };
+    }
+
+    const candidateFingerprint = this.buildCandidateFingerprint(candidate);
+    const semanticSimilarity = this.calculateWeightedSemanticSimilarity(
+      newFingerprint,
+      candidateFingerprint,
+    );
+
+    /*
+     * Second-stage pre-filter. Skip expensive family/capability extraction for
+     * clearly unrelated candidates.
+     */
+    if (
+      titleSimilarity < 0.45 &&
+      problemSimilarity < 0.52 &&
+      semanticSimilarity < 0.5
+    ) {
+      return {
+        candidate,
+        isDuplicate: false,
+        combinedSimilarity: Math.max(titleSimilarity, semanticSimilarity),
+        titleSimilarity,
+        semanticSimilarity,
+        workflowSimilarity: 0,
+        capabilitySimilarity: 0,
+        sameProblemFamily: false,
+      };
+    }
+
+    const workflowSimilarity = this.calculateWorkflowSimilarity(
+      newFingerprint,
+      candidateFingerprint,
+    );
+    const capabilitySimilarity = this.calculateCapabilitySimilarity(
+      idea,
+      candidate,
+    );
+    const sameProblemFamily = this.belongsToSameProblemFamily(idea, candidate);
+
+    const familyCompoundDuplicate =
+      sameProblemFamily &&
+      semanticSimilarity >= 0.84 &&
+      workflowSimilarity >= 0.82;
+    const capabilityWorkflowDuplicate =
+      capabilitySimilarity >= 0.86 && workflowSimilarity >= 0.78;
+
+    /*
+     * Same-domain ideas often share vocabulary and broad workflows. A hard
+     * duplicate now requires either an almost identical title, very high
+     * semantic overlap, or a strong compound match across multiple dimensions.
+     * This prevents false conflicts when two ideas address the same evidence
+     * using meaningfully different products.
+     */
+    const isDuplicate =
+      titleSimilarity >= IDEA_TITLE_SIMILARITY_THRESHOLD ||
+      semanticSimilarity >= IDEA_SEMANTIC_SIMILARITY_THRESHOLD ||
+      familyCompoundDuplicate ||
+      capabilityWorkflowDuplicate;
+    const combinedSimilarity = Math.max(
+      titleSimilarity,
+      semanticSimilarity,
+      familyCompoundDuplicate || capabilityWorkflowDuplicate
+        ? Math.max(workflowSimilarity, capabilitySimilarity)
+        : 0,
+    );
+
+    return {
+      candidate,
+      isDuplicate,
+      combinedSimilarity,
+      titleSimilarity,
+      semanticSimilarity,
+      workflowSimilarity,
+      capabilitySimilarity,
+      sameProblemFamily,
+    };
   }
 
   private mapStoredIdeaToCandidate(idea: {

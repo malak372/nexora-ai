@@ -94,17 +94,35 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
         return [];
       }
 
-      const collectedPosts: CollectorPost[] = [];
+      const isFastGeneration = input.collectionMode === 'FAST_GENERATION';
+      const sources = isFastGeneration
+        ? this.forumSources
+            .filter((source) => source.url !== 'https://meta.discourse.org')
+            .slice(0, 3)
+        : this.forumSources;
 
-      for (const source of this.forumSources) {
-        const posts = await source.adapter.collect(
-          source.url,
-          searchQuery,
-          input,
+      this.logger.debug(
+        `Forum source plan | collectionMode=${input.collectionMode ?? 'STANDARD'} | fast=${isFastGeneration} | sources=${sources.map((source) => source.url).join(',')}`,
+      );
+
+      const results = isFastGeneration
+        ? await Promise.allSettled(
+            sources.map((source) =>
+              source.adapter.collect(source.url, searchQuery, input),
+            ),
+          )
+        : await this.collectSequentially(sources, searchQuery, input);
+
+      const collectedPosts = results.flatMap((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+
+        this.logger.debug(
+          `Forum source skipped | url=${sources[index]?.url ?? 'unknown'} | error=${this.getErrorMessage(result.reason)}`,
         );
-
-        collectedPosts.push(...posts);
-      }
+        return [];
+      });
 
       const rankedPosts = this.rankAndDeduplicatePosts(collectedPosts, input);
 
@@ -118,6 +136,29 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
 
       return [];
     }
+  }
+
+  private async collectSequentially(
+    sources: readonly ForumSource[],
+    searchQuery: string,
+    input: CollectorInput,
+  ): Promise<PromiseSettledResult<CollectorPost[]>[]> {
+    const results: PromiseSettledResult<CollectorPost[]>[] = [];
+
+    for (const source of sources) {
+      try {
+        const posts = await source.adapter.collect(
+          source.url,
+          searchQuery,
+          input,
+        );
+        results.push({ status: 'fulfilled', value: posts });
+      } catch (reason: unknown) {
+        results.push({ status: 'rejected', reason });
+      }
+    }
+
+    return results;
   }
 
   /**

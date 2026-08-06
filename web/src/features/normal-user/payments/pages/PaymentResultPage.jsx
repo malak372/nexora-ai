@@ -16,7 +16,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { updateStoredUser } from '../../../auth/shared/auth.storage';
-import { reconcilePayment } from '../api/paymentFlowApi';
+import { getPaymentState, reconcilePayment } from '../api/paymentFlowApi';
 import { refreshPaymentDestination } from '../utils/paymentCacheInvalidation';
 import {
   clearPaymentReturnReference,
@@ -24,8 +24,9 @@ import {
 } from '../utils/paymentReturn.storage';
 import '../styles/payment-result.css';
 
-const MAX_RECONCILE_ATTEMPTS = 45;
-const RECONCILE_DELAY_MS = 2000;
+const MAX_STATUS_ATTEMPTS = 60;
+const STATUS_POLL_DELAY_MS = 750;
+const PROVIDER_RECONCILE_EVERY = 6;
 
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -86,7 +87,7 @@ export default function PaymentResultPage() {
 
   const confirmPayment = useCallback(async () => {
     if (!paymentId && alreadyUnlocked && fallbackIdeaId) {
-      await refreshPaymentDestination({ ideaId: fallbackIdeaId });
+      void refreshPaymentDestination({ ideaId: fallbackIdeaId });
       clearPaymentReturnReference();
       setState({
         loading: false,
@@ -124,9 +125,12 @@ export default function PaymentResultPage() {
     let latestPayment = null;
     let lastError = null;
 
-    for (let attempt = 0; attempt < MAX_RECONCILE_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_STATUS_ATTEMPTS; attempt += 1) {
       try {
-        const payment = await reconcilePayment(paymentId);
+        const payment =
+          attempt === 0 || attempt % PROVIDER_RECONCILE_EVERY === 0
+            ? await reconcilePayment(paymentId)
+            : await getPaymentState(paymentId);
         latestPayment = payment;
         lastError = null;
 
@@ -147,7 +151,10 @@ export default function PaymentResultPage() {
         }
 
         if (isFulfillmentComplete(payment)) {
-          await refreshPaymentDestination({
+          // Show success immediately. Cache refresh continues in the background,
+          // so the user is no longer blocked by unrelated cache cleanup or
+          // workspace prefetching.
+          void refreshPaymentDestination({
             ideaId: payment.ideaId || fallbackIdeaId,
             publicationId: payment.publicationId || fallbackPublicationId,
           });
@@ -172,7 +179,7 @@ export default function PaymentResultPage() {
         lastError = error;
       }
 
-      await wait(RECONCILE_DELAY_MS);
+      await wait(STATUS_POLL_DELAY_MS);
     }
 
     const paymentWasVerified = latestPayment?.status === 'SUCCEEDED';

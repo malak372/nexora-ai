@@ -21,9 +21,14 @@ import axios from 'axios';
  * Example:
  * REACT_APP_API_BASE_URL=http://localhost:3000
  */
-const API_BASE_URL =
+const API_BASE_URL = (
     process.env.REACT_APP_API_BASE_URL ||
-    'http://localhost:3000';
+    'http://localhost:3000'
+).replace(/\/$/, '');
+
+const API_TIMEOUT_MS = Number(
+    process.env.REACT_APP_API_TIMEOUT_MS || 20000,
+);
 
 /**
  * Shared Axios client used by Nexora frontend features.
@@ -34,7 +39,7 @@ const API_BASE_URL =
  */
 export const apiClient = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 15000,
+    timeout: API_TIMEOUT_MS,
     withCredentials: true,
     headers: {
         Accept: 'application/json',

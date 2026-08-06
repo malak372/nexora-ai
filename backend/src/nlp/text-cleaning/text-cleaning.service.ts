@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
+const URL_PATTERN = /https?:\/\/\S+|www\.\S+/giu;
+const MENTION_PATTERN = /@[\p{L}\p{N}_]+/gu;
+const HASHTAG_PATTERN = /#([\p{L}\p{N}_]+)/gu;
+const UNSUPPORTED_CHARACTER_PATTERN = /[^\p{L}\p{N}\s]/gu;
+const WHITESPACE_PATTERN = /\s+/gu;
+
 /**
  * Represents a cleaned text ready for NLP processing.
  */
@@ -51,12 +57,11 @@ export class TextCleaningService {
 
     const cleanedText = originalText
       .toLocaleLowerCase()
-      .replace(/https?:\/\/\S+/gu, ' ')
-      .replace(/www\.\S+/gu, ' ')
-      .replace(/@\w+/gu, ' ')
-      .replace(/#([\p{L}\p{N}_]+)/gu, '$1')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .replace(/\s+/gu, ' ')
+      .replace(URL_PATTERN, ' ')
+      .replace(MENTION_PATTERN, ' ')
+      .replace(HASHTAG_PATTERN, '$1')
+      .replace(UNSUPPORTED_CHARACTER_PATTERN, ' ')
+      .replace(WHITESPACE_PATTERN, ' ')
       .trim();
 
     return {

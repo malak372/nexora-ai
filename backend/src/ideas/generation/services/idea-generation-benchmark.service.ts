@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   Injectable,
   Logger,
@@ -28,13 +30,16 @@ import {
 } from '../constants/idea-judge.constants';
 import {
   IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK,
+  IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED,
   IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS,
   IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
   IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES,
   IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY,
   IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
+  IDEA_CORE_GOOGLE_TIMEOUT_MS,
   IDEA_CORE_MODEL_TIMEOUT_MS,
+  IDEA_CORE_OPENROUTER_TIMEOUT_MS,
   IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
   IDEA_MIN_ACCEPTED_QUALITY_SCORE,
   IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
@@ -74,6 +79,15 @@ import {
  */
 export type IdeaBenchmarkCandidate = {
   readonly candidateId: string;
+  /**
+   * Immutable model metadata retained in memory so successful candidates can
+   * be persisted together after winner selection instead of performing one
+   * Supabase write per model on the critical path.
+   */
+  readonly modelSnapshot: Pick<
+    AiModel,
+    'id' | 'providerKey' | 'apiModelId' | 'modelName' | 'displayName'
+  >;
   readonly aiResult: AiExecutionResult;
   readonly parsedOutput: ParsedIdeaAiOutput;
   readonly quality: IdeaQualityEvaluation;
@@ -173,11 +187,21 @@ export class IdeaGenerationBenchmarkService {
 
     const eligibleModels = (
       await this.aiModelsService.getRoutableModels()
-    ).filter(
-      (model) =>
-        model.supportsJsonOutput &&
-        !IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS.has(model.apiModelId),
-    );
+    ).filter((model) => {
+      if (
+        !model.supportsJsonOutput ||
+        IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS.has(model.apiModelId)
+      ) {
+        return false;
+      }
+
+      const provider = normalizeAiProviderKey(model.providerKey);
+      const isSlowMirroredGemini =
+        provider === AI_PROVIDER_KEYS.OPENROUTER &&
+        model.apiModelId === 'google/gemini-3.5-flash-lite';
+
+      return !isSlowMirroredGemini;
+    });
 
     if (eligibleModels.length === 0) {
       throw new ServiceUnavailableException(
@@ -277,12 +301,13 @@ export class IdeaGenerationBenchmarkService {
         attemptedCandidateCount += modelsForDirection.length;
 
         const settledAttempts = await Promise.all(
-          modelsForDirection.map(async (model) => {
+          modelsForDirection.map(async (model, modelIndex) => {
             try {
               return await this.executeModelCandidate(
                 context,
                 model,
                 direction,
+                modelIndex === 0,
               );
             } catch (error: unknown) {
               if (this.isTransientModelFailure(error)) {
@@ -304,6 +329,22 @@ export class IdeaGenerationBenchmarkService {
 
           acceptedCandidatesForDirection.push(candidate);
           successfulCandidates.push(candidate);
+        }
+
+        /*
+         * The first provider-diverse batch is still executed in parallel so
+         * comparative quality is preserved whenever two valid candidates are
+         * immediately available. After that batch, one quality-approved,
+         * distinct candidate is already sufficient for a successful run.
+         * Continuing through every remaining provider only adds sequential
+         * timeout windows and does not improve the selected result when the
+         * product policy accepts a single validated candidate.
+         */
+        if (
+          successfulCandidates.length >=
+          IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES
+        ) {
+          break;
         }
       }
 
@@ -345,8 +386,6 @@ export class IdeaGenerationBenchmarkService {
     if (successfulCandidates.length === 1) {
       const onlyCandidate = successfulCandidates[0];
 
-      await this.selectSingleCandidate(context.runId, onlyCandidate);
-
       const selectedCandidate: IdeaBenchmarkCandidate = {
         ...onlyCandidate,
         semanticDiversity: {
@@ -360,6 +399,13 @@ export class IdeaGenerationBenchmarkService {
         hybridFinalScore: null,
         selected: true,
       };
+
+      this.persistCandidateDecisionSnapshotInBackground(
+        context.runId,
+        [selectedCandidate],
+        selectedCandidate.candidateId,
+        null,
+      );
 
       return {
         winner: selectedCandidate,
@@ -390,13 +436,21 @@ export class IdeaGenerationBenchmarkService {
       judgeCandidates.map((candidate) => candidate.candidateId),
     );
 
-    const judgeEvaluation = await this.candidateJudgeService.evaluate(
-      context,
-      judgeCandidates.map((candidate) => ({
-        candidateId: candidate.candidateId,
-        parsedOutput: candidate.parsedOutput,
-      })),
-    );
+    const judgeEvaluation = IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED
+      ? await this.candidateJudgeService.evaluate(
+          context,
+          judgeCandidates.map((candidate) => ({
+            candidateId: candidate.candidateId,
+            parsedOutput: candidate.parsedOutput,
+          })),
+        )
+      : null;
+
+    if (!IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED) {
+      this.logger.debug(
+        'Comparative AI judge skipped in strict fast mode; deterministic quality and semantic-diversity ranking selected the winner.',
+      );
+    }
 
     const useJudgeScores =
       judgeEvaluation !== null &&
@@ -493,7 +547,7 @@ export class IdeaGenerationBenchmarkService {
         }
       : null;
 
-    await this.persistFinalDecision(
+    this.persistCandidateDecisionSnapshotInBackground(
       context.runId,
       candidates,
       winner.candidateId,
@@ -590,6 +644,7 @@ export class IdeaGenerationBenchmarkService {
         context,
         localModel,
         primaryDirection,
+        true,
       );
     } catch (error: unknown) {
       const message =
@@ -616,6 +671,7 @@ export class IdeaGenerationBenchmarkService {
     context: IdeaGenerationContext,
     model: AiModel,
     direction: CandidateConceptDirection,
+    allowQualityRevision: boolean,
   ): Promise<IdeaBenchmarkCandidate> {
     const prompt = context.prompt;
 
@@ -636,35 +692,27 @@ export class IdeaGenerationBenchmarkService {
         direction.promptText,
         qualityContext,
       );
-      const qualityApprovedAttempt = initialAttempt.quality.accepted
-        ? initialAttempt
-        : await this.reviseWeakCandidate(
-            context,
-            model,
-            initialAttempt,
-            qualityContext,
-            direction.promptText,
-          );
+      /*
+       * Keep two complete first-pass candidates for comparison, but spend the
+       * bounded revision budget only on the first/highest-priority model.
+       */
+      const qualityApprovedAttempt =
+        initialAttempt.quality.accepted || !allowQualityRevision
+          ? initialAttempt
+          : await this.reviseWeakCandidate(
+              context,
+              model,
+              initialAttempt,
+              qualityContext,
+              direction.promptText,
+            );
 
-      const usableAttempt = qualityApprovedAttempt.quality.accepted
-        ? qualityApprovedAttempt
-        : null;
+      const usableAttempt = qualityApprovedAttempt;
 
-      if (!usableAttempt) {
-        const errorMessage = this.buildQualityRejectionMessage(
-          qualityApprovedAttempt.quality,
+      if (!qualityApprovedAttempt.quality.accepted) {
+        this.logger.warn(
+          `Model "${model.displayName ?? model.modelName}" returned a structurally valid candidate below the preferred quality threshold (${qualityApprovedAttempt.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}). It is retained as a last-resort candidate so the run always returns a result.`,
         );
-
-        await this.persistRejectedCandidate({
-          runId: context.runId,
-          model,
-          attempt: qualityApprovedAttempt,
-          errorMessage,
-          direction,
-        });
-        failurePersisted = true;
-
-        throw new ServiceUnavailableException(errorMessage);
       }
 
       const acceptedAttempt = await this.resolveDistinctAttempt(
@@ -675,17 +723,23 @@ export class IdeaGenerationBenchmarkService {
         qualityContext,
       );
 
-      const candidateId = await this.persistSuccessfulCandidate({
-        runId: context.runId,
-        model,
-        aiResult: acceptedAttempt.aiResult,
-        parsedOutput: acceptedAttempt.parsedOutput,
-        quality: acceptedAttempt.quality,
-        direction,
-      });
+      /*
+       * Candidate diagnostics are not needed to evaluate the winner. Allocate
+       * the UUID locally and defer successful-candidate persistence until all
+       * parallel model results have been scored. This replaces two create
+       * round-trips plus a later update transaction with one createMany call.
+       */
+      const candidateId = randomUUID();
 
       return {
         candidateId,
+        modelSnapshot: {
+          id: model.id,
+          providerKey: model.providerKey,
+          apiModelId: model.apiModelId,
+          modelName: model.modelName,
+          displayName: model.displayName,
+        },
         aiResult: acceptedAttempt.aiResult,
         parsedOutput: acceptedAttempt.parsedOutput,
         quality: acceptedAttempt.quality,
@@ -709,12 +763,24 @@ export class IdeaGenerationBenchmarkService {
       );
 
       if (!failurePersisted && !duplicateRejectionPersisted) {
-        await this.persistFailedCandidate({
+        // Failed-candidate rows are diagnostics only. Do not hold the user-facing
+        // pipeline behind another remote Supabase write after a provider timeout.
+        // Successful candidates, duplicate checks, quality gates, and winner
+        // persistence remain fully awaited.
+        void this.persistFailedCandidate({
           runId: context.runId,
           model,
           responseTimeMs: Date.now() - startedAt,
           errorMessage,
           direction,
+        }).catch((persistenceError: unknown) => {
+          const persistenceMessage =
+            persistenceError instanceof Error
+              ? persistenceError.message
+              : String(persistenceError);
+          this.logger.warn(
+            `Failed to persist benchmark diagnostic for model "${model.displayName ?? model.modelName}": ${persistenceMessage}`,
+          );
         });
       }
 
@@ -817,14 +883,9 @@ export class IdeaGenerationBenchmarkService {
 
     const errorMessage = this.buildDuplicateRejectionMessage(duplicateResult);
 
-    await this.persistRejectedCandidate({
-      runId: context.runId,
-      model,
-      attempt: currentAttempt,
-      errorCode: 'SEMANTIC_DUPLICATE_REJECTED',
-      errorMessage,
-      direction,
-    });
+    this.logger.warn(
+      `${errorMessage} The duplicate candidate will not enter winner selection; the benchmark will continue with another healthy model or ranked opportunity.`,
+    );
 
     throw new ServiceUnavailableException(errorMessage);
   }
@@ -848,6 +909,65 @@ export class IdeaGenerationBenchmarkService {
     );
   }
 
+  /**
+   * Returns only the fields needed to redesign or revise a candidate.
+   *
+   * Sending the complete parsed premium result repeats fourteen advanced
+   * outputs in the follow-up request and can add thousands of input tokens.
+   * The product mechanism is fully represented by the core narrative,
+   * objectives, target users, MVP features, technology stack, and architecture
+   * summary, so the remaining advanced outputs are intentionally omitted.
+   */
+  private buildCompactCandidateSignature(
+    parsedOutput: ParsedIdeaAiOutput,
+  ): Record<string, unknown> {
+    const readAdvancedOutput = (outputKey: string): string | string[] | null => {
+      const output = parsedOutput.advancedOutputs.find(
+        (item) => item.outputKey === outputKey,
+      );
+
+      if (!output) {
+        return null;
+      }
+
+      if (
+        Array.isArray(output.structuredContent) &&
+        output.structuredContent.length > 0
+      ) {
+        return output.structuredContent
+          .filter((item): item is string => typeof item === 'string')
+          .slice(0, 8)
+          .map((item) => item.replace(/\s+/gu, ' ').trim().slice(0, 180));
+      }
+
+      return output.content
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 900);
+    };
+
+    const core = parsedOutput.coreIdea;
+
+    return {
+      title: core.title,
+      problemStatement: core.problemStatement.slice(0, 1_200),
+      objectives: core.objectives.slice(0, 5),
+      targetUsers: core.targetUsers.slice(0, 4),
+      overview: (
+        core.partialAbstract ??
+        core.limitedAbstract ??
+        core.fullAbstract ??
+        ''
+      )
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 800),
+      mvpFeatures: readAdvancedOutput('mvp-features'),
+      technologyStack: readAdvancedOutput('technology-stack'),
+      systemArchitecture: readAdvancedOutput('system-architecture'),
+    };
+  }
+
   private buildDuplicateRedesignPrompt(
     assignedPromptText: string,
     previousAttempt: AcceptedModelAttempt,
@@ -865,8 +985,10 @@ export class IdeaGenerationBenchmarkService {
     const attemptInstructions =
       attemptNumber === 1
         ? [
-            '- Change the core workflow and primary value proposition.',
-            '- Replace the main user journey, not only the title, wording, or feature names.',
+            '- Change the core workflow, primary actor action, system response, and measurable outcome.',
+            '- Replace the main user journey, product mechanism, and dominant capability combination; do not only rename telemetry, monitoring, bridge, dashboard, or integration concepts.',
+            `- Do not reuse the rejected solution archetype: ${previousArchetype}.`,
+            `- Prefer one of these materially different archetypes: ${alternativeArchetypes.join(', ')}.`,
           ]
         : [
             '- Use a fundamentally different solution archetype from the rejected candidate.',
@@ -890,9 +1012,11 @@ export class IdeaGenerationBenchmarkService {
       duplicateResult.matchedIdea
         ? `- Avoid recreating the product direction represented by existing idea "${duplicateResult.matchedIdea.title}".`
         : '',
-      '<previous_rejected_candidate_json>',
-      JSON.stringify(previousAttempt.parsedOutput),
-      '</previous_rejected_candidate_json>',
+      '<previous_rejected_candidate_signature>',
+      JSON.stringify(
+        this.buildCompactCandidateSignature(previousAttempt.parsedOutput),
+      ),
+      '</previous_rejected_candidate_signature>',
       '- Before returning, compare the redesigned concept with the rejected candidate and verify that its workflow and value delivery are materially different.',
       '- Return exactly one complete JSON object matching the required schema.',
     ]
@@ -1060,7 +1184,7 @@ export class IdeaGenerationBenchmarkService {
       //    healthy ONLINE model from the provider-diverse rotation.
       // The shorter timeout prevents one unavailable model from holding the
       // complete parallel batch for several minutes.
-      timeoutMs: IDEA_CORE_MODEL_TIMEOUT_MS,
+      timeoutMs: this.resolveCoreModelTimeoutMs(model),
       maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
@@ -1074,6 +1198,25 @@ export class IdeaGenerationBenchmarkService {
   }
 
   /**
+   * Uses a shorter timeout for OpenRouter without shortening the direct Google
+   * quality window. This prevents one unavailable routed model from adding a
+   * full nine-second stall while preserving the stronger model response time.
+   */
+  private resolveCoreModelTimeoutMs(model: AiModel): number {
+    const provider = normalizeAiProviderKey(model.providerKey);
+
+    if (provider === AI_PROVIDER_KEYS.OPENROUTER) {
+      return IDEA_CORE_OPENROUTER_TIMEOUT_MS;
+    }
+
+    if (provider === AI_PROVIDER_KEYS.GOOGLE) {
+      return IDEA_CORE_GOOGLE_TIMEOUT_MS;
+    }
+
+    return IDEA_CORE_MODEL_TIMEOUT_MS;
+  }
+
+  /**
    * Rejects a candidate before quality scoring when it ignores the requested
    * multi-problem or multi-domain portfolio contract. This allows the parallel
    * benchmark to select another valid candidate instead of discovering the
@@ -1083,45 +1226,76 @@ export class IdeaGenerationBenchmarkService {
     context: IdeaGenerationContext,
     parsedOutput: ParsedIdeaAiOutput,
   ): void {
-    const pairs = this.parseCandidateProblemSolutionPairs(
-      parsedOutput.coreIdea.problemStatement,
+    const statement = parsedOutput.coreIdea.problemStatement.trim();
+    const normalized = this.normalizePortfolioText(statement);
+
+    if (statement.length < 120 || statement.length > 2_200) {
+      throw new ServiceUnavailableException(
+        `UNIFIED_PROBLEM_STATEMENT_REJECTED: expected 120-2200 characters but received ${statement.length}.`,
+      );
+    }
+
+    if (/solution response\s*:|^\s*\d+[.)]\s*\[/im.test(statement)) {
+      throw new ServiceUnavailableException(
+        'UNIFIED_PROBLEM_STATEMENT_REJECTED: problemStatement must be readable problem-only prose, not a numbered problem-solution portfolio.',
+      );
+    }
+
+    const evidenceBackedDomainNames = new Set(
+      context.domainEvidence
+        .filter((evidence) => evidence.evidenceAvailable)
+        .map((evidence) => evidence.domainName.trim().toLowerCase()),
     );
 
-    const distinctEvidenceProblems = new Set(
-      (context.communityAiAnalysis?.opportunities ?? []).map((opportunity) =>
-        this.normalizePortfolioText(opportunity.problem),
+    const supportedDomains = [
+      ...new Set(
+        (context.communityAiAnalysis?.opportunities ?? [])
+          .map((item) => item.domainName.trim())
+          .filter(
+            (domainName) =>
+              Boolean(domainName) &&
+              evidenceBackedDomainNames.has(domainName.toLowerCase()),
+          ),
       ),
-    ).size;
+    ];
 
-    const minimumPairCount = Math.max(
-      1,
-      context.selectedDomains.length,
-      distinctEvidenceProblems >= 2 ? 2 : 1,
+    const representedSupportedDomains = supportedDomains.filter((domain) =>
+      normalized.includes(this.normalizePortfolioText(domain)),
     );
 
-    if (pairs.length < minimumPairCount || pairs.length > 6) {
+    /*
+     * A multi-domain requirement is valid only when at least two domains have
+     * both usable collected evidence and an AI-supported opportunity. Merely
+     * selecting extra domains in the request must not force the generated
+     * problem statement to mention unsupported domains.
+     */
+    if (supportedDomains.length > 1 && representedSupportedDomains.length < 2) {
       throw new ServiceUnavailableException(
-        `PROBLEM_SOLUTION_PORTFOLIO_REJECTED: expected ${minimumPairCount}-6 explicit pairs but received ${pairs.length}.`,
+        `UNIFIED_PROBLEM_STATEMENT_REJECTED: a genuinely multi-domain candidate must integrate at least two evidence-backed AI-supported domains; represented ${representedSupportedDomains.length}.`,
       );
     }
 
-    const missingDomains = context.selectedDomains.filter((domain) => {
-      const expected = this.normalizePortfolioText(domain.name);
-      return !pairs.some((pair) => {
-        const actual = this.normalizePortfolioText(pair.domainName);
-        return actual === expected || actual.includes(expected) || expected.includes(actual);
-      });
-    });
-
-    if (missingDomains.length > 0) {
+    if (parsedOutput.coreIdea.objectives.length < 3) {
       throw new ServiceUnavailableException(
-        `PROBLEM_SOLUTION_PORTFOLIO_REJECTED: candidate omitted selected domain(s): ${missingDomains.map((domain) => domain.name).join(', ')}.`,
+        'UNIFIED_PROBLEM_STATEMENT_REJECTED: at least three concrete objectives are required.',
       );
     }
 
-    if (parsedOutput.coreIdea.objectives.length < pairs.length) {
+    const fullAbstract = parsedOutput.coreIdea.fullAbstract?.trim();
+    const overview = (
+      parsedOutput.coreIdea.partialAbstract ??
+      parsedOutput.coreIdea.limitedAbstract ??
+      ''
+    ).trim();
+
+    if (
+      fullAbstract &&
+      overview &&
+      this.normalizePortfolioText(fullAbstract) ===
+        this.normalizePortfolioText(overview)
+    ) {
       throw new ServiceUnavailableException(
-        'PROBLEM_SOLUTION_PORTFOLIO_REJECTED: every pair requires a corresponding objective.',
+        'ABSTRACT_DUPLICATION_REJECTED: fullAbstract must add material detail beyond the overview.',
       );
     }
   }
@@ -1272,9 +1446,11 @@ export class IdeaGenerationBenchmarkService {
         previousAttempt.quality,
       ),
       '</deterministic_quality_feedback>',
-      '<previous_candidate_json>',
-      JSON.stringify(previousAttempt.parsedOutput),
-      '</previous_candidate_json>',
+      '<previous_candidate_signature>',
+      JSON.stringify(
+        this.buildCompactCandidateSignature(previousAttempt.parsedOutput),
+      ),
+      '</previous_candidate_signature>',
       '- Return exactly one complete JSON object matching the required schema.',
     ].join('\n');
   }
@@ -1535,10 +1711,11 @@ export class IdeaGenerationBenchmarkService {
       'Reject evidence from unrelated developer programs, cloud-credit claims, repository governance records, political news, and AI research reports even when they contain broad words such as student, education, platform, or system.',
       'A GitHub issue that already specifies proposed implementation, routes, components, files to modify, infrastructure, tests, phases, or expected impact is a solution blueprint, not independent community-demand evidence. Do not copy, repackage, or productize that implementation plan. Use only independent user-observed pain that remains after removing the prescribed solution.',
       'Keep the JSON concise. Use short arrays, avoid repeating the abstract in advanced outputs, and keep each advanced-output section focused on implementation decisions rather than generic prose.',
+      'The overview abstract must be concise. fullAbstract must contain materially richer detail in at least two paragraphs and must not repeat the overview verbatim.',
       'Preserve every used opportunity as an immutable evidence unit: its title, problem, need, solution area, severity, frequency, domain label, and evidence samples must remain mutually consistent. Multiple units may be combined only when they form one coherent workflow.',
       context.selectedDomains.length > 1
-        ? `The final problemStatement must expose at least one evidence-backed problem and one corresponding solution response for each supported selected domain, plus additional domain-labeled pairs when distinct evidence supports them: ${context.selectedDomains.map((domain) => domain.name).join(', ')}.`
-        : 'The final problemStatement may expose several distinct evidence-backed problems when they belong to the same user journey.',
+        ? `The final problemStatement must be one coherent problem-only narrative that integrates every AI-supported domain participating in the same workflow: ${context.selectedDomains.map((domain) => domain.name).join(', ')}. Cross-domain ideas are allowed and encouraged when the evidence supports one connected product journey.`
+        : 'The final problemStatement must be one coherent problem-only narrative. Do not include solutions or numbered portfolio entries.',
       'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',
       'When directEvidenceCount or frequency equals 1, use singular and qualified wording such as one report indicates or a limited evidence sample suggests. Never use frequently, recurring discussions, common, widespread, or equivalent market-wide language.',
       'When directEvidenceCount equals 1, the solution scope must remain proportional to one observed case: prefer one narrow user workflow and one primary product surface. Do not escalate a simple taxonomy, access, storage, or usability complaint into an enterprise SDK, telemetry platform, compliance suite, or CI/CD product unless host integration is strictly necessary and explicitly justified.',
@@ -1657,35 +1834,48 @@ export class IdeaGenerationBenchmarkService {
     readonly quality: IdeaQualityEvaluation;
     readonly direction: CandidateConceptDirection;
   }): Promise<string> {
-    const candidate = await this.prisma.ideaGenerationCandidate.create({
-      data: {
+    const data = {
+      aiModelId: input.model.id,
+      modelName: input.model.modelName,
+      displayName: input.model.displayName,
+      opportunityTitle: input.direction.opportunity.title,
+      rawResponse: input.aiResult.text,
+      parsedResponse: this.toPrismaJson(input.parsedOutput),
+      overallScore: input.quality.score,
+      semanticDiversityAdjustedScore: null,
+      hybridFinalScore: null,
+      finalScore: null,
+      innovationScore: input.quality.dimensions.innovation,
+      marketFitScore: input.quality.dimensions.marketFit,
+      technicalQualityScore: input.quality.dimensions.technicalQuality,
+      completenessScore: input.quality.dimensions.completeness,
+      originalityScore: input.quality.dimensions.originality,
+      inputTokens: input.aiResult.inputTokens,
+      outputTokens: input.aiResult.outputTokens,
+      costEstimate: input.aiResult.costEstimate,
+      responseTimeMs: input.aiResult.responseTimeMs,
+      selected: false,
+      errorCode: null,
+      errorMessage: null,
+    };
+
+    const candidate = await this.prisma.ideaGenerationCandidate.upsert({
+      where: {
+        runId_providerKey_apiModelId_opportunityRank: {
+          runId: input.runId,
+          providerKey: input.model.providerKey,
+          apiModelId: input.model.apiModelId,
+          opportunityRank: input.direction.opportunity.rank,
+        },
+      },
+      create: {
         runId: input.runId,
-        aiModelId: input.model.id,
         providerKey: input.model.providerKey,
         apiModelId: input.model.apiModelId,
-        modelName: input.model.modelName,
-        displayName: input.model.displayName,
         opportunityRank: input.direction.opportunity.rank,
-        opportunityTitle: input.direction.opportunity.title,
-        rawResponse: input.aiResult.text,
-        parsedResponse: this.toPrismaJson(input.parsedOutput),
-        overallScore: input.quality.score,
-        semanticDiversityAdjustedScore: null,
-        hybridFinalScore: null,
-        finalScore: null,
-        innovationScore: input.quality.dimensions.innovation,
-        marketFitScore: input.quality.dimensions.marketFit,
-        technicalQualityScore: input.quality.dimensions.technicalQuality,
-        completenessScore: input.quality.dimensions.completeness,
-        originalityScore: input.quality.dimensions.originality,
-        inputTokens: input.aiResult.inputTokens,
-        outputTokens: input.aiResult.outputTokens,
-        costEstimate: input.aiResult.costEstimate,
-        responseTimeMs: input.aiResult.responseTimeMs,
-        selected: false,
-        errorCode: null,
-        errorMessage: null,
+        ...data,
       },
+      update: data,
       select: { id: true },
     });
 
@@ -1704,36 +1894,49 @@ export class IdeaGenerationBenchmarkService {
     readonly errorMessage: string;
     readonly direction: CandidateConceptDirection;
   }): Promise<void> {
-    await this.prisma.ideaGenerationCandidate.create({
-      data: {
+    const data = {
+      aiModelId: input.model.id,
+      modelName: input.model.modelName,
+      displayName: input.model.displayName,
+      opportunityTitle: input.direction.opportunity.title,
+      rawResponse: input.attempt.aiResult.text,
+      parsedResponse: this.toPrismaJson(input.attempt.parsedOutput),
+      overallScore: input.attempt.quality.score,
+      semanticDiversityAdjustedScore: null,
+      hybridFinalScore: null,
+      finalScore: null,
+      innovationScore: input.attempt.quality.dimensions.innovation,
+      marketFitScore: input.attempt.quality.dimensions.marketFit,
+      technicalQualityScore:
+        input.attempt.quality.dimensions.technicalQuality,
+      completenessScore: input.attempt.quality.dimensions.completeness,
+      originalityScore: input.attempt.quality.dimensions.originality,
+      inputTokens: input.attempt.aiResult.inputTokens,
+      outputTokens: input.attempt.aiResult.outputTokens,
+      costEstimate: input.attempt.aiResult.costEstimate,
+      responseTimeMs: input.attempt.aiResult.responseTimeMs,
+      selected: false,
+      errorCode: input.errorCode ?? 'QUALITY_GATE_REJECTED',
+      errorMessage: input.errorMessage,
+    };
+
+    await this.prisma.ideaGenerationCandidate.upsert({
+      where: {
+        runId_providerKey_apiModelId_opportunityRank: {
+          runId: input.runId,
+          providerKey: input.model.providerKey,
+          apiModelId: input.model.apiModelId,
+          opportunityRank: input.direction.opportunity.rank,
+        },
+      },
+      create: {
         runId: input.runId,
-        aiModelId: input.model.id,
         providerKey: input.model.providerKey,
         apiModelId: input.model.apiModelId,
-        modelName: input.model.modelName,
-        displayName: input.model.displayName,
         opportunityRank: input.direction.opportunity.rank,
-        opportunityTitle: input.direction.opportunity.title,
-        rawResponse: input.attempt.aiResult.text,
-        parsedResponse: this.toPrismaJson(input.attempt.parsedOutput),
-        overallScore: input.attempt.quality.score,
-        semanticDiversityAdjustedScore: null,
-        hybridFinalScore: null,
-        finalScore: null,
-        innovationScore: input.attempt.quality.dimensions.innovation,
-        marketFitScore: input.attempt.quality.dimensions.marketFit,
-        technicalQualityScore:
-          input.attempt.quality.dimensions.technicalQuality,
-        completenessScore: input.attempt.quality.dimensions.completeness,
-        originalityScore: input.attempt.quality.dimensions.originality,
-        inputTokens: input.attempt.aiResult.inputTokens,
-        outputTokens: input.attempt.aiResult.outputTokens,
-        costEstimate: input.attempt.aiResult.costEstimate,
-        responseTimeMs: input.attempt.aiResult.responseTimeMs,
-        selected: false,
-        errorCode: input.errorCode ?? 'QUALITY_GATE_REJECTED',
-        errorMessage: input.errorMessage,
+        ...data,
       },
+      update: data,
     });
   }
 
@@ -1748,25 +1951,156 @@ export class IdeaGenerationBenchmarkService {
     readonly errorMessage: string;
     readonly direction: CandidateConceptDirection;
   }): Promise<void> {
-    await this.prisma.ideaGenerationCandidate.create({
-      data: {
+    const data = {
+      aiModelId: input.model.id,
+      modelName: input.model.modelName,
+      displayName: input.model.displayName,
+      opportunityTitle: input.direction.opportunity.title,
+      responseTimeMs: input.responseTimeMs,
+      selected: false,
+      errorCode: 'MODEL_EXECUTION_FAILED',
+      errorMessage: input.errorMessage,
+    };
+
+    /*
+     * The same model can be retried for the same opportunity rank. The schema
+     * intentionally has one diagnostic row per run/model/opportunity, so update
+     * that row instead of trying to insert a duplicate key.
+     */
+    await this.prisma.ideaGenerationCandidate.upsert({
+      where: {
+        runId_providerKey_apiModelId_opportunityRank: {
+          runId: input.runId,
+          providerKey: input.model.providerKey,
+          apiModelId: input.model.apiModelId,
+          opportunityRank: input.direction.opportunity.rank,
+        },
+      },
+      create: {
         runId: input.runId,
-        aiModelId: input.model.id,
         providerKey: input.model.providerKey,
         apiModelId: input.model.apiModelId,
-        modelName: input.model.modelName,
-        displayName: input.model.displayName,
         opportunityRank: input.direction.opportunity.rank,
-        opportunityTitle: input.direction.opportunity.title,
-        responseTimeMs: input.responseTimeMs,
-        selected: false,
-        errorCode: 'MODEL_EXECUTION_FAILED',
-        errorMessage: input.errorMessage,
+        ...data,
       },
+      update: data,
     });
   }
 
-  /** Selects the only quality-approved candidate atomically. */
+  /**
+   * Persists every successful benchmark candidate and the final decision in
+   * one batched database operation after deterministic scoring is complete.
+   *
+   * Successful candidate rows are diagnostics, not prerequisites for model
+   * comparison. Deferring them removes remote database latency from each
+   * parallel AI branch while preserving the complete benchmark audit trail.
+   */
+  private persistCandidateDecisionSnapshotInBackground(
+    runId: string,
+    candidates: readonly IdeaBenchmarkCandidate[],
+    winnerCandidateId: string,
+    evaluation: IdeaJudgeEvaluation | null,
+  ): void {
+    void this.persistCandidateDecisionSnapshot(
+      runId,
+      candidates,
+      winnerCandidateId,
+      evaluation,
+    ).catch((error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Background benchmark candidate persistence failed for run "${runId}": ${message}`,
+      );
+    });
+  }
+
+  private async persistCandidateDecisionSnapshot(
+    runId: string,
+    candidates: readonly IdeaBenchmarkCandidate[],
+    winnerCandidateId: string,
+    evaluation: IdeaJudgeEvaluation | null,
+  ): Promise<void> {
+    const rows = candidates.map((candidate) => {
+      const score = candidate.aiJudge;
+      const isWinner = candidate.candidateId === winnerCandidateId;
+
+      return {
+        id: candidate.candidateId,
+        runId,
+        aiModelId: candidate.modelSnapshot.id,
+        providerKey: candidate.modelSnapshot.providerKey,
+        apiModelId: candidate.modelSnapshot.apiModelId,
+        modelName: candidate.modelSnapshot.modelName,
+        displayName: candidate.modelSnapshot.displayName,
+        opportunityRank: candidate.opportunityRank,
+        opportunityTitle: candidate.opportunityTitle,
+        rawResponse: candidate.aiResult.text,
+        parsedResponse: this.toPrismaJson(candidate.parsedOutput),
+        overallScore: candidate.quality.score,
+        semanticDiversityAdjustedScore:
+          candidate.semanticDiversityAdjustedScore,
+        hybridFinalScore: candidate.hybridFinalScore,
+        finalScore: candidate.hybridFinalScore,
+        innovationScore: candidate.quality.dimensions.innovation,
+        marketFitScore: candidate.quality.dimensions.marketFit,
+        technicalQualityScore:
+          candidate.quality.dimensions.technicalQuality,
+        completenessScore: candidate.quality.dimensions.completeness,
+        originalityScore: candidate.quality.dimensions.originality,
+        inputTokens: candidate.aiResult.inputTokens,
+        outputTokens: candidate.aiResult.outputTokens,
+        costEstimate: candidate.aiResult.costEstimate,
+        responseTimeMs: candidate.aiResult.responseTimeMs,
+        selected: isWinner,
+        errorCode: null,
+        errorMessage: null,
+        aiJudgeScore: score?.overallScore ?? null,
+        semanticDiversityScore:
+          candidate.semanticDiversity?.diversityScore ?? null,
+        maximumSimilarity:
+          candidate.semanticDiversity?.maxSimilarity ?? null,
+        mostSimilarCandidateId:
+          candidate.semanticDiversity?.mostSimilarCandidateId ?? null,
+        semanticDuplicateRisk:
+          candidate.semanticDiversity?.duplicateRisk ?? null,
+        localRelevanceScore: score?.localRelevance ?? null,
+        problemImportanceScore: score?.problemImportance ?? null,
+        aiJudgeInnovationScore: score?.innovation ?? null,
+        regulatoryFeasibilityScore:
+          score?.regulatoryFeasibility ?? null,
+        technicalFeasibilityScore:
+          score?.technicalFeasibility ?? null,
+        marketPotentialScore: score?.marketPotential ?? null,
+        implementationClarityScore:
+          score?.implementationClarity ?? null,
+        judgeStrengths: score
+          ? this.toPrismaJsonValue(score.strengths)
+          : Prisma.JsonNull,
+        judgeRisks: score
+          ? this.toPrismaJsonValue(score.risks)
+          : Prisma.JsonNull,
+        judgeReason: isWinner
+          ? (evaluation?.reason ??
+            (candidate.quality.accepted
+              ? 'Selected by deterministic quality and semantic-diversity ranking.'
+              : 'Selected as the strongest structurally valid availability fallback.'))
+          : (evaluation?.comparisonReport.find(
+              (report) => report.candidateId === candidate.candidateId,
+            )?.whyItRankedHere ?? null),
+        judgeConfidence: isWinner ? (evaluation?.confidence ?? 0) : null,
+        requiresLegalVerification: isWinner
+          ? (evaluation?.requiresLegalVerification ?? null)
+          : null,
+      };
+    });
+
+    await this.prisma.ideaGenerationCandidate.createMany({
+      data: rows,
+    });
+  }
+
+  /** Selects the only structurally valid candidate atomically. */
   private async selectSingleCandidate(
     runId: string,
     candidate: IdeaBenchmarkCandidate,
@@ -1787,8 +2121,9 @@ export class IdeaGenerationBenchmarkService {
           maximumSimilarity: 0,
           mostSimilarCandidateId: null,
           semanticDuplicateRisk: 'LOW',
-          judgeReason:
-            'Selected by deterministic fallback because only one quality-approved candidate remained; comparative AI judging was not performed.',
+          judgeReason: candidate.quality.accepted
+            ? 'Selected by deterministic fallback because only one quality-approved candidate remained; comparative AI judging was not performed.'
+            : 'Selected as the only structurally valid availability fallback after bounded model execution; review the stored quality issues before publication.',
           judgeConfidence: 0,
           requiresLegalVerification: null,
         },

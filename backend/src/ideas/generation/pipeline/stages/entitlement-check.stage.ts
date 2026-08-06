@@ -20,6 +20,7 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 import type { IdeaGenerationPolicyInput } from '../../types/idea-generation-policy.type';
 
 import { IdeaGenerationPolicyService } from '../../services/idea-generation-policy.service';
+import { IdeaGenerationDatabaseRetryService } from '../../services/idea-generation-database-retry.service';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 
@@ -64,6 +65,8 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
     private readonly prisma: PrismaService,
 
     private readonly policyService: IdeaGenerationPolicyService,
+
+    private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
   ) {}
 
   /**
@@ -135,26 +138,34 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
   private async buildUserPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    const user = await this.prisma.user.findFirst({
-      where: {
-        id: context.owner.userId,
-        deletedAt: null,
-      },
+    const user = await this.databaseRetry.execute(
+      () =>
+        this.prisma.user.findUnique({
+          where: {
+            id: context.owner.userId,
+          },
 
-      select: {
-        id: true,
-        role: true,
-        userType: true,
-        accountStatus: true,
-        isActive: true,
-        isVerified: true,
-        creditBalance: true,
-        freeGenerationLimit: true,
-        freeGenerationsUsed: true,
+          select: {
+            id: true,
+            role: true,
+            userType: true,
+            accountStatus: true,
+            isActive: true,
+            isVerified: true,
+            creditBalance: true,
+            freeGenerationLimit: true,
+            freeGenerationsUsed: true,
+            deletedAt: true,
+          },
+        }),
+      {
+        operationName: 'load user generation entitlement',
+        runId: context.runId,
+        maxAttempts: 4,
       },
-    });
+    );
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       throw new NotFoundException({
         code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
 
@@ -170,12 +181,14 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
       });
     }
 
+    const { deletedAt: _deletedAt, ...policyUser } = user;
+
     return {
       ownerType: IDEA_OWNER_TYPES.USER,
 
       requestedGenerationType: context.generationType,
 
-      user,
+      user: policyUser,
     };
   }
 
@@ -188,17 +201,25 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
   private async buildGuestPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    const guestSession = await this.prisma.guestSession.findUnique({
-      where: {
-        id: context.owner.guestSessionId,
-      },
+    const guestSession = await this.databaseRetry.execute(
+      () =>
+        this.prisma.guestSession.findUnique({
+          where: {
+            id: context.owner.guestSessionId,
+          },
 
-      select: {
-        id: true,
-        hasGenerated: true,
-        expiresAt: true,
+          select: {
+            id: true,
+            hasGenerated: true,
+            expiresAt: true,
+          },
+        }),
+      {
+        operationName: 'load guest generation entitlement',
+        runId: context.runId,
+        maxAttempts: 4,
       },
-    });
+    );
 
     if (!guestSession) {
       throw new NotFoundException({

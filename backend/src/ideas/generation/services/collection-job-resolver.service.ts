@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import { CollectionJobStatus, LanguageCode, Prisma } from '@prisma/client';
 
@@ -12,6 +12,7 @@ import {
 import { IntelligentAnalysisService } from '../../../nlp/pipeline/intelligent-analysis.service';
 
 import type { IntelligentAnalysisOutput } from '../../../nlp/pipeline/types/intelligent-analysis.types';
+import { Sentiment } from '../../../nlp/common/enums/sentiment.enum';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -195,6 +196,21 @@ export type ResolveCollectionJobResult = {
  */
 @Injectable()
 export class CollectionJobResolverService {
+  private readonly logger = new Logger(CollectionJobResolverService.name);
+
+  /**
+   * Process-local hot cache for identical generation requests. A repeated run
+   * can reuse the already loaded collection job and persisted NLP output
+   * without another Supabase search or relation reload.
+   */
+  private readonly hotReuseCache = new Map<
+    string,
+    { readonly expiresAt: number; readonly result: ResolveCollectionJobResult }
+  >();
+
+  private static readonly HOT_REUSE_CACHE_TTL_MS = 10 * 60 * 1000;
+  private static readonly HOT_REUSE_CACHE_MAX_ENTRIES = 100;
+
   constructor(
     private readonly prisma: PrismaService,
 
@@ -214,6 +230,17 @@ export class CollectionJobResolverService {
     input: ResolveCollectionJobInput,
   ): Promise<ResolveCollectionJobResult> {
     const normalizedInput = this.normalizeInput(input);
+    const cacheKey = this.buildHotReuseCacheKey(normalizedInput);
+
+    if (!normalizedInput.forceRefresh) {
+      const cached = this.getHotReuseResult(cacheKey);
+      if (cached) {
+        this.logger.debug(
+          `Reused hot collection/NLP result for domain ${normalizedInput.domainId}.`,
+        );
+        return cached;
+      }
+    }
 
     const reusableJob = normalizedInput.forceRefresh
       ? null
@@ -224,13 +251,14 @@ export class CollectionJobResolverService {
         ? this.mapPersistedAnalysis(reusableJob)
         : await this.intelligentAnalysisService.analyze(reusableJob.id);
 
-      return {
+      const result: ResolveCollectionJobResult = {
         job: reusableJob,
         nlpOutput,
         reused: true,
-
         selectedPlatformId: this.resolveSingleDataSourceId(reusableJob),
       };
+      this.setHotReuseResult(cacheKey, result);
+      return result;
     }
 
     const collectionInput: IdeaGenerationCollectionInput = {
@@ -267,18 +295,152 @@ export class CollectionJobResolverService {
       );
     }
 
-    const nlpOutput = await this.intelligentAnalysisService.analyze(
-      startedJob.id,
-    );
+    /*
+     * Loading the relation-rich job and starting deterministic NLP used to be
+     * serialized. NLP reads the completed job by id internally, so both remote
+     * database operations can safely overlap after collection is committed.
+     * This keeps the complete corpus while removing one full Supabase wait.
+     */
+    const [completedJob, nlpOutput] = await Promise.all([
+      this.loadResolvedJob(startedJob.id),
+      this.intelligentAnalysisService.analyze(startedJob.id),
+    ]);
 
-    const completedJob = await this.loadResolvedJob(startedJob.id);
-
-    return {
+    const result: ResolveCollectionJobResult = {
       job: completedJob,
       nlpOutput,
       reused: false,
-
       selectedPlatformId: this.resolveSingleDataSourceId(completedJob),
+    };
+    this.setHotReuseResult(cacheKey, result);
+    return result;
+  }
+
+  private buildHotReuseCacheKey(input: ResolveCollectionJobInput): string {
+    return JSON.stringify({
+      domainId: input.domainId,
+      country: input.country,
+      city: input.city ?? null,
+      region: input.region ?? null,
+      language: input.language,
+      radiusKm: input.radiusKm ?? null,
+      dataSourceKeys: [...input.dataSourceKeys].sort(),
+      keywords: [...(input.keywords ?? [])]
+        .map((value) => value.toLowerCase().replace(/\s+/gu, ' ').trim())
+        .sort(),
+      collectionMode: input.collectionMode ?? null,
+      collectorLimits: input.collectorLimits ?? null,
+    });
+  }
+
+  private getHotReuseResult(
+    key: string,
+  ): ResolveCollectionJobResult | null {
+    const cached = this.hotReuseCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      this.hotReuseCache.delete(key);
+      return null;
+    }
+    return { ...cached.result, reused: true };
+  }
+
+  private setHotReuseResult(
+    key: string,
+    result: ResolveCollectionJobResult,
+  ): void {
+    if (
+      this.hotReuseCache.size >=
+      CollectionJobResolverService.HOT_REUSE_CACHE_MAX_ENTRIES
+    ) {
+      const oldestKey = this.hotReuseCache.keys().next().value as
+        | string
+        | undefined;
+      if (oldestKey) this.hotReuseCache.delete(oldestKey);
+    }
+
+    this.hotReuseCache.set(key, {
+      expiresAt:
+        Date.now() + CollectionJobResolverService.HOT_REUSE_CACHE_TTL_MS,
+      result,
+    });
+  }
+
+  /**
+   * Runs deterministic NLP when collected rows exist and returns a complete
+   * zero-data contract otherwise. This prevents an empty collector response or
+   * an NLP edge-case from blocking the later validation-first AI prompt.
+   */
+  private async resolveNlpOutput(
+    job: ResolvedCollectionJob,
+  ): Promise<IntelligentAnalysisOutput> {
+    if (job.totalPosts + job.totalComments === 0) {
+      return this.createEmptyNlpOutput(job);
+    }
+
+    try {
+      return await this.intelligentAnalysisService.analyze(job.id);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `NLP analysis failed for collection job ${job.id}; generation will continue with a context-only fallback. error=${error instanceof Error ? error.message : String(error)}.`,
+      );
+      return this.createEmptyNlpOutput(job);
+    }
+  }
+
+  /** Creates the complete prompt-compatible NLP shape for a zero-data job. */
+  private createEmptyNlpOutput(
+    job: ResolvedCollectionJob,
+  ): IntelligentAnalysisOutput {
+    return {
+      collectionJobId: job.id,
+      language: job.language,
+      domain: {
+        id: job.domain.id,
+        name: job.domain.name,
+      },
+      location: {
+        country: job.country,
+        city: job.city,
+        region: job.region,
+      },
+      platforms: job.sources.map((source) => source.dataSource.key),
+      totalTextsAnalyzed: 0,
+      totalPostsAnalyzed: 0,
+      totalCommentsAnalyzed: 0,
+      dataQuality: {
+        duplicateTextsRemoved: 0,
+        spamTextsRemoved: 0,
+        irrelevantTextsRemoved: 0,
+      },
+      sentimentStats: {
+        positive: 0,
+        negative: 0,
+        neutral: 0,
+        dominantSentiment: Sentiment.NEUTRAL,
+      },
+      keywords: [],
+      topics: [],
+      recurringProblems: [],
+      extractedNeeds: [],
+      featureRequests: [],
+      opportunities: [],
+      insights: {
+        urgencySignals: [],
+        costConcerns: [],
+        timeConcerns: [],
+        accessibilityConcerns: [],
+        safetyConcerns: [],
+        reliabilityConcerns: [],
+        additionalInsights: [
+          'No usable community text was retained within the fast collection budget.',
+        ],
+      },
+      samplePosts: [],
+      sampleComments: [],
+      aiUsed: false,
+      confidence: 0,
+      analyzedTexts: [],
     };
   }
 

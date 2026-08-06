@@ -1,91 +1,55 @@
 /**
- * Defines the application route configuration.
+ * Application route configuration with route-level code splitting.
  *
- * Public pages are rendered inside PublicLayout so they share the same
- * navigation bar, footer, and general page structure.
- *
- * Authentication pages are rendered inside AuthLayout.
- *
- * The About, Domains, How It Works, and Contact content are sections
- * inside HomePage and therefore do not require separate routes.
+ * Each page is downloaded only when its route is visited. This keeps the
+ * initial bundle small and prevents public pages from loading dashboard,
+ * payment, chart, AI chat, and generation code unnecessarily.
  *
  * @author Eman
- * @component
- * @returns {JSX.Element} The application route tree.
  */
-
+import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
+import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import AuthLayout from '../layouts/AuthLayout';
 import PublicLayout from '../layouts/PublicLayout';
-
-import LoginPage from '../features/auth/Login/pages/LoginPage';
-import RegisterPage from '../features/auth/Register/pages/RegisterPage';
-import VerifyEmailPage from '../features/auth/Register/EmailVerification/pages/VerifyEmailPage';
-import ForgotPasswordPage from '../features/auth/PasswordRecovery/pages/ForgotPasswordPage';
-import ResetPasswordPage from '../features/auth/PasswordRecovery/pages/ResetPasswordPage';
-import HomePage from '../pages/public/HomePage';
-import GuestGenerateIdeaPage from '../features/guest-idea/pages/GuestGenerateIdeaPage';
-import PublicPublicationDetailsPage from '../features/home/pages/PublicPublicationDetailsPage';
-import NotFoundPage from '../pages/public/NotFoundPage';
-
 import { normalUserRoutes } from './normal-user.routes';
+
+const HomePage = lazy(() => import('../pages/public/HomePage'));
+const NotFoundPage = lazy(() => import('../pages/public/NotFoundPage'));
+const LoginPage = lazy(() => import('../features/auth/Login/pages/LoginPage'));
+const RegisterPage = lazy(() => import('../features/auth/Register/pages/RegisterPage'));
+const VerifyEmailPage = lazy(() => import('../features/auth/Register/EmailVerification/pages/VerifyEmailPage'));
+const ForgotPasswordPage = lazy(() => import('../features/auth/PasswordRecovery/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('../features/auth/PasswordRecovery/pages/ResetPasswordPage'));
+const GuestGenerateIdeaPage = lazy(() => import('../features/guest-idea/pages/GuestGenerateIdeaPage'));
+const PublicPublicationDetailsPage = lazy(() => import('../features/home/pages/PublicPublicationDetailsPage'));
 
 export default function AppRoutes() {
     return (
-        <Routes>
-            {/* Public pages */}
-            <Route element={<PublicLayout />}>
-                <Route
-                    index
-                    element={<HomePage />}
-                />
-                <Route
-                    path="/generate"
-                    element={<GuestGenerateIdeaPage />}
-                />
-                <Route
-                    path="/publications/:publicationId"
-                    element={<PublicPublicationDetailsPage />}
-                />
-            </Route>
+        <Suspense fallback={<RouteLoadingFallback />}>
+            <Routes>
+                <Route element={<PublicLayout />}>
+                    <Route index element={<HomePage />} />
+                    <Route path="/generate" element={<GuestGenerateIdeaPage />} />
+                    <Route
+                        path="/publications/:publicationId"
+                        element={<PublicPublicationDetailsPage />}
+                    />
+                </Route>
 
-            {/* Authentication pages */}
-            <Route element={<AuthLayout />}>
-                <Route
-                    path="/login"
-                    element={<LoginPage />}
-                />
+                <Route element={<AuthLayout />}>
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/verify-email" element={<VerifyEmailPage />} />
+                    <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                    <Route path="/reset-password" element={<ResetPasswordPage />} />
+                </Route>
 
-                <Route
-                    path="/register"
-                    element={<RegisterPage />}
-                />
+                {normalUserRoutes}
 
-                <Route
-                    path="/verify-email"
-                    element={<VerifyEmailPage />}
-                />
-
-                <Route
-                    path="/forgot-password"
-                    element={<ForgotPasswordPage />}
-                />
-
-                <Route
-                    path="/reset-password"
-                    element={<ResetPasswordPage />}
-                />
-            </Route>
-
-            {/* Normal user pages */}
-            {normalUserRoutes}
-
-            {/* This route must always stay last */}
-            <Route
-                path="*"
-                element={<NotFoundPage />}
-            />
-        </Routes>
+                <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+        </Suspense>
     );
 }

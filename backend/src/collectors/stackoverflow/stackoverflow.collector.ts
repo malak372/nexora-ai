@@ -14,6 +14,7 @@ import { CollectorCacheUtil } from '../base/collector-cache.util';
 import { CollectorHeaderUtil } from '../base/collector-header.util';
 import { CollectorHttpUtil } from '../base/collector-http.util';
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { CollectorQueryBuilderUtil } from '../base/collector-query-builder.util';
 
 type StackOverflowOwner = {
   display_name?: string;
@@ -100,47 +101,59 @@ export class StackOverflowCollector
         return [];
       }
 
-      const allQuestions: StackOverflowQuestion[] = [];
+      const queryResults = await Promise.allSettled(
+        queries.map(async (query) => {
+          const cacheKey = CollectorCacheUtil.build(
+            this.sourceKey,
+            'questions',
+            [
+              query.q,
+              query.title,
+              query.body,
+              query.tagged,
+              input.country,
+              input.language,
+            ],
+          );
 
-      for (const query of queries) {
-        const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'questions', [
-          query.q,
-          query.title,
-          query.body,
-          query.tagged,
-          input.country,
-          input.language,
-        ]);
-
-        const data = await CollectorHttpUtil.getWithRetryAndCache<
-          StackOverflowResponse<StackOverflowQuestion>
-        >(
-          `${this.apiBaseUrl}/search/advanced`,
-          {
-            headers: this.buildHeaders(),
-
-            params: {
-              site: this.getSite(),
-              sort: 'activity',
-              order: 'desc',
-              pagesize: Math.min(this.maxFetchedPosts, 100),
-              filter: 'withbody',
-              ...query,
-              ...this.buildApiKeyParam(),
+          return CollectorHttpUtil.getWithRetryAndCache<
+            StackOverflowResponse<StackOverflowQuestion>
+          >(
+            `${this.apiBaseUrl}/search/advanced`,
+            {
+              headers: this.buildHeaders(),
+              params: {
+                site: this.getSite(),
+                sort: 'activity',
+                order: 'desc',
+                pagesize: Math.min(this.maxFetchedPosts, 30),
+                filter: 'withbody',
+                ...query,
+                ...this.buildApiKeyParam(),
+              },
+              timeout:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? 4_500
+                  : 10_000,
             },
+            {
+              cacheKey,
+              cacheTtlMs: this.cacheTtlMs,
+              retryAttempts:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? 0
+                  : this.retryAttempts,
+              retryDelayMs: this.retryDelayMs,
+            },
+          );
+        }),
+      );
 
-            timeout: 10_000,
-          },
-          {
-            cacheKey,
-            cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
-            retryDelayMs: this.retryDelayMs,
-          },
-        );
-
-        allQuestions.push(...(data.items ?? []));
-      }
+      const allQuestions = queryResults.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value.items ?? [] : [],
+      );
 
       const seenQuestionIds = new Set<string>();
 
@@ -233,17 +246,18 @@ export class StackOverflowCollector
   private buildSearchQueries(
     input: CollectorInput,
   ): StackOverflowSearchQuery[] {
-    const userKeywords = (input.keywords ?? [])
-      .map((keyword) => this.cleanNormalizedText(keyword))
-      .filter(Boolean);
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    const technicalQueries =
+      CollectorQueryBuilderUtil.buildStackOverflowTechnicalQueries({
+        domainName: input.domainName,
+        maxQueries: isBoundedMode ? 3 : 6,
+      });
 
-    const keywords = userKeywords.length
-      ? userKeywords
-      : this.getDomainKeywords(input);
-
-    return keywords.slice(0, 5).map((keyword) => ({
-      q: keyword,
-    }));
+    return technicalQueries.map((query, index) =>
+      index === 0 ? { title: query } : { q: query },
+    );
   }
 
   /**

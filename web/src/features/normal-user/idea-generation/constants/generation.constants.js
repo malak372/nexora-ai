@@ -1,11 +1,9 @@
 /**
- * Shared idea-generation presentation constants.
+ * Six user-facing milestones for the detailed backend pipeline.
  *
- * Backend stage keys remain the source of truth. The six visual groups provide
- * a concise progress story for both normal and premium users without exposing
- * internal implementation details.
- *
- * @author Malak
+ * Backend stages stay separate for retries, monitoring, and persistence. The
+ * frontend deliberately groups them into six clear milestones so the user sees
+ * one active spinner and one meaningful transition at a time.
  */
 import {
   BrainCircuit,
@@ -14,98 +12,122 @@ import {
   Layers3,
   SearchCheck,
   Sparkles,
-} from 'lucide-react';
+} from "lucide-react";
 
 export const GENERATION_TYPES = {
-  NORMAL_FREE: 'NORMAL_FREE',
-  PREMIUM_CREDIT: 'PREMIUM_CREDIT',
+  NORMAL_FREE: "NORMAL_FREE",
+  PREMIUM_CREDIT: "PREMIUM_CREDIT",
 };
 
 export const LANGUAGE_OPTIONS = [
-  { value: 'ANY', label: 'Any language' },
-  { value: 'EN', label: 'English' },
-  { value: 'AR', label: 'Arabic' },
-  { value: 'FR', label: 'French' },
-  { value: 'ES', label: 'Spanish' },
-  { value: 'DE', label: 'German' },
-  { value: 'TR', label: 'Turkish' },
+  { value: "ANY", label: "Any language" },
+  { value: "EN", label: "English" },
+  { value: "AR", label: "Arabic" },
+  { value: "FR", label: "French" },
+  { value: "ES", label: "Spanish" },
+  { value: "DE", label: "German" },
+  { value: "TR", label: "Turkish" },
 ];
 
 export const VISUAL_PIPELINE_GROUPS = [
   {
-    key: 'prepare',
+    key: "prepare",
     number: 1,
-    title: 'Preparing',
-    description: 'Checking access and generation context.',
+    title: "Preparing request",
+    description: "Validating your request, access, domain, and selected evidence sources.",
     icon: Layers3,
     stageKeys: [
-      'request-validation',
-      'entitlement-check',
-      'domain-resolution',
-      'data-source-selection',
-      'collection-job-resolution',
+      "request-validation",
+      "entitlement-check",
+      "domain-resolution",
+      "data-source-selection",
     ],
   },
   {
-    key: 'community',
+    key: "evidence",
     number: 2,
-    title: 'Collecting',
-    description: 'Gathering relevant community evidence.',
+    title: "Collecting evidence",
+    description: "Gathering and restoring relevant posts, comments, and source evidence.",
     icon: Database,
-    stageKeys: ['data-collection'],
+    stageKeys: [
+      "collection-job-resolution",
+      "data-collection",
+    ],
   },
   {
-    key: 'nlp',
+    key: "insights",
     number: 3,
-    title: 'Analyzing',
-    description: 'Finding repeated problems and needs.',
+    title: "Understanding community needs",
+    description: "Cleaning evidence, extracting community needs, and ranking evidence-backed opportunities.",
     icon: BrainCircuit,
     stageKeys: [
-      'nlp-analysis',
-      'community-ai-analysis',
-      'opportunity-ranking',
+      "nlp-analysis",
+      "community-ai-analysis",
+      "opportunity-ranking",
     ],
   },
   {
-    key: 'models',
+    key: "generation",
     number: 4,
-    title: 'Generating',
-    description: 'Building strong solution candidates.',
+    title: "Creating the idea",
+    description: "Building the grounded prompt and generating the strongest solution candidates.",
     icon: Sparkles,
     stageKeys: [
-      'prompt-building',
-      'core-idea-generation',
+      "prompt-building",
+      "core-idea-generation",
     ],
   },
   {
-    key: 'validation',
+    key: "quality",
     number: 5,
-    title: 'Validating',
-    description: 'Checking quality and originality.',
+    title: "Checking quality and originality",
+    description: "Checking structure, evidence coverage, originality, duplication, and solution quality.",
     icon: SearchCheck,
     stageKeys: [
-      'ai-output-validation',
-      'duplicate-check',
-      'idea-persistence',
+      "ai-output-validation",
+      "duplicate-check",
     ],
   },
   {
-    key: 'workspace',
+    key: "workspace",
     number: 6,
-    title: 'Finalizing',
-    description: 'Preparing the saved idea workspace.',
+    title: "Saving workspace",
+    description: "Saving the approved idea and preparing its final workspace.",
     icon: CheckCircle2,
-    stageKeys: ['finalization'],
+    stageKeys: [
+      "idea-persistence",
+      "full-abstract-generation",
+      "technology-stack-generation",
+      "system-architecture-generation",
+      "database-design-generation",
+      "mvp-features-generation",
+      "value-proposition-generation",
+      "revenue-model-generation",
+      "local-regulations-generation",
+      "budget-estimation-generation",
+      "feasibility-assessment-generation",
+      "implementation-timeline-generation",
+      "market-potential-generation",
+      "nlp-executive-summary-generation",
+      "community-feedback-summary-generation",
+      "finalization",
+    ],
   },
 ];
 
+export const BACKEND_STAGE_TO_VISUAL_INDEX = new Map(
+  VISUAL_PIPELINE_GROUPS.flatMap((group, index) =>
+    group.stageKeys.map((stageKey) => [stageKey, index]),
+  ),
+);
+
 export const TERMINAL_RUN_STATUSES = new Set([
-  'COMPLETED',
-  'FAILED',
-  'CANCELLED',
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
 ]);
 
 export const COMPLETED_RUN_STATUSES = new Set([
-  'COMPLETED',
-  'SUCCEEDED',
+  "COMPLETED",
+  "SUCCEEDED",
 ]);

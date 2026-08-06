@@ -14,6 +14,7 @@ import {
 } from '../base/collector.types';
 
 import { RelevanceScoreUtil } from '../base/relevance-score.util';
+import { CollectorQueryBuilderUtil } from '../base/collector-query-builder.util';
 
 /**
  * Represents a GitHub user returned by the REST API.
@@ -120,51 +121,69 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
-      const searchQuery = this.buildSearchQuery(input);
+      const searchQueries = this.buildSearchQueries(input);
 
-      if (!searchQuery) {
+      if (!searchQueries.length) {
         this.logger.warn(
-          'GitHub collection skipped because no domain keywords exist.',
+          'GitHub collection skipped because no complaint-focused search query could be built.',
         );
-
         return [];
       }
 
-      const cacheKey = CollectorCacheUtil.build(this.sourceKey, 'issues', [
-        searchQuery,
-        input.country,
-        input.language,
-      ]);
+      const responses = await Promise.allSettled(
+        searchQueries.map(async (searchQuery) => {
+          const cacheKey = CollectorCacheUtil.build(
+            this.sourceKey,
+            'issues',
+            [searchQuery, input.country, input.language],
+          );
 
-      const response =
-        await CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubSearchResponse>(
-          `${this.apiBaseUrl}/search/issues`,
-          {
-            headers: this.buildHeaders(),
-            params: {
-              q: searchQuery,
-              sort: 'updated',
-              order: 'desc',
-              per_page: Math.min(this.maxFetchedPosts, 100),
+          return CollectorHttpUtil.getWithRetryCacheAndHeaders<GitHubSearchResponse>(
+            `${this.apiBaseUrl}/search/issues`,
+            {
+              headers: this.buildHeaders(),
+              params: {
+                q: searchQuery,
+                sort: 'updated',
+                order: 'desc',
+                per_page: Math.min(this.maxFetchedPosts, 30),
+              },
+              timeout:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? Math.min(this.requestTimeoutMs, 6_000)
+                  : this.requestTimeoutMs,
             },
-            timeout: this.requestTimeoutMs,
-          },
-          {
-            cacheKey,
-            etagCacheKey: `${cacheKey}:etag`,
-            cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
-            retryDelayMs: this.retryDelayMs,
-          },
-        );
+            {
+              cacheKey,
+              etagCacheKey: `${cacheKey}:etag`,
+              cacheTtlMs: this.cacheTtlMs,
+              retryAttempts:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? 0
+                  : this.retryAttempts,
+              retryDelayMs: this.retryDelayMs,
+            },
+          );
+        }),
+      );
 
-      this.monitorGitHubRateLimit(response.headers);
+      const fulfilledResponses = responses.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : [],
+      );
 
-      const issues = response.data.items ?? [];
+      for (const response of fulfilledResponses) {
+        this.monitorGitHubRateLimit(response.headers);
+      }
+
+      const issues = fulfilledResponses.flatMap(
+        (response) => response.data.items ?? [],
+      );
       const seenIssueIds = new Set<string>();
 
       const rankedIssues = issues
-        .filter((issue) => this.isValidIssue(issue))
+        .filter((issue) => this.isValidIssue(issue, input))
         .filter((issue) => {
           const id = issue.id?.toString();
 
@@ -208,53 +227,39 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
   /**
    * Builds a GitHub issue-search query.
    */
-  private buildSearchQuery(input: CollectorInput): string {
-    const domainKeywords = this.getDomainKeywords(input);
+  private buildSearchQueries(input: CollectorInput): string[] {
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    const clauses = CollectorQueryBuilderUtil.buildGitHubFlexibleQueries({
+      domainName: input.domainName,
+      maxQueries: isBoundedMode ? 3 : 6,
+    });
 
-    if (domainKeywords.length === 0) {
-      return '';
-    }
-
-    const userQueries = (input.keywords ?? [])
-      .map((keyword) => this.cleanNormalizedText(keyword))
-      .filter(Boolean);
-
-    const domainName = this.cleanNormalizedText(input.domainName);
-
-    const preferredTerms = userQueries.length
-      ? userQueries
-      : [domainName, ...domainKeywords];
-
-    const terms = this.unique(preferredTerms)
-      .filter((term) => term.length >= 3)
-      .slice(0, 5);
-
-    if (!terms.length) {
-      return '';
-    }
-
-    const searchTerms = terms.map((term) => `"${term}"`).join(' OR ');
-
-    return [
-      `(${searchTerms})`,
-      'in:title,body',
-      'is:issue',
-      '-is:pr',
-      'state:open',
-      'comments:>1',
-      'updated:>2025-01-01',
-      '-label:discussion',
-      '-label:question',
-      '-label:documentation',
-      '-label:"good first issue"',
-      '-label:"help wanted"',
-    ].join(' ');
+    return clauses.map((clause) =>
+      [
+        `${clause} bug OR incorrect OR stale OR fail OR "not updating"`,
+        'in:title,body',
+        'is:issue',
+        '-is:pr',
+        'state:open',
+        'updated:>2024-01-01',
+        '-label:discussion',
+        '-label:question',
+        '-label:documentation',
+        '-label:"good first issue"',
+        '-label:"help wanted"',
+      ].join(' '),
+    );
   }
 
   /**
    * Validates a GitHub issue before ranking.
    */
-  private isValidIssue(issue: GitHubIssue): boolean {
+  private isValidIssue(
+    issue: GitHubIssue,
+    input: CollectorInput,
+  ): boolean {
     const title = this.cleanPlainText(issue.title);
     const body = this.cleanPlainText(issue.body);
     const author = this.cleanNormalizedText(issue.user?.login);
@@ -270,7 +275,8 @@ export class GitHubCollector extends BaseCollector implements SocialCollector {
       !title ||
       !url ||
       issue.pull_request ||
-      (issue.comments ?? 0) <= 1 ||
+      (input.collectionMode !== 'TARGETED_RECOVERY' &&
+        (issue.comments ?? 0) <= 1) ||
       author.includes('[bot]') ||
       url.includes('/jobs/') ||
       content.length < 80

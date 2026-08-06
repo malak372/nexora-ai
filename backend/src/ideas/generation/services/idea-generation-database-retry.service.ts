@@ -37,10 +37,15 @@ export class IdeaGenerationDatabaseRetryService {
           throw error;
         }
 
-        const delayMs = Math.min(
+        const exponentialDelayMs = Math.min(
           GENERATION_DATABASE_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
           GENERATION_DATABASE_RETRY_MAX_DELAY_MS,
         );
+
+        // A small jitter prevents several concurrent pipeline queries from
+        // retrying against the pooled database at the exact same instant.
+        const jitterMs = Math.floor(Math.random() * 120);
+        const delayMs = exponentialDelayMs + jitterMs;
 
         this.logger.warn(
           `Transient database failure during "${options.operationName}"${

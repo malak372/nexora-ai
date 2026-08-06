@@ -27,6 +27,7 @@ import { CreditBalanceService } from '../../../credits/services/credit-balance.s
 import { CreditCacheService } from '../../../credits/services/credit-cache.service';
 import type { CreditBalanceResult } from '../../../credits/types/credit-balance-result.type';
 import type { Cache } from 'cache-manager';
+import { randomUUID } from 'crypto';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 import { userCacheKeys } from '../../../users/cache/user-cache.keys';
@@ -82,6 +83,7 @@ export type IdeaPersistenceDatabaseClient = Prisma.TransactionClient;
 type IdeaPersistenceTransactionResult = {
   readonly ideaId: string;
   readonly creditAdjustment: CreditBalanceResult | null;
+  readonly persistedIdea: PersistedGeneratedIdea;
 };
 
 /**
@@ -148,30 +150,23 @@ export type PersistGeneratedIdeaInput = {
  * Generated outputs are included so the pipeline can use the
  * complete committed result without performing another query.
  */
-export type PersistedGeneratedIdea = Prisma.IdeaGetPayload<{
-  include: {
-    generatedOutputs: {
-      orderBy: {
-        sequence: 'asc';
-      };
-    };
-
-    domain: {
-      select: {
-        id: true;
-        name: true;
-      };
-    };
-
-    generationRun: {
-      select: {
-        id: true;
-        status: true;
-        progressPercent: true;
-      };
-    };
+export type PersistedGeneratedIdea = {
+  readonly id: string;
+  readonly title: string;
+  readonly domain: {
+    readonly id: string;
+    readonly name: string;
   };
-}>;
+  readonly generatedOutputs: ReadonlyArray<{
+    readonly id: string;
+    readonly outputKey: string;
+  }>;
+  readonly generationRun: {
+    readonly id: string;
+    readonly status: IdeaGenerationRunStatus;
+    readonly progressPercent: number;
+  } | null;
+};
 
 /**
  * Persists generated ideas and consumes their corresponding
@@ -249,23 +244,52 @@ export class IdeaPersistenceService {
   ): Promise<PersistedGeneratedIdea> {
     const normalizedInput = this.normalizeInput(input);
 
+    /*
+     * Do not repeat the same remote reads before the transaction. The
+     * serializable transaction already validates the run, prompt history,
+     * collection job, duplicate state, and entitlement immediately before
+     * writing. Removing the three preflight queries saves database round-trips
+     * without weakening atomicity or race protection.
+     */
     const transactionResult =
       await this.executeSerializableTransaction(normalizedInput);
 
-    await this.invalidatePremiumCreditCaches(normalizedInput);
+    const summaryInvalidation = normalizedInput.userId
+      ? this.cacheManager.del(
+          userCacheKeys.summary(normalizedInput.userId),
+        )
+      : Promise.resolve();
 
-    if (normalizedInput.userId) {
-      await this.cacheManager.del(
-        userCacheKeys.summary(normalizedInput.userId),
-      );
-    }
+    const persistedIdea = transactionResult.persistedIdea;
 
-    await this.notifyPremiumCreditBalance(
-      normalizedInput,
-      transactionResult.creditAdjustment,
-    );
+    /*
+     * The idea and entitlement are already committed. Cache invalidation and
+     * notification are post-commit side effects and must not hold the user on
+     * the generation screen. Execute them concurrently in the background while
+     * preserving failure logging inside their dedicated services.
+     */
+    void Promise.allSettled([
+      this.invalidatePremiumCreditCaches(normalizedInput),
+      summaryInvalidation,
+      this.notifyPremiumCreditBalance(
+        normalizedInput,
+        transactionResult.creditAdjustment,
+      ),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          const message =
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason);
+          this.logger.warn(
+            `Post-commit idea persistence side effect failed: ${message}`,
+          );
+        }
+      }
+    });
 
-    return this.loadPersistedIdea(transactionResult.ideaId);
+    return persistedIdea;
   }
 
   /**
@@ -279,6 +303,46 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    * @returns Committed idea identifier and optional credit adjustment.
    */
+  private async preflightGenerationRun(
+    input: PersistGeneratedIdeaInput,
+  ): Promise<void> {
+    const run = await this.prisma.ideaGenerationRun.findUnique({
+      where: { id: input.runId },
+      select: { id: true },
+    });
+    if (!run) {
+      throw new NotFoundException(`Idea generation run "${input.runId}" was not found.`);
+    }
+  }
+
+  private async preflightPromptHistory(
+    input: PersistGeneratedIdeaInput,
+  ): Promise<void> {
+    const prompt = await this.prisma.promptHistory.findUnique({
+      where: { id: input.promptHistoryId },
+      select: { generationRunId: true },
+    });
+    if (!prompt || prompt.generationRunId !== input.runId) {
+      throw new BadRequestException(
+        'The prompt history does not belong to the provided generation run.',
+      );
+    }
+  }
+
+  private async preflightCollectionJob(
+    input: PersistGeneratedIdeaInput,
+  ): Promise<void> {
+    const collection = await this.prisma.collectionJob.findUnique({
+      where: { id: input.collectionJobId },
+      select: { domainId: true },
+    });
+    if (!collection || collection.domainId !== input.domainId) {
+      throw new BadRequestException(
+        'The collection job does not belong to the selected domain.',
+      );
+    }
+  }
+
   private async executeSerializableTransaction(
     input: PersistGeneratedIdeaInput,
   ): Promise<IdeaPersistenceTransactionResult> {
@@ -291,36 +355,31 @@ export class IdeaPersistenceService {
         return await this.prisma.$transaction(
           async (transaction): Promise<IdeaPersistenceTransactionResult> => {
             const run = await this.validateGenerationRun(transaction, input);
+            const commentsCount = await this.validateCollectionJob(
+              transaction,
+              input,
+            );
 
-            await this.validatePromptHistory(transaction, input);
-
-            await this.validateCollectionJob(transaction, input);
-
-            await this.duplicateDetectionService.assertNotDuplicate(
-              input.domainId,
-              input.collectionJobId,
+            await this.duplicateDetectionService.assertNoExactTitleDuplicate(
               input.parsedOutput.coreIdea,
               transaction,
             );
 
-            const idea = await this.createIdea(transaction, input);
-
-            await this.attachPromptHistoryToIdea(
+            /*
+             * Create the base idea, attach prompt history, and insert all
+             * generated outputs in one nested Prisma write. This removes two
+             * remote database round-trips from the serializable transaction.
+             */
+            const idea = await this.createIdeaWithRelations(
               transaction,
-              input.promptHistoryId,
-              idea.id,
+              input,
+              commentsCount,
             );
 
             const creditAdjustment = await this.consumeEntitlement(
               transaction,
               input,
               idea.id,
-            );
-
-            await this.createGeneratedOutputs(
-              transaction,
-              idea.id,
-              input.parsedOutput,
             );
 
             await this.attachIdeaToGenerationRun(
@@ -333,6 +392,20 @@ export class IdeaPersistenceService {
             return {
               ideaId: idea.id,
               creditAdjustment,
+              persistedIdea: {
+                id: idea.id,
+                title: idea.title,
+                domain: idea.domain,
+                generatedOutputs: idea.generatedOutputs.map((output) => ({
+                  id: output.id,
+                  outputKey: output.outputKey,
+                })),
+                generationRun: {
+                  id: run.id,
+                  status: run.status,
+                  progressPercent: run.progressPercent,
+                },
+              },
             };
           },
           {
@@ -664,6 +737,12 @@ export class IdeaPersistenceService {
         generationType: true,
         status: true,
         cancelRequestedAt: true,
+        progressPercent: true,
+        promptHistories: {
+          where: { id: input.promptHistoryId },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
@@ -718,6 +797,12 @@ export class IdeaPersistenceService {
       );
     }
 
+    if (run.promptHistories.length !== 1) {
+      throw new BadRequestException(
+        'The prompt history does not belong to the provided generation run.',
+      );
+    }
+
     return run;
   }
 
@@ -769,7 +854,7 @@ export class IdeaPersistenceService {
   private async validateCollectionJob(
     transaction: IdeaPersistenceDatabaseClient,
     input: PersistGeneratedIdeaInput,
-  ): Promise<void> {
+  ): Promise<number> {
     const collectionJob = await transaction.collectionJob.findUnique({
       where: {
         id: input.collectionJobId,
@@ -778,6 +863,11 @@ export class IdeaPersistenceService {
       select: {
         id: true,
         domainId: true,
+        nlpAnalysis: {
+          select: {
+            totalCommentsAnalyzed: true,
+          },
+        },
       },
     });
 
@@ -792,6 +882,8 @@ export class IdeaPersistenceService {
         'The collection job does not belong to the selected domain.',
       );
     }
+
+    return collectionJob.nlpAnalysis?.totalCommentsAnalyzed ?? 0;
   }
 
   /**
@@ -1010,68 +1102,71 @@ export class IdeaPersistenceService {
    * @param input Normalized persistence input.
    * @returns Newly created idea.
    */
-  private async createIdea(
+  private async createIdeaWithRelations(
     transaction: IdeaPersistenceDatabaseClient,
     input: PersistGeneratedIdeaInput,
+    commentsCount: number,
   ) {
     const core = input.parsedOutput.coreIdea;
-
     const isPremium =
       input.generationType === IdeaGenerationType.PREMIUM_CREDIT;
-
     const now = new Date();
-
-    const collectionMetrics = await transaction.collectionJob.findUnique({
-      where: { id: input.collectionJobId },
-      select: {
-        nlpAnalysis: {
-          select: {
-            totalCommentsAnalyzed: true,
-          },
-        },
-      },
-    });
-
-    const commentsCount =
-      collectionMetrics?.nlpAnalysis?.totalCommentsAnalyzed ?? 0;
+    const generatedOutputs = input.parsedOutput.advancedOutputs.map(
+      (output) => ({
+        id: randomUUID(),
+        outputKey: output.outputKey,
+        title: output.title,
+        sequence: getIdeaAdvancedOutputSequence(output.outputKey),
+        status: GeneratedOutputStatus.COMPLETED,
+        content: output.content,
+        structuredContent:
+          output.structuredContent === undefined
+            ? undefined
+            : this.toInputJsonValue(output.structuredContent),
+        errorMessage: null,
+        generatedAt: now,
+      }),
+    );
 
     return transaction.idea.create({
       data: {
         userId: input.userId ?? null,
-
         guestSessionId: input.guestSessionId ?? null,
-
         domainId: input.domainId,
-
         collectionJobId: input.collectionJobId,
-
         commentsCount,
-
         selectedRegion: input.selectedRegion,
-
         title: core.title,
-
         problemStatement: core.problemStatement,
-
         objectives: this.toInputJsonValue(core.objectives),
-
         targetUsers: this.toInputJsonValue(core.targetUsers),
-
         limitedAbstract: core.limitedAbstract ?? null,
-
         partialAbstract: core.partialAbstract ?? null,
-
         fullAbstract: core.fullAbstract ?? null,
-
         generationType: input.generationType,
-
         isUnlocked: isPremium,
-
         unlockMethod: isPremium
           ? UnlockMethod.CREDIT_GENERATION
           : UnlockMethod.NONE,
-
         unlockedAt: isPremium ? now : null,
+        promptHistories: {
+          connect: { id: input.promptHistoryId },
+        },
+        generatedOutputs:
+          generatedOutputs.length > 0
+            ? { create: generatedOutputs }
+            : undefined,
+      },
+      select: {
+        id: true,
+        title: true,
+        domain: {
+          select: { id: true, name: true },
+        },
+        generatedOutputs: {
+          select: { id: true, outputKey: true },
+          orderBy: { sequence: 'asc' },
+        },
       },
     });
   }
@@ -1085,22 +1180,6 @@ export class IdeaPersistenceService {
    * @param promptHistoryId Prompt-history identifier.
    * @param ideaId Persisted idea identifier.
    */
-  private async attachPromptHistoryToIdea(
-    transaction: IdeaPersistenceDatabaseClient,
-    promptHistoryId: string,
-    ideaId: string,
-  ): Promise<void> {
-    await transaction.promptHistory.update({
-      where: {
-        id: promptHistoryId,
-      },
-
-      data: {
-        ideaId,
-      },
-    });
-  }
-
   /**
    * Persists every advanced output generated for the idea.
    *
@@ -1112,45 +1191,6 @@ export class IdeaPersistenceService {
    * @param ideaId Persisted parent-idea identifier.
    * @param parsedOutput Parsed and validated AI output.
    */
-  private async createGeneratedOutputs(
-    transaction: IdeaPersistenceDatabaseClient,
-    ideaId: string,
-    parsedOutput: ParsedIdeaAiOutput,
-  ): Promise<void> {
-    const advancedOutputs = parsedOutput.advancedOutputs;
-
-    if (advancedOutputs.length === 0) {
-      return;
-    }
-
-    const generatedAt = new Date();
-
-    await transaction.generatedOutput.createMany({
-      data: advancedOutputs.map((output) => ({
-        ideaId,
-
-        outputKey: output.outputKey,
-
-        title: output.title,
-
-        sequence: getIdeaAdvancedOutputSequence(output.outputKey),
-
-        status: GeneratedOutputStatus.COMPLETED,
-
-        content: output.content,
-
-        structuredContent:
-          output.structuredContent === undefined
-            ? undefined
-            : this.toInputJsonValue(output.structuredContent),
-
-        errorMessage: null,
-
-        generatedAt,
-      })),
-    });
-  }
-
   /**
    * Links the persisted idea and collection job to the running
    * generation run without completing the run.
@@ -1194,50 +1234,6 @@ export class IdeaPersistenceService {
         'The generated idea could not be attached because the generation-run state changed.',
       );
     }
-  }
-
-  /**
-   * Loads the complete persisted result after the persistence
-   * transaction has committed successfully.
-   *
-   * Keeping this read outside the interactive transaction reduces
-   * transaction lifetime and avoids holding the transaction open
-   * for a non-mutating response query.
-   *
-   * @param ideaId Persisted idea identifier.
-   * @returns Complete committed idea result.
-   */
-  private async loadPersistedIdea(
-    ideaId: string,
-  ): Promise<PersistedGeneratedIdea> {
-    return this.prisma.idea.findUniqueOrThrow({
-      where: {
-        id: ideaId,
-      },
-
-      include: {
-        generatedOutputs: {
-          orderBy: {
-            sequence: 'asc',
-          },
-        },
-
-        domain: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-
-        generationRun: {
-          select: {
-            id: true,
-            status: true,
-            progressPercent: true,
-          },
-        },
-      },
-    });
   }
 
   /**

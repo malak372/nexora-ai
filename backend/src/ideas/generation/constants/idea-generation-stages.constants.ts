@@ -23,6 +23,11 @@ export const IDEA_GENERATION_STAGE_KEYS = {
 
   COLLECTION_JOB_RESOLUTION: 'collection-job-resolution',
 
+  /**
+   * Legacy persisted keys retained for historical run compatibility.
+   * They are no longer present in CORE_IDEA_GENERATION_STAGES because
+   * collection-job-resolution already performs collection and deterministic NLP.
+   */
   DATA_COLLECTION: 'data-collection',
 
   NLP_ANALYSIS: 'nlp-analysis',
@@ -195,48 +200,18 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
       requiredForPremium: false,
     },
 
-    {
-      key: IDEA_GENERATION_STAGE_KEYS.DATA_COLLECTION,
 
-      displayName: 'Confirm collected evidence',
-
-      sequence: 5,
-
-      progressStart: 30,
-
-      progressEnd: 34,
-
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-
-      requiredForPremium: false,
-    },
-
-    {
-      key: IDEA_GENERATION_STAGE_KEYS.NLP_ANALYSIS,
-
-      displayName: 'Normalize evidence',
-
-      sequence: 6,
-
-      progressStart: 34,
-
-      progressEnd: 40,
-
-      maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
-
-      requiredForPremium: false,
-    },
 
     {
       key: IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS,
 
       displayName: 'AI evidence analysis',
 
-      sequence: 7,
+      sequence: 5,
 
-      progressStart: 40,
+      progressStart: 30,
 
-      progressEnd: 50,
+      progressEnd: 39,
 
       maxAttempts: 1,
 
@@ -248,11 +223,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Rank problem families',
 
-      sequence: 8,
+      sequence: 6,
 
-      progressStart: 50,
+      progressStart: 39,
 
-      progressEnd: 56,
+      progressEnd: 44,
 
       maxAttempts: 1,
 
@@ -264,11 +239,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Build problem-solution brief',
 
-      sequence: 9,
+      sequence: 7,
 
-      progressStart: 56,
+      progressStart: 44,
 
-      progressEnd: 61,
+      progressEnd: 50,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -280,11 +255,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Generate candidate ideas',
 
-      sequence: 10,
+      sequence: 8,
 
-      progressStart: 61,
+      progressStart: 50,
 
-      progressEnd: 80,
+      progressEnd: 78,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -296,11 +271,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Validate idea quality',
 
-      sequence: 11,
+      sequence: 9,
 
-      progressStart: 80,
+      progressStart: 78,
 
-      progressEnd: 87,
+      progressEnd: 86,
 
       maxAttempts: DEFAULT_STAGE_MAX_ATTEMPTS,
 
@@ -312,11 +287,11 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Check originality',
 
-      sequence: 12,
+      sequence: 10,
 
-      progressStart: 87,
+      progressStart: 86,
 
-      progressEnd: 90,
+      progressEnd: 91,
 
       maxAttempts: 1,
 
@@ -328,9 +303,9 @@ export const CORE_IDEA_GENERATION_STAGES: readonly IdeaGenerationStageDefinition
 
       displayName: 'Persist validated workspace',
 
-      sequence: 13,
+      sequence: 11,
 
-      progressStart: 94,
+      progressStart: 91,
 
       progressEnd: 98,
 

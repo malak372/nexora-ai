@@ -53,6 +53,19 @@ export class UserIdeasController {
   }
 
   /**
+   * Retrieves the lightweight workspace payload in one database request.
+   *
+   * GET /users/ideas/:ideaId/workspace
+   */
+  @Get(':ideaId/workspace')
+  getMyIdeaWorkspace(
+    @CurrentUser('id') userId: string,
+    @Param('ideaId', new ParseUUIDPipe({ version: '4' })) ideaId: string,
+  ) {
+    return this.userIdeasService.getMyIdeaWorkspace(userId, ideaId);
+  }
+
+  /**
    * Retrieves one idea belonging to the authenticated user.
    *
    * GET /users/ideas/:ideaId

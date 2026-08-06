@@ -60,6 +60,7 @@ export type DomainRelevanceResult = {
  */
 @Injectable()
 export class DomainRelevanceService {
+  private readonly matcherCache = new Map<string, readonly { term: string; isPhrase: boolean; pattern: RegExp }[]>();
   /**
    * Minimum number of matched domain terms required for a text
    * to be considered relevant.
@@ -106,7 +107,8 @@ export class DomainRelevanceService {
    */
   analyze(text: string, keywords: readonly string[]): DomainRelevanceResult {
     const normalizedText = this.normalizeText(text);
-    const normalizedKeywords = this.normalizeKeywords(keywords);
+    const matchers = this.getMatchers(keywords);
+    const normalizedKeywords = matchers.map((matcher) => matcher.term);
 
     if (normalizedKeywords.length === 0) {
       return this.buildResult({
@@ -131,15 +133,15 @@ export class DomainRelevanceService {
     const matchedKeywords: string[] = [];
     const matchedPhrases: string[] = [];
 
-    for (const keyword of normalizedKeywords) {
-      if (!this.containsTerm(normalizedText, keyword)) {
+    for (const matcher of matchers) {
+      if (!matcher.pattern.test(normalizedText)) {
         continue;
       }
 
-      if (this.isPhrase(keyword)) {
-        matchedPhrases.push(keyword);
+      if (matcher.isPhrase) {
+        matchedPhrases.push(matcher.term);
       } else {
-        matchedKeywords.push(keyword);
+        matchedKeywords.push(matcher.term);
       }
     }
 
@@ -222,6 +224,36 @@ export class DomainRelevanceService {
           .filter((keyword) => keyword.length > 0),
       ),
     ];
+  }
+
+
+  /** Builds and caches token-aware regular expressions once per keyword set. */
+  private getMatchers(
+    keywords: readonly string[],
+  ): readonly { term: string; isPhrase: boolean; pattern: RegExp }[] {
+    const normalizedKeywords = this.normalizeKeywords(keywords);
+    const cacheKey = normalizedKeywords.join('\u0000');
+    const cached = this.matcherCache.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    const matchers = normalizedKeywords.map((term) => ({
+      term,
+      isPhrase: this.isPhrase(term),
+      pattern: new RegExp(
+        `(^|[^\\p{L}\\p{M}\\p{N}])${this.escapeRegExp(term)}(?=$|[^\\p{L}\\p{M}\\p{N}])`,
+        'u',
+      ),
+    }));
+
+    if (this.matcherCache.size >= 100) {
+      this.matcherCache.clear();
+    }
+
+    this.matcherCache.set(cacheKey, matchers);
+    return matchers;
   }
 
   /**

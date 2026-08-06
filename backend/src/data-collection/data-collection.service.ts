@@ -1,7 +1,6 @@
 import {
   Injectable,
   Logger,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 
 import {
@@ -24,6 +23,9 @@ import {
 import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 
 import { CollectorsFactory } from '../collectors/collectors.factory';
+
+import { TextInputBuilderService } from '../nlp/pipeline/text-input-builder.service';
+import type { IntelligentTextInput } from '../nlp/pipeline/types/intelligent-analysis.types';
 
 import { CollectionJobService } from './collection-jobs/collection-job.service';
 
@@ -88,7 +90,8 @@ type CollectionTrigger = 'USER_MANUAL' | 'SYSTEM_INTERNAL';
  * Important behavior:
  * - Persists collection-job ownership directly.
  * - Continues running after one source fails.
- * - Fails the parent job only when every source fails.
+ * - Completes sparse internal generation jobs even when every external source
+ *   fails, allowing a clearly labelled context-only generation fallback.
  * - Checks stop requests before and after external collection.
  * - Enforces user ownership when reading data.
  *
@@ -122,6 +125,16 @@ export class DataCollectionService {
    * Reserved domain name representing all domains.
    */
   private readonly GENERAL_DOMAIN_NAME = 'general';
+
+  /**
+   * Maximum execution time for one external collector during fast generation.
+   *
+   * Every source runs in parallel. A source exceeding this budget is marked
+   * failed independently while the remaining sources continue. Keeping this
+   * below ten seconds leaves time for filtering, persistence, and deterministic
+   * NLP inside the desired 10–20 second collection window.
+   */
+  private readonly FAST_GENERATION_COLLECTOR_TIMEOUT_MS = 8_000;
 
   constructor(
     private readonly collectionJobService: CollectionJobService,
@@ -163,14 +176,12 @@ export class DataCollectionService {
 
     actorId?: string,
   ) {
-    const domain = await this.collectionJobService.validateActiveDomain(
-      dto.domainId,
-    );
-
-    const dataSources =
-      await this.collectionJobService.resolveActiveImplementedDataSources(
+    const [domain, dataSources] = await Promise.all([
+      this.collectionJobService.validateActiveDomain(dto.domainId),
+      this.collectionJobService.resolveActiveImplementedDataSources(
         dto.dataSourceKeys,
-      );
+      ),
+    ]);
 
     const isGeneralDomain = this.isGeneralDomain(domain.name);
 
@@ -193,7 +204,7 @@ export class DataCollectionService {
       actorId,
     );
 
-    await this.auditService.createLog({
+    const startAudit = this.auditService.createLog({
       actorId,
 
       action: AuditAction.RUN_DATA_COLLECTION,
@@ -226,6 +237,16 @@ export class DataCollectionService {
       },
     });
 
+    if (trigger === 'USER_MANUAL') {
+      await startAudit;
+    } else {
+      void startAudit.catch((error: unknown) => {
+        this.logger.warn(
+          `Could not persist the internal collection-start audit for job ${job.id}: ${this.getErrorMessage(error)}.`,
+        );
+      });
+    }
+
     const collectionMode =
       'collectionMode' in dto ? dto.collectionMode : undefined;
 
@@ -234,28 +255,44 @@ export class DataCollectionService {
 
     let completedSources = 0;
     let failedSources = 0;
+    const fastEvidenceInputs: IntelligentTextInput[] = [];
+    const completedSourceKeys: string[] = [];
+    let fastPersistedPosts = 0;
+    let fastPersistedComments = 0;
 
     try {
       const sourceResults = await Promise.all(
         dataSources.map(async (dataSource) => {
           /*
-           * Every selected source is submitted immediately. CollectorQueueService
-           * enforces COLLECTOR_QUEUE_CONCURRENCY, so this service can wait for the
-           * whole collection job without serializing individual collectors.
+           * Every selected source is submitted immediately in the same
+           * Promise.all() wave. CollectorQueueService has enough default
+           * concurrency for the complete registered collector set, so sources
+           * are not serialized into multiple batches.
            */
-          if (await this.isStopped(job.id)) {
+          if (
+            trigger === 'USER_MANUAL' &&
+            (await this.isStopped(job.id))
+          ) {
             return 'STOPPED' as const;
           }
 
-          await this.collectionJobService.markSourceRunning(
-            job.id,
-            dataSource.id,
-          );
+          const markSourceRunningPromise =
+            this.collectionJobService.markSourceRunning(
+              job.id,
+              dataSource.id,
+            );
 
           try {
             const collector = this.collectorsFactory.getCollector(
               dataSource.key,
             );
+
+            const effectiveCollectorLimits =
+              this.resolveSourceCollectorLimits(
+                dataSource.key,
+                collectionMode,
+                collectorLimits,
+              );
 
             const collectorInput: CollectorInput = {
               domainName: isGeneralDomain ? 'All Domains' : domain.name,
@@ -267,29 +304,100 @@ export class DataCollectionService {
               radiusKm: dto.radiusKm,
               keywords: userKeywords,
               collectionMode,
-              limits: collectorLimits,
+              limits: effectiveCollectorLimits,
             };
 
-            const posts = await this.collectorQueueService.run(
-              () => collector.collect(collectorInput),
+            if (collectionMode === 'FAST_GENERATION') {
+              this.logger.debug(
+                `Collector limits applied | source=${dataSource.key} | ` +
+                  `fetchedPosts=${effectiveCollectorLimits?.maxFetchedPosts ?? 'default'} | ` +
+                  `savedPosts=${effectiveCollectorLimits?.maxSavedPosts ?? 'default'} | ` +
+                  `fetchedComments=${effectiveCollectorLimits?.maxFetchedComments ?? 'default'} | ` +
+                  `savedComments=${effectiveCollectorLimits?.maxSavedComments ?? 'default'}`,
+              );
+            }
+
+            const postsPromise = this.collectorQueueService.run(
+              () =>
+                collector.runWithLimits(collectorInput, () =>
+                  collector.collect(collectorInput),
+                ),
               {
                 platform: dataSource.key,
-                timeoutMs: collectionMode === 'FAST_GENERATION' ? 12_000 : undefined,
+                timeoutMs:
+                  collectionMode === 'FAST_GENERATION'
+                    ? this.FAST_GENERATION_COLLECTOR_TIMEOUT_MS
+                    : undefined,
               },
             );
+
+            const [posts] = await Promise.all([
+              postsPromise,
+              markSourceRunningPromise,
+            ]);
 
             /*
              * A collector may finish after an administrator stopped the job.
              * Do not persist late results in that case.
              */
-            if (await this.isStopped(job.id)) {
+            if (
+              trigger === 'USER_MANUAL' &&
+              (await this.isStopped(job.id))
+            ) {
               return 'STOPPED' as const;
             }
 
             const relevantPosts = this.filterRelevantPosts(
               posts,
               relevanceTerms,
+              collectionMode,
+              dataSource.key,
             );
+
+            if (collectionMode === 'FAST_GENERATION') {
+              completedSourceKeys.push(dataSource.key);
+              for (const post of relevantPosts) {
+                const postId = `${dataSource.key}:post:${post.externalId}`;
+                const isMarketplaceSource =
+                  dataSource.key === 'google-play' ||
+                  dataSource.key === 'app-store';
+
+                /*
+                 * App-store listing descriptions are publisher marketing copy,
+                 * not community evidence. Keep the listing as the parent row,
+                 * but send only its user reviews to the fast NLP corpus.
+                 */
+                if (!isMarketplaceSource) {
+                  fastEvidenceInputs.push({
+                    id: postId,
+                    sourceType: 'POST',
+                    title: post.title ?? null,
+                    content: [post.title?.trim(), post.content.trim()]
+                      .filter(Boolean)
+                      .join(' ')
+                      .slice(0, 2_000),
+                    language: this.parseFastLanguageCode(post.languageCode),
+                    likesCount: post.likesCount,
+                    repliesCount: post.repliesCount ?? post.comments.length,
+                  });
+                }
+
+                for (const comment of post.comments.slice(
+                  0,
+                  effectiveCollectorLimits?.maxSavedComments ?? 1,
+                )) {
+                  if (!comment.content.trim()) continue;
+                  fastEvidenceInputs.push({
+                    id: `${dataSource.key}:comment:${comment.externalId}`,
+                    sourceType: 'COMMENT',
+                    postId,
+                    content: comment.content.trim().slice(0, 1_200),
+                    language: this.parseFastLanguageCode(comment.languageCode),
+                    likesCount: comment.likesCount,
+                  });
+                }
+              }
+            }
 
             const totals = await this.socialPostService.createManyWithComments(
               job.id,
@@ -301,6 +409,11 @@ export class DataCollectionService {
               },
               relevantPosts,
             );
+
+            if (collectionMode === 'FAST_GENERATION') {
+              fastPersistedPosts += totals.totalPosts;
+              fastPersistedComments += totals.totalComments;
+            }
 
             await this.collectionJobService.markSourceCompleted(
               job.id,
@@ -342,7 +455,7 @@ export class DataCollectionService {
 
       if (
         sourceResults.some((result) => result === 'STOPPED') ||
-        (await this.isStopped(job.id))
+        (trigger === 'USER_MANUAL' && (await this.isStopped(job.id)))
       ) {
         await this.collectionJobService.markRemainingSourcesStopped(job.id);
 
@@ -355,17 +468,32 @@ export class DataCollectionService {
        * still considered a successful source execution.
        */
       const authoritativeTotals =
-        await this.collectionJobService.countPersistedJobData(job.id);
+        collectionMode === 'FAST_GENERATION'
+          ? {
+              totalPosts: fastPersistedPosts,
+              totalComments: fastPersistedComments,
+            }
+          : await this.collectionJobService.countPersistedJobData(job.id);
 
       if (completedSources === 0 && authoritativeTotals.totalPosts === 0) {
-        throw new ServiceUnavailableException(
-          'All selected data sources failed without persisting usable data.',
+        /*
+         * Sparse or temporarily unavailable public sources must not convert a
+         * valid idea-generation request into a technical failure. Completing
+         * the job with zero rows lets the NLP and prompt layers create a clearly
+         * labelled context-only pilot hypothesis instead of blocking the run.
+         */
+        this.logger.warn(
+          `Collection job ${job.id} completed without persisted posts. The generation pipeline will continue with a context-only fallback.`,
         );
       }
 
-      const completedJob = await this.collectionJobService.completeJob(job.id);
+      const completedJob =
+        await this.collectionJobService.completeJobWithTotals(
+          job.id,
+          authoritativeTotals,
+        );
 
-      await this.auditService.createLog({
+      const completionAudit = this.auditService.createLog({
         actorId,
 
         action: AuditAction.COMPLETE_DATA_COLLECTION,
@@ -388,6 +516,35 @@ export class DataCollectionService {
           completedAt: completedJob.completedAt,
         },
       });
+
+      if (trigger === 'USER_MANUAL') {
+        await completionAudit;
+      } else {
+        void completionAudit.catch((error: unknown) => {
+          this.logger.warn(
+            `Could not persist the internal collection-completion audit for job ${job.id}: ${this.getErrorMessage(error)}.`,
+          );
+        });
+      }
+
+      if (collectionMode === 'FAST_GENERATION') {
+        TextInputBuilderService.primeFastContext({
+          collectionJobId: job.id,
+          language: dto.language,
+          domain: {
+            id: domain.id,
+            name: domain.name,
+            keywords: domainKeywords,
+          },
+          location: {
+            country: dto.country,
+            city: dto.city,
+            region: dto.region,
+          },
+          platforms: [...new Set(completedSourceKeys)],
+          inputs: fastEvidenceInputs,
+        });
+      }
 
       return completedJob;
     } catch (error: unknown) {
@@ -427,6 +584,24 @@ export class DataCollectionService {
 
       throw error;
     }
+  }
+
+
+  private parseFastLanguageCode(
+    value: string | null | undefined,
+  ): LanguageCode | null {
+    if (!value) return null;
+    const normalized = value.trim().toLowerCase().replace('_', '-');
+    const primary = normalized.split('-')[0];
+    const map: Readonly<Record<string, LanguageCode>> = {
+      ar: LanguageCode.AR,
+      en: LanguageCode.EN,
+      fr: LanguageCode.FR,
+      es: LanguageCode.ES,
+      de: LanguageCode.DE,
+      tr: LanguageCode.TR,
+    };
+    return map[normalized] ?? map[primary] ?? null;
   }
 
   /**
@@ -534,8 +709,12 @@ export class DataCollectionService {
   private filterRelevantPosts(
     posts: CollectorPost[],
     relevanceTerms: string[],
+    collectionMode?: CollectorInput['collectionMode'],
+    sourceKey?: string,
   ): CollectorPost[] {
     const normalizedTerms = this.normalizeRelevanceTerms(relevanceTerms);
+    const minimumScore =
+      collectionMode === 'FAST_GENERATION' ? 35 : this.MIN_RELEVANCE_SCORE;
 
     if (!normalizedTerms.length) {
       return posts;
@@ -544,10 +723,30 @@ export class DataCollectionService {
     return posts.filter((post) => {
       const normalizedTags = this.normalizeRelevanceTerms(post.tags ?? []);
 
-      const baseScore = RelevanceScoreUtil.scoreText({
-        title: post.title,
+      const commentsBody = post.comments
+        .slice(0, 20)
+        .map((comment) => comment.content)
+        .join(' ');
 
-        body: [post.content, ...normalizedTags].filter(Boolean).join(' '),
+      const isMarketplaceSource =
+        sourceKey === 'google-play' || sourceKey === 'app-store';
+      const relevanceBody = isMarketplaceSource
+        ? [commentsBody, ...normalizedTags].filter(Boolean).join(' ')
+        : [post.content, commentsBody, ...normalizedTags]
+            .filter(Boolean)
+            .join(' ');
+
+      /*
+       * Google Play and App Store descriptions are publisher-controlled
+       * marketing copy. They must not raise relevance or problem scores.
+       * Marketplace posts may enter the corpus only when their persisted
+       * reviews/comments independently match the domain and contain a direct
+       * complaint or request.
+       */
+      const baseScore = RelevanceScoreUtil.scoreText({
+        title: isMarketplaceSource ? '' : post.title,
+
+        body: relevanceBody,
 
         domainTerms: normalizedTerms,
 
@@ -570,19 +769,19 @@ export class DataCollectionService {
 
       const finalScore = baseScore + sourceTagBonus;
       const hasMinimumIndependentRelevance =
-        baseScore >= this.MIN_RELEVANCE_SCORE ||
-        (hasExactSourceTagMatch && baseScore >= 40);
+        baseScore >= minimumScore ||
+        (hasExactSourceTagMatch && baseScore >= Math.max(30, minimumScore - 5));
       const passesGenericTitleGuard = this.passesGenericTitleGuard(
         post,
         normalizedTerms,
         normalizedTags,
         hasExactSourceTagMatch,
       );
-      const hasCommunityProblemSignal = this.hasCommunityProblemSignal(post);
+      const hasCommunityProblemSignal = this.hasCommunityProblemSignal(post, sourceKey);
 
       const accepted =
         hasMinimumIndependentRelevance &&
-        finalScore >= this.MIN_RELEVANCE_SCORE &&
+        finalScore >= minimumScore &&
         passesGenericTitleGuard &&
         hasCommunityProblemSignal;
 
@@ -593,10 +792,12 @@ export class DataCollectionService {
           `baseScore=${baseScore}`,
           `sourceTagBonus=${sourceTagBonus}`,
           `finalScore=${finalScore}`,
-          `minimum=${this.MIN_RELEVANCE_SCORE}`,
+          `minimum=${minimumScore}`,
+          `collectionMode=${collectionMode ?? 'STANDARD'}`,
           `independentRelevance=${hasMinimumIndependentRelevance}`,
           `genericTitleGuard=${passesGenericTitleGuard}`,
           `communityProblemSignal=${hasCommunityProblemSignal}`,
+          `publisherCopyExcluded=${isMarketplaceSource}`,
           `accepted=${accepted}`,
         ].join(' | '),
       );
@@ -612,20 +813,30 @@ export class DataCollectionService {
    * The check includes comments because marketplace listings often have a
    * neutral title while their reviews contain the actual user problems.
    */
-  private hasCommunityProblemSignal(post: CollectorPost): boolean {
+  private hasCommunityProblemSignal(
+    post: CollectorPost,
+    sourceKey?: string,
+  ): boolean {
     const commentsText = post.comments
       .slice(0, 20)
       .map((comment) => comment.content)
       .join(' ');
+
+    const complaintPattern = /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu;
+
+    // Marketplace descriptions are publisher marketing copy. They may describe
+    // capabilities such as "adapts to your mood" but are not user complaints.
+    // For app stores, only reviews/comments may establish a community problem.
+    if (sourceKey === 'google-play' || sourceKey === 'app-store') {
+      return complaintPattern.test(commentsText);
+    }
 
     const content = [post.title, post.content, commentsText]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
 
-    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|privacy|consent|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
-      content,
-    );
+    return complaintPattern.test(content);
   }
 
   /**
@@ -716,6 +927,33 @@ export class DataCollectionService {
     );
 
     return containsDomainTerm && meaningfulTokens.length <= 1;
+  }
+
+  /**
+   * Gives marketplace collectors enough review depth to surface real user
+   * complaints while keeping every collector inside the same fast timeout.
+   *
+   * App stores search only two applications but inspect more reviews per app.
+   * Other sources keep the run-level limits unchanged.
+   */
+  private resolveSourceCollectorLimits(
+    sourceKey: string,
+    collectionMode: CollectorInput['collectionMode'],
+    limits?: CollectorInput['limits'],
+  ): CollectorInput['limits'] {
+    if (
+      collectionMode !== 'FAST_GENERATION' ||
+      (sourceKey !== 'google-play' && sourceKey !== 'app-store')
+    ) {
+      return limits;
+    }
+
+    return {
+      maxFetchedPosts: Math.max(2, limits?.maxFetchedPosts ?? 2),
+      maxSavedPosts: Math.max(2, limits?.maxSavedPosts ?? 2),
+      maxFetchedComments: Math.max(12, limits?.maxFetchedComments ?? 12),
+      maxSavedComments: Math.max(5, limits?.maxSavedComments ?? 5),
+    };
   }
 
   /**

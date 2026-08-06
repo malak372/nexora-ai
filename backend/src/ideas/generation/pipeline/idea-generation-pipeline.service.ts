@@ -151,6 +151,16 @@ type ResolvedPipelineStage = {
 export class IdeaGenerationPipelineService {
   private readonly logger = new Logger(IdeaGenerationPipelineService.name);
 
+  /**
+   * Serializes non-critical stage checkpoint writes per run. The pipeline no
+   * longer waits for a remote Supabase round-trip after every completed stage,
+   * but writes still reach PostgreSQL in the exact stage order.
+   */
+  private readonly stageCheckpointQueues = new Map<string, Promise<void>>();
+
+  /** Serializes compact recovery snapshots without blocking normal stage work. */
+  private readonly contextCheckpointQueues = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stageService: IdeaGenerationStageService,
@@ -191,21 +201,24 @@ export class IdeaGenerationPipelineService {
       input.stages,
     );
 
-    await this.initializeStageRecords(
-      input.context.runId,
-      resolvedStages.map(({ definition }) => definition),
-    );
-
-    const startedRun = await this.databaseRetry.execute(
-      () => this.runService.startRun(input.context.runId),
-      {
-        operationName: 'start generation run',
-        runId: input.context.runId,
-      },
-    );
+    const [startedRun] = await Promise.all([
+      this.databaseRetry.execute(
+        () => this.runService.startRun(input.context.runId),
+        {
+          operationName: 'start generation run',
+          runId: input.context.runId,
+        },
+      ),
+      this.initializeStageRecords(
+        input.context.runId,
+        resolvedStages.map(({ definition }) => definition),
+      ),
+    ]);
     this.realtime.publishRunUpdated(startedRun);
 
-    await this.saveContextCheckpoint(input.context);
+    // The run already exists durably. Queue the initial recovery snapshot so
+    // request validation can begin without another remote database round-trip.
+    void this.enqueueContextCheckpoint(input.context);
 
     let currentContext = input.context;
 
@@ -218,34 +231,14 @@ export class IdeaGenerationPipelineService {
           resolvedStage.definition.key,
           deadlineAt,
         );
-        const persistedStage = await this.databaseRetry.execute(
-          () =>
-            this.prisma.ideaGenerationStage.findUnique({
-              where: {
-                runId_stageKey: {
-                  runId: currentContext.runId,
-                  stageKey: resolvedStage.definition.key,
-                },
-              },
-            }),
-          {
-            operationName: 'read pipeline checkpoint',
-            runId: currentContext.runId,
-          },
-        );
-
-        if (
-          persistedStage?.status === IdeaGenerationStageStatus.COMPLETED ||
-          persistedStage?.status === IdeaGenerationStageStatus.SKIPPED
-        ) {
-          processedStages.push({
-            stageKey: resolvedStage.definition.key,
-            status: persistedStage.status,
-            attemptCount: persistedStage.attemptCount,
-          });
-          continue;
-        }
-
+        /*
+         * This queued execution is fresh: stage records were initialized just
+         * before the loop. Reading every stage back from remote PostgreSQL added
+         * one network round-trip per stage without changing the result.
+         *
+         * Interrupted-run recovery should use a dedicated resume entry point
+         * instead of penalizing every normal generation.
+         */
         if (currentContext.noResultOutcome) {
           await this.markStageSkipped(
             currentContext.runId,
@@ -268,7 +261,38 @@ export class IdeaGenerationPipelineService {
         );
 
         currentContext = stageResult.context;
-        await this.saveContextCheckpoint(currentContext);
+
+        /*
+         * The idea is already transactionally committed at this boundary.
+         * Publish its identifier immediately so the frontend can open the
+         * workspace while final run bookkeeping and the completion alert finish.
+         */
+        if (
+          resolvedStage.definition.key ===
+            IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE &&
+          currentContext.ideaId
+        ) {
+          this.realtime.publishRunProgress({
+            runId: currentContext.runId,
+            currentStageKey: IDEA_GENERATION_STAGE_KEYS.FINALIZATION,
+            progressPercent: 99,
+            ideaId: currentContext.ideaId,
+          });
+        }
+
+        if (this.shouldCheckpointAfterStage(resolvedStage.definition.key)) {
+          const checkpoint = this.enqueueContextCheckpoint(currentContext);
+
+          // Only durable success boundaries wait for the ordered checkpoint
+          // queue. Collection, community analysis, and core generation already
+          // persist their own source-of-truth rows, so their compact run
+          // snapshots may overlap the next stage safely.
+          if (this.requiresSynchronousContextCheckpoint(
+            resolvedStage.definition.key,
+          )) {
+            await checkpoint;
+          }
+        }
 
         processedStages.push(stageResult.summary);
       }
@@ -333,23 +357,24 @@ export class IdeaGenerationPipelineService {
     deadlineAt: number,
   ): void {
     const remainingMs = deadlineAt - Date.now();
-    const requiredReserveMs = this.requiresFinalizationReserve(stageKey)
-      ? IDEA_GENERATION_FINALIZATION_RESERVE_MS
-      : 0;
 
-    if (remainingMs > requiredReserveMs) {
+    /*
+     * Only the hard safety deadline stops the pipeline. The 60-second target is
+     * measured for observability, but a run that already has valid evidence
+     * must not be marked FAILED merely because remote PostgreSQL persistence
+     * consumed the remaining performance target.
+     */
+    if (remainingMs > 0) {
       return;
     }
 
     throw new ConflictException({
-      code: 'IDEA_GENERATION_DEADLINE_EXCEEDED',
+      code: 'IDEA_GENERATION_HARD_DEADLINE_EXCEEDED',
       message:
-        `Generation run "${runId}" reached its bounded execution deadline before stage "${stageKey}". ` +
-        'The run was not marked completed because no persisted final idea may be skipped.',
+        `Generation run "${runId}" reached its hard safety deadline before stage "${stageKey}".`,
       details: {
         stageKey,
         remainingMs: Math.max(0, remainingMs),
-        requiredReserveMs,
       },
     });
   }
@@ -615,12 +640,16 @@ export class IdeaGenerationPipelineService {
           };
         }
 
-        await this.markStageCompleted(
+        const completionWrite = this.markStageCompleted(
           context.runId,
           definition,
           attempt,
           result.resultPreview,
         );
+
+        if (this.requiresSynchronousCompletionCheckpoint(definition.key)) {
+          await completionWrite;
+        }
 
         return {
           context: result.context,
@@ -762,24 +791,104 @@ export class IdeaGenerationPipelineService {
     definition: IdeaGenerationStageDefinition,
     attempt: number,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
-      },
-      data: {
-        status: IdeaGenerationStageStatus.RUNNING,
-        progressPercent: definition.progressStart,
-        attemptCount: attempt,
-        startedAt: new Date(),
-        completedAt: null,
-        errorMessage: null,
-      },
+    this.realtime.publishStageTransition({
+      runId,
+      stageKey: definition.key,
+      displayName: definition.displayName,
+      sequence: definition.sequence,
+      status: IdeaGenerationStageStatus.RUNNING,
+      progressPercent: definition.progressStart,
+      attemptCount: attempt,
+      maxAttempts: definition.maxAttempts,
     });
 
-    this.realtime.publishStageUpdated(stage);
+    this.realtime.publishRunProgress({
+      runId,
+      currentStageKey: definition.key,
+      progressPercent: definition.progressStart,
+    });
+
+    /*
+     * Keep the cancellation guard as one lightweight updateMany instead of a
+     * two-statement transaction. The stage-row checkpoint is observability
+     * metadata, so it is serialized in the existing per-run queue and does not
+     * block the actual workload.
+     *
+     * Cheap in-memory stages do not need a remote cancellation round-trip at
+     * every boundary. Cancellation is guarded before each expensive/external
+     * stage and before persistence/finalization, which keeps cancellation safe
+     * while removing repeated 1-3 second Supabase gaps between tiny stages.
+     */
+    if (this.requiresSynchronousStartGuard(definition.key)) {
+      const runUpdate = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationRun.updateMany({
+            where: {
+              id: runId,
+              status: 'RUNNING',
+              cancelRequestedAt: null,
+            },
+            data: {
+              currentStageKey: definition.key,
+              progressPercent: definition.progressStart,
+              lastHeartbeatAt: new Date(),
+            },
+          }),
+        {
+          operationName: 'guard stage start and update run progress',
+          runId,
+        },
+      );
+
+      if (runUpdate.count !== 1) {
+        throw new ConflictException(
+          'The generation run is no longer active or cancellation was requested.',
+        );
+      }
+    }
+
+    void this.enqueueStageCheckpoint(runId, async () => {
+      const stage = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationStage.update({
+            where: {
+              runId_stageKey: {
+                runId,
+                stageKey: definition.key,
+              },
+            },
+            data: {
+              status: IdeaGenerationStageStatus.RUNNING,
+              progressPercent: definition.progressStart,
+              attemptCount: attempt,
+              startedAt: new Date(),
+              completedAt: null,
+              errorMessage: null,
+            },
+          }),
+        {
+          operationName: 'checkpoint stage running',
+          runId,
+        },
+      );
+
+      this.realtime.publishStageUpdated(stage);
+    });
+  }
+
+  /**
+   * Stages that touch external systems or cross the durable success boundary
+   * keep an awaited cancellation guard. Small deterministic stages are allowed
+   * to flow without paying a database round-trip before each one.
+   */
+  private requiresSynchronousStartGuard(
+    stageKey: IdeaGenerationStageKey,
+  ): boolean {
+    return (
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+    );
   }
 
   /**
@@ -796,25 +905,99 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     resultPreview?: string,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
-      },
-      data: {
-        status: IdeaGenerationStageStatus.COMPLETED,
-        progressPercent: definition.progressEnd,
-        attemptCount: attempt,
-        resultPreview:
-          resultPreview !== undefined ? resultPreview : Prisma.JsonNull,
-        errorMessage: null,
-        completedAt: new Date(),
-      },
+    this.realtime.publishStageTransition({
+      runId,
+      stageKey: definition.key,
+      displayName: definition.displayName,
+      sequence: definition.sequence,
+      status: IdeaGenerationStageStatus.COMPLETED,
+      progressPercent: definition.progressEnd,
+      attemptCount: attempt,
+      maxAttempts: definition.maxAttempts,
+      resultPreview,
     });
 
-    this.realtime.publishStageUpdated(stage);
+    this.realtime.publishRunProgress({
+      runId,
+      currentStageKey: definition.key,
+      progressPercent: definition.progressEnd,
+    });
+
+    /*
+     * Do not update IdeaGenerationRun again here. markStageRunning() for the
+     * next stage performs the guarded run update and cancellation check. The
+     * old completion transaction wrote both rows after every stage, creating
+     * an unnecessary remote query and several seconds of idle time.
+     */
+    return this.enqueueStageCheckpoint(runId, async () => {
+      const stage = await this.databaseRetry.execute(
+        () =>
+          this.prisma.ideaGenerationStage.update({
+            where: {
+              runId_stageKey: {
+                runId,
+                stageKey: definition.key,
+              },
+            },
+            data: {
+              status: IdeaGenerationStageStatus.COMPLETED,
+              progressPercent: definition.progressEnd,
+              attemptCount: attempt,
+              resultPreview:
+                resultPreview !== undefined ? resultPreview : Prisma.JsonNull,
+              errorMessage: null,
+              completedAt: new Date(),
+            },
+          }),
+        {
+          operationName: 'mark stage completed',
+          runId,
+        },
+      );
+
+      this.realtime.publishStageUpdated(stage);
+    });
+  }
+
+  /**
+   * Persistence and finalization checkpoints are awaited because they define
+   * the durable success boundary. Earlier completion checkpoints are ordered
+   * in the background to remove repeated network idle time only.
+   */
+  private requiresSynchronousCompletionCheckpoint(
+    stageKey: IdeaGenerationStageKey,
+  ): boolean {
+    return (
+      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+    );
+  }
+
+  /** Enqueues one ordered stage-checkpoint write for a generation run. */
+  private enqueueStageCheckpoint(
+    runId: string,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    const previous = this.stageCheckpointQueues.get(runId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(operation);
+
+    this.stageCheckpointQueues.set(runId, current);
+
+    void current
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Deferred stage checkpoint failed for run "${runId}": ${message}`,
+        );
+      })
+      .finally(() => {
+        if (this.stageCheckpointQueues.get(runId) === current) {
+          this.stageCheckpointQueues.delete(runId);
+        }
+      });
+
+    return current;
   }
 
   /**
@@ -959,20 +1142,46 @@ export class IdeaGenerationPipelineService {
     attempt: number,
     error: Error,
   ): Promise<void> {
-    const stage = await this.prisma.ideaGenerationStage.update({
-      where: {
-        runId_stageKey: {
-          runId,
-          stageKey: definition.key,
-        },
+    /*
+     * markStageRunning() uses a deferred ordered checkpoint. A very fast stage
+     * can fail before that RUNNING write reaches PostgreSQL, leaving
+     * started_at=null. Updating such a row directly to FAILED violates the
+     * generation_stages_status_consistency_check constraint.
+     *
+     * Wait for the pending checkpoint first. The fallback startedAt value below
+     * keeps the FAILED lifecycle valid even if the deferred RUNNING write itself
+     * failed because of a transient database issue.
+     */
+    const pendingCheckpoint = this.stageCheckpointQueues.get(runId);
+
+    if (pendingCheckpoint) {
+      await pendingCheckpoint.catch(() => undefined);
+    }
+
+    const failedAt = new Date();
+
+    const stage = await this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationStage.update({
+          where: {
+            runId_stageKey: {
+              runId,
+              stageKey: definition.key,
+            },
+          },
+          data: {
+            status: IdeaGenerationStageStatus.FAILED,
+            attemptCount: attempt,
+            errorMessage: this.toSafeErrorMessage(error),
+            startedAt: failedAt,
+            completedAt: failedAt,
+          },
+        }),
+      {
+        operationName: 'mark generation stage failed',
+        runId,
       },
-      data: {
-        status: IdeaGenerationStageStatus.FAILED,
-        attemptCount: attempt,
-        errorMessage: this.toSafeErrorMessage(error),
-        completedAt: new Date(),
-      },
-    });
+    );
 
     this.realtime.publishStageUpdated(stage);
   }
@@ -1070,6 +1279,59 @@ export class IdeaGenerationPipelineService {
    * @returns Normalized Error instance.
    */
   /** Persists a JSON-safe copy of the current pipeline context. */
+  /**
+   * Persists only recovery-critical context boundaries.
+   *
+   * Writing the complete context after every small validation/checkpoint stage
+   * was the largest avoidable source of remote-database latency.
+   */
+  private shouldCheckpointAfterStage(stageKey: IdeaGenerationStageKey): boolean {
+    return (
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION ||
+      stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE
+    );
+  }
+
+  /** Idea persistence is the only snapshot boundary that must finish before
+   * the pipeline advances. Finalization contains no recovery-critical payload. */
+  private requiresSynchronousContextCheckpoint(
+    stageKey: IdeaGenerationStageKey,
+  ): boolean {
+    return stageKey === IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
+  }
+
+  /** Queues compact context snapshots in run order and coalesces work with the
+   * active pipeline instead of adding an idle Supabase gap after each stage. */
+  private enqueueContextCheckpoint(
+    context: IdeaGenerationContext,
+  ): Promise<void> {
+    const runId = context.runId;
+    const previous =
+      this.contextCheckpointQueues.get(runId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => this.saveContextCheckpoint(context));
+
+    this.contextCheckpointQueues.set(runId, current);
+
+    void current
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Deferred context checkpoint failed for run "${runId}": ${message}`,
+        );
+      })
+      .finally(() => {
+        if (this.contextCheckpointQueues.get(runId) === current) {
+          this.contextCheckpointQueues.delete(runId);
+        }
+      });
+
+    return current;
+  }
+
   private async saveContextCheckpoint(
     context: IdeaGenerationContext,
   ): Promise<void> {

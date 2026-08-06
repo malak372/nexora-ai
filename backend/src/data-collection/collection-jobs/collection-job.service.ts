@@ -469,20 +469,27 @@ export class CollectionJobService {
    */
   async completeJob(id: string) {
     const totals = await this.countPersistedJobData(id);
+    return this.completeJobWithTotals(id, totals);
+  }
 
+  /**
+   * Completes a job using authoritative totals already counted by the caller.
+   * This avoids repeating the same two COUNT queries immediately before the
+   * final UPDATE in the internal idea-generation path.
+   */
+  completeJobWithTotals(
+    id: string,
+    totals: { totalPosts: number; totalComments: number },
+  ) {
     return this.prisma.collectionJob.update({
-      where: {
-        id,
-      },
-
+      where: { id },
       data: {
         status: CollectionJobStatus.COMPLETED,
-        totalPosts: totals.totalPosts,
-        totalComments: totals.totalComments,
+        totalPosts: this.toNonNegativeInteger(totals.totalPosts),
+        totalComments: this.toNonNegativeInteger(totals.totalComments),
         completedAt: new Date(),
         failedReason: null,
       },
-
       include: collectionJobInclude,
     });
   }

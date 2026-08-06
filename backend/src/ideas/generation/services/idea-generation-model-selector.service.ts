@@ -4,6 +4,8 @@ import type { AiModel } from '@prisma/client';
 import { AiModelRoutingService } from '../../../ai-models/ai-model-routing.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import {
+  IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS,
+  IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD,
   IDEA_BENCHMARK_INITIAL_MODEL_COUNT,
   IDEA_BENCHMARK_RECENT_RUN_LOOKBACK,
 } from '../constants/idea-generation.constants';
@@ -11,11 +13,17 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 
 type RecentModelUsage = {
   readonly modelIds: ReadonlySet<string>;
+  readonly failedModelIds: ReadonlySet<string>;
+  readonly failureCounts: ReadonlyMap<string, number>;
   readonly providerCounts: ReadonlyMap<string, number>;
 };
 
 /**
  * Selects a rotating, health-aware, provider-diverse model order.
+ *
+ * Model names are never hard-coded. Replacing DeepSeek or any other model in
+ * the ai_models table is therefore picked up automatically on the next run as
+ * long as the replacement is active, routable, and healthy.
  *
  * The first benchmark group is interleaved by provider. Therefore, when both
  * Google and OpenRouter have routable models, the benchmark does not execute
@@ -46,9 +54,25 @@ export class IdeaGenerationModelSelectorService {
 
     const recentUsage = await this.findRecentUsage(context);
     const seed = this.hash(context.runId);
+    const cooledModelIds = new Set(
+      availableModels
+        .filter(
+          (model) =>
+            (recentUsage.failureCounts.get(model.id) ?? 0) >=
+            IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD,
+        )
+        .map((model) => model.id),
+    );
+    const nonCooledModels = availableModels.filter(
+      (model) => !cooledModelIds.has(model.id),
+    );
+    const selectableModels =
+      nonCooledModels.length >= IDEA_BENCHMARK_INITIAL_MODEL_COUNT
+        ? nonCooledModels
+        : availableModels;
     const modelsByProvider = new Map<string, AiModel[]>();
 
-    for (const model of availableModels) {
+    for (const model of selectableModels) {
       const providerModels = modelsByProvider.get(model.providerKey) ?? [];
       providerModels.push(model);
       modelsByProvider.set(model.providerKey, providerModels);
@@ -56,7 +80,13 @@ export class IdeaGenerationModelSelectorService {
 
     for (const providerModels of modelsByProvider.values()) {
       providerModels.sort((first, second) =>
-        this.compareModels(first, second, recentUsage.modelIds, seed),
+        this.compareModels(
+          first,
+          second,
+          recentUsage.modelIds,
+          recentUsage.failedModelIds,
+          seed,
+        ),
       );
     }
 
@@ -96,7 +126,7 @@ export class IdeaGenerationModelSelectorService {
     const ordered: AiModel[] = [];
     let providerCursor = 0;
 
-    while (ordered.length < availableModels.length) {
+    while (ordered.length < selectableModels.length) {
       const providerKey = providerKeys[providerCursor % providerKeys.length];
       const providerModels = modelsByProvider.get(providerKey);
       const model = providerModels?.shift();
@@ -107,7 +137,7 @@ export class IdeaGenerationModelSelectorService {
 
       providerCursor += 1;
 
-      if (providerCursor > availableModels.length * providerKeys.length * 2) {
+      if (providerCursor > selectableModels.length * providerKeys.length * 2) {
         break;
       }
     }
@@ -152,8 +182,17 @@ export class IdeaGenerationModelSelectorService {
     first: AiModel,
     second: AiModel,
     recentModelIds: ReadonlySet<string>,
+    recentFailedModelIds: ReadonlySet<string>,
     seed: number,
   ): number {
+    const failureDifference =
+      (recentFailedModelIds.has(first.id) ? 1 : 0) -
+      (recentFailedModelIds.has(second.id) ? 1 : 0);
+
+    if (failureDifference !== 0) {
+      return failureDifference;
+    }
+
     const recentDifference =
       (recentModelIds.has(first.id) ? 1 : 0) -
       (recentModelIds.has(second.id) ? 1 : 0);
@@ -178,6 +217,10 @@ export class IdeaGenerationModelSelectorService {
       return second.priority - first.priority;
     }
 
+    if (first.isDefault !== second.isDefault) {
+      return first.isDefault ? -1 : 1;
+    }
+
     return this.hash(`${seed}:${first.id}`) - this.hash(`${seed}:${second.id}`);
   }
 
@@ -193,35 +236,51 @@ export class IdeaGenerationModelSelectorService {
       where: {
         ...ownerWhere,
         id: { not: context.runId },
-        benchmarkCandidates: { some: { selected: true } },
+        benchmarkCandidates: { some: {} },
       },
       select: {
         benchmarkCandidates: {
-          where: { selected: true },
-          select: { aiModelId: true, providerKey: true },
+          select: {
+            aiModelId: true,
+            providerKey: true,
+            selected: true,
+            errorCode: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
-      take: IDEA_BENCHMARK_RECENT_RUN_LOOKBACK,
+      take: Math.max(IDEA_BENCHMARK_RECENT_RUN_LOOKBACK, IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS),
     });
 
     const modelIds = new Set<string>();
+    const failedModelIds = new Set<string>();
+    const failureCounts = new Map<string, number>();
     const providerCounts = new Map<string, number>();
 
     for (const candidate of recentRuns.flatMap(
       (run) => run.benchmarkCandidates,
     )) {
-      if (candidate.aiModelId) {
+      if (candidate.selected && candidate.aiModelId) {
         modelIds.add(candidate.aiModelId);
       }
 
-      providerCounts.set(
-        candidate.providerKey,
-        (providerCounts.get(candidate.providerKey) ?? 0) + 1,
-      );
+      if (candidate.errorCode && candidate.aiModelId) {
+        failedModelIds.add(candidate.aiModelId);
+        failureCounts.set(
+          candidate.aiModelId,
+          (failureCounts.get(candidate.aiModelId) ?? 0) + 1,
+        );
+      }
+
+      if (candidate.selected) {
+        providerCounts.set(
+          candidate.providerKey,
+          (providerCounts.get(candidate.providerKey) ?? 0) + 1,
+        );
+      }
     }
 
-    return { modelIds, providerCounts };
+    return { modelIds, failedModelIds, failureCounts, providerCounts };
   }
 
   private healthRank(status: AiModel['healthStatus']): number {

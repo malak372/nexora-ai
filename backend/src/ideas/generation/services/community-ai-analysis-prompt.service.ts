@@ -26,12 +26,14 @@ export class CommunityAiAnalysisPromptService {
     return {
       systemInstruction: this.buildSystemInstruction(),
       userPrompt: JSON.stringify({
-        task: `Analyze cleaned community evidence and extract ${COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES}-${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concrete, non-duplicated software opportunities when the supplied evidence supports that many. Return fewer rather than inventing unsupported opportunities.`,
+        task: `When related recurring problems can be solved by one coherent product, merge them into one compound opportunity and preserve evidence for every component. Never merge unrelated problems. Every opportunities item must be a JSON object, never a string.
+
+Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} concise, non-duplicated software opportunities. Opportunities may belong to different domains. When two or more domains contribute to one connected workflow, preserve them as compatible components that a later stage can combine into one cross-domain product. Return fewer rather than inventing unsupported opportunities.`,
         primaryDomain: { id: context.domainId, name: context.domainName },
         selectedDomains: context.selectedDomains.map((domain) => ({
           id: domain.id,
           name: domain.name,
-          keywords: domain.keywords,
+          keywords: domain.keywords.slice(0, 20),
         })),
         location: context.location,
         requestedKeywords: context.keywords,
@@ -84,12 +86,15 @@ export class CommunityAiAnalysisPromptService {
       'Cover different problem families and user jobs instead of producing wording variations of one complaint.',
       'When selectedDomains contains multiple domains, assign every opportunity to exactly one selected domain using domainName and return at least one evidence-backed opportunity per selected domain whenever supplied evidence supports it.',
       'Do not invent an opportunity merely to fill a missing domain. Add a quality warning naming any domain whose supplied evidence was insufficient.',
-      'Do not combine unrelated problem dimensions into one opportunity title, problem, or unmet need unless the same evidence sample directly supports every included dimension.',
+      'Do not combine unrelated problem dimensions inside one opportunity. Keep domain-specific evidence units atomic so the idea-generation stage can combine only compatible units into one cross-domain workflow.',
       'A single evidence quote may ground only one returned opportunity. When one quote mentions multiple issues, select the most concrete actionable user problem as the primary opportunity and mention the secondary issue only as context or a risk; do not emit a second opportunity backed by the same quote.',
       'Two opportunities must not contain the same normalized evidence quote. If their evidenceSamples overlap exactly, merge them into one atomic opportunity and choose the title/problem pair that best matches the dominant user job.',
       'For example, session recovery and storage persistence must remain separate opportunities when they come from different comments. A multi-part title is allowed only when at least one supplied quote explicitly supports all included parts.',
       'Set frequency from the number of distinct supplied evidence samples supporting that exact problem family. Never copy topic frequency, keyword frequency, or the total number of mentions into opportunity frequency.',
       'Order opportunities from strongest to weakest evidence support, while preserving different confidence values rather than assigning the same score to every item.',
+      'Keep summary under 260 characters. Keep each problem, unmetNeed, and solutionArea under 150 characters. Keep affectedUsers to at most 2 short items, risks to at most 2 short items, and evidenceSamples to exactly 1 strongest supplied quote per opportunity. Return compact JSON only; no markdown and no explanatory prose outside the schema.',
+      'Never derive a problem from publisher marketing copy, app feature listings, product descriptions, tutorials, or promotional promises. Such text may describe an existing solution but is not evidence that users experience the claimed problem.',
+      'Prefer explicit first-person complaints, review comments, bug reports, failures, missing capabilities, and direct requests. When none exists, return fewer opportunities rather than converting product features into unmet needs.',
       'Every opportunity must include at least one supplied evidence sample; use two or more distinct samples when available for that problem family.',
       'Do not fabricate facts, statistics, regulations, market sizes, local conditions, or user behavior.',
       'Treat country, city, region, requested keywords, and source selection as context rather than proof.',

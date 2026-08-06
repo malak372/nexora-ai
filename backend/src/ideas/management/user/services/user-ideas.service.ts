@@ -405,6 +405,86 @@ export class UserIdeasService {
   }
 
   /**
+   * Returns only the data required to render the idea workspace.
+   * The idea and completed outputs are selected in one Prisma query, avoiding
+   * the previous two HTTP requests and the large generation audit payload.
+   */
+  async getMyIdeaWorkspace(userId: string, ideaId: string) {
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+        userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        limitedAbstract: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        user: {
+          select: {
+            accountStatus: true,
+          },
+        },
+        generatedOutputs: {
+          where: {
+            status: GeneratedOutputStatus.COMPLETED,
+          },
+          orderBy: {
+            sequence: 'asc',
+          },
+          select: {
+            id: true,
+            outputKey: true,
+            title: true,
+            sequence: true,
+            content: true,
+            structuredContent: true,
+            generatedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException('The requested idea was not found.');
+    }
+
+    const canUseAiChat = idea.user?.accountStatus === AccountStatus.PREMIUM;
+    const { generatedOutputs, user, ...ideaData } = idea;
+
+    return {
+      idea: {
+        ...ideaData,
+        access: {
+          canViewAdvancedOutputs: idea.isUnlocked,
+          canUseAiChat: idea.isUnlocked && canUseAiChat,
+          canViewCommunityData: idea.isUnlocked,
+          canPublish: true,
+        },
+      },
+      outputs: idea.isUnlocked ? generatedOutputs : [],
+    };
+  }
+
+  /**
    * Retrieves a complete user-facing representation
    * of one user-owned idea.
    */
