@@ -307,6 +307,48 @@ export type SelectedGenerationDomain = {
   readonly keywords: readonly string[];
 };
 
+/**
+ * Evidence collected for one selected domain during a multi-domain run.
+ *
+ * Keeping this structure in the shared generation context allows later stages
+ * to preserve domain attribution while still using one merged NLP analysis.
+ * A domain may legitimately contain zero texts; in that case it can only be
+ * presented to the AI as a validation hypothesis, not as observed evidence.
+ *
+ * @author Eman
+ */
+export type IdeaGenerationDomainEvidence = {
+  /** Selected domain identifier. */
+  readonly domainId: string;
+
+  /** Human-readable selected domain name. */
+  readonly domainName: string;
+
+  /** Collection job that produced this domain evidence. */
+  readonly collectionJobId: string;
+
+  /** Indicates whether a compatible completed collection job was reused. */
+  readonly reused: boolean;
+
+  /** Total analyzed posts and comments for this domain. */
+  readonly totalTextsAnalyzed: number;
+
+  /** Total analyzed posts for this domain. */
+  readonly totalPostsAnalyzed: number;
+
+  /** Total analyzed comments for this domain. */
+  readonly totalCommentsAnalyzed: number;
+
+  /** True when at least one cleaned text is available as evidence. */
+  readonly evidenceAvailable: boolean;
+
+  /** Representative posts retained by the NLP pipeline. */
+  readonly samplePosts: Prisma.JsonValue | null;
+
+  /** Representative comments retained by the NLP pipeline. */
+  readonly sampleComments: Prisma.JsonValue | null;
+};
+
 export type IdeaGenerationContext = {
   /**
    * Persisted IdeaGenerationRun identifier.
@@ -394,6 +436,12 @@ export type IdeaGenerationContext = {
    * NLP analysis loaded or produced by the pipeline.
    */
   nlp: IdeaGenerationNlpContext | null;
+
+  /**
+   * Per-domain collection evidence preserved for prompt construction,
+   * AI analysis, and benchmark validation.
+   */
+  domainEvidence: IdeaGenerationDomainEvidence[];
 
   /** Evidence-grounded LLM analysis over the cleaned NLP context. */
   communityAiAnalysis: CommunityAiAnalysis | null;
@@ -553,6 +601,7 @@ export function createIdeaGenerationContext(
 
     collection: null,
     nlp: null,
+    domainEvidence: [],
     communityAiAnalysis: null,
     opportunityRanking: null,
     benchmarkWinnerOpportunity: null,

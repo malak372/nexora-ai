@@ -39,7 +39,7 @@ import { GUEST_SESSION_COOKIE_NAME } from './utilities/constants/guest-session.c
  * This value is used only when FRONTEND_URL is not configured
  * inside the backend environment variables.
  */
-const DEFAULT_FRONTEND_URL = 'http://localhost:3000';
+const DEFAULT_FRONTEND_URL = 'http://localhost:3001';
 
 /**
  * Default backend HTTP port.
@@ -162,108 +162,118 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  const enableSwagger =
+    configService.get<string>('ENABLE_SWAGGER', 'true') === 'true';
+
   /**
-   * Configures the Nexora AI OpenAPI document.
+   * Swagger generation scans every controller and DTO. Keeping it disabled
+   * in production reduces startup work and memory usage.
    */
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Nexora AI API')
-    .setDescription(
-      [
-        'REST API documentation for the Nexora AI backend.',
-        '',
-        'Nexora AI provides:',
-        '- Authentication and user management.',
-        '- Community data collection.',
-        '- NLP analysis and AI enhancement.',
-        '- Software idea generation.',
-        '- Credit and payment management.',
-        '- Idea publication, ratings, voting, and feedback.',
-        '- Administrative monitoring and analytics.',
-      ].join('\n'),
-    )
-    .setVersion('1.0.0')
-
+  if (enableSwagger) {
     /**
-     * JWT access-token authentication.
+     * Configures the Nexora AI OpenAPI document.
      */
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Enter the JWT access token.',
-      },
-      'access-token',
-    )
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Nexora AI API')
+      .setDescription(
+        [
+          'REST API documentation for the Nexora AI backend.',
+          '',
+          'Nexora AI provides:',
+          '- Authentication and user management.',
+          '- Community data collection.',
+          '- NLP analysis and AI enhancement.',
+          '- Software idea generation.',
+          '- Credit and payment management.',
+          '- Idea publication, ratings, voting, and feedback.',
+          '- Administrative monitoring and analytics.',
+        ].join('\n'),
+      )
+      .setVersion('1.0.0')
+
+      /**
+       * JWT access-token authentication.
+       */
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Enter the JWT access token.',
+        },
+        'access-token',
+      )
+
+      /**
+       * Refresh-token cookie authentication.
+       */
+      .addCookieAuth(
+        'refresh_token',
+        {
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'refresh_token',
+          description:
+            'Refresh-token cookie used for session renewal.',
+        },
+        'refresh-token',
+      )
+
+      /**
+       * Guest-session cookie authentication.
+       *
+       * The imported constant ensures Swagger uses the exact same
+       * cookie name as the guest-session controller and services.
+       */
+      .addCookieAuth(
+        GUEST_SESSION_COOKIE_NAME,
+        {
+          type: 'apiKey',
+          in: 'cookie',
+          name: GUEST_SESSION_COOKIE_NAME,
+          description:
+            'HTTP-only guest-session cookie used for guest idea generation.',
+        },
+        'guest-session',
+      )
+      .build();
+
+    const swaggerDocument =
+      SwaggerModule.createDocument(
+        app,
+        swaggerConfig,
+      );
 
     /**
-     * Refresh-token cookie authentication.
-     */
-    .addCookieAuth(
-      'refresh_token',
-      {
-        type: 'apiKey',
-        in: 'cookie',
-        name: 'refresh_token',
-        description:
-          'Refresh-token cookie used for session renewal.',
-      },
-      'refresh-token',
-    )
-
-    /**
-     * Guest-session cookie authentication.
+     * Exposes Swagger UI outside any API route prefix.
      *
-     * The imported constant ensures Swagger uses the exact same
-     * cookie name as the guest-session controller and services.
+     * Swagger UI:
+     * http://localhost:3000/docs
+     *
+     * OpenAPI JSON:
+     * http://localhost:3000/docs-json
      */
-    .addCookieAuth(
-      GUEST_SESSION_COOKIE_NAME,
-      {
-        type: 'apiKey',
-        in: 'cookie',
-        name: GUEST_SESSION_COOKIE_NAME,
-        description:
-          'HTTP-only guest-session cookie used for guest idea generation.',
-      },
-      'guest-session',
-    )
-    .build();
-
-  const swaggerDocument =
-    SwaggerModule.createDocument(
+    SwaggerModule.setup(
+      'docs',
       app,
-      swaggerConfig,
+      swaggerDocument,
+      {
+        jsonDocumentUrl: 'docs-json',
+        customSiteTitle:
+          'Nexora AI API Documentation',
+        swaggerOptions: {
+          persistAuthorization: true,
+          displayRequestDuration: true,
+          filter: true,
+          tryItOutEnabled: true,
+          docExpansion: 'none',
+          tagsSorter: 'alpha',
+          operationsSorter: 'alpha',
+        },
+      },
     );
 
-  /**
-   * Exposes Swagger UI outside any API route prefix.
-   *
-   * Swagger UI:
-   * http://localhost:3000/docs
-   *
-   * OpenAPI JSON:
-   * http://localhost:3000/docs-json
-   */
-  SwaggerModule.setup(
-    'docs',
-    app,
-    swaggerDocument,
-    {
-      jsonDocumentUrl: 'docs-json',
-      customSiteTitle:
-        'Nexora AI API Documentation',
-      swaggerOptions: {
-        persistAuthorization: true,
-        displayRequestDuration: true,
-        filter: true,
-        tryItOutEnabled: true,
-        docExpansion: 'none',
-        tagsSorter: 'alpha',
-        operationsSorter: 'alpha',
-      },
-    },
-  );
+  }
 
   /**
    * Serves user-uploaded files publicly.
@@ -278,6 +288,8 @@ async function bootstrap(): Promise<void> {
     join(process.cwd(), 'uploads'),
     {
       prefix: '/uploads/',
+      maxAge: configService.get<string>('UPLOAD_CACHE_MAX_AGE', '1d'),
+      immutable: configService.get<string>('NODE_ENV') === 'production',
     },
   );
 

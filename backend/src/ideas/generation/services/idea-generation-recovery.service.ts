@@ -15,7 +15,7 @@ export class IdeaGenerationRecoveryService
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(IdeaGenerationRecoveryService.name);
-  private readonly intervalMs = 30_000;
+  private readonly intervalMs = 120_000;
   private timer: NodeJS.Timeout | null = null;
   private recoveryInProgress = false;
 
@@ -30,7 +30,6 @@ export class IdeaGenerationRecoveryService
     }, this.intervalMs);
 
     this.timer.unref();
-    void this.recoverEligibleRuns();
   }
 
   onApplicationShutdown(): void {
@@ -48,7 +47,11 @@ export class IdeaGenerationRecoveryService
     this.recoveryInProgress = true;
 
     try {
-      const runs = await this.runService.findRecoverableRuns(10);
+      if (await this.runService.hasActiveRuns()) {
+        return;
+      }
+
+      const runs = await this.runService.findRecoverableRuns(5);
 
       for (const run of runs) {
         if (run.retryCount >= GENERATION_RUN_MAX_RECOVERY_ATTEMPTS) {

@@ -120,10 +120,14 @@ export class AppStoreCollector
         return [];
       }
 
-      const searchResults = await Promise.all(
+      const searchResults = await Promise.allSettled(
         searchQueries.map((query) => this.searchApps(query, input)),
       );
-      const apps = this.deduplicateApps(searchResults.flat());
+      const apps = this.deduplicateApps(
+        searchResults.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : [],
+        ),
+      );
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app))
@@ -134,19 +138,38 @@ export class AppStoreCollector
         }))
         .filter((item) => item.score > 0)
         .sort((first, second) => second.score - first.score)
-        .slice(0, this.resolveMaxSavedPosts(input));
+        .slice(
+          0,
+          input.collectionMode === 'FAST_GENERATION' ||
+          input.collectionMode === 'TARGETED_RECOVERY'
+            ? Math.min(2, this.resolveMaxSavedPosts(input))
+            : this.resolveMaxSavedPosts(input),
+        );
 
-      const posts: CollectorPost[] = [];
+      const isBoundedParallelMode =
+        input.collectionMode === 'FAST_GENERATION' ||
+        input.collectionMode === 'TARGETED_RECOVERY';
+      const posts: CollectorPost[] = isBoundedParallelMode
+        ? (
+            await Promise.allSettled(
+              rankedApps.map((item) =>
+                this.mapAppToCollectorPost(item.app, input),
+              ),
+            )
+          ).flatMap((result) =>
+            result.status === 'fulfilled' ? [result.value] : [],
+          )
+        : [];
 
-      // Review endpoints are more sensitive to bursts than search endpoints.
-      // Collect sequentially so one throttled request does not cause all apps
-      // to lose their review evidence at the same time.
-      for (const item of rankedApps) {
-        posts.push(await this.mapAppToCollectorPost(item.app, input));
-        await this.delay(250);
+      if (!isBoundedParallelMode) {
+        // Standard mode keeps the conservative sequential review policy.
+        for (const item of rankedApps) {
+          posts.push(await this.mapAppToCollectorPost(item.app, input));
+          await this.delay(250);
+        }
       }
 
-      this.logger.log(`App Store collection completed. Apps: ${posts.length}`);
+      this.logger.log(`App Store collection completed. Apps: ${posts.length} | mode=${input.collectionMode ?? 'STANDARD'} | parallel=${input.collectionMode === 'FAST_GENERATION'}`);
 
       return posts;
     } catch (error: unknown) {
@@ -172,15 +195,16 @@ export class AppStoreCollector
       input.language,
     ]);
 
-    const requestedCountry = this.resolveCountry(input.country);
-    const requestedResults = await CollectorExternalCacheUtil.remember<
-      AppStoreApp[]
-    >(cacheKey, this.cacheTtlMs, () =>
-      appStoreClient.search({
-        term: searchQuery,
-        country: requestedCountry,
-        num: Math.min(this.resolveMaxFetchedPosts(input), 25),
-      }),
+    const requestedCountry =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY'
+        ? 'us'
+        : this.resolveCountry(input.country);
+    const requestedResults = await this.searchAppsWithBoundedFallback(
+      cacheKey,
+      searchQuery,
+      requestedCountry,
+      input,
     );
 
     if (requestedResults.length > 0 || requestedCountry === 'us') {
@@ -209,6 +233,79 @@ export class AppStoreCollector
     );
   }
 
+  /**
+   * Executes one cached App Store search with a single bounded direct retry.
+   *
+   * The direct retry bypasses a failed cache wrapper call, then a secondary
+   * English storefront is attempted only when the US storefront still returns
+   * no results. This keeps FAST_GENERATION bounded while avoiding an immediate
+   * zero-result collector after one transient scraper/cache failure.
+   */
+  private async searchAppsWithBoundedFallback(
+    cacheKey: string,
+    searchQuery: string,
+    requestedCountry: string,
+    input: CollectorInput,
+  ): Promise<AppStoreApp[]> {
+    const num = Math.min(this.resolveMaxFetchedPosts(input), 25);
+    const search = (country: string) =>
+      appStoreClient.search({
+        term: searchQuery,
+        country,
+        num,
+      });
+
+    try {
+      return await CollectorExternalCacheUtil.remember<AppStoreApp[]>(
+        cacheKey,
+        this.cacheTtlMs,
+        () => search(requestedCountry),
+      );
+    } catch (firstError: unknown) {
+      this.logger.warn(
+        `App Store cached search failed for "${searchQuery}" in ${requestedCountry}; retrying once without cache.`,
+      );
+
+      try {
+        const directResults = await search(requestedCountry);
+        if (directResults.length > 0) {
+          return directResults;
+        }
+      } catch (retryError: unknown) {
+        this.logger.warn(
+          `App Store direct retry failed for "${searchQuery}" in ${requestedCountry}: ${this.getErrorMessage(
+            retryError,
+          )}`,
+        );
+      }
+
+      if (
+        input.collectionMode === 'FAST_GENERATION' &&
+        requestedCountry === 'us'
+      ) {
+        try {
+          this.logger.warn(
+            `App Store US search produced no usable result for "${searchQuery}"; trying the GB storefront once.`,
+          );
+          return await search('gb');
+        } catch (fallbackError: unknown) {
+          this.logger.warn(
+            `App Store GB fallback failed for "${searchQuery}": ${this.getErrorMessage(
+              fallbackError,
+            )}`,
+          );
+        }
+      }
+
+      this.logger.debug(
+        `App Store search exhausted bounded fallbacks for "${searchQuery}": ${this.getErrorMessage(
+          firstError,
+        )}`,
+      );
+      return [];
+    }
+  }
+
   /** Builds focused queries instead of relying on one broad domain term. */
   private buildSearchQueries(input: CollectorInput): string[] {
     const userKeywords = (input.keywords ?? [])
@@ -235,15 +332,23 @@ export class AppStoreCollector
       .filter(Boolean)
       .slice(0, 8);
 
-    const focused = terms.slice(0, 5);
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    const focused = terms.slice(0, isBoundedMode ? 2 : 5);
     const intentQueries = [
       terms.find((term) =>
-        /irrigat|schedule|controller|offline|farm management/iu.test(term),
+        /irrigat|schedule|controller|offline|farm management|computer vision|segmentation|nutrition tracking|route planning/iu.test(
+          term,
+        ),
       ),
       terms.slice(0, 2).join(' '),
     ].filter((term): term is string => Boolean(term));
 
-    return this.unique([...intentQueries, ...focused]).slice(0, 6);
+    return this.unique([...intentQueries, ...focused]).slice(
+      0,
+      isBoundedMode ? 2 : 6,
+    );
   }
 
   /** Deduplicates applications returned by multiple focused searches. */
@@ -420,7 +525,10 @@ export class AppStoreCollector
         input.language,
       ]);
 
-      const requestedCountry = this.resolveCountry(input.country);
+      const requestedCountry =
+        input.collectionMode === 'FAST_GENERATION'
+          ? 'us'
+          : this.resolveCountry(input.country);
       let reviews: AppStoreReview[];
 
       try {
@@ -459,6 +567,11 @@ export class AppStoreCollector
 
       return reviews
         .filter((review) => this.isUsefulReview(review, input))
+        .sort(
+          (left, right) =>
+            this.reviewProblemPriority(right) -
+            this.reviewProblemPriority(left),
+        )
         .slice(0, this.resolveMaxSavedComments(input))
         .map(
           (review): CollectorComment => ({
@@ -524,7 +637,9 @@ export class AppStoreCollector
 
     const content = this.cleanNormalizedText(rawContent);
 
-    if (content.length < 40) {
+    const hasProblemSignal = this.hasReviewProblemSignal(content);
+
+    if (content.length < (hasProblemSignal ? 20 : 40)) {
       return false;
     }
 
@@ -575,6 +690,26 @@ export class AppStoreCollector
     return !blockedWords.some((word) =>
       content.includes(this.cleanNormalizedText(word)),
     );
+  }
+
+  /** Returns true when a review contains a concrete complaint or request. */
+  private hasReviewProblemSignal(content: string): boolean {
+    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|broken|slow|lag|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible|need|needs|wish|request|should add|please add|paywall|subscription|ads?|privacy)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|إعلانات|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
+      content,
+    );
+  }
+
+  /** Prioritizes low-rated and complaint-bearing reviews before saving. */
+  private reviewProblemPriority(review: AppStoreReview): number {
+    const content = this.cleanNormalizedText(
+      this.cleanPlainText(review.text),
+    );
+    const score = Number(review.score);
+    const lowRatingBonus =
+      Number.isFinite(score) && score > 0 && score <= 3 ? 3 : 0;
+    const complaintBonus = this.hasReviewProblemSignal(content) ? 5 : 0;
+
+    return complaintBonus + lowRatingBonus;
   }
 
   /**

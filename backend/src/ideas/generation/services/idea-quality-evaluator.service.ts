@@ -29,7 +29,9 @@ export type IdeaQualityIssue = {
     | 'OVER_SCOPED_MVP'
     | 'UNSUPPORTED_MARKET_GENERALIZATION'
     | 'INACCURATE_NLP_SUMMARY'
-    | 'AWKWARD_PRODUCT_COPY';
+    | 'AWKWARD_PRODUCT_COPY'
+    | 'NO_DIRECT_EVIDENCE'
+    | 'SECONDARY_DOMAIN_LEAKAGE';
   readonly message: string;
   readonly penalty: number;
 };
@@ -71,6 +73,10 @@ export type IdeaQualityEvaluationContext = {
   readonly targetCity?: string | null;
   readonly targetRegion?: string | null;
   readonly localEvidenceVerified?: boolean;
+  readonly directEvidenceCount?: number;
+  readonly verifiedIndependentSourceCount?: number;
+  readonly primaryDomainName?: string | null;
+  readonly secondaryDomainNames?: readonly string[];
 };
 
 /**
@@ -460,16 +466,55 @@ export class IdeaQualityEvaluatorService {
       }
     }
 
+    const directEvidenceCount = Math.max(
+      0,
+      context.directEvidenceCount ?? context.totalTextsAnalyzed ?? 0,
+    );
+    const hasNoDirectEvidence = directEvidenceCount === 0;
+
+    if (hasNoDirectEvidence) {
+      issues.push({
+        code: 'NO_DIRECT_EVIDENCE',
+        message:
+          'No direct community evidence was retained. The candidate may continue only as a clearly labeled validation hypothesis and must not receive a market-fit pass.',
+        penalty: 35,
+      });
+    }
+
+    const secondaryDomainLeakage = (context.secondaryDomainNames ?? []).some(
+      (domain) =>
+        domain.trim().length > 0 &&
+        new RegExp(`\\b${this.escapeRegExp(domain.trim())}\\b`, 'iu').test(
+          [
+            output.coreIdea.problemStatement,
+            output.coreIdea.partialAbstract,
+            output.coreIdea.fullAbstract,
+          ].join(' '),
+        ),
+    );
+
+    if (hasNoDirectEvidence && secondaryDomainLeakage) {
+      issues.push({
+        code: 'SECONDARY_DOMAIN_LEAKAGE',
+        message:
+          'With zero retained evidence, keep the fallback strictly inside the selected primary domain and remove secondary-domain claims.',
+        penalty: 20,
+      });
+    }
+
     const dimensions: IdeaQualityDimensions = {
       innovation: this.clamp(
         45 + differentiatorHits * 9 + (genericTitle ? -12 : 8),
       ),
       marketFit: this.clamp(
-        35 +
-          Math.min(problem.length / 8, 30) +
-          concreteTargets * 8 +
-          Math.min(adoptionHits, 4) * 3 +
-          (isNarrowIntermediaryProduct ? -12 : 0),
+        Math.min(
+          hasNoDirectEvidence ? 35 : directEvidenceCount === 1 ? 72 : 100,
+          35 +
+            Math.min(problem.length / 8, 30) +
+            concreteTargets * 8 +
+            Math.min(adoptionHits, 4) * 3 +
+            (isNarrowIntermediaryProduct ? -12 : 0),
+        ),
       ),
       technicalQuality: this.clamp(
         40 +
@@ -506,7 +551,9 @@ export class IdeaQualityEvaluatorService {
         issue.code === 'UNSUPPORTED_PLATFORM_ACCESS' ||
         issue.code === 'MALFORMED_MEASURABLE_TARGET' ||
         issue.code === 'UNSUPPORTED_IMPACT_TARGET' ||
-        issue.code === 'COMMON_TITLE_MISSPELLING',
+        issue.code === 'COMMON_TITLE_MISSPELLING' ||
+        issue.code === 'NO_DIRECT_EVIDENCE' ||
+        issue.code === 'SECONDARY_DOMAIN_LEAKAGE',
     );
 
     return {

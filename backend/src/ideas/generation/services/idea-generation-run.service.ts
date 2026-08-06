@@ -303,34 +303,35 @@ export class IdeaGenerationRunService {
 
     const now = new Date();
 
-    const result = await this.prisma.ideaGenerationRun.updateMany({
-      where: {
-        id: normalizedRunId,
-        status: {
-          in: [
-            IdeaGenerationRunStatus.QUEUED,
-            IdeaGenerationRunStatus.RETRYING,
-            IdeaGenerationRunStatus.PAUSED,
-          ],
+    try {
+      return await this.prisma.ideaGenerationRun.update({
+        where: {
+          id: normalizedRunId,
+          status: {
+            in: [
+              IdeaGenerationRunStatus.QUEUED,
+              IdeaGenerationRunStatus.RETRYING,
+              IdeaGenerationRunStatus.PAUSED,
+            ],
+          },
+          cancelRequestedAt: null,
         },
-        cancelRequestedAt: null,
-      },
-      data: {
-        status: IdeaGenerationRunStatus.RUNNING,
-        startedAt: now,
-        lastHeartbeatAt: now,
-        nextRetryAt: null,
-        pausedAt: null,
-        errorCode: null,
-        errorMessage: null,
-      },
-    });
-
-    if (result.count !== 1) {
-      await this.throwStartFailure(normalizedRunId);
+        data: {
+          status: IdeaGenerationRunStatus.RUNNING,
+          startedAt: now,
+          lastHeartbeatAt: now,
+          nextRetryAt: null,
+          pausedAt: null,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        await this.throwStartFailure(normalizedRunId);
+      }
+      throw error;
     }
-
-    return this.findRunOrThrow(normalizedRunId);
   }
 
   /**
@@ -579,33 +580,34 @@ export class IdeaGenerationRunService {
 
     const now = new Date();
 
-    const result = await db.ideaGenerationRun.updateMany({
-      where: {
-        id: normalizedRunId,
-        status: {
-          in: [
-            IdeaGenerationRunStatus.RUNNING,
-            IdeaGenerationRunStatus.RETRYING,
-          ],
+    try {
+      return await db.ideaGenerationRun.update({
+        where: {
+          id: normalizedRunId,
+          status: {
+            in: [
+              IdeaGenerationRunStatus.RUNNING,
+              IdeaGenerationRunStatus.RETRYING,
+            ],
+          },
+          cancelRequestedAt: null,
         },
-        cancelRequestedAt: null,
-      },
-      data: {
-        status: IdeaGenerationRunStatus.COMPLETED,
-        progressPercent: 100,
-        currentStageKey: null,
-        completedAt: now,
-        lastHeartbeatAt: now,
-        errorCode: null,
-        errorMessage: null,
-      },
-    });
-
-    if (result.count !== 1) {
-      await this.throwCompletionFailure(normalizedRunId, db);
+        data: {
+          status: IdeaGenerationRunStatus.COMPLETED,
+          progressPercent: 100,
+          currentStageKey: null,
+          completedAt: now,
+          lastHeartbeatAt: now,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        await this.throwCompletionFailure(normalizedRunId, db);
+      }
+      throw error;
     }
-
-    return this.findRunOrThrow(normalizedRunId, db);
   }
 
   /**
@@ -798,6 +800,29 @@ export class IdeaGenerationRunService {
     }
 
     return this.findRunOrThrow(normalizedRunId);
+  }
+
+  /**
+   * Lightweight guard used by the background recovery scanner.
+   *
+   * Recovery must not compete with a user-facing pipeline for the same
+   * Prisma/Supabase connection pool.
+   */
+  async hasActiveRuns(): Promise<boolean> {
+    const activeRun = await this.prisma.ideaGenerationRun.findFirst({
+      where: {
+        status: {
+          in: [
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
+          ],
+        },
+        cancelRequestedAt: null,
+      },
+      select: { id: true },
+    });
+
+    return activeRun !== null;
   }
 
   /** Returns paused/retrying runs that are ready for recovery. */

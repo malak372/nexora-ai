@@ -1,7 +1,11 @@
 import { IdeaGenerationType } from '@prisma/client';
 
 import type { IdeaOpportunityRanking } from '../../ideas/generation/types/idea-opportunity-ranking.type';
-import type { SelectedGenerationDomain } from '../../ideas/generation/types/idea-generation-context.type';
+import type {
+  IdeaGenerationDomainEvidence,
+  IdeaGenerationNlpContext,
+  SelectedGenerationDomain,
+} from '../../ideas/generation/types/idea-generation-context.type';
 
 /**
  * Input required to generate a new idea prompt.
@@ -42,6 +46,19 @@ export type IdeaGenerationPromptInput = {
 
   /** Ordered domains that must contribute evidence-backed problems. */
   readonly selectedDomains?: readonly SelectedGenerationDomain[];
+
+  /**
+   * In-memory merged NLP context produced by parallel multi-domain collection.
+   * When supplied, it takes precedence over the primary job's persisted NLP
+   * row so the prompt receives evidence from every completed domain.
+   */
+  readonly analysisOverride?: IdeaGenerationNlpContext;
+
+  /**
+   * Domain-attributed evidence map used to keep samples and counts attached to
+   * the domain that produced them.
+   */
+  readonly domainEvidence?: readonly IdeaGenerationDomainEvidence[];
 };
 
 /**

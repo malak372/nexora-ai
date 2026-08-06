@@ -15,7 +15,6 @@ import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 import {
-  COMMUNITY_AI_ANALYSIS_ALLOW_LOCAL_FALLBACK,
   COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
   COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION,
   COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES,
@@ -24,11 +23,11 @@ import {
   COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE,
   COMMUNITY_AI_ANALYSIS_MIN_TOTAL_EVIDENCE_SAMPLES,
   COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
-  COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES,
   COMMUNITY_AI_ANALYSIS_SCHEMA_NAME,
+  COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS,
+  COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES,
   COMMUNITY_AI_ANALYSIS_TEMPERATURE,
 } from '../constants/community-ai-analysis.constants';
-import { buildCommunityAiAnalysisSchema } from '../schemas/community-ai-analysis.schema';
 import type {
   CommunityAiAnalysis,
   CommunityAiOpportunity,
@@ -70,161 +69,203 @@ export class CommunityAiAnalysisService {
     context: IdeaGenerationContext,
   ): Promise<CommunityAiAnalysis | null> {
     const prompt = this.promptService.build(context);
-    const preferredOnlineModel = await this.findPreferredOnlineModel();
-    const localFallbackModel = COMMUNITY_AI_ANALYSIS_ALLOW_LOCAL_FALLBACK
-      ? await this.findLocalFallbackModel()
-      : null;
-    const excludedAiModelIds = new Set<string>(
-      localFallbackModel ? [localFallbackModel.id] : [],
-    );
+    const onlineModels = await this.findOnlineFallbackModels();
+    const startedAt = Date.now();
     let lastError: unknown = null;
 
     /*
-     * The bounded attempts below are online-only. Ollama is excluded explicitly
-     * so a schema-valid but domain-invalid online response cannot consume the
-     * local fallback invisibly inside AiExecutionService. After all online
-     * attempts are exhausted, Ollama receives exactly one explicit final
-     * attempt using the same schema and business-quality validation.
+     * Use explicit ONLINE model rotation only. Ollama is intentionally excluded.
+     * Each attempt has its own provider timeout and the complete chain has a
+     * hard wall-clock cap, so a provider cannot keep the pipeline blocked for
+     * minutes while structured-output repair or internal retries are running.
      */
     for (
       let attempt = 1;
-      attempt <= COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS;
+      attempt <= Math.min(
+        COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
+        Math.max(1, onlineModels.length),
+      );
       attempt += 1
     ) {
-      try {
-        const result = await this.aiExecutionService.execute({
-          aiModelId: attempt === 1 ? preferredOnlineModel?.id : undefined,
-          userPrompt: prompt.userPrompt,
-          systemInstruction: prompt.systemInstruction,
-          requestType: ApiRequestType.NLP_ENHANCEMENT,
-          promptType: PromptType.NLP_ANALYSIS,
-          generationType: context.generationType,
-          userId:
-            context.owner.type === IDEA_OWNER_TYPES.USER
-              ? context.owner.userId
-              : undefined,
-          guestSessionId:
-            context.owner.type === IDEA_OWNER_TYPES.GUEST
-              ? context.owner.guestSessionId
-              : undefined,
-          responseFormat: AiResponseFormat.JSON,
-          responseSchema: buildCommunityAiAnalysisSchema(),
-          responseSchemaName: COMMUNITY_AI_ANALYSIS_SCHEMA_NAME,
-          estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-          maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-          temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
-          strategy: AiRoutingStrategy.BALANCED,
-          excludedAiModelIds: [...excludedAiModelIds],
-          timeoutMs: COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
-          maxRetriesPerModel: 0,
-          maxModelsPerOperation: COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION,
-          allowProviderFallbackOnInvalidPrompt: true,
-        });
+      const elapsedMs = Date.now() - startedAt;
+      const totalRemainingMs =
+        COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS - elapsedMs;
 
-        try {
-          const analysis = this.parseGroundAndValidate(
-            context,
-            result.text,
-            result.aiModelId,
-            result.apiModelId,
-            attempt,
-          );
-
-          this.logger.log(
-            `Community AI analysis accepted. operationId=${result.operationId}, modelId=${result.aiModelId}, apiModelId=${result.apiModelId}, provider=${result.providerKey}, attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, opportunities=${analysis.opportunities.length}.`,
-          );
-
-          return analysis;
-        } catch (validationError: unknown) {
-          lastError = validationError;
-          excludedAiModelIds.add(result.aiModelId);
-
-          this.logger.warn(
-            `Community AI analysis response rejected. operationId=${result.operationId}, modelId=${result.aiModelId}, apiModelId=${result.apiModelId}, provider=${result.providerKey}, attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, nextAttemptUsesDifferentOnlineModel=${attempt < COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, excludedModelCount=${excludedAiModelIds.size}, error=${this.getErrorMessage(validationError)}.`,
-          );
-        }
-      } catch (executionError: unknown) {
-        lastError = executionError;
-        const databaseUnavailable = isTransientDatabaseError(executionError);
-
-        this.logger.warn(
-          `Community AI analysis online execution failed. attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, nextOnlineAttempt=${!databaseUnavailable && attempt < COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, localFallbackAvailable=${Boolean(localFallbackModel)}, databaseUnavailable=${databaseUnavailable}, error=${this.getErrorMessage(executionError)}.`,
-        );
-
-        /*
-         * AI routing and model-health persistence both depend on the database.
-         * Retrying three models while Prisma cannot reach PostgreSQL only adds
-         * delay and cannot succeed. Stop immediately and let the deterministic
-         * NLP path remain the in-memory fallback while the pipeline-level
-         * infrastructure recovery handles the interrupted run.
-         */
-        if (databaseUnavailable) {
-          break;
-        }
-
-        continue;
+      if (totalRemainingMs <= 500) {
+        break;
       }
-    }
 
-    if (localFallbackModel) {
+      const model = onlineModels[attempt - 1];
+      const attemptTimeoutMs = Math.min(
+        COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
+        totalRemainingMs,
+      );
+
       try {
-        this.logger.warn(
-          `Community AI online analysis was exhausted. Executing local Ollama fallback model "${localFallbackModel.displayName ?? localFallbackModel.modelName}" once.`,
+        const result = await this.withHardTimeout(
+          this.aiExecutionService.execute({
+            aiModelId: model?.id,
+            userPrompt: prompt.userPrompt,
+            systemInstruction: prompt.systemInstruction,
+            requestType: ApiRequestType.NLP_ENHANCEMENT,
+            promptType: PromptType.NLP_ANALYSIS,
+            generationType: context.generationType,
+            userId:
+              context.owner.type === IDEA_OWNER_TYPES.USER
+                ? context.owner.userId
+                : undefined,
+            guestSessionId:
+              context.owner.type === IDEA_OWNER_TYPES.GUEST
+                ? context.owner.guestSessionId
+                : undefined,
+            responseFormat: AiResponseFormat.JSON,
+            /*
+             * AiExecutionInput requires schema metadata for every JSON request.
+             * This intentionally permissive provider-boundary schema only
+             * guarantees a JSON object. Business validation below remains
+             * strict and normalizes aliases before checking evidence grounding.
+             */
+            responseSchema: {
+              type: 'object',
+              additionalProperties: true,
+            },
+            responseSchemaName: `${COMMUNITY_AI_ANALYSIS_SCHEMA_NAME}_tolerant`,
+            /*
+             * Do not attach the strict provider-boundary JSON schema here.
+             * Providers frequently return semantically correct aliases such as
+             * name/description/need. The tolerant parser below normalizes those
+             * aliases and then applies the same evidence and quality checks.
+             */
+            estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
+            maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
+            temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
+            strategy: AiRoutingStrategy.BALANCED,
+            excludedAiModelIds: onlineModels
+              .slice(0, attempt - 1)
+              .map((item) => item.id),
+            timeoutMs: attemptTimeoutMs,
+            maxRetriesPerModel: 0,
+            maxModelsPerOperation: 1,
+            allowProviderFallbackOnInvalidPrompt: true,
+          }),
+          attemptTimeoutMs + 750,
+          `Community AI online attempt ${attempt}`,
         );
 
-        const localResult = await this.aiExecutionService.execute({
-          aiModelId: localFallbackModel.id,
-          userPrompt: prompt.userPrompt,
-          systemInstruction: prompt.systemInstruction,
-          requestType: ApiRequestType.NLP_ENHANCEMENT,
-          promptType: PromptType.NLP_ANALYSIS,
-          generationType: context.generationType,
-          userId:
-            context.owner.type === IDEA_OWNER_TYPES.USER
-              ? context.owner.userId
-              : undefined,
-          guestSessionId:
-            context.owner.type === IDEA_OWNER_TYPES.GUEST
-              ? context.owner.guestSessionId
-              : undefined,
-          responseFormat: AiResponseFormat.JSON,
-          responseSchema: buildCommunityAiAnalysisSchema(),
-          responseSchemaName: COMMUNITY_AI_ANALYSIS_SCHEMA_NAME,
-          estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-          maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-          temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
-          timeoutMs: COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
-          maxRetriesPerModel: 0,
-          allowProviderFallbackOnInvalidPrompt: true,
-        });
-
-        const localAnalysis = this.parseGroundAndValidate(
+        const analysis = this.parseGroundAndValidate(
           context,
-          localResult.text,
-          localResult.aiModelId,
-          localResult.apiModelId,
-          COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS + 1,
+          result.text,
+          result.aiModelId,
+          result.apiModelId,
+          attempt,
         );
 
         this.logger.log(
-          `Community AI analysis accepted from local Ollama fallback. operationId=${localResult.operationId}, modelId=${localResult.aiModelId}, apiModelId=${localResult.apiModelId}, opportunities=${localAnalysis.opportunities.length}.`,
+          `Community AI analysis accepted. operationId=${result.operationId}, modelId=${result.aiModelId}, apiModelId=${result.apiModelId}, provider=${result.providerKey}, attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, opportunities=${analysis.opportunities.length}, elapsedMs=${Date.now() - startedAt}.`,
         );
 
-        return localAnalysis;
-      } catch (localError: unknown) {
-        lastError = localError;
+        return analysis;
+      } catch (error: unknown) {
+        lastError = error;
+        const databaseUnavailable = isTransientDatabaseError(error);
 
         this.logger.warn(
-          `Local Ollama community analysis failed or was rejected. Deterministic NLP fallback will be used. error=${this.getErrorMessage(localError)}.`,
+          `Community AI online model failed or was rejected. attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, model=${model?.displayName ?? model?.modelName ?? 'balanced-routing'}, provider=${model?.providerKey ?? 'auto'}, databaseUnavailable=${databaseUnavailable}, elapsedMs=${Date.now() - startedAt}, error=${this.getErrorMessage(error)}.`,
         );
+
+        if (databaseUnavailable) {
+          break;
+        }
       }
     }
 
     this.logger.warn(
-      `Community AI analysis was not applied after exhausting online execution${localFallbackModel ? ' and the local Ollama fallback' : ''}. Deterministic NLP fallback will be used. error=${this.getErrorMessage(lastError)}.`,
+      `Community AI online fallback chain was exhausted within ${Date.now() - startedAt}ms. Deterministic NLP analysis will continue without Ollama. error=${this.getErrorMessage(lastError)}.`,
     );
 
     return null;
+  }
+
+  /**
+   * Returns active online models in provider-diverse order.
+   *
+   * The configured default model is first when it is online. The second slot
+   * prefers a different provider, avoiding two attempts against the same
+   * failing provider while keeping the fallback fully remote.
+   */
+  private async findOnlineFallbackModels(): Promise<AiModel[]> {
+    try {
+      const [defaultModel, routableModels] = await Promise.all([
+        this.aiModelsService.getDefaultModel().catch(() => null),
+        this.aiModelsService.getRoutableModels(),
+      ]);
+
+      const onlineModels = routableModels.filter(
+        (model) =>
+          normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA,
+      );
+
+      const ordered: AiModel[] = [];
+      const append = (model: AiModel | null | undefined): void => {
+        if (model && !ordered.some((item) => item.id === model.id)) {
+          ordered.push(model);
+        }
+      };
+
+      if (
+        defaultModel &&
+        normalizeAiProviderKey(defaultModel.providerKey) !==
+          AI_PROVIDER_KEYS.OLLAMA
+      ) {
+        append(defaultModel);
+      }
+
+      const firstProvider = ordered[0]
+        ? normalizeAiProviderKey(ordered[0].providerKey)
+        : null;
+
+      append(
+        onlineModels.find(
+          (model) =>
+            normalizeAiProviderKey(model.providerKey) !== firstProvider,
+        ),
+      );
+
+      for (const model of onlineModels) {
+        append(model);
+      }
+
+      return ordered.slice(0, COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Online community-analysis model discovery failed; balanced routing will be attempted once. error=${this.getErrorMessage(error)}.`,
+      );
+      return [];
+    }
+  }
+
+  private async withHardTimeout<T>(
+    task: Promise<T>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        task,
+        new Promise<never>((_resolve, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error(`${label} exceeded ${timeoutMs}ms.`));
+          }, timeoutMs);
+          timeoutHandle.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
   }
 
   /**
@@ -246,67 +287,83 @@ export class CommunityAiAnalysisService {
       apiModelId,
       attemptCount,
     );
-    const analysis = this.applyEvidenceGrounding(context, parsedAnalysis);
+    const domainNormalizedAnalysis = this.normalizeOpportunityDomains(
+      context,
+      parsedAnalysis,
+    );
+    const analysis = this.applyEvidenceGrounding(
+      context,
+      domainNormalizedAnalysis,
+    );
 
     this.validateBusinessQuality(analysis, context);
 
     return analysis;
   }
 
-  /**
-   * Resolves the configured default online model for the first attempt.
-   *
-   * The method deliberately ignores an Ollama default because the local
-   * provider is reserved for the explicit final fallback tier.
-   *
-   * A missing or temporarily unavailable default model is non-fatal; normal
-   * balanced routing is used instead.
-   */
-  private async findPreferredOnlineModel(): Promise<AiModel | null> {
-    try {
-      const model = await this.aiModelsService.getDefaultModel();
-
-      if (
-        normalizeAiProviderKey(model.providerKey) === AI_PROVIDER_KEYS.OLLAMA
-      ) {
-        return null;
-      }
-
-      return model;
-    } catch {
-      return null;
-    }
-  }
 
   /**
-   * Finds one active, routable Ollama model supporting structured output.
-   *
-   * The model remains an explicit last-resort tier and is never mixed into the
-   * online domain-validation rotation.
+   * Repairs provider labels such as "Unassigned", "General", or an empty
+   * domain without discarding an otherwise grounded response. The model is not
+   * allowed to invent a new domain; unknown labels are mapped to the primary
+   * selected domain and every valid selected label is preserved.
    */
-  private async findLocalFallbackModel(): Promise<AiModel | null> {
-    try {
-      const models = await this.aiModelsService.getRoutableModels();
+  private normalizeOpportunityDomains(
+    context: IdeaGenerationContext,
+    analysis: CommunityAiAnalysis,
+  ): CommunityAiAnalysis {
+    const selectedDomains =
+      context.selectedDomains.length > 0
+        ? context.selectedDomains
+        : context.domainName
+          ? [{ id: context.domainId, name: context.domainName, keywords: [] }]
+          : [];
 
-      return (
-        models.find(
-          (model) =>
-            normalizeAiProviderKey(model.providerKey) ===
-              AI_PROVIDER_KEYS.OLLAMA && model.supportsJsonOutput,
-        ) ?? null
-      );
-    } catch (error: unknown) {
-      /*
-       * The local model record is stored in PostgreSQL. When PostgreSQL is
-       * unavailable, attempting to resolve Ollama through the same database
-       * would fail before any local HTTP request is made. Treat model discovery
-       * as unavailable and allow deterministic NLP fallback instead.
-       */
-      this.logger.warn(
-        `Local Ollama fallback discovery was skipped because model metadata could not be loaded. error=${this.getErrorMessage(error)}.`,
-      );
-      return null;
+    const primaryDomainName = selectedDomains[0]?.name;
+    if (!primaryDomainName) {
+      return analysis;
     }
+
+    const selectedByNormalizedName = new Map(
+      selectedDomains.map((domain) => [
+        this.normalizeComparableText(domain.name),
+        domain.name,
+      ]),
+    );
+
+    const genericLabels = new Set([
+      '',
+      'unassigned',
+      'general',
+      'unknown',
+      'other',
+      'n a',
+      'na',
+    ]);
+
+    return {
+      ...analysis,
+      opportunities: analysis.opportunities.map((opportunity) => {
+        const normalized = this.normalizeComparableText(
+          opportunity.domainName,
+        );
+        const exactSelectedName = selectedByNormalizedName.get(normalized);
+
+        if (exactSelectedName) {
+          return { ...opportunity, domainName: exactSelectedName };
+        }
+
+        if (genericLabels.has(normalized)) {
+          return { ...opportunity, domainName: primaryDomainName };
+        }
+
+        /*
+         * A non-selected model label is still constrained to the user's
+         * selected scope instead of rejecting the complete AI analysis.
+         */
+        return { ...opportunity, domainName: primaryDomainName };
+      }),
+    };
   }
 
   /** Parses the central runtime's validated JSON into the domain contract. */
@@ -461,36 +518,44 @@ export class CommunityAiAnalysisService {
       normalizedSignatures.add(signature);
     }
 
-    const missingDomains = context.selectedDomains.filter(
+    const representedSelectedDomainCount = context.selectedDomains.filter(
       (domain) =>
-        !representedDomains.has(this.normalizeComparableText(domain.name)),
-    );
+        representedDomains.has(this.normalizeComparableText(domain.name)),
+    ).length;
 
-    if (missingDomains.length > 0) {
+    /*
+     * Multi-domain requests frequently contain useful evidence for only one of
+     * the selected domains inside the fast collection budget. Requiring every
+     * domain to appear rejected valid AI analyses and forced a deterministic
+     * fallback. Accept the strongest evidence-backed selected domain instead;
+     * unsupported domains are simply omitted and are never fabricated.
+     */
+    if (
+      context.selectedDomains.length > 0 &&
+      representedSelectedDomainCount === 0
+    ) {
       throw new Error(
-        `No independently supported problem was found for selected domain(s): ${missingDomains.map((domain) => domain.name).join(', ')}. The run is stopped instead of fabricating cross-domain evidence.`,
+        `The response did not contain an evidence-backed opportunity for any selected domain: ${context.selectedDomains.map((domain) => domain.name).join(', ')}.`,
       );
     }
   }
 
   private parseOpportunity(value: unknown): CommunityAiOpportunity {
-    if (!this.isRecord(value)) {
-      throw new Error('Community AI analysis returned an invalid opportunity.');
-    }
+    const normalizedValue = this.normalizeOpportunityValue(value);
 
-    const problem = this.firstString(value, [
+    const rawProblem = this.firstString(normalizedValue, [
       'problem',
       'problemStatement',
       'painPoint',
       'description',
     ]);
-    const unmetNeed = this.firstString(value, [
+    const unmetNeed = this.firstString(normalizedValue, [
       'unmetNeed',
       'need',
       'userNeed',
       'missingCapability',
     ]);
-    const solutionArea = this.firstString(value, [
+    const solutionArea = this.firstString(normalizedValue, [
       'solutionArea',
       'solution',
       'proposedSolution',
@@ -498,79 +563,128 @@ export class CommunityAiAnalysisService {
       'direction',
     ]);
 
+    const evidenceSamples = this.normalizeTextArray(
+      normalizedValue.evidenceSamples ??
+        normalizedValue.evidence ??
+        normalizedValue.examples ??
+        normalizedValue.quotes,
+      [],
+    );
+    const problem = this.repairTruncatedProblemFromEvidence(
+      rawProblem,
+      evidenceSamples,
+    );
+
     const severity = this.normalizeSeverity(
-      value.severity ?? value.impactLevel ?? value.priority,
+      normalizedValue.severity ?? normalizedValue.impactLevel ?? normalizedValue.priority,
     );
 
     const confidence = this.normalizeOptionalScore(
-      value.confidence ?? value.score,
+      normalizedValue.confidence ?? normalizedValue.score,
       50,
     );
 
     return {
       domainName: this.optionalString(
-        value.domainName ?? value.domain ?? value.category,
+        normalizedValue.domainName ?? normalizedValue.domain ?? normalizedValue.category,
         'Unassigned',
       ),
       title: this.optionalString(
-        value.title ?? value.name,
+        normalizedValue.title ?? normalizedValue.name,
         this.deriveTitle(problem, unmetNeed),
       ),
       problem,
       unmetNeed,
       solutionArea,
       affectedUsers: this.normalizeTextArray(
-        value.affectedUsers ?? value.targetUsers ?? value.users,
+        normalizedValue.affectedUsers ?? normalizedValue.targetUsers ?? normalizedValue.users,
         ['Affected community users'],
       ),
-      evidenceSamples: this.normalizeTextArray(
-        value.evidenceSamples ??
-          value.evidence ??
-          value.examples ??
-          value.quotes,
-        [],
-      ),
+      evidenceSamples,
       frequency: this.normalizeOptionalPositiveInteger(
-        value.frequency ?? value.occurrences ?? value.count,
+        normalizedValue.frequency ?? normalizedValue.occurrences ?? normalizedValue.count,
         1,
       ),
       severity,
       confidence,
       problemImportance: this.normalizeOptionalScore(
-        value.problemImportance ?? value.importance ?? value.impact,
+        normalizedValue.problemImportance ?? normalizedValue.importance ?? normalizedValue.impact,
         confidence,
       ),
       localEvidenceAvailable:
-        value.localEvidenceAvailable === true ||
-        value.hasLocalEvidence === true,
+        normalizedValue.localEvidenceAvailable === true ||
+        normalizedValue.hasLocalEvidence === true,
       localEvidenceSamples: this.normalizeTextArray(
-        value.localEvidenceSamples ?? value.localEvidence,
+        normalizedValue.localEvidenceSamples ?? normalizedValue.localEvidence,
         [],
         true,
       ),
       localRelevance: this.normalizeOptionalScore(
-        value.localRelevance ?? value.relevance,
+        normalizedValue.localRelevance ?? normalizedValue.relevance,
         25,
       ),
       groundingScore: 0,
       technicalFeasibility: this.normalizeOptionalScore(
-        value.technicalFeasibility ?? value.feasibility,
+        normalizedValue.technicalFeasibility ?? normalizedValue.feasibility,
         60,
       ),
       marketPotential: this.normalizeOptionalScore(
-        value.marketPotential ?? value.marketScore,
+        normalizedValue.marketPotential ?? normalizedValue.marketScore,
         50,
       ),
       innovationPotential: this.normalizeOptionalScore(
-        value.innovationPotential ?? value.innovation,
+        normalizedValue.innovationPotential ?? normalizedValue.innovation,
         50,
       ),
       risks: this.normalizeTextArray(
-        value.risks ?? value.riskFactors ?? value.limitations,
+        normalizedValue.risks ?? normalizedValue.riskFactors ?? normalizedValue.limitations,
         [],
         true,
       ),
     };
+  }
+
+  /**
+   * Accepts the two common structured-output shapes returned by providers.
+   *
+   * Preferred shape: a complete opportunity object.
+   * Tolerated shape: a plain opportunity description string. The string is
+   * promoted to the required semantic fields and is later grounded against the
+   * persisted NLP corpus. Unsupported promoted opportunities are discarded by
+   * applyEvidenceGrounding(), so tolerance never bypasses evidence validation.
+   */
+  private normalizeOpportunityValue(
+    value: unknown,
+  ): Record<string, unknown> {
+    if (this.isRecord(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const description = value.replace(/\s+/gu, ' ').trim();
+
+      return {
+        title: this.deriveTitle(description, description),
+        problem: description,
+        unmetNeed: description,
+        solutionArea:
+          'Combine the related community pain points into one focused software workflow.',
+        affectedUsers: ['Affected community users'],
+        evidenceSamples: [description],
+        frequency: 1,
+        severity: 'MEDIUM',
+        confidence: 50,
+        problemImportance: 50,
+        technicalFeasibility: 60,
+        marketPotential: 50,
+        innovationPotential: 55,
+        risks: [
+          'The provider returned a compact opportunity description; direct evidence grounding is required.',
+        ],
+      };
+    }
+
+    throw new Error('Community AI analysis returned an invalid opportunity.');
   }
 
   private firstString(
@@ -587,6 +701,89 @@ export class CommunityAiAnalysisService {
     throw new Error(
       `Community AI analysis is missing a required semantic field (${keys.join(' | ')}).`,
     );
+  }
+
+  /**
+   * Repairs provider text that ends mid-word by extracting the explicit problem
+   * section from the verbatim evidence sample. This is deterministic and adds
+   * no provider request.
+   */
+  private repairTruncatedProblemFromEvidence(
+    problem: string,
+    evidenceSamples: readonly string[],
+  ): string {
+    const normalized = problem.replace(/\s+/gu, ' ').trim();
+    if (!this.looksTruncatedProblem(normalized)) {
+      return normalized;
+    }
+
+    for (const sample of evidenceSamples) {
+      const extracted = this.extractProblemSection(sample);
+      if (extracted.length >= 35) {
+        return this.boundProblemText(extracted, 240);
+      }
+    }
+
+    return this.boundProblemText(normalized, 240);
+  }
+
+  private looksTruncatedProblem(value: string): boolean {
+    if (!value) {
+      return true;
+    }
+
+    if (/[.!?]["')\]]?$/u.test(value)) {
+      return false;
+    }
+
+    const words = value.split(/\s+/u).filter(Boolean);
+    const lastWord = words.at(-1)?.replace(/[^\p{L}\p{N}-]+/gu, '') ?? '';
+
+    return value.length < 170 && (lastWord.length <= 4 || words.length < 9);
+  }
+
+  private extractProblemSection(value: string): string {
+    const normalized = value
+      .replace(/\r?\n/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    const labeled = normalized.match(
+      /(?:^|\s)(?:#{1,6}\s*)?(?:🤔\s*)?(?:problem statement|problem|issue|pain point)\s*:?\s*(.+?)(?=\s+(?:#{1,6}\s*)?(?:🛠️\s*)?(?:proposed solution|solution|alternatives considered|feature summary|mockups|additional context)\b|$)/iu,
+    );
+
+    if (labeled?.[1]) {
+      return labeled[1]
+        .replace(/^[\s:–—-]+/u, '')
+        .replace(/\s+/gu, ' ')
+        .trim();
+    }
+
+    const firstSentence = normalized.match(/^(.{35,360}?[.!?])(?:\s|$)/u);
+    return firstSentence?.[1]?.trim() ?? '';
+  }
+
+  private boundProblemText(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+
+    const bounded = normalized.slice(0, maxLength);
+    const sentenceBoundary = Math.max(
+      bounded.lastIndexOf('.'),
+      bounded.lastIndexOf('!'),
+      bounded.lastIndexOf('?'),
+    );
+    const wordBoundary = bounded.lastIndexOf(' ');
+    const end =
+      sentenceBoundary >= 80
+        ? sentenceBoundary + 1
+        : wordBoundary >= 80
+          ? wordBoundary
+          : maxLength;
+
+    return bounded.slice(0, end).replace(/[\s,;:–—-]+$/u, '').trim();
   }
 
   private optionalString(value: unknown, fallback: string): string {

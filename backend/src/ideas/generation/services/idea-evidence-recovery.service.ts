@@ -69,33 +69,32 @@ export type IdeaEvidenceRecoveryResult = {
 @Injectable()
 export class IdeaEvidenceRecoveryService {
   private readonly reviewSourceOrder = [
-    'google-play',
     'app-store',
-    'reddit',
+    'google-play',
     'youtube',
+    'stackoverflow',
+    'github',
     'forum',
-    'product-hunt',
   ] as const;
 
   private readonly technicalSourceOrder = [
     'stackoverflow',
     'github',
-    'dev-to',
     'youtube',
-    'forum',
-    'google-play',
     'app-store',
-    'blog',
-    'news',
-    'hacker-news',
-    'product-hunt',
+    'google-play',
+    'forum',
   ] as const;
 
-  /** Recovery focuses on high-yield end-user sources instead of every source. */
+  /**
+   * Recovery uses several complementary complaint-rich sources in parallel.
+   * Three sources are enough to improve evidence recall without repeating the
+   * full nine-source collection pass.
+   */
   private readonly maximumRecoverySources = 3;
 
-  /** Keeps provider queries bounded and ensures the highest-value terms run first. */
-  private readonly maximumRecoveryKeywords = 10;
+  /** Keeps provider queries bounded and natural-language complaint focused. */
+  private readonly maximumRecoveryKeywords = 3;
 
   constructor(
     private readonly configService: ConfigService,
@@ -248,15 +247,19 @@ export class IdeaEvidenceRecoveryService {
         family === 'IDLE_SESSION_AUTH_FAILURE' ||
         family === 'STORAGE_AND_SYNC_FAILURE',
     );
+    const isGenericZeroEvidenceRecovery = evidenceFamilies.includes(
+      'GENERIC_USER_FRICTION',
+    );
 
     /*
-     * Widen both readonly tuple constants to one shared string-array type.
-     * This prevents the ternary expression from producing an incompatible
-     * tuple union and keeps Map#get supplied with a known string key.
+     * A generic zero-evidence recovery must not spend the whole budget on app
+     * listings. It starts with direct complaint sources, then uses one review
+     * source as a complementary signal.
      */
-    const preferredOrder: readonly string[] = isDeveloperTechnicalRecovery
-      ? this.technicalSourceOrder
-      : this.reviewSourceOrder;
+    const preferredOrder: readonly string[] =
+      isDeveloperTechnicalRecovery || isGenericZeroEvidenceRecovery
+        ? this.technicalSourceOrder
+        : this.reviewSourceOrder;
 
     const ordered = preferredOrder
       .map((key: string) => byKey.get(key))
@@ -297,18 +300,10 @@ export class IdeaEvidenceRecoveryService {
     const familyTerms = evidenceFamilies.flatMap((family) =>
       this.buildFamilyQueries(domainTerm, family),
     );
-    const genericComplaintTerms = [
-      `${domainTerm} app user complaint`,
-      `${domainTerm} app review problem`,
-      `${domainTerm} negative app reviews`,
-      `${domainTerm} feature request user review`,
-      `${domainTerm} missing feature complaint`,
-      `${domainTerm} inaccessible feature`,
-      `${domainTerm} forced to use website`,
-      `${domainTerm} login session problem`,
-      `${domainTerm} synchronization storage problem`,
-      `${domainTerm} workflow frustration`,
-    ];
+    const genericComplaintTerms = this.buildNaturalComplaintQueries(
+      domainTerm,
+      context.keywords,
+    );
     const boundedBaseTerms = [domain, ...context.keywords]
       .map((value) => value.trim())
       .filter(Boolean)
@@ -325,6 +320,76 @@ export class IdeaEvidenceRecoveryService {
       .map((value) => value.replace(/\s+/gu, ' ').trim())
       .filter(Boolean)
       .slice(0, this.maximumRecoveryKeywords);
+  }
+
+  /**
+   * Produces phrases that resemble how users actually describe failures.
+   *
+   * These are intentionally short and concrete. Search engines and community
+   * APIs match "bus arrival data not updating" more reliably than synthetic
+   * combinations such as "transportation inaccurate".
+   */
+  private buildNaturalComplaintQueries(
+    domainTerm: string,
+    domainKeywords: readonly string[],
+  ): string[] {
+    const normalizedDomain = domainTerm.toLowerCase();
+    const smartCityQueries = [
+      'parking status is wrong',
+      'bus arrival data not updating',
+      'street light outage not showing',
+      'cannot submit municipal complaint',
+      'public service request stuck',
+      'traffic data is inaccurate',
+      'city app missing service',
+      'parking app not working',
+    ];
+    const transportationQueries = [
+      'bus arrival time is wrong',
+      'route planner gives wrong route',
+      'trip tracking not updating',
+      'fare payment failed',
+      'vehicle profile missing',
+      'public transport app not working',
+    ];
+    const logisticsQueries = [
+      'delivery status not updating',
+      'driver cannot complete delivery',
+      'route assignment is wrong',
+      'proof of delivery missing',
+      'shipment tracking inaccurate',
+      'warehouse picking error',
+    ];
+
+    const knownQueries =
+      normalizedDomain.includes('smart cit')
+        ? smartCityQueries
+        : normalizedDomain.includes('transport')
+          ? transportationQueries
+          : normalizedDomain.includes('logistic')
+            ? logisticsQueries
+            : [];
+
+    const usefulDomainTerms = domainKeywords
+      .map((value) => value.toLowerCase().replace(/\s+/gu, ' ').trim())
+      .filter((value) => value.length >= 4)
+      .filter(
+        (value) =>
+          !/\b(?:platform|system|software|application|dashboard|analytics|management|optimization|integration)\b/iu.test(
+            value,
+          ),
+      )
+      .slice(0, 2);
+
+    return [
+      ...knownQueries,
+      ...usefulDomainTerms.flatMap((term) => [
+        `${term} not working`,
+        `${term} data is wrong`,
+        `cannot use ${term}`,
+      ]),
+      `${domainTerm} user complaint`,
+    ];
   }
 
   /** Derives safe descriptor queries from the currently selected opportunity. */
@@ -788,18 +853,21 @@ export class IdeaEvidenceRecoveryService {
     readonly maxSavedComments: number;
   } {
     return {
-      maxFetchedPosts: this.readPositiveConfig(
-        'RECOVERY_MAX_FETCHED_POSTS',
-        24,
+      maxFetchedPosts: Math.min(
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 4),
+        6,
       ),
-      maxSavedPosts: this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 14),
-      maxFetchedComments: this.readPositiveConfig(
-        'RECOVERY_MAX_FETCHED_COMMENTS',
-        30,
+      maxSavedPosts: Math.min(
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 2),
+        3,
       ),
-      maxSavedComments: this.readPositiveConfig(
-        'RECOVERY_MAX_SAVED_COMMENTS',
-        18,
+      maxFetchedComments: Math.min(
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 6),
+        8,
+      ),
+      maxSavedComments: Math.min(
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 4),
+        5,
       ),
     };
   }

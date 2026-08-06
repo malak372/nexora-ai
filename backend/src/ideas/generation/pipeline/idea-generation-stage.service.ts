@@ -9,9 +9,7 @@ import type { IdeaGenerationContext } from '../types/idea-generation-context.typ
 
 import type { IdeaGenerationStageKey } from '../constants/idea-generation-stages.constants';
 
-import { IdeaGenerationDatabaseRetryService } from '../services/idea-generation-database-retry.service';
 import { IdeaGenerationRunService } from '../services/idea-generation-run.service';
-import { IdeaGenerationRealtimeService } from '../services/idea-generation-realtime.service';
 
 /**
  * Input required to execute one idea-generation pipeline stage.
@@ -162,8 +160,6 @@ export class IdeaGenerationStageService {
 
   constructor(
     private readonly generationRunService: IdeaGenerationRunService,
-    private readonly databaseRetry: IdeaGenerationDatabaseRetryService,
-    private readonly realtime: IdeaGenerationRealtimeService,
   ) {}
 
   /**
@@ -205,8 +201,13 @@ export class IdeaGenerationStageService {
 
     this.validateProgressOrder(startProgressPercent, completedProgressPercent);
 
-    await this.throwIfCancellationRequested(context, stage);
-
+    /*
+     * Cancellation is already enforced atomically by
+     * IdeaGenerationPipelineService.markStageRunning(), whose guarded
+     * update requires cancelRequestedAt to remain null. Avoiding this extra
+     * remote read removes one PostgreSQL round-trip before every stage while
+     * preserving cancellation safety.
+     */
     try {
       const shouldExecute = await this.shouldExecuteStage(stage, context);
 
@@ -222,31 +223,20 @@ export class IdeaGenerationStageService {
         };
       }
 
-      const startedRun = await this.updateProgressWithRetry(
-        context.runId,
-        stage.key,
-        startProgressPercent,
-        'record stage start progress',
-      );
-      this.realtime.publishRunUpdated(startedRun);
-
       this.logger.debug(
         `Started idea-generation stage "${stage.key}" for run "${context.runId}".`,
       );
 
+      /*
+       * Pipeline tracking and run progress are persisted together by
+       * IdeaGenerationPipelineService. Keeping those writes here as well used
+       * to duplicate two remote PostgreSQL round-trips for every stage.
+       * Execute only the stage workload here; the outer pipeline owns the
+       * atomic tracking write and realtime publication.
+       */
       const executionResult = await stage.execute(context);
 
       this.validateExecutionResult(executionResult, stage.key, context.runId);
-
-      await this.throwIfCancellationRequested(executionResult.context, stage);
-
-      const progressedRun = await this.updateProgressWithRetry(
-        executionResult.context.runId,
-        stage.key,
-        completedProgressPercent,
-        'record stage completion progress',
-      );
-      this.realtime.publishRunUpdated(progressedRun);
 
       this.logger.debug(
         `Completed idea-generation stage "${stage.key}" for run "${executionResult.context.runId}".`,
@@ -280,34 +270,6 @@ export class IdeaGenerationStageService {
 
       throw normalizedError;
     }
-  }
-
-  /**
-   * Persists stage progress through the shared bounded database retry policy.
-   *
-   * Supabase/PostgreSQL poolers may occasionally close an idle or recycled
-   * connection. Progress updates are idempotent conditional writes, so retrying
-   * them is safe and prevents a temporary connection reset from failing the
-   * whole generation pipeline before the stage itself starts.
-   */
-  private updateProgressWithRetry(
-    runId: string,
-    currentStageKey: IdeaGenerationStageKey,
-    progressPercent: number,
-    operationName: string,
-  ) {
-    return this.databaseRetry.execute(
-      () =>
-        this.generationRunService.updateProgress({
-          runId,
-          currentStageKey,
-          progressPercent,
-        }),
-      {
-        operationName,
-        runId,
-      },
-    );
   }
 
   /**

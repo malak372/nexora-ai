@@ -31,6 +31,7 @@ type GooglePlayReview = {
   text?: string;
   userName?: string;
   thumbsUp?: number;
+  score?: number;
   date?: string | Date;
 };
 
@@ -103,11 +104,15 @@ export class GooglePlayCollector
         return [];
       }
 
-      const searchResults = await Promise.all(
+      const searchResults = await Promise.allSettled(
         searchQueries.map((query) => this.searchApps(query, input)),
       );
 
-      const apps = this.deduplicateApps(searchResults.flat());
+      const apps = this.deduplicateApps(
+        searchResults.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : [],
+        ),
+      );
 
       const rankedApps = apps
         .filter((app) => this.isValidApp(app, input))
@@ -117,14 +122,20 @@ export class GooglePlayCollector
         }))
         .filter((item) => item.score > 0)
         .sort((first, second) => second.score - first.score)
-        .slice(0, this.resolveMaxSavedPosts(input));
+        .slice(
+          0,
+          input.collectionMode === 'FAST_GENERATION' ||
+          input.collectionMode === 'TARGETED_RECOVERY'
+            ? Math.min(2, this.resolveMaxSavedPosts(input))
+            : this.resolveMaxSavedPosts(input),
+        );
 
       const posts = await Promise.all(
         rankedApps.map((item) => this.mapAppToCollectorPost(item.app, input)),
       );
 
       this.logger.log(
-        `Google Play collection completed. Apps: ${posts.length}`,
+        `Google Play collection completed. Apps: ${posts.length} | mode=${input.collectionMode ?? 'STANDARD'} | parallel=true`,
       );
 
       return posts;
@@ -151,7 +162,11 @@ export class GooglePlayCollector
       input.language,
     ]);
 
-    const requestedCountry = this.resolveCountry(input.country);
+    const requestedCountry =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY'
+        ? 'us'
+        : this.resolveCountry(input.country);
 
     const requestedResults = await CollectorExternalCacheUtil.remember<
       GooglePlayApp[]
@@ -218,13 +233,16 @@ export class GooglePlayCollector
       .filter(Boolean)
       .slice(0, 6);
 
-    const focusedQueries = terms.slice(0, 4);
-    const combinedQuery = terms.slice(0, 3).join(' ');
+    const isBoundedMode =
+      input.collectionMode === 'FAST_GENERATION' ||
+      input.collectionMode === 'TARGETED_RECOVERY';
+    const focusedQueries = terms.slice(0, isBoundedMode ? 2 : 4);
+    const combinedQuery = terms.slice(0, isBoundedMode ? 2 : 3).join(' ');
 
     return this.unique([
       ...focusedQueries,
       ...(combinedQuery ? [combinedQuery] : []),
-    ]).slice(0, 5);
+    ]).slice(0, isBoundedMode ? 2 : 5);
   }
 
   /** Removes duplicate applications returned by multiple focused searches. */
@@ -365,7 +383,11 @@ export class GooglePlayCollector
           () =>
             googlePlayClient.reviews({
               appId,
-              num: this.resolveMaxFetchedComments(input),
+              num:
+                input.collectionMode === 'FAST_GENERATION' ||
+                input.collectionMode === 'TARGETED_RECOVERY'
+                  ? Math.min(this.resolveMaxFetchedComments(input), 4)
+                  : this.resolveMaxFetchedComments(input),
               sort: this.getNewestSort(),
               lang: this.resolveLanguage(input.language),
               country: this.resolveCountry(input.country),
@@ -374,6 +396,11 @@ export class GooglePlayCollector
 
       return (response.data ?? [])
         .filter((review) => this.isUsefulReview(review, input))
+        .sort(
+          (left, right) =>
+            this.reviewProblemPriority(right) -
+            this.reviewProblemPriority(left),
+        )
         .slice(0, this.resolveMaxSavedComments(input))
         .map(
           (review): CollectorComment => ({
@@ -440,7 +467,9 @@ export class GooglePlayCollector
     const rawContent = this.cleanPlainText(review.text);
     const content = this.cleanNormalizedText(rawContent);
 
-    if (content.length < 40) {
+    const hasProblemSignal = this.hasReviewProblemSignal(content);
+
+    if (content.length < (hasProblemSignal ? 20 : 40)) {
       return false;
     }
 
@@ -488,6 +517,26 @@ export class GooglePlayCollector
     return !blockedWords.some((word) =>
       content.includes(this.cleanNormalizedText(word)),
     );
+  }
+
+  /** Returns true when a review contains a concrete complaint or request. */
+  private hasReviewProblemSignal(content: string): boolean {
+    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|broken|slow|lag|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible|need|needs|wish|request|should add|please add|paywall|subscription|ads?|privacy)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|إعلانات|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
+      content,
+    );
+  }
+
+  /** Prioritizes low-rated and complaint-bearing reviews before saving. */
+  private reviewProblemPriority(review: GooglePlayReview): number {
+    const content = this.cleanNormalizedText(
+      this.cleanPlainText(review.text),
+    );
+    const score = Number(review.score);
+    const lowRatingBonus =
+      Number.isFinite(score) && score > 0 && score <= 3 ? 3 : 0;
+    const complaintBonus = this.hasReviewProblemSignal(content) ? 5 : 0;
+
+    return complaintBonus + lowRatingBonus + Math.min(review.thumbsUp ?? 0, 5) / 10;
   }
 
   /**

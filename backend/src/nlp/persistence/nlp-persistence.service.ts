@@ -46,8 +46,12 @@ export class NlpPersistenceService {
       command.collectionJobId,
     );
 
-    await this.ensureCollectionJobExists(collectionJobId);
-
+    /*
+     * Do not issue a separate collectionJob.findUnique() before every upsert.
+     * The database foreign key already guarantees referential integrity and
+     * handlePersistenceError maps P2003/P2025 to NotFoundException. Removing
+     * this redundant remote query saves one Supabase round-trip per run.
+     */
     const persistenceData = this.buildPersistenceData(command);
 
     try {
@@ -94,30 +98,6 @@ export class NlpPersistenceService {
   }
 
   /**
-   * Ensures that the referenced collection job exists.
-   *
-   * @param collectionJobId Collection job identifier.
-   */
-  private async ensureCollectionJobExists(
-    collectionJobId: string,
-  ): Promise<void> {
-    const collectionJob = await this.prisma.collectionJob.findUnique({
-      where: {
-        id: collectionJobId,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!collectionJob) {
-      throw new NotFoundException(
-        `Collection job with ID "${collectionJobId}" was not found.`,
-      );
-    }
-  }
-
-  /**
    * Converts the persistence command into data matching the NlpAnalysis model.
    *
    * @param command NLP analysis persistence command.
@@ -156,19 +136,19 @@ export class NlpPersistenceService {
    * @returns Prisma-compatible JSON value.
    */
   private toJsonValue(value: unknown): Prisma.InputJsonValue {
-    const serializedValue = JSON.stringify(value);
-
-    if (serializedValue === undefined) {
+    if (value === undefined) {
       throw new BadRequestException(
         'NLP analysis contains a value that cannot be stored as JSON.',
       );
     }
 
-    try {
-      return JSON.parse(serializedValue) as Prisma.InputJsonValue;
-    } catch {
-      throw new BadRequestException('NLP analysis contains invalid JSON data.');
-    }
+    /*
+     * NLP output is assembled from plain objects, arrays, strings, numbers,
+     * booleans, and null. Avoid JSON.stringify + JSON.parse for every persisted
+     * column because that repeatedly copies the full analysis payload before the
+     * remote Supabase upsert. Prisma performs the final JSON serialization once.
+     */
+    return value as Prisma.InputJsonValue;
   }
 
   /**

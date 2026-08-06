@@ -24,13 +24,11 @@ import { AiOutputValidationStage } from './pipeline/stages/ai-output-validation.
 import { CommunityAiAnalysisStage } from './pipeline/stages/community-ai-analysis.stage';
 import { CollectionJobResolutionStage } from './pipeline/stages/collection-job-resolution.stage';
 import { CoreIdeaGenerationStage } from './pipeline/stages/core-idea-generation.stage';
-import { DataCollectionStage } from './pipeline/stages/data-collection.stage';
 import { DataSourceSelectionStage } from './pipeline/stages/data-source-selection.stage';
 import { DuplicateCheckStage } from './pipeline/stages/duplicate-check.stage';
 import { EntitlementCheckStage } from './pipeline/stages/entitlement-check.stage';
 import { FinalizationStage } from './pipeline/stages/finalization.stage';
 import { IdeaPersistenceStage } from './pipeline/stages/idea-persistence.stage';
-import { NlpAnalysisStage } from './pipeline/stages/nlp-analysis.stage';
 import { OpportunityRankingStage } from './pipeline/stages/opportunity-ranking.stage';
 import { PromptBuildingStage } from './pipeline/stages/prompt-building.stage';
 import { RequestValidationStage } from './pipeline/stages/request-validation.stage';
@@ -137,8 +135,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     EntitlementCheckStage,
     DataSourceSelectionStage,
     CollectionJobResolutionStage,
-    DataCollectionStage,
-    NlpAnalysisStage,
     CommunityAiAnalysisStage,
     OpportunityRankingStage,
     PromptBuildingStage,
@@ -148,7 +144,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
     IdeaPersistenceStage,
     FinalizationStage,
 
-
     {
       provide: IDEA_GENERATION_STAGES,
       inject: [
@@ -156,9 +151,7 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         EntitlementCheckStage,
         DataSourceSelectionStage,
         CollectionJobResolutionStage,
-        DataCollectionStage,
-        NlpAnalysisStage,
-        CommunityAiAnalysisStage,
+                CommunityAiAnalysisStage,
         OpportunityRankingStage,
         PromptBuildingStage,
         CoreIdeaGenerationStage,
@@ -172,8 +165,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         entitlementCheckStage: EntitlementCheckStage,
         dataSourceSelectionStage: DataSourceSelectionStage,
         collectionJobResolutionStage: CollectionJobResolutionStage,
-        dataCollectionStage: DataCollectionStage,
-        nlpAnalysisStage: NlpAnalysisStage,
         communityAiAnalysisStage: CommunityAiAnalysisStage,
         opportunityRankingStage: OpportunityRankingStage,
         promptBuildingStage: PromptBuildingStage,
@@ -187,8 +178,6 @@ import { IdeaUnlockOutputParserService } from './services/idea-unlock-output-par
         entitlementCheckStage,
         dataSourceSelectionStage,
         collectionJobResolutionStage,
-        dataCollectionStage,
-        nlpAnalysisStage,
         communityAiAnalysisStage,
         opportunityRankingStage,
         promptBuildingStage,

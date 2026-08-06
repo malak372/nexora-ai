@@ -137,6 +137,31 @@ export class TopicExtractionService {
     }
 
     const topicRules = await this.topicRuleService.getRules(language);
+
+    return this.collectTopics(keywords, (normalizedKeyword) =>
+      this.findCanonicalTopic(normalizedKeyword) ??
+      this.findAdministratorTopic(normalizedKeyword, topicRules),
+    );
+  }
+
+  /**
+   * Resolves only built-in canonical topics without database access.
+   *
+   * The idea-generation fast path uses this method because the following
+   * Community AI stage performs the authoritative semantic synthesis. Stable
+   * canonical labels are preserved while the remote topic-rule round trip is
+   * removed from the critical path.
+   */
+  extractCanonical(keywords: readonly WeightedKeyword[]): WeightedTopic[] {
+    return this.collectTopics(keywords, (normalizedKeyword) =>
+      this.findCanonicalTopic(normalizedKeyword),
+    );
+  }
+
+  private collectTopics(
+    keywords: readonly WeightedKeyword[],
+    resolveTopic: (normalizedKeyword: string) => string | null,
+  ): WeightedTopic[] {
     const topicFrequencyMap = new Map<string, number>();
 
     for (const keyword of keywords) {
@@ -146,9 +171,7 @@ export class TopicExtractionService {
         continue;
       }
 
-      const topic =
-        this.findCanonicalTopic(normalizedKeyword) ??
-        this.findAdministratorTopic(normalizedKeyword, topicRules);
+      const topic = resolveTopic(normalizedKeyword);
 
       if (!topic || !this.isSafeTopicLabel(topic)) {
         continue;

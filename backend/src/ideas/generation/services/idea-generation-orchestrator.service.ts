@@ -224,6 +224,9 @@ export class IdeaGenerationOrchestratorService {
       evidenceRecoveryAttempts: checkpoint.evidenceRecoveryAttempts ?? 0,
       evidenceRecoveryCollectionJobIds:
         checkpoint.evidenceRecoveryCollectionJobIds ?? [],
+      // Checkpoints created before multi-domain evidence support do not contain
+      // this field. Defaulting keeps old paused/retrying runs resumable.
+      domainEvidence: checkpoint.domainEvidence ?? [],
       createdAt: new Date(checkpoint.createdAt),
     };
 

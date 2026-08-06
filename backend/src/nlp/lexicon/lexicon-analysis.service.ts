@@ -225,7 +225,7 @@ export class LexiconAnalysisService {
       normalizedLexicons[type] = [
         ...new Set(
           (lexicons[type] ?? [])
-            .map((term) => this.normalizeText(term))
+            .map((term) => this.normalizeSearchableText(term))
             .filter(Boolean),
         ),
       ];
@@ -245,16 +245,18 @@ export class LexiconAnalysisService {
     cleanedText: string,
     lexicons: LexiconsByType,
   ): Partial<Record<NlpLexiconType, string[]>> {
-    const normalizedText = this.normalizeText(cleanedText);
+    const normalizedText = this.normalizeSearchableText(cleanedText);
     const matches: Partial<Record<NlpLexiconType, string[]>> = {};
 
     if (!normalizedText) {
       return matches;
     }
 
+    const paddedText = ` ${normalizedText} `;
+
     for (const type of this.getLexiconTypes()) {
       const matchedTerms = lexicons[type].filter((term) =>
-        this.containsTerm(normalizedText, term),
+        paddedText.includes(` ${term} `),
       );
 
       if (matchedTerms.length > 0) {
@@ -265,32 +267,12 @@ export class LexiconAnalysisService {
     return matches;
   }
 
-  /**
-   * Determines whether normalized text contains a complete lexicon term.
-   *
-   * Unicode-aware letter and number boundaries allow matches beside
-   * punctuation while preventing partial-word matches.
-   *
-   * @param normalizedText Normalized text.
-   * @param normalizedTerm Normalized lexicon term.
-   * @returns True when the complete term appears in the text.
-   */
-  private containsTerm(
-    normalizedText: string,
-    normalizedTerm: string,
-  ): boolean {
-    if (!normalizedText || !normalizedTerm) {
-      return false;
-    }
-
-    const escapedTerm = this.escapeRegExp(normalizedTerm);
-
-    const pattern = new RegExp(
-      `(?<![\\p{L}\\p{N}_])${escapedTerm}(?![\\p{L}\\p{N}_])`,
-      'iu',
-    );
-
-    return pattern.test(normalizedText);
+  /** Converts punctuation to spaces once so full-term matching uses fast string lookup. */
+  private normalizeSearchableText(value: string): string {
+    return this.normalizeText(value)
+      .replace(/[^\p{L}\p{M}\p{N}_]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   /**
@@ -377,16 +359,6 @@ export class LexiconAnalysisService {
       .toLocaleLowerCase()
       .trim()
       .replace(/\s+/gu, ' ');
-  }
-
-  /**
-   * Escapes a value before inserting it into a regular expression.
-   *
-   * @param value Raw regular-expression value.
-   * @returns Escaped value.
-   */
-  private escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   }
 
   /**

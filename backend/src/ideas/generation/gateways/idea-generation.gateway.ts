@@ -140,7 +140,16 @@ export class IdeaGenerationGateway implements OnModuleInit, OnModuleDestroy {
     }
 
     await client.join(this.roomName(runId));
-    client.emit(IDEA_GENERATION_SOCKET_EVENTS.SNAPSHOT, snapshot);
+
+    /*
+     * A stage may advance between the ownership read above and room join.
+     * Reload after joining so the client receives the newest durable state,
+     * while any concurrent realtime event is already captured by the room.
+     */
+    const latestSnapshot =
+      (await this.loadOwnedSnapshot(userId, runId)) ?? snapshot;
+
+    client.emit(IDEA_GENERATION_SOCKET_EVENTS.SNAPSHOT, latestSnapshot);
 
     acknowledge({ success: true, runId });
   }

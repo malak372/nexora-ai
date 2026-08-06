@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { LanguageCode, NlpLexiconType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -27,8 +27,52 @@ export type GroupedNlpLexiconWords = Record<NlpLexiconType, readonly string[]>;
  * @author Eman
  */
 @Injectable()
-export class NlpLexiconService {
+export class NlpLexiconService implements OnModuleInit {
+  /**
+   * Lexicons change rarely but were previously loaded from the remote database
+   * for every generated idea. Keep a short process-local cache so repeated
+   * generation runs avoid the same Supabase round-trip without changing the
+   * amount of community evidence or the NLP rules.
+   */
+  private readonly groupedCache = new Map<
+    LanguageCode,
+    {
+      readonly expiresAt: number;
+      readonly value: Record<NlpLexiconType, string[]>;
+    }
+  >();
+
+  private readonly groupedRequests = new Map<
+    LanguageCode,
+    Promise<Record<NlpLexiconType, string[]>>
+  >();
+
+  private readonly cacheTtlMs = 10 * 60 * 1000;
+  private readonly logger = new Logger(NlpLexiconService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Starts warming the English and language-neutral lexicons during backend
+   * startup. The work is intentionally not awaited, so application startup is
+   * not delayed, while the first generation run usually receives a warm cache.
+   */
+  onModuleInit(): void {
+    void Promise.allSettled([
+      this.getGroupedWords(LanguageCode.EN),
+      this.getGroupedWords(LanguageCode.ANY),
+    ]).then((results) => {
+      const rejected = results.filter(
+        (result) => result.status === 'rejected',
+      ).length;
+
+      if (rejected > 0) {
+        this.logger.warn(
+          `NLP lexicon warmup completed with ${rejected} failed request(s); normal lazy loading remains available.`,
+        );
+      }
+    });
+  }
 
   /**
    * Returns active lexicon terms for one category and target language.
@@ -74,6 +118,37 @@ export class NlpLexiconService {
   async getGroupedWords(
     language: LanguageCode,
   ): Promise<Record<NlpLexiconType, string[]>> {
+    const now = Date.now();
+    const cached = this.groupedCache.get(language);
+
+    if (cached && cached.expiresAt > now) {
+      return this.cloneGroupedWords(cached.value);
+    }
+
+    const inFlight = this.groupedRequests.get(language);
+    if (inFlight) {
+      return this.cloneGroupedWords(await inFlight);
+    }
+
+    const request = this.loadGroupedWords(language);
+    this.groupedRequests.set(language, request);
+
+    try {
+      const value = await request;
+      this.groupedCache.set(language, {
+        value,
+        expiresAt: Date.now() + this.cacheTtlMs,
+      });
+      return this.cloneGroupedWords(value);
+    } finally {
+      this.groupedRequests.delete(language);
+    }
+  }
+
+  /** Loads one language from Prisma when the cache is cold. */
+  private async loadGroupedWords(
+    language: LanguageCode,
+  ): Promise<Record<NlpLexiconType, string[]>> {
     const lexicons = await this.prisma.nlpLexicon.findMany({
       where: {
         isActive: true,
@@ -84,12 +159,8 @@ export class NlpLexiconService {
         type: true,
       },
       orderBy: [
-        {
-          type: Prisma.SortOrder.asc,
-        },
-        {
-          word: Prisma.SortOrder.asc,
-        },
+        { type: Prisma.SortOrder.asc },
+        { word: Prisma.SortOrder.asc },
       ],
     });
 
@@ -104,6 +175,17 @@ export class NlpLexiconService {
     }
 
     return groupedWords;
+  }
+
+  /** Prevents callers from mutating the cached arrays. */
+  private cloneGroupedWords(
+    value: Record<NlpLexiconType, string[]>,
+  ): Record<NlpLexiconType, string[]> {
+    const clone = this.buildEmptyGroupedWords();
+    for (const type of this.getLexiconTypes()) {
+      clone[type] = [...value[type]];
+    }
+    return clone;
   }
 
   /**

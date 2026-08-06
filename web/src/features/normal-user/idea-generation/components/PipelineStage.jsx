@@ -135,18 +135,17 @@ export default function PipelineStage({
           <motion.span
             className="nx-stage-flow__spark"
             animate={
-              shouldReduceMotion
-                ? undefined
+              shouldReduceMotion || !isActive
+                ? { opacity: 0, x: '-130%' }
                 : {
                     x: ['-130%', '230%'],
                     opacity: [0, 1, 1, 0],
                   }
             }
             transition={{
-              duration: isActive ? 1.1 : 1.7,
-              repeat: Infinity,
+              duration: 1.1,
+              repeat: isActive ? Infinity : 0,
               ease: 'linear',
-              delay: index * 0.1,
             }}
           />
 

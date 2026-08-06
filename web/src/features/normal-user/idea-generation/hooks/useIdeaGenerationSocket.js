@@ -21,9 +21,63 @@ const SOCKET_URL =
   process.env.REACT_APP_API_URL?.replace(/\/$/, '') ||
   'http://localhost:3000';
 
-const SOCKET_RECONCILIATION_MS = 4_000;
+const SOCKET_RECONCILIATION_MS = 2_500;
 const FALLBACK_RECONCILIATION_MS = 2_000;
 const RATE_LIMIT_RETRY_MS = 15_000;
+
+const STAGE_SEQUENCE = new Map([
+  ['request-validation', 1],
+  ['entitlement-check', 2],
+  ['domain-resolution', 3],
+  ['data-source-selection', 4],
+  ['collection-job-resolution', 5],
+  ['data-collection', 6],
+  ['nlp-analysis', 7],
+  ['community-ai-analysis', 8],
+  ['opportunity-ranking', 9],
+  ['prompt-building', 10],
+  ['core-idea-generation', 11],
+  ['ai-output-validation', 12],
+  ['duplicate-check', 13],
+  ['idea-persistence', 14],
+  ['full-abstract-generation', 15],
+  ['technology-stack-generation', 16],
+  ['system-architecture-generation', 17],
+  ['database-design-generation', 18],
+  ['mvp-features-generation', 19],
+  ['value-proposition-generation', 20],
+  ['revenue-model-generation', 21],
+  ['local-regulations-generation', 22],
+  ['budget-estimation-generation', 23],
+  ['feasibility-assessment-generation', 24],
+  ['implementation-timeline-generation', 25],
+  ['market-potential-generation', 26],
+  ['nlp-executive-summary-generation', 27],
+  ['community-feedback-summary-generation', 28],
+  ['finalization', 99],
+]);
+
+function resolveForwardStage(currentKey, incomingKey) {
+  if (!incomingKey) return currentKey ?? null;
+  if (!currentKey) return incomingKey;
+
+  const currentSequence = STAGE_SEQUENCE.get(currentKey) ?? 0;
+  const incomingSequence = STAGE_SEQUENCE.get(incomingKey) ?? 0;
+  return incomingSequence >= currentSequence ? incomingKey : currentKey;
+}
+
+function resolveFurthestStageKey(stages = []) {
+  return stages.reduce((resolvedKey, stage) => {
+    const stageKey = stage?.stageKey ?? stage?.key;
+    const status = String(stage?.status ?? '').toUpperCase();
+
+    if (!stageKey || !['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(status)) {
+      return resolvedKey;
+    }
+
+    return resolveForwardStage(resolvedKey, stageKey);
+  }, null);
+}
 const TERMINAL_STATUSES = new Set([
   'COMPLETED',
   'FAILED',
@@ -91,6 +145,18 @@ function mergeRunSnapshot(current, incoming) {
     ...incoming,
     id: incoming?.id ?? incoming?.runId ?? current?.id,
     runId: incoming?.runId ?? incoming?.id ?? current?.runId,
+    ideaId: incoming?.ideaId ?? current?.ideaId ?? null,
+    startedAt: incoming?.startedAt ?? current?.startedAt ?? null,
+    completedAt: incoming?.completedAt ?? current?.completedAt ?? null,
+    cancelRequestedAt:
+      incoming?.cancelRequestedAt ?? current?.cancelRequestedAt ?? null,
+    currentStageKey: resolveForwardStage(
+      current?.currentStageKey,
+      resolveForwardStage(
+        incoming?.currentStageKey,
+        resolveFurthestStageKey(incoming?.stages ?? []),
+      ),
+    ),
     progressPercent: Math.max(
       Number(current?.progressPercent ?? 0),
       Number(incoming?.progressPercent ?? 0),
@@ -161,6 +227,8 @@ export function useIdeaGenerationSocket(runId) {
 
     mountedRef.current = true;
     socketProvenRef.current = false;
+    setRun(null);
+    runRef.current = null;
 
     const clearReconciliationTimer = () => {
       if (reconciliationTimerRef.current) {
@@ -202,7 +270,8 @@ export function useIdeaGenerationSocket(runId) {
       .finally(() => scheduleReconciliation(FALLBACK_RECONCILIATION_MS));
 
     const socket = io(`${SOCKET_URL}/idea-generation`, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
+      upgrade: false,
       auth: (callback) => {
         callback({ token: getAccessToken() });
       },
@@ -232,9 +301,10 @@ export function useIdeaGenerationSocket(runId) {
           setError('');
           setErrorStatus(null);
 
-          // Reconcile once after joining so no event can be missed between the
-          // initial HTTP request and room subscription.
-          loadSnapshot({ silent: true }).catch(() => undefined);
+          /*
+           * joinRun emits an authoritative socket snapshot before the
+           * acknowledgement, so another HTTP request here only adds latency.
+           */
           return;
         }
 
@@ -276,15 +346,34 @@ export function useIdeaGenerationSocket(runId) {
         const stages = mergeStage(current?.stages ?? [], payload);
 
         return {
-          ...(current ?? { id: runId, runId, stages: [] }),
+          ...(current ?? {
+            id: runId,
+            runId,
+            status: 'QUEUED',
+            progressPercent: 0,
+            currentStageKey: null,
+            startedAt: null,
+            stages: [],
+          }),
+          status:
+            current?.status === 'QUEUED' &&
+            String(payload.status ?? '').toUpperCase() === 'RUNNING'
+              ? 'RUNNING'
+              : current?.status ?? 'RUNNING',
+          startedAt:
+            current?.startedAt ??
+            (String(payload.status ?? '').toUpperCase() === 'RUNNING'
+              ? payload.startedAt ?? null
+              : null),
           progressPercent: Math.max(
             Number(current?.progressPercent ?? 0),
             Number(payload.progressPercent ?? 0),
           ),
-          currentStageKey:
-            payload.status === 'RUNNING'
-              ? payload.stageKey
-              : current?.currentStageKey,
+          currentStageKey: ['RUNNING', 'COMPLETED', 'SUCCEEDED', 'SKIPPED'].includes(
+            String(payload.status ?? '').toUpperCase(),
+          )
+            ? resolveForwardStage(current?.currentStageKey, payload.stageKey)
+            : current?.currentStageKey,
           stages,
         };
       });

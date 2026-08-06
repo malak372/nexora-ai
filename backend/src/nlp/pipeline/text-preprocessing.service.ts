@@ -175,6 +175,8 @@ type LanguageResolvedTextItem = CleanedTextItem & {
  */
 @Injectable()
 export class TextPreprocessingService {
+  private static readonly MAX_FAST_ANALYSIS_TEXTS = 14;
+
   private readonly logger = new Logger(TextPreprocessingService.name);
 
   constructor(
@@ -200,7 +202,9 @@ export class TextPreprocessingService {
     domainKeywords: ReadonlyArray<string>,
     fallbackLanguage: LanguageCode = LanguageCode.EN,
   ): TextPreprocessingOutput {
-    const cleanedItems: CleanedTextItem[] = inputs.map((input) => ({
+    const selectedInputs = this.selectFastAnalysisInputs(inputs);
+
+    const cleanedItems: CleanedTextItem[] = selectedInputs.map((input) => ({
       input,
       cleaning: this.textCleaningService.clean(input.content),
     }));
@@ -301,6 +305,49 @@ export class TextPreprocessingService {
       irrelevantTextsRemoved,
       initialAnalysisResults: this.buildInitialAnalysisResults(relevantTexts),
     };
+  }
+
+
+  /**
+   * Keeps a broad, evidence-ranked corpus for the synchronous evidence-preparation pass
+   * pass. This prevents long repository comments and low-signal records from
+   * multiplying the cost of language detection, regex filters, lexicon scans,
+   * problem extraction, and confidence calculations.
+   *
+   * Posts are preferred, then concrete complaint/request signals and engagement.
+   * Up to fourteen high-signal posts and comments are retained so the AI receives broad evidence without allowing an unbounded corpus.
+   */
+  private selectFastAnalysisInputs(
+    inputs: ReadonlyArray<IntelligentTextInput>,
+  ): IntelligentTextInput[] {
+    if (inputs.length <= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
+      return [...inputs];
+    }
+
+    const evidencePattern =
+      /\b(?:cannot|can't|unable|missing|unavailable|difficult|confusing|slow|crash|error|fails?|failed|problem|issue|bug|blocked|need|needs|should|please add|feature request|wish)\b/iu;
+
+    return inputs
+      .map((input, index) => {
+        const normalized = input.content.toLowerCase();
+        const evidenceBonus = evidencePattern.test(normalized) ? 100 : 0;
+        const sourceBonus = input.sourceType === 'POST' ? 40 : 0;
+        const engagement =
+          Math.min(Math.max(input.likesCount ?? 0, 0), 25) +
+          Math.min(Math.max(input.repliesCount ?? 0, 0), 25);
+
+        return {
+          input,
+          index,
+          score: evidenceBonus + sourceBonus + engagement,
+        };
+      })
+      .sort(
+        (first, second) =>
+          second.score - first.score || first.index - second.index,
+      )
+      .slice(0, TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS)
+      .map((entry) => entry.input);
   }
 
   /**

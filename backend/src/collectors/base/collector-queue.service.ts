@@ -59,6 +59,7 @@ type CollectorQueueStatus = {
  *
  * Features:
  * - Configurable concurrency.
+ * - A default parallel capacity large enough for all registered collectors.
  * - Configurable maximum waiting queue size.
  * - FIFO task scheduling.
  * - Optional platform-aware logging.
@@ -97,14 +98,18 @@ export class CollectorQueueService {
   constructor(private readonly configService: ConfigService) {
     const configuredConcurrency = this.getPositiveNumber(
       'COLLECTOR_QUEUE_CONCURRENCY',
-      4,
+      8,
     );
 
     /*
-     * The fast generation path selects at most four sources. A floor of four
-     * prevents the last source from waiting for a second 12-second queue wave.
+     * The runtime currently registers twelve collectors. A floor of sixteen
+     * allows all selected collectors to start in one wave, including a small
+     * allowance for another active job, while the queue remains globally
+     * bounded.
+     *
+     * COLLECTOR_QUEUE_CONCURRENCY may raise this value for a larger deployment.
      */
-    this.concurrency = Math.max(4, configuredConcurrency);
+    this.concurrency = Math.max(16, configuredConcurrency);
 
     this.maxQueueSize = this.getPositiveNumber('COLLECTOR_QUEUE_MAX_SIZE', 100);
   }

@@ -2899,3 +2899,127 @@
     grid-column: 2
   }
 }
+
+
+/* ==========================================================================
+   Full-viewport completion celebration
+   Rendered through React Portal into document.body so transformed layout
+   ancestors cannot constrain position: fixed.
+   ========================================================================== */
+
+.nx-celebration {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw;
+  width: 100dvw;
+  min-height: 100vh;
+  min-height: 100dvh;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  overflow: hidden;
+  isolation: isolate;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+}
+
+.nx-celebration--normal {
+  background:
+    linear-gradient(rgba(43, 48, 54, .52), rgba(43, 48, 54, .52)),
+    radial-gradient(circle at 78% 18%, rgba(92, 189, 185, .16), transparent 28%),
+    radial-gradient(circle at 18% 84%, rgba(230, 174, 185, .12), transparent 30%);
+  -webkit-backdrop-filter: blur(14px) saturate(.78);
+  backdrop-filter: blur(14px) saturate(.78);
+}
+
+.nx-celebration--normal .nx-celebration__result {
+  width: min(650px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: clamp(30px, 4vw, 48px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(255, 255, 255, .82);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(92, 189, 185, .11), transparent 29%),
+    radial-gradient(circle at 0 100%, rgba(230, 174, 185, .09), transparent 26%),
+    rgba(255, 255, 255, .985);
+  box-shadow:
+    0 36px 100px rgba(23, 34, 32, .26),
+    inset 0 1px rgba(255, 255, 255, .96);
+}
+
+.nx-celebration--normal .nx-celebration__icon {
+  width: 70px;
+  height: 70px;
+  border-radius: 22px;
+  box-shadow: 0 16px 34px rgba(47, 119, 116, .18);
+}
+
+.nx-celebration--normal .nx-celebration__eyebrow {
+  margin-top: 18px;
+}
+
+.nx-celebration--normal .nx-celebration__result h2 {
+  max-width: 560px;
+  margin: 16px auto 10px;
+  font-size: clamp(27px, 4vw, 38px);
+  line-height: 1.18;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+
+.nx-celebration--normal .nx-celebration__result > p {
+  max-width: 500px;
+  margin: 0 auto 20px;
+  color: #74807b;
+  line-height: 1.65;
+}
+
+.nx-celebration--normal .nx-celebration__result button {
+  position: relative;
+  z-index: 2;
+  min-height: 52px;
+  justify-content: center;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .nx-celebration {
+    padding: 14px;
+  }
+
+  .nx-celebration--normal .nx-celebration__result {
+    width: 100%;
+    max-height: calc(100dvh - 28px);
+    padding: 28px 20px;
+    border-radius: 24px;
+  }
+
+  .nx-celebration--normal .nx-celebration__result h2 {
+    font-size: clamp(24px, 8vw, 31px);
+  }
+
+  .nx-celebration--normal .nx-celebration__result button {
+    width: 100%;
+  }
+}
+
+/* Realtime pipeline reliability: the loader itself always rotates while its
+   card may float independently. This avoids transform animation collisions. */
+.nx-horizontal-stage--active .nx-horizontal-stage__icon > .nx-spin,
+.nx-generation-loading > .nx-spin {
+  transform-origin: 50% 50%;
+  animation: nxRealtimePipelineSpin .72s linear infinite !important;
+  will-change: transform;
+}
+
+@keyframes nxRealtimePipelineSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -77,6 +77,13 @@ export type TextInputContext = {
  */
 @Injectable()
 export class TextInputBuilderService {
+  private static readonly MAX_INPUT_CHARACTERS = 2_000;
+  private static readonly FAST_CONTEXT_TTL_MS = 60_000;
+  private static readonly fastContextCache = new Map<
+    string,
+    { readonly expiresAt: number; readonly context: TextInputContext }
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -86,7 +93,35 @@ export class TextInputBuilderService {
    * @param collectionJobId Collection job identifier.
    * @returns Collection-job context and unified NLP text inputs.
    */
+  static primeFastContext(context: TextInputContext): void {
+    this.fastContextCache.set(context.collectionJobId, {
+      expiresAt: Date.now() + this.FAST_CONTEXT_TTL_MS,
+      context: {
+        ...context,
+        domain: { ...context.domain, keywords: [...context.domain.keywords] },
+        location: { ...context.location },
+        platforms: [...context.platforms],
+        inputs: context.inputs.map((input) => ({ ...input })),
+      },
+    });
+  }
+
+  private static consumeFastContext(
+    collectionJobId: string,
+  ): TextInputContext | null {
+    const cached = this.fastContextCache.get(collectionJobId);
+    if (!cached) return null;
+    this.fastContextCache.delete(collectionJobId);
+    if (cached.expiresAt <= Date.now()) return null;
+    return cached.context;
+  }
+
   async build(collectionJobId: string): Promise<TextInputContext> {
+    const fastContext = TextInputBuilderService.consumeFastContext(collectionJobId);
+    if (fastContext) {
+      return fastContext;
+    }
+
     const collectionJob = await this.prisma.collectionJob.findUnique({
       where: {
         id: collectionJobId,
@@ -131,6 +166,15 @@ export class TextInputBuilderService {
             repliesCount: true,
 
             comments: {
+              orderBy: [
+                {
+                  likesCount: 'desc',
+                },
+                {
+                  id: 'asc',
+                },
+              ],
+              take: 3,
               select: {
                 id: true,
                 content: true,
@@ -152,7 +196,9 @@ export class TextInputBuilderService {
         id: post.id,
         sourceType: 'POST',
         title: post.title,
-        content: this.mergePostTitleAndContent(post.title, post.content),
+        content: this.limitContent(
+          this.mergePostTitleAndContent(post.title, post.content),
+        ),
         language: this.parseLanguageCode(post.languageCode),
         likesCount: post.likesCount,
         repliesCount: post.repliesCount,
@@ -165,7 +211,7 @@ export class TextInputBuilderService {
           id: comment.id,
           sourceType: 'COMMENT' as const,
           postId: post.id,
-          content: comment.content,
+          content: this.limitContent(comment.content),
           language: this.parseLanguageCode(comment.languageCode),
           likesCount: comment.likesCount,
         })),
@@ -272,6 +318,22 @@ export class TextInputBuilderService {
     };
 
     return languageMap[normalizedValue] ?? languageMap[primaryLanguage] ?? null;
+  }
+
+
+  /**
+   * Bounds unusually large repository posts before expensive regex and lexicon
+   * analysis. Community evidence normally appears near the beginning of the
+   * post, while long implementation dumps and stack traces add large CPU cost.
+   */
+  private limitContent(value: string): string {
+    const normalized = value?.trim() ?? '';
+
+    if (normalized.length <= TextInputBuilderService.MAX_INPUT_CHARACTERS) {
+      return normalized;
+    }
+
+    return normalized.slice(0, TextInputBuilderService.MAX_INPUT_CHARACTERS);
   }
 
   /**

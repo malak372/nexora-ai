@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { IdeaGenerationRun, IdeaGenerationStage } from '@prisma/client';
+import {
+  IdeaGenerationRunStatus,
+  IdeaGenerationStageStatus,
+  type IdeaGenerationRun,
+  type IdeaGenerationStage,
+} from '@prisma/client';
 import { EventEmitter } from 'node:events';
 
 import type {
@@ -29,6 +34,87 @@ export class IdeaGenerationRealtimeService {
   constructor() {
     // Multiple gateway listeners may be registered during tests or hot reload.
     this.emitter.setMaxListeners(25);
+  }
+
+  /**
+   * Publishes a lightweight stage transition before the remote database write.
+   *
+   * The persisted update still follows immediately. This event only removes UI
+   * latency caused by a geographically remote PostgreSQL connection.
+   */
+  publishStageTransition(input: {
+    runId: string;
+    stageKey: string;
+    displayName: string;
+    sequence: number;
+    progressPercent: number;
+    attemptCount: number;
+    maxAttempts: number;
+    status: IdeaGenerationStageStatus;
+    resultPreview?: unknown;
+    errorMessage?: string | null;
+  }): void {
+    const now = new Date();
+
+    this.emitter.emit(
+      IDEA_GENERATION_REALTIME_INTERNAL_EVENTS.STAGE_UPDATED,
+      {
+        runId: input.runId,
+        stageKey: input.stageKey,
+        displayName: input.displayName,
+        sequence: input.sequence,
+        status: input.status,
+        progressPercent: input.progressPercent,
+        attemptCount: input.attemptCount,
+        maxAttempts: input.maxAttempts,
+        resultPreview: input.resultPreview ?? null,
+        errorMessage: input.errorMessage ?? null,
+        startedAt:
+          input.status === IdeaGenerationStageStatus.RUNNING ? now : null,
+        completedAt:
+          input.status === IdeaGenerationStageStatus.COMPLETED ||
+          input.status === IdeaGenerationStageStatus.SKIPPED ||
+          input.status === IdeaGenerationStageStatus.FAILED
+            ? now
+            : null,
+        updatedAt: now,
+      } satisfies IdeaGenerationRealtimeStagePayload,
+    );
+  }
+
+  /**
+   * Publishes run progress immediately without waiting for persistence.
+   *
+   * A later persisted snapshot replaces this optimistic event using updatedAt.
+   */
+  publishRunProgress(input: {
+    runId: string;
+    currentStageKey: string | null;
+    progressPercent: number;
+    status?: IdeaGenerationRunStatus;
+    ideaId?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  }): void {
+    const now = new Date();
+
+    this.emitter.emit(
+      IDEA_GENERATION_REALTIME_INTERNAL_EVENTS.RUN_UPDATED,
+      {
+        runId: input.runId,
+        status: input.status ?? IdeaGenerationRunStatus.RUNNING,
+        progressPercent: input.progressPercent,
+        currentStageKey: input.currentStageKey,
+        ideaId: input.ideaId ?? null,
+        errorCode: input.errorCode ?? null,
+        errorMessage: input.errorMessage ?? null,
+        cancelRequestedAt: null,
+        startedAt: null,
+        completedAt:
+          input.status === IdeaGenerationRunStatus.COMPLETED ? now : null,
+        updatedAt: now,
+      } satisfies IdeaGenerationRealtimeRunPayload,
+    );
   }
 
   /** Publishes one persisted stage snapshot. */

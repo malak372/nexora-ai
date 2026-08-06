@@ -30,6 +30,7 @@ const FEATURE_REQUEST_PATTERNS: readonly RegExp[] = [
 
 const COMPLAINT_PATTERNS: readonly RegExp[] = [
   /\b(?:cannot|can't|unable to|doesn't work|not working|failed to|fails to|crash(?:es|ed)?|freeze|frozen|lost|missing|blocked|unavailable|broken|bug|error|slow|confusing|frustrating|paywall|subscription)\b/iu,
+  /\b(?:not accurate enough|insufficient(?:ly)? accurate|inaccurate|imprecise|lacks? (?:the required )?precision|difficulty identifying|struggle(?:s|d)? to identify|cannot accurately|can't accurately)\b/iu,
   /(?:لا أستطيع|لا يمكن|لا يعمل|ما بشتغل|فشل|يتعطل|تعطل|مفقود|محجوب|غير متاح|بطيء|مربك|اشتراك|مدفوع)/iu,
 ];
 
@@ -162,13 +163,20 @@ export class IndependentEvidenceVerificationService {
       readonly author: string | null;
     }>,
   ): RankedIdeaOpportunity {
-    const resolvedEvidence = candidate.evidenceSamples
-      .map((sample) => this.resolveEvidence(sample, records))
-      .filter((evidence): evidence is IndependentEvidence => Boolean(evidence));
-
-    const qualifyingEvidence = this.deduplicateIndependentEvidence(
-      resolvedEvidence.filter((evidence) => evidence.qualifiesForRecurrence),
+    const resolvedEvidence = this.deduplicateIndependentEvidence(
+      candidate.evidenceSamples
+        .map((sample) => this.resolveEvidence(sample, records))
+        .filter((evidence): evidence is IndependentEvidence => Boolean(evidence)),
     ).slice(0, MAX_VERIFIED_EVIDENCE_SAMPLES);
+
+    const directEvidence = resolvedEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.UNKNOWN &&
+        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION,
+    );
+    const qualifyingEvidence = directEvidence.filter(
+      (evidence) => evidence.qualifiesForRecurrence,
+    );
 
     const verifiedCount = qualifyingEvidence.length;
     const verifiedSourceCount = new Set(
@@ -207,10 +215,24 @@ export class IndependentEvidenceVerificationService {
       0,
       candidate.evidenceScore - verifiedEvidenceScore,
     );
+    const unknownOnlyEvidence =
+      resolvedEvidence.length > 0 && directEvidence.length === 0;
+    const unsupportedProblemPenalty = unknownOnlyEvidence ? 0.22 : 0;
     const adjustedFinalScore = Math.max(
       0,
-      Number((candidate.finalScore - evidencePenalty * 0.35).toFixed(4)),
+      Number(
+        (
+          candidate.finalScore -
+          evidencePenalty * 0.35 -
+          unsupportedProblemPenalty
+        ).toFixed(4),
+      ),
     );
+
+    if (unknownOnlyEvidence) {
+      disqualificationReasons.add('NO_DIRECT_EVIDENCE');
+      disqualificationReasons.add('LOW_EVIDENCE_QUALITY');
+    }
 
     /*
      * A candidate that passes the recurrence and source-diversity gate may be
@@ -235,13 +257,19 @@ export class IndependentEvidenceVerificationService {
     return {
       ...candidate,
       frequency: verifiedCount,
-      evidenceSamples: qualifyingEvidence.map((evidence) => evidence.text),
+      /*
+       * Preserve every resolved direct sample for downstream ranking and prompt
+       * grounding. Only qualifyingEvidence contributes to recurrence counts;
+       * an exact one-off developer report must not disappear merely because it
+       * has not reached the multi-source recurrence gate.
+       */
+      evidenceSamples: directEvidence.map((evidence) => evidence.text),
       evidenceScore: verifiedEvidenceScore,
       finalScore: adjustedFinalScore,
       selectionEligible:
         recurrenceEligible && disqualificationReasons.size === 0,
       disqualificationReasons: [...disqualificationReasons],
-      independentEvidence: resolvedEvidence,
+      independentEvidence: directEvidence,
       verifiedIndependentEvidenceCount: verifiedCount,
       verifiedIndependentSourceCount: verifiedSourceCount,
     };
@@ -263,7 +291,8 @@ export class IndependentEvidenceVerificationService {
       return (
         normalizedRecord === normalizedSample ||
         normalizedRecord.includes(normalizedSample) ||
-        normalizedSample.includes(normalizedRecord)
+        normalizedSample.includes(normalizedRecord) ||
+        this.hasStrongTokenContainment(normalizedSample, normalizedRecord)
       );
     });
 
@@ -299,7 +328,24 @@ export class IndependentEvidenceVerificationService {
     }
 
     if (REVIEW_SOURCE_KEYS.has(sourceKey)) {
-      return INDEPENDENT_EVIDENCE_KINDS.REVIEW;
+      if (!isComment) {
+        return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
+      }
+
+      if (FEATURE_REQUEST_PATTERNS.some((pattern) => pattern.test(text))) {
+        return INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST;
+      }
+
+      if (
+        COMPLAINT_PATTERNS.some((pattern) => pattern.test(text)) ||
+        /\b(?:can'?t|cant|is it possible|is it possable|can i|could i)\b/iu.test(
+          text,
+        )
+      ) {
+        return INDEPENDENT_EVIDENCE_KINDS.REVIEW;
+      }
+
+      return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
     }
 
     if (FEATURE_REQUEST_PATTERNS.some((pattern) => pattern.test(text))) {
@@ -420,9 +466,24 @@ export class IndependentEvidenceVerificationService {
     return value
       .normalize('NFKC')
       .toLocaleLowerCase()
-      .replace(/[`*_>#()[\]{}]/gu, ' ')
+      .replace(/<[^>]+>/gu, ' ')
+      .replace(/&(?:nbsp|amp|quot|apos|lt|gt);/giu, ' ')
+      .replace(/[`*_>#()[\]{}.,!?;:\/'"“”‘’|+=~-]/gu, ' ')
       .replace(/\s+/gu, ' ')
       .trim();
+  }
+
+  /** Resolves harmless formatting differences for long source excerpts. */
+  private hasStrongTokenContainment(sample: string, record: string): boolean {
+    const sampleTokens = [...new Set(sample.split(' ').filter(Boolean))];
+    const recordTokens = new Set(record.split(' ').filter(Boolean));
+
+    if (sampleTokens.length < 12 || recordTokens.size < 12) {
+      return false;
+    }
+
+    const matched = sampleTokens.filter((token) => recordTokens.has(token)).length;
+    return matched / sampleTokens.length >= 0.88;
   }
 
   private calculateEvidenceCoverage(

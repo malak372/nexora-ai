@@ -51,4 +51,14 @@ export interface SocialCollector {
    * @returns Unified collected posts.
    */
   collect(input: CollectorInput): Promise<CollectorPost[]>;
+
+  /**
+   * Runs a collection operation with request-scoped limits.
+   * Implemented centrally by BaseCollector so singleton collectors remain
+   * concurrency-safe while all active sources honour FAST_GENERATION limits.
+   */
+  runWithLimits<T>(
+    input: CollectorInput,
+    operation: () => Promise<T>,
+  ): Promise<T>;
 }
