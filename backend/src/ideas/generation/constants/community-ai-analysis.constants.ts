@@ -7,7 +7,7 @@
  * @author Malak
  */
 export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
-  'nexora_community_opportunity_analysis_v3';
+  'nexora_community_opportunity_analysis_v4';
 
 /**
  * Maximum generated tokens for one community-analysis response.
@@ -15,7 +15,7 @@ export const COMMUNITY_AI_ANALYSIS_SCHEMA_NAME =
  * The value is sufficient for a compact structured response while keeping the
  * community-analysis stage inside the bounded fast-generation budget.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 1_450;
+export const COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS = 1_400;
 
 /**
  * Low temperature keeps extraction deterministic, evidence-focused,
@@ -28,7 +28,7 @@ export const COMMUNITY_AI_ANALYSIS_TEMPERATURE = 0.1;
  *
  * Bounding the sample count reduces prompt size and provider latency.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 3;
+export const COMMUNITY_AI_ANALYSIS_MAX_SAMPLES_PER_GROUP = 4;
 
 /**
  * Maximum number of characters retained from one evidence sample.
@@ -46,12 +46,12 @@ export const COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES = 1;
 /**
  * Maximum number of opportunities accepted from one AI response.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 3;
+export const COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES = 2;
 
 /**
  * Number of domain-validation attempts using different online models.
  */
-export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 1;
+export const COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS = 2;
 
 /**
  * Maximum models routed by AiExecutionService during one attempt.
@@ -66,10 +66,10 @@ export const COMMUNITY_AI_ANALYSIS_MAX_MODELS_PER_OPERATION = 1;
  * The bounded timeout prevents the community-analysis stage from becoming a
  * bottleneck in the one-minute generation path.
  */
-export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 9_000;
+export const COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS = 6_000;
 
 /** Hard wall-clock cap for the complete online fallback chain. */
-export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 10_000;
+export const COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS = 12_500;
 
 /**
  * Disables the explicit Ollama fallback in the strict fast-generation path.

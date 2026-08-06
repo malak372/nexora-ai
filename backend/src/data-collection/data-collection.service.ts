@@ -712,15 +712,19 @@ export class DataCollectionService {
     collectionMode?: CollectorInput['collectionMode'],
     sourceKey?: string,
   ): CollectorPost[] {
-    const normalizedTerms = this.normalizeRelevanceTerms(relevanceTerms);
-    const minimumScore =
-      collectionMode === 'FAST_GENERATION' ? 35 : this.MIN_RELEVANCE_SCORE;
+    const normalizedTerms = this.expandTechnicalRelevanceTerms(
+      this.normalizeRelevanceTerms(relevanceTerms),
+    );
+    const minimumScore = this.resolveMinimumRelevanceScore(
+      sourceKey,
+      collectionMode,
+    );
 
     if (!normalizedTerms.length) {
       return posts;
     }
 
-    return posts.filter((post) => {
+    return posts.flatMap((post) => {
       const normalizedTags = this.normalizeRelevanceTerms(post.tags ?? []);
 
       const commentsBody = post.comments
@@ -730,23 +734,24 @@ export class DataCollectionService {
 
       const isMarketplaceSource =
         sourceKey === 'google-play' || sourceKey === 'app-store';
-      const relevanceBody = isMarketplaceSource
+      const isCommentContainerSource =
+        isMarketplaceSource || sourceKey === 'youtube';
+
+      const directEvidenceBody = isMarketplaceSource
         ? [commentsBody, ...normalizedTags].filter(Boolean).join(' ')
         : [post.content, commentsBody, ...normalizedTags]
             .filter(Boolean)
             .join(' ');
 
       /*
-       * Google Play and App Store descriptions are publisher-controlled
-       * marketing copy. They must not raise relevance or problem scores.
-       * Marketplace posts may enter the corpus only when their persisted
-       * reviews/comments independently match the domain and contain a direct
-       * complaint or request.
+       * Marketplace descriptions remain excluded from evidence scoring.
+       * Their title/content may still establish that the parent application is
+       * domain relevant, allowing independently problematic reviews to survive.
        */
       const baseScore = RelevanceScoreUtil.scoreText({
         title: isMarketplaceSource ? '' : post.title,
 
-        body: relevanceBody,
+        body: directEvidenceBody,
 
         domainTerms: normalizedTerms,
 
@@ -777,13 +782,44 @@ export class DataCollectionService {
         normalizedTags,
         hasExactSourceTagMatch,
       );
-      const hasCommunityProblemSignal = this.hasCommunityProblemSignal(post, sourceKey);
+      const hasCommunityProblemSignal =
+        this.hasCommunityProblemSignal(post, sourceKey);
+      const complaintComments = post.comments.filter((comment) =>
+        this.hasComplaintSignal(comment.content),
+      );
+      const hasComplaintComment = complaintComments.length > 0;
+
+      const containerDomainScore = isCommentContainerSource
+        ? RelevanceScoreUtil.scoreText({
+            title: post.title,
+            body: [post.content, ...normalizedTags].filter(Boolean).join(' '),
+            domainTerms: normalizedTerms,
+            problemTerms: [],
+            publishedAt: post.publishedAt,
+          })
+        : 0;
+
+      const technicalProblemOverride =
+        this.isTechnicalCommunitySource(sourceKey) &&
+        hasCommunityProblemSignal &&
+        this.hasTechnicalDomainAlias(
+          [post.title, post.content, commentsBody].filter(Boolean).join(' '),
+          normalizedTerms,
+        );
+
+      const commentContainerOverride =
+        isCommentContainerSource &&
+        hasComplaintComment &&
+        containerDomainScore >=
+          this.resolveContainerDomainMinimum(sourceKey, collectionMode);
 
       const accepted =
-        hasMinimumIndependentRelevance &&
-        finalScore >= minimumScore &&
-        passesGenericTitleGuard &&
-        hasCommunityProblemSignal;
+        (hasMinimumIndependentRelevance &&
+          finalScore >= minimumScore &&
+          passesGenericTitleGuard &&
+          hasCommunityProblemSignal) ||
+        technicalProblemOverride ||
+        commentContainerOverride;
 
       this.logger.debug(
         [
@@ -798,11 +834,32 @@ export class DataCollectionService {
           `genericTitleGuard=${passesGenericTitleGuard}`,
           `communityProblemSignal=${hasCommunityProblemSignal}`,
           `publisherCopyExcluded=${isMarketplaceSource}`,
+          `technicalProblemOverride=${technicalProblemOverride}`,
+          `commentContainerOverride=${commentContainerOverride}`,
+          `complaintComments=${complaintComments.length}`,
           `accepted=${accepted}`,
         ].join(' | '),
       );
 
-      return accepted;
+      if (!accepted) {
+        return [];
+      }
+
+      /*
+       * For app stores and YouTube, retain only independently problematic user
+       * comments when the parent is accepted as a domain container. The neutral
+       * publisher/video description is not treated as community evidence.
+       */
+      if (commentContainerOverride) {
+        return [
+          {
+            ...post,
+            comments: complaintComments,
+          },
+        ];
+      }
+
+      return [post];
     });
   }
 
@@ -822,13 +879,11 @@ export class DataCollectionService {
       .map((comment) => comment.content)
       .join(' ');
 
-    const complaintPattern = /(?:\b(?:cannot|can't|unable|doesn't work|not working|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu;
-
     // Marketplace descriptions are publisher marketing copy. They may describe
     // capabilities such as "adapts to your mood" but are not user complaints.
     // For app stores, only reviews/comments may establish a community problem.
     if (sourceKey === 'google-play' || sourceKey === 'app-store') {
-      return complaintPattern.test(commentsText);
+      return this.hasComplaintSignal(commentsText);
     }
 
     const content = [post.title, post.content, commentsText]
@@ -836,7 +891,112 @@ export class DataCollectionService {
       .join(' ')
       .toLowerCase();
 
-    return complaintPattern.test(content);
+    return this.hasComplaintSignal(content);
+  }
+
+  /**
+   * Detects direct complaints, failed workflows, incorrect data, and feature
+   * requests in user-controlled text.
+   */
+  private hasComplaintSignal(value: string): boolean {
+    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|not updating|outdated|stale|incorrect|wrong|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible|before departures|invalid wire type)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
+      value,
+    );
+  }
+
+  /**
+   * Technical sources use domain vocabulary that differs from end-user labels.
+   * This method recognizes transit feeds, sensor telemetry, and civic-service
+   * integration terms as aliases of Smart Cities and Transportation.
+   */
+  private hasTechnicalDomainAlias(
+    value: string,
+    normalizedTerms: readonly string[],
+  ): boolean {
+    const normalized = value.normalize('NFKC').toLowerCase();
+    const smartCitySelected = normalizedTerms.some((term) =>
+      /smart cit|transport|public transport|urban mobility|city infrastructure|internet of things|iot/iu.test(
+        term,
+      ),
+    );
+
+    if (!smartCitySelected) {
+      return false;
+    }
+
+    return /\b(?:gtfs(?:[_ -]?rt)?|general transit feed|avl feed|automatic vehicle location|train platform|platform change|arrival times?|departure times?|metro[- ]north|transit feed|parking availability|parking occupancy|street light|street lighting|traffic sensor|traffic signal|municipal service|civic service|vehicle location|sensor telemetry|iot sensor)\b/iu.test(
+      normalized,
+    );
+  }
+
+  /**
+   * Adds compact technical aliases only when the selected domain family needs
+   * them. These aliases improve scoring without polluting unrelated domains.
+   */
+  private expandTechnicalRelevanceTerms(
+    normalizedTerms: readonly string[],
+  ): string[] {
+    const smartCitySelected = normalizedTerms.some((term) =>
+      /smart cit|transport|public transport|urban mobility|city infrastructure|internet of things|iot/iu.test(
+        term,
+      ),
+    );
+
+    if (!smartCitySelected) {
+      return [...normalizedTerms];
+    }
+
+    return this.unique([
+      ...normalizedTerms,
+      'gtfs',
+      'gtfs rt',
+      'transit feed',
+      'train platform',
+      'arrival time',
+      'departure time',
+      'parking availability',
+      'parking occupancy',
+      'street light',
+      'traffic sensor',
+      'municipal service',
+      'vehicle location',
+      'iot sensor',
+    ]);
+  }
+
+  /**
+   * Recovery thresholds are source aware. Technical community sources receive
+   * a lower threshold only when a direct problem signal and technical-domain
+   * alias are both present; noisy media and publisher sources remain strict.
+   */
+  private resolveMinimumRelevanceScore(
+    sourceKey?: string,
+    collectionMode?: CollectorInput['collectionMode'],
+  ): number {
+    if (collectionMode === 'TARGETED_RECOVERY') {
+      return this.isTechnicalCommunitySource(sourceKey) ? 12 : 38;
+    }
+
+    if (collectionMode === 'FAST_GENERATION') {
+      return this.isTechnicalCommunitySource(sourceKey) ? 15 : 35;
+    }
+
+    return this.MIN_RELEVANCE_SCORE;
+  }
+
+  private resolveContainerDomainMinimum(
+    sourceKey?: string,
+    collectionMode?: CollectorInput['collectionMode'],
+  ): number {
+    if (sourceKey === 'youtube') {
+      return collectionMode === 'TARGETED_RECOVERY' ? 25 : 30;
+    }
+
+    return collectionMode === 'TARGETED_RECOVERY' ? 25 : 20;
+  }
+
+  private isTechnicalCommunitySource(sourceKey?: string): boolean {
+    return sourceKey === 'github' || sourceKey === 'stackoverflow';
   }
 
   /**
@@ -951,8 +1111,8 @@ export class DataCollectionService {
     return {
       maxFetchedPosts: Math.max(2, limits?.maxFetchedPosts ?? 2),
       maxSavedPosts: Math.max(2, limits?.maxSavedPosts ?? 2),
-      maxFetchedComments: Math.max(12, limits?.maxFetchedComments ?? 12),
-      maxSavedComments: Math.max(5, limits?.maxSavedComments ?? 5),
+      maxFetchedComments: Math.max(20, limits?.maxFetchedComments ?? 20),
+      maxSavedComments: Math.max(12, limits?.maxSavedComments ?? 12),
     };
   }
 

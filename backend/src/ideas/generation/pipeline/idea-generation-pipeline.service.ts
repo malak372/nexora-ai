@@ -297,7 +297,7 @@ export class IdeaGenerationPipelineService {
         processedStages.push(stageResult.summary);
       }
 
-      this.assertPersistedIdeaBeforeCompletion(currentContext);
+      this.assertCompletionIntegrity(currentContext);
 
       const completedRun = await this.runService.completeRun(
         currentContext.runId,
@@ -380,17 +380,72 @@ export class IdeaGenerationPipelineService {
   }
 
   /**
-   * Enforces the core integrity rule: a run cannot become COMPLETED unless an
-   * actual idea was persisted and linked to the run.
+   * Validates the only two states that may complete successfully:
+   *
+   * 1. A normal generation with a persisted idea and a validated core title.
+   * 2. A documented no-result outcome produced by the strict evidence gate.
+   *
+   * A no-result completion is intentional, not a generation failure. Later AI,
+   * persistence, and finalization stages are skipped, so no idea is created and
+   * no entitlement is consumed. The guard still rejects contradictory states
+   * such as a no-result outcome that also contains a partially persisted idea.
    */
-  private assertPersistedIdeaBeforeCompletion(
+  private assertCompletionIntegrity(
     context: IdeaGenerationContext,
   ): void {
+    if (context.noResultOutcome) {
+      this.assertValidNoResultCompletion(context);
+      return;
+    }
+
     if (!context.ideaId?.trim() || !context.coreIdea?.title?.trim()) {
       throw new ConflictException({
         code: 'IDEA_GENERATION_COMPLETED_WITHOUT_IDEA',
         message:
-          'The pipeline produced no persisted idea. Completion was blocked to preserve generation integrity.',
+          'The pipeline produced neither a persisted idea nor a documented no-result outcome. Completion was blocked to preserve generation integrity.',
+      });
+    }
+  }
+
+  /**
+   * Ensures that a successful no-result run is internally consistent.
+   *
+   * No-result is allowed only after evidence processing created the explicit
+   * NO_RECURRING_OPPORTUNITY checkpoint. It must never coexist with an idea ID,
+   * generated output IDs, or a core idea because those fields would indicate a
+   * partially executed persistence path.
+   */
+  private assertValidNoResultCompletion(
+    context: IdeaGenerationContext,
+  ): void {
+    const outcome = context.noResultOutcome;
+
+    if (!outcome || outcome.code !== 'NO_RECURRING_OPPORTUNITY') {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_INVALID_NO_RESULT_OUTCOME',
+        message:
+          'The pipeline produced an unsupported no-result outcome. Completion was blocked to preserve generation integrity.',
+      });
+    }
+
+    const hasPersistedIdea = Boolean(context.ideaId?.trim());
+    const hasCoreIdea = Boolean(context.coreIdea?.title?.trim());
+    const hasPersistedOutputs =
+      Object.keys(context.generatedOutputIdsByKey ?? {}).length > 0;
+
+    if (hasPersistedIdea || hasCoreIdea || hasPersistedOutputs) {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_CONTRADICTORY_NO_RESULT_STATE',
+        message:
+          'The pipeline produced both a no-result outcome and partial idea data. Completion was blocked to prevent an inconsistent run state.',
+      });
+    }
+
+    if (!context.collection?.collectionJobId?.trim() || !context.nlp) {
+      throw new ConflictException({
+        code: 'IDEA_GENERATION_INCOMPLETE_NO_RESULT_STATE',
+        message:
+          'The no-result outcome is missing its collection or NLP evidence checkpoint. Completion was blocked to preserve auditability.',
       });
     }
   }
@@ -540,39 +595,29 @@ export class IdeaGenerationPipelineService {
     runId: string,
     definitions: readonly IdeaGenerationStageDefinition[],
   ): Promise<void> {
-    await this.prisma.$transaction(
-      definitions.map((definition) =>
-        this.prisma.ideaGenerationStage.upsert({
-          where: {
-            runId_stageKey: {
-              runId,
-              stageKey: definition.key,
-            },
-          },
-          create: {
-            runId,
-            stageKey: definition.key,
-            displayName: definition.displayName,
-            sequence: definition.sequence,
-            status: IdeaGenerationStageStatus.PENDING,
-            progressPercent: definition.progressStart,
-            resultPreview: Prisma.JsonNull,
-            errorMessage: null,
-            startedAt: null,
-            completedAt: null,
-            attemptCount: 0,
-            maxAttempts: definition.maxAttempts,
-          },
-          update: {
-            // Preserve completed checkpoints during recovery. Only static
-            // metadata is synchronized here.
-            displayName: definition.displayName,
-            sequence: definition.sequence,
-            maxAttempts: definition.maxAttempts,
-          },
-        }),
-      ),
-    );
+    /*
+     * Generation runs are newly created before entering this pipeline. A single
+     * createMany replaces a transaction containing one upsert per stage, which
+     * removed several seconds before request-validation on remote PostgreSQL.
+     * skipDuplicates keeps the operation safe for an accidental repeated call.
+     */
+    await this.prisma.ideaGenerationStage.createMany({
+      data: definitions.map((definition) => ({
+        runId,
+        stageKey: definition.key,
+        displayName: definition.displayName,
+        sequence: definition.sequence,
+        status: IdeaGenerationStageStatus.PENDING,
+        progressPercent: definition.progressStart,
+        resultPreview: Prisma.JsonNull,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+        attemptCount: 0,
+        maxAttempts: definition.maxAttempts,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   /**
@@ -1359,9 +1404,10 @@ export class IdeaGenerationPipelineService {
               : context.prompt.responseSchema,
           }
         : null,
-      // Persisted output rows are referenced by generatedOutputIdsByKey. Keeping
-      // their full content in the checkpoint would duplicate every premium
-      // result in idea_generation_runs.context_snapshot.
+      // Persisted output rows are referenced by generatedOutputIdsByKey. An
+      // empty array after ideaId is assigned means "content compacted after
+      // persistence", not "no outputs generated". The generated IDs remain the
+      // canonical checkpoint representation.
       advancedOutputs: context.ideaId ? [] : context.advancedOutputs,
     };
 

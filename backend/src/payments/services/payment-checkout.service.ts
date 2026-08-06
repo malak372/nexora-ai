@@ -124,18 +124,24 @@ export class PaymentCheckoutService {
     const [user, settings] = await Promise.all([this.ensureEligibleUser(userId), this.getSystemSettings()]);
     const activationFee = user.accountStatus === AccountStatus.NORMAL ? settings.premiumActivationFee : new Prisma.Decimal(0);
     const total = settings.creditPrice.mul(creditsQuantity).add(activationFee);
-    const acceptance = user.accountStatus === AccountStatus.PREMIUM ? settings.premiumAcceptancePrice : settings.normalAcceptancePrice;
+    const acceptance = user.accountStatus === AccountStatus.PREMIUM
+      ? new Prisma.Decimal(0)
+      : settings.normalAcceptancePrice;
     return {
       currency: DEFAULT_PAYMENT_CURRENCY,
       accountStatus: user.accountStatus,
       creditsQuantity,
       creditPrice: settings.creditPrice.toFixed(2),
+      premiumIdeaCreditCost: settings.premiumIdeaCreditCost,
+      minimumCreditsForPremiumActivation:
+        user.accountStatus === AccountStatus.NORMAL
+          ? settings.premiumIdeaCreditCost
+          : 1,
       premiumActivationFee: settings.premiumActivationFee.toFixed(2),
       activationFeeApplied: activationFee.toFixed(2),
       creditPurchaseTotal: total.toFixed(2),
       directUnlockPrice: settings.directUnlockPrice.toFixed(2),
       normalAcceptancePrice: settings.normalAcceptancePrice.toFixed(2),
-      premiumAcceptancePrice: settings.premiumAcceptancePrice.toFixed(2),
       publicationAcceptancePrice: acceptance.toFixed(2),
       normalPublicationAdvancedPrice:
         settings.normalPublicationAdvancedPrice.toFixed(2),
@@ -167,6 +173,22 @@ export class PaymentCheckoutService {
     const providerKey = this.resolveProviderKey(paymentMethodKey);
 
     const purchasedCredits = dto.creditsQuantity;
+
+    if (
+      purchasingUser.accountStatus === AccountStatus.NORMAL &&
+      purchasedCredits < settings.premiumIdeaCreditCost
+    ) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_CREDIT_QUANTITY,
+        `A NORMAL user must purchase at least ${settings.premiumIdeaCreditCost} credits to activate Premium.`,
+        {
+          details: {
+            minimumRequiredCredits: settings.premiumIdeaCreditCost,
+            requestedCredits: purchasedCredits,
+          },
+        },
+      );
+    }
     const bonusCredits = this.calculateBonusCredits(
       purchasedCredits,
       settings.bonusThreshold,
@@ -559,6 +581,13 @@ export class PaymentCheckoutService {
   ): Promise<PaymentCheckoutResult> {
     const user = await this.ensureEligibleUser(userId);
 
+    if (user.accountStatus !== AccountStatus.NORMAL) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.INVALID_PAYMENT_PURPOSE,
+        'Premium users accept basic publication details for free.',
+      );
+    }
+
     const [settings, publication, existing] = await Promise.all([
       this.getSystemSettings(),
       this.prisma.ideaPublication.findFirst({
@@ -598,7 +627,7 @@ export class PaymentCheckoutService {
       userId,
       ideaId: null,
       publicationId,
-      amount: user.accountStatus === AccountStatus.PREMIUM ? settings.premiumAcceptancePrice : settings.normalAcceptancePrice,
+      amount: settings.normalAcceptancePrice,
       currency: DEFAULT_PAYMENT_CURRENCY,
       paymentMethodKey,
       providerKey,
@@ -1277,11 +1306,10 @@ export class PaymentCheckoutService {
       where: { key: GLOBAL_SYSTEM_SETTINGS_KEY },
       select: {
         creditPrice: true,
+        premiumIdeaCreditCost: true,
         directUnlockPrice: true,
         premiumActivationFee: true,
-        publishedIdeaPrice: true,
         normalAcceptancePrice: true,
-        premiumAcceptancePrice: true,
         normalPublicationAdvancedPrice: true,
         publicationAdvancedCreditCost: true,
         bonusThreshold: true,

@@ -34,6 +34,7 @@ import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth
 import { resolveMediaUrl } from '../../utils/mediaUrl';
 import VoxidenceMark from '../../components/brand/VoxidenceMark';
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
+import { preloadRoute } from '../../routes/routePreloaders';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -115,7 +116,7 @@ export default function NormalHeader({ onOpenMenu }) {
 
         <nav className="normal-header__nav" aria-label="Workspace navigation">
           {PRIMARY_ITEMS.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'is-active' : '')}>
+            <NavLink key={to} to={to} onMouseEnter={() => preloadRoute(to)} onFocus={() => preloadRoute(to)} className={({ isActive }) => (isActive ? 'is-active' : '')}>
               {({ isActive }) => (
                 <>
                   <Icon size={16} strokeWidth={1.9} />

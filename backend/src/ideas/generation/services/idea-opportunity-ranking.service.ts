@@ -467,9 +467,8 @@ export class IdeaOpportunityRankingService {
      * dropping otherwise valid evidence.
      */
     const hasAcceptedGrounding =
-      source === 'COMMUNITY_AI_ANALYSIS'
-        ? groundingScore >= 50
-        : source === 'COMMUNITY_LLM_ANALYSIS' && confidence >= 70;
+      groundingScore >= 50 ||
+      (source === 'COMMUNITY_LLM_ANALYSIS' && confidence >= 70);
 
     if (!hasAcceptedGrounding) {
       return false;
@@ -485,6 +484,78 @@ export class IdeaOpportunityRankingService {
         rawSample === normalizedSample ||
         rawSample.startsWith(normalizedSample) ||
         normalizedSample.startsWith(rawSample),
+    );
+  }
+
+  /**
+   * Rejects article/video/review headlines as internal problem-family titles.
+   * Ranked titles should be short reusable labels, not copied source content.
+   */
+  private isProfessionalOpportunityTitle(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    const wordCount = normalized.split(/\s+/u).length;
+
+    if (normalized.length > 96 || wordCount > 12) return false;
+
+    return !/(?:\b20\d{2}\b|\bupdate\b|\bguide\b|\bhere'?s\b|\bfirst time visiting\b|\bhow to\b|[!?]{1,})/iu.test(
+      normalized,
+    );
+  }
+
+  /**
+   * Produces a concise, auditable problem-family title from retained evidence.
+   * It uses deterministic domain patterns first and a bounded semantic phrase
+   * fallback second, so no extra AI call or latency is introduced.
+   */
+  private deriveProfessionalCommunityTitle(
+    candidate: NormalizedCandidate,
+    evidenceSamples: readonly string[],
+  ): string {
+    const context = [
+      candidate.title,
+      candidate.problem,
+      candidate.need,
+      candidate.solutionArea,
+      ...evidenceSamples,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(' ')
+      .replace(/\s+/gu, ' ')
+      .toLowerCase();
+
+    if (
+      /\b(?:fare|ticket|contactless|tube|bus|transit).{0,100}(?:confus|unclear|difficult|how to pay)|(?:confus|unclear|difficult).{0,100}\b(?:fare|ticket|contactless|transit|bus|tube)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'First-Time Transit Fare Payment Confusion';
+    }
+
+    if (/\b(?:traffic|highway|bottleneck|congestion|delay)\b/iu.test(context)) {
+      return 'Urban Traffic Bottleneck and Delay Reduction';
+    }
+
+    if (/\b(?:route|journey|navigation).{0,80}(?:confus|unclear|difficult|missing)\b/iu.test(context)) {
+      return 'Public Transport Route Guidance Friction';
+    }
+
+    const derived = this.deriveConcreteTitle(evidenceSamples);
+    if (derived && this.isProfessionalOpportunityTitle(derived)) {
+      return this.canonicalizeOpportunityTitle(derived);
+    }
+
+    const source =
+      candidate.problem ?? candidate.need ?? candidate.solutionArea ?? candidate.title;
+    const cleaned = source
+      .replace(/\([^)]*\)/gu, ' ')
+      .replace(/\b(?:20\d{2}|update|guide|video|review)\b/giu, ' ')
+      .replace(/[^\p{L}\p{N} -]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const words = cleaned.split(/\s+/u).filter(Boolean).slice(0, 9);
+
+    return this.canonicalizeOpportunityTitle(
+      words.length >= 3 ? words.join(' ') : `${candidate.title} Workflow Friction`,
     );
   }
 
@@ -522,6 +593,13 @@ export class IdeaOpportunityRankingService {
             : [],
     };
 
+    if (
+      isCommunityAiCandidate &&
+      !this.isSemanticallyAlignedWithDeclaredDomain(workingCandidate)
+    ) {
+      return null;
+    }
+
     /*
      * Reject structurally incomplete NLP opportunities. A solution area alone
      * is not a user need or problem and must not enter deterministic ranking.
@@ -538,11 +616,23 @@ export class IdeaOpportunityRankingService {
       return null;
     }
 
-    const normalizedEvidence = workingCandidate.evidenceSamples
+    /*
+     * Normalize the corpus once, but do not apply the generic diagnostic-text
+     * filter before validating Community-AI grounding. A grounded workflow
+     * report can describe confusion, friction, or a missing capability without
+     * containing classic bug words such as "error" or "crash". Applying
+     * isNonDiagnosticEvidence first previously erased those exact samples and
+     * produced the contradictory state groundingScore=100 with
+     * evidenceSamples=[] in the ranked opportunity.
+     */
+    const corpusEvidence = workingCandidate.evidenceSamples
       .map((sample) => this.normalizeEvidenceSample(sample))
       .filter(Boolean)
-      .filter((sample) => !this.isPromotionalOnlyEvidence(sample))
-      .filter((sample) => !this.isNonDiagnosticEvidence(sample));
+      .filter((sample) => !this.isPromotionalOnlyEvidence(sample));
+
+    const normalizedEvidence = corpusEvidence.filter(
+      (sample) => !this.isNonDiagnosticEvidence(sample),
+    );
 
     const directEvidence = normalizedEvidence
       .filter(
@@ -569,7 +659,7 @@ export class IdeaOpportunityRankingService {
      * the deterministic grounding score passed the accepted threshold.
      */
     const groundedCommunityEvidence = isCommunityAiCandidate
-      ? normalizedEvidence.filter((sample) =>
+      ? corpusEvidence.filter((sample) =>
           this.isAcceptedCommunityAiEvidence(workingCandidate, sample),
         )
       : [];
@@ -618,12 +708,18 @@ export class IdeaOpportunityRankingService {
     const preserveCommunityTitle =
       isCommunityAiCandidate &&
       !GENERIC_LABELS.has(normalizedTitle) &&
-      originalTitle.split(/\s+/u).length >= 3;
+      originalTitle.split(/\s+/u).length >= 3 &&
+      this.isProfessionalOpportunityTitle(originalTitle);
     const finalTitle = preserveCommunityTitle
       ? originalTitle
-      : tentativeTitle
-        ? this.canonicalizeOpportunityTitle(tentativeTitle)
-        : null;
+      : isCommunityAiCandidate
+        ? this.deriveProfessionalCommunityTitle(
+            workingCandidate,
+            titleDerivationEvidence,
+          )
+        : tentativeTitle
+          ? this.canonicalizeOpportunityTitle(tentativeTitle)
+          : null;
 
     if (!finalTitle) {
       return null;
@@ -732,6 +828,53 @@ export class IdeaOpportunityRankingService {
       ),
       evidenceSamples: boundedEvidenceSamples,
     };
+  }
+
+  /**
+   * Prevents a candidate from being assigned to a selected domain merely
+   * because the evidence mentions that domain as a dataset label, search term,
+   * quoted title, or incidental context. The actual operational problem must
+   * contain domain-specific workflow language.
+   */
+  private isSemanticallyAlignedWithDeclaredDomain(
+    candidate: NormalizedCandidate,
+  ): boolean {
+    if (!this.isJsonObject(candidate.raw)) return true;
+
+    const domainName = (this.readString(candidate.raw.domainName) ?? '')
+      .trim()
+      .toLowerCase();
+    if (!domainName) return true;
+
+    const descriptor = [
+      candidate.title,
+      candidate.problem ?? '',
+      candidate.need ?? '',
+      candidate.solutionArea ?? '',
+    ]
+      .join(' ')
+      .replace(/[“”"'][^“”"']{0,180}[“”"']/gu, ' ')
+      .replace(/\b(?:dataset|data set|search term|keyword|topic|title|query)\s+(?:for|named|called|about)?\s*[^,.!?;:]{0,100}/giu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .toLowerCase();
+
+    const domainSignals: Readonly<Record<string, readonly RegExp[]>> = {
+      'artificial intelligence': [
+        /\b(?:artificial intelligence|machine learning|deep learning|neural network|llm|large language model|prompt|inference|training model|ai model|chatbot|computer vision|natural language processing|recommendation model|predictive model)\b/iu,
+      ],
+      finance: [
+        /\b(?:finance|financial|fintech|payment|invoice|billing|budget|expense|revenue|accounting|banking|credit|loan|investment|cash flow|fraud)\b/iu,
+      ],
+      energy: [
+        /\b(?:energy|electricity|power grid|solar|wind turbine|battery|consumption|kilowatt|renewable|utility|metering|load forecast)\b/iu,
+      ],
+    };
+
+    const patterns = domainSignals[domainName];
+    if (!patterns) return true;
+
+    return patterns.some((pattern) => pattern.test(descriptor));
   }
 
   private repairTruncatedDescriptorFromEvidence(

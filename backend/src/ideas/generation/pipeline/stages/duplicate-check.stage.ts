@@ -205,11 +205,15 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       result.sameProblemFamily &&
       result.semanticSimilarity >= 0.86 &&
       result.workflowSimilarity >= 0.9;
+    const decisiveCrossFamilyWorkflow =
+      result.semanticSimilarity >= 0.8 &&
+      result.workflowSimilarity >= 0.7;
 
     return (
       exactOrNearTitle ||
       veryHighSemanticOverlap ||
-      decisiveSameFamilyWorkflow
+      decisiveSameFamilyWorkflow ||
+      decisiveCrossFamilyWorkflow
     );
   }
 

@@ -121,11 +121,22 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
         nlp: enrichedNlp,
         communityAiAnalysis: analysis,
       },
-      resultPreview: analysis.opportunities.some(
-        (opportunity) => opportunity.evidenceSamples.length > 0,
-      )
-        ? `Community AI analysis extracted ${analysis.opportunities.length} evidence-grounded opportunity candidate(s).`
-        : `Created ${analysis.opportunities.length} preliminary domain hypothesis candidate(s) because no direct community evidence was retained.`,
+      resultPreview: (() => {
+        const groundedCount = analysis.opportunities.filter(
+          (opportunity) => opportunity.evidenceSamples.length > 0,
+        ).length;
+        const hypothesisCount = analysis.opportunities.length - groundedCount;
+
+        if (groundedCount === analysis.opportunities.length) {
+          return `Community AI analysis extracted ${groundedCount} evidence-grounded opportunity candidate(s).`;
+        }
+
+        if (groundedCount > 0) {
+          return `Generated ${analysis.opportunities.length} opportunity candidate(s): ${groundedCount} grounded by retained evidence and ${hypothesisCount} preliminary hypothesis candidate(s).`;
+        }
+
+        return `Created ${hypothesisCount} preliminary domain hypothesis candidate(s) because no direct community evidence was retained.`;
+      })(),
       metadata: {
         analysisLayer: 'IDEA_OPPORTUNITY_ENRICHMENT',
         duplicatesNlpAiEnhancement: false,
@@ -209,21 +220,31 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       ]);
       const hasEvidence = Boolean(evidence);
 
+      const evidenceProblem = evidence
+        ? this.deriveProblemFromEvidence(evidence, domain.name)
+        : null;
+      const evidenceTitle = evidenceProblem
+        ? this.buildEvidenceOpportunityTitle(evidenceProblem, domain.name)
+        : null;
+
       return {
         domainName: domain.name,
         title: hasEvidence
-          ? `${domain.name} evidence-led workflow opportunity`
+          ? evidenceTitle ?? `${domain.name} evidence-led workflow opportunity`
           : `${domain.name} validation-first workflow opportunity`,
         problem: hasEvidence
-          ? `Users in ${domain.name} experience the concrete workflow friction described by the retained community sample.`
+          ? evidenceProblem ??
+            `Users in ${domain.name} experience a concrete workflow problem retained from community evidence.`
           : `A concrete community problem for ${domain.name} was not captured within the fast collection budget.`,
         unmetNeed: hasEvidence
-          ? `A focused software workflow that responds directly to the retained ${domain.name} signal.`
+          ? `A focused software workflow that directly resolves: ${evidenceProblem ?? `the retained ${domain.name} signal`}`
           : `A rapid validation workflow that discovers and tests the highest-value ${domain.name} problem before full implementation.`,
         solutionArea: hasEvidence
-          ? 'Evidence-led workflow automation and guided decision support'
+          ? this.deriveSolutionArea(evidenceProblem ?? evidence ?? '', domain.name)
           : 'Problem discovery, validation, and configurable pilot workflow',
-        affectedUsers: [`Users participating in ${domain.name} workflows`],
+        affectedUsers: hasEvidence
+          ? this.deriveAffectedUsers(evidenceProblem ?? evidence ?? '', domain.name)
+          : [`Users participating in ${domain.name} workflows`],
         evidenceSamples: evidence ? [evidence] : [],
         frequency: 1,
         severity: 'MEDIUM',
@@ -259,6 +280,121 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       apiModelId: null,
       attemptCount: 0,
     };
+  }
+
+  /**
+   * Converts retained evidence into a concise, concrete problem statement.
+   *
+   * The fallback must preserve the actual technical or operational friction
+   * instead of replacing it with a generic "described by the sample" sentence.
+   */
+  private deriveProblemFromEvidence(
+    evidence: string,
+    domainName: string,
+  ): string {
+    const normalized = evidence.replace(/\s+/gu, ' ').trim();
+
+    const explicitProblem = normalized.match(
+      /(?:my problem is|the problem is|problem[:\s]+)([^.!?]{30,360})/iu,
+    );
+    if (explicitProblem?.[1]) {
+      return this.ensureSentence(
+        explicitProblem[1]
+          .replace(/^(?:that|with)\s+/iu, '')
+          .trim(),
+      );
+    }
+
+    const difficulty = normalized.match(
+      /((?:finding|extracting|connecting|integrating|visualizing|mapping|using|debugging|validating)[^.!?]{25,360})/iu,
+    );
+    if (difficulty?.[1]) {
+      return this.ensureSentence(difficulty[1].trim());
+    }
+
+    const firstSentence =
+      normalized
+        .split(/(?<=[.!?])\s+/u)
+        .find((item) => item.trim().length >= 35)
+        ?.trim() ?? normalized.slice(0, 320).trim();
+
+    return this.ensureSentence(
+      firstSentence ||
+        `A retained ${domainName} report describes unresolved workflow friction`,
+    );
+  }
+
+  private buildEvidenceOpportunityTitle(
+    problem: string,
+    domainName: string,
+  ): string {
+    const normalized = problem.toLowerCase();
+
+    if (/b-?spline|piecewise polynomial|spline coefficient/u.test(normalized)) {
+      return 'Reliable B-Spline Coefficient Extraction and Validation';
+    }
+    if (/recommendation|recommender/u.test(normalized)) {
+      return 'Recommendation Workflow Accuracy and Validation';
+    }
+    if (/connect|integration|api/u.test(normalized)) {
+      return `${domainName} Integration Reliability`;
+    }
+
+    const words = problem
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .split(/\s+/u)
+      .filter(Boolean)
+      .slice(0, 8);
+
+    return words.length >= 3
+      ? words.map((word) => this.capitalizeWord(word)).join(' ')
+      : `${domainName} Evidence-Grounded Workflow Improvement`;
+  }
+
+  private deriveSolutionArea(problem: string, domainName: string): string {
+    const normalized = problem.toLowerCase();
+
+    if (/b-?spline|piecewise polynomial|coefficient/u.test(normalized)) {
+      return 'Statistical model coefficient extraction, verification, and visualization';
+    }
+    if (/recommendation|recommender/u.test(normalized)) {
+      return 'Recommendation quality diagnostics and explainable validation';
+    }
+    if (/connect|integration|api/u.test(normalized)) {
+      return 'Integration diagnostics and guided configuration validation';
+    }
+
+    return `${domainName} workflow diagnostics and guided decision support`;
+  }
+
+  private deriveAffectedUsers(
+    problem: string,
+    domainName: string,
+  ): string[] {
+    const normalized = problem.toLowerCase();
+
+    if (/\br\b|b-?spline|polynomial|statistical/u.test(normalized)) {
+      return ['Data analysts', 'Statistical computing researchers', 'Software developers'];
+    }
+    if (/recommendation|recommender/u.test(normalized)) {
+      return ['Recommendation-system developers', 'Data analysts', 'Product teams'];
+    }
+
+    return [`${domainName} practitioners`, 'Software developers', 'Operational analysts'];
+  }
+
+  private ensureSentence(value: string): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (!normalized) return normalized;
+
+    const capitalized =
+      normalized.charAt(0).toUpperCase() + normalized.slice(1);
+
+    return /[.!?]$/u.test(capitalized) ? capitalized : `${capitalized}.`;
+  }
+
+  private capitalizeWord(value: string): string {
+    return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
   }
 
   private extractFirstEvidence(values: readonly unknown[]): string | null {

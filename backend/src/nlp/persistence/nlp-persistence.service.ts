@@ -41,7 +41,7 @@ export class NlpPersistenceService {
    * @param command Strongly typed NLP analysis persistence command.
    * @returns The created or updated NLP analysis record.
    */
-  async saveAnalysis(command: PersistAnalysisCommand): Promise<NlpAnalysis> {
+  async saveAnalysis(command: PersistAnalysisCommand): Promise<Pick<NlpAnalysis, 'id' | 'collectionJobId' | 'createdAt' | 'updatedAt'>> {
     const collectionJobId = this.normalizeCollectionJobId(
       command.collectionJobId,
     );
@@ -65,6 +65,12 @@ export class NlpPersistenceService {
         },
         update: {
           ...persistenceData,
+        },
+        select: {
+          id: true,
+          collectionJobId: true,
+          createdAt: true,
+          updatedAt: true,
         },
       });
 

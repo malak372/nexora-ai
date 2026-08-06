@@ -22,6 +22,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
+import { preloadRoute } from '../../routes/routePreloaders';
 
 const baseItems = [
   ['/normal/dashboard', 'Home', LayoutDashboard],
@@ -70,6 +71,8 @@ export default function NormalSidebar({ isOpen, onClose }) {
             <NavLink
               key={to}
               to={to}
+              onMouseEnter={() => preloadRoute(to)}
+              onFocus={() => preloadRoute(to)}
               onClick={onClose}
               className={({ isActive }) => (isActive ? 'is-active' : '')}
             >

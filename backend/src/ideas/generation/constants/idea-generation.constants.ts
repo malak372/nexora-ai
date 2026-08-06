@@ -77,7 +77,7 @@ export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
  * providers will respond. The pipeline must never mark a run completed unless
  * a persisted idea exists and FinalizationStage succeeds.
  */
-export const IDEA_GENERATION_TARGET_BUDGET_MS = 60_000;
+export const IDEA_GENERATION_TARGET_BUDGET_MS = 120_000;
 
 /**
  * Hard safety deadline. The 60-second target is a performance objective, not
@@ -87,7 +87,7 @@ export const IDEA_GENERATION_TARGET_BUDGET_MS = 60_000;
 export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 300_000;
 
 /** Maximum provider time allocated to one core-generation candidate. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 14_000;
 
 /**
  * OpenRouter models are cut off earlier because the observed slow/failing
@@ -95,7 +95,7 @@ export const IDEA_CORE_MODEL_TIMEOUT_MS = 12_000;
  * Direct Google models keep the wider quality-safe allowance.
  */
 export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 12_000;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 16_000;
 
 /** Local core-model fallback is disabled inside the strict minute path. */
 export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
@@ -253,7 +253,7 @@ export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 30;
  * Limiting the candidate set prevents duplicate comparison
  * from becoming increasingly expensive as user history grows.
  */
-export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 40;
+export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 16;
 export const DUPLICATE_DETECTION_BATCH_SIZE = 8;
 
 /**
@@ -531,16 +531,16 @@ export type CollectionJobResolutionType =
  * initial bounded parallel collection must either provide sufficient evidence
  * or the run fails without consuming an entitlement.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 0;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
-export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.6;
+export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0;
 
 /** Minimum number of representative samples required before skipping recovery. */
-export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 3;
+export const MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY = 1;
 
 /** Minimum number of independent source families required before skipping recovery. */
-export const MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY = 2;
+export const MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY = 1;
 
 /** Minimum deterministic quality score required for an AI idea candidate. */
 export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
@@ -549,7 +549,10 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */
-export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 0;
+export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
+
+/** Skip expensive self-revision when the first pass is already usable. */
+export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 60;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -570,7 +573,7 @@ export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 1;
  * Maximum ranked opportunities available to the benchmark after the initial
  * fast path is exhausted. Opportunities four and five are fallback-only.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 3;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 2;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -603,7 +606,7 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * attempt limit from becoming inconsistent with the configured opportunity
  * and model counts.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = IDEA_BENCHMARK_MAX_CANDIDATES;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 4;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved
@@ -638,13 +641,13 @@ export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 0;
  * Number of recent generation runs inspected when rotating AI model
  * selection.
  */
-export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;
+export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 6;
 
 /** Number of recent runs used for temporary model-failure cooldown. */
-export const IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS = 2;
+export const IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS = 4;
 
 /** Repeated recent failures required before a model is cooled down. */
-export const IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD = 2;
+export const IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD = 1;
 
 /**
  * Model API identifiers excluded from the normal core-generation rotation.
@@ -657,5 +660,6 @@ export const IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS = new Set<string>([
   'nvidia/nemotron-nano-9b-v2:free',
   'cohere/north-mini-code:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
-  'poolside/laguna-s-2.1:free',
+  'mistralai/mistral-small-2603',
+  'stepfun/step-3.5-flash',
 ]);
