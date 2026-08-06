@@ -540,9 +540,14 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: var(--nx-success);
-    font-size: 0.68rem;
-    font-weight: 800;
+    color: #5cbdb9;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.nx-field__verified svg {
+    color: #5cbdb9;
 }
 
 .nx-field__control {
@@ -605,7 +610,7 @@
 }
 
 .nx-field__status-icon {
-    color: var(--nx-success);
+    color: #5cbdb9;
 }
 
 .nx-field__action {
@@ -1918,4 +1923,43 @@ input:-webkit-autofill:focus {
         padding: 0 9px;
         font-size: 0.67rem;
     }
+}
+
+/* Live account-lock countdown shown below the backend lock message. */
+.nx-form__lock-countdown {
+    width: fit-content;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 7px;
+    padding: 7px 10px;
+    border: 1px solid rgba(179, 61, 76, 0.14);
+    border-radius: 10px;
+    color: #9c3342;
+    background: rgba(255, 255, 255, 0.56);
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.nx-form__lock-countdown strong {
+    min-width: 66px;
+    color: #7f2634;
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+}
+
+/* Official Voxidence mark: identical to Home and the normal-user header. */
+.nx-brand__symbol {
+    width: 46px;
+    height: 46px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+}
+
+.nx-brand__symbol .voxidence-mark {
+    width: 46px !important;
+    height: 46px !important;
 }

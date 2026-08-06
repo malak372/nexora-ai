@@ -209,7 +209,7 @@ export default function RegisterPage() {
                                     scale: 0.96,
                                 }}
                             >
-                                <VoxidenceMark size={23} />
+                                <VoxidenceMark size={46} />
                             </motion.span>
 
                             <span className="nx-register__brand-copy">

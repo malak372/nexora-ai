@@ -2899,3 +2899,132 @@
     grid-column: 2
   }
 }
+
+/* Compact idea-generation wizard.
+ * Keeps the existing layout and behavior while fitting the active step into
+ * a shorter desktop viewport with less unnecessary vertical scrolling.
+ *
+ * @author Eman
+ */
+@media (min-width: 761px) {
+  .nx-generation-page {
+    padding-top: 14px;
+    padding-bottom: 24px;
+  }
+
+  .nx-generation-hero {
+    padding: 8px 20px 16px;
+  }
+
+  .nx-generation-hero h1 {
+    margin: 10px 0 8px;
+    font-size: clamp(34px, 4vw, 54px);
+    line-height: 1.02;
+  }
+
+  .nx-generation-hero p {
+    max-width: 720px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .nx-kicker {
+    padding: 6px 10px;
+  }
+
+  .nx-step-rail {
+    margin-bottom: 12px;
+  }
+
+  .nx-step>span {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+  }
+
+  .nx-panel {
+    min-height: 390px;
+    padding: clamp(22px, 3.2vw, 38px);
+  }
+
+  .nx-panel h2 {
+    margin: 11px 0 7px;
+    font-size: clamp(27px, 3.2vw, 40px);
+  }
+
+  .nx-panel>p,
+  .nx-panel__head p {
+    line-height: 1.55;
+  }
+
+  .nx-speech-field {
+    margin-top: 16px;
+  }
+
+  .nx-speech-field textarea {
+    min-height: 150px;
+    padding-top: 14px;
+    line-height: 1.55;
+  }
+
+  .nx-signal-tips {
+    margin-top: 10px;
+  }
+
+  .nx-signal-tips span {
+    padding: 6px 10px;
+  }
+
+  .nx-domain-selection-head,
+  .nx-location-grid,
+  .nx-review-layout {
+    margin-top: 16px;
+  }
+
+  .nx-auto-domain {
+    margin-top: 12px;
+  }
+
+  .nx-domain-grid {
+    gap: 8px;
+  }
+
+  .nx-domain-grid button {
+    min-height: 88px;
+    padding: 11px 12px;
+  }
+
+  .nx-location-grid input,
+  .nx-location-grid select {
+    min-height: 46px;
+  }
+
+  .nx-source-note {
+    margin-top: 14px;
+    padding: 13px;
+  }
+
+  .nx-review-problem,
+  .nx-review-facts article {
+    padding: 15px;
+  }
+
+  .nx-review-problem p {
+    margin-bottom: 0;
+    line-height: 1.55;
+  }
+
+  .nx-refresh-toggle,
+  .nx-generation-type {
+    margin-top: 11px;
+  }
+
+  .nx-wizard-actions {
+    padding: 13px 24px;
+  }
+
+  .nx-back-button,
+  .nx-next-button {
+    min-height: 44px;
+  }
+}

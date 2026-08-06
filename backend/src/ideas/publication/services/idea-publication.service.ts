@@ -161,6 +161,7 @@ export class IdeaPublicationService {
             allowRatings: dto.allowRatings ?? true,
             allowFeedback: dto.allowFeedback ?? true,
             allowVoting: dto.allowVoting ?? true,
+            allowAdoption: dto.allowAdoption ?? true,
           },
           update: {
             visibility: dto.visibility,
@@ -170,6 +171,7 @@ export class IdeaPublicationService {
             allowRatings: dto.allowRatings,
             allowFeedback: dto.allowFeedback,
             allowVoting: dto.allowVoting,
+            allowAdoption: dto.allowAdoption,
           },
           select: {
             id: true,
@@ -243,6 +245,25 @@ export class IdeaPublicationService {
     }
 
     return result;
+  }
+
+  /** Enables or disables future acceptances while preserving existing ones. */
+  async setAcceptanceEnabled(userId: string, ideaId: string, allowAdoption: boolean) {
+    const publication = await this.prisma.ideaPublication.findFirst({
+      where: { ideaId, publisherId: userId },
+      select: { id: true, status: true },
+    });
+    if (!publication) throw new NotFoundException('Publication not found');
+    if (publication.status === IdeaPublicationStatus.ARCHIVED) {
+      throw new BadRequestException('Acceptance cannot be changed while the publication is archived.');
+    }
+    const updated = await this.prisma.ideaPublication.update({
+      where: { id: publication.id },
+      data: { allowAdoption },
+      include: { audiences: true },
+    });
+    await this.publicationCache.invalidateDiscovery(publication.id);
+    return updated;
   }
 
   /**

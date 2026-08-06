@@ -22,10 +22,19 @@
     box-shadow: 0 10px 24px rgba(58, 126, 120, .15);
 }
 
-.vox-public-brand-mark img { width: 100%; height: 100%; object-fit: cover; }
+.vox-public-brand-mark img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 
-.vox-public-nav { gap: 1.65rem; }
-.vox-public-actions .nexora-button-primary { border-radius: 14px; }
+.vox-public-nav {
+    gap: 1.65rem;
+}
+
+.vox-public-actions .nexora-button-primary {
+    border-radius: 14px;
+}
 
 .vox-public-footer {
     border-color: rgba(56, 105, 99, .1) !important;
@@ -45,11 +54,12 @@
 .vox-public-shell .nexora-button-primary:hover {
     box-shadow: 0 18px 38px rgba(48, 116, 109, .27);
 }
+
 .vox-public-shell {
     background: #f8fbfa;
 }
 
-.vox-public-shell > header {
+.vox-public-shell>header {
     background: transparent;
 }
 
@@ -69,7 +79,7 @@
     height: 27px;
     place-items: center;
     border-radius: 10px;
-    background: rgba(255,255,255,.18);
+    background: rgba(255, 255, 255, .18);
 }
 
 .vox-navbar-cta:hover .vox-navbar-cta-logo {
@@ -97,33 +107,38 @@
         linear-gradient(135deg, #fffdfc, #faf9f6 48%, #fffdfc);
 }
 
-.vox-public-shell > header > div:first-child {
+.vox-public-shell>header>div:first-child {
     border-color: rgba(255, 253, 252, .94) !important;
-    background: linear-gradient(
-        120deg,
-        rgba(255, 253, 252, .94),
-        rgba(255, 248, 250, .91) 50%,
-        rgba(245, 251, 249, .92)
-    ) !important;
+    background: linear-gradient(120deg,
+            rgba(255, 253, 252, .94),
+            rgba(255, 248, 250, .91) 50%,
+            rgba(245, 251, 249, .92)) !important;
     box-shadow:
         0 18px 55px rgba(73, 83, 79, .11),
         inset 0 1px 0 rgba(255, 253, 252, .95) !important;
 }
 
-.vox-navbar-logo,
 .vox-navbar-cta {
-    background: linear-gradient(
-        145deg,
-        var(--public-eucalyptus-500) 0%,
-        var(--public-eucalyptus-600) 58%,
-        var(--public-eucalyptus-700) 100%
-    ) !important;
+    background: linear-gradient(145deg,
+            var(--public-eucalyptus-500) 0%,
+            var(--public-eucalyptus-600) 58%,
+            var(--public-eucalyptus-700) 100%) !important;
 }
 
 .vox-navbar-logo {
-    box-shadow:
-        0 12px 27px rgba(47, 119, 116, .24),
-        inset 0 1px 0 rgba(255, 255, 255, .32) !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible;
+}
+
+.vox-navbar-logo img {
+    display: block;
+    width: 46px !important;
+    height: 46px !important;
+    object-fit: contain;
 }
 
 .vox-navbar-cta {
@@ -162,6 +177,7 @@
 .vox-navbar-brand:hover .vox-navbar-logo {
     filter: drop-shadow(0 10px 18px rgba(47, 119, 116, .28));
 }
+
 /* Compact public footer */
 .vox-footer {
     position: relative;
@@ -199,23 +215,31 @@
     gap: 13px;
 }
 
-.vox-footer__mark {
-    display: grid;
-    width: 48px;
-    height: 48px;
-    flex: 0 0 auto;
-    place-items: center;
-    border-radius: 16px;
-    background: linear-gradient(145deg, #69b7b1 0%, #5cbdb9 58%, #4fa9a4 100%);
-    color: #fff;
-    box-shadow:
-        0 12px 26px rgba(47, 119, 116, .21),
-        inset 0 1px 0 rgba(255, 255, 255, .34);
-    transition: transform .32s cubic-bezier(.22, 1, .36, 1);
+.vox-footer__brand-mark {
+    display: block;
+    width: 54px;
+    height: 54px;
+    flex: 0 0 54px;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 14px;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible;
+    transition:
+        transform .32s cubic-bezier(.22, 1, .36, 1),
+        filter .32s ease;
 }
 
-.vox-footer__brand:hover .vox-footer__mark {
+.vox-footer__brand:hover .vox-footer__brand-mark {
     transform: rotate(-8deg) translateY(-2px) scale(1.06);
+    filter: drop-shadow(0 10px 18px rgba(47, 119, 116, .22));
+}
+
+.vox-footer__brand-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .vox-footer__brand strong,
@@ -380,5 +404,44 @@
     .vox-footer__bottom {
         flex-direction: column;
         gap: 6px;
+    }
+}
+
+/* Softer monochrome bulb used in compact public CTAs and footer branding. */
+.vox-navbar-cta-logo,
+.vox-hero-button-mark {
+    color: #f6fffd;
+}
+
+.vox-navbar-cta-logo svg,
+.vox-hero-button-mark svg {
+    filter: drop-shadow(0 0 5px rgba(239, 255, 251, .42));
+}
+
+/* Keep the public Home header dimensions aligned with the authenticated user header. */
+.vox-public-header {
+    padding: 14px 22px 0;
+}
+
+.vox-public-header__inner {
+    width: min(1500px, 100%);
+    min-height: 72px;
+    padding: 10px 12px 10px 16px;
+    border-radius: 22px;
+}
+
+.vox-public-header__mobile-menu {
+    width: min(1500px, 100%);
+}
+
+@media (max-width: 700px) {
+    .vox-public-header {
+        padding: 10px 10px 0;
+    }
+
+    .vox-public-header__inner {
+        min-height: 62px;
+        padding: 10px 12px;
+        border-radius: 17px;
     }
 }

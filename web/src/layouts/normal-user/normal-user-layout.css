@@ -497,27 +497,14 @@
 
 .normal-header__brand-mark {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
-.normal-header__brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: -50%;
-  background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, .55), transparent 65%);
-  transform: translateX(-70%) rotate(18deg);
-  animation: nx-brand-shine 4.8s ease-in-out infinite;
-}
-
+/* The official icon already contains its own glow, rounded tile, and status dot.
+ * Keep the wrapper decoration-free so it matches the home-page brand exactly. */
+.normal-header__brand-mark::after,
 .normal-header__brand-mark i {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  right: 5px;
-  top: 5px;
-  border-radius: 50%;
-  background: #84f1c1;
-  box-shadow: 0 0 12px #84f1c1;
+  display: none;
 }
 
 .normal-header__nav a {
@@ -732,21 +719,16 @@
   width: 52px;
   height: 52px;
   flex: 0 0 52px;
-  color: #fff;
-  border-radius: 17px;
-  background: linear-gradient(145deg, #69B7B1, #5CBDB9 58%, #4FA9A4);
-  box-shadow: 0 13px 28px rgba(92, 189, 185, .28), inset 0 1px 0 rgba(255, 255, 255, .35);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.normal-header--professional .normal-header__brand-mark i {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #5ee3a3;
-  box-shadow: 0 0 0 4px rgba(94, 227, 163, .14);
+.normal-header--professional .normal-header__brand-mark img {
+  width: 52px !important;
+  height: 52px !important;
+  object-fit: contain;
 }
 
 .normal-header__brand-copy {
@@ -1825,4 +1807,17 @@
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Slightly smaller official mark while preserving the shared recurring shine. */
+.normal-header--professional .normal-header__brand-mark {
+  width: 46px;
+  height: 46px;
+  flex-basis: 46px;
+}
+
+.normal-header--professional .normal-header__brand-mark .voxidence-mark,
+.normal-header--professional .normal-header__brand-mark img {
+  width: 46px !important;
+  height: 46px !important;
 }

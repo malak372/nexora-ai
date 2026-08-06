@@ -220,6 +220,7 @@ export default function PublicationDetailPage() {
   const ratingsEnabled = publication?.allowRatings !== false;
   const votingEnabled = publication?.allowVoting !== false;
   const feedbackEnabled = publication?.allowFeedback !== false;
+  const acceptanceEnabled = publication?.allowAdoption !== false;
   const enabledEngagementCount = [
     ratingsEnabled,
     votingEnabled,
@@ -562,7 +563,7 @@ export default function PublicationDetailPage() {
         </section>
       ) : null}
 
-      {!accepted ? (
+      {!accepted && acceptanceEnabled ? (
         <section className="publication-access-card">
           <div>
             <span><LockKeyhole size={16} /> PROTECTED OPPORTUNITY BRIEF</span>
@@ -577,13 +578,42 @@ export default function PublicationDetailPage() {
 
           <div className="publication-access-action">
             <div className="publication-access-action__price">
-              <small>One-time protected access</small>
-              <strong>{paymentPricing ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}` : 'Open the complete opportunity'}</strong>
-              <span><ShieldCheck size={15} /> Secure sandbox checkout</span>
+              <small>{isPremiumUser ? 'Included with Premium' : 'One-time protected access'}</small>
+              <strong>
+                {isPremiumUser
+                  ? 'Free basic access'
+                  : paymentPricing
+                    ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
+                    : 'Open the complete opportunity'}
+              </strong>
+              <span>
+                <ShieldCheck size={15} />
+                {isPremiumUser ? 'No payment or credits required' : 'Secure sandbox checkout'}
+              </span>
             </div>
-            <button type="button" className="accept-button" onClick={() => setPaymentOpen(true)}>
-              <LockKeyhole /> Unlock protected brief
+            <button
+              type="button"
+              className="accept-button"
+              disabled={busyAction === 'accept'}
+              onClick={isPremiumUser ? handleAccept : () => setPaymentOpen(true)}
+            >
+              {busyAction === 'accept' ? (
+                <LoaderCircle className="publication-spin" size={18} />
+              ) : isPremiumUser ? (
+                <Sparkles size={18} />
+              ) : (
+                <LockKeyhole />
+              )}
+              {isPremiumUser ? 'Open basic outputs' : 'Unlock protected brief'}
             </button>
+          </div>
+        </section>
+      ) : !accepted ? (
+        <section className="publication-access-card">
+          <div>
+            <span><ShieldCheck size={16} /> ACCEPTANCE PAUSED BY PUBLISHER</span>
+            <h2>This idea is currently open for discovery only.</h2>
+            <p>The publisher disabled new acceptances. Existing accepted users keep their access.</p>
           </div>
         </section>
       ) : (
@@ -708,35 +738,35 @@ export default function PublicationDetailPage() {
       {errorMessage ? <p className="publication-error">{errorMessage}</p> : null}
 
 
-      {paymentOpen
+      {paymentOpen && acceptanceEnabled
         ? createPortal(
           <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose payment method">
-          <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setPaymentOpen(false)} />
-          <section className="publication-payment-modal__panel">
-            <header>
-              <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
-              <div><span>PROTECTED ACCESS</span><h2>Unlock the complete opportunity brief</h2><p>Choose a secure test payment method. Access is granted only after verified provider confirmation.</p></div>
-              <button type="button" className="publication-payment-modal__close" onClick={() => setPaymentOpen(false)}><X size={20} /></button>
-            </header>
-            <div className="publication-payment-modal__benefits">
-              <span><CheckCircle2 size={16} /> Problem statement</span>
-              <span><CheckCircle2 size={16} /> Objectives</span>
-              <span><CheckCircle2 size={16} /> Target users</span>
-              <span><CheckCircle2 size={16} /> Accepted ideas library</span>
-            </div>
-            <div className="publication-payment-modal__methods">
-              <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
-                <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
-              </button>
-            </div>
-            <footer>
-              <div><ShieldCheck size={17} /><span><strong>Secure provider checkout</strong><small>Access is granted only after verified payment confirmation.</small></span></div>
-              <button type="button" disabled={busyAction === 'accept'} onClick={handleAccept}>
-                {busyAction === 'accept' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
-                {busyAction === 'accept' ? 'Creating checkout…' : 'Continue securely'}
-              </button>
-            </footer>
-          </section>
+            <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setPaymentOpen(false)} />
+            <section className="publication-payment-modal__panel">
+              <header>
+                <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
+                <div><span>PROTECTED ACCESS</span><h2>Unlock the complete opportunity brief</h2><p>Choose a secure test payment method. Access is granted only after verified provider confirmation.</p></div>
+                <button type="button" className="publication-payment-modal__close" onClick={() => setPaymentOpen(false)}><X size={20} /></button>
+              </header>
+              <div className="publication-payment-modal__benefits">
+                <span><CheckCircle2 size={16} /> Problem statement</span>
+                <span><CheckCircle2 size={16} /> Objectives</span>
+                <span><CheckCircle2 size={16} /> Target users</span>
+                <span><CheckCircle2 size={16} /> Accepted ideas library</span>
+              </div>
+              <div className="publication-payment-modal__methods">
+                <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
+                  <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
+                </button>
+              </div>
+              <footer>
+                <div><ShieldCheck size={17} /><span><strong>Secure provider checkout</strong><small>Access is granted only after verified payment confirmation.</small></span></div>
+                <button type="button" disabled={busyAction === 'accept'} onClick={handleAccept}>
+                  {busyAction === 'accept' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
+                  {busyAction === 'accept' ? 'Creating checkout…' : 'Continue securely'}
+                </button>
+              </footer>
+            </section>
           </div>,
           document.body,
         )
@@ -746,44 +776,44 @@ export default function PublicationDetailPage() {
       {advancedPaymentOpen
         ? createPortal(
           <div className="publication-payment-modal" role="dialog" aria-modal="true" aria-label="Choose advanced-output payment method">
-          <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setAdvancedPaymentOpen(false)} />
-          <section className="publication-payment-modal__panel publication-payment-modal__panel--advanced">
-            <header>
-              <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
-              <div>
-                <span>ADVANCED OPPORTUNITY ACCESS</span>
-                <h2>Open the complete idea workspace</h2>
-                <p>The backend determines the price and grants access only after the provider payment is verified.</p>
+            <button className="publication-payment-modal__backdrop" type="button" aria-label="Close payment" onClick={() => setAdvancedPaymentOpen(false)} />
+            <section className="publication-payment-modal__panel publication-payment-modal__panel--advanced">
+              <header>
+                <div className="publication-payment-modal__icon"><LockKeyhole size={24} /></div>
+                <div>
+                  <span>ADVANCED OPPORTUNITY ACCESS</span>
+                  <h2>Open the complete idea workspace</h2>
+                  <p>The backend determines the price and grants access only after the provider payment is verified.</p>
+                </div>
+                <button type="button" className="publication-payment-modal__close" onClick={() => setAdvancedPaymentOpen(false)}><X size={20} /></button>
+              </header>
+
+              <div className="publication-payment-modal__price">
+                <small>Advanced outputs · one-time payment</small>
+                <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
               </div>
-              <button type="button" className="publication-payment-modal__close" onClick={() => setAdvancedPaymentOpen(false)}><X size={20} /></button>
-            </header>
 
-            <div className="publication-payment-modal__price">
-              <small>Advanced outputs · one-time payment</small>
-              <strong>{paymentPricing?.normalPublicationAdvancedPrice} {paymentPricing?.currency}</strong>
-            </div>
+              <div className="publication-payment-modal__benefits">
+                <span><CheckCircle2 size={16} /> Full abstract</span>
+                <span><CheckCircle2 size={16} /> Technology and architecture</span>
+                <span><CheckCircle2 size={16} /> Feasibility and implementation</span>
+                <span><CheckCircle2 size={16} /> Business and market outputs</span>
+              </div>
 
-            <div className="publication-payment-modal__benefits">
-              <span><CheckCircle2 size={16} /> Full abstract</span>
-              <span><CheckCircle2 size={16} /> Technology and architecture</span>
-              <span><CheckCircle2 size={16} /> Feasibility and implementation</span>
-              <span><CheckCircle2 size={16} /> Business and market outputs</span>
-            </div>
+              <div className="publication-payment-modal__methods">
+                <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
+                  <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
+                </button>
+              </div>
 
-            <div className="publication-payment-modal__methods">
-              <button type="button" className={paymentMethod === 'card' ? 'active' : ''} onClick={() => setPaymentMethod('card')}>
-                <i><CreditCard size={22} /></i><span><strong>Card checkout</strong><small>Visa or Mastercard · Stripe test mode</small></span><b>{paymentMethod === 'card' ? 'Selected' : 'Choose'}</b>
-              </button>
-            </div>
-
-            <footer>
-              <div><ShieldCheck size={17} /><span><strong>Verified fulfillment</strong><small>The workspace opens only after backend reconciliation succeeds.</small></span></div>
-              <button type="button" disabled={busyAction === 'advanced-unlock'} onClick={handleAdvancedUnlock}>
-                {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
-                {busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment'}
-              </button>
-            </footer>
-          </section>
+              <footer>
+                <div><ShieldCheck size={17} /><span><strong>Verified fulfillment</strong><small>The workspace opens only after backend reconciliation succeeds.</small></span></div>
+                <button type="button" disabled={busyAction === 'advanced-unlock'} onClick={handleAdvancedUnlock}>
+                  {busyAction === 'advanced-unlock' ? <LoaderCircle className="publication-spin" /> : <LockKeyhole />}
+                  {busyAction === 'advanced-unlock' ? 'Creating checkout…' : 'Continue to payment'}
+                </button>
+              </footer>
+            </section>
           </div>,
           document.body,
         )
@@ -792,32 +822,32 @@ export default function PublicationDetailPage() {
       {reportOpen
         ? createPortal(
           <div className="publication-report-modal" role="dialog" aria-modal="true" aria-label="Report publication">
-          <button type="button" className="publication-report-modal__backdrop" aria-label="Close report" onClick={() => setReportOpen(false)} />
-          <form onSubmit={handleReport}>
-            <header>
-              <div><span>TRUST & SAFETY</span><h2>Report this publication</h2><p>Your report is private and reviewed by the Voxidence moderation team.</p></div>
-              <button type="button" onClick={() => setReportOpen(false)}><X size={19} /></button>
-            </header>
-            <label>
-              <span>Reason</span>
-              <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
-                <option value="MISLEADING">Misleading information</option>
-                <option value="SPAM">Spam or manipulation</option>
-                <option value="OFFENSIVE">Offensive content</option>
-                <option value="COPYRIGHT">Copyright concern</option>
-                <option value="PRIVACY">Privacy concern</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </label>
-            <label>
-              <span>Additional details</span>
-              <textarea value={reportDetails} minLength={5} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder="Explain what the moderation team should review." />
-            </label>
-            <footer>
-              <button type="button" onClick={() => setReportOpen(false)}>Cancel</button>
-              <button type="submit" className="is-primary" disabled={busyAction === 'report'}><Flag size={16} /> Submit report</button>
-            </footer>
-          </form>
+            <button type="button" className="publication-report-modal__backdrop" aria-label="Close report" onClick={() => setReportOpen(false)} />
+            <form onSubmit={handleReport}>
+              <header>
+                <div><span>TRUST & SAFETY</span><h2>Report this publication</h2><p>Your report is private and reviewed by the Voxidence moderation team.</p></div>
+                <button type="button" onClick={() => setReportOpen(false)}><X size={19} /></button>
+              </header>
+              <label>
+                <span>Reason</span>
+                <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
+                  <option value="MISLEADING">Misleading information</option>
+                  <option value="SPAM">Spam or manipulation</option>
+                  <option value="OFFENSIVE">Offensive content</option>
+                  <option value="COPYRIGHT">Copyright concern</option>
+                  <option value="PRIVACY">Privacy concern</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </label>
+              <label>
+                <span>Additional details</span>
+                <textarea value={reportDetails} minLength={5} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder="Explain what the moderation team should review." />
+              </label>
+              <footer>
+                <button type="button" onClick={() => setReportOpen(false)}>Cancel</button>
+                <button type="submit" className="is-primary" disabled={busyAction === 'report'}><Flag size={16} /> Submit report</button>
+              </footer>
+            </form>
           </div>,
           document.body,
         )

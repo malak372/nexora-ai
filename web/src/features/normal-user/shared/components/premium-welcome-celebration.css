@@ -31,16 +31,16 @@
 
 .premium-welcome__outer-piece {
     position: absolute;
-    top: -10vh;
+    top: -12vh;
     width: var(--piece-size);
     height: calc(var(--piece-size) * 1.75);
     opacity: 0;
-    transform: translate3d(0, -30px, 0) rotate(var(--piece-start-rotation));
+    transform: translate3d(0, -24px, 0) rotate(var(--piece-start-rotation));
+    backface-visibility: hidden;
     will-change: transform, opacity;
     animation-name: premium-welcome-confetti-fall;
-    animation-timing-function: cubic-bezier(0.2, 0.72, 0.3, 1);
-    animation-fill-mode: forwards;
-    filter: drop-shadow(0 4px 7px rgba(76, 103, 94, 0.12));
+    animation-timing-function: linear;
+    animation-fill-mode: both;
 }
 
 .premium-welcome__outer-piece--rectangle {
@@ -302,8 +302,8 @@
 
 .premium-welcome__character {
     display: inline-block;
-    color: #709b93;
-    text-shadow: 0 8px 18px rgba(112, 155, 147, 0.08);
+    color: #62bab5 !important;
+    text-shadow: 0 8px 18px rgba(98, 186, 181, 0.14);
     will-change: transform, opacity;
 }
 
@@ -351,7 +351,7 @@
     align-items: center;
     gap: 16px;
     margin: 22px 0 0;
-    color: #62887f;
+    color: #e7a7b4 !important;
     font-family: 'Inter', 'Segoe UI', sans-serif;
     font-size: clamp(1rem, 1.42vw, 1.18rem);
     font-weight: 800;
@@ -360,7 +360,7 @@
 }
 
 .premium-welcome__name-deco {
-    color: #efc0cb;
+    color: #e7a7b4 !important;
     font-size: 0.9rem;
     letter-spacing: 0;
 }
@@ -368,20 +368,20 @@
 @keyframes premium-welcome-confetti-fall {
     0% {
         opacity: 0;
-        transform: translate3d(0, -32px, 0) rotate(var(--piece-start-rotation));
+        transform: translate3d(0, -24px, 0) rotate(var(--piece-start-rotation));
     }
 
-    8% {
+    7% {
         opacity: 1;
     }
 
-    44% {
-        transform: translate3d(var(--piece-sway), 48vh, 0) rotate(280deg);
+    88% {
+        opacity: 0.96;
     }
 
     100% {
-        opacity: 0.92;
-        transform: translate3d(var(--piece-drift), 118vh, 0) rotate(680deg);
+        opacity: 0;
+        transform: translate3d(var(--piece-drift), 126vh, 0) rotate(720deg);
     }
 }
 

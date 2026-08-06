@@ -14,11 +14,20 @@
 import {
     ArrowLeft,
     Bot,
+    BrainCircuit,
+    CheckCircle2,
     Crown,
+    Database,
+    Layers3,
+    Lightbulb,
     LoaderCircle,
     MessageSquarePlus,
+    Mic,
+    MicOff,
     Send,
     Sparkles,
+    Trash2,
+    WandSparkles,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import {
@@ -35,23 +44,31 @@ import { getIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 import {
     createAiChatSocket,
     createChatSession,
+    deleteChatSession,
     listChatMessages,
     listChatSessions,
 } from '../api/aiChatApi';
 
 import '../styles/ai-chat.css';
 
-/**
- * Adds a new chat message to the current message list or updates an existing
- * message when another version of the same message is received.
- *
- * This is required because AI messages may initially arrive with a pending
- * state and later be updated while streaming or after completion.
- *
- * @param {Array<object>} items Current chat messages.
- * @param {object} message Incoming or updated message.
- * @returns {Array<object>} Updated message collection.
- */
+const STARTER_PROMPTS = [
+    {
+        icon: Layers3,
+        label: 'Design the architecture',
+        prompt: 'Design a clear system architecture for this idea and explain the role of each major component.',
+    },
+    {
+        icon: Database,
+        label: 'Plan the database',
+        prompt: 'Propose a practical database design for this idea, including the main entities and relationships.',
+    },
+    {
+        icon: Lightbulb,
+        label: 'Refine the MVP',
+        prompt: 'Help me define the strongest MVP for this idea and prioritize the features that should be built first.',
+    },
+];
+
 const mergeMessage = (items, message) => {
     if (!message?.id) return items;
 
@@ -71,17 +88,6 @@ const mergeMessage = (items, message) => {
     return next;
 };
 
-/**
- * Displays the Premium AI chat workspace for a selected idea.
- *
- * The component verifies Premium access, loads the selected idea and its
- * conversations, connects to the AI chat WebSocket, and streams assistant
- * responses into the active conversation.
- *
- * @returns {JSX.Element} Premium AI chat page.
- *
- * @author Eman
- */
 export default function AiChatPage() {
     const { ideaId } = useParams();
     const navigate = useNavigate();
@@ -91,56 +97,80 @@ export default function AiChatPage() {
         isLoading: accessLoading,
     } = useAccountAccess();
 
-    /**
-     * Keeps the current WebSocket connection without causing renders.
-     */
     const socketRef = useRef(null);
-
-    /**
-     * References the bottom of the messages list for automatic scrolling.
-     */
+    const messagesRef = useRef(null);
     const bottomRef = useRef(null);
+    const shouldAutoScrollRef = useRef(true);
+    const recognitionRef = useRef(null);
+    const voiceBaseDraftRef = useRef('');
+    const sessionRequestRef = useRef(0);
 
     const [idea, setIdea] = useState(null);
     const [sessions, setSessions] = useState([]);
     const [sessionId, setSessionId] = useState('');
+    const [loadingSessionId, setLoadingSessionId] = useState('');
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
+    const [creatingSession, setCreatingSession] = useState(false);
+    const [deletingSessionId, setDeletingSessionId] = useState('');
+    const [confirmDeleteId, setConfirmDeleteId] = useState('');
     const [error, setError] = useState('');
+    const [isListening, setIsListening] = useState(false);
+    const [voiceSupported, setVoiceSupported] = useState(true);
+    const [voiceHint, setVoiceHint] = useState('');
 
-    /**
-     * Returns the complete active session object based on the selected
-     * session identifier.
-     */
     const activeSession = useMemo(
         () => sessions.find((session) => session.id === sessionId),
         [sessions, sessionId],
     );
 
-    /**
-     * Opens a conversation and retrieves all of its stored messages.
-     *
-     * @param {string} nextSessionId Session identifier to open.
-     * @returns {Promise<void>}
-     */
     const openSession = useCallback(async (nextSessionId) => {
         if (!nextSessionId) return;
 
+        const requestId = sessionRequestRef.current + 1;
+        sessionRequestRef.current = requestId;
+
         setSessionId(nextSessionId);
+        setLoadingSessionId(nextSessionId);
+        setMessages([]);
+        setConfirmDeleteId('');
+        setError('');
+        shouldAutoScrollRef.current = true;
 
-        const result = await listChatMessages(nextSessionId);
+        try {
+            const result = await listChatMessages(nextSessionId);
 
-        setMessages(result.items);
+            if (sessionRequestRef.current !== requestId) return;
+
+            const loadedMessages = result.items || [];
+
+            setMessages(loadedMessages);
+            setSessions((current) => current.map((session) =>
+                session.id === nextSessionId
+                    ? {
+                        ...session,
+                        _count: {
+                            ...(session._count || {}),
+                            messages: loadedMessages.length,
+                        },
+                    }
+                    : session));
+        } catch (requestError) {
+            if (sessionRequestRef.current !== requestId) return;
+
+            setError(
+                requestError.message ||
+                'Chat messages could not be loaded.',
+            );
+        } finally {
+            if (sessionRequestRef.current === requestId) {
+                setLoadingSessionId('');
+            }
+        }
     }, []);
 
-    /**
-     * Loads the selected idea and its available AI chat sessions.
-     *
-     * A default conversation is automatically created when the idea does not
-     * have any previous chat sessions.
-     */
     useEffect(() => {
         if (accessLoading || !isPremium) {
             if (!accessLoading) {
@@ -203,13 +233,20 @@ export default function AiChatPage() {
         openSession,
     ]);
 
-    /**
-     * Creates and manages the real-time WebSocket connection for the active
-     * conversation.
-     *
-     * The socket listens for message acceptance, streaming chunks, completed
-     * responses, failed responses, cancelled responses, and connection errors.
-     */
+    const syncActiveSessionCount = useCallback((nextMessages) => {
+        setSessions((current) => current.map((session) =>
+            session.id === sessionId
+                ? {
+                    ...session,
+                    lastMessageAt: new Date().toISOString(),
+                    _count: {
+                        ...(session._count || {}),
+                        messages: nextMessages.length,
+                    },
+                }
+                : session));
+    }, [sessionId]);
+
     useEffect(() => {
         if (!sessionId || !isPremium) {
             return undefined;
@@ -219,30 +256,20 @@ export default function AiChatPage() {
 
         socketRef.current = socket;
 
-        /**
-         * Inserts the accepted user message and placeholder AI message.
-         *
-         * @param {object} payload WebSocket event payload.
-         * @param {object} payload.userMessage Saved user message.
-         * @param {object} payload.aiMessage Pending AI message.
-         */
         const handleAccepted = ({ userMessage, aiMessage }) => {
-            setMessages((current) =>
-                mergeMessage(
+            setMessages((current) => {
+                const next = mergeMessage(
                     mergeMessage(current, userMessage),
                     aiMessage,
-                ));
+                );
+
+                syncActiveSessionCount(next);
+                return next;
+            });
 
             setSending(true);
         };
 
-        /**
-         * Appends a streamed text chunk to the corresponding AI message.
-         *
-         * @param {object} payload WebSocket event payload.
-         * @param {string} payload.messageId AI message identifier.
-         * @param {string} payload.content Streamed text content.
-         */
         const handleChunk = ({ messageId, content }) => {
             setMessages((current) =>
                 current.map((message) =>
@@ -255,22 +282,15 @@ export default function AiChatPage() {
                         : message));
         };
 
-        /**
-         * Handles completed, failed, or cancelled AI messages.
-         *
-         * @param {object} payload WebSocket event payload.
-         * @param {object} payload.message Final message representation.
-         */
         const handleTerminal = ({ message }) => {
-            setMessages((current) => mergeMessage(current, message));
+            setMessages((current) => {
+                const next = mergeMessage(current, message);
+                syncActiveSessionCount(next);
+                return next;
+            });
             setSending(false);
         };
 
-        /**
-         * Handles errors returned by the chat WebSocket.
-         *
-         * @param {object} payload Error payload.
-         */
         const handleError = (payload) => {
             setError(
                 payload?.message ||
@@ -301,55 +321,185 @@ export default function AiChatPage() {
             socket.disconnect();
             socketRef.current = null;
         };
-    }, [isPremium, sessionId]);
+    }, [isPremium, sessionId, syncActiveSessionCount]);
 
-    /**
-     * Automatically scrolls to the latest message whenever the conversation
-     * content changes.
-     */
-    useEffect(() => {
+    const scrollMessagesToBottom = useCallback((behavior = 'smooth') => {
         bottomRef.current?.scrollIntoView({
-            behavior: 'smooth',
+            behavior,
+            block: 'end',
         });
-    }, [messages]);
+    }, []);
 
-    /**
-     * Creates and opens a new conversation for the current idea.
-     *
-     * @returns {Promise<void>}
-     */
+    const handleMessagesScroll = useCallback((event) => {
+        const element = event.currentTarget;
+        const distanceFromBottom =
+            element.scrollHeight - element.scrollTop - element.clientHeight;
+
+        shouldAutoScrollRef.current = distanceFromBottom < 90;
+    }, []);
+
+    useEffect(() => {
+        if (shouldAutoScrollRef.current) {
+            scrollMessagesToBottom(messages.length > 1 ? 'smooth' : 'auto');
+        }
+    }, [messages, scrollMessagesToBottom]);
+
+    useEffect(() => {
+        const SpeechRecognition =
+            window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+            setVoiceSupported(false);
+            return undefined;
+        }
+
+        const recognition = new SpeechRecognition();
+
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+        recognition.lang =
+            document.documentElement.lang ||
+            navigator.language ||
+            'ar-PS';
+
+        recognition.onstart = () => {
+            setIsListening(true);
+            setVoiceHint('Listening… speak naturally');
+        };
+
+        recognition.onresult = (event) => {
+            let transcript = '';
+
+            for (let index = 0; index < event.results.length; index += 1) {
+                transcript += event.results[index][0]?.transcript || '';
+            }
+
+            const base = voiceBaseDraftRef.current.trimEnd();
+            const spokenText = transcript.trimStart();
+
+            setDraft(
+                base && spokenText
+                    ? `${base} ${spokenText}`
+                    : base || spokenText,
+            );
+        };
+
+        recognition.onerror = (event) => {
+            setIsListening(false);
+
+            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                setVoiceHint('Microphone permission is required');
+                setError('Please allow microphone access to use Premium voice typing.');
+                return;
+            }
+
+            if (event.error === 'no-speech') {
+                setVoiceHint('No speech detected — tap the microphone to try again');
+                return;
+            }
+
+            setVoiceHint('Voice typing stopped');
+            setError('Voice typing could not continue. Please try again.');
+        };
+
+        recognition.onend = () => {
+            setIsListening(false);
+            setVoiceHint('');
+        };
+
+        recognitionRef.current = recognition;
+
+        return () => {
+            recognition.onstart = null;
+            recognition.onresult = null;
+            recognition.onerror = null;
+            recognition.onend = null;
+            recognition.abort();
+            recognitionRef.current = null;
+        };
+    }, []);
+
+    const toggleVoiceInput = () => {
+        if (!voiceSupported || !recognitionRef.current || sending) {
+            return;
+        }
+
+        setError('');
+
+        if (isListening) {
+            recognitionRef.current.stop();
+            return;
+        }
+
+        voiceBaseDraftRef.current = draft;
+
+        try {
+            recognitionRef.current.start();
+        } catch (recognitionError) {
+            setIsListening(false);
+            setError('The microphone is already starting. Please wait a moment and try again.');
+        }
+    };
+
     const addSession = async () => {
+        if (creatingSession) return;
+
         try {
             setError('');
+            setCreatingSession(true);
 
             const created = await createChatSession(
                 ideaId,
-                `Idea chat ${sessions.length + 1}`,
+                `Voxidence chat ${sessions.length + 1}`,
             );
 
-            setSessions((current) => [
-                created,
-                ...current,
-            ]);
-
+            setSessions((current) => [created, ...current]);
             await openSession(created.id);
         } catch (requestError) {
             setError(
                 requestError.message ||
                 'A new conversation could not be created.',
             );
+        } finally {
+            setCreatingSession(false);
         }
     };
 
-    /**
-     * Sends the user's message through the active WebSocket connection.
-     *
-     * Each request receives a unique client identifier to prevent duplicate
-     * message processing.
-     *
-     * @param {React.FormEvent<HTMLFormElement> | React.KeyboardEvent} event
-     * Form submission or keyboard event.
-     */
+    const removeSession = async (targetSessionId) => {
+        if (!targetSessionId || deletingSessionId) return;
+
+        try {
+            setError('');
+            setDeletingSessionId(targetSessionId);
+
+            await deleteChatSession(targetSessionId);
+
+            const remainingSessions = sessions.filter(
+                (session) => session.id !== targetSessionId,
+            );
+
+            setSessions(remainingSessions);
+            setConfirmDeleteId('');
+
+            if (targetSessionId === sessionId) {
+                if (remainingSessions.length) {
+                    await openSession(remainingSessions[0].id);
+                } else {
+                    setSessionId('');
+                    setMessages([]);
+                }
+            }
+        } catch (requestError) {
+            setError(
+                requestError.message ||
+                'The conversation could not be deleted.',
+            );
+        } finally {
+            setDeletingSessionId('');
+        }
+    };
+
     const sendMessage = (event) => {
         event.preventDefault();
 
@@ -364,8 +514,14 @@ export default function AiChatPage() {
         }
 
         setError('');
+
+        if (isListening) {
+            recognitionRef.current?.stop();
+        }
+
         setDraft('');
         setSending(true);
+        shouldAutoScrollRef.current = true;
 
         socketRef.current.emit(
             'chat:send-message',
@@ -387,38 +543,34 @@ export default function AiChatPage() {
         );
     };
 
-    /**
-     * Shows the initial loading state while Premium access and chat data are
-     * being resolved.
-     */
     if (loading || accessLoading) {
         return (
             <section className="ai-chat-state">
-                <LoaderCircle className="is-spinning" />
+                <div className="ai-chat-state__orb">
+                    <LoaderCircle className="is-spinning" />
+                </div>
 
-                <h1>
-                    Opening your premium AI workspace
-                </h1>
+                <span>Premium intelligence workspace</span>
+                <h1>Preparing your idea copilot</h1>
+                <p>Connecting the conversation to your idea context and evidence.</p>
             </section>
         );
     }
 
-    /**
-     * Prevents Normal users from accessing the Premium-only AI chat feature.
-     */
     if (!isPremium) {
         return (
             <section className="ai-chat-state ai-chat-state--locked">
-                <Crown size={34} />
+                <div className="ai-chat-state__orb">
+                    <Crown size={30} />
+                </div>
 
-                <h1>
-                    AI Chat is a Premium feature
-                </h1>
+                <span>Premium workspace</span>
+                <h1>AI Chat is a Premium feature</h1>
 
                 <p>
                     Activate Premium credits to discuss architecture,
                     features, feasibility, and implementation with an
-                    assistant that knows this idea.
+                    assistant that understands this idea.
                 </p>
 
                 <button
@@ -435,32 +587,54 @@ export default function AiChatPage() {
     return (
         <motion.main
             className="ai-chat-page"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: 'easeOut' }}
         >
+            <div className="ai-chat-ambient ai-chat-ambient--one" />
+            <div className="ai-chat-ambient ai-chat-ambient--two" />
+
             <aside className="ai-chat-sidebar">
-                <button
-                    className="ai-chat-back"
-                    type="button"
-                    onClick={() => navigate(`/normal/ideas/${ideaId}`)}
-                >
-                    <ArrowLeft size={17} />
-                    Idea workspace
-                </button>
+                <div className="ai-chat-sidebar__top">
+                    <button
+                        className="ai-chat-back"
+                        type="button"
+                        onClick={() => navigate(`/normal/ideas/${ideaId}`)}
+                    >
+                        <ArrowLeft size={17} />
+                        <span>Idea workspace</span>
+                    </button>
 
-                <div className="ai-chat-idea">
-                    <span>
-                        <Bot size={22} />
-                    </span>
+                    <div className="ai-chat-premium-mark" title="Premium AI workspace">
+                        <Crown size={15} />
+                    </div>
+                </div>
 
-                    <div>
-                        <small>
-                            Premium AI Chat
-                        </small>
+                <div className="ai-chat-idea-card">
+                    <div className="ai-chat-idea-card__glow" aria-hidden="true" />
 
-                        <strong>
+                    <div className="ai-chat-idea-card__top">
+                        <div className="ai-chat-idea-card__icon">
+                            <BrainCircuit size={23} />
+                            <i />
+                        </div>
+
+                        <div className="ai-chat-idea-card__heading">
+                            <span>Connected idea</span>
+                            <b><Sparkles size={11} /> Live context</b>
+                        </div>
+                    </div>
+
+                    <div className="ai-chat-idea-card__title-wrap">
+                        <small>Voxidence is exploring</small>
+                        <h2 title={idea?.title || 'Idea assistant'}>
                             {idea?.title || 'Idea assistant'}
-                        </strong>
+                        </h2>
+                    </div>
+
+                    <div className="ai-chat-idea-card__status">
+                        <CheckCircle2 size={13} />
+                        <span>Idea knowledge synced</span>
                     </div>
                 </div>
 
@@ -468,147 +642,345 @@ export default function AiChatPage() {
                     className="ai-chat-new"
                     type="button"
                     onClick={addSession}
+                    disabled={creatingSession}
                 >
-                    <MessageSquarePlus size={17} />
-                    New conversation
+                    {creatingSession ? (
+                        <LoaderCircle className="is-spinning" size={18} />
+                    ) : (
+                        <MessageSquarePlus size={18} />
+                    )}
+                    <span>{creatingSession ? 'Creating…' : 'New conversation'}</span>
+                    <Sparkles size={14} />
                 </button>
 
-                <nav>
-                    {sessions.map((session) => (
-                        <button
-                            key={session.id}
-                            type="button"
-                            className={
-                                session.id === sessionId
-                                    ? 'is-active'
-                                    : ''
-                            }
-                            onClick={() => openSession(session.id)}
-                        >
-                            <strong>
-                                {session.title}
-                            </strong>
+                <div className="ai-chat-history-heading">
+                    <span>Conversation history</span>
+                    <b>{sessions.length}</b>
+                </div>
 
-                            <small>
-                                {session._count?.messages ?? 0} messages
-                            </small>
-                        </button>
+                <nav aria-label="AI chat conversations">
+                    {sessions.map((session, index) => (
+                        <div
+                            key={session.id}
+                            className={`ai-chat-session ${session.id === sessionId ? 'is-active' : ''
+                                }`}
+                        >
+                            <button
+                                className="ai-chat-session__open"
+                                type="button"
+                                onClick={() => openSession(session.id)}
+                                aria-current={session.id === sessionId ? 'page' : undefined}
+                            >
+                                <span className="ai-chat-session-index">
+                                    {String(index + 1).padStart(2, '0')}
+                                </span>
+
+                                <span className="ai-chat-session-copy">
+                                    <strong>{session.title}</strong>
+                                    <small className={loadingSessionId === session.id ? 'is-loading' : ''}>
+                                        {loadingSessionId === session.id ? (
+                                            <><LoaderCircle className="is-spinning" size={12} /> Loading chat…</>
+                                        ) : (
+                                            <>
+                                                {session._count?.messages ?? 0}{' '}
+                                                {(session._count?.messages ?? 0) === 1 ? 'message' : 'messages'}
+                                            </>
+                                        )}
+                                    </small>
+                                </span>
+                            </button>
+
+                            <button
+                                className="ai-chat-session__delete"
+                                type="button"
+                                onClick={() => setConfirmDeleteId(session.id)}
+                                aria-label={`Delete ${session.title}`}
+                                title="Delete conversation"
+                            >
+                                <Trash2 size={15} />
+                            </button>
+
+                            {confirmDeleteId === session.id ? (
+                                <div className="ai-chat-session__confirm">
+                                    <span>Delete this chat?</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteId('')}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="is-danger"
+                                        onClick={() => removeSession(session.id)}
+                                        disabled={deletingSessionId === session.id}
+                                    >
+                                        {deletingSessionId === session.id ? 'Deleting…' : 'Delete'}
+                                    </button>
+                                </div>
+                            ) : null}
+                        </div>
                     ))}
                 </nav>
+
+                <div className="ai-chat-sidebar__footer">
+                    <WandSparkles size={17} />
+                    <p>
+                        Voxidence keeps every conversation connected to this idea and its generated outputs.
+                    </p>
+                </div>
             </aside>
 
             <section className="ai-chat-panel">
-                <header>
-                    <div>
-                        <span>
-                            <Sparkles size={16} />
+                <header className="ai-chat-header">
+                    <div className="ai-chat-header__identity">
+                        <span className="ai-chat-header__icon">
+                            <Bot size={19} />
+                            <i />
                         </span>
 
                         <div>
-                            <small>
-                                Context-aware conversation
-                            </small>
+                            <span className="ai-chat-eyebrow">
+                                Voxidence idea copilot
+                            </span>
 
-                            <h1>
-                                {activeSession?.title || 'AI Chat'}
-                            </h1>
+                            <h1>{activeSession?.title || 'Voxidence Chat'}</h1>
                         </div>
                     </div>
 
-                    <b>
-                        Premium
-                    </b>
+                    <div className="ai-chat-live-status">
+                        <i />
+                        Ready to explore
+                    </div>
                 </header>
 
-                <div className="ai-chat-messages">
+                <div
+                    ref={messagesRef}
+                    className="ai-chat-messages"
+                    onScroll={handleMessagesScroll}
+                >
                     {!messages.length ? (
-                        <div className="ai-chat-empty">
-                            <Bot size={30} />
+                        <motion.div
+                            className="ai-chat-empty"
+                            initial={{ opacity: 0, y: 14 }}
+                            animate={{ opacity: 1, y: 0 }}
+                        >
+                            <div className="ai-chat-empty__visual">
+                                <span className="ai-chat-empty__ring ai-chat-empty__ring--one" />
+                                <span className="ai-chat-empty__ring ai-chat-empty__ring--two" />
+                                <div>
+                                    <BrainCircuit size={34} />
+                                </div>
+                            </div>
 
-                            <h2>
-                                Ask anything about this idea
-                            </h2>
-
+                            <span className="ai-chat-eyebrow">Turn evidence into decisions</span>
+                            <h2>Where should we take this idea next?</h2>
                             <p>
-                                Explore the technology stack, database,
-                                architecture, MVP, market potential, budget,
-                                or implementation plan.
+                                Ask your copilot to challenge assumptions, shape the
+                                product, or translate the idea into an actionable plan.
                             </p>
-                        </div>
+
+                            <div className="ai-chat-starters">
+                                {STARTER_PROMPTS.map((starter) => {
+                                    const StarterIcon = starter.icon;
+
+                                    return (
+                                        <button
+                                            key={starter.label}
+                                            type="button"
+                                            onClick={() => setDraft(starter.prompt)}
+                                        >
+                                            <span><StarterIcon size={17} /></span>
+                                            {starter.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </motion.div>
                     ) : null}
 
-                    {messages.map((message) => (
-                        <article
-                            key={message.id}
-                            className={
-                                `ai-chat-message ${message.sender === 'USER'
-                                    ? 'is-user'
-                                    : 'is-ai'
-                                }`
-                            }
-                        >
-                            <span>
-                                {message.sender === 'USER'
-                                    ? 'You'
-                                    : <Bot size={16} />}
-                            </span>
+                    {messages.map((message) => {
+                        const isUser = message.sender === 'USER';
+                        const isThinking =
+                            !message.message &&
+                            ['PENDING', 'STREAMING'].includes(message.status);
 
-                            <div>
-                                <p>
-                                    {message.message || (
-                                        message.status === 'PENDING'
-                                            ? 'Thinking…'
-                                            : ''
+                        return (
+                            <motion.article
+                                key={message.id}
+                                className={`ai-chat-message ${isUser ? 'is-user' : 'is-ai'}`}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                            >
+                                <span className="ai-chat-message__avatar">
+                                    {isUser ? 'You' : <Bot size={17} />}
+                                </span>
+
+                                <div className="ai-chat-message__content">
+                                    {!isUser ? (
+                                        <small className="ai-chat-message__label">
+                                            Idea copilot
+                                        </small>
+                                    ) : null}
+
+                                    {isThinking ? (
+                                        <span className="ai-chat-thinking" aria-label="AI is thinking">
+                                            <i />
+                                            <i />
+                                            <i />
+                                        </span>
+                                    ) : (
+                                        <div
+                                            className="ai-chat-message__body"
+                                            dir="auto"
+                                        >
+                                            {message.message
+                                                ?.split('\n')
+                                                .map((line, lineIndex) => {
+                                                    const trimmed = line.trim();
+                                                    const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/);
+                                                    const numberedMatch = trimmed.match(/^(\d+)[.)]\s+(.+)/);
+                                                    const headingMatch = trimmed.match(/^#{1,3}\s+(.+)/);
+                                                    const parts = (value) => value
+                                                        .split(/(\*\*[^*]+\*\*)/g)
+                                                        .filter(Boolean)
+                                                        .map((part, partIndex) =>
+                                                            part.startsWith('**') && part.endsWith('**')
+                                                                ? (
+                                                                    <strong key={`${lineIndex}-${partIndex}`}>
+                                                                        {part.slice(2, -2)}
+                                                                    </strong>
+                                                                )
+                                                                : part);
+
+                                                    if (!trimmed) {
+                                                        return <span className="ai-chat-message__space" key={lineIndex} />;
+                                                    }
+
+                                                    if (headingMatch) {
+                                                        return (
+                                                            <h3 key={lineIndex}>
+                                                                {parts(headingMatch[1])}
+                                                            </h3>
+                                                        );
+                                                    }
+
+                                                    if (bulletMatch) {
+                                                        return (
+                                                            <div className="ai-chat-message__list-row" key={lineIndex}>
+                                                                <i aria-hidden="true" />
+                                                                <span>{parts(bulletMatch[1])}</span>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    if (numberedMatch) {
+                                                        return (
+                                                            <div className="ai-chat-message__list-row is-numbered" key={lineIndex}>
+                                                                <b>{numberedMatch[1]}</b>
+                                                                <span>{parts(numberedMatch[2])}</span>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return <p key={lineIndex}>{parts(line)}</p>;
+                                                })}
+                                        </div>
                                     )}
-                                </p>
 
-                                {message.status === 'FAILED' ? (
-                                    <small>
-                                        {message.errorMessage ||
-                                            'Response failed.'}
-                                    </small>
-                                ) : null}
-                            </div>
-                        </article>
-                    ))}
+                                    {message.status === 'FAILED' ? (
+                                        <small className="ai-chat-message__failure">
+                                            {message.errorMessage || 'Response failed.'}
+                                        </small>
+                                    ) : null}
+                                </div>
+                            </motion.article>
+                        );
+                    })}
 
                     <div ref={bottomRef} />
                 </div>
 
                 {error ? (
-                    <p className="ai-chat-error">
+                    <p className="ai-chat-error" role="alert">
                         {error}
                     </p>
                 ) : null}
 
-                <form
-                    className="ai-chat-composer"
-                    onSubmit={sendMessage}
-                >
-                    <textarea
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        placeholder="Ask Voxidence AI about this idea…"
-                        maxLength={4000}
-                        rows={1}
-                        onKeyDown={(event) => {
-                            if (
-                                event.key === 'Enter' &&
-                                !event.shiftKey
-                            ) {
-                                sendMessage(event);
-                            }
-                        }}
-                    />
-
-                    <button
-                        type="submit"
-                        disabled={!draft.trim() || sending}
-                        aria-label="Send message"
+                <div className="ai-chat-composer-shell">
+                    <form
+                        className="ai-chat-composer"
+                        onSubmit={sendMessage}
                     >
-                        <Send size={18} />
-                    </button>
-                </form>
+                        <div className="ai-chat-composer__spark">
+                            <Sparkles size={17} />
+                        </div>
+
+                        <textarea
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            placeholder="Ask Voxidence anything about this idea…"
+                            maxLength={4000}
+                            rows={1}
+                            onKeyDown={(event) => {
+                                if (
+                                    event.key === 'Enter' &&
+                                    !event.shiftKey
+                                ) {
+                                    sendMessage(event);
+                                }
+                            }}
+                        />
+
+                        <button
+                            className={`ai-chat-voice ${isListening ? 'is-listening' : ''}`}
+                            type="button"
+                            onClick={toggleVoiceInput}
+                            disabled={!voiceSupported || sending}
+                            aria-label={isListening ? 'Stop voice typing' : 'Start voice typing'}
+                            aria-pressed={isListening}
+                            title={
+                                voiceSupported
+                                    ? isListening
+                                        ? 'Stop voice typing'
+                                        : 'Speak and convert your voice to text'
+                                    : 'Voice typing is not supported in this browser'
+                            }
+                        >
+                            {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                            {isListening ? <span className="ai-chat-voice__pulse" /> : null}
+                        </button>
+
+                        <button
+                            className="ai-chat-send"
+                            type="submit"
+                            disabled={!draft.trim() || sending}
+                            aria-label="Send message"
+                        >
+                            {sending ? (
+                                <LoaderCircle className="is-spinning" size={18} />
+                            ) : (
+                                <Send size={18} />
+                            )}
+                        </button>
+                    </form>
+
+                    <div className="ai-chat-composer-note">
+                        <span className={isListening ? 'is-listening' : ''}>
+                            {isListening ? (
+                                <>
+                                    <i />
+                                    {voiceHint || 'Listening… your speech appears as text'}
+                                </>
+                            ) : (
+                                voiceSupported
+                                    ? 'Tap the microphone to type with your voice'
+                                    : 'Voice typing is unavailable in this browser'
+                            )}
+                        </span>
+                        <span>Enter to send · Shift + Enter for a new line</span>
+                    </div>
+                </div>
             </section>
         </motion.main>
     );

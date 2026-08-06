@@ -129,6 +129,11 @@ export class UpsertIdeaPublicationDto {
   @IsBoolean()
   allowVoting?: boolean;
 
+  /** Enables or disables acceptance for this publication. */
+  @IsOptional()
+  @IsBoolean()
+  allowAdoption?: boolean;
+
   /**
    * Optional audience definitions used when the publication
    * visibility is restricted.

@@ -1460,3 +1460,32 @@
   border-color: transparent;
   box-shadow: 0 14px 30px rgba(36, 77, 64, .2)
 }
+
+/* Voxidence aqua treatment for the Premium AI Chat workspace action. */
+.workspace-actions .workspace-premium-chat {
+  border-color: rgba(88, 189, 185, .28);
+  color: #ffffff;
+  background: linear-gradient(135deg, #68c8c3 0%, #52b9b5 54%, #338f8b 100%);
+  box-shadow:
+    0 16px 34px rgba(47, 133, 130, .22),
+    inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+.workspace-actions .workspace-premium-chat:hover {
+  border-color: rgba(255, 255, 255, .48);
+  background: linear-gradient(135deg, #75cfca 0%, #5dbfbb 50%, #3a9995 100%);
+  box-shadow:
+    0 20px 40px rgba(47, 133, 130, .28),
+    0 0 0 4px rgba(88, 189, 185, .1),
+    inset 0 1px 0 rgba(255, 255, 255, .32);
+}
+
+.workspace-actions .workspace-premium-chat>svg:first-child {
+  color: #2f8582;
+  background: rgba(255, 255, 255, .94);
+}
+
+.workspace-actions .workspace-premium-chat small,
+.workspace-actions .workspace-premium-chat>svg:last-child {
+  color: rgba(255, 255, 255, .78);
+}

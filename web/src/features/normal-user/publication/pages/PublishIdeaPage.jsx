@@ -44,6 +44,7 @@ const INITIAL_FORM = {
   allowRatings: true,
   allowFeedback: true,
   allowVoting: true,
+  allowAdoption: true,
   selectedUserTypes: [],
 };
 
@@ -89,6 +90,7 @@ export default function PublishIdeaPage() {
           allowRatings: publication.allowRatings ?? true,
           allowFeedback: publication.allowFeedback ?? true,
           allowVoting: publication.allowVoting ?? true,
+          allowAdoption: publication.allowAdoption ?? true,
           selectedUserTypes,
         });
       } catch (requestError) {
@@ -123,13 +125,14 @@ export default function PublishIdeaPage() {
     allowRatings: form.allowRatings,
     allowFeedback: form.allowFeedback,
     allowVoting: form.allowVoting,
+    allowAdoption: form.allowAdoption,
     ...(form.visibility === 'SELECTED_AUDIENCE'
       ? {
-          audiences: form.selectedUserTypes.map((audienceValue) => ({
-            audienceType: 'user-type',
-            audienceValue,
-          })),
-        }
+        audiences: form.selectedUserTypes.map((audienceValue) => ({
+          audienceType: 'user-type',
+          audienceValue,
+        })),
+      }
       : { audiences: [] }),
   }), [form]);
 
@@ -340,6 +343,7 @@ export default function PublishIdeaPage() {
               ['allowRatings', 'Ratings'],
               ['allowFeedback', 'Written feedback'],
               ['allowVoting', 'Voting'],
+              ['allowAdoption', 'Allow idea acceptance'],
             ].map(([key, label]) => (
               <label key={key}>
                 <span>{label}</span>

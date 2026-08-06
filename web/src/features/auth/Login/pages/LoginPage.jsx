@@ -67,7 +67,7 @@ export default function LoginPage() {
     const navigate = useNavigate();
     const pageRef = useRef(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [serverError, setServerError] = useState('');
+    const [serverError, setServerError] = useState(null);
 
     /**
      * Updates the decorative background pixels using CSS variables.
@@ -108,7 +108,7 @@ export default function LoginPage() {
     };
 
     const handleLogin = async (values) => {
-        setServerError('');
+        setServerError(null);
         setIsSubmitting(true);
 
         try {
@@ -124,10 +124,25 @@ export default function LoginPage() {
                 replace: true,
             });
         } catch (error) {
-            setServerError(
-                error?.message ||
-                'Invalid email or password.',
-            );
+            setServerError({
+                type: error?.type || 'error',
+                title: error?.title || 'Sign in failed',
+                message:
+                    error?.message ||
+                    'Invalid email or password.',
+                code: error?.code,
+                attemptsRemaining:
+                    error?.attemptsRemaining,
+                remainingSeconds:
+                    error?.remainingSeconds,
+                remainingMinutes:
+                    error?.remainingMinutes,
+                justLocked: Boolean(error?.justLocked),
+                lockDurationMinutes:
+                    error?.lockDurationMinutes,
+                lockedAt: error?.lockedAt,
+                lockedUntil: error?.lockedUntil,
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -221,7 +236,7 @@ export default function LoginPage() {
                                 whileHover={{ rotate: 10, scale: 1.08 }}
                                 whileTap={{ scale: 0.96 }}
                             >
-                                <VoxidenceMark size={24} />
+                                <VoxidenceMark size={46} />
                             </motion.span>
 
                             <span className="nx-brand__copy">
@@ -397,7 +412,7 @@ export default function LoginPage() {
 
                         <LoginForm
                             isSubmitting={isSubmitting}
-                            onDismissError={() => setServerError('')}
+                            onDismissError={() => setServerError(null)}
                             onSubmit={handleLogin}
                             serverError={serverError}
                         />

@@ -15,6 +15,7 @@ import {
   MessageSquareText,
   PauseCircle,
   PencilLine,
+  Power,
   RefreshCw,
   Star,
   ThumbsDown,
@@ -39,6 +40,7 @@ export default function PublishedIdeaCard({
   onInsights,
   onStop,
   onRepost,
+  onToggleAcceptance,
   processing = false,
   index = 0,
 }) {
@@ -47,9 +49,8 @@ export default function PublishedIdeaCard({
 
   return (
     <motion.article
-      className={`published-card published-card--${(index % 4) + 1} ${
-        isArchived ? 'published-card--archived' : ''
-      }`}
+      className={`published-card published-card--${(index % 4) + 1} ${isArchived ? 'published-card--archived' : ''
+        }`}
       initial={
         shouldReduceMotion
           ? undefined
@@ -94,9 +95,8 @@ export default function PublishedIdeaCard({
           </small>
         </div>
 
-        <div className={`published-card__status ${
-          isArchived ? 'is-archived' : 'is-live'
-        }`}>
+        <div className={`published-card__status ${isArchived ? 'is-archived' : 'is-live'
+          }`}>
           {isArchived ? <Archive size={13} /> : <BarChart3 size={13} />}
           {isArchived ? 'Stopped' : 'Published'}
         </div>
@@ -148,6 +148,18 @@ export default function PublishedIdeaCard({
             Audience ledger
             <BarChart3 size={16} />
           </motion.button>
+
+          {!isArchived ? (
+            <motion.button
+              type="button"
+              className={publication?.allowAdoption === false ? 'is-repost' : 'is-quiet'}
+              onClick={onToggleAcceptance}
+              disabled={processing}
+            >
+              {publication?.allowAdoption === false ? 'Enable acceptance' : 'Disable acceptance'}
+              <Power size={16} />
+            </motion.button>
+          ) : null}
 
           {!isArchived ? (
             <motion.button

@@ -35,6 +35,7 @@ import {
   getMyPublishedIdeas,
   repostPublication,
   stopPublication,
+  updatePublicationAcceptanceSetting,
 } from '../api/publishedIdeasApi';
 import PublishedIdeaCard from '../components/PublishedIdeaCard';
 import PublicationInsightsPanel from '../components/PublicationInsightsPanel';
@@ -94,7 +95,7 @@ export default function PublishedIdeasPage() {
       } catch (requestError) {
         setError(
           requestError?.message ||
-            'Your publications could not be loaded.',
+          'Your publications could not be loaded.',
         );
       } finally {
         setLoading(false);
@@ -112,17 +113,17 @@ export default function PublishedIdeasPage() {
       current.map((item) =>
         item.id === publicationId
           ? {
-              ...item,
-              status: nextStatus,
-              archivedAt:
-                nextStatus === 'ARCHIVED'
-                  ? new Date().toISOString()
-                  : null,
-              publishedAt:
-                nextStatus === 'PUBLISHED'
-                  ? new Date().toISOString()
-                  : item.publishedAt,
-            }
+            ...item,
+            status: nextStatus,
+            archivedAt:
+              nextStatus === 'ARCHIVED'
+                ? new Date().toISOString()
+                : null,
+            publishedAt:
+              nextStatus === 'PUBLISHED'
+                ? new Date().toISOString()
+                : item.publishedAt,
+          }
           : item,
       ),
     );
@@ -130,17 +131,16 @@ export default function PublishedIdeasPage() {
     setSelectedPublication((current) =>
       current?.id === publicationId
         ? {
-            ...current,
-            status: nextStatus,
-          }
+          ...current,
+          status: nextStatus,
+        }
         : current,
     );
   };
 
   const handleStop = async (publication) => {
     const confirmed = window.confirm(
-      `Stop publishing “${
-        publication.publicTitle || 'this publication'
+      `Stop publishing “${publication.publicTitle || 'this publication'
       }”? It will leave Discover, while accepted users and your owner ledger keep access.`,
     );
 
@@ -162,8 +162,24 @@ export default function PublishedIdeasPage() {
     } catch (requestError) {
       setError(
         requestError?.message ||
-          'The publication could not be stopped.',
+        'The publication could not be stopped.',
       );
+    } finally {
+      setProcessingId('');
+    }
+  };
+
+  const handleToggleAcceptance = async (publication) => {
+    const nextValue = publication.allowAdoption === false;
+    const confirmed = window.confirm(`${nextValue ? 'Enable' : 'Disable'} new acceptances for “${publication.publicTitle || 'this publication'}”? Existing accepted users will keep their access.`);
+    if (!confirmed) return;
+    try {
+      setProcessingId(publication.id);
+      setError('');
+      await updatePublicationAcceptanceSetting(publication.ideaId, nextValue);
+      setItems((current) => current.map((item) => item.id === publication.id ? { ...item, allowAdoption: nextValue } : item));
+    } catch (requestError) {
+      setError(requestError?.message || 'The acceptance setting could not be updated.');
     } finally {
       setProcessingId('');
     }
@@ -171,8 +187,7 @@ export default function PublishedIdeasPage() {
 
   const handleRepost = async (publication) => {
     const confirmed = window.confirm(
-      `Re-publish “${
-        publication.publicTitle || 'this publication'
+      `Re-publish “${publication.publicTitle || 'this publication'
       }”? It will become discoverable again with the same comments, ratings, votes, and acceptances.`,
     );
 
@@ -194,7 +209,7 @@ export default function PublishedIdeasPage() {
     } catch (requestError) {
       setError(
         requestError?.message ||
-          'The publication could not be re-published.',
+        'The publication could not be re-published.',
       );
     } finally {
       setProcessingId('');
@@ -363,6 +378,7 @@ export default function PublishedIdeasPage() {
               onInsights={() => setSelectedPublication(publication)}
               onStop={() => handleStop(publication)}
               onRepost={() => handleRepost(publication)}
+              onToggleAcceptance={() => handleToggleAcceptance(publication)}
               processing={processingId === publication.id}
             />
           ))}
