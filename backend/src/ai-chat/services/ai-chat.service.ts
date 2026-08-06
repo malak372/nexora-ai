@@ -56,7 +56,7 @@ export class AiChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiChatAccessService: AiChatAccessService,
-  ) {}
+  ) { }
 
   /**
    * Creates a new chat session for an unlocked idea accessible to the
@@ -155,11 +155,11 @@ export class AiChatService {
       deletedAt: null,
       ...(query.search
         ? {
-            title: {
-              contains: query.search,
-              mode: Prisma.QueryMode.insensitive,
-            },
-          }
+          title: {
+            contains: query.search,
+            mode: Prisma.QueryMode.insensitive,
+          },
+        }
         : {}),
     };
 
@@ -273,6 +273,14 @@ export class AiChatService {
       if (updateResult.count === 0) {
         throw new NotFoundException('AI chat session was not found.');
       }
+
+      await transaction.$executeRaw`
+        UPDATE "chat_sessions"
+        SET "title_manually_edited" = true
+        WHERE "id" = ${sessionId}
+          AND "user_id" = ${userId}
+          AND "deleted_at" IS NULL
+      `;
 
       const updatedSession = await transaction.chatSession.findFirst({
         where: {

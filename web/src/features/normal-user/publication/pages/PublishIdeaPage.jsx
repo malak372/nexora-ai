@@ -9,10 +9,13 @@ import {
   Eye,
   Globe2,
   LoaderCircle,
+  MessageSquareText,
   Save,
   ShieldCheck,
   Sparkles,
+  Star,
   UsersRound,
+  Vote,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
@@ -338,16 +341,50 @@ export default function PublishIdeaPage() {
             </section>
           ) : null}
 
-          <div className="publish-toggles">
+          <div className="publish-toggles" aria-label="Community interaction settings">
             {[
-              ['allowRatings', 'Ratings'],
-              ['allowFeedback', 'Written feedback'],
-              ['allowVoting', 'Voting'],
-              ['allowAdoption', 'Allow idea acceptance'],
-            ].map(([key, label]) => (
-              <label key={key}>
-                <span>{label}</span>
-                <input type="checkbox" checked={form[key]} onChange={(event) => updateField(key, event.target.checked)} />
+              {
+                key: 'allowRatings',
+                label: 'Ratings',
+                description: 'Let members score the idea.',
+                icon: Star,
+              },
+              {
+                key: 'allowFeedback',
+                label: 'Written feedback',
+                description: 'Collect detailed community comments.',
+                icon: MessageSquareText,
+              },
+              {
+                key: 'allowVoting',
+                label: 'Voting',
+                description: 'Allow support and oppose votes.',
+                icon: Vote,
+              },
+              {
+                key: 'allowAdoption',
+                label: 'Allow idea acceptance',
+                description: 'Let members accept this idea into their workspace.',
+                icon: ShieldCheck,
+              },
+            ].map(({ key, label, description, icon: Icon }) => (
+              <label
+                key={key}
+                className={form[key] ? 'publish-toggle is-enabled' : 'publish-toggle'}
+              >
+                <span className="publish-toggle__icon" aria-hidden="true">
+                  <Icon size={18} strokeWidth={2.1} />
+                </span>
+                <span className="publish-toggle__copy">
+                  <strong>{label}</strong>
+                  <small>{description}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={form[key]}
+                  onChange={(event) => updateField(key, event.target.checked)}
+                  aria-label={label}
+                />
               </label>
             ))}
           </div>

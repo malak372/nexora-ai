@@ -58,7 +58,7 @@ export default function NormalHeader({ onOpenMenu }) {
   const { isPremium, creditBalance } = useAccountAccess();
 
   const displayName = user.fullName || user.name || 'Voxidence user';
-  const accessLabel = isPremium ? `Premium · ${creditBalance} credits` : 'Normal access';
+  const accessLabel = isPremium ? 'Premium' : 'Normal access';
   const imageUrl = resolveMediaUrl(user.avatarUrl || user.profileImageUrl || user.photoUrl || '');
   const initials = getInitials(displayName);
 
@@ -109,7 +109,6 @@ export default function NormalHeader({ onOpenMenu }) {
           </motion.span>
           <div className="normal-header__brand-copy">
             <strong>Voxidence</strong>
-            <small>Ideas built from real needs</small>
           </div>
         </NavLink>
 

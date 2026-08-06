@@ -2372,6 +2372,8 @@ html {
 }
 
 .vox-hero-button-secondary {
+    min-width: 320px;
+    padding-inline: 28px;
     border-color: rgba(217, 143, 160, .24);
     background: linear-gradient(145deg, rgba(255, 253, 252, .94), rgba(250, 249, 246, .94));
     color: var(--vox-eucalyptus-800);
@@ -5119,5 +5121,308 @@ html {
     .vox-stage-showcase-controls * {
         transition: none !important;
         animation: none !important;
+    }
+}
+
+/* ===== Professional hero stage presentation ===== */
+.vox-stage-showcase {
+    isolation: isolate;
+    width: min(100%, 720px);
+    padding: 14px;
+    border: 1px solid rgba(123, 169, 159, 0.22);
+    border-radius: 36px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(239, 248, 245, 0.78));
+    box-shadow:
+        0 42px 95px rgba(45, 84, 75, 0.16),
+        0 12px 32px rgba(71, 132, 120, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    overflow: visible;
+}
+
+.vox-stage-showcase::before {
+    inset: -18% 15% auto -10%;
+    height: 54%;
+    opacity: 0.8;
+    z-index: -3;
+}
+
+.vox-stage-backdrop {
+    position: absolute;
+    z-index: -2;
+    border: 1px solid rgba(137, 181, 171, 0.2);
+    border-radius: 32px;
+    background: rgba(255, 255, 255, 0.42);
+    box-shadow: 0 24px 60px rgba(50, 92, 82, 0.08);
+    pointer-events: none;
+}
+
+.vox-stage-backdrop-one {
+    inset: 28px -18px -18px 26px;
+    transform: rotate(1.7deg);
+}
+
+.vox-stage-backdrop-two {
+    inset: 16px 22px -28px -16px;
+    transform: rotate(-1.25deg);
+    opacity: 0.72;
+}
+
+.vox-stage-showcase-frame {
+    aspect-ratio: 4 / 3;
+    border: 1px solid rgba(132, 174, 164, 0.2);
+    border-radius: 26px;
+    background: linear-gradient(145deg, #f7fbfa, #eef7f4);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+        0 18px 48px rgba(42, 85, 75, 0.1);
+}
+
+.vox-stage-window-rail {
+    position: absolute;
+    top: 16px;
+    left: 18px;
+    z-index: 5;
+    display: inline-flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.56);
+    box-shadow: 0 8px 24px rgba(52, 91, 82, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.vox-stage-window-rail span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(76, 154, 143, 0.38);
+}
+
+.vox-stage-window-rail span:nth-child(2) {
+    background: rgba(213, 151, 174, 0.34);
+}
+
+.vox-stage-window-rail span:nth-child(3) {
+    background: rgba(202, 181, 126, 0.4);
+}
+
+.vox-stage-showcase-image {
+    inset: -4%;
+    width: 108%;
+    height: 108%;
+    max-width: none;
+    object-fit: cover;
+    object-position: center;
+    filter: saturate(0.98) contrast(1.01);
+}
+
+.vox-stage-showcase-glass {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border-radius: inherit;
+    background:
+        linear-gradient(115deg, rgba(255, 255, 255, 0.17), transparent 29%, transparent 70%, rgba(255, 255, 255, 0.12)),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 34%);
+    pointer-events: none;
+}
+
+.vox-stage-corner-accent {
+    position: absolute;
+    right: 20px;
+    top: 18px;
+    z-index: 5;
+    width: 42px;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(91, 188, 178, 0.18), rgba(91, 188, 178, 0.58));
+    box-shadow: 0 0 20px rgba(91, 188, 178, 0.2);
+}
+
+.vox-stage-showcase-controls {
+    position: absolute;
+    right: 50%;
+    bottom: 16px;
+    z-index: 6;
+    display: flex;
+    width: auto;
+    grid-template-columns: none;
+    gap: 7px;
+    padding: 8px 10px;
+    transform: translateX(50%);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 999px;
+    background: rgba(252, 255, 254, 0.72);
+    box-shadow: 0 12px 30px rgba(42, 79, 71, 0.13);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+.vox-stage-showcase-controls button {
+    display: block;
+    width: 36px;
+    height: 18px;
+    padding: 7px 0;
+    border-radius: 999px;
+    background: transparent;
+}
+
+.vox-stage-showcase-controls button:hover,
+.vox-stage-showcase-controls button.is-active {
+    background: transparent;
+}
+
+.vox-stage-showcase-controls i {
+    width: 36px;
+    height: 4px;
+    background: rgba(112, 151, 142, 0.2);
+    transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.vox-stage-showcase-controls button.is-active i {
+    background: rgba(98, 177, 166, 0.25);
+    transform: scaleY(1.2);
+}
+
+.vox-stage-showcase-controls i b {
+    background: linear-gradient(90deg, #77c9bd, #3a9991);
+}
+
+@media (max-width: 680px) {
+    .vox-stage-showcase {
+        padding: 9px;
+        border-radius: 27px;
+    }
+
+    .vox-stage-showcase-frame {
+        border-radius: 21px;
+    }
+
+    .vox-stage-backdrop-one {
+        inset: 18px -8px -12px 18px;
+    }
+
+    .vox-stage-backdrop-two {
+        inset: 12px 18px -18px -8px;
+    }
+
+    .vox-stage-showcase-controls {
+        bottom: 11px;
+        gap: 5px;
+        padding: 7px 8px;
+    }
+
+    .vox-stage-showcase-controls button,
+    .vox-stage-showcase-controls i {
+        width: 25px;
+    }
+
+    .vox-stage-window-rail {
+        top: 12px;
+        left: 13px;
+    }
+
+    .vox-stage-corner-accent {
+        top: 15px;
+        right: 14px;
+        width: 30px;
+    }
+}
+
+/* Hero typography color refinement */
+.vox-hero-heading {
+    color: #355f59;
+}
+
+.vox-hero-lead {
+    color: #60756f;
+}
+
+.vox-hero-brand-name {
+    color: #2f7774;
+    font-weight: 750;
+}
+
+/* Hero stage hover feedback: subtle, polished, and non-disruptive. */
+.vox-stage-showcase {
+    cursor: default;
+    transition:
+        transform 320ms cubic-bezier(.22, 1, .36, 1),
+        border-color 260ms ease,
+        box-shadow 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.vox-stage-showcase-frame {
+    transition:
+        transform 320ms cubic-bezier(.22, 1, .36, 1),
+        border-color 260ms ease,
+        box-shadow 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.vox-stage-showcase-frame::after {
+    position: absolute;
+    inset: -30% auto -30% -34%;
+    z-index: 4;
+    width: 22%;
+    content: '';
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, .46),
+            transparent);
+    filter: blur(7px);
+    transform: skewX(-16deg);
+    transition:
+        left 620ms cubic-bezier(.22, 1, .36, 1),
+        opacity 180ms ease;
+}
+
+.vox-stage-showcase-image {
+    transition: filter 300ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .vox-stage-showcase:hover {
+        transform: translateY(-5px);
+        border-color: rgba(91, 174, 162, .38);
+        box-shadow:
+            0 50px 108px rgba(45, 84, 75, .19),
+            0 16px 38px rgba(71, 132, 120, .11),
+            0 0 0 5px rgba(119, 201, 189, .08),
+            inset 0 1px 0 rgba(255, 255, 255, .98);
+    }
+
+    .vox-stage-showcase:hover .vox-stage-showcase-frame {
+        transform: scale(1.008);
+        border-color: rgba(91, 174, 162, .32);
+        box-shadow:
+            inset 0 0 0 1px rgba(255, 255, 255, .78),
+            0 23px 56px rgba(42, 85, 75, .14);
+    }
+
+    .vox-stage-showcase:hover .vox-stage-showcase-frame::after {
+        left: 116%;
+        opacity: 1;
+    }
+
+    .vox-stage-showcase:hover .vox-stage-showcase-image {
+        filter: saturate(1.045) contrast(1.025) brightness(1.015);
+    }
+
+    .vox-stage-showcase:hover .vox-stage-corner-accent {
+        box-shadow: 0 0 27px rgba(91, 188, 178, .35);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .vox-stage-showcase,
+    .vox-stage-showcase-frame,
+    .vox-stage-showcase-frame::after,
+    .vox-stage-showcase-image {
+        transition: none !important;
     }
 }

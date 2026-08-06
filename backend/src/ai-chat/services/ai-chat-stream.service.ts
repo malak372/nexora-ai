@@ -38,6 +38,7 @@ import type {
 } from '../types/ai-chat-message.types';
 import { AiChatAccessService } from './ai-chat-access.service';
 import { AiChatContextService } from './ai-chat-context.service';
+import { AiChatTitleService } from './ai-chat-title.service';
 import { AiChatMessageWriterService } from './messages/ai-chat-message-writer.service';
 
 /**
@@ -88,8 +89,9 @@ export class AiChatStreamService {
     private readonly aiExecutionService: AiExecutionService,
     private readonly aiChatAccessService: AiChatAccessService,
     private readonly aiChatContextService: AiChatContextService,
+    private readonly aiChatTitleService: AiChatTitleService,
     private readonly messageWriterService: AiChatMessageWriterService,
-  ) {}
+  ) { }
 
   /**
    * Persists and starts one AI response without blocking the Socket.IO
@@ -239,6 +241,11 @@ export class AiChatStreamService {
         );
 
       observer.onCompleted(completedMessage);
+
+      void this.aiChatTitleService.refreshTitleIfNeeded(
+        activeResponse.userId,
+        activeResponse.sessionId,
+      );
     } catch (error: unknown) {
       if (activeResponse.controller.signal.aborted) {
         await this.handleAbortedResponse(activeResponse, observer);

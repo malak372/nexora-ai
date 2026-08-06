@@ -24,17 +24,21 @@ import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft,
     ArrowRight,
+    Bookmark,
     Check,
     CircleAlert,
+    Folder,
     Globe2,
     Lightbulb,
     LoaderCircle,
     LockKeyhole,
+    Infinity,
     LogIn,
     MapPin,
     RefreshCcw,
     Sparkles,
     UserPlus,
+    UserRound,
     WandSparkles,
 } from 'lucide-react';
 
@@ -571,64 +575,159 @@ export default function GuestGenerateIdeaPage() {
      */
     if (guestUsed && !run) {
         return (
-            <section className="guest-limit-page">
-                <div className="guest-limit-card guest-limit-card--used">
-                    <div className="guest-limit-glow" aria-hidden="true" />
+            <section className="guest-limit-page guest-limit-page--showcase">
+                <div className="guest-limit-showcase">
+                    <div className="guest-limit-content">
+                        <div className="guest-limit-badge">
+                            <span className="guest-limit-badge-icon">
+                                <LockKeyhole />
+                            </span>
+                            <span>Free guest idea completed</span>
+                        </div>
 
-                    <span className="guest-icon guest-limit-icon">
-                        <LockKeyhole />
-                    </span>
+                        <h1 className="guest-limit-title">
+                            <span className="guest-limit-title-accent">Your</span> free discovery
+                            <span className="guest-limit-title-ending"> is complete.</span>
+                        </h1>
 
-                    <p className="guest-eyebrow">
-                        Free guest idea completed
-                    </p>
+                        <p className="guest-limit-description">
+                            Your guest idea has already been used. Create a free Voxidence
+                            account to generate more ideas and save your discoveries.
+                        </p>
 
-                    <h1>
-                        Your free discovery is complete.
-                    </h1>
+                        <div className="guest-limit-feature-list" aria-label="Account benefits">
+                            <div className="guest-limit-feature">
+                                <span className="guest-limit-feature-icon">
+                                    <Sparkles />
+                                </span>
+                                <span className="guest-limit-feature-copy">
+                                    <strong>More idea attempts</strong>
+                                </span>
+                                <ArrowRight className="guest-limit-feature-arrow" />
+                            </div>
 
-                    <p>
-                        We’re sorry, your one-time guest generation has
-                        already been used. Create a free Voxidence account to
-                        unlock more idea attempts, keep your discoveries, and
-                        continue building from your personal workspace.
-                    </p>
+                            <div className="guest-limit-feature">
+                                <span className="guest-limit-feature-icon">
+                                    <Bookmark />
+                                </span>
+                                <span className="guest-limit-feature-copy">
+                                    <strong>Saved discoveries</strong>
+                                </span>
+                                <ArrowRight className="guest-limit-feature-arrow" />
+                            </div>
 
-                    <div className="guest-limit-benefits" aria-label="Account benefits">
-                        <span><Check /> More idea attempts</span>
-                        <span><Check /> Saved discoveries</span>
-                        <span><Check /> Your own workspace</span>
-                    </div>
+                            <div className="guest-limit-feature">
+                                <span className="guest-limit-feature-icon">
+                                    <Folder />
+                                </span>
+                                <span className="guest-limit-feature-copy">
+                                    <strong>Your own workspace</strong>
+                                </span>
+                                <ArrowRight className="guest-limit-feature-arrow" />
+                            </div>
+                        </div>
 
-                    <div className="guest-result-actions guest-limit-actions">
+                        <div className="guest-limit-showcase-actions">
+                            <button
+                                type="button"
+                                className="guest-limit-create"
+                                onClick={() => navigate('/register')}
+                            >
+                                <span className="guest-limit-action-icon">
+                                    <UserPlus />
+                                </span>
+                                <span>Create free account</span>
+                                <ArrowRight className="guest-limit-action-arrow" />
+                            </button>
+
+                            <button
+                                type="button"
+                                className="guest-limit-signin"
+                                onClick={() => navigate('/login')}
+                            >
+                                <LogIn />
+                                <span>Sign in</span>
+                            </button>
+                        </div>
+
                         <button
                             type="button"
-                            className="guest-primary"
-                            onClick={() => navigate('/register')}
+                            className="guest-limit-showcase-home"
+                            onClick={() => navigate('/')}
                         >
-                            <UserPlus />
-                            Create free account
-                            <ArrowRight />
-                        </button>
-
-                        <button
-                            type="button"
-                            className="guest-secondary"
-                            onClick={() => navigate('/login')}
-                        >
-                            <LogIn />
-                            Sign in
+                            <ArrowLeft />
+                            <span>Back to home</span>
                         </button>
                     </div>
 
-                    <button
-                        type="button"
-                        className="guest-limit-home"
-                        onClick={() => navigate('/')}
-                    >
-                        <ArrowLeft />
-                        Back to home
-                    </button>
+                    <div className="guest-limit-visual" aria-hidden="true">
+                        <div className="guest-limit-visual-glow guest-limit-visual-glow--one" />
+                        <div className="guest-limit-visual-glow guest-limit-visual-glow--two" />
+                        <div className="guest-limit-path guest-limit-path--one" />
+                        <div className="guest-limit-path guest-limit-path--two" />
+
+                        <span className="guest-limit-spark guest-limit-spark--one">✦</span>
+                        <span className="guest-limit-spark guest-limit-spark--two">+</span>
+                        <span className="guest-limit-spark guest-limit-spark--three">✦</span>
+
+                        <div className="guest-visual-card guest-visual-card--ideas">
+                            <div className="guest-visual-card-head">
+                                <span><Sparkles /></span>
+                                <strong>More ideas</strong>
+                                <span className="guest-visual-bubble guest-visual-bubble--infinity">
+                                    <Infinity />
+                                </span>
+                            </div>
+                            <div className="guest-visual-lines">
+                                <i /><b />
+                                <i /><b />
+                                <i /><b />
+                            </div>
+                        </div>
+
+                        <div className="guest-visual-card guest-visual-card--saved">
+                            <div className="guest-visual-card-head">
+                                <span><Bookmark /></span>
+                                <strong>Saved discoveries</strong>
+                                <span className="guest-visual-bubble guest-visual-bubble--check">
+                                    <Check />
+                                </span>
+                            </div>
+                            <div className="guest-visual-lines guest-visual-lines--saved">
+                                <i /><b />
+                                <i /><b />
+                                <i /><b />
+                            </div>
+                        </div>
+
+                        <div className="guest-visual-card guest-visual-card--workspace">
+                            <div className="guest-visual-card-head">
+                                <span><Folder /></span>
+                                <strong>My workspace</strong>
+                                <span className="guest-visual-bubble guest-visual-bubble--user">
+                                    <UserRound />
+                                </span>
+                            </div>
+                            <div className="guest-workspace-preview">
+                                <div className="guest-workspace-list">
+                                    <span /><span /><span /><span />
+                                </div>
+                                <div className="guest-workspace-chart">
+                                    <svg viewBox="0 0 190 110" preserveAspectRatio="none">
+                                        <path d="M8 91 L52 50 L96 72 L140 24 L182 46" />
+                                        <circle cx="8" cy="91" r="4" />
+                                        <circle cx="52" cy="50" r="4" />
+                                        <circle cx="96" cy="72" r="4" />
+                                        <circle cx="140" cy="24" r="4" />
+                                        <circle cx="182" cy="46" r="4" />
+                                    </svg>
+                                    <div className="guest-workspace-chart-blocks">
+                                        <span /><span /><span />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         );

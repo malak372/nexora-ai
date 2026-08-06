@@ -62,10 +62,26 @@ export default function HeroSection() {
     const navigate = useNavigate();
     const shouldReduceMotion = useReducedMotion();
     const [activeStageIndex, setActiveStageIndex] = useState(0);
-    const [isPaused, setIsPaused] = useState(false);
 
     useEffect(() => {
-        if (shouldReduceMotion || isPaused) {
+        HERO_STAGES.forEach(({ image }) => {
+            const preloadImage = new Image();
+            preloadImage.src = image;
+            preloadImage.decode?.().catch(() => undefined);
+        });
+    }, []);
+
+    useEffect(() => {
+        const resetToFirstStage = () => setActiveStageIndex(0);
+
+        resetToFirstStage();
+        window.addEventListener('pageshow', resetToFirstStage);
+
+        return () => window.removeEventListener('pageshow', resetToFirstStage);
+    }, []);
+
+    useEffect(() => {
+        if (shouldReduceMotion) {
             return undefined;
         }
 
@@ -76,7 +92,7 @@ export default function HeroSection() {
         }, STAGE_DURATION_MS);
 
         return () => window.clearInterval(intervalId);
-    }, [isPaused, shouldReduceMotion]);
+    }, [shouldReduceMotion]);
 
     const activeStage = HERO_STAGES[activeStageIndex];
 
@@ -112,9 +128,10 @@ export default function HeroSection() {
                     </h1>
 
                     <p className="vox-hero-lead">
-                        Voxidence listens to recurring community needs, connects them
-                        with evidence, and turns them into focused software opportunities
-                        with purpose, context, and local relevance.
+                        <strong className="vox-hero-brand-name">Voxidence</strong>{' '}
+                        listens to recurring community needs, connects them with evidence,
+                        and turns them into focused software opportunities with purpose,
+                        context, and local relevance.
                     </p>
 
                     <div className="vox-hero-actions">
@@ -159,48 +176,36 @@ export default function HeroSection() {
                     animate={shouldReduceMotion ? undefined : { opacity: 1, scale: 1, x: 0 }}
                     transition={{ duration: 0.86, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
                     className="vox-stage-showcase"
-                    onMouseEnter={() => setIsPaused(true)}
-                    onMouseLeave={() => setIsPaused(false)}
                     aria-label="Voxidence project stages slideshow"
                 >
+                    <span className="vox-stage-backdrop vox-stage-backdrop-one" aria-hidden="true" />
+                    <span className="vox-stage-backdrop vox-stage-backdrop-two" aria-hidden="true" />
+
                     <div className="vox-stage-showcase-frame">
-                        <AnimatePresence mode="wait" initial={false}>
+                        <div className="vox-stage-window-rail" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                        </div>
+
+                        <AnimatePresence mode="sync" initial={false}>
                             <motion.img
                                 key={activeStage.id}
                                 src={activeStage.image}
                                 alt={activeStage.title}
                                 className="vox-stage-showcase-image"
-                                initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035, filter: 'blur(8px)' }}
-                                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.985, filter: 'blur(5px)' }}
-                                transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+                                loading="eager"
+                                decoding="async"
+                                fetchPriority={activeStageIndex === 0 ? 'high' : 'auto'}
+                                initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.025 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.99 }}
+                                transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
                             />
                         </AnimatePresence>
 
-                    </div>
-
-                    <div className="vox-stage-showcase-controls" aria-label="Choose a project stage">
-                        {HERO_STAGES.map((stage, index) => (
-                            <button
-                                key={stage.id}
-                                type="button"
-                                className={index === activeStageIndex ? 'is-active' : ''}
-                                onClick={() => setActiveStageIndex(index)}
-                                aria-label={`Show ${stage.title}`}
-                                aria-current={index === activeStageIndex ? 'true' : undefined}
-                            >
-                                <i aria-hidden="true">
-                                    {index === activeStageIndex && !shouldReduceMotion && !isPaused && (
-                                        <motion.b
-                                            key={`${activeStage.id}-progress`}
-                                            initial={{ scaleX: 0 }}
-                                            animate={{ scaleX: 1 }}
-                                            transition={{ duration: STAGE_DURATION_MS / 1000, ease: 'linear' }}
-                                        />
-                                    )}
-                                </i>
-                            </button>
-                        ))}
+                        <span className="vox-stage-showcase-glass" aria-hidden="true" />
+                        <span className="vox-stage-corner-accent" aria-hidden="true" />
                     </div>
                 </motion.div>
             </div>

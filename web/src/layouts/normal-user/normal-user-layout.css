@@ -738,6 +738,8 @@
 }
 
 .normal-header__brand-copy strong {
+  /* Match the active Home navigation color for one consistent brand accent. */
+  color: #2F7774;
   font-size: 17px;
   letter-spacing: -.025em;
 }
@@ -1820,4 +1822,44 @@
 .normal-header--professional .normal-header__brand-mark img {
   width: 46px !important;
   height: 46px !important;
+}
+
+/* ========================================================================== */
+/* Profile label simplification and softer header text */
+/* ========================================================================== */
+
+.normal-header--professional .normal-header__brand strong {
+  color: #2F7774 !important;
+}
+
+.normal-header--professional .normal-header__nav a,
+.normal-header--professional .normal-header__profile b {
+  color: #355551 !important;
+}
+
+.normal-header--professional .normal-header__nav a {
+  color: #4e645d !important;
+}
+
+.normal-header--professional .normal-header__nav a:hover,
+.normal-header--professional .normal-header__nav a.is-active {
+  color: #2f7774 !important;
+}
+
+.normal-header--professional .normal-header__profile small,
+.normal-header__profile-copy small {
+  color: #c48b9d !important;
+}
+
+
+/* Compact spacing for the generate workspace */
+.normal-app-shell__main:has(.nx-generation-page) {
+  width: min(1500px, 100%);
+  padding: 12px 24px 24px !important;
+}
+
+@media (max-width: 760px) {
+  .normal-app-shell__main:has(.nx-generation-page) {
+    padding: 10px 0 20px !important;
+  }
 }

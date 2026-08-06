@@ -171,7 +171,7 @@ export default function Navbar() {
                     </span>
 
                     <div className="min-w-0">
-                        <p className="text-[1.02rem] font-black tracking-[-0.03em] text-[#223532]">
+                        <p className="text-[1.02rem] font-black tracking-[-0.03em] text-[#2f7774]">
                             Voxidence
                         </p>
                         <p className="hidden text-[0.72rem] font-semibold text-[#6d817d] md:block">

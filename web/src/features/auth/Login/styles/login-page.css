@@ -1963,3 +1963,60 @@ input:-webkit-autofill:focus {
     width: 46px !important;
     height: 46px !important;
 }
+
+/* ========================================================================== */
+/* Auth color alignment with the public Home identity                         */
+/* ========================================================================== */
+
+.nx-login {
+    --nx-ink: #355f59;
+    --nx-muted: #60756f;
+}
+
+/* Match the Voxidence wordmark beside the icon to the Home navbar exactly. */
+.nx-login .nx-brand__copy strong {
+    color: #2f7774;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+}
+
+/* Replace near-black auth copy with softer brand graphite/eucalyptus tones. */
+.nx-login .nx-login__story h1,
+.nx-login .nx-story-item strong,
+.nx-login .nx-login__story-footer strong,
+.nx-login .nx-auth-card__heading h1,
+.nx-login .nx-auth-card h1,
+.nx-login .nx-form label,
+.nx-login .nx-field__control input {
+    color: #355f59;
+}
+
+.nx-login .nx-brand__copy small,
+.nx-login .nx-login__lead,
+.nx-login .nx-auth-card__heading p,
+.nx-login .nx-auth-card>p,
+.nx-login .nx-login__story-footer,
+.nx-login .nx-form__footer {
+    color: #60756f;
+}
+
+/* Final login text-color cleanup: remove remaining near-black copy. */
+.nx-login .nx-auth-card__heading h2,
+.nx-login .nx-field__label-row label,
+.nx-login .nx-story-item strong,
+.nx-login .nx-login__story-footer strong,
+.nx-login .nx-auth-card strong,
+.nx-login .nx-auth-card label,
+.nx-login .nx-auth-card button:not(.nx-form__submit),
+.nx-login .nx-auth-card input {
+    color: #355f59;
+}
+
+.nx-login .nx-auth-card__heading p,
+.nx-login .nx-form__register,
+.nx-login .nx-check,
+.nx-login .nx-auth-card__trust,
+.nx-login .nx-field__helper,
+.nx-login .nx-field__hint {
+    color: #60756f;
+}

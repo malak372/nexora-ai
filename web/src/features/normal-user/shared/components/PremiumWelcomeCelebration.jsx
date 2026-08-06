@@ -21,22 +21,22 @@ const OUTER_CONFETTI_COUNT = 42;
 
 const confettiItems = [
     { id: 1, top: '14%', left: '12%', size: 'lg', tone: 'teal', delay: 1.0 },
-    { id: 2, top: '19%', left: '20%', size: 'sm', tone: 'gold', delay: 1.14 },
+    { id: 2, top: '19%', left: '20%', size: 'sm', tone: 'sage', delay: 1.14 },
     { id: 3, top: '22%', left: '26%', size: 'xs', tone: 'pink', delay: 1.08 },
     { id: 4, top: '30%', left: '8%', size: 'sm', tone: 'teal', delay: 1.22 },
     { id: 5, top: '43%', left: '12%', size: 'md', tone: 'pink', delay: 1.18 },
     { id: 6, top: '57%', left: '18%', size: 'sm', tone: 'teal', delay: 1.28 },
-    { id: 7, top: '72%', left: '14%', size: 'lg', tone: 'gold', delay: 1.34 },
+    { id: 7, top: '72%', left: '14%', size: 'lg', tone: 'sage', delay: 1.34 },
     { id: 8, top: '78%', left: '23%', size: 'xs', tone: 'pink', delay: 1.26 },
 
-    { id: 9, top: '14%', right: '18%', size: 'sm', tone: 'gold', delay: 1.12 },
+    { id: 9, top: '14%', right: '18%', size: 'sm', tone: 'sage', delay: 1.12 },
     { id: 10, top: '18%', right: '10%', size: 'lg', tone: 'teal', delay: 1.24 },
     { id: 11, top: '24%', right: '20%', size: 'xs', tone: 'pink', delay: 1.1 },
     { id: 12, top: '28%', right: '13%', size: 'md', tone: 'teal', delay: 1.2 },
-    { id: 13, top: '40%', right: '7%', size: 'sm', tone: 'gold', delay: 1.3 },
+    { id: 13, top: '40%', right: '7%', size: 'sm', tone: 'sage', delay: 1.3 },
     { id: 14, top: '50%', right: '18%', size: 'sm', tone: 'pink', delay: 1.22 },
     { id: 15, top: '58%', right: '11%', size: 'md', tone: 'teal', delay: 1.32 },
-    { id: 16, top: '74%', right: '16%', size: 'lg', tone: 'gold', delay: 1.42 },
+    { id: 16, top: '74%', right: '16%', size: 'lg', tone: 'sage', delay: 1.42 },
 ];
 
 function getDisplayName(user) {
@@ -68,7 +68,7 @@ export default function PremiumWelcomeCelebration() {
     const outerConfetti = useMemo(
         () =>
             Array.from({ length: OUTER_CONFETTI_COUNT }, (_, index) => {
-                const palette = ['teal', 'pink', 'champagne', 'ivory'];
+                const palette = ['teal', 'pink', 'sage', 'ivory'];
                 const shapes = ['rectangle', 'circle', 'ribbon'];
 
                 return {
