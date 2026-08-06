@@ -163,8 +163,12 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
       {
         cacheKey,
         cacheTtlMs: this.cacheTtlMs,
-        retryAttempts: this.retryAttempts,
+        retryAttempts:
+          input.collectionMode === 'FAST_GENERATION'
+            ? 1
+            : this.retryAttempts,
         retryDelayMs: this.retryDelayMs,
+        retryOnRateLimit: input.collectionMode !== 'FAST_GENERATION',
       },
     );
 

@@ -52,7 +52,16 @@ export class AnalysisEvidenceService {
         !this.isLikelyPromotionalDescription(text.originalText),
     );
 
-    return posts
+    const rankedPosts = posts.length > 0
+      ? posts
+      : this.selectUniqueEvidence(analyzedTexts).filter(
+          (text) =>
+            text.sourceType === 'POST' &&
+            text.originalText.trim().length >= 20 &&
+            !this.isLikelyPromotionalDescription(text.originalText),
+        );
+
+    return rankedPosts
       .sort((first, second) => {
         const sentimentDifference =
           this.displayEvidencePriority(second.sentiment) -
@@ -89,19 +98,24 @@ export class AnalysisEvidenceService {
     text: string;
     sentiment: Sentiment;
   }> {
-    return this.selectUniqueEvidence(analyzedTexts)
-      .filter(
-        (
-          text,
-        ): text is TextAnalysisResult & {
-          sourceType: 'COMMENT';
-          postId: string;
-        } =>
-          text.sourceType === 'COMMENT' &&
-          typeof text.postId === 'string' &&
-          text.postId.trim().length > 0 &&
-          this.isUsefulDisplayEvidence(text.originalText),
-      )
+    const traceableComments = this.selectUniqueEvidence(analyzedTexts).filter(
+      (
+        text,
+      ): text is TextAnalysisResult & {
+        sourceType: 'COMMENT';
+        postId: string;
+      } =>
+        text.sourceType === 'COMMENT' &&
+        typeof text.postId === 'string' &&
+        text.postId.trim().length > 0 &&
+        text.originalText.trim().length >= 12,
+    );
+
+    const usefulComments = traceableComments.filter((text) =>
+      this.isUsefulDisplayEvidence(text.originalText),
+    );
+
+    return (usefulComments.length > 0 ? usefulComments : traceableComments)
       .slice(0, MAX_OUTPUT_COMMENT_SAMPLES)
       .map((text) => ({
         id: text.id.trim(),

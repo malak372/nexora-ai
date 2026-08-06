@@ -155,6 +155,9 @@ type AiExecutionBaseInput = {
    */
   readonly estimatedOutputTokens?: number;
 
+  /** Optional caller-driven cancellation signal for this logical operation. */
+  readonly signal?: AbortSignal;
+
   /** Optional per-operation provider timeout override in milliseconds. */
   readonly timeoutMs?: number;
 

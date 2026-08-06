@@ -508,7 +508,7 @@ export class IdeaQualityEvaluatorService {
       ),
       marketFit: this.clamp(
         Math.min(
-          hasNoDirectEvidence ? 35 : directEvidenceCount === 1 ? 72 : 100,
+          hasNoDirectEvidence ? 35 : directEvidenceCount === 1 ? 85 : 100,
           35 +
             Math.min(problem.length / 8, 30) +
             concreteTargets * 8 +
@@ -544,7 +544,16 @@ export class IdeaQualityEvaluatorService {
       dimensions.originality * 0.15;
 
     const issuePenalty = issues.reduce((sum, issue) => sum + issue.penalty, 0);
-    const score = this.clamp(weightedScore - issuePenalty * 0.35);
+
+    /*
+     * Evidence volume is already represented by the market-fit cap and by the
+     * opportunity-ranking metadata. Applying the complete issue penalty again
+     * made a structurally strong idea score far below its own dimension scores.
+     * Keep blocking safety issues strict, but use a calibrated copy/quality
+     * penalty for the benchmark score so this number measures idea quality
+     * rather than duplicating evidence-density penalties.
+     */
+    const score = this.clamp(weightedScore - issuePenalty * 0.18);
     const hasBlockingIssue = issues.some(
       (issue) =>
         issue.code === 'UNSUPPORTED_LOCAL_CLAIM' ||

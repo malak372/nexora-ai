@@ -50,22 +50,49 @@ export class AiTimeoutService {
   async execute<T>(
     operation: (signal: AbortSignal) => Promise<T>,
     timeoutMs: number | null,
+    externalSignal?: AbortSignal,
   ): Promise<T> {
     this.validateOperation(operation);
 
+    if (externalSignal?.aborted) {
+      throw this.createCancelledError();
+    }
+
     if (timeoutMs === null) {
-      return operation(new AbortController().signal);
+      const controller = new AbortController();
+      const abortListener = () => controller.abort();
+      externalSignal?.addEventListener('abort', abortListener, { once: true });
+
+      try {
+        return await operation(controller.signal);
+      } finally {
+        externalSignal?.removeEventListener('abort', abortListener);
+      }
     }
 
     this.validateTimeout(timeoutMs);
 
     const controller = new AbortController();
+    const abortListener = () => controller.abort();
+    externalSignal?.addEventListener('abort', abortListener, { once: true });
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
     const operationPromise = Promise.resolve().then(() =>
       operation(controller.signal),
     );
+
+    const cancellationPromise = new Promise<never>((_, reject) => {
+      if (!externalSignal) {
+        return;
+      }
+
+      externalSignal.addEventListener(
+        'abort',
+        () => reject(this.createCancelledError()),
+        { once: true },
+      );
+    });
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
@@ -76,14 +103,24 @@ export class AiTimeoutService {
     });
 
     try {
-      return await Promise.race([operationPromise, timeoutPromise]);
+      return await Promise.race([operationPromise, timeoutPromise, cancellationPromise]);
     } finally {
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
       }
+      externalSignal?.removeEventListener('abort', abortListener);
     }
   }
 
+
+  private createCancelledError(): AiProviderError {
+    return new AiProviderError(
+      'AI request was cancelled because another parallel candidate already satisfied the quality threshold.',
+      AiProviderErrorCode.CANCELLED,
+      false,
+      499,
+    );
+  }
   /**
    * Creates the normalized provider error returned when one execution
    * attempt exceeds its configured timeout.

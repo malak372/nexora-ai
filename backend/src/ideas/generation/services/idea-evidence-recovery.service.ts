@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 
@@ -68,6 +68,8 @@ export type IdeaEvidenceRecoveryResult = {
  */
 @Injectable()
 export class IdeaEvidenceRecoveryService {
+  private readonly logger = new Logger(IdeaEvidenceRecoveryService.name);
+
   private readonly reviewSourceOrder = [
     'app-store',
     'google-play',
@@ -91,10 +93,10 @@ export class IdeaEvidenceRecoveryService {
    * Three sources are enough to improve evidence recall without repeating the
    * full nine-source collection pass.
    */
-  private readonly maximumRecoverySources = 3;
+  private readonly maximumRecoverySources = 5;
 
   /** Keeps provider queries bounded and natural-language complaint focused. */
-  private readonly maximumRecoveryKeywords = 3;
+  private readonly maximumRecoveryKeywords = 6;
 
   constructor(
     private readonly configService: ConfigService,
@@ -168,8 +170,17 @@ export class IdeaEvidenceRecoveryService {
       communityAiAnalysis: null,
       opportunityRanking: null,
     };
+    const retainedRecoveryTextCount = this.countRetainedRecoveryTexts(nlp);
     const rawCommunityAiAnalysis =
-      await this.communityAiAnalysisService.analyze(recoveryContext);
+      retainedRecoveryTextCount > 0
+        ? await this.communityAiAnalysisService.analyze(recoveryContext)
+        : null;
+
+    if (retainedRecoveryTextCount === 0) {
+      this.logger.warn(
+        'Targeted recovery retained zero final evidence texts; skipping Community AI recovery analysis.',
+      );
+    }
 
     /*
      * Recovery is useful only when it contributes evidence that did not already
@@ -190,10 +201,16 @@ export class IdeaEvidenceRecoveryService {
           this.areEquivalentEvidenceSamples(sample, primarySample),
         ),
     );
-    const communityAiAnalysis = this.filterCommunityAiAnalysisToNovelEvidence(
-      rawCommunityAiAnalysis,
-      novelEvidenceSamples,
-    );
+    const communityAiAnalysis =
+      this.filterCommunityAiAnalysisToNovelEvidence(
+        rawCommunityAiAnalysis,
+        novelEvidenceSamples,
+      ) ??
+      this.buildDeterministicRecoveryAnalysis(
+        context,
+        selectedOpportunity,
+        novelEvidenceSamples,
+      );
     const novelNlp = this.filterNlpContextToNovelEvidence(
       nlp,
       novelEvidenceSamples,
@@ -216,10 +233,27 @@ export class IdeaEvidenceRecoveryService {
       newEvidenceSampleCount: novelEvidenceSamples.length,
       novelEvidenceSamples,
       recoveryOutcome,
-      communityAiRecoveryExecuted: true,
+      communityAiRecoveryExecuted: retainedRecoveryTextCount > 0,
       nlp: novelNlp,
       communityAiAnalysis,
     };
+  }
+
+  /**
+   * Counts only the corpus that survived central relevance, preprocessing, and
+   * NLP persistence. Raw collector hits do not justify an AI recovery call.
+   */
+  private countRetainedRecoveryTexts(nlp: IdeaGenerationNlpContext): number {
+    const samplePosts = Array.isArray(nlp.samplePosts)
+      ? nlp.samplePosts.length
+      : 0;
+    const sampleComments = Array.isArray(nlp.sampleComments)
+      ? nlp.sampleComments.length
+      : 0;
+    const retainedTotals =
+      (nlp.totalPostsAnalyzed ?? 0) + (nlp.totalCommentsAnalyzed ?? 0);
+
+    return Math.max(samplePosts + sampleComments, retainedTotals);
   }
 
   /**
@@ -520,6 +554,157 @@ export class IdeaEvidenceRecoveryService {
       localEvidenceSamples,
       localEvidenceAvailable: localEvidenceSamples.length > 0,
     };
+  }
+
+
+  /**
+   * Builds an auditable recovery opportunity when the online Community AI
+   * cannot return a valid schema despite the recovery corpus containing new
+   * complaint evidence. This is not synthetic market research: every claim is
+   * inherited from the previously ranked problem family and every supporting
+   * sample is copied from the newly collected corpus. The deterministic
+   * ranking and independent-source verifier still decide whether the result is
+   * eligible.
+   */
+  private buildDeterministicRecoveryAnalysis(
+    context: IdeaGenerationContext,
+    selectedOpportunity: RankedIdeaOpportunity | null,
+    novelEvidenceSamples: readonly string[],
+  ): CommunityAiAnalysis | null {
+    if (!selectedOpportunity || novelEvidenceSamples.length === 0) {
+      return null;
+    }
+
+    const evidenceSamples = this.deduplicateEvidenceSamples(
+      novelEvidenceSamples,
+    ).slice(0, 8);
+    const rawDomainName = this.readRecoveredDomainName(
+      selectedOpportunity,
+    );
+    const domainName =
+      context.domainName?.trim() ||
+      rawDomainName ||
+      'General';
+    const title = `${selectedOpportunity.title} — recovered evidence`;
+    const problem =
+      selectedOpportunity.problem ||
+      selectedOpportunity.need ||
+      `Users in ${domainName} encounter a repeated workflow problem.`;
+    const unmetNeed =
+      selectedOpportunity.need ||
+      `A focused workflow that addresses the recovered ${domainName} complaints.`;
+    const solutionArea =
+      selectedOpportunity.solutionArea ||
+      'Evidence-led workflow improvement and operational decision support';
+    const confidence = Math.min(78, 45 + evidenceSamples.length * 7);
+
+    const opportunity: CommunityAiOpportunity = {
+      domainName,
+      title,
+      problem,
+      unmetNeed,
+      solutionArea,
+      affectedUsers: this.resolveRecoveredAffectedUsers(selectedOpportunity),
+      evidenceSamples,
+      frequency: evidenceSamples.length,
+      severity: this.resolveRecoveredSeverity(selectedOpportunity.severity),
+      confidence,
+      problemImportance: Math.min(82, 55 + evidenceSamples.length * 5),
+      localEvidenceAvailable: false,
+      localEvidenceSamples: [],
+      localRelevance: 20,
+      groundingScore: 100,
+      technicalFeasibility: 72,
+      marketPotential: Math.min(75, 48 + evidenceSamples.length * 4),
+      innovationPotential: 58,
+      risks: [
+        'The recovered evidence must still pass independent-source verification.',
+        'The selected location is a deployment target unless explicitly named by the evidence.',
+      ],
+    };
+
+    return {
+      summary:
+        `Targeted recovery retained ${evidenceSamples.length} new complaint evidence sample(s). ` +
+        'A deterministic evidence-preserving opportunity was created because online Community AI did not return an acceptable grounded response.',
+      dominantProblems: [problem],
+      unmetNeeds: [unmetNeed],
+      opportunities: [opportunity],
+      overallConfidence: confidence,
+      qualityWarnings: [
+        'Community AI recovery output was unavailable; this opportunity was constructed deterministically from newly retained evidence.',
+        'Eligibility remains controlled by deterministic ranking and independent-source verification.',
+      ],
+      modelId: null,
+      apiModelId: null,
+      attemptCount: 0,
+    };
+  }
+
+  /**
+   * Reads the domain name from the raw ranked opportunity safely.
+   *
+   * The raw ranking payload is Prisma JSON and may not contain a usable
+   * domainName field.
+   */
+  private readRecoveredDomainName(
+    selectedOpportunity: RankedIdeaOpportunity,
+  ): string | null {
+    const raw = selectedOpportunity.raw;
+
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      Array.isArray(raw)
+    ) {
+      return null;
+    }
+
+    const domainName =
+      (raw as Prisma.JsonObject).domainName;
+
+    if (typeof domainName !== 'string') {
+      return null;
+    }
+
+    const normalizedDomainName = domainName.trim();
+
+    return normalizedDomainName.length > 0
+      ? normalizedDomainName
+      : null;
+  }
+
+  /** Maps ranking severity strings into the strict Community AI contract. */
+  private resolveRecoveredSeverity(
+    value: string | null,
+  ): CommunityAiOpportunity['severity'] {
+    const normalized = value?.toUpperCase();
+    return normalized === 'LOW' ||
+      normalized === 'HIGH' ||
+      normalized === 'CRITICAL'
+      ? normalized
+      : 'MEDIUM';
+  }
+
+  /** Preserves known affected-user labels without inventing new personas. */
+  private resolveRecoveredAffectedUsers(
+    selectedOpportunity: RankedIdeaOpportunity,
+  ): string[] {
+    const raw = selectedOpportunity.raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const value = (raw as Prisma.JsonObject).affectedUsers;
+      if (Array.isArray(value)) {
+        const users = value
+          .filter((entry): entry is string => typeof entry === 'string')
+          .map((entry) => entry.replace(/\s+/gu, ' ').trim())
+          .filter(Boolean);
+        if (users.length > 0) {
+          return users.slice(0, 6);
+        }
+      }
+    }
+
+    return [`Users participating in ${selectedOpportunity.title} workflows`];
   }
 
   /** Prevents old or irrelevant recovery records from entering merged NLP data. */
@@ -854,20 +1039,20 @@ export class IdeaEvidenceRecoveryService {
   } {
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 4),
-        6,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 16),
+        20,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 2),
-        3,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 10),
+        12,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 6),
-        8,
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 24),
+        30,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 4),
-        5,
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 16),
+        20,
       ),
     };
   }

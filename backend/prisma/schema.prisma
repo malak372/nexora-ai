@@ -56,27 +56,27 @@ model CollectionJobSource {
 }
 
 model User {
-  id                          String                      @id @default(uuid())
-  fullName                    String                      @map("full_name")
-  email                       String                      @unique
-  passwordHash                String                      @map("password_hash")
-  role                        UserRole                    @default(USER)
-  accountStatus               AccountStatus               @default(NORMAL) @map("account_status")
-  freeGenerationLimit         Int                         @default(3) @map("free_generation_limit")
-  freeGenerationsUsed         Int                         @default(0) @map("free_generations_used")
-  creditBalance               Int                         @default(0) @map("credit_balance")
-  isActive                    Boolean                     @default(true) @map("is_active")
-  isVerified                  Boolean                     @default(false) @map("is_verified")
-  createdAt                   DateTime                    @default(now()) @map("created_at")
-  updatedAt                   DateTime                    @updatedAt @map("updated_at")
+  id                  String        @id @default(uuid())
+  fullName            String        @map("full_name")
+  email               String        @unique
+  passwordHash        String        @map("password_hash")
+  role                UserRole      @default(USER)
+  accountStatus       AccountStatus @default(NORMAL) @map("account_status")
+  freeGenerationLimit Int           @default(3) @map("free_generation_limit")
+  freeGenerationsUsed Int           @default(0) @map("free_generations_used")
+  creditBalance       Int           @default(0) @map("credit_balance")
+  isActive            Boolean       @default(true) @map("is_active")
+  isVerified          Boolean       @default(false) @map("is_verified")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
 
-  failedLoginAttempts         Int                         @default(0) @map("failed_login_attempts")
-  failedLoginWindowStartedAt  DateTime?                   @map("failed_login_window_started_at")
-  loginLockLevel              Int                         @default(0) @map("login_lock_level")
+  failedLoginAttempts        Int       @default(0) @map("failed_login_attempts")
+  failedLoginWindowStartedAt DateTime? @map("failed_login_window_started_at")
+  loginLockLevel             Int       @default(0) @map("login_lock_level")
 
-  lockedAt                    DateTime?                   @map("locked_at")
-  lockedUntil                 DateTime?                   @map("locked_until")
-  lockDurationMinutes         Int?                        @map("lock_duration_minutes")
+  lockedAt            DateTime? @map("locked_at")
+  lockedUntil         DateTime? @map("locked_until")
+  lockDurationMinutes Int?      @map("lock_duration_minutes")
 
   emailVerifiedAt             DateTime?                   @map("email_verified_at")
   lastLoginAt                 DateTime?                   @map("last_login_at")
@@ -182,6 +182,9 @@ model SystemSetting {
   /// One credit allows one premium idea generation.
   creditPrice Decimal @map("credit_price") @db.Decimal(10, 2)
 
+  /// Credits required to generate one Premium idea.
+  premiumIdeaCreditCost Int @default(15) @map("premium_idea_credit_cost")
+
   /// Minimum purchased credits required for bonus credits.
   bonusThreshold Int @default(0) @map("bonus_threshold")
 
@@ -197,7 +200,7 @@ model SystemSetting {
 
   /// Direct payment required to unlock advanced outputs
   /// for one previously generated free idea.
-  directUnlockPrice Decimal @default(10) @map("direct_unlock_price") @db.Decimal(10, 2)
+  directUnlockPrice Decimal @default(15) @map("direct_unlock_price") @db.Decimal(10, 2)
 
   /// Additional fee charged when a NORMAL user becomes PREMIUM
   /// through the first credit purchase.
@@ -205,21 +208,16 @@ model SystemSetting {
 
   /// Credits required for a Premium user to unlock the
   /// advanced details of an accepted publication.
-  publicationAdvancedCreditCost Int @default(1) @map("publication_advanced_credit_cost")
+  publicationAdvancedCreditCost Int @default(10) @map("publication_advanced_credit_cost")
 
-  /// Legacy publication price retained temporarily
-  /// for backward compatibility.
-  publishedIdeaPrice Decimal @default(15) @map("published_idea_price") @db.Decimal(10, 2)
 
   /// Price paid by a NORMAL user to accept a publication.
-  normalAcceptancePrice Decimal @default(15) @map("normal_acceptance_price") @db.Decimal(10, 2)
+  normalAcceptancePrice Decimal @default(5) @map("normal_acceptance_price") @db.Decimal(10, 2)
 
-  /// Price paid by a PREMIUM user to accept a publication.
-  premiumAcceptancePrice Decimal @default(5) @map("premium_acceptance_price") @db.Decimal(10, 2)
 
   /// Direct-payment price for a NORMAL user to unlock advanced outputs
   /// after the basic publication acceptance already exists.
-  normalPublicationAdvancedPrice Decimal @default(5) @map("normal_publication_advanced_price") @db.Decimal(10, 2)
+  normalPublicationAdvancedPrice Decimal @default(10) @map("normal_publication_advanced_price") @db.Decimal(10, 2)
 
   updatedBy User? @relation("SettingsUpdatedBy", fields: [updatedById], references: [id])
 

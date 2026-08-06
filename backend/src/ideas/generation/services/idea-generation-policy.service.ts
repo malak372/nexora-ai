@@ -4,12 +4,13 @@ import {
   Injectable,
 } from '@nestjs/common';
 
-import { IdeaGenerationType, UnlockMethod } from '@prisma/client';
+import { AccountStatus, IdeaGenerationType, UnlockMethod } from '@prisma/client';
+
+import { PrismaService } from '../../../prisma/prisma.service';
 
 import {
   GUEST_GENERATION_LIMIT,
   IDEA_GENERATION_ERROR_CODES,
-  PREMIUM_IDEA_CREDIT_COST,
 } from '../constants/idea-generation.constants';
 
 import type {
@@ -40,6 +41,7 @@ import type {
  */
 @Injectable()
 export class IdeaGenerationPolicyService {
+  constructor(private readonly prisma: PrismaService) {}
   /**
    * Evaluates generation entitlement for either a registered user
    * or a guest session.
@@ -47,7 +49,7 @@ export class IdeaGenerationPolicyService {
    * @param input Owner and requested generation information.
    * @returns Resolved generation policy.
    */
-  evaluate(input: IdeaGenerationPolicyInput): IdeaGenerationPolicy {
+  async evaluate(input: IdeaGenerationPolicyInput): Promise<IdeaGenerationPolicy> {
     if (input.ownerType === 'GUEST') {
       return this.evaluateGuestPolicy(input);
     }
@@ -58,17 +60,26 @@ export class IdeaGenerationPolicyService {
   /**
    * Evaluates generation entitlement for a registered user.
    *
+   * Premium accounts are always resolved to PREMIUM_CREDIT generation.
+   * This prevents a stale or incorrect frontend payload from silently
+   * creating a NORMAL_FREE idea for a premium account.
+   *
    * @param input Registered-user policy input.
    * @returns Authorized generation policy.
    */
-  private evaluateRegisteredUserPolicy(
+  private async evaluateRegisteredUserPolicy(
     input: RegisteredIdeaGenerationPolicyInput,
-  ): IdeaGenerationPolicy {
+  ): Promise<IdeaGenerationPolicy> {
     const { user, requestedGenerationType } = input;
 
     this.validateRegisteredUser(user);
 
-    switch (requestedGenerationType) {
+    const effectiveGenerationType =
+      user.accountStatus === AccountStatus.PREMIUM
+        ? IdeaGenerationType.PREMIUM_CREDIT
+        : requestedGenerationType;
+
+    switch (effectiveGenerationType) {
       case IdeaGenerationType.NORMAL_FREE:
         return this.buildNormalFreePolicy(input);
 
@@ -202,19 +213,24 @@ export class IdeaGenerationPolicyService {
    * @param input Registered-user policy input.
    * @returns Premium-credit generation policy.
    */
-  private buildPremiumCreditPolicy(
+  private async buildPremiumCreditPolicy(
     input: RegisteredIdeaGenerationPolicyInput,
-  ): IdeaGenerationPolicy {
+  ): Promise<IdeaGenerationPolicy> {
     const { user } = input;
 
     const currentCreditBalance = Math.max(0, user.creditBalance);
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { key: 'GLOBAL' },
+      select: { premiumIdeaCreditCost: true },
+    });
+    const requiredCredits = settings?.premiumIdeaCreditCost ?? 15;
 
-    if (currentCreditBalance < PREMIUM_IDEA_CREDIT_COST) {
+    if (currentCreditBalance < requiredCredits) {
       throw new ForbiddenException({
         code: IDEA_GENERATION_ERROR_CODES.INSUFFICIENT_CREDITS,
         message:
           'The user does not have enough credits to generate a premium idea.',
-        requiredCredits: PREMIUM_IDEA_CREDIT_COST,
+        requiredCredits,
         availableCredits: currentCreditBalance,
       });
     }
@@ -226,7 +242,7 @@ export class IdeaGenerationPolicyService {
       unlockOnGeneration: true,
       unlockMethod: UnlockMethod.CREDIT_GENERATION,
 
-      creditsToConsume: PREMIUM_IDEA_CREDIT_COST,
+      creditsToConsume: requiredCredits,
 
       consumesFreeGeneration: false,
       consumesGuestGeneration: false,
@@ -237,7 +253,7 @@ export class IdeaGenerationPolicyService {
 
       remainingFreeGenerations: null,
 
-      expectedCreditBalance: currentCreditBalance - PREMIUM_IDEA_CREDIT_COST,
+      expectedCreditBalance: currentCreditBalance - requiredCredits,
     };
   }
 

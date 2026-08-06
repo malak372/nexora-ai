@@ -41,14 +41,13 @@ export class SettingsService {
       settings = await this.prisma.systemSetting.create({
         data: {
           key: 'GLOBAL',
-          creditPrice: 15,
-          directUnlockPrice: 10,
+          creditPrice: 1,
+          premiumIdeaCreditCost: 15,
+          directUnlockPrice: 15,
           premiumActivationFee: 5,
-          publishedIdeaPrice: 15,
-          normalAcceptancePrice: 15,
-          premiumAcceptancePrice: 5,
-          normalPublicationAdvancedPrice: 5,
-          publicationAdvancedCreditCost: 1,
+          normalAcceptancePrice: 5,
+          normalPublicationAdvancedPrice: 10,
+          publicationAdvancedCreditCost: 10,
           bonusThreshold: 0,
           bonusCredits: 0,
           ideaPromptTemplate: null,
@@ -77,14 +76,13 @@ export class SettingsService {
 
     const hasChanges =
       this.changed(body.creditPrice, currentSettings.creditPrice) ||
+      this.changed(body.premiumIdeaCreditCost, currentSettings.premiumIdeaCreditCost) ||
       this.changed(body.directUnlockPrice, currentSettings.directUnlockPrice) ||
       this.changed(
         body.premiumActivationFee,
         currentSettings.premiumActivationFee,
       ) ||
-      this.changed(body.publishedIdeaPrice, currentSettings.publishedIdeaPrice) ||
       this.changed(body.normalAcceptancePrice, currentSettings.normalAcceptancePrice) ||
-      this.changed(body.premiumAcceptancePrice, currentSettings.premiumAcceptancePrice) ||
       this.changed(body.normalPublicationAdvancedPrice, currentSettings.normalPublicationAdvancedPrice) ||
       this.changed(
         body.publicationAdvancedCreditCost,
@@ -107,15 +105,16 @@ export class SettingsService {
         ...(body.creditPrice !== undefined && {
           creditPrice: body.creditPrice,
         }),
+        ...(body.premiumIdeaCreditCost !== undefined && {
+          premiumIdeaCreditCost: body.premiumIdeaCreditCost,
+        }),
         ...(body.directUnlockPrice !== undefined && {
           directUnlockPrice: body.directUnlockPrice,
         }),
         ...(body.premiumActivationFee !== undefined && {
           premiumActivationFee: body.premiumActivationFee,
         }),
-        ...(body.publishedIdeaPrice !== undefined && { publishedIdeaPrice: body.publishedIdeaPrice }),
         ...(body.normalAcceptancePrice !== undefined && { normalAcceptancePrice: body.normalAcceptancePrice }),
-        ...(body.premiumAcceptancePrice !== undefined && { premiumAcceptancePrice: body.premiumAcceptancePrice }),
         ...(body.normalPublicationAdvancedPrice !== undefined && {
           normalPublicationAdvancedPrice: body.normalPublicationAdvancedPrice,
         }),
@@ -165,9 +164,7 @@ export class SettingsService {
       creditPrice: Prisma.Decimal | number | string;
       directUnlockPrice: Prisma.Decimal | number | string;
       premiumActivationFee: Prisma.Decimal | number | string;
-      publishedIdeaPrice: Prisma.Decimal | number | string;
       normalAcceptancePrice: Prisma.Decimal | number | string;
-      premiumAcceptancePrice: Prisma.Decimal | number | string;
       normalPublicationAdvancedPrice: Prisma.Decimal | number | string;
     },
   >(settings: T) {
@@ -176,9 +173,7 @@ export class SettingsService {
       creditPrice: toNumber(settings.creditPrice),
       directUnlockPrice: toNumber(settings.directUnlockPrice),
       premiumActivationFee: toNumber(settings.premiumActivationFee),
-      publishedIdeaPrice: toNumber(settings.publishedIdeaPrice),
       normalAcceptancePrice: toNumber(settings.normalAcceptancePrice),
-      premiumAcceptancePrice: toNumber(settings.premiumAcceptancePrice),
       normalPublicationAdvancedPrice: toNumber(settings.normalPublicationAdvancedPrice),
     };
   }
@@ -196,21 +191,19 @@ export class SettingsService {
     creditPrice: number;
     directUnlockPrice: number;
     premiumActivationFee: number;
-    publishedIdeaPrice: number;
     normalAcceptancePrice: number;
-    premiumAcceptancePrice: number;
     normalPublicationAdvancedPrice: number;
     publicationAdvancedCreditCost: number;
+    premiumIdeaCreditCost: number;
     bonusThreshold: number;
     bonusCredits: number;
   }) {
     return {
       creditPrice: settings.creditPrice,
+      premiumIdeaCreditCost: settings.premiumIdeaCreditCost,
       directUnlockPrice: settings.directUnlockPrice,
       premiumActivationFee: settings.premiumActivationFee,
-      publishedIdeaPrice: settings.publishedIdeaPrice,
       normalAcceptancePrice: settings.normalAcceptancePrice,
-      premiumAcceptancePrice: settings.premiumAcceptancePrice,
       normalPublicationAdvancedPrice: settings.normalPublicationAdvancedPrice,
       publicationAdvancedCreditCost: settings.publicationAdvancedCreditCost,
       bonusThreshold: settings.bonusThreshold,

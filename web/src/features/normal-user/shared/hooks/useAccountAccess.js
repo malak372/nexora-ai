@@ -23,6 +23,11 @@ import {
     extractApiData,
     normalUserApi,
 } from '../api/normalUserApi';
+import {
+    cachedRequest,
+    createRequestCacheKey,
+    invalidateRequestCache,
+} from '../cache/requestCache';
 
 /**
  * Creates an account-access snapshot using the user information currently
@@ -86,8 +91,15 @@ export default function useAccountAccess() {
      */
     const refresh = useCallback(async () => {
         try {
-            const response = await normalUserApi.get('/users/credits');
-            const payload = extractApiData(response) || {};
+            const cacheKey = createRequestCacheKey('account-access');
+            const payload = await cachedRequest(
+                cacheKey,
+                async () => {
+                    const response = await normalUserApi.get('/users/credits');
+                    return extractApiData(response) || {};
+                },
+                { ttlMs: 2 * 60 * 1000, force: false },
+            );
 
             const accountStatus = payload.accountStatus || 'NORMAL';
 
@@ -144,9 +156,14 @@ export default function useAccountAccess() {
             handleUserUpdate,
         );
 
+        const handleCreditsUpdated = () => {
+            invalidateRequestCache('account-access:');
+            void refresh();
+        };
+
         window.addEventListener(
             'nexora:credits-updated',
-            refresh,
+            handleCreditsUpdated,
         );
 
         return () => {
@@ -157,7 +174,7 @@ export default function useAccountAccess() {
 
             window.removeEventListener(
                 'nexora:credits-updated',
-                refresh,
+                handleCreditsUpdated,
             );
         };
     }, [refresh]);

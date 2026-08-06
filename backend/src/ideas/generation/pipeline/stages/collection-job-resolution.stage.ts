@@ -195,17 +195,16 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       forceRefresh: context.forceRefresh,
       collectionMode: 'FAST_GENERATION',
       /*
-       * Keep the existing evidence volume unchanged. Latency improvements are
-       * applied after collection (cached lexicons, overlapped NLP work, and
-       * fewer database round-trips), not by shrinking the corpus.
+       * Collect a stronger first-pass corpus so most runs satisfy evidence
+       * requirements without a second targeted-recovery collection. All
+       * collectors still execute in parallel, therefore the additional depth
+       * improves recall without creating one sequential request chain.
        */
       collectorLimits: {
-        // Every active source participates, but each source contributes a
-        // compact evidence sample so total wall-clock time stays bounded.
-        maxFetchedPosts: 3,
-        maxSavedPosts: 2,
-        maxFetchedComments: 2,
-        maxSavedComments: 1,
+        maxFetchedPosts: 10,
+        maxSavedPosts: 7,
+        maxFetchedComments: 16,
+        maxSavedComments: 10,
       },
     });
   }
@@ -255,11 +254,25 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       this.selectSpecificDomainTerms(domain, 2),
     );
 
+    const problemFocusedPrimaryQueries = primaryDomain
+      ? this.buildProblemFocusedQueries(primaryDomain)
+      : [];
+    const problemFocusedSecondaryQueries = secondaryDomains.flatMap((domain) =>
+      this.buildProblemFocusedQueries(domain).slice(0, 1),
+    );
+
+    /*
+     * Do not send the complete generated keyword catalogue to collectors.
+     * Generic phrases such as "government software" or a bare domain name
+     * produce political news, unrelated developer tickets, and promotional
+     * pages. Prefer specific domain workflows paired with explicit user-pain
+     * intent so the first pass retains more usable evidence with fewer calls.
+     */
     return [
-      ...(primaryDomain ? [primaryDomain.name] : []),
+      ...problemFocusedPrimaryQueries,
       ...primaryTerms,
+      ...problemFocusedSecondaryQueries,
       ...secondaryTerms,
-      ...context.keywords,
     ]
       .map((value) => value.trim())
       .filter(Boolean)
@@ -270,7 +283,30 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
               this.normalizeTerm(candidate) === this.normalizeTerm(value),
           ) === index,
       )
-      .slice(0, 14);
+      .slice(0, 12);
+  }
+
+
+  /** Builds high-intent queries that describe a user problem, not a topic. */
+  private buildProblemFocusedQueries(
+    domain: SelectedGenerationDomain,
+  ): string[] {
+    const specificTerms = this.selectSpecificDomainTerms(domain, 5);
+    const baseTerms = specificTerms.length > 0
+      ? specificTerms
+      : [domain.name];
+
+    const intentSuffixes = [
+      'user complaint problem',
+      'not working difficult confusing',
+      'review missing feature',
+    ];
+
+    return baseTerms
+      .slice(0, 4)
+      .flatMap((term, index) => [
+        `${term} ${intentSuffixes[index % intentSuffixes.length]}`,
+      ]);
   }
 
   /**

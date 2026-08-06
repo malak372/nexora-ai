@@ -753,6 +753,10 @@ export class AiModelsService {
         healthStatus: {
           in: [...ROUTABLE_HEALTH_STATUSES],
         },
+
+        consecutiveFailures: {
+          lt: 3,
+        },
       },
     });
 
@@ -784,6 +788,10 @@ export class AiModelsService {
 
         healthStatus: {
           in: [...ROUTABLE_HEALTH_STATUSES],
+        },
+
+        consecutiveFailures: {
+          lt: 3,
         },
       },
 

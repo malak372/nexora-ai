@@ -133,6 +133,8 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
 
       generationType: context.generationType,
 
+      creditsToConsume: policy.creditsToConsume,
+
       parsedOutput,
     });
 
