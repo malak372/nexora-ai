@@ -93,12 +93,16 @@ export class DiscourseForumAdapter
             params: {
               q: searchQuery,
             },
-            timeout: 10_000,
+            timeout:
+              input.collectionMode === 'FAST_GENERATION' ? 2_500 : 10_000,
           },
           {
             cacheKey,
             cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
+            retryAttempts:
+              input.collectionMode === 'FAST_GENERATION'
+                ? 0
+                : this.retryAttempts,
             retryDelayMs: this.retryDelayMs,
           },
         );
@@ -146,7 +150,7 @@ export class DiscourseForumAdapter
 
     const topicId = topic.id ?? 0;
 
-    const comments = await this.collectTopicReplies(forumUrl, topicId);
+    const comments = await this.collectTopicReplies(forumUrl, topicId, input);
 
     const title = this.cleanPlainText(topic.title);
 
@@ -184,6 +188,7 @@ export class DiscourseForumAdapter
   private async collectTopicReplies(
     forumUrl: string,
     topicId: number,
+    input: CollectorInput,
   ): Promise<CollectorComment[]> {
     if (!topicId) {
       return [];
@@ -200,12 +205,16 @@ export class DiscourseForumAdapter
           `${forumUrl}/t/${topicId}.json`,
           {
             headers: this.buildHeaders(),
-            timeout: 10_000,
+            timeout:
+              input.collectionMode === 'FAST_GENERATION' ? 2_500 : 10_000,
           },
           {
             cacheKey,
             cacheTtlMs: this.cacheTtlMs,
-            retryAttempts: this.retryAttempts,
+            retryAttempts:
+              input.collectionMode === 'FAST_GENERATION'
+                ? 0
+                : this.retryAttempts,
             retryDelayMs: this.retryDelayMs,
           },
         );

@@ -52,7 +52,7 @@ export class FinalizationStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     await Promise.resolve();
     this.validateContext(context);
-    await this.notifyRegisteredUserSafely(context);
+    void this.notifyRegisteredUserSafely(context);
 
     return {
       context,
@@ -73,7 +73,9 @@ export class FinalizationStage implements IdeaGenerationStage {
     };
   }
 
-  /** Creates an in-app completion alert for registered users only. */
+  /** Creates an in-app completion alert after the durable idea is ready.
+   * This post-commit side effect is intentionally not awaited so notification
+   * persistence cannot delay the user-visible completion event. */
   private async notifyRegisteredUserSafely(
     context: IdeaGenerationContext,
   ): Promise<void> {

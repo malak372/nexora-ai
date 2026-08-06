@@ -1,7 +1,8 @@
 import { Logger } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { ConfigService } from '@nestjs/config';
 
-import { CollectorInput } from './collector.types';
+import { CollectorInput, CollectorLimits } from './collector.types';
 import { CollectorConfigUtil } from './collector-config.util';
 
 /**
@@ -18,11 +19,48 @@ import { CollectorConfigUtil } from './collector-config.util';
 export abstract class BaseCollector {
   protected readonly logger: Logger;
 
-  protected readonly maxFetchedPosts: number;
-  protected readonly maxSavedPosts: number;
+  /**
+   * Per-async-execution collector limits. Collectors are singleton Nest
+   * providers and several sources can run concurrently, therefore mutable
+   * instance fields would leak limits between runs. AsyncLocalStorage keeps
+   * the active FAST_GENERATION limits isolated for each collector invocation.
+   */
+  private static readonly limitContext =
+    new AsyncLocalStorage<CollectorLimits>();
 
-  protected readonly maxFetchedComments: number;
-  protected readonly maxSavedComments: number;
+  private readonly defaultMaxFetchedPosts: number;
+  private readonly defaultMaxSavedPosts: number;
+
+  private readonly defaultMaxFetchedComments: number;
+  private readonly defaultMaxSavedComments: number;
+
+  protected get maxFetchedPosts(): number {
+    return this.resolveLimit(
+      BaseCollector.limitContext.getStore()?.maxFetchedPosts,
+      this.defaultMaxFetchedPosts,
+    );
+  }
+
+  protected get maxSavedPosts(): number {
+    return this.resolveLimit(
+      BaseCollector.limitContext.getStore()?.maxSavedPosts,
+      this.defaultMaxSavedPosts,
+    );
+  }
+
+  protected get maxFetchedComments(): number {
+    return this.resolveLimit(
+      BaseCollector.limitContext.getStore()?.maxFetchedComments,
+      this.defaultMaxFetchedComments,
+    );
+  }
+
+  protected get maxSavedComments(): number {
+    return this.resolveLimit(
+      BaseCollector.limitContext.getStore()?.maxSavedComments,
+      this.defaultMaxSavedComments,
+    );
+  }
 
   protected readonly retryAttempts: number;
   protected readonly retryDelayMs: number;
@@ -34,22 +72,22 @@ export abstract class BaseCollector {
   ) {
     this.logger = new Logger(collectorName);
 
-    this.maxFetchedPosts = this.getPositiveNumber(
+    this.defaultMaxFetchedPosts = this.getPositiveNumber(
       'COLLECTOR_MAX_FETCHED_POSTS',
       80,
     );
 
-    this.maxSavedPosts = this.getPositiveNumber(
+    this.defaultMaxSavedPosts = this.getPositiveNumber(
       'COLLECTOR_MAX_SAVED_POSTS',
       40,
     );
 
-    this.maxFetchedComments = this.getPositiveNumber(
+    this.defaultMaxFetchedComments = this.getPositiveNumber(
       'COLLECTOR_MAX_FETCHED_COMMENTS',
       40,
     );
 
-    this.maxSavedComments = this.getPositiveNumber(
+    this.defaultMaxSavedComments = this.getPositiveNumber(
       'COLLECTOR_MAX_SAVED_COMMENTS',
       40,
     );
@@ -59,6 +97,20 @@ export abstract class BaseCollector {
     this.retryDelayMs = this.getPositiveNumber('COLLECTOR_RETRY_DELAY_MS', 800);
 
     this.cacheTtlMs = this.getPositiveNumber('COLLECTOR_CACHE_TTL_MS', 300_000);
+  }
+
+  /**
+   * Executes one collector call with isolated per-run limits.
+   *
+   * Existing collectors may read the inherited max* properties directly.
+   * Wrapping the complete asynchronous operation here guarantees that all of
+   * them honour CollectorInput.limits without rewriting every implementation.
+   */
+  runWithLimits<T>(
+    input: CollectorInput,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return BaseCollector.limitContext.run(input.limits ?? {}, operation);
   }
 
   /**

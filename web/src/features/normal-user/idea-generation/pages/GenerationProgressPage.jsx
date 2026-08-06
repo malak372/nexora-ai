@@ -7,7 +7,7 @@
  * backend reaches CANCELLED at the next safe checkpoint. Visual styling uses
  * the Voxidence eucalyptus-and-rose identity without changing pipeline data.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, Clock3, LayoutDashboard, Radio, RefreshCw, X } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -22,73 +22,76 @@ import { getVisualPipeline } from '../utils/pipeline.utils';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import '../styles/generation.css';
 
-function useSmoothBackendProgress(value) {
-  const target = Math.max(0, Math.min(100, Number(value ?? 0)));
-  const [displayed, setDisplayed] = useState(target);
-  const frameRef = useRef(null);
-  const currentRef = useRef(target);
-
-  useEffect(() => {
-    const animate = () => {
-      const distance = target - currentRef.current;
-      if (Math.abs(distance) < 0.06) {
-        currentRef.current = target;
-        setDisplayed(target);
-        return;
-      }
-      const speed = Math.min(0.11, Math.max(0.045, Math.abs(distance) / 240));
-      currentRef.current += distance * speed;
-      setDisplayed(currentRef.current);
-      frameRef.current = requestAnimationFrame(animate);
-    };
-
-    cancelAnimationFrame(frameRef.current);
-    frameRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameRef.current);
-  }, [target]);
-
-  return displayed;
-}
 
 export default function GenerationProgressPage() {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId);
   const { isPremium } = useAccountAccess();
-  const displayedProgress = useSmoothBackendProgress(run?.progressPercent);
+  const displayedProgress = Math.max(
+    0,
+    Math.min(100, Number(run?.progressPercent ?? 0)),
+  );
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  const pipeline = useMemo(
-    () => getVisualPipeline(run?.stages ?? [], run?.currentStageKey ?? null),
-    [run?.currentStageKey, run?.stages],
+  const backendPipeline = useMemo(
+    () => getVisualPipeline(
+      run?.stages ?? [],
+      run?.currentStageKey ?? null,
+      run?.status ?? 'QUEUED',
+    ),
+    [run?.currentStageKey, run?.stages, run?.status],
   );
+
+  const pipeline = backendPipeline;
 
   const isComplete = COMPLETED_RUN_STATUSES.has(run?.status) && Boolean(run?.ideaId);
   const isTerminal = TERMINAL_RUN_STATUSES.has(run?.status);
   const completedCount = pipeline.filter((stage) => stage.status === 'completed').length;
-  const activeStage = pipeline.find((stage) => stage.status === 'active') ?? pipeline[0];
+  const activeStage = pipeline.find((stage) => stage.status === 'active') ?? null;
   const preparingStage = pipeline.find((stage) => stage.key === 'prepare');
   const preparingStageKeys = preparingStage?.stageKeys ?? [];
   const currentStageKey = run?.currentStageKey ?? null;
-  const hasMovedBeyondPreparing = Boolean(currentStageKey) && !preparingStageKeys.includes(currentStageKey);
+  const isFailedRun = run?.status === 'FAILED';
+  const hasMovedBeyondPreparing =
+    isFailedRun ||
+    (Boolean(currentStageKey) && !preparingStageKeys.includes(currentStageKey));
   const canCancel = !isTerminal && (preparingStage?.status === 'completed' || hasMovedBeyondPreparing);
 
 
   useEffect(() => {
-    if (isTerminal) return undefined;
+    const stageStartedAt = (run?.stages ?? [])
+      .map((stage) => stage?.startedAt)
+      .filter(Boolean)
+      .map((value) => new Date(value).getTime())
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b)[0];
+    const runStartedAt = run?.startedAt
+      ? new Date(run.startedAt).getTime()
+      : null;
+    const startedAt = Number.isFinite(runStartedAt)
+      ? runStartedAt
+      : stageStartedAt;
 
-    const startedAt = run?.startedAt ? new Date(run.startedAt).getTime() : Date.now();
+    if (!startedAt) {
+      setElapsedSeconds(0);
+      return undefined;
+    }
+
     const updateElapsed = () => {
       setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     };
 
     updateElapsed();
+
+    if (isTerminal) return undefined;
+
     const timerId = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(timerId);
-  }, [isTerminal, run?.startedAt]);
+  }, [isTerminal, run?.startedAt, run?.stages]);
 
   useEffect(() => {
     if (run?.cancelRequestedAt) setCancelRequested(true);
@@ -173,7 +176,7 @@ export default function GenerationProgressPage() {
             <span>{String(activeStage?.number ?? 1).padStart(2, '0')}</span>
             <div>
               <small>Now working on</small>
-              <strong>{activeStage?.title ?? 'Preparing'}</strong>
+              <strong>{activeStage?.title ?? 'Waiting for backend start'}</strong>
             </div>
           </div>
         </div>

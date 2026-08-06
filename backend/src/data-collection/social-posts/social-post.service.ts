@@ -29,6 +29,13 @@ import { GetSocialPostsQueryDto } from './dto/get-social-posts-query.dto';
  */
 @Injectable()
 export class SocialPostService {
+  /**
+   * Bounds concurrent post transactions during fast collection. A small pool
+   * removes the old one-post-at-a-time latency while avoiding an unbounded
+   * burst of interactive transactions against Supabase.
+   */
+  private static readonly POST_PERSISTENCE_CONCURRENCY = 4;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -57,125 +64,164 @@ export class SocialPostService {
     totalPosts: number;
     totalComments: number;
   }> {
-    for (const post of posts) {
-      const externalId = post.externalId.trim();
-      const content = post.content.trim();
+    const validPosts = posts.filter(
+      (post) => post.externalId.trim().length > 0 && post.content.trim().length > 0,
+    );
 
-      if (!externalId || !content) {
-        continue;
-      }
+    /*
+     * The previous implementation persisted every post in a sequential
+     * interactive transaction. With 10-20 posts and a remote Supabase region,
+     * network latency accumulated linearly and consumed most of the NLP stage.
+     *
+     * A bounded worker pool preserves one atomic transaction per post while
+     * allowing independent posts to be written concurrently. Four workers are
+     * intentionally conservative: fast enough to remove serial latency, but
+     * small enough to avoid exhausting the Prisma/Supabase connection pool.
+     */
+    let nextIndex = 0;
+    const workerCount = Math.min(
+      SocialPostService.POST_PERSISTENCE_CONCURRENCY,
+      validPosts.length,
+    );
 
-      const comments = post.comments ?? [];
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (true) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
 
-      /*
-       * A store listing may contain many reviews. Prisma's default five-second
-       * interactive-transaction timeout was too short for sequential comment
-       * upserts and could leave earlier posts persisted while the source was
-       * marked FAILED with zero counters. A bounded explicit timeout keeps the
-       * post and its comments atomic without allowing an unbounded transaction.
-       */
-      await this.prisma.$transaction(
-        async (transaction) => {
-          const savedPost = await transaction.socialPost.upsert({
-            where: {
-              collectionJobId_dataSourceId_externalId: {
-                collectionJobId,
-                dataSourceId,
-                externalId,
-              },
-            },
-            update: {
-              title: this.normalizeOptionalText(post.title),
-              content,
-              author: this.normalizeOptionalText(post.author),
-              url: this.normalizeOptionalText(post.url),
-              country: this.normalizeOptionalText(
-                post.country ?? location.country,
-              ),
-              city: this.normalizeOptionalText(post.city ?? location.city),
-              region: this.normalizeOptionalText(
-                post.region ?? location.region,
-              ),
-              languageCode: this.normalizeOptionalText(post.languageCode),
-              likesCount: this.toNonNegativeInteger(post.likesCount),
-              repliesCount: this.toNonNegativeInteger(
-                post.repliesCount ?? comments.length,
-              ),
-              publishedAt: post.publishedAt,
-              collectedAt: new Date(),
-            },
-            create: {
+          const post = validPosts[currentIndex];
+          if (!post) {
+            return;
+          }
+
+          await this.persistPostWithComments(
+            collectionJobId,
+            dataSourceId,
+            location,
+            post,
+          );
+        }
+      }),
+    );
+
+    return {
+      totalPosts: validPosts.length,
+      totalComments: validPosts.reduce(
+        (total, post) =>
+          total +
+          (post.comments ?? []).filter(
+            (comment) =>
+              comment.externalId.trim().length > 0 &&
+              comment.content.trim().length > 0,
+          ).length,
+        0,
+      ),
+    };
+  }
+
+  /** Persists one post and its comments atomically. */
+  private async persistPostWithComments(
+    collectionJobId: string,
+    dataSourceId: string,
+    location: {
+      country?: string | null;
+      city?: string | null;
+      region?: string | null;
+    },
+    post: CollectorPost,
+  ): Promise<void> {
+    const externalId = post.externalId.trim();
+    const content = post.content.trim();
+    const comments = post.comments ?? [];
+
+    await this.prisma.$transaction(
+      async (transaction) => {
+        const savedPost = await transaction.socialPost.upsert({
+          where: {
+            collectionJobId_dataSourceId_externalId: {
               collectionJobId,
               dataSourceId,
               externalId,
-              title: this.normalizeOptionalText(post.title),
-              content,
-              author: this.normalizeOptionalText(post.author),
-              url: this.normalizeOptionalText(post.url),
-              country: this.normalizeOptionalText(
-                post.country ?? location.country,
-              ),
-              city: this.normalizeOptionalText(post.city ?? location.city),
-              region: this.normalizeOptionalText(
-                post.region ?? location.region,
-              ),
-              languageCode: this.normalizeOptionalText(post.languageCode),
-              likesCount: this.toNonNegativeInteger(post.likesCount),
-              repliesCount: this.toNonNegativeInteger(
-                post.repliesCount ?? comments.length,
-              ),
-              publishedAt: post.publishedAt,
             },
-          });
+          },
+          update: {
+            title: this.normalizeOptionalText(post.title),
+            content,
+            author: this.normalizeOptionalText(post.author),
+            url: this.normalizeOptionalText(post.url),
+            country: this.normalizeOptionalText(post.country ?? location.country),
+            city: this.normalizeOptionalText(post.city ?? location.city),
+            region: this.normalizeOptionalText(post.region ?? location.region),
+            languageCode: this.normalizeOptionalText(post.languageCode),
+            likesCount: this.toNonNegativeInteger(post.likesCount),
+            repliesCount: this.toNonNegativeInteger(
+              post.repliesCount ?? comments.length,
+            ),
+            publishedAt: post.publishedAt,
+            collectedAt: new Date(),
+          },
+          create: {
+            collectionJobId,
+            dataSourceId,
+            externalId,
+            title: this.normalizeOptionalText(post.title),
+            content,
+            author: this.normalizeOptionalText(post.author),
+            url: this.normalizeOptionalText(post.url),
+            country: this.normalizeOptionalText(post.country ?? location.country),
+            city: this.normalizeOptionalText(post.city ?? location.city),
+            region: this.normalizeOptionalText(post.region ?? location.region),
+            languageCode: this.normalizeOptionalText(post.languageCode),
+            likesCount: this.toNonNegativeInteger(post.likesCount),
+            repliesCount: this.toNonNegativeInteger(
+              post.repliesCount ?? comments.length,
+            ),
+            publishedAt: post.publishedAt,
+          },
+        });
 
-          for (const comment of comments) {
-            const commentExternalId = comment.externalId.trim();
-            const commentContent = comment.content.trim();
-
-            if (!commentExternalId || !commentContent) {
-              continue;
-            }
-
-            await transaction.socialComment.upsert({
-              where: {
-                postId_externalId: {
-                  postId: savedPost.id,
-                  externalId: commentExternalId,
+        await Promise.all(
+          comments
+            .filter(
+              (comment) =>
+                comment.externalId.trim().length > 0 &&
+                comment.content.trim().length > 0,
+            )
+            .map((comment) =>
+              transaction.socialComment.upsert({
+                where: {
+                  postId_externalId: {
+                    postId: savedPost.id,
+                    externalId: comment.externalId.trim(),
+                  },
                 },
-              },
-              update: {
-                content: commentContent,
-                author: this.normalizeOptionalText(comment.author),
-                languageCode: this.normalizeOptionalText(comment.languageCode),
-                likesCount: this.toNonNegativeInteger(comment.likesCount),
-                publishedAt: comment.publishedAt,
-                collectedAt: new Date(),
-              },
-              create: {
-                postId: savedPost.id,
-                externalId: commentExternalId,
-                content: commentContent,
-                author: this.normalizeOptionalText(comment.author),
-                languageCode: this.normalizeOptionalText(comment.languageCode),
-                likesCount: this.toNonNegativeInteger(comment.likesCount),
-                publishedAt: comment.publishedAt,
-              },
-            });
-          }
-        },
-        {
-          maxWait: 5_000,
-          timeout: 30_000,
-        },
-      );
-    }
-
-    /*
-     * Return authoritative database counts rather than increment counters from
-     * attempted upserts. This remains correct for retries and duplicate-safe
-     * reruns because upserted records are counted exactly once.
-     */
-    return this.countByCollectionJobSource(collectionJobId, dataSourceId);
+                update: {
+                  content: comment.content.trim(),
+                  author: this.normalizeOptionalText(comment.author),
+                  languageCode: this.normalizeOptionalText(comment.languageCode),
+                  likesCount: this.toNonNegativeInteger(comment.likesCount),
+                  publishedAt: comment.publishedAt,
+                  collectedAt: new Date(),
+                },
+                create: {
+                  postId: savedPost.id,
+                  externalId: comment.externalId.trim(),
+                  content: comment.content.trim(),
+                  author: this.normalizeOptionalText(comment.author),
+                  languageCode: this.normalizeOptionalText(comment.languageCode),
+                  likesCount: this.toNonNegativeInteger(comment.likesCount),
+                  publishedAt: comment.publishedAt,
+                },
+              }),
+            ),
+        );
+      },
+      {
+        maxWait: 5_000,
+        timeout: 30_000,
+      },
+    );
   }
 
   /**

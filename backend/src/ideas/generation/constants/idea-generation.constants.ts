@@ -80,22 +80,39 @@ export const GENERATION_HEARTBEAT_INTERVAL_MS = 15 * 1000;
 export const IDEA_GENERATION_TARGET_BUDGET_MS = 60_000;
 
 /**
- * Internal execution deadline leaves two seconds for persistence, finalization,
- * realtime publication, and HTTP/WebSocket propagation.
+ * Hard safety deadline. The 60-second target is a performance objective, not
+ * a reason to destroy a valid run while persistence or a provider call is
+ * finishing. External adapters keep their own short timeouts.
  */
-export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 57_000;
+export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 300_000;
 
 /** Maximum provider time allocated to one core-generation candidate. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 16_000;
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 12_000;
+
+/**
+ * OpenRouter models are cut off earlier because the observed slow/failing
+ * requests consume the complete benchmark window without improving quality.
+ * Direct Google models keep the wider quality-safe allowance.
+ */
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 12_000;
 
 /** Local core-model fallback is disabled inside the strict minute path. */
 export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
 
 /**
+ * Disables the additional comparative AI-judge request in the strict fast path.
+ * Deterministic quality, semantic diversity, output validation, and duplicate
+ * detection remain enabled. This removes one sequential provider call after
+ * the candidate models have already completed.
+ */
+export const IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED = false;
+
+/**
  * Maximum number of milliseconds reserved for deterministic cleanup and
  * persistence after the AI phase.
  */
-export const IDEA_GENERATION_FINALIZATION_RESERVE_MS = 6_000;
+export const IDEA_GENERATION_FINALIZATION_RESERVE_MS = 12_000;
 
 /**
  * Maximum duration a running generation may remain without
@@ -236,7 +253,8 @@ export const MIN_COLLECTED_TEXTS_FOR_GENERATION = 30;
  * Limiting the candidate set prevents duplicate comparison
  * from becoming increasingly expensive as user history grows.
  */
-export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 100;
+export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 40;
+export const DUPLICATE_DETECTION_BATCH_SIZE = 8;
 
 /**
  * Similarity threshold used when comparing normalized idea
@@ -246,10 +264,10 @@ export const DUPLICATE_DETECTION_CANDIDATE_LIMIT = 100;
  * - 0 means completely different.
  * - 1 means identical.
  */
-export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.9;
+export const IDEA_TITLE_SIMILARITY_THRESHOLD = 0.96;
 
 /** Semantic similarity threshold across the complete core idea. */
-export const IDEA_SEMANTIC_SIMILARITY_THRESHOLD = 0.82;
+export const IDEA_SEMANTIC_SIMILARITY_THRESHOLD = 0.9;
 
 /**
  * Maximum length of a normalized idea title used during
@@ -513,7 +531,7 @@ export type CollectionJobResolutionType =
  * initial bounded parallel collection must either provide sufficient evidence
  * or the run fails without consuming an entitlement.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 0;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0.6;
@@ -552,7 +570,7 @@ export const IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT = 1;
  * Maximum ranked opportunities available to the benchmark after the initial
  * fast path is exhausted. Opportunities four and five are fallback-only.
  */
-export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 1;
+export const IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT = 3;
 
 /**
  * Number of AI models executed for each ranked opportunity.
@@ -595,7 +613,7 @@ export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = IDEA_BENCHMARK_MAX_CANDIDATES;
  * many redesign attempts before the benchmark advances to the next model or
  * ranked opportunity.
  */
-export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 0;
+export const IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS = 1;
 
 /**
  * Preferred minimum number of valid candidates before comparative judging.
@@ -621,6 +639,12 @@ export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 0;
  * selection.
  */
 export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 2;
+
+/** Number of recent runs used for temporary model-failure cooldown. */
+export const IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS = 2;
+
+/** Repeated recent failures required before a model is cooled down. */
+export const IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD = 2;
 
 /**
  * Model API identifiers excluded from the normal core-generation rotation.

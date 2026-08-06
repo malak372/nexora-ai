@@ -19,12 +19,12 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
 /**
  * Generates the core idea through a dynamic multi-model benchmark.
  *
- * The highest-ranked NLP opportunity is evaluated by three rotating JSON-capable
+ * The highest-ranked NLP opportunity is evaluated by two rotating JSON-capable
  * models in parallel. Additional ordered models are used only when a fast-path
- * model fails or produces a rejected output; no second opportunity batch runs.
- * Quality-approved candidates are compared using the AI judge when its confidence is
- * sufficient. Final selection uses the persisted hybrid score, while a low-
- * confidence or unavailable judge falls back to deterministic quality.
+ * model fails. Quality-approved candidates remain preferred, while the best
+ * structurally valid low-score candidate is retained only as an availability
+ * fallback. Comparative judging runs when multiple candidates complete inside
+ * the budget; otherwise deterministic quality selects the result.
  *
  * @author Malak
  */
@@ -98,6 +98,8 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           providerKey: winner.aiResult.providerKey,
           apiModelId: winner.aiResult.apiModelId,
           deterministicScore: winner.quality.score,
+          qualityThresholdAccepted: winner.quality.accepted,
+          availabilityFallbackUsed: !winner.quality.accepted,
           semanticDiversityAdjustedScore: winner.semanticDiversityAdjustedScore,
           aiJudgeScore: winner.aiJudge?.overallScore ?? null,
           hybridFinalScore: winner.hybridFinalScore,
@@ -170,6 +172,8 @@ export class CoreIdeaGenerationStage implements IdeaGenerationStage {
           costEstimate: candidate.aiResult.costEstimate,
           responseTimeMs: candidate.aiResult.responseTimeMs,
           validationScore: candidate.quality.score,
+          qualityThresholdAccepted: candidate.quality.accepted,
+          availabilityFallbackUsed: !candidate.quality.accepted,
           validationIssues: candidate.quality.issues.map((issue) => issue.code),
           semanticDiversityScore:
             candidate.semanticDiversity?.diversityScore ?? null,

@@ -26,30 +26,18 @@ const PAYMENT_AFFECTED_NAMESPACES = [
  */
 export async function invalidatePaymentAffectedCaches({ ideaId, publicationId } = {}) {
   if (ideaId) invalidateIdeaWorkspace(ideaId);
-  else invalidateIdeaWorkspace();
 
   PAYMENT_AFFECTED_NAMESPACES.forEach((namespace) => {
     invalidateRequestCache(namespace);
   });
 
-  await queryClient.cancelQueries();
-  queryClient.removeQueries();
-
-  // Clear browser-level HTTP cache entries created by a service worker or the
-  // Cache API. Session/local storage used for authentication is untouched.
-  if ('caches' in window) {
-    try {
-      const cacheNames = await window.caches.keys();
-      await Promise.all(
-        cacheNames
-          .filter((name) => name.toLowerCase().includes('nexora'))
-          .map((name) => window.caches.delete(name)),
-      );
-    } catch {
-      // Cache API can be unavailable in private mode. Request-cache cleanup
-      // above is still sufficient for the application data.
-    }
-  }
+  // Mark active React Query data stale without cancelling every request or
+  // deleting the whole client cache. Global removal was making payment return
+  // noticeably slower and forced unrelated pages to reload.
+  await queryClient.invalidateQueries({
+    predicate: (query) => query.getObserversCount() > 0,
+    refetchType: 'none',
+  });
 
   return { ideaId, publicationId };
 }
@@ -61,14 +49,20 @@ export async function invalidatePaymentAffectedCaches({ ideaId, publicationId } 
 export async function refreshPaymentDestination({ ideaId, publicationId } = {}) {
   await invalidatePaymentAffectedCaches({ ideaId, publicationId });
 
+  const refreshes = [];
+
   if (ideaId) {
-    await getIdeaWorkspaceBundle(ideaId, { forceRefresh: true });
+    refreshes.push(getIdeaWorkspaceBundle(ideaId, { forceRefresh: true }));
   }
 
   if (publicationId) {
-    await Promise.allSettled([
-      getDiscoveryById(publicationId),
-      getMyAcceptance(publicationId),
-    ]);
+    refreshes.push(
+      Promise.allSettled([
+        getDiscoveryById(publicationId),
+        getMyAcceptance(publicationId),
+      ]),
+    );
   }
+
+  await Promise.allSettled(refreshes);
 }

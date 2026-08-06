@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { LanguageCode } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -35,8 +35,40 @@ export type TopicRule = {
  * @author Eman
  */
 @Injectable()
-export class TopicRuleService {
+export class TopicRuleService implements OnModuleInit {
+  private readonly cache = new Map<
+    LanguageCode,
+    { readonly expiresAt: number; readonly rules: TopicRule[] }
+  >();
+
+  private readonly inFlight = new Map<LanguageCode, Promise<TopicRule[]>>();
+
+  private readonly cacheTtlMs = 10 * 60 * 1000;
+  private readonly logger = new Logger(TopicRuleService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Prefetches the rules most generation runs need while Nest is finishing its
+   * startup sequence. This removes two cold Supabase reads from the first NLP
+   * analysis without delaying application readiness.
+   */
+  onModuleInit(): void {
+    void Promise.allSettled([
+      this.getRules(LanguageCode.EN),
+      this.getRules(LanguageCode.ANY),
+    ]).then((results) => {
+      const rejected = results.filter(
+        (result) => result.status === 'rejected',
+      ).length;
+
+      if (rejected > 0) {
+        this.logger.warn(
+          `NLP topic-rule warmup completed with ${rejected} failed request(s); normal lazy loading remains available.`,
+        );
+      }
+    });
+  }
 
   /**
    * Returns all active topic rules for a specific language.
@@ -49,6 +81,34 @@ export class TopicRuleService {
    * @returns Normalized topic rules.
    */
   async getRules(language: LanguageCode): Promise<TopicRule[]> {
+    const now = Date.now();
+    const cached = this.cache.get(language);
+
+    if (cached && cached.expiresAt > now) {
+      return this.cloneRules(cached.rules);
+    }
+
+    const existingRequest = this.inFlight.get(language);
+    if (existingRequest) {
+      return this.cloneRules(await existingRequest);
+    }
+
+    const request = this.loadRules(language);
+    this.inFlight.set(language, request);
+
+    try {
+      const rules = await request;
+      this.cache.set(language, {
+        rules,
+        expiresAt: Date.now() + this.cacheTtlMs,
+      });
+      return this.cloneRules(rules);
+    } finally {
+      this.inFlight.delete(language);
+    }
+  }
+
+  private async loadRules(language: LanguageCode): Promise<TopicRule[]> {
     const rules = await this.prisma.nlpTopicRule.findMany({
       where: {
         isActive: true,
@@ -73,6 +133,13 @@ export class TopicRuleService {
     return rules.map((rule) => ({
       topic: rule.topic.trim(),
       terms: this.normalizeTerms(rule.terms),
+    }));
+  }
+
+  private cloneRules(rules: readonly TopicRule[]): TopicRule[] {
+    return rules.map((rule) => ({
+      topic: rule.topic,
+      terms: [...rule.terms],
     }));
   }
 

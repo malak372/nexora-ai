@@ -30,5 +30,10 @@ export function isTransientDatabaseError(error: unknown): boolean {
     'socket hang up',
     'econnreset',
     'etimedout',
+    'response from the engine was empty',
+    'query engine response was empty',
+    'engine was empty',
+    'unexpected eof',
+    'connection closed unexpectedly',
   ].some((fragment) => message.includes(fragment));
 }

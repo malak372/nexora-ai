@@ -28,7 +28,7 @@ export const PROMPT_TEMPLATE_MAX_LENGTH = 15_000;
  * This limit protects the application from unexpectedly large
  * prompts and excessive provider input usage.
  */
-export const MAX_RENDERED_PROMPT_LENGTH = 100_000;
+export const MAX_RENDERED_PROMPT_LENGTH = 60_000;
 
 /**
  * Approximate character-to-token ratio used for English and
@@ -67,17 +67,20 @@ export const MAX_PROMPT_DATA_SOURCES = 50;
  * representation is compacted.
  */
 export const PROMPT_SECTION_CHARACTER_BUDGETS = {
-  sentimentStats: 2_500,
-  keywords: 3_000,
-  topics: 4_500,
-  recurringProblems: 7_000,
-  extractedNeeds: 7_000,
-  featureRequests: 7_000,
-  opportunities: 6_000,
-  insights: 5_000,
-  dataQuality: 3_000,
-  samplePosts: 5_000,
-  sampleComments: 5_000,
+  sentimentStats: 900,
+  keywords: 1_000,
+  topics: 1_600,
+  recurringProblems: 3_000,
+  extractedNeeds: 3_000,
+  featureRequests: 2_600,
+  opportunities: 3_000,
+  insights: 2_000,
+  dataQuality: 1_000,
+  samplePosts: 2_200,
+  sampleComments: 1_800,
+  domainEvidence: 4_200,
+  selectedOpportunity: 3_200,
+  shortlistedOpportunities: 2_200,
 } as const;
 
 /**

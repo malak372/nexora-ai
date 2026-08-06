@@ -26,6 +26,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
@@ -73,9 +74,27 @@ export default function CompletionCelebration({
     return () => window.clearInterval(timer);
   }, [isPremium]);
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth =
+      window.innerWidth - document.documentElement.clientWidth;
+
+    document.body.style.overflow = 'hidden';
+
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
+    };
+  }, []);
+
+  const celebration = (
     <div
-      className={`nx-celebration ${isPremium ? 'nx-celebration--premium' : ''}`}
+      className={`nx-celebration ${isPremium ? 'nx-celebration--premium' : 'nx-celebration--normal'}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="generation-complete-title"
@@ -173,4 +192,6 @@ export default function CompletionCelebration({
       </AnimatePresence>
     </div>
   );
+
+  return createPortal(celebration, document.body);
 }

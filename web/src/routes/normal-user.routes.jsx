@@ -1,31 +1,36 @@
 /**
- * Authenticated normal-user routes.
+ * Authenticated normal-user routes with route-level code splitting.
  *
- * @author Malak
+ * Heavy pages such as charts, AI chat, payments, and idea workspaces are
+ * loaded only when the user visits them.
+ *
+ * @author Eman
  */
+import { lazy } from 'react';
 import { Navigate, Route } from 'react-router-dom';
 
 import NormalUserLayout from '../layouts/normal-user/NormalUserLayout';
-import NormalDashboardPage from '../features/normal-user/dashboard/pages/NormalDashboardPage';
-import GenerateIdeaPage from '../features/normal-user/idea-generation/pages/GenerateIdeaPage';
-import GenerationProgressPage from '../features/normal-user/idea-generation/pages/GenerationProgressPage';
-import MyIdeasPage from '../features/normal-user/ideas/pages/MyIdeasPage';
-import DiscoveriesPage from '../features/normal-user/discoveries/pages/DiscoveriesPage';
-import PublicationDetailPage from '../features/normal-user/discoveries/pages/PublicationDetailPage';
-import AcceptedIdeaWorkspacePage from '../features/normal-user/discoveries/pages/AcceptedIdeaWorkspacePage';
-import PublishedIdeasPage from '../features/normal-user/published/pages/PublishedIdeasPage';
-import IdeaWorkspacePage from '../features/normal-user/idea-workspace/pages/IdeaWorkspacePage';
-import BusinessModelPage from '../features/normal-user/business-models/pages/BusinessModelPage';
-import DirectUnlockPage from '../features/normal-user/payments/pages/DirectUnlockPage';
-import PaymentResultPage from '../features/normal-user/payments/pages/PaymentResultPage';
-import PublishIdeaPage from '../features/normal-user/publication/pages/PublishIdeaPage';
-import ProfileSettingsPage from '../features/normal-user/profile/pages/ProfileSettingsPage';
-import CompliancePage from '../features/normal-user/compliance/pages/CompliancePage';
-import NotificationsPage from '../features/normal-user/notifications/pages/NotificationsPage';
-import PreferencesPage from '../features/normal-user/preferences/pages/PreferencesPage';
-import UpgradePage from '../features/normal-user/upgrade/pages/UpgradePage';
-import BillingHistoryPage from '../features/normal-user/billing/pages/BillingHistoryPage';
-import AiChatPage from '../features/normal-user/ai-chat/pages/AiChatPage';
+
+const NormalDashboardPage = lazy(() => import('../features/normal-user/dashboard/pages/NormalDashboardPage'));
+const GenerateIdeaPage = lazy(() => import('../features/normal-user/idea-generation/pages/GenerateIdeaPage'));
+const GenerationProgressPage = lazy(() => import('../features/normal-user/idea-generation/pages/GenerationProgressPage'));
+const MyIdeasPage = lazy(() => import('../features/normal-user/ideas/pages/MyIdeasPage'));
+const DiscoveriesPage = lazy(() => import('../features/normal-user/discoveries/pages/DiscoveriesPage'));
+const PublicationDetailPage = lazy(() => import('../features/normal-user/discoveries/pages/PublicationDetailPage'));
+const AcceptedIdeaWorkspacePage = lazy(() => import('../features/normal-user/discoveries/pages/AcceptedIdeaWorkspacePage'));
+const PublishedIdeasPage = lazy(() => import('../features/normal-user/published/pages/PublishedIdeasPage'));
+const IdeaWorkspacePage = lazy(() => import('../features/normal-user/idea-workspace/pages/IdeaWorkspacePage'));
+const BusinessModelPage = lazy(() => import('../features/normal-user/business-models/pages/BusinessModelPage'));
+const DirectUnlockPage = lazy(() => import('../features/normal-user/payments/pages/DirectUnlockPage'));
+const PaymentResultPage = lazy(() => import('../features/normal-user/payments/pages/PaymentResultPage'));
+const PublishIdeaPage = lazy(() => import('../features/normal-user/publication/pages/PublishIdeaPage'));
+const ProfileSettingsPage = lazy(() => import('../features/normal-user/profile/pages/ProfileSettingsPage'));
+const CompliancePage = lazy(() => import('../features/normal-user/compliance/pages/CompliancePage'));
+const NotificationsPage = lazy(() => import('../features/normal-user/notifications/pages/NotificationsPage'));
+const PreferencesPage = lazy(() => import('../features/normal-user/preferences/pages/PreferencesPage'));
+const UpgradePage = lazy(() => import('../features/normal-user/upgrade/pages/UpgradePage'));
+const BillingHistoryPage = lazy(() => import('../features/normal-user/billing/pages/BillingHistoryPage'));
+const AiChatPage = lazy(() => import('../features/normal-user/ai-chat/pages/AiChatPage'));
 
 function TemporaryNormalPage({ title }) {
     return (

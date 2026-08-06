@@ -20,9 +20,14 @@ const API_URL =
     process.env.REACT_APP_API_URL?.replace(/\/$/, '') ||
     'http://localhost:3000';
 
+const API_TIMEOUT_MS = Number(
+    process.env.REACT_APP_API_TIMEOUT_MS || 20000,
+);
+
 export const normalUserApi = axios.create({
     baseURL: API_URL,
-    timeout: 30000,
+    timeout: API_TIMEOUT_MS,
+    withCredentials: true,
     headers: {
         Accept: 'application/json',
     },
@@ -47,9 +52,14 @@ const refreshAccessToken = async () => {
         throw new Error('Refresh token is missing.');
     }
 
-    const response = await axios.post(`${API_URL}/auth/refresh`, {
-        refreshToken,
-    });
+    const response = await axios.post(
+        `${API_URL}/auth/refresh`,
+        { refreshToken },
+        {
+            timeout: API_TIMEOUT_MS,
+            withCredentials: true,
+        },
+    );
 
     const payload = response.data?.data ?? response.data;
     const nextAccessToken = payload?.accessToken;

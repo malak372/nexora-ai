@@ -104,6 +104,13 @@ export class PromptBuildingStage implements IdeaGenerationStage {
       opportunityRanking: context.opportunityRanking ?? undefined,
 
       selectedDomains: context.selectedDomains,
+
+      // Use the merged multi-domain NLP result instead of reloading only the
+      // primary collection job analysis.
+      analysisOverride: context.nlp ?? undefined,
+
+      // Preserve domain attribution for evidence-aware prompt instructions.
+      domainEvidence: context.domainEvidence,
     });
 
     const promptHistory = await this.promptHistoryService.savePrompt({

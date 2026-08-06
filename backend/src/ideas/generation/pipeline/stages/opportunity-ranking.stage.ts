@@ -72,7 +72,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       context.domainId,
     );
     let workingContext = context;
-    let ranking = await this.tryRankContext(workingContext, previousIdeaTexts);
+    let ranking = this.enforcePrimaryDomainFallback(
+      await this.tryRankContext(workingContext, previousIdeaTexts),
+      workingContext,
+    );
     const recoveryMetadata: Array<{
       readonly collectionJobId: string;
       readonly selectedDataSourceKeys: readonly string[];
@@ -91,9 +94,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }> = [];
 
     while (
-      (!ranking ||
-        !this.hasEligibleOpportunity(ranking) ||
-        this.requiresEvidenceRecovery(ranking)) &&
+      this.shouldRunEvidenceRecovery(ranking, workingContext) &&
       workingContext.evidenceRecoveryAttempts < MAX_EVIDENCE_RECOVERY_ATTEMPTS
     ) {
       const recoveryTarget = this.resolveRecoveryTarget(
@@ -125,7 +126,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         ],
       };
 
-      ranking = await this.tryRankContext(workingContext, previousIdeaTexts);
+      ranking = this.enforcePrimaryDomainFallback(
+        await this.tryRankContext(workingContext, previousIdeaTexts),
+        workingContext,
+      );
       const selectedOpportunityNewEvidenceCount =
         this.countSelectedOpportunityNovelEvidence(
           ranking?.selected ?? null,
@@ -186,6 +190,344 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       recoveryMetadata.length > 0,
       aggregatedRecoveryMetadata,
     );
+  }
+
+  /**
+   * Runs recovery only when the primary corpus has no usable direct signal.
+   *
+   * A concrete feature request, bug report, failure description, or explicit
+   * missing-capability statement is already valuable evidence for a bounded
+   * pilot, even when strict recurrence verification has not reached the
+   * multi-source gate. Skipping recovery in that case avoids repeating a full
+   * collection/NLP/Community-AI pass that cannot materially improve the idea.
+   */
+  private shouldRunEvidenceRecovery(
+    ranking: IdeaOpportunityRanking | null,
+    context: IdeaGenerationContext,
+  ): boolean {
+    /*
+     * A zero-text primary corpus means the selected collectors did not produce
+     * any usable evidence. Running a full second collection + NLP + Community
+     * AI pass in that case is expensive and, in practice, usually repeats the
+     * same empty outcome. Continue immediately with a clearly qualified
+     * preliminary fallback instead of spending 40-60 extra seconds.
+     */
+    const primaryTextCount =
+      (context.nlp?.totalTextsAnalyzed ?? 0) +
+      (context.nlp?.totalPostsAnalyzed ?? 0) +
+      (context.nlp?.totalCommentsAnalyzed ?? 0);
+
+    const representativeEvidenceCount = context.domainEvidence.reduce(
+      (total, domain) =>
+        total +
+        this.readDomainEvidenceTexts(domain.samplePosts).length +
+        this.readDomainEvidenceTexts(domain.sampleComments).length,
+      0,
+    );
+
+    /*
+     * A corpus of one or two analyzed texts with no representative complaint
+     * is too weak to justify another collection + NLP + Community-AI cycle.
+     * In observed runs that recovery added roughly 50 seconds and still
+     * returned no direct evidence. Continue with a primary-domain hypothesis
+     * instead of repeating the same low-yield path.
+     */
+    if (primaryTextCount <= 0 && representativeEvidenceCount === 0) {
+      // One targeted recovery pass is justified when the primary collection
+      // produced no usable text at all. The recovery service uses problem-family
+      // queries rather than repeating the broad domain search.
+      return context.evidenceRecoveryAttempts === 0;
+    }
+
+    if (primaryTextCount <= 2 && representativeEvidenceCount === 0) {
+      return context.evidenceRecoveryAttempts === 0;
+    }
+
+    if (this.hasDirectEvidenceInContext(context)) {
+      return false;
+    }
+
+    if (!ranking) {
+      return true;
+    }
+
+    if (this.hasDirectUsableEvidence(ranking)) {
+      return false;
+    }
+
+    return (
+      !this.hasEligibleOpportunity(ranking) ||
+      this.requiresEvidenceRecovery(ranking)
+    );
+  }
+
+  /**
+   * Detects direct community evidence independently from the strict recurrence
+   * counters. The recurrence counters remain unchanged for honest reporting.
+   */
+  private hasDirectUsableEvidence(ranking: IdeaOpportunityRanking): boolean {
+    return [ranking.selected, ...ranking.alternatives].some((candidate) => {
+      if ((candidate.verifiedIndependentEvidenceCount ?? 0) > 0) {
+        return true;
+      }
+
+      return this.readCandidateEvidenceSamples(candidate.raw).some((sample) =>
+        this.looksLikeDirectProblemEvidence(sample),
+      );
+    });
+  }
+
+  /** Reads raw evidenceSamples from Prisma JSON without unsafe property access. */
+  private readCandidateEvidenceSamples(value: Prisma.JsonValue): string[] {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return [];
+    }
+
+    const samples = (value as Prisma.JsonObject).evidenceSamples;
+
+    if (!Array.isArray(samples)) {
+      return [];
+    }
+
+    return samples
+      .filter((sample): sample is string => typeof sample === 'string')
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Accepts explicit user/developer problem reports, not product marketing.
+   * This is deliberately stricter than generic keyword relevance.
+   */
+  private looksLikeDirectProblemEvidence(value: string): boolean {
+    const normalized = value.toLowerCase();
+
+    const explicitRequest =
+      /\b(?:feature request|bug report|is your feature request related to a problem|describe the problem|steps to reproduce|expected behavior|actual behavior)\b/iu.test(
+        normalized,
+      );
+    const concreteFailure =
+      /\b(?:cannot|can'?t|cant|unable|fails?|failed|failure|error|broken|missing|lack(?:s|ing)?|absence|not working|does not work|doesn't work|unsupported|no support|request(?:ed)?|should support|need(?:s|ed)?|not accurate enough|inaccurate|imprecise|too slow|confusing)\b/iu.test(
+        normalized,
+      );
+    const explicitCapabilityQuestion =
+      /\b(?:is it possible|is it possable|can i|could i|how can i|why can'?t i|why cant i)\b.{0,140}\b(?:add|create|manage|support|use|connect|sync|export|import|access|check|track)\b/iu.test(
+        normalized,
+      );
+    const marketingOnly =
+      /\b(?:download now|subscription|auto-renew|unlock the future|ultimate assistant|discover the power|experience the remarkable|available exclusively|terms of service|privacy policy)\b/iu.test(
+        normalized,
+      ) &&
+      !explicitRequest;
+
+    return (
+      !marketingOnly &&
+      (explicitRequest || concreteFailure || explicitCapabilityQuestion)
+    );
+  }
+
+  /**
+   * Checks representative evidence already attached to selected domains.
+   * A valid complaint/request is enough for a bounded preliminary pilot and
+   * must not trigger another collection + NLP + Community-AI cycle.
+   */
+  private hasDirectEvidenceInContext(context: IdeaGenerationContext): boolean {
+    return context.domainEvidence.some((domain) => {
+      const samples = [
+        ...this.readDomainEvidenceTexts(domain.samplePosts),
+        ...this.readDomainEvidenceTexts(domain.sampleComments),
+      ];
+
+      return samples.some((sample) =>
+        this.looksLikeDirectProblemEvidence(sample),
+      );
+    });
+  }
+
+  /**
+   * Reads representative domain-evidence text from nullable Prisma JSON.
+   *
+   * Domain evidence is persisted as JsonValue, so samplePosts/sampleComments
+   * cannot be accessed as typed arrays directly. Invalid entries are ignored
+   * instead of failing the whole generation run.
+   */
+  private readDomainEvidenceTexts(value: Prisma.JsonValue | null): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return null;
+        }
+
+        const rawText = (item as Prisma.JsonObject).text;
+
+        return typeof rawText === 'string'
+          ? rawText.replace(/\s+/gu, ' ').trim()
+          : null;
+      })
+      .filter((item): item is string => Boolean(item));
+  }
+
+  /**
+   * Prevents an unsupported secondary-domain fallback from becoming the final
+   * product direction. Secondary domains may win only when they retain direct
+   * evidence. With no direct evidence, generation remains anchored to the
+   * primary domain selected by the user.
+   */
+  private enforcePrimaryDomainFallback(
+    ranking: IdeaOpportunityRanking | null,
+    context: IdeaGenerationContext,
+  ): IdeaOpportunityRanking | null {
+    if (!ranking) {
+      return this.buildPrimaryDomainHypothesisRanking(context);
+    }
+
+    const candidates = [ranking.selected, ...ranking.alternatives];
+    const directCandidate = candidates.find(
+      (candidate) =>
+        candidate.evidenceSamples.length > 0 ||
+        (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
+    );
+
+    if (directCandidate) {
+      return ranking;
+    }
+
+    const primaryDomainName =
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      'Selected domain';
+
+    const primaryCandidate = candidates.find(
+      (candidate) =>
+        this.readCandidateDomainName(candidate.raw).toLowerCase() ===
+        primaryDomainName.toLowerCase(),
+    );
+
+    if (
+      primaryCandidate &&
+      primaryCandidate.problem !== null &&
+      !this.isMissingEvidencePlaceholder(primaryCandidate.problem)
+    ) {
+      const selected = { ...primaryCandidate, rank: 1 };
+      return {
+        ...ranking,
+        selected,
+        alternatives: candidates
+          .filter((candidate) => candidate !== primaryCandidate)
+          .filter(
+            (candidate) =>
+              this.readCandidateDomainName(candidate.raw).toLowerCase() ===
+              primaryDomainName.toLowerCase(),
+          )
+          .map((candidate, index) => ({ ...candidate, rank: index + 2 })),
+        selectionReason:
+          `No direct community evidence was retained, so the preliminary direction remains in the user-selected primary domain "${primaryDomainName}".`,
+      };
+    }
+
+    return this.buildPrimaryDomainHypothesisRanking(context);
+  }
+
+  private readCandidateDomainName(value: Prisma.JsonValue): string {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return '';
+    }
+
+    const domainName = (value as Prisma.JsonObject).domainName;
+    return typeof domainName === 'string' ? domainName.trim() : '';
+  }
+
+  private isMissingEvidencePlaceholder(value: string): boolean {
+    return /(?:problem .* not captured|no direct community evidence|highest-value .* problem before full implementation|validation-first workflow opportunity)/iu.test(
+      value,
+    );
+  }
+
+  /**
+   * Creates a primary-domain validation hypothesis without pretending that an
+   * absent community problem is itself evidence.
+   */
+  private buildPrimaryDomainHypothesisRanking(
+    context: IdeaGenerationContext,
+  ): IdeaOpportunityRanking {
+    const domainName =
+      context.domainName?.trim() ||
+      context.selectedDomains[0]?.name?.trim() ||
+      'Selected domain';
+
+    const title = `${domainName} Evidence Validation Workflow`;
+    const problem =
+      `The pilot will test whether teams working in ${domainName} need a structured, low-cost workflow for collecting, classifying, and validating operational-friction reports before committing to a full software implementation.`;
+    const need =
+      `A bounded pilot that captures real user reports, groups recurring workflow problems, and measures which problem family is strong enough to justify implementation.`;
+
+    const selected: IdeaOpportunityRanking['selected'] = {
+      rank: 1,
+      title,
+      problem,
+      need,
+      solutionArea:
+        'User-feedback intake, evidence classification, and pilot validation workflow',
+      evidenceType: 'OPPORTUNITY',
+      sourceIndex: 0,
+      frequency: 0,
+      severity: 'MEDIUM',
+      evidenceSamples: [],
+      frequencyScore: 0,
+      severityScore: 0.6,
+      evidenceScore: 0,
+      evidenceReliabilityScore: 0.1,
+      weakEvidencePenalty: 0.26,
+      specificityScore: 0.72,
+      feasibilityScore: 0.88,
+      localRelevanceScore: 0.25,
+      noveltyScore: 0.62,
+      businessValueScore: 0.5,
+      marketGapScore: 0.5,
+      competitionScore: 0.5,
+      technicalRiskScore: 0.32,
+      supportScore: 0.08,
+      nlpConfidenceScore: context.nlp?.confidence ?? 0.2,
+      baseScore: 0.24,
+      confidencePenalty: 0.16,
+      finalScore: 0.08,
+      selectionEligible: false,
+      disqualificationReasons: [
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        'NO_DIRECT_EVIDENCE',
+        'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+      ],
+      verifiedIndependentEvidenceCount: 0,
+      verifiedIndependentSourceCount: 0,
+      independentEvidence: [],
+      raw: {
+        source: 'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        domainName,
+        title,
+        problem,
+        unmetNeed: need,
+        solutionArea:
+          'User-feedback intake, evidence classification, and pilot validation workflow',
+        evidenceSamples: [],
+      },
+    };
+
+    return {
+      selected,
+      alternatives: [],
+      evaluatedCount: 1,
+      evidenceCoverage: 0,
+      selectionReason:
+        `No direct community problem was retained within the fast collection budget. The run remains anchored to the primary domain "${domainName}" and generates a clearly labeled validation hypothesis instead of switching to an unsupported secondary domain.`,
+      qualityWarnings: [
+        'No direct community problem was established. The generated product must be presented as a validation workflow, not as a validated market solution.',
+        'The selected location is a pilot deployment target and is not claimed as evidence origin.',
+      ],
+    };
   }
 
   /**
@@ -666,77 +1008,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   private buildEmergencyFallbackRanking(
     context: IdeaGenerationContext,
   ): IdeaOpportunityRanking {
-    const domainName = context.domainName?.trim() || 'Selected domain';
-    const communityOpportunity = context.communityAiAnalysis?.opportunities?.[0];
-    const title =
-      communityOpportunity?.title?.trim() ||
-      `${domainName} Workflow Improvement Pilot`;
-    const problem =
-      communityOpportunity?.problem?.trim() ||
-      `Users in the ${domainName.toLowerCase()} domain experience fragmented workflows, limited access, or reliability friction that requires focused pilot validation.`;
-    const need =
-      communityOpportunity?.unmetNeed?.trim() ||
-      `A focused, user-centered software workflow that addresses the strongest observed ${domainName.toLowerCase()} friction and validates it during an initial pilot.`;
-    const evidenceSamples = (communityOpportunity?.evidenceSamples ?? [])
-      .filter((sample): sample is string =>
-        typeof sample === 'string' && sample.trim().length > 0,
-      )
-      .slice(0, 5);
-
-    const selected: IdeaOpportunityRanking['selected'] = {
-      rank: 1,
-      title,
-      problem,
-      need,
-      solutionArea: communityOpportunity?.solutionArea?.trim() || null,
-      evidenceType: 'OPPORTUNITY',
-      sourceIndex: 0,
-      frequency: Math.max(1, communityOpportunity?.frequency ?? 1),
-      severity: communityOpportunity?.severity ?? 'MEDIUM',
-      evidenceSamples,
-      frequencyScore: 0.25,
-      severityScore: 0.6,
-      evidenceScore: evidenceSamples.length > 0 ? 0.2 : 0.1,
-      evidenceReliabilityScore: evidenceSamples.length > 0 ? 0.5 : 0.42,
-      weakEvidencePenalty: evidenceSamples.length > 0 ? 0.08 : 0.12,
-      specificityScore: 0.62,
-      feasibilityScore: 0.78,
-      localRelevanceScore: 0.25,
-      noveltyScore: 0.58,
-      businessValueScore: 0.55,
-      marketGapScore: 0.5,
-      competitionScore: 0.5,
-      technicalRiskScore: 0.4,
-      supportScore: evidenceSamples.length > 0 ? 0.5 : 0.38,
-      nlpConfidenceScore: context.nlp?.confidence ?? 0.45,
-      baseScore: 0.5,
-      confidencePenalty: 0.08,
-      finalScore: 0.42,
-      selectionEligible: false,
-      disqualificationReasons: ['CONTROLLED_PRELIMINARY_PILOT_FALLBACK'],
-      verifiedIndependentEvidenceCount: 0,
-      verifiedIndependentSourceCount: 0,
-      independentEvidence: [],
-      raw: {
-        source: 'CONTROLLED_PRELIMINARY_PILOT_FALLBACK',
-        title,
-        problem,
-        need,
-        evidenceSamples,
-      },
-    };
-
-    return {
-      selected,
-      alternatives: [],
-      evaluatedCount: 1,
-      evidenceCoverage: evidenceSamples.length > 0 ? 1 : 0,
-      selectionReason:
-        'No strictly rankable opportunity remained after focused recovery, so the strongest domain-aligned signal was retained as a controlled preliminary pilot.',
-      qualityWarnings: [
-        'This is a controlled preliminary-pilot fallback. Claims must remain conservative and validation must be included in the first pilot milestone.',
-      ],
-    };
+    return this.buildPrimaryDomainHypothesisRanking(context);
   }
 
   private hasEligibleOpportunity(ranking: IdeaOpportunityRanking): boolean {
@@ -794,7 +1066,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         ? recoveryApplied
           ? `Targeted evidence recovery completed; ranked ${ranking.evaluatedCount} candidate(s) and selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}.`
           : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`
-        : `Selected the strongest evidence-backed opportunity "${ranking.selected.title}" as a controlled preliminary pilot after focused recovery. Generation will continue with conservative, explicitly qualified claims.`,
+        : recoveryApplied
+          ? `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot after one focused evidence-recovery pass. Idea generation will continue, while sparse-evidence claims remain explicitly qualified.`
+          : `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot from the direct evidence already collected. No evidence-recovery pass was needed; idea generation will continue while sparse-evidence claims remain explicitly qualified.`,
       metadata: {
         selectedTitle: ranking.selected.title,
         selectedScore: ranking.selected.finalScore,

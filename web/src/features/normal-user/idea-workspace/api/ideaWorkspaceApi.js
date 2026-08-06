@@ -21,26 +21,39 @@ const WORKSPACE_CACHE_TTL_MS = 5 * 60 * 1000;
 const unwrap = (response) => response?.data?.data ?? response?.data;
 
 async function requestWorkspaceBundle(ideaId) {
-  const [ideaResult, outputsResult] = await Promise.allSettled([
-    normalUserApi.get(`/users/ideas/${ideaId}`),
-    normalUserApi.get(`/users/ideas/${ideaId}/outputs`),
-  ]);
+  try {
+    const response = await normalUserApi.get(`/users/ideas/${ideaId}/workspace`);
+    const payload = unwrap(response);
 
-  if (ideaResult.status === 'rejected') {
-    throw ideaResult.reason;
+    return {
+      idea: payload?.idea ?? null,
+      outputs: Array.isArray(payload?.outputs) ? payload.outputs : [],
+    };
+  } catch (error) {
+    // Temporary compatibility fallback while frontend and backend deployments
+    // are not yet on the same version.
+    if (error?.response?.status !== 404) throw error;
+
+    const [ideaResponse, outputsResponse] = await Promise.all([
+      normalUserApi.get(`/users/ideas/${ideaId}`),
+      normalUserApi
+        .get(`/users/ideas/${ideaId}/outputs`)
+        .catch((outputError) => {
+          if (outputError?.response?.status === 403) return null;
+          throw outputError;
+        }),
+    ]);
+
+    const idea = unwrap(ideaResponse);
+    const outputPayload = outputsResponse ? unwrap(outputsResponse) : [];
+
+    return {
+      idea,
+      outputs: Array.isArray(outputPayload)
+        ? outputPayload
+        : outputPayload?.data ?? [],
+    };
   }
-
-  const idea = unwrap(ideaResult.value);
-  let outputs = [];
-
-  if (outputsResult.status === 'fulfilled') {
-    const payload = unwrap(outputsResult.value);
-    outputs = Array.isArray(payload) ? payload : payload?.data ?? [];
-  } else if (outputsResult.reason?.response?.status !== 403) {
-    throw outputsResult.reason;
-  }
-
-  return { idea, outputs };
 }
 
 /**

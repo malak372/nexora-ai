@@ -102,8 +102,12 @@ export class IdeaGenerationSelectionService {
   }
 
   /**
-   * Keeps the collection phase inside the one-minute application budget by
-   * selecting a bounded, provider-diverse set of evidence-rich sources.
+   * Selects every active and implemented collector.
+   *
+   * Sources are still ordered by expected community-evidence value, but no
+   * source is silently removed. DataCollectionService executes the complete
+   * list in one bounded parallel wave and applies a per-source timeout, so one
+   * slow or unavailable platform does not block the remaining collectors.
    */
   private selectFastEvidenceSources<T extends { readonly key: string }>(
     sources: readonly T[],
@@ -112,11 +116,11 @@ export class IdeaGenerationSelectionService {
       'reddit',
       'stack-overflow',
       'github',
+      'google-play',
+      'app-store',
       'hacker-news',
       'dev-to',
       'product-hunt',
-      'google-play',
-      'app-store',
       'youtube',
       'forum',
       'news',
@@ -124,12 +128,11 @@ export class IdeaGenerationSelectionService {
     ];
     const rank = new Map(priority.map((key, index) => [key, index]));
 
-    return [...sources]
-      .sort((left, right) =>
+    return [...sources].sort(
+      (left, right) =>
         (rank.get(left.key) ?? Number.MAX_SAFE_INTEGER) -
         (rank.get(right.key) ?? Number.MAX_SAFE_INTEGER),
-      )
-      .slice(0, 4);
+    );
   }
 
   private normalizeKeywords(keywords: readonly string[]): string[] {

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 
 import {
@@ -52,6 +53,8 @@ import type { IdeaGenerationContext } from '../../types/idea-generation-context.
  */
 @Injectable()
 export class DuplicateCheckStage implements IdeaGenerationStage {
+  private readonly logger = new Logger(DuplicateCheckStage.name);
+
   /**
    * Stable pipeline-stage key.
    */
@@ -83,12 +86,31 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       context.coreIdea!,
     );
 
-    if (result.isDuplicate) {
+    /*
+     * The benchmark already performs duplicate-aware redesign before winner
+     * selection. AI output validation can then expand the problem statement and
+     * full abstract using evidence wording shared by every concept generated
+     * from the same opportunity. That expansion may trigger a broad compound
+     * SAME_PROBLEM_FAMILY result even though the product mechanism was already
+     * redesigned.
+     *
+     * The final stage therefore blocks only decisive duplicates:
+     * - exact or near-exact title;
+     * - very high overall semantic overlap;
+     * - same problem family together with both high semantic and workflow
+     *   overlap.
+     *
+     * Moderate same-family overlap is retained as diagnostic metadata instead
+     * of failing the whole paid generation after a successful redesign.
+     */
+    const decisiveDuplicate = this.isDecisiveDuplicate(result);
+
+    if (decisiveDuplicate) {
       throw new ConflictException({
         code: IDEA_GENERATION_ERROR_CODES.DUPLICATE_IDEA,
 
         message:
-          'A highly similar generated idea already exists for this domain.',
+          'A decisively similar generated idea already exists for this domain.',
 
         details: {
           matchedIdeaId: result.matchedIdea?.id ?? null,
@@ -101,6 +123,12 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
 
           semanticSimilarity: result.semanticSimilarity,
 
+          workflowSimilarity: result.workflowSimilarity,
+
+          sameProblemFamily: result.sameProblemFamily,
+
+          duplicateReasons: result.duplicateReasons,
+
           titleThreshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
 
           semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
@@ -108,13 +136,33 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
       });
     }
 
+    if (result.isDuplicate) {
+      this.logger.warn(
+        [
+          `Soft duplicate signal retained for run "${context.runId}" without failing generation.`,
+          `matchedIdeaId=${result.matchedIdea?.id ?? 'none'}`,
+          `titleSimilarity=${result.titleSimilarity}`,
+          `semanticSimilarity=${result.semanticSimilarity}`,
+          `workflowSimilarity=${result.workflowSimilarity}`,
+          `sameProblemFamily=${result.sameProblemFamily}`,
+          `reasons=${result.duplicateReasons.join(',') || 'none'}`,
+        ].join(' '),
+      );
+    }
+
     return {
       context,
 
-      resultPreview: 'No duplicate generated idea was detected.',
+      resultPreview: result.isDuplicate
+        ? 'A moderate same-problem-family overlap was detected after benchmark redesign, but no decisive duplicate was found.'
+        : 'No duplicate generated idea was detected.',
 
       metadata: {
         isDuplicate: false,
+
+        softDuplicateSignalDetected: result.isDuplicate,
+
+        decisiveDuplicate: false,
 
         highestSimilarity: result.highestSimilarity,
 
@@ -122,13 +170,47 @@ export class DuplicateCheckStage implements IdeaGenerationStage {
 
         semanticSimilarity: result.semanticSimilarity,
 
+        workflowSimilarity: result.workflowSimilarity,
+
+        sameProblemFamily: result.sameProblemFamily,
+
+        duplicateReasons: result.duplicateReasons,
+
         matchedIdeaId: result.matchedIdea?.id ?? null,
+
+        matchedTitle: result.matchedIdea?.title ?? null,
 
         titleThreshold: IDEA_TITLE_SIMILARITY_THRESHOLD,
 
         semanticThreshold: IDEA_SEMANTIC_SIMILARITY_THRESHOLD,
       },
     };
+  }
+
+  /**
+   * Returns true only for similarity strong enough to reject the final idea.
+   *
+   * A same-family match by itself is not decisive because every candidate for
+   * one evidence-backed opportunity necessarily shares part of the problem
+   * vocabulary. The workflow must also remain nearly identical.
+   */
+  private isDecisiveDuplicate(
+    result: Awaited<ReturnType<IdeaDuplicateDetectionService['check']>>,
+  ): boolean {
+    const exactOrNearTitle =
+      result.titleSimilarity >= IDEA_TITLE_SIMILARITY_THRESHOLD;
+    const veryHighSemanticOverlap =
+      result.semanticSimilarity >= IDEA_SEMANTIC_SIMILARITY_THRESHOLD;
+    const decisiveSameFamilyWorkflow =
+      result.sameProblemFamily &&
+      result.semanticSimilarity >= 0.86 &&
+      result.workflowSimilarity >= 0.9;
+
+    return (
+      exactOrNearTitle ||
+      veryHighSemanticOverlap ||
+      decisiveSameFamilyWorkflow
+    );
   }
 
   /**
