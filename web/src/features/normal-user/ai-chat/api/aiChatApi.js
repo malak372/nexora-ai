@@ -131,6 +131,35 @@ export async function createChatSession(
 }
 
 /**
+ * Updates an existing AI Chat session.
+ *
+ * @param {string} sessionId
+ * @param {{title?: string}} updates
+ *
+ * @returns {Promise<Object>}
+ */
+export async function updateChatSession(
+    sessionId,
+    updates,
+) {
+    try {
+        const response = await normalUserApi.patch(
+            `/chat/sessions/${sessionId}`,
+            updates,
+        );
+
+        return extractApiData(response);
+    } catch (error) {
+        throw new Error(
+            getApiErrorMessage(
+                error,
+                'The AI chat session could not be updated.',
+            ),
+        );
+    }
+}
+
+/**
  * Deletes one AI Chat session owned by the current user.
  *
  * @param {string} sessionId

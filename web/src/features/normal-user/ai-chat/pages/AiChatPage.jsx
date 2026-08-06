@@ -46,6 +46,7 @@ import {
     createChatSession,
     deleteChatSession,
     listChatMessages,
+    updateChatSession,
     listChatSessions,
 } from '../api/aiChatApi';
 
@@ -68,6 +69,47 @@ const STARTER_PROMPTS = [
         prompt: 'Help me define the strongest MVP for this idea and prioritize the features that should be built first.',
     },
 ];
+
+
+const isIdentityQuestion = (value = '') => {
+    const normalized = String(value).trim().toLowerCase();
+
+    return /(?:what(?:'s| is) your name|who are you|your name|name of (?:the )?(?:ai|assistant)|شو اسمك|ما اسمك|ايش اسمك|إيش اسمك|مين انت|مين أنت|من انت|من أنت|شو بتسمي حالك|عرف عن حالك|عرّف عن حالك)/i.test(normalized);
+};
+
+const cleanAssistantMessage = (value = '', allowIdentity = false) => {
+    if (!value) return value;
+
+    let cleaned = String(value)
+        .replace(
+            /^(?:hello|hi|hey|welcome|مرحب(?:اً|ا)?|أهلاً|اهلاً|أهلًا|السلام عليكم)[!,.،\s-]*/i,
+            '',
+        )
+        .trimStart();
+
+    if (allowIdentity) {
+        return cleaned;
+    }
+
+    const identityPatterns = [
+        /(?:^|[.!?؟\n]\s*)(?:i(?:'m| am)|this is)\s+voxidence(?:\s+(?:ai|assistant|chat assistant))?[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+        /(?:^|[.!?؟\n]\s*)my name is\s+voxidence[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+        /(?:^|[.!?؟\n]\s*)voxidence\s+(?:here|is your\s+(?:ai\s+)?assistant)[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+        /(?:^|[.!?؟\n]\s*)(?:أنا|انا)\s+(?:فوكسيدنس|voxidence)[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+        /(?:^|[.!?؟\n]\s*)اسمي\s+(?:فوكسيدنس|voxidence)[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+        /(?:^|[.!?؟\n]\s*)(?:فوكسيدنس|voxidence)\s+(?:هنا|هو مساعدك|هي مساعدتك)[^.!?؟\n]*(?:[.!?؟]|$)/gi,
+    ];
+
+    identityPatterns.forEach((pattern) => {
+        cleaned = cleaned.replace(pattern, ' ');
+    });
+
+    return cleaned
+        .replace(/^[,،;:!?.؟\s-]+/, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+};
 
 const mergeMessage = (items, message) => {
     if (!message?.id) return items;
@@ -103,7 +145,11 @@ export default function AiChatPage() {
     const shouldAutoScrollRef = useRef(true);
     const recognitionRef = useRef(null);
     const voiceBaseDraftRef = useRef('');
+    const voiceFinalTranscriptRef = useRef('');
+    const voiceStoppedByUserRef = useRef(false);
     const sessionRequestRef = useRef(0);
+    const pendingMessageRef = useRef(null);
+    const titleRefreshTimerRef = useRef(null);
 
     const [idea, setIdea] = useState(null);
     const [sessions, setSessions] = useState([]);
@@ -193,20 +239,16 @@ export default function AiChatPage() {
 
                 setIdea(ideaResult);
 
-                let nextSessions = sessionResult.items;
-
-                if (!nextSessions.length) {
-                    const created = await createChatSession(
-                        ideaId,
-                        'Idea strategy chat',
-                    );
-
-                    nextSessions = [created];
-                }
+                const nextSessions = sessionResult.items || [];
 
                 setSessions(nextSessions);
 
-                await openSession(nextSessions[0].id);
+                if (nextSessions.length) {
+                    await openSession(nextSessions[0].id);
+                } else {
+                    setSessionId('');
+                    setMessages([]);
+                }
             } catch (requestError) {
                 if (mounted) {
                     setError(
@@ -289,6 +331,18 @@ export default function AiChatPage() {
                 return next;
             });
             setSending(false);
+
+            if (message?.status === 'COMPLETED') {
+                window.clearTimeout(titleRefreshTimerRef.current);
+                titleRefreshTimerRef.current = window.setTimeout(async () => {
+                    try {
+                        const result = await listChatSessions(ideaId);
+                        setSessions(result.items || []);
+                    } catch {
+                        // Title refresh is optional and must not interrupt chat.
+                    }
+                }, 1800);
+            }
         };
 
         const handleError = (payload) => {
@@ -303,6 +357,32 @@ export default function AiChatPage() {
         socket.on('connect', () => {
             socket.emit('chat:join-session', {
                 sessionId,
+            }, (ack) => {
+                const pending = pendingMessageRef.current;
+
+                if (
+                    ack?.success &&
+                    pending?.sessionId === sessionId
+                ) {
+                    pendingMessageRef.current = null;
+                    socket.emit(
+                        'chat:send-message',
+                        {
+                            sessionId,
+                            clientRequestId: crypto.randomUUID(),
+                            message: pending.message,
+                        },
+                        (sendAck) => {
+                            if (!sendAck?.success) {
+                                setError(
+                                    sendAck?.error?.message ||
+                                    'Your message could not be sent.',
+                                );
+                                setSending(false);
+                            }
+                        },
+                    );
+                }
             });
         });
 
@@ -318,10 +398,11 @@ export default function AiChatPage() {
                 sessionId,
             });
 
+            window.clearTimeout(titleRefreshTimerRef.current);
             socket.disconnect();
             socketRef.current = null;
         };
-    }, [isPremium, sessionId, syncActiveSessionCount]);
+    }, [ideaId, isPremium, sessionId, syncActiveSessionCount]);
 
     const scrollMessagesToBottom = useCallback((behavior = 'smooth') => {
         bottomRef.current?.scrollIntoView({
@@ -358,25 +439,39 @@ export default function AiChatPage() {
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
-        recognition.lang =
-            document.documentElement.lang ||
-            navigator.language ||
-            'ar-PS';
+
+        const pageLanguage = document.documentElement.lang?.trim();
+        const isArabicPage =
+            document.documentElement.dir === 'rtl' ||
+            pageLanguage?.toLowerCase().startsWith('ar');
+
+        recognition.lang = isArabicPage
+            ? 'ar-PS'
+            : pageLanguage || navigator.language || 'en-US';
 
         recognition.onstart = () => {
+            voiceStoppedByUserRef.current = false;
+            voiceFinalTranscriptRef.current = '';
             setIsListening(true);
             setVoiceHint('Listening… speak naturally');
         };
 
         recognition.onresult = (event) => {
-            let transcript = '';
+            let interimTranscript = '';
 
-            for (let index = 0; index < event.results.length; index += 1) {
-                transcript += event.results[index][0]?.transcript || '';
+            for (let index = event.resultIndex; index < event.results.length; index += 1) {
+                const result = event.results[index];
+                const transcript = result[0]?.transcript || '';
+
+                if (result.isFinal) {
+                    voiceFinalTranscriptRef.current += `${transcript} `;
+                } else {
+                    interimTranscript += transcript;
+                }
             }
 
             const base = voiceBaseDraftRef.current.trimEnd();
-            const spokenText = transcript.trimStart();
+            const spokenText = `${voiceFinalTranscriptRef.current}${interimTranscript}`.trim();
 
             setDraft(
                 base && spokenText
@@ -405,7 +500,11 @@ export default function AiChatPage() {
 
         recognition.onend = () => {
             setIsListening(false);
-            setVoiceHint('');
+            setVoiceHint(
+                voiceStoppedByUserRef.current
+                    ? ''
+                    : 'Voice input ended — tap the microphone to continue',
+            );
         };
 
         recognitionRef.current = recognition;
@@ -428,11 +527,14 @@ export default function AiChatPage() {
         setError('');
 
         if (isListening) {
+            voiceStoppedByUserRef.current = true;
             recognitionRef.current.stop();
             return;
         }
 
         voiceBaseDraftRef.current = draft;
+        voiceFinalTranscriptRef.current = '';
+        voiceStoppedByUserRef.current = false;
 
         try {
             recognitionRef.current.start();
@@ -441,6 +543,50 @@ export default function AiChatPage() {
             setError('The microphone is already starting. Please wait a moment and try again.');
         }
     };
+
+    const buildConversationTitle = (message = '') => {
+        const normalized = String(message)
+            .replace(/\s+/g, ' ')
+            .replace(/[?!.,،؛:]+$/g, '')
+            .trim();
+
+        if (!normalized) return 'New conversation';
+
+        const words = normalized.split(' ').slice(0, 8);
+        const title = words.join(' ');
+
+        return title.length > 64
+            ? `${title.slice(0, 61).trimEnd()}…`
+            : title;
+    };
+
+    const emitChatMessage = useCallback((targetSessionId, message) => {
+        if (!socketRef.current?.connected || !targetSessionId || !message) {
+            pendingMessageRef.current = {
+                sessionId: targetSessionId,
+                message,
+            };
+            return;
+        }
+
+        socketRef.current.emit(
+            'chat:send-message',
+            {
+                sessionId: targetSessionId,
+                clientRequestId: crypto.randomUUID(),
+                message,
+            },
+            (ack) => {
+                if (!ack?.success) {
+                    setError(
+                        ack?.error?.message ||
+                        'Your message could not be sent.',
+                    );
+                    setSending(false);
+                }
+            },
+        );
+    }, []);
 
     const addSession = async () => {
         if (creatingSession) return;
@@ -451,7 +597,7 @@ export default function AiChatPage() {
 
             const created = await createChatSession(
                 ideaId,
-                `Voxidence chat ${sessions.length + 1}`,
+                'New conversation',
             );
 
             setSessions((current) => [created, ...current]);
@@ -500,16 +646,12 @@ export default function AiChatPage() {
         }
     };
 
-    const sendMessage = (event) => {
+    const sendMessage = async (event) => {
         event.preventDefault();
 
         const message = draft.trim();
 
-        if (
-            !message ||
-            !socketRef.current?.connected ||
-            sending
-        ) {
+        if (!message || sending || creatingSession) {
             return;
         }
 
@@ -523,24 +665,56 @@ export default function AiChatPage() {
         setSending(true);
         shouldAutoScrollRef.current = true;
 
-        socketRef.current.emit(
-            'chat:send-message',
-            {
-                sessionId,
-                clientRequestId: crypto.randomUUID(),
-                message,
-            },
-            (ack) => {
-                if (!ack?.success) {
-                    setError(
-                        ack?.error?.message ||
-                        'Your message could not be sent.',
-                    );
+        try {
+            let targetSessionId = sessionId;
 
-                    setSending(false);
-                }
-            },
-        );
+            if (!targetSessionId) {
+                setCreatingSession(true);
+
+                const created = await createChatSession(
+                    ideaId,
+                    buildConversationTitle(message),
+                );
+
+                targetSessionId = created.id;
+                pendingMessageRef.current = {
+                    sessionId: targetSessionId,
+                    message,
+                };
+                setSessions((current) => [created, ...current]);
+                await openSession(targetSessionId);
+                return;
+            }
+
+            const currentSession = sessions.find(
+                (session) => session.id === targetSessionId,
+            );
+            const isFirstMessage =
+                (currentSession?._count?.messages ?? messages.length) === 0;
+
+            if (isFirstMessage) {
+                const title = buildConversationTitle(message);
+                const updated = await updateChatSession(targetSessionId, {
+                    title,
+                });
+
+                setSessions((current) => current.map((session) =>
+                    session.id === targetSessionId
+                        ? { ...session, ...updated, title }
+                        : session));
+            }
+
+            emitChatMessage(targetSessionId, message);
+        } catch (requestError) {
+            setDraft(message);
+            setSending(false);
+            setError(
+                requestError.message ||
+                'Your message could not be sent.',
+            );
+        } finally {
+            setCreatingSession(false);
+        }
     };
 
     if (loading || accessLoading) {
@@ -551,7 +725,7 @@ export default function AiChatPage() {
                 </div>
 
                 <span>Premium intelligence workspace</span>
-                <h1>Preparing your idea copilot</h1>
+                <h1>Preparing your AI chat</h1>
                 <p>Connecting the conversation to your idea context and evidence.</p>
             </section>
         );
@@ -741,7 +915,7 @@ export default function AiChatPage() {
 
                         <div>
                             <span className="ai-chat-eyebrow">
-                                Voxidence idea copilot
+                                Voxidence AI Chat
                             </span>
 
                             <h1>{activeSession?.title || 'Voxidence Chat'}</h1>
@@ -776,7 +950,7 @@ export default function AiChatPage() {
                             <span className="ai-chat-eyebrow">Turn evidence into decisions</span>
                             <h2>Where should we take this idea next?</h2>
                             <p>
-                                Ask your copilot to challenge assumptions, shape the
+                                Ask AI Chat to challenge assumptions, shape the
                                 product, or translate the idea into an actionable plan.
                             </p>
 
@@ -799,7 +973,7 @@ export default function AiChatPage() {
                         </motion.div>
                     ) : null}
 
-                    {messages.map((message) => {
+                    {messages.map((message, messageIndex) => {
                         const isUser = message.sender === 'USER';
                         const isThinking =
                             !message.message &&
@@ -819,7 +993,7 @@ export default function AiChatPage() {
                                 <div className="ai-chat-message__content">
                                     {!isUser ? (
                                         <small className="ai-chat-message__label">
-                                            Idea copilot
+                                            AI Chat
                                         </small>
                                     ) : null}
 
@@ -834,7 +1008,16 @@ export default function AiChatPage() {
                                             className="ai-chat-message__body"
                                             dir="auto"
                                         >
-                                            {message.message
+                                            {cleanAssistantMessage(
+                                                message.message,
+                                                isUser || isIdentityQuestion(
+                                                    [...messages]
+                                                        .slice(0, messageIndex)
+                                                        .reverse()
+                                                        .find((item) => item.sender === 'USER')
+                                                        ?.message || '',
+                                                ),
+                                            )
                                                 ?.split('\n')
                                                 .map((line, lineIndex) => {
                                                     const trimmed = line.trim();

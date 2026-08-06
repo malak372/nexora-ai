@@ -18,6 +18,7 @@ import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { AiChatAccessService } from './services/ai-chat-access.service';
 import { AiChatContextService } from './services/ai-chat-context.service';
 import { AiChatStreamService } from './services/ai-chat-stream.service';
+import { AiChatTitleService } from './services/ai-chat-title.service';
 import { AiChatService } from './services/ai-chat.service';
 import { AiChatMessageReaderService } from './services/messages/ai-chat-message-reader.service';
 import { AiChatMessageWriterService } from './services/messages/ai-chat-message-writer.service';
@@ -47,10 +48,11 @@ import { AiChatMessageWriterService } from './services/messages/ai-chat-message-
     AiChatAccessService,
     AiChatContextService,
     AiChatStreamService,
+    AiChatTitleService,
     AiChatService,
     AiChatMessageReaderService,
     AiChatMessageWriterService,
   ],
   exports: [AiChatService, AiChatAccessService],
 })
-export class AiChatModule {}
+export class AiChatModule { }

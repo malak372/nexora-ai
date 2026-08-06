@@ -112,6 +112,18 @@ export const AI_CHAT_MAX_OUTPUT_TOKENS = 2_000;
  */
 export const AI_CHAT_RESPONSE_TEMPERATURE = 0.35;
 
+/** Maximum output tokens used when generating a concise chat title. */
+export const AI_CHAT_TITLE_MAX_OUTPUT_TOKENS = 40;
+
+/** Low temperature keeps generated chat titles concise and stable. */
+export const AI_CHAT_TITLE_TEMPERATURE = 0.15;
+
+/** Maximum number of conversation messages considered for title generation. */
+export const AI_CHAT_TITLE_CONTEXT_MESSAGES = 10;
+
+/** Maximum title-generation duration. Title generation is non-blocking. */
+export const AI_CHAT_TITLE_TIMEOUT_MS = 15_000;
+
 /**
  * Maximum number of simultaneous AI responses allowed in one chat session.
  *

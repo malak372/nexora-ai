@@ -15,7 +15,6 @@ import {
   MessageSquareText,
   PauseCircle,
   PencilLine,
-  Power,
   RefreshCw,
   Star,
   ThumbsDown,
@@ -40,7 +39,6 @@ export default function PublishedIdeaCard({
   onInsights,
   onStop,
   onRepost,
-  onToggleAcceptance,
   processing = false,
   index = 0,
 }) {
@@ -133,9 +131,10 @@ export default function PublishedIdeaCard({
 
           <span className="is-accepted">
             <UsersRound size={15} />
-            {publication?.acceptanceCount ?? 0}
+            {publication?.acceptanceCount ?? publication?.acceptedCount ?? 0}
             <small>accepted</small>
           </span>
+
         </div>
 
         <div className="published-card__actions">
@@ -149,17 +148,6 @@ export default function PublishedIdeaCard({
             <BarChart3 size={16} />
           </motion.button>
 
-          {!isArchived ? (
-            <motion.button
-              type="button"
-              className={publication?.allowAdoption === false ? 'is-repost' : 'is-quiet'}
-              onClick={onToggleAcceptance}
-              disabled={processing}
-            >
-              {publication?.allowAdoption === false ? 'Enable acceptance' : 'Disable acceptance'}
-              <Power size={16} />
-            </motion.button>
-          ) : null}
 
           {!isArchived ? (
             <motion.button

@@ -7,7 +7,7 @@
  * Data sources remain backend-resolved from the request context.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Crown, Globe2, Layers3, LockKeyhole, MapPin, Mic, MicOff, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Crown, Globe2, Layers3, LockKeyhole, MapPin, Mic, MicOff, Sparkles} from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
@@ -140,7 +140,6 @@ export default function GenerateIdeaPage() {
     }
   };
   return <div className="nx-generation-page"><section className="nx-generation-shell">
-    <header className="nx-generation-hero"><span className="nx-kicker"><WandSparkles size={14} />Signal discovery studio</span><h1>Start with the problem.<br /><span>Voxidence finds the opportunity.</span></h1><p>Begin with a written or spoken signal, or skip straight to a domain. Voxidence keeps collection strategy and evidence ranking intelligent and automatic.</p></header>
     <div className="nx-step-rail">{STEPS.map(([title, caption], index) => <div key={title} className={`nx-step ${index === step ? 'is-current' : ''} ${index < step ? 'is-complete' : ''}`}><span>{index < step ? <Check size={15} /> : index + 1}</span><div><b>{title}</b><small>{caption}</small></div>{index < STEPS.length - 1 ? <i /> : null}</div>)}</div>
     <div className="nx-generation-card">
       {step === 0 ? <section className="nx-panel nx-panel--signal"><div className="nx-panel__head"><div><span className="nx-kicker"><Sparkles size={14} />Tell us what you noticed</span><h2>What real problem should Voxidence investigate?</h2><p>Describe the frustration, who experiences it, and why current solutions are not enough.</p></div><span className="nx-private-note">Private workspace</span></div><div className="nx-speech-field"><textarea value={draft.description} maxLength={2000} onChange={e => updateDraft({ description: e.target.value })} placeholder="Example: Students in Nablus struggle to coordinate shared transport because schedules change and there is no trusted real-time matching system…" /><div className="nx-speech-field__actions"><button type="button" className={`nx-voice-button ${listening ? 'is-listening' : ''}`} onClick={toggleVoice}>{listening ? <MicOff size={20} /> : <Mic size={20} />}<span>{listening ? 'Listening…' : 'Speak to type'}</span></button><button type="button" className="nx-domain-shortcut" onClick={() => setStep(1)}><Layers3 size={19} /><span>Choose domains instead</span><ArrowRight size={16} /></button></div><small>{draft.description.length}/2000</small></div>{voiceError ? <p className="nx-inline-error">{voiceError}</p> : null}<div className="nx-signal-tips"><span>Include who is affected</span><span>Explain the repeated pain</span><span>Mention the location when relevant</span></div></section> : null}

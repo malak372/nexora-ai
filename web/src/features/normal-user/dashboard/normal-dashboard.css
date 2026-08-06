@@ -1661,7 +1661,8 @@ button.normal-metric-card:hover {
 }
 
 .normal-dashboard-hero--core h1 {
-  color: #171220;
+  /* Clearly visible eucalyptus green instead of an almost-black graphite tone. */
+  color: #496D65;
 }
 
 .normal-dashboard-hero--core h1 span {

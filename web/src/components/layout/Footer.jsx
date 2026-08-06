@@ -162,7 +162,7 @@ export default function Footer() {
                 </div>
 
                 <div className="vox-footer__bottom">
-                    <p>© {CURRENT_YEAR} Voxidence. All rights reserved.</p>
+                    <p>© {CURRENT_YEAR} <span className="vox-footer__copyright-brand">Voxidence</span>. All rights reserved.</p>
 
                     <p>
                         From community signal to evidence-backed direction.

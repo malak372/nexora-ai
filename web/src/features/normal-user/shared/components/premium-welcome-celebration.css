@@ -66,8 +66,8 @@
     background: #efbdc8;
 }
 
-.premium-welcome__outer-piece--champagne {
-    background: #dec59d;
+.premium-welcome__outer-piece--sage {
+    background: #b8d2c7;
 }
 
 .premium-welcome__outer-piece--ivory {
@@ -189,17 +189,27 @@
     gap: 10px;
     margin-bottom: 34px;
     padding: 12px 20px;
-    border: 1px solid rgba(235, 210, 215, 0.95);
+    border: 1px solid rgba(93, 187, 183, 0.42) !important;
     border-radius: 999px;
-    color: #5c837b;
-    background: rgba(255, 250, 249, 0.86);
-    box-shadow: 0 8px 24px rgba(119, 138, 131, 0.05);
+    color: #4f8f8b !important;
+    background: linear-gradient(135deg,
+            rgba(246, 252, 251, 0.99),
+            rgba(224, 242, 239, 0.96)) !important;
+    box-shadow:
+        0 10px 26px rgba(93, 187, 183, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.96) !important;
     font-family: 'Inter', 'Segoe UI', sans-serif;
     font-size: 0.86rem;
     font-weight: 700;
     letter-spacing: 0.16em;
     text-transform: uppercase;
 }
+
+.premium-welcome__eyebrow svg {
+    color: #4f8f8b !important;
+    stroke: currentColor !important;
+}
+
 
 .premium-welcome__confetti {
     position: absolute;
@@ -273,10 +283,10 @@
     box-shadow: 0 0 12px rgba(239, 199, 207, 0.26);
 }
 
-.premium-welcome__spark--gold {
-    color: #e4ccb1;
-    background: #e4ccb1;
-    box-shadow: 0 0 12px rgba(228, 204, 177, 0.24);
+.premium-welcome__spark--sage {
+    color: #b8d2c7;
+    background: #b8d2c7;
+    box-shadow: 0 0 12px rgba(184, 210, 199, 0.25);
 }
 
 .premium-welcome__title {
@@ -318,7 +328,7 @@
     width: min(390px, 72%);
     height: 1px;
     margin: 28px auto 0;
-    background: linear-gradient(90deg, transparent, rgba(232, 211, 181, 0.95), transparent);
+    background: linear-gradient(90deg, transparent, rgba(143, 190, 181, 0.9), transparent);
     transform-origin: center;
 }
 
@@ -328,17 +338,17 @@
     left: 50%;
     width: 11px;
     height: 11px;
-    background: #e3cba8;
+    background: #8fbeb5;
     transform: translate(-50%, -50%) rotate(45deg);
     border-radius: 2px;
-    box-shadow: 0 0 10px rgba(227, 203, 168, 0.22);
+    box-shadow: 0 0 10px rgba(143, 190, 181, 0.25);
 }
 
 .premium-welcome__message {
     position: relative;
     z-index: 4;
     margin: 26px 0 0;
-    color: #7b817f;
+    color: #4f8f8b;
     font-family: 'Inter', 'Segoe UI', sans-serif;
     font-size: clamp(1.02rem, 1.6vw, 1.28rem);
     font-weight: 500;

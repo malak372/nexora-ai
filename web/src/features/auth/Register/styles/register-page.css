@@ -1924,3 +1924,43 @@
     width: 46px !important;
     height: 46px !important;
 }
+
+/* ========================================================================== */
+/* Register color alignment with the public Home identity                     */
+/* ========================================================================== */
+
+.nx-register {
+    --nx-ink: #355f59;
+    --nx-muted: #60756f;
+}
+
+/* Match the Voxidence wordmark beside the icon to the Home navbar exactly. */
+.nx-register .nx-register__brand-copy strong {
+    color: #2f7774;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+}
+
+/* Replace near-black register copy with softer project palette tones. */
+.nx-register .nx-register__story h1,
+.nx-register .nx-register__benefit strong,
+.nx-register .nx-register__story-footer strong,
+.nx-register .nx-register__form-heading h2,
+.nx-register .nx-register__form-card .register-label,
+.nx-register .nx-register__form-card .register-user-type-copy strong,
+.nx-register .nx-register__form-card .register-input-shell input,
+.nx-register .register-legal-modal h2,
+.nx-register .register-verification-modal h2 {
+    color: #355f59;
+}
+
+.nx-register .nx-register__brand-copy small,
+.nx-register .nx-register__story-lead,
+.nx-register .nx-register__benefit p,
+.nx-register .nx-register__form-heading>p,
+.nx-register .nx-register__form-card .register-user-type-copy small,
+.nx-register .nx-register__form-card .register-login-link,
+.nx-register .register-legal-modal p,
+.nx-register .register-verification-modal p {
+    color: #60756f;
+}
