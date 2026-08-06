@@ -69,114 +69,185 @@ export class CommunityAiAnalysisService {
     context: IdeaGenerationContext,
   ): Promise<CommunityAiAnalysis | null> {
     const prompt = this.promptService.build(context);
-    const onlineModels = await this.findOnlineFallbackModels();
+    const onlineModels = await this.findOnlineFallbackModels(context);
     const startedAt = Date.now();
-    let lastError: unknown = null;
+
+    if (onlineModels.length === 0) {
+      this.logger.warn(
+        'No healthy online community-analysis model is available. Deterministic NLP analysis will continue immediately.',
+      );
+      return null;
+    }
 
     /*
-     * Use explicit ONLINE model rotation only. Ollama is intentionally excluded.
-     * Each attempt has its own provider timeout and the complete chain has a
-     * hard wall-clock cap, so a provider cannot keep the pipeline blocked for
-     * minutes while structured-output repair or internal retries are running.
+     * Provider-diverse attempts run concurrently instead of serially. This
+     * preserves the same quality fallback coverage while bounding latency to
+     * the slowest allowed request rather than the sum of both request windows.
+     * The first response that passes parsing, evidence grounding, and business
+     * validation wins; remaining requests receive AbortSignal cancellation.
      */
-    for (
-      let attempt = 1;
-      attempt <= Math.min(
-        COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
-        Math.max(1, onlineModels.length),
-      );
-      attempt += 1
-    ) {
-      const elapsedMs = Date.now() - startedAt;
-      const totalRemainingMs =
-        COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS - elapsedMs;
+    const models = onlineModels.slice(
+      0,
+      Math.min(COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS, onlineModels.length),
+    );
+    const controllers = models.map(() => new AbortController());
+    const pending = new Map<
+      number,
+      Promise<{
+        readonly index: number;
+        readonly analysis: CommunityAiAnalysis | null;
+        readonly operationId?: string;
+        readonly modelId?: string;
+        readonly apiModelId?: string;
+        readonly providerKey?: string;
+        readonly error?: unknown;
+      }>
+    >();
+    let lastError: unknown = null;
 
-      if (totalRemainingMs <= 500) {
+    models.forEach((model, index) => {
+      const attempt = index + 1;
+      const requestTimeoutMs = Math.min(
+        COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
+        COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS,
+      );
+
+      const task = this.withHardTimeout(
+        this.aiExecutionService.execute({
+          aiModelId: model.id,
+          userPrompt: prompt.userPrompt,
+          systemInstruction: prompt.systemInstruction,
+          requestType: ApiRequestType.NLP_ENHANCEMENT,
+          promptType: PromptType.NLP_ANALYSIS,
+          generationType: context.generationType,
+          userId:
+            context.owner.type === IDEA_OWNER_TYPES.USER
+              ? context.owner.userId
+              : undefined,
+          guestSessionId:
+            context.owner.type === IDEA_OWNER_TYPES.GUEST
+              ? context.owner.guestSessionId
+              : undefined,
+          responseFormat: AiResponseFormat.JSON,
+          responseSchema: {
+            type: 'object',
+            additionalProperties: true,
+          },
+          responseSchemaName: `${COMMUNITY_AI_ANALYSIS_SCHEMA_NAME}_tolerant`,
+          estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
+          maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
+          temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
+          strategy: AiRoutingStrategy.BALANCED,
+          excludedAiModelIds: models
+            .filter((_item, modelIndex) => modelIndex !== index)
+            .map((item) => item.id),
+          timeoutMs: requestTimeoutMs,
+          maxRetriesPerModel: 0,
+          maxModelsPerOperation: 1,
+          allowProviderFallbackOnInvalidPrompt: true,
+          signal: controllers[index].signal,
+        }),
+        requestTimeoutMs + 500,
+        `Community AI online attempt ${attempt}`,
+      )
+        .then((result) => ({
+          index,
+          analysis: this.parseGroundAndValidate(
+            context,
+            result.text,
+            result.aiModelId,
+            result.apiModelId,
+            attempt,
+          ),
+          operationId: result.operationId,
+          modelId: result.aiModelId,
+          apiModelId: result.apiModelId,
+          providerKey: result.providerKey,
+        }))
+        .catch((error: unknown) => ({
+          index,
+          analysis: null,
+          error,
+        }));
+
+      pending.set(index, task);
+    });
+
+    const totalTimeoutAt = startedAt + COMMUNITY_AI_ANALYSIS_TOTAL_TIMEOUT_MS;
+
+    while (pending.size > 0 && Date.now() < totalTimeoutAt) {
+      const remainingMs = Math.max(1, totalTimeoutAt - Date.now());
+      const settled = await this.withHardTimeout(
+        Promise.race(pending.values()),
+        remainingMs,
+        'Community AI provider-diverse chain',
+      ).catch((error: unknown) => ({
+        index: -1,
+        analysis: null,
+        error,
+      }));
+
+      if (settled.index < 0) {
+        lastError = settled.error;
         break;
       }
 
-      const model = onlineModels[attempt - 1];
-      const attemptTimeoutMs = Math.min(
-        COMMUNITY_AI_ANALYSIS_REQUEST_TIMEOUT_MS,
-        totalRemainingMs,
-      );
+      pending.delete(settled.index);
 
-      try {
-        const result = await this.withHardTimeout(
-          this.aiExecutionService.execute({
-            aiModelId: model?.id,
-            userPrompt: prompt.userPrompt,
-            systemInstruction: prompt.systemInstruction,
-            requestType: ApiRequestType.NLP_ENHANCEMENT,
-            promptType: PromptType.NLP_ANALYSIS,
-            generationType: context.generationType,
-            userId:
-              context.owner.type === IDEA_OWNER_TYPES.USER
-                ? context.owner.userId
-                : undefined,
-            guestSessionId:
-              context.owner.type === IDEA_OWNER_TYPES.GUEST
-                ? context.owner.guestSessionId
-                : undefined,
-            responseFormat: AiResponseFormat.JSON,
-            /*
-             * AiExecutionInput requires schema metadata for every JSON request.
-             * This intentionally permissive provider-boundary schema only
-             * guarantees a JSON object. Business validation below remains
-             * strict and normalizes aliases before checking evidence grounding.
-             */
-            responseSchema: {
-              type: 'object',
-              additionalProperties: true,
-            },
-            responseSchemaName: `${COMMUNITY_AI_ANALYSIS_SCHEMA_NAME}_tolerant`,
-            /*
-             * Do not attach the strict provider-boundary JSON schema here.
-             * Providers frequently return semantically correct aliases such as
-             * name/description/need. The tolerant parser below normalizes those
-             * aliases and then applies the same evidence and quality checks.
-             */
-            estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-            maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
-            temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
-            strategy: AiRoutingStrategy.BALANCED,
-            excludedAiModelIds: onlineModels
-              .slice(0, attempt - 1)
-              .map((item) => item.id),
-            timeoutMs: attemptTimeoutMs,
-            maxRetriesPerModel: 0,
-            maxModelsPerOperation: 1,
-            allowProviderFallbackOnInvalidPrompt: true,
-          }),
-          attemptTimeoutMs + 750,
-          `Community AI online attempt ${attempt}`,
-        );
-
-        const analysis = this.parseGroundAndValidate(
-          context,
-          result.text,
-          result.aiModelId,
-          result.apiModelId,
-          attempt,
-        );
+      if (settled.analysis) {
+        controllers.forEach((controller, index) => {
+          if (index !== settled.index && pending.has(index)) {
+            controller.abort();
+          }
+        });
+        void Promise.allSettled(pending.values());
 
         this.logger.log(
-          `Community AI analysis accepted. operationId=${result.operationId}, modelId=${result.aiModelId}, apiModelId=${result.apiModelId}, provider=${result.providerKey}, attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, opportunities=${analysis.opportunities.length}, elapsedMs=${Date.now() - startedAt}.`,
+          `Community AI analysis accepted. operationId=${settled.operationId}, modelId=${settled.modelId}, apiModelId=${settled.apiModelId}, provider=${settled.providerKey}, concurrentAttempt=${settled.index + 1}/${models.length}, opportunities=${settled.analysis.opportunities.length}, elapsedMs=${Date.now() - startedAt}.`,
         );
-
-        return analysis;
-      } catch (error: unknown) {
-        lastError = error;
-        const databaseUnavailable = isTransientDatabaseError(error);
-
-        this.logger.warn(
-          `Community AI online model failed or was rejected. attempt=${attempt}/${COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS}, model=${model?.displayName ?? model?.modelName ?? 'balanced-routing'}, provider=${model?.providerKey ?? 'auto'}, databaseUnavailable=${databaseUnavailable}, elapsedMs=${Date.now() - startedAt}, error=${this.getErrorMessage(error)}.`,
-        );
-
-        if (databaseUnavailable) {
-          break;
-        }
+        return settled.analysis;
       }
+
+      lastError = settled.error;
+      const model = models[settled.index];
+      const databaseUnavailable = isTransientDatabaseError(settled.error);
+      this.logger.warn(
+        `Community AI online model failed or was rejected. concurrentAttempt=${settled.index + 1}/${models.length}, model=${model?.displayName ?? model?.modelName ?? 'balanced-routing'}, provider=${model?.providerKey ?? 'auto'}, databaseUnavailable=${databaseUnavailable}, elapsedMs=${Date.now() - startedAt}, error=${this.getErrorMessage(settled.error)}.`,
+      );
+
+      if (databaseUnavailable) {
+        controllers.forEach((controller) => controller.abort());
+        break;
+      }
+    }
+
+    controllers.forEach((controller) => controller.abort());
+    void Promise.allSettled(pending.values());
+
+    const retainedFallback = this.buildRetainedEvidenceFallbackOpportunities(context);
+    if (retainedFallback.length > 0) {
+      const averageConfidence =
+        retainedFallback.reduce((sum, item) => sum + item.confidence, 0) /
+        retainedFallback.length;
+      const analysis: CommunityAiAnalysis = {
+        summary: `Recovered ${retainedFallback.length} cautious opportunity candidate(s) from retained NLP evidence after online providers returned no acceptable portfolio.`,
+        dominantProblems: retainedFallback.map((item) => item.problem),
+        unmetNeeds: retainedFallback.map((item) => item.unmetNeed),
+        opportunities: retainedFallback,
+        overallConfidence: averageConfidence,
+        qualityWarnings: [
+          'Online community-analysis providers returned no acceptable opportunity portfolio; retained NLP evidence was preserved instead of being discarded.',
+          'The recovered direction is supported by a small evidence sample and requires broader validation.',
+        ],
+        modelId: null,
+        apiModelId: null,
+        attemptCount: models.length,
+      };
+      const grounded = this.applyEvidenceGrounding(context, analysis);
+      this.logger.warn(
+        `Community AI online fallback chain was exhausted within ${Date.now() - startedAt}ms; recovered ${grounded.opportunities.length} retained evidence-backed candidate(s).`,
+      );
+      return grounded;
     }
 
     this.logger.warn(
@@ -193,55 +264,100 @@ export class CommunityAiAnalysisService {
    * prefers a different provider, avoiding two attempts against the same
    * failing provider while keeping the fallback fully remote.
    */
-  private async findOnlineFallbackModels(): Promise<AiModel[]> {
+  private async findOnlineFallbackModels(
+    context: IdeaGenerationContext,
+  ): Promise<AiModel[]> {
     try {
-      const [defaultModel, routableModels] = await Promise.all([
-        this.aiModelsService.getDefaultModel().catch(() => null),
-        this.aiModelsService.getRoutableModels(),
-      ]);
+      const routableModels = await this.aiModelsService.getRoutableModels();
 
       const onlineModels = routableModels.filter(
         (model) =>
-          normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA,
+          normalizeAiProviderKey(model.providerKey) !== AI_PROVIDER_KEYS.OLLAMA &&
+          model.supportsJsonOutput &&
+          model.healthStatus !== 'UNAVAILABLE' &&
+          model.consecutiveFailures < 4,
       );
 
-      const ordered: AiModel[] = [];
-      const append = (model: AiModel | null | undefined): void => {
-        if (model && !ordered.some((item) => item.id === model.id)) {
-          ordered.push(model);
+      /*
+       * Community analysis gets one short online attempt. Rotate the first
+       * model deterministically per run instead of pinning the configured
+       * default forever. Healthy direct-provider models are preferred, while
+       * recent failures and very large/slow routed models are penalized.
+       */
+      const seed = this.hash(context.runId);
+      const ordered = [...onlineModels].sort((first, second) => {
+        const healthDifference =
+          this.healthRank(first.healthStatus) - this.healthRank(second.healthStatus);
+        if (healthDifference !== 0) return healthDifference;
+
+        if (first.consecutiveFailures !== second.consecutiveFailures) {
+          return first.consecutiveFailures - second.consecutiveFailures;
         }
-      };
 
-      if (
-        defaultModel &&
-        normalizeAiProviderKey(defaultModel.providerKey) !==
-          AI_PROVIDER_KEYS.OLLAMA
-      ) {
-        append(defaultModel);
+        const firstProvider = normalizeAiProviderKey(first.providerKey);
+        const secondProvider = normalizeAiProviderKey(second.providerKey);
+        const directProviderDifference =
+          (firstProvider === AI_PROVIDER_KEYS.GOOGLE ? 0 : 1) -
+          (secondProvider === AI_PROVIDER_KEYS.GOOGLE ? 0 : 1);
+        if (directProviderDifference !== 0) return directProviderDifference;
+
+        const weightDifference = first.weight - second.weight;
+        if (weightDifference !== 0) return weightDifference;
+
+        return (
+          this.hash(`${seed}:${first.id}`) -
+          this.hash(`${seed}:${second.id}`)
+        );
+      });
+
+      if (ordered.length <= 1) {
+        return ordered;
       }
 
-      const firstProvider = ordered[0]
-        ? normalizeAiProviderKey(ordered[0].providerKey)
-        : null;
-
-      append(
-        onlineModels.find(
-          (model) =>
-            normalizeAiProviderKey(model.providerKey) !== firstProvider,
-        ),
+      const first = ordered[0];
+      const firstProvider = normalizeAiProviderKey(first.providerKey);
+      const differentProvider = ordered.find(
+        (model, index) =>
+          index > 0 &&
+          normalizeAiProviderKey(model.providerKey) !== firstProvider,
       );
+      const second =
+        differentProvider ?? ordered.find((model, index) => index > 0);
 
-      for (const model of onlineModels) {
-        append(model);
-      }
-
-      return ordered.slice(0, COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS);
+      return [first, ...(second ? [second] : [])].slice(
+        0,
+        COMMUNITY_AI_ANALYSIS_MAX_ATTEMPTS,
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Online community-analysis model discovery failed; balanced routing will be attempted once. error=${this.getErrorMessage(error)}.`,
       );
       return [];
     }
+  }
+
+  private healthRank(status: AiModel['healthStatus']): number {
+    switch (status) {
+      case 'HEALTHY':
+        return 0;
+      case 'UNKNOWN':
+        return 1;
+      case 'DEGRADED':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  private hash(value: string): number {
+    let result = 2166136261;
+
+    for (const character of value) {
+      result ^= character.charCodeAt(0);
+      result = Math.imul(result, 16777619);
+    }
+
+    return result >>> 0;
   }
 
   private async withHardTimeout<T>(
@@ -282,6 +398,7 @@ export class CommunityAiAnalysisService {
     attemptCount: number,
   ): CommunityAiAnalysis {
     const parsedAnalysis = this.parseAndValidate(
+      context,
       text,
       modelId,
       apiModelId,
@@ -368,6 +485,7 @@ export class CommunityAiAnalysisService {
 
   /** Parses the central runtime's validated JSON into the domain contract. */
   private parseAndValidate(
+    context: IdeaGenerationContext,
     text: string,
     modelId: string,
     apiModelId: string,
@@ -379,12 +497,25 @@ export class CommunityAiAnalysisService {
       throw new Error('Community AI analysis returned an invalid root object.');
     }
 
-    const opportunities = parsed.opportunities
+    const providerOpportunities = parsed.opportunities
       .slice(0, COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES)
       .map((value) => this.parseOpportunity(value));
 
+    const opportunities =
+      providerOpportunities.length > 0
+        ? providerOpportunities
+        : this.buildRetainedEvidenceFallbackOpportunities(context);
+
+    if (providerOpportunities.length === 0 && opportunities.length > 0) {
+      this.logger.warn(
+        `Community AI provider returned an empty opportunities array; recovered ${opportunities.length} grounded candidate(s) from retained NLP evidence instead of failing the stage.`,
+      );
+    }
+
     if (opportunities.length === 0) {
-      throw new Error('Community AI analysis returned no opportunities.');
+      throw new Error(
+        'Community AI analysis returned no opportunities and no retained evidence-backed candidate could be recovered.',
+      );
     }
 
     const inferredConfidence =
@@ -411,6 +542,11 @@ export class CommunityAiAnalysisService {
       ),
       qualityWarnings: [
         ...this.normalizeTextArray(parsed.qualityWarnings, [], true),
+        ...(providerOpportunities.length === 0
+          ? [
+              'The online model returned no opportunity objects; retained NLP evidence was converted into a cautious grounded opportunity so the community-analysis stage could continue.',
+            ]
+          : []),
         ...(opportunities.length <
         COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES
           ? [
@@ -422,6 +558,229 @@ export class CommunityAiAnalysisService {
       apiModelId,
       attemptCount,
     };
+  }
+
+  /**
+   * Converts already-retained deterministic NLP findings into the exact
+   * CommunityAiOpportunity contract when an online provider returns an empty
+   * opportunities array. This is not an invented market hypothesis: every
+   * recovered item must carry a verbatim sample that can later pass the same
+   * corpus-grounding validation as a provider-created item.
+   */
+  private buildRetainedEvidenceFallbackOpportunities(
+    context: IdeaGenerationContext,
+  ): CommunityAiOpportunity[] {
+    if (!context.nlp) {
+      return [];
+    }
+
+    const corpus = this.collectEvidenceCorpus(context.nlp);
+    const primaryDomainName =
+      context.selectedDomains[0]?.name ?? context.domainName ?? 'Unassigned';
+    const selectedDomainNames = new Map(
+      context.selectedDomains.map((domain) => [
+        this.normalizeComparableText(domain.name),
+        domain.name,
+      ]),
+    );
+    const sourceRecords: Record<string, unknown>[] = [];
+
+    const appendRecords = (value: unknown): void => {
+      if (!Array.isArray(value)) {
+        return;
+      }
+
+      for (const entry of value) {
+        if (this.isRecord(entry)) {
+          sourceRecords.push(entry);
+        }
+      }
+    };
+
+    appendRecords(context.nlp.opportunities);
+    appendRecords(context.nlp.recurringProblems);
+    appendRecords(context.nlp.extractedNeeds);
+    appendRecords(context.nlp.featureRequests);
+
+    const recovered: CommunityAiOpportunity[] = [];
+    const seenSignatures = new Set<string>();
+
+    for (const record of sourceRecords) {
+      if (recovered.length >= COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES) {
+        break;
+      }
+
+      const problem = this.firstAvailableString(record, [
+        'problem',
+        'problemStatement',
+        'description',
+        'title',
+        'need',
+      ]);
+      if (!problem || problem.length < 24) {
+        continue;
+      }
+
+      const unmetNeed =
+        this.firstAvailableString(record, [
+          'unmetNeed',
+          'need',
+          'missingCapability',
+          'title',
+        ]) ?? `A reliable workflow that resolves: ${problem}`;
+      const solutionArea =
+        this.firstAvailableString(record, [
+          'solutionArea',
+          'solution',
+          'direction',
+        ]) ?? 'A focused software workflow for diagnosis, validation, and guided resolution.';
+
+      const explicitEvidence = this.normalizeTextArray(
+        record.evidenceSamples ?? record.evidence ?? record.examples,
+        [],
+        true,
+      );
+      const groundedEvidence = explicitEvidence
+        .map((sample) => this.findGroundedCorpusMatch(sample, corpus))
+        .filter((sample): sample is string => sample !== null);
+      const descriptor = this.normalizeComparableText(
+        `${problem} ${unmetNeed} ${solutionArea}`,
+      );
+      const corpusFallback = corpus.find(
+        (sample) =>
+          this.tokenOverlap(
+            descriptor,
+            this.normalizeComparableText(sample),
+          ) >= 0.12,
+      );
+      const evidenceSample = groundedEvidence[0] ?? corpusFallback;
+
+      if (!evidenceSample) {
+        continue;
+      }
+
+      const signature = this.normalizeComparableText(problem);
+      if (!signature || seenSignatures.has(signature)) {
+        continue;
+      }
+      seenSignatures.add(signature);
+
+      const rawDomainName =
+        this.firstAvailableString(record, ['domainName', 'domain']) ??
+        primaryDomainName;
+      const domainName =
+        selectedDomainNames.get(
+          this.normalizeComparableText(rawDomainName),
+        ) ?? primaryDomainName;
+      const confidence = Math.max(
+        COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE,
+        this.normalizeOptionalScore(record.confidence ?? record.aiConfidence, 45),
+      );
+
+      recovered.push({
+        domainName,
+        title:
+          this.firstAvailableString(record, ['title', 'name']) ??
+          this.deriveTitle(problem, unmetNeed),
+        problem: this.boundProblemText(problem, 240),
+        unmetNeed: this.boundProblemText(unmetNeed, 220),
+        solutionArea: this.boundProblemText(solutionArea, 180),
+        affectedUsers: this.normalizeTextArray(
+          record.affectedUsers ?? record.targetUsers,
+          ['Affected community users'],
+        ).slice(0, 2),
+        evidenceSamples: [evidenceSample],
+        frequency: this.normalizeOptionalPositiveInteger(record.frequency, 1),
+        severity: this.normalizeSeverity(record.severity),
+        confidence,
+        problemImportance: this.normalizeOptionalScore(
+          record.problemImportance ?? record.importance,
+          confidence,
+        ),
+        localEvidenceAvailable: false,
+        localEvidenceSamples: [],
+        localRelevance: Math.min(
+          25,
+          this.normalizeOptionalScore(record.localRelevance, 20),
+        ),
+        groundingScore: 0,
+        technicalFeasibility: this.normalizeOptionalScore(
+          record.technicalFeasibility ?? record.feasibility,
+          65,
+        ),
+        marketPotential: this.normalizeOptionalScore(
+          record.marketPotential,
+          45,
+        ),
+        innovationPotential: this.normalizeOptionalScore(
+          record.innovationPotential,
+          50,
+        ),
+        risks: this.normalizeTextArray(
+          record.risks ?? record.limitations,
+          [
+            'The direction is supported by limited retained evidence and requires broader validation.',
+          ],
+        ).slice(0, 2),
+      });
+    }
+
+    if (recovered.length > 0) {
+      return recovered;
+    }
+
+    const strongestCorpusSample = corpus.find((sample) => sample.length >= 40);
+    if (!strongestCorpusSample) {
+      return [];
+    }
+
+    const problem =
+      this.extractProblemSection(strongestCorpusSample) ||
+      this.boundProblemText(strongestCorpusSample, 220);
+
+    return [
+      {
+        domainName: primaryDomainName,
+        title: this.deriveTitle(problem, problem),
+        problem,
+        unmetNeed: `A reliable workflow that resolves: ${problem}`,
+        solutionArea:
+          'A focused software workflow for diagnosis, validation, and guided resolution.',
+        affectedUsers: ['Affected community users'],
+        evidenceSamples: [strongestCorpusSample],
+        frequency: 1,
+        severity: 'MEDIUM',
+        confidence: Math.max(
+          40,
+          COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE,
+        ),
+        problemImportance: 45,
+        localEvidenceAvailable: false,
+        localEvidenceSamples: [],
+        localRelevance: 20,
+        groundingScore: 0,
+        technicalFeasibility: 65,
+        marketPotential: 40,
+        innovationPotential: 50,
+        risks: [
+          'The direction is supported by one retained sample and requires broader validation.',
+        ],
+      },
+    ];
+  }
+
+  private firstAvailableString(
+    record: Record<string, unknown>,
+    keys: readonly string[],
+  ): string | null {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.replace(/\s+/gu, ' ').trim();
+      }
+    }
+
+    return null;
   }
 
   /**

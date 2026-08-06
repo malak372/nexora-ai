@@ -145,9 +145,21 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * strict business checks so a formatting miss does not discard the whole
      * generation run.
      */
-    const normalizedOutput = this.normalizeUnifiedIdeaNarrative(
+    const normalizedNarrative = this.normalizeUnifiedIdeaNarrative(
       context,
       parsedOutput,
+    );
+
+    /*
+     * Providers occasionally return optional premium fields even when the
+     * active entitlement is free. This is a schema-adherence defect, not a
+     * reason to discard an otherwise valid idea. Apply a deterministic tier
+     * projection before strict validation so unauthorized fields are removed
+     * rather than leaked or allowed to fail the complete generation run.
+     */
+    const normalizedOutput = this.sanitizeOutputForContext(
+      context,
+      this.projectOutputToGenerationTier(context, normalizedNarrative),
     );
 
     this.validateOutputForGenerationType(context, normalizedOutput);
@@ -203,6 +215,194 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
         outputValidated: true,
       },
     };
+  }
+
+
+  /**
+   * Applies the same final text cleanup before the normalized output is placed
+   * back into the pipeline context. Persistence performs the same cleanup as a
+   * last safety boundary, but doing it here keeps WebSocket previews,
+   * duplicate checks, context snapshots, and the final database record
+   * consistent with one another.
+   */
+  private sanitizeOutputForContext(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    const selectedRegion = context.location.city?.trim() ?? '';
+
+    const sanitizeText = (value: string): string => {
+      let sanitized = value
+        .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
+        .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
+        .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
+        .replace(/\bReact\s*\.\s*js\b/giu, 'React')
+        .replace(/\s+([,.;:!?])/gu, '$1')
+        .replace(/[ \t]{2,}/gu, ' ')
+        .replace(
+          /\b(?:one retained community report|a retained community report) indicates that collected feedback(?: from [^.!?]{0,120})? indicates that\s*/giu,
+          'One retained community report indicates that ',
+        )
+        .replace(/\bindicates that\s+indicates that\b/giu, 'indicates that')
+        .trim();
+
+      if (selectedRegion.length >= 2) {
+        const escaped = selectedRegion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const displayRegion = selectedRegion.replace(
+          /\b\p{L}/gu,
+          (letter) => letter.toUpperCase(),
+        );
+        sanitized = sanitized.replace(
+          new RegExp(`\\b${escaped}\\b`, 'giu'),
+          displayRegion,
+        );
+      }
+
+      return sanitized;
+    };
+
+    const sanitizeStructuredValue = (value: unknown): unknown => {
+      if (typeof value === 'string') return sanitizeText(value);
+      if (Array.isArray(value)) return value.map(sanitizeStructuredValue);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [
+            key,
+            sanitizeStructuredValue(item),
+          ]),
+        );
+      }
+      return value;
+    };
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        title: sanitizeText(parsedOutput.coreIdea.title),
+        problemStatement: sanitizeText(parsedOutput.coreIdea.problemStatement),
+        objectives: parsedOutput.coreIdea.objectives.map(sanitizeText),
+        targetUsers: parsedOutput.coreIdea.targetUsers.map(sanitizeText),
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? {
+              limitedAbstract: sanitizeText(
+                parsedOutput.coreIdea.limitedAbstract,
+              ),
+            }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? {
+              partialAbstract: sanitizeText(
+                parsedOutput.coreIdea.partialAbstract,
+              ),
+            }
+          : {}),
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: sanitizeText(parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map((output) => ({
+        ...output,
+        title: sanitizeText(output.title),
+        content: sanitizeText(output.content),
+        ...(output.structuredContent !== undefined
+          ? {
+              structuredContent: sanitizeStructuredValue(
+                output.structuredContent,
+              ) as typeof output.structuredContent,
+            }
+          : {}),
+      })),
+    };
+  }
+
+  /**
+   * Projects a provider response onto the exact entitlement contract.
+   *
+   * This method is deliberately deterministic and loss-limiting:
+   * - Free tiers retain only their authorized abstract fields.
+   * - Premium fields and advanced outputs are removed from free responses.
+   * - Premium responses remain unchanged and continue through strict
+   *   completeness validation.
+   *
+   * Removing unauthorized optional fields here prevents harmless provider
+   * over-generation from failing the whole run while preserving the security
+   * boundary that prevents premium content leakage.
+   */
+  private projectOutputToGenerationTier(
+    context: IdeaGenerationContext,
+    parsedOutput: ParsedIdeaAiOutput,
+  ): ParsedIdeaAiOutput {
+    switch (context.generationType) {
+      case IdeaGenerationType.GUEST_FREE: {
+        const partialAbstract =
+          parsedOutput.coreIdea.partialAbstract?.trim() ||
+          parsedOutput.coreIdea.fullAbstract?.trim() ||
+          parsedOutput.coreIdea.limitedAbstract?.trim() ||
+          '';
+        const limitedAbstract =
+          parsedOutput.coreIdea.limitedAbstract?.trim() ||
+          this.buildLimitedAbstract(partialAbstract);
+
+        if (
+          parsedOutput.coreIdea.fullAbstract !== undefined ||
+          parsedOutput.advancedOutputs.length > 0
+        ) {
+          this.logger.warn(
+            'Guest output contained unauthorized premium fields. They were removed before validation.',
+          );
+        }
+
+        return {
+          coreIdea: {
+            ...parsedOutput.coreIdea,
+            limitedAbstract,
+            partialAbstract,
+            fullAbstract: undefined,
+          },
+          advancedOutputs: [],
+        };
+      }
+
+      case IdeaGenerationType.NORMAL_FREE: {
+        const partialAbstract =
+          parsedOutput.coreIdea.partialAbstract?.trim() ||
+          parsedOutput.coreIdea.fullAbstract?.trim() ||
+          parsedOutput.coreIdea.limitedAbstract?.trim() ||
+          '';
+
+        if (
+          parsedOutput.coreIdea.fullAbstract !== undefined ||
+          parsedOutput.advancedOutputs.length > 0
+        ) {
+          this.logger.warn(
+            'NORMAL_FREE output contained unauthorized premium fields. They were removed before validation.',
+          );
+        }
+
+        return {
+          coreIdea: {
+            ...parsedOutput.coreIdea,
+            partialAbstract: this.buildConciseOverview(partialAbstract),
+            fullAbstract: undefined,
+          },
+          advancedOutputs: [],
+        };
+      }
+
+      case IdeaGenerationType.PREMIUM_CREDIT:
+        return parsedOutput;
+
+      default:
+        return this.assertNeverGenerationType(context.generationType);
+    }
+  }
+
+  /** Builds a bounded guest preview without exposing premium-length content. */
+  private buildLimitedAbstract(value: string): string {
+    const overview = this.buildConciseOverview(value);
+    const words = overview.split(/\s+/u).filter(Boolean);
+
+    return words.slice(0, 70).join(' ').trim();
   }
 
   /**
@@ -324,13 +524,20 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .filter((item) => item.coverageScore >= 2)
       .slice(0, 3);
 
-    let problemStatement = this.polishProblemStatement(
-      winner?.problem?.trim() || parsedOutput.coreIdea.problemStatement
-        .replace(/(?:^|\n)\s*\d+[.)-]?\s*\[[^\]]+\]\s*Problem:\s*/gi, ' ')
-        .replace(/\s*\|\s*Solution response:\s*[^\n]+/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    );
+    const providerProblemStatement = parsedOutput.coreIdea.problemStatement
+      .replace(/(?:^|\n)\s*\d+[.)-]?\s*\[[^\]]+\]\s*Problem:\s*/gi, ' ')
+      .replace(/\s*\|\s*Solution response:\s*[^\n]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const winnerProblem = winner?.problem?.trim() ?? '';
+    const preferredProblem =
+      winnerProblem &&
+      !this.isGenericFallbackProblem(winnerProblem) &&
+      !this.isFragmentLikeEvidenceProblem(winnerProblem)
+        ? winnerProblem
+        : providerProblemStatement || winnerProblem;
+
+    let problemStatement = this.polishProblemStatement(preferredProblem);
 
     if (grounded.length > 0) {
       const domains = [...new Set(grounded.map((item) => item.domainName))];
@@ -341,7 +548,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       if (cleanedProblems.length === 1) {
         const domain =
           domains[0] ?? context.domainName ?? 'the selected domain';
-        const problem = this.capitalizeSentence(cleanedProblems[0] ?? '');
+        const groundedProblem = cleanedProblems[0] ?? '';
+        const selectedProblem =
+          this.isSpecificProblemStatement(providerProblemStatement) &&
+          (!this.isSpecificProblemStatement(groundedProblem) ||
+            this.isFragmentLikeEvidenceProblem(groundedProblem))
+            ? providerProblemStatement
+            : groundedProblem;
+        const problem = this.capitalizeSentence(selectedProblem);
 
         problemStatement = this.polishProblemStatement(
           this.hasStrongIndependentEvidence(context)
@@ -459,6 +673,14 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       problemStatement,
     );
 
+    /*
+     * Run final copy cleanup after every possible overview/full-abstract
+     * reconstruction so duplicated zero-evidence wording cannot reappear.
+     */
+    overview = this.finalizePersistedNarrativeCopy(overview);
+    problemStatement = this.finalizePersistedNarrativeCopy(problemStatement);
+    fullAbstract = this.finalizePersistedNarrativeCopy(fullAbstract);
+
     return {
       ...parsedOutput,
       coreIdea: {
@@ -486,6 +708,76 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       },
       advancedOutputs,
     };
+  }
+
+  /**
+   * Final persisted-copy cleanup. This deliberately runs after all narrative
+   * builders, sparse-evidence qualifiers, and abstract expansion.
+   */
+  private finalizePersistedNarrativeCopy(value: string): string {
+    const cleaned = value
+      .replace(
+        /\bIt tests whether the pilot will test whether\b/giu,
+        'It tests whether',
+      )
+      .replace(
+        /\bThe pilot tests whether the pilot will test whether\b/giu,
+        'The pilot tests whether',
+      )
+      .replace(
+        /\bmove(?:s)? from anecdotal (?:feedback|problem-solving) to (?:a )?(?:data-informed, )?structured validation process\b/giu,
+        'collect initial operational reports and determine whether a recurring problem family exists',
+      )
+      .replace(
+        /\bmove(?:s)? from anecdotal (?:feedback|problem-solving) to evidence-collection(?: and validation development)?\b/giu,
+        'collect initial operational reports and determine whether a recurring problem family exists',
+      )
+      .replace(/\binfrastructure-agnostic layer\b/giu, 'bounded pilot workflow')
+      .replace(/\bmay fail ambiguous operational failures\b/giu, 'may encounter ambiguous operational failures')
+      .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
+      .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
+      .replace(/\bnablus\b/giu, 'Nablus')
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+
+    return this.removeRepeatedLeadingNarrative(cleaned);
+  }
+
+  private removeRepeatedLeadingNarrative(value: string): string {
+    const paragraphs = value
+      .split(/\n\s*\n/u)
+      .map((item) => item.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+
+    if (paragraphs.length > 1) {
+      const firstKey = this.normalizeComparableText(paragraphs[0] ?? '');
+      const secondKey = this.normalizeComparableText(paragraphs[1] ?? '');
+      if (
+        firstKey &&
+        (firstKey === secondKey ||
+          secondKey.startsWith(firstKey) ||
+          firstKey.startsWith(secondKey))
+      ) {
+        paragraphs.splice(1, 1);
+      }
+    }
+
+    const joined = paragraphs.join('\n\n');
+    const sentences = joined.match(/[^.!?]+[.!?]+|[^.!?]+$/gu) ?? [joined];
+    const result: string[] = [];
+
+    for (const sentence of sentences) {
+      const normalized = this.normalizeComparableText(sentence);
+      const duplicate = result.some(
+        (previous) =>
+          this.normalizeComparableText(previous) === normalized &&
+          normalized.length >= 40,
+      );
+      if (!duplicate) result.push(sentence.trim());
+    }
+
+    return result.join(' ').replace(/\s+/gu, ' ').trim();
   }
 
   /**
@@ -817,7 +1109,15 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     }
 
     const winner = this.resolveWinnerOpportunityRaw(context);
-    const selectedProblem = winner?.problem?.trim();
+    const winnerProblem = winner?.problem?.trim() ?? '';
+    const providerProblem = parsedOutput.coreIdea.problemStatement
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const selectedProblem =
+      this.isSpecificProblemStatement(providerProblem) &&
+      this.isFragmentLikeEvidenceProblem(winnerProblem)
+        ? providerProblem
+        : winnerProblem || providerProblem;
     if (!selectedProblem) {
       return overview;
     }
@@ -871,15 +1171,47 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
    * "a case in which uncertainty regarding..."
    */
   private buildSparseEvidenceSentence(problem: string): string {
-    const normalized = problem.replace(/\s+/gu, ' ').trim();
+    let normalized = problem.replace(/\s+/gu, ' ').trim();
+
+    // Remove qualifiers already produced by the model. The validator owns the
+    // single evidence qualifier and must not stack "report indicates" phrases.
+    normalized = normalized
+      .replace(
+        /^(?:a preliminary community signal[^:]*:\s*|a preliminary community report (?:suggests|indicates|reports)(?: that)?\s*|a limited evidence sample(?: from [^,.]{1,100})? (?:suggests|indicates|shows|reports)(?: that)?\s*|(?:one|a) (?:retained|collected) (?:community )?report (?:suggests|indicates|describes|reports)(?: that)?\s*)/iu,
+        '',
+      )
+      .replace(/^(?:the )?collected report indicates that\s*/iu, '')
+      .replace(/^(?:one|a) user experienced\s*/iu, '')
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    // Raw evidence can contain a full question, configuration dump, or logs.
+    // Keep only the first meaningful sentence so the abstract remains natural.
+    normalized = (normalized.split(/(?<=[.!?])\s+/u)[0] ?? normalized)
+      .replace(/[.]+$/u, '')
+      .trim();
 
     const nounPhraseStart =
-      /^(?:uncertainty|difficulty|friction|inability|failure|a lack|lack|missing|absence|limited access|insufficient|the need|a need|concern|confusion)\b/iu.test(
+      /^(?:uncertainty|difficulty|friction|inability|failure|a lack|lack|missing|absence|limited access|insufficient|the need|a need|concern|confusion|authentication|configuration|redirect uri)/iu.test(
         normalized,
       );
 
+    const alreadyQualifiedClause =
+      /^(?:a limited evidence sample|a preliminary signal|collected feedback|community feedback|the evidence|one report)\b/iu.test(
+        normalized,
+      );
+
+    if (alreadyQualifiedClause) {
+      normalized = normalized
+        .replace(
+          /^(?:a limited evidence sample(?: from [^,.]{1,100})?|a preliminary signal|collected feedback|community feedback|the evidence|one report)\s+(?:suggests|indicates|shows|reports|describes)(?: that)?\s*/iu,
+          '',
+        )
+        .trim();
+    }
+
     if (nounPhraseStart) {
-      return `One collected report describes ${this.lowercaseSentenceStart(
+      return `One retained community report describes ${this.lowercaseSentenceStart(
         normalized,
       )}.`;
     }
@@ -888,12 +1220,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       /^(?:the user|one user|a user)\s+(.+)$/iu,
     );
     if (firstPersonNeed?.[1]) {
-      return `One collected report describes a user who ${this.lowercaseSentenceStart(
+      return `One retained community report describes a user who ${this.lowercaseSentenceStart(
         firstPersonNeed[1],
       )}.`;
     }
 
-    return `One collected report describes a case where ${this.lowercaseSentenceStart(
+    return `One retained community report indicates that ${this.lowercaseSentenceStart(
       normalized,
     )}.`;
   }
@@ -915,11 +1247,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       return fullAbstract;
     }
 
-    const selected = context.opportunityRanking?.selected;
-    const directEvidenceCount =
-      selected?.independentEvidence?.length ??
-      selected?.evidenceSamples.length ??
-      0;
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
 
     const paragraphs = fullAbstract
       .split(/\n\s*\n/u)
@@ -937,16 +1265,151 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           ? 'The proposed pilot responds to one collected report rather than a validated market-wide pattern.'
           : `The proposed pilot responds to ${directEvidenceCount} collected reports rather than a validated market-wide pattern.`;
 
-    const groundedOpening = [
+    const evidenceQualifier = [
       evidenceOpening,
-      problemStatement,
-      'The product should therefore be evaluated as a bounded workflow hypothesis, and broader demand or recurrence must be measured during the pilot before wider deployment.',
+      'The evidence limits market-wide claims, but it does not replace the product workflow, architecture, value, and pilot detail in the generated premium abstract.',
     ]
       .join(' ')
       .replace(/\s+/gu, ' ')
       .trim();
 
-    return [groundedOpening, ...paragraphs.slice(1)].join('\n\n');
+    /*
+     * Preserve every generated paragraph. Previously the validator replaced
+     * paragraph one with a deterministic warning, which made a rich premium
+     * abstract look like a fallback disclaimer. The qualifier is now a short
+     * preface and the model-authored workflow remains intact.
+     */
+    const qualifierPatterns = [
+      /no retained direct community report/iu,
+      /one (?:retained|collected) direct community report/iu,
+      /responds to one collected report/iu,
+      /responds to \d+ collected reports/iu,
+      /evidence limits market-wide claims/iu,
+    ];
+    const firstParagraph = paragraphs[0] ?? '';
+    const alreadyQualified = qualifierPatterns.some((pattern) =>
+      pattern.test(firstParagraph),
+    );
+
+    if (alreadyQualified) {
+      const correctedFirstParagraph = this.correctEvidenceQualifierCount(
+        firstParagraph,
+        directEvidenceCount,
+      );
+      return [correctedFirstParagraph, ...paragraphs.slice(1)].join('\n\n');
+    }
+
+    return [evidenceQualifier, ...paragraphs].join('\n\n');
+  }
+
+  private countRetainedDirectEvidence(
+    context: IdeaGenerationContext,
+  ): number {
+    const selected = context.opportunityRanking?.selected;
+
+    // Narrative counts must describe evidence supporting the selected
+    // opportunity, not every retained text from all selected domains.
+    const verifiedCount = selected?.verifiedIndependentEvidenceCount;
+    if (typeof verifiedCount === 'number' && verifiedCount > 0) {
+      return Math.floor(verifiedCount);
+    }
+
+    if (Array.isArray(selected?.independentEvidence)) {
+      const identities = new Set(
+        selected.independentEvidence
+          .map((item) =>
+            typeof item?.identityKey === 'string'
+              ? item.identityKey.trim().toLowerCase()
+              : typeof item?.text === 'string'
+                ? item.text.replace(/\s+/gu, ' ').trim().toLowerCase()
+                : '',
+          )
+          .filter((item) => item.length >= 20),
+      );
+      if (identities.size > 0) return identities.size;
+    }
+
+    if (Array.isArray(selected?.evidenceSamples)) {
+      const samples = new Set(
+        selected.evidenceSamples
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.replace(/\s+/gu, ' ').trim().toLowerCase())
+          .filter((item) => item.length >= 20),
+      );
+      if (samples.size > 0) return samples.size;
+    }
+
+    // Domain evidence is only a boolean last resort. It must never inflate the
+    // report count shown in the persisted narrative.
+    return (context.domainEvidence ?? []).some(
+      (item) => item.evidenceAvailable && item.totalTextsAnalyzed > 0,
+    )
+      ? 1
+      : 0;
+  }
+
+  private correctEvidenceQualifierCount(
+    paragraph: string,
+    directEvidenceCount: number,
+  ): string {
+    const opening =
+      directEvidenceCount <= 0
+        ? 'The proposed pilot currently has no retained direct community report and must be treated as an unvalidated primary-domain hypothesis.'
+        : directEvidenceCount === 1
+          ? 'The proposed pilot is supported by one retained direct community report and should be treated as a preliminary, not market-wide, signal.'
+          : `The proposed pilot is supported by ${directEvidenceCount} retained direct community reports and should still avoid market-wide claims until broader validation.`;
+
+    const remainder = paragraph
+      .replace(
+        /^(?:(?:The proposed pilot|The evidence limits market-wide claims)[^.]*\.\s*){1,2}/iu,
+        '',
+      )
+      .replace(
+        /^(?:one|a) (?:retained|collected) (?:community )?report (?:suggests|indicates|describes|reports)(?: that)?\s*/iu,
+        '',
+      )
+      .replace(/^the collected report indicates that\s*/iu, '')
+      .trim();
+
+    return remainder ? `${opening} ${remainder}` : opening;
+  }
+
+  private isFragmentLikeEvidenceProblem(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+
+    if (!normalized) {
+      return true;
+    }
+
+    const wordCount = normalized.split(' ').filter(Boolean).length;
+    const hasProblemVerb =
+      /\b(?:struggle|difficulty|difficult|fail|failure|delay|pressure|cost|margin|friction|error|unable|cannot|can't|lack|missing|slow|risk|overhead|problem|issue|challenge)\b/iu.test(
+        normalized,
+      );
+    const looksLikeQuestionTitleFragment =
+      /^(?:why|how|what|when|where|who)\b/iu.test(normalized) ||
+      /\b(?:giants?|platforms?|apps?|systems?)\s*,?\s*(?:and|or)\s*[^.]+\.?$/iu.test(
+        normalized,
+      );
+
+    return wordCount < 8 || !hasProblemVerb || looksLikeQuestionTitleFragment;
+  }
+
+  private isGenericFallbackProblem(value: string): boolean {
+    return /(?:concrete workflow friction described by|evidence-led workflow opportunity|users in .+ experience the concrete workflow|retained community sample|focused software workflow that responds directly)/iu.test(
+      value,
+    );
+  }
+
+  private isSpecificProblemStatement(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    if (normalized.length < 90 || this.isGenericFallbackProblem(normalized)) {
+      return false;
+    }
+
+    return /(?:difficulty|unable|fails?|mismatch|inaccurate|error|friction|manual|extract|connect|integrat|visualiz|validate|debug)/iu.test(
+      normalized,
+    );
   }
 
   private hasAnyRetainedDirectEvidence(

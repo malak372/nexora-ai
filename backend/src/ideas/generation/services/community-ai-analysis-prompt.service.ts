@@ -71,6 +71,7 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
         cleanedCommunitySamples: {
           posts: this.normalizeSamples(context.nlp.samplePosts),
           comments: this.normalizeSamples(context.nlp.sampleComments),
+          retainedEvidence: this.collectRetainedEvidenceSamples(context),
         },
       }),
     };
@@ -106,7 +107,7 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
       'domainName must exactly equal one selectedDomains.name value. dominantProblems, unmetNeeds, affectedUsers, evidenceSamples, localEvidenceSamples, risks, and qualityWarnings must be arrays of strings.',
       'Set localEvidenceAvailable to true only when a supplied evidence quote explicitly mentions the requested country, city, or region.',
       'When localEvidenceAvailable is false, localEvidenceSamples must be empty, localRelevance must not exceed 25, and risks must not invent location-specific infrastructure, expertise, economic, or regulatory claims.',
-      'Every evidenceSamples item must be copied verbatim from one supplied cleanedCommunitySamples value. Do not paraphrase, summarize, translate, combine, or rewrite evidence text.',
+      'Every evidenceSamples item must be copied verbatim from one supplied cleanedCommunitySamples posts, comments, or retainedEvidence value. Do not paraphrase, summarize, translate, combine, or rewrite evidence text.',
       'All score fields must be numbers from 0 to 100. frequency must be a positive integer. severity must be LOW, MEDIUM, HIGH, or CRITICAL. Confidence, importance, feasibility, market potential, innovation potential, and local relevance must be assessed independently and should vary when evidence strength differs.',
       'Never return objects inside dominantProblems or unmetNeeds.',
       'Each opportunity must include concrete risks grounded in technical uncertainty, adoption constraints, evidence limitations, or integration boundaries; do not invent local regulations or infrastructure constraints.',
@@ -167,6 +168,73 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
       );
 
     return Object.fromEntries(compactedEntries);
+  }
+
+  /**
+   * Builds the authoritative provider evidence list from every retained NLP
+   * location. Some NLP runs intentionally keep samplePosts/sampleComments null
+   * while preserving verbatim quotes inside recurringProblems,
+   * extractedNeeds, opportunities, or insights. Supplying those quotes here
+   * prevents a compliant model from returning an empty opportunities array.
+   */
+  private collectRetainedEvidenceSamples(
+    context: IdeaGenerationContext,
+  ): readonly string[] {
+    const extracted: string[] = [];
+    const evidenceKeys = new Set([
+      'evidenceSamples',
+      'samplePosts',
+      'sampleComments',
+      'localEvidenceSamples',
+    ]);
+
+    const visit = (value: unknown, parentKey = ''): void => {
+      if (extracted.length >= COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS) {
+        return;
+      }
+
+      if (typeof value === 'string') {
+        if (!evidenceKeys.has(parentKey)) {
+          return;
+        }
+
+        const normalized = value.replace(/\s+/gu, ' ').trim();
+        if (normalized.length >= 24) {
+          extracted.push(
+            normalized.slice(0, COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH),
+          );
+        }
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          visit(entry, parentKey);
+          if (extracted.length >= COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS) {
+            break;
+          }
+        }
+        return;
+      }
+
+      if (value && typeof value === 'object') {
+        for (const [key, entry] of Object.entries(value)) {
+          if (evidenceKeys.has(key) || typeof entry === 'object') {
+            visit(entry, key);
+          }
+          if (extracted.length >= COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS) {
+            break;
+          }
+        }
+      }
+    };
+
+    visit(context.nlp);
+
+    return [...new Set(extracted)].slice(
+      0,
+      COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS,
+    );
   }
 
   private normalizeSamples(value: Prisma.JsonValue | null): readonly string[] {

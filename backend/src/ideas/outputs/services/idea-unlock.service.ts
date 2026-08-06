@@ -17,7 +17,6 @@ import {
 
 import { AiExecutionService } from '../../../ai/services/ai-execution.service';
 import { AiResponseFormat } from '../../../ai/types/ai-provider.type';
-import { PREMIUM_IDEA_CREDIT_COST } from '../../../credits/constants/credit.constants';
 import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PromptBuilderService } from '../../../prompts/services/prompt-builder.service';
@@ -152,6 +151,14 @@ export class IdeaUnlockService {
       };
     }
 
+    const settings = input.consumeCredit
+      ? await this.prisma.systemSetting.findUnique({
+          where: { key: 'GLOBAL' },
+          select: { premiumIdeaCreditCost: true },
+        })
+      : null;
+    const requiredCredits = settings?.premiumIdeaCreditCost ?? 15;
+
     if (input.consumeCredit) {
       if (idea.user.accountStatus !== AccountStatus.PREMIUM) {
         throw new ForbiddenException(
@@ -159,7 +166,7 @@ export class IdeaUnlockService {
         );
       }
 
-      if (idea.user.creditBalance < PREMIUM_IDEA_CREDIT_COST) {
+      if (idea.user.creditBalance < requiredCredits) {
         throw new BadRequestException('Insufficient credit balance.');
       }
     }
@@ -232,7 +239,7 @@ export class IdeaUnlockService {
         const creditResult = await this.creditBalanceService.consumeForIdeaGeneration(
           input.userId,
           idea.id,
-          PREMIUM_IDEA_CREDIT_COST,
+          requiredCredits,
         );
         creditWasConsumed = true;
         balanceAfter = creditResult.balanceAfter;
@@ -291,7 +298,7 @@ export class IdeaUnlockService {
         await this.creditBalanceService.adjustBalance({
           userId: input.userId,
           ideaId: idea.id,
-          amount: PREMIUM_IDEA_CREDIT_COST,
+          amount: requiredCredits,
           type: CreditTransactionType.REFUND,
           description: 'Credit refunded because advanced-output generation failed.',
           activatePremium: false,

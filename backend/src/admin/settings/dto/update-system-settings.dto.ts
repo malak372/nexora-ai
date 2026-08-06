@@ -17,6 +17,13 @@ export class UpdateSystemSettingsDto {
   @Min(0.01)
   creditPrice?: number;
 
+  /** Credits consumed to generate one Premium idea. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  premiumIdeaCreditCost?: number;
+
   /** Direct-payment price for unlocking one user-owned free idea. */
   @IsOptional()
   @Type(() => Number)
@@ -31,27 +38,12 @@ export class UpdateSystemSettingsDto {
   @Min(0)
   premiumActivationFee?: number;
 
-  /** Fixed price paid by a NORMAL user to accept a published idea. */
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  publishedIdeaPrice?: number;
-
   /** Fixed acceptance price for NORMAL accounts. */
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   normalAcceptancePrice?: number;
-
-  /** Fixed acceptance price for PREMIUM accounts. */
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  premiumAcceptancePrice?: number;
-
 
 
   /** Direct-payment price for a NORMAL user's advanced publication outputs. */

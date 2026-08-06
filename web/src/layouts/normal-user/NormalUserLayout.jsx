@@ -12,6 +12,7 @@ import PremiumWelcomeCelebration from '../../features/normal-user/shared/compone
 import NormalSidebar from './NormalSidebar';
 import './normal-user-layout.css';
 import './normal-user-theme.css';
+import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
 
 export default function NormalUserLayout() {
   const navigate = useNavigate();
@@ -20,6 +21,10 @@ export default function NormalUserLayout() {
   useEffect(() => {
     if (!getAccessToken()) navigate('/login', { replace: true });
   }, [navigate]);
+
+  useEffect(() => {
+    preloadPrimaryRoutes();
+  }, []);
 
   useEffect(() => {
     const handleExpired = () => navigate('/login', { replace: true });

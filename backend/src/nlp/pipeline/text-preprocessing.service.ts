@@ -175,7 +175,7 @@ type LanguageResolvedTextItem = CleanedTextItem & {
  */
 @Injectable()
 export class TextPreprocessingService {
-  private static readonly MAX_FAST_ANALYSIS_TEXTS = 14;
+  private static readonly MAX_FAST_ANALYSIS_TEXTS = 24;
 
   private readonly logger = new Logger(TextPreprocessingService.name);
 
@@ -206,7 +206,15 @@ export class TextPreprocessingService {
 
     const cleanedItems: CleanedTextItem[] = selectedInputs.map((input) => ({
       input,
-      cleaning: this.textCleaningService.clean(input.content),
+      /*
+       * A short complaint comment often contains the actual user problem while
+       * the parent post title carries the selected-domain signal. Analyze both
+       * together so useful comments are not discarded merely because the
+       * comment itself says only "it crashes" or "this does not work".
+       */
+      cleaning: this.textCleaningService.clean(
+        this.buildContextualAnalysisText(input),
+      ),
     }));
 
     const nonEmptyItems = cleanedItems.filter((item) => !item.cleaning.isEmpty);
@@ -281,9 +289,51 @@ export class TextPreprocessingService {
             item.isRelevant || this.shouldRetainBorderlineEvidence(item.text),
         )
       : evaluatedTexts;
-    const relevantTexts = relevantItems.map((item) => item.text);
+    let relevantTexts = relevantItems.map((item) => item.text);
+
+    /*
+     * A fast run must not collapse a non-empty collected corpus to zero merely
+     * because short complaint comments depend on their parent title for domain
+     * context. When the strict relevance pass retains nothing, recover only
+     * concrete complaint/request records whose contextual analysis text still
+     * contains a selected-domain signal. This is bounded and evidence-driven;
+     * it does not forward the complete noisy corpus to the AI provider.
+     */
+    if (relevantTexts.length === 0 && evaluatedTexts.length > 0) {
+      const allEvaluatedTexts = evaluatedTexts.map((item) => item.text);
+      const complaintCandidates = allEvaluatedTexts.filter((text) =>
+        this.isRecoverableContextualEvidence(text),
+      );
+      const boundedFallbackPool =
+        complaintCandidates.length > 0
+          ? complaintCandidates
+          : allEvaluatedTexts.filter((text) =>
+              this.isSafeMinimumFallbackEvidence(text),
+            );
+
+      relevantTexts = boundedFallbackPool
+        .sort((first, second) => {
+          const firstComment = first.sourceType === 'COMMENT' ? 1 : 0;
+          const secondComment = second.sourceType === 'COMMENT' ? 1 : 0;
+          const firstEvidence = this.contextualEvidencePriority(first);
+          const secondEvidence = this.contextualEvidencePriority(second);
+          return (
+            secondEvidence - firstEvidence ||
+            secondComment - firstComment ||
+            second.relevanceScore - first.relevanceScore
+          );
+        })
+        .slice(0, 6);
+
+      if (relevantTexts.length > 0) {
+        this.logger.warn(
+          `Strict NLP relevance retained zero texts; recovered ${relevantTexts.length} contextual complaint/request evidence text(s) instead of discarding the collected corpus.`,
+        );
+      }
+    }
+
     const irrelevantTextsRemoved =
-      evaluatedTexts.length - relevantItems.length + technicalNoiseTextsRemoved;
+      evaluatedTexts.length - relevantTexts.length + technicalNoiseTextsRemoved;
 
     if (irrelevantTextsRemoved > 0) {
       this.logger.debug(
@@ -325,13 +375,18 @@ export class TextPreprocessingService {
     }
 
     const evidencePattern =
-      /\b(?:cannot|can't|unable|missing|unavailable|difficult|confusing|slow|crash|error|fails?|failed|problem|issue|bug|blocked|need|needs|should|please add|feature request|wish)\b/iu;
+      /\b(?:cannot|can't|unable|missing|unavailable|difficult|confusing|slow|lag|latency|crash|freeze|error|fails?|failed|broken|problem|issue|bug|blocked|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|need|needs|should|please add|feature request|wish)\b/iu;
 
-    return inputs
+    const ranked = inputs
       .map((input, index) => {
-        const normalized = input.content.toLowerCase();
-        const evidenceBonus = evidencePattern.test(normalized) ? 100 : 0;
-        const sourceBonus = input.sourceType === 'POST' ? 40 : 0;
+        const contextualText = this.buildContextualAnalysisText(input);
+        const evidenceBonus = evidencePattern.test(contextualText) ? 120 : 0;
+        /*
+         * Complaint comments receive priority over generic post titles. Posts
+         * still remain represented so every retained comment keeps context and
+         * the NLP stage does not become comment-only.
+         */
+        const sourceBonus = input.sourceType === 'COMMENT' ? 55 : 35;
         const engagement =
           Math.min(Math.max(input.likesCount ?? 0, 0), 25) +
           Math.min(Math.max(input.repliesCount ?? 0, 0), 25);
@@ -345,9 +400,62 @@ export class TextPreprocessingService {
       .sort(
         (first, second) =>
           second.score - first.score || first.index - second.index,
-      )
-      .slice(0, TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS)
-      .map((entry) => entry.input);
+      );
+
+    const selected: IntelligentTextInput[] = [];
+    const selectedIds = new Set<string>();
+
+    const take = (sourceType: 'POST' | 'COMMENT', limit: number): void => {
+      for (const entry of ranked) {
+        if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
+          break;
+        }
+        if (
+          entry.input.sourceType !== sourceType ||
+          selectedIds.has(entry.input.id)
+        ) {
+          continue;
+        }
+        const currentCount = selected.filter(
+          (item) => item.sourceType === sourceType,
+        ).length;
+        if (currentCount >= limit) break;
+        selected.push(entry.input);
+        selectedIds.add(entry.input.id);
+      }
+    };
+
+    take('COMMENT', 16);
+    take('POST', 8);
+
+    for (const entry of ranked) {
+      if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
+        break;
+      }
+      if (!selectedIds.has(entry.input.id)) {
+        selected.push(entry.input);
+        selectedIds.add(entry.input.id);
+      }
+    }
+
+    return selected;
+  }
+
+  /**
+   * Builds the text used only for relevance and evidence extraction. The raw
+   * database content is preserved on the input object for auditing.
+   */
+  private buildContextualAnalysisText(input: IntelligentTextInput): string {
+    const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+    const content = input.content.replace(/\s+/gu, ' ').trim();
+
+    if (input.sourceType === 'COMMENT' && title && content) {
+      return `${title}. Community comment: ${content}`;
+    }
+
+    return title && content && !content.toLowerCase().includes(title.toLowerCase())
+      ? `${title}. ${content}`
+      : content || title;
   }
 
   /**
@@ -404,6 +512,51 @@ export class TextPreprocessingService {
     ];
 
     return evidenceSignals.some((signal) => normalized.includes(signal));
+  }
+
+
+  /**
+   * Recovers a bounded complaint/request record after an otherwise empty strict
+   * pass. Parent-title context is already present in cleanedText for comments.
+   */
+  private isRecoverableContextualEvidence(text: PreprocessedTextInput): boolean {
+    const normalized = text.cleaning.cleanedText.toLowerCase();
+    const hasDomainSignal =
+      text.matchedKeywords.length > 0 ||
+      text.matchedPhrases.length > 0 ||
+      text.relevanceScore >= 0.12;
+    const hasConcreteEvidence =
+      /\b(?:cannot|can't|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|needs|should|please add|feature request|wish)\b/iu.test(
+        normalized,
+      );
+
+    return hasDomainSignal && hasConcreteEvidence;
+  }
+
+
+  /**
+   * Last-resort bounded evidence retention for a non-empty collected corpus.
+   * This path is used only when every stricter relevance rule removed the
+   * complete sample. It keeps traceable natural-language records and never
+   * forwards code-heavy or machine-generated operational noise.
+   */
+  private isSafeMinimumFallbackEvidence(text: PreprocessedTextInput): boolean {
+    const normalized = text.cleaning.cleanedText.replace(/\s+/gu, ' ').trim();
+    if (normalized.length < 24 || normalized.length > 1800) {
+      return false;
+    }
+    if (this.isTechnicalNoise(normalized) || this.isNonComplaintContext(normalized)) {
+      return false;
+    }
+    return text.sourceType === 'COMMENT' || text.relevanceScore >= 0.05;
+  }
+
+  /** Ranks bounded fallback evidence without another provider call. */
+  private contextualEvidencePriority(text: PreprocessedTextInput): number {
+    const normalized = text.cleaning.cleanedText.toLowerCase();
+    const complaint = /\b(?:cannot|can't|unable|not working|does not work|crash|freeze|slow|lag|latency|error|fail|failed|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|should|feature request|wish)\b/iu.test(normalized) ? 5 : 0;
+    const traceableComment = text.sourceType === 'COMMENT' && Boolean(text.postId) ? 3 : 0;
+    return complaint + traceableComment + Math.min(text.relevanceScore * 10, 2);
   }
 
   /**

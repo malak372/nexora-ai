@@ -174,7 +174,7 @@ export class TextInputBuilderService {
                   id: 'asc',
                 },
               ],
-              take: 3,
+              take: 8,
               select: {
                 id: true,
                 content: true,
@@ -211,6 +211,7 @@ export class TextInputBuilderService {
           id: comment.id,
           sourceType: 'COMMENT' as const,
           postId: post.id,
+          title: post.title,
           content: this.limitContent(comment.content),
           language: this.parseLanguageCode(comment.languageCode),
           likesCount: comment.likesCount,

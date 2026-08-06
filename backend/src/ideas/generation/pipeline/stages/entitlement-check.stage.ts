@@ -80,7 +80,7 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
   ): Promise<IdeaGenerationStageExecutionResult> {
     const policyInput = await this.buildPolicyInput(context);
 
-    const policy = this.policyService.evaluate(policyInput);
+    const policy = await this.policyService.evaluate(policyInput);
 
     const updatedContext: IdeaGenerationContext = {
       ...context,

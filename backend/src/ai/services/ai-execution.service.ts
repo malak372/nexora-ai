@@ -155,6 +155,9 @@ type ExecuteProviderRequestInput = {
    * Stable name assigned to the structured-output schema.
    */
   readonly responseSchemaName?: string;
+
+  /** Optional caller-driven cancellation signal. */
+  readonly signal?: AbortSignal;
 };
 
 /**
@@ -850,6 +853,8 @@ export class AiExecutionService {
       responseSchemaName: useNativeResponseSchema
         ? input.responseSchemaName
         : undefined,
+
+      signal: input.signal,
     };
   }
 
@@ -887,6 +892,7 @@ export class AiExecutionService {
           signal,
         }),
       timeoutMs,
+      request.signal,
     );
   }
 
@@ -1148,6 +1154,8 @@ export class AiExecutionService {
           responseSchema: input.responseSchema,
 
           responseSchemaName: input.responseSchemaName,
+
+          signal: input.signal,
         },
         this.resolveModelRequestTimeoutMs(model, input.timeoutMs),
       );

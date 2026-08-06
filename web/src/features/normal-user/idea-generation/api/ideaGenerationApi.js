@@ -22,10 +22,17 @@ import {
  *
  * @returns {Promise<Array|Object>} Backend domain response.
  */
-export async function getAvailableDomains() {
-    const response = await normalUserApi.get('/domains/available');
+export async function getAvailableDomains({ force = false } = {}) {
+    const cacheKey = createRequestCacheKey('available-domains');
 
-    return extractApiData(response);
+    return cachedRequest(
+        cacheKey,
+        async () => {
+            const response = await normalUserApi.get('/domains/available');
+            return extractApiData(response);
+        },
+        { ttlMs: 30 * 60 * 1000, force },
+    );
 }
 
 /**

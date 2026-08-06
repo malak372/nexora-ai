@@ -10,6 +10,7 @@ import {
   PromptType,
   Prisma,
   type AiModel,
+  IdeaGenerationType,
 } from '@prisma/client';
 
 import { AiModelsService } from '../../../ai-models/ai-models.service';
@@ -239,7 +240,7 @@ export class IdeaGenerationBenchmarkService {
     /*
      * Fast-path policy:
      * - Two provider-diverse candidates are launched in parallel.
-     * - No same-model retry or quality-revision loop is allowed.
+     * - One bounded self-revision is allowed for a structurally valid weak result.
      * - One accepted candidate is sufficient.
      * - Comparative judging runs only when two candidates finish inside budget.
      */
@@ -247,6 +248,7 @@ export class IdeaGenerationBenchmarkService {
     const conceptDirections = this.buildConceptDirections(context);
     let attemptedCandidateCount = 0;
     const blockedModelIds = new Set<string>();
+    const warnedOpportunityTitles = new Set<string>();
 
     /*
      * Execute a bounded model batch for one opportunity at a time. When a
@@ -261,35 +263,62 @@ export class IdeaGenerationBenchmarkService {
 
       if (
         isFallbackOpportunity &&
-        successfulCandidates.length >= IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES
+        this.countQualityApprovedCandidates(successfulCandidates) >=
+          IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES
       ) {
         this.logger.log(
-          `Initial ${IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT} opportunities produced ${successfulCandidates.length} accepted candidates; fallback opportunities were skipped.`,
+          `Initial ${IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT} opportunities produced ${this.countQualityApprovedCandidates(successfulCandidates)} quality-approved candidate(s); fallback opportunities were skipped.`,
         );
         break;
       }
 
       const attemptedModelIdsForDirection = new Set<string>();
       const acceptedCandidatesForDirection: IdeaBenchmarkCandidate[] = [];
+      const isUnvalidatedHypothesis =
+        direction.opportunity.disqualificationReasons.includes(
+          'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        ) ||
+        direction.opportunity.disqualificationReasons.includes(
+          'NO_DIRECT_EVIDENCE',
+        );
+      /*
+       * A no-evidence validation hypothesis cannot honestly reach the ordinary
+       * market-fit threshold by repeated rewriting. Generate one complete,
+       * clearly qualified availability fallback and stop instead of spending
+       * three provider/revision windows on the same unsupported premise.
+       */
+      const targetCandidateCount = isUnvalidatedHypothesis
+        ? 1
+        : IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
+      const directionAttemptLimit = isUnvalidatedHypothesis
+        ? Math.min(attemptedCandidateCount + 1, IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS)
+        : IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS;
 
       while (
-        acceptedCandidatesForDirection.length <
-          IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY &&
-        attemptedCandidateCount < IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS
+        acceptedCandidatesForDirection.length < targetCandidateCount &&
+        attemptedCandidateCount < directionAttemptLimit
       ) {
         const missingCandidateCount =
-          IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY -
-          acceptedCandidatesForDirection.length;
+          targetCandidateCount - acceptedCandidatesForDirection.length;
         const remainingAttemptCount =
           IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS - attemptedCandidateCount;
 
-        const modelsForDirection = orderedModels
-          .filter(
-            (model) =>
-              !blockedModelIds.has(model.id) &&
-              !attemptedModelIdsForDirection.has(model.id),
-          )
-          .slice(0, Math.min(missingCandidateCount, remainingAttemptCount));
+        const remainingEligibleModels = orderedModels.filter(
+          (model) =>
+            !blockedModelIds.has(model.id) &&
+            !attemptedModelIdsForDirection.has(model.id),
+        );
+        const selectedModels =
+          attemptedModelIdsForDirection.size === 0
+            ? this.modelSelectorService.getInitialModels(
+                remainingEligibleModels,
+              )
+            : remainingEligibleModels;
+
+        const modelsForDirection = selectedModels.slice(
+          0,
+          Math.min(missingCandidateCount, remainingAttemptCount),
+        );
 
         if (modelsForDirection.length === 0) {
           break;
@@ -300,26 +329,12 @@ export class IdeaGenerationBenchmarkService {
         }
         attemptedCandidateCount += modelsForDirection.length;
 
-        const settledAttempts = await Promise.all(
-          modelsForDirection.map(async (model, modelIndex) => {
-            try {
-              return await this.executeModelCandidate(
-                context,
-                model,
-                direction,
-                modelIndex === 0,
-              );
-            } catch (error: unknown) {
-              if (this.isTransientModelFailure(error)) {
-                blockedModelIds.add(model.id);
-                this.logger.warn(
-                  `Model "${model.displayName ?? model.modelName}" was removed from the remaining benchmark assignments after a transient provider failure.`,
-                );
-              }
-
-              return null;
-            }
-          }),
+        const settledAttempts = await this.executeParallelCandidateBatch(
+          context,
+          modelsForDirection,
+          direction,
+          blockedModelIds,
+          !isUnvalidatedHypothesis,
         );
 
         for (const candidate of settledAttempts) {
@@ -341,7 +356,7 @@ export class IdeaGenerationBenchmarkService {
          * product policy accepts a single validated candidate.
          */
         if (
-          successfulCandidates.length >=
+          this.countQualityApprovedCandidates(successfulCandidates) >=
           IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES
         ) {
           break;
@@ -349,12 +364,42 @@ export class IdeaGenerationBenchmarkService {
       }
 
       if (
-        acceptedCandidatesForDirection.length <
-        IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY
+        acceptedCandidatesForDirection.length < targetCandidateCount &&
+        !warnedOpportunityTitles.has(direction.opportunity.title)
       ) {
-        this.logger.warn(
-          `Opportunity "${direction.opportunity.title}" produced ${acceptedCandidatesForDirection.length}/${IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY} accepted candidate(s) after exhausting its healthy model fallbacks.`,
+        warnedOpportunityTitles.add(direction.opportunity.title);
+        const qualityGateSatisfied = acceptedCandidatesForDirection.some(
+          (candidate) =>
+            candidate.quality.accepted &&
+            candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE,
         );
+        this.logger.warn(
+          qualityGateSatisfied
+            ? `Opportunity "${direction.opportunity.title}" completed with ${acceptedCandidatesForDirection.length} accepted candidate(s); remaining provider requests were unavailable or cancelled after the preferred quality gate was satisfied.`
+            : `Opportunity "${direction.opportunity.title}" completed with ${acceptedCandidatesForDirection.length} structurally valid fallback candidate(s); the preferred quality gate was not satisfied.`,
+        );
+      }
+
+      /*
+       * A primary-domain validation hypothesis is the final honest fallback,
+       * not one of several market opportunities. Once one complete candidate
+       * exists, stop the outer opportunity loop as well; trying additional
+       * unsupported hypotheses only repeats provider and revision cost.
+       */
+      if (isUnvalidatedHypothesis && acceptedCandidatesForDirection.length > 0) {
+        this.logger.warn(
+          `Stopped benchmark after one availability fallback for unvalidated opportunity "${direction.opportunity.title}"; the preferred quality gate was not treated as satisfied.`,
+        );
+        break;
+      }
+
+      /*
+       * Once the global model-attempt budget is exhausted, later concept
+       * directions cannot start any additional provider request. Stop here so
+       * the same opportunity is not reported repeatedly with 0/2 candidates.
+       */
+      if (attemptedCandidateCount >= IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS) {
+        break;
       }
     }
 
@@ -561,6 +606,14 @@ export class IdeaGenerationBenchmarkService {
     };
   }
 
+
+  /** Returns the number of candidates that truly passed the quality gate. */
+  private countQualityApprovedCandidates(
+    candidates: readonly IdeaBenchmarkCandidate[],
+  ): number {
+    return candidates.filter((candidate) => candidate.quality.accepted).length;
+  }
+
   /**
    * Builds a deterministic, opportunity-diverse shortlist for the AI judge.
    *
@@ -621,6 +674,127 @@ export class IdeaGenerationBenchmarkService {
    * A local failure is swallowed here so benchmark() can emit one final, clear
    * service-unavailable error describing exhaustion of both execution tiers.
    */
+  /**
+   * Starts the provider-diverse batch concurrently and stops as soon as one
+   * complete candidate satisfies the preferred quality threshold.
+   *
+   * A caller-driven AbortSignal is propagated through AiExecutionService to
+   * the provider adapters, so the slower request is cancelled instead of
+   * keeping the pipeline behind Promise.all. When no candidate reaches the
+   * threshold, all started models are allowed to finish and the ordinary
+   * winner-selection logic chooses the strongest valid result.
+   */
+  private async executeParallelCandidateBatch(
+    context: IdeaGenerationContext,
+    models: readonly AiModel[],
+    direction: CandidateConceptDirection,
+    blockedModelIds: Set<string>,
+    allowQualityRevision = true,
+  ): Promise<Array<IdeaBenchmarkCandidate | null>> {
+    if (models.length <= 1) {
+      const model = models[0];
+
+      if (!model) {
+        return [];
+      }
+
+      try {
+        const candidate = await this.executeModelCandidate(
+          context,
+          model,
+          direction,
+          allowQualityRevision,
+        );
+
+        if (
+          candidate.quality.accepted &&
+          candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE
+        ) {
+          this.logger.log(
+            `Early benchmark stop: model "${candidate.modelSnapshot.displayName ?? candidate.modelSnapshot.modelName}" reached ${candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; no additional provider request is required.`,
+          );
+        }
+
+        return [candidate];
+      } catch (error: unknown) {
+        if (this.isTransientModelFailure(error)) {
+          blockedModelIds.add(model.id);
+        }
+
+        return [null];
+      }
+    }
+
+    const controllers = models.map(() => new AbortController());
+    const pending = new Map<
+      number,
+      Promise<{
+        readonly index: number;
+        readonly candidate: IdeaBenchmarkCandidate | null;
+        readonly error?: unknown;
+      }>
+    >();
+    const results: Array<IdeaBenchmarkCandidate | null> = models.map(
+      () => null,
+    );
+
+    models.forEach((model, index) => {
+      const promise = this.executeModelCandidate(
+        context,
+        model,
+        direction,
+        allowQualityRevision && index === 0,
+        controllers[index].signal,
+      )
+        .then((candidate) => ({ index, candidate }))
+        .catch((error: unknown) => ({ index, candidate: null, error }));
+
+      pending.set(index, promise);
+    });
+
+    while (pending.size > 0) {
+      const settled = await Promise.race(pending.values());
+      pending.delete(settled.index);
+      results[settled.index] = settled.candidate;
+
+      if (settled.error !== undefined) {
+        const model = models[settled.index];
+        const cancelledByEarlyWinner = controllers[settled.index].signal.aborted;
+
+        if (!cancelledByEarlyWinner && this.isTransientModelFailure(settled.error)) {
+          blockedModelIds.add(model.id);
+          this.logger.warn(
+            `Model "${model.displayName ?? model.modelName}" was removed from the remaining benchmark assignments after a transient provider failure.`,
+          );
+        }
+      }
+
+      if (
+        settled.candidate &&
+        settled.candidate.quality.accepted &&
+        settled.candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE
+      ) {
+        controllers.forEach((controller, index) => {
+          if (index !== settled.index && pending.has(index)) {
+            controller.abort();
+          }
+        });
+
+        this.logger.log(
+          `Early benchmark stop: model "${settled.candidate.modelSnapshot.displayName ?? settled.candidate.modelSnapshot.modelName}" reached ${settled.candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; remaining parallel provider requests were cancelled.`,
+        );
+
+        // Every pending promise already converts rejection into a settled
+        // result. Drain it asynchronously so the user-facing pipeline does not
+        // wait when an adapter is slow to acknowledge AbortSignal.
+        void Promise.allSettled(pending.values());
+        break;
+      }
+    }
+
+    return results;
+  }
+
   private async executeLocalEmergencyFallback(
     context: IdeaGenerationContext,
     localModel: AiModel,
@@ -672,6 +846,7 @@ export class IdeaGenerationBenchmarkService {
     model: AiModel,
     direction: CandidateConceptDirection,
     allowQualityRevision: boolean,
+    signal?: AbortSignal,
   ): Promise<IdeaBenchmarkCandidate> {
     const prompt = context.prompt;
 
@@ -691,6 +866,7 @@ export class IdeaGenerationBenchmarkService {
         model,
         direction.promptText,
         qualityContext,
+        signal,
       );
       /*
        * Keep two complete first-pass candidates for comparison, but spend the
@@ -705,15 +881,40 @@ export class IdeaGenerationBenchmarkService {
               initialAttempt,
               qualityContext,
               direction.promptText,
+              signal,
             );
 
       const usableAttempt = qualityApprovedAttempt;
 
       if (!qualityApprovedAttempt.quality.accepted) {
+        const blockingIssues = qualityApprovedAttempt.quality.issues
+          .filter((issue) =>
+            [
+              'UNSUPPORTED_LOCAL_CLAIM',
+              'UNSUPPORTED_PLATFORM_ACCESS',
+              'MALFORMED_MEASURABLE_TARGET',
+              'UNSUPPORTED_IMPACT_TARGET',
+              'COMMON_TITLE_MISSPELLING',
+              'NO_DIRECT_EVIDENCE',
+              'SECONDARY_DOMAIN_LEAKAGE',
+            ].includes(issue.code),
+          )
+          .map((issue) => issue.code);
+
         this.logger.warn(
-          `Model "${model.displayName ?? model.modelName}" returned a structurally valid candidate below the preferred quality threshold (${qualityApprovedAttempt.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}). It is retained as a last-resort candidate so the run always returns a result.`,
+          qualityApprovedAttempt.quality.score < IDEA_MIN_ACCEPTED_QUALITY_SCORE
+            ? `Model "${model.displayName ?? model.modelName}" returned a structurally valid candidate below the preferred quality threshold (${qualityApprovedAttempt.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}). It is retained as a last-resort candidate so the run always returns a result.`
+            : `Model "${model.displayName ?? model.modelName}" reached ${qualityApprovedAttempt.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}, but deterministic blocking checks still rejected it (${blockingIssues.join(', ') || 'UNKNOWN_BLOCKING_ISSUE'}). It is retained only as a fallback candidate.`,
         );
       }
+
+      const isUnvalidatedHypothesis =
+        direction.opportunity.disqualificationReasons.includes(
+          'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+        ) ||
+        direction.opportunity.disqualificationReasons.includes(
+          'NO_DIRECT_EVIDENCE',
+        );
 
       const acceptedAttempt = await this.resolveDistinctAttempt(
         context,
@@ -721,6 +922,8 @@ export class IdeaGenerationBenchmarkService {
         direction,
         usableAttempt,
         qualityContext,
+        signal,
+        !isUnvalidatedHypothesis,
       );
 
       /*
@@ -753,6 +956,10 @@ export class IdeaGenerationBenchmarkService {
         semanticDiversity: null,
       };
     } catch (error: unknown) {
+      if (signal?.aborted) {
+        throw error;
+      }
+
       const errorMessage =
         error instanceof Error
           ? error.message
@@ -804,7 +1011,15 @@ export class IdeaGenerationBenchmarkService {
     direction: CandidateConceptDirection,
     initialAttempt: AcceptedModelAttempt,
     qualityContext: IdeaQualityEvaluationContext,
+    signal?: AbortSignal,
+    allowDuplicateRedesign = true,
   ): Promise<AcceptedModelAttempt> {
+    if (signal?.aborted) {
+      throw new ServiceUnavailableException(
+        'Parallel candidate generation was cancelled after another model satisfied the quality threshold.',
+      );
+    }
+
     let currentAttempt = initialAttempt;
     let duplicateResult = await this.checkAttemptDuplicate(
       context,
@@ -816,6 +1031,16 @@ export class IdeaGenerationBenchmarkService {
     }
 
     this.logDuplicateRejection(model, direction, 0, duplicateResult);
+
+    if (!allowDuplicateRedesign) {
+      this.logger.warn(
+        `Duplicate redesign was skipped for unvalidated opportunity "${direction.opportunity.title}" to keep the benchmark bounded. The first complete candidate is returned with a deterministic identity adjustment instead of starting another provider/revision window.`,
+      );
+      return this.applyDeterministicIdentityDiversification(
+        currentAttempt,
+        direction,
+      );
+    }
 
     for (
       let attemptNumber = 1;
@@ -835,6 +1060,7 @@ export class IdeaGenerationBenchmarkService {
           model,
           redesignPrompt,
           qualityContext,
+          signal,
         );
         currentAttempt = generatedAttempt.quality.accepted
           ? generatedAttempt
@@ -844,6 +1070,7 @@ export class IdeaGenerationBenchmarkService {
               generatedAttempt,
               qualityContext,
               redesignPrompt,
+              signal,
             );
 
         if (!currentAttempt.quality.accepted) {
@@ -870,6 +1097,10 @@ export class IdeaGenerationBenchmarkService {
           duplicateResult,
         );
       } catch (error: unknown) {
+        if (signal?.aborted) {
+          throw error;
+        }
+
         const message =
           error instanceof Error
             ? error.message
@@ -888,6 +1119,26 @@ export class IdeaGenerationBenchmarkService {
     );
 
     throw new ServiceUnavailableException(errorMessage);
+  }
+
+  private applyDeterministicIdentityDiversification(
+    attempt: AcceptedModelAttempt,
+    direction: CandidateConceptDirection,
+  ): AcceptedModelAttempt {
+    const coreIdea = attempt.parsedOutput.coreIdea;
+    const baseTitle = coreIdea.title.replace(/\b(?:platform|workbench|system|solution)\b/giu, '').replace(/\s+/gu, ' ').trim();
+    const diversifiedTitle = `${baseTitle} Evidence Intake Pilot`;
+    return {
+      ...attempt,
+      parsedOutput: {
+        ...attempt.parsedOutput,
+        coreIdea: {
+          ...coreIdea,
+          title: diversifiedTitle,
+          problemStatement: `${coreIdea.problemStatement} This bounded pilot uses the selected opportunity as a validation target and does not claim a distinct market-wide problem family.`,
+        },
+      },
+    };
   }
 
   private async checkAttemptDuplicate(
@@ -1142,6 +1393,7 @@ export class IdeaGenerationBenchmarkService {
     model: AiModel,
     userPrompt: string,
     qualityContext: IdeaQualityEvaluationContext,
+    signal?: AbortSignal,
   ): Promise<AcceptedModelAttempt> {
     const prompt = context.prompt;
 
@@ -1186,6 +1438,7 @@ export class IdeaGenerationBenchmarkService {
       // complete parallel batch for several minutes.
       timeoutMs: this.resolveCoreModelTimeoutMs(model),
       maxRetriesPerModel: IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL,
+      signal,
     });
     const parsedOutput = this.outputParserService.parseOrThrow(aiResult.text);
     this.assertCandidateProblemSolutionPortfolio(context, parsedOutput);
@@ -1373,7 +1626,14 @@ export class IdeaGenerationBenchmarkService {
     initialAttempt: AcceptedModelAttempt,
     qualityContext: IdeaQualityEvaluationContext,
     assignedPromptText: string,
+    signal?: AbortSignal,
   ): Promise<AcceptedModelAttempt> {
+    if (signal?.aborted) {
+      throw new ServiceUnavailableException(
+        'Parallel candidate revision was cancelled after another model satisfied the quality threshold.',
+      );
+    }
+
     if (!context.prompt || initialAttempt.quality.accepted) {
       return initialAttempt;
     }
@@ -1397,6 +1657,7 @@ export class IdeaGenerationBenchmarkService {
           model,
           revisionPrompt,
           qualityContext,
+          signal,
         );
 
         if (revisedAttempt.quality.score > bestAttempt.quality.score) {
@@ -1411,6 +1672,10 @@ export class IdeaGenerationBenchmarkService {
           return bestAttempt;
         }
       } catch (error: unknown) {
+        if (signal?.aborted) {
+          throw error;
+        }
+
         const message =
           error instanceof Error ? error.message : 'Unknown revision failure.';
 
@@ -1561,6 +1826,38 @@ export class IdeaGenerationBenchmarkService {
      */
     const isControlledSparseFallback =
       !opportunity.selectionEligible && !isDefensiveFallbackAllowed;
+    const evidenceBackedDomains = context.domainEvidence
+      .filter((evidence) => {
+        const samplePosts = Array.isArray(evidence.samplePosts)
+          ? evidence.samplePosts
+          : [];
+        const sampleComments = Array.isArray(evidence.sampleComments)
+          ? evidence.sampleComments
+          : [];
+
+        return (
+          evidence.evidenceAvailable &&
+          evidence.totalTextsAnalyzed > 0 &&
+          (samplePosts.length > 0 || sampleComments.length > 0)
+        );
+      })
+      .map((evidence) => evidence.domainName);
+    const evidenceBackedDomainSet = new Set(
+      evidenceBackedDomains.map((domainName) =>
+        domainName.trim().toLocaleLowerCase(),
+      ),
+    );
+    const opportunityDomainName =
+      this.isJsonObject(opportunity.raw) &&
+      typeof opportunity.raw.domainName === 'string'
+        ? opportunity.raw.domainName.trim()
+        : '';
+    const alignedEvidenceDomains = evidenceBackedDomains.filter(
+      (domainName) =>
+        !opportunityDomainName ||
+        domainName.toLocaleLowerCase() ===
+          opportunityDomainName.toLocaleLowerCase(),
+    );
 
     if (isControlledSparseFallback) {
       this.logger.warn(
@@ -1575,6 +1872,16 @@ export class IdeaGenerationBenchmarkService {
       opportunity,
       promptText: [
         prompt.promptText,
+        'DETERMINISTIC QUALITY TARGET (APPLIES TO THE FIRST RESPONSE):',
+        `- The candidate is evaluated on a 100-point deterministic score and should reach at least ${IDEA_MIN_ACCEPTED_QUALITY_SCORE}/100 in this first response.`,
+        '- Weighted dimensions: innovation 25%, market fit 25%, technical quality 20%, completeness 15%, originality 15%.',
+        '- Innovation: propose a materially differentiated mechanism or workflow, not a renamed dashboard, generic assistant, thin wrapper, or basic validator.',
+        '- Market fit: solve the exact evidence-backed user job, identify realistic users and adoption roles, and avoid unsupported market-size or local-prevalence claims.',
+        '- Technical quality: provide a feasible architecture, supported integrations, realistic data flow, privacy boundaries, and implementable objectives.',
+        '- Completeness: return every field required by the active response schema with concrete, mutually consistent content.',
+        '- Originality: use a distinctive product concept, title, value proposition, and primary workflow that are not generic or interchangeable.',
+        '- Avoid score penalties: generic title, vague objectives, weak target users, unsupported root causes, invented statistics, unsupported platform access, over-scoped MVP, awkward copy, secondary-domain leakage, and unauthorized tier fields.',
+        '- Before returning JSON, privately self-check the five weighted dimensions and revise the candidate until it is likely to meet or exceed the threshold. Do not output the self-check or scores.',
         'FINAL CONCEPT ASSIGNMENT:',
         `- Build the complete candidate around the selected ranked opportunity #${opportunity.rank}: "${opportunity.title}".`,
         '- This opportunity is immutable for this generation run.',
@@ -1595,13 +1902,24 @@ export class IdeaGenerationBenchmarkService {
                 : '- QUALITY QUALIFIER: this opportunity is a controlled evidence-backed fallback. Keep claims conservative, explicitly qualify uncertainty, and frame validation as part of the pilot.',
             ]
           : []),
-        ...(context.selectedDomains.length > 1
+        ...(alignedEvidenceDomains.length > 1
           ? [
-              `- CROSS-DOMAIN COVERAGE: combine compatible evidence-backed problems across ${context.selectedDomains.map((domain) => domain.name).join(', ')} into one coherent workflow.`,
-              '- Include at least one problem and corresponding solution response per selected domain when evidence supports it.',
-              '- Do not invent a problem for a domain whose evidence is absent or weak.',
+              `- CROSS-DOMAIN COVERAGE: combine only these independently evidence-backed domains when they form one coherent workflow: ${alignedEvidenceDomains.join(', ')}.`,
+              '- Every target-user segment, objective, and capability must map to direct retained evidence from one of those domains.',
             ]
-          : ['- Do not switch to, merge with, or replace it using an alternative opportunity.']),
+          : [
+              `- DOMAIN BOUNDARY: generate for the single evidence-backed domain ${alignedEvidenceDomains[0] ?? opportunityDomainName ?? context.domainName ?? 'represented by the selected opportunity'}.`,
+              `- Do not add users, workflows, institutions, or market claims from unsupported selected domains. Unsupported selected domains are: ${context.selectedDomains
+                .map((domain) => domain.name)
+                .filter(
+                  (domainName) =>
+                    !evidenceBackedDomainSet.has(
+                      domainName.trim().toLocaleLowerCase(),
+                    ),
+                )
+                .join(', ') || 'none'}.`,
+              '- A contextual mention of a domain, organization, website, or data source is not sufficient domain evidence. Classify the problem by the affected workflow and user job.',
+            ]),
         '- All candidates must solve the same supported problem portfolio, but each assigned direction must use a materially different primary user job, core workflow, and dominant capability combination.',
         '- Produce one coherent commercially viable software product, not a feature list or a minor patch.',
         ...(effectiveEvidenceSamples.length === 1
@@ -1684,6 +2002,21 @@ export class IdeaGenerationBenchmarkService {
   private buildQualityContext(
     context: IdeaGenerationContext,
   ): IdeaQualityEvaluationContext {
+    const retainedDirectEvidenceCount = (context.domainEvidence ?? []).reduce(
+      (total, domain) => {
+        const samplePostsCount = Array.isArray(domain.samplePosts)
+          ? domain.samplePosts.length
+          : 0;
+
+        const sampleCommentsCount = Array.isArray(domain.sampleComments)
+          ? domain.sampleComments.length
+          : 0;
+
+        return total + samplePostsCount + sampleCommentsCount;
+      },
+      0,
+    );
+
     return {
       totalTextsAnalyzed: context.nlp?.totalTextsAnalyzed,
       totalPostsAnalyzed: context.nlp?.totalPostsAnalyzed,
@@ -1693,6 +2026,11 @@ export class IdeaGenerationBenchmarkService {
       targetCity: context.location.city,
       targetRegion: context.location.region,
       localEvidenceVerified: this.hasVerifiedLocalEvidence(context),
+      directEvidenceCount: retainedDirectEvidenceCount,
+      primaryDomainName: context.domainName,
+      secondaryDomainNames: (context.selectedDomains ?? [])
+        .map((domain) => domain.name)
+        .filter((name) => name !== context.domainName),
     };
   }
 
@@ -1711,11 +2049,14 @@ export class IdeaGenerationBenchmarkService {
       'Reject evidence from unrelated developer programs, cloud-credit claims, repository governance records, political news, and AI research reports even when they contain broad words such as student, education, platform, or system.',
       'A GitHub issue that already specifies proposed implementation, routes, components, files to modify, infrastructure, tests, phases, or expected impact is a solution blueprint, not independent community-demand evidence. Do not copy, repackage, or productize that implementation plan. Use only independent user-observed pain that remains after removing the prescribed solution.',
       'Keep the JSON concise. Use short arrays, avoid repeating the abstract in advanced outputs, and keep each advanced-output section focused on implementation decisions rather than generic prose.',
-      'The overview abstract must be concise. fullAbstract must contain materially richer detail in at least two paragraphs and must not repeat the overview verbatim.',
+      context.policy?.includePremiumOutputs
+        ? 'Return partialAbstract as a concise overview. Return fullAbstract as a materially richer premium document of 3-5 paragraphs covering: the evidence-grounded problem and affected workflow; the end-to-end product workflow; the main technical components and data flow; concrete user value and pilot validation; and explicit evidence limitations. Qualification language must not dominate the document, and the two abstracts must not repeat each other verbatim.'
+        : context.generationType === IdeaGenerationType.GUEST_FREE
+          ? 'Return limitedAbstract and partialAbstract only. Do not return fullAbstract or advancedOutputs for guest generation.'
+          : 'Return partialAbstract only. Do not return fullAbstract or advancedOutputs for NORMAL_FREE generation.',
       'Preserve every used opportunity as an immutable evidence unit: its title, problem, need, solution area, severity, frequency, domain label, and evidence samples must remain mutually consistent. Multiple units may be combined only when they form one coherent workflow.',
-      context.selectedDomains.length > 1
-        ? `The final problemStatement must be one coherent problem-only narrative that integrates every AI-supported domain participating in the same workflow: ${context.selectedDomains.map((domain) => domain.name).join(', ')}. Cross-domain ideas are allowed and encouraged when the evidence supports one connected product journey.`
-        : 'The final problemStatement must be one coherent problem-only narrative. Do not include solutions or numbered portfolio entries.',
+      'The final problemStatement must be one coherent problem-only narrative. Use only domains that have retained direct evidence in domainEvidence. A selected domain with zero retained posts and comments must not appear in targetUsers, objectives, abstracts, market claims, or advanced outputs.',
+      'Classify domain alignment by the affected user workflow and unmet need, not by incidental words naming a government website, school, city, company, repository, or source system.',
       'A cybersecurity incident such as ransomware, deletion by an attacker, or a data breach is not evidence of ordinary synchronization failure, network timeout, or storage-choice demand. Do not reinterpret security incidents as product reliability evidence.',
       'When directEvidenceCount or frequency equals 1, use singular and qualified wording such as one report indicates or a limited evidence sample suggests. Never use frequently, recurring discussions, common, widespread, or equivalent market-wide language.',
       'When directEvidenceCount equals 1, the solution scope must remain proportional to one observed case: prefer one narrow user workflow and one primary product surface. Do not escalate a simple taxonomy, access, storage, or usability complaint into an enterprise SDK, telemetry platform, compliance suite, or CI/CD product unless host integration is strictly necessary and explicitly justified.',
@@ -2095,8 +2436,33 @@ export class IdeaGenerationBenchmarkService {
       };
     });
 
+    const deduplicatedRows = Array.from(
+      rows.reduce((byKey, row) => {
+        const key = [
+          row.runId,
+          row.providerKey,
+          row.apiModelId,
+          row.opportunityRank,
+        ].join('::');
+        const existing = byKey.get(key);
+
+        if (
+          !existing ||
+          row.selected ||
+          (!existing.selected &&
+            (row.overallScore ?? Number.NEGATIVE_INFINITY) >
+              (existing.overallScore ?? Number.NEGATIVE_INFINITY))
+        ) {
+          byKey.set(key, row);
+        }
+
+        return byKey;
+      }, new Map<string, (typeof rows)[number]>()),
+    ).map(([, row]) => row);
+
     await this.prisma.ideaGenerationCandidate.createMany({
-      data: rows,
+      data: deduplicatedRows,
+      skipDuplicates: true,
     });
   }
 

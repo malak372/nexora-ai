@@ -44,6 +44,13 @@ type CollectorHttpOptions = {
    * Optional cache key used to store an ETag value.
    */
   etagCacheKey?: string;
+
+  /**
+   * Whether HTTP 429 responses may be retried. Fast generation collectors can
+   * disable this because a daily provider quota cannot recover during the same
+   * user-facing pipeline run.
+   */
+  retryOnRateLimit?: boolean;
 };
 
 /**
@@ -240,8 +247,8 @@ export class CollectorHttpUtil {
           requestFailureKind === 'CANCELED' ||
           status === undefined ||
           status === 408 ||
-          status === 429 ||
-          status >= 500;
+          (status === 429 && options.retryOnRateLimit !== false) ||
+          (typeof status === 'number' && status >= 500);
 
         if (!shouldRetry || attempt === retryAttempts) {
           this.logger.error(

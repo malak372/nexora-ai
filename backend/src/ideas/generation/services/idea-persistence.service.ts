@@ -32,8 +32,6 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { userCacheKeys } from '../../../users/cache/user-cache.keys';
 
-import { PREMIUM_IDEA_CREDIT_COST } from '../constants/idea-generation.constants';
-
 import {
   findIdeaAdvancedOutputDefinitionByKey,
   getIdeaAdvancedOutputSequence,
@@ -137,6 +135,12 @@ export type PersistGeneratedIdeaInput = {
    * Entitlement tier used for generation.
    */
   readonly generationType: IdeaGenerationType;
+
+  /**
+   * Credit amount already resolved by the entitlement stage.
+   * Passing it here removes a system-setting read from the write transaction.
+   */
+  readonly creditsToConsume: number;
 
   /**
    * Parsed and normalized AI output.
@@ -251,8 +255,12 @@ export class IdeaPersistenceService {
      * writing. Removing the three preflight queries saves database round-trips
      * without weakening atomicity or race protection.
      */
+    const transactionStartedAt = Date.now();
     const transactionResult =
       await this.executeSerializableTransaction(normalizedInput);
+    this.logger.debug(
+      `Idea persistence transaction committed in ${Date.now() - transactionStartedAt}ms for run "${normalizedInput.runId}" with ${normalizedInput.parsedOutput.advancedOutputs.length} advanced output(s).`,
+    );
 
     const summaryInvalidation = normalizedInput.userId
       ? this.cacheManager.del(
@@ -354,40 +362,36 @@ export class IdeaPersistenceService {
       try {
         return await this.prisma.$transaction(
           async (transaction): Promise<IdeaPersistenceTransactionResult> => {
-            const run = await this.validateGenerationRun(transaction, input);
-            const commentsCount = await this.validateCollectionJob(
-              transaction,
-              input,
-            );
-
-            await this.duplicateDetectionService.assertNoExactTitleDuplicate(
-              input.parsedOutput.coreIdea,
-              transaction,
-            );
+            const [run, commentsCount] = await Promise.all([
+              this.validateGenerationRun(transaction, input),
+              this.validateCollectionJob(transaction, input),
+              this.duplicateDetectionService.assertNoExactTitleDuplicate(
+                input.parsedOutput.coreIdea,
+                transaction,
+              ),
+            ]);
 
             /*
              * Create the base idea, attach prompt history, and insert all
              * generated outputs in one nested Prisma write. This removes two
              * remote database round-trips from the serializable transaction.
              */
-            const idea = await this.createIdeaWithRelations(
+            const created = await this.createIdeaWithRelations(
               transaction,
               input,
               commentsCount,
             );
+            const idea = created.idea;
 
-            const creditAdjustment = await this.consumeEntitlement(
-              transaction,
-              input,
-              idea.id,
-            );
-
-            await this.attachIdeaToGenerationRun(
-              transaction,
-              run.id,
-              idea.id,
-              input.collectionJobId,
-            );
+            const [creditAdjustment] = await Promise.all([
+              this.consumeEntitlement(transaction, input, idea.id),
+              this.attachIdeaToGenerationRun(
+                transaction,
+                run.id,
+                idea.id,
+                input.collectionJobId,
+              ),
+            ]);
 
             return {
               ideaId: idea.id,
@@ -396,10 +400,7 @@ export class IdeaPersistenceService {
                 id: idea.id,
                 title: idea.title,
                 domain: idea.domain,
-                generatedOutputs: idea.generatedOutputs.map((output) => ({
-                  id: output.id,
-                  outputKey: output.outputKey,
-                })),
+                generatedOutputs: created.generatedOutputs,
                 generationRun: {
                   id: run.id,
                   status: run.status,
@@ -482,7 +483,80 @@ export class IdeaPersistenceService {
       selectedRegion,
       collectionJobId,
       generationType: input.generationType,
-      parsedOutput: input.parsedOutput,
+      creditsToConsume:
+        input.generationType === IdeaGenerationType.PREMIUM_CREDIT
+          ? Math.max(1, Math.floor(input.creditsToConsume))
+          : 0,
+      parsedOutput: this.sanitizeParsedOutput(input.parsedOutput, selectedRegion),
+    };
+  }
+
+  private sanitizeParsedOutput(
+    parsedOutput: ParsedIdeaAiOutput,
+    selectedRegion: string,
+  ): ParsedIdeaAiOutput {
+    const sanitizeText = (value: string): string => {
+      let sanitized = value
+        .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
+        .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
+        .replace(/\bNode\s*\.\s*js\b/giu, 'Node.js')
+        .replace(/\bReact\s*\.\s*js\b/giu, 'React')
+        .replace(/\s+([,.;:!?])/gu, '$1')
+        .replace(/[ \t]{2,}/gu, ' ')
+        .replace(
+          /\b(?:one retained community report|a retained community report) indicates that collected feedback(?: from [^.!?]{0,120})? indicates that\s*/giu,
+          'One retained community report indicates that ',
+        )
+        .replace(/\bindicates that\s+indicates that\b/giu, 'indicates that')
+        .trim();
+
+      const region = selectedRegion.trim();
+      if (region.length >= 2) {
+        const escaped = region.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        sanitized = sanitized.replace(
+          new RegExp(`\\b${escaped}\\b`, 'giu'),
+          region.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase()),
+        );
+      }
+      return sanitized;
+    };
+
+    const sanitizeJson = (value: JsonValue): JsonValue => {
+      if (typeof value === 'string') return sanitizeText(value);
+      if (Array.isArray(value)) return value.map((item) => sanitizeJson(item));
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, sanitizeJson(item)]),
+        ) as JsonValue;
+      }
+      return value;
+    };
+
+    return {
+      coreIdea: {
+        ...parsedOutput.coreIdea,
+        title: sanitizeText(parsedOutput.coreIdea.title),
+        problemStatement: sanitizeText(parsedOutput.coreIdea.problemStatement),
+        objectives: parsedOutput.coreIdea.objectives.map(sanitizeText),
+        targetUsers: parsedOutput.coreIdea.targetUsers.map(sanitizeText),
+        ...(parsedOutput.coreIdea.limitedAbstract !== undefined
+          ? { limitedAbstract: sanitizeText(parsedOutput.coreIdea.limitedAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.partialAbstract !== undefined
+          ? { partialAbstract: sanitizeText(parsedOutput.coreIdea.partialAbstract) }
+          : {}),
+        ...(parsedOutput.coreIdea.fullAbstract !== undefined
+          ? { fullAbstract: sanitizeText(parsedOutput.coreIdea.fullAbstract) }
+          : {}),
+      },
+      advancedOutputs: parsedOutput.advancedOutputs.map((output) => ({
+        ...output,
+        title: sanitizeText(output.title),
+        content: sanitizeText(output.content),
+        ...(output.structuredContent !== undefined
+          ? { structuredContent: sanitizeJson(output.structuredContent) as typeof output.structuredContent }
+          : {}),
+      })),
     };
   }
 
@@ -1085,7 +1159,7 @@ export class IdeaPersistenceService {
     return this.creditBalanceService.consumeForIdeaGeneration(
       userId,
       ideaId,
-      PREMIUM_IDEA_CREDIT_COST,
+      input.creditsToConsume,
       transaction,
     );
   }
@@ -1128,7 +1202,7 @@ export class IdeaPersistenceService {
       }),
     );
 
-    return transaction.idea.create({
+    const idea = await transaction.idea.create({
       data: {
         userId: input.userId ?? null,
         guestSessionId: input.guestSessionId ?? null,
@@ -1163,12 +1237,15 @@ export class IdeaPersistenceService {
         domain: {
           select: { id: true, name: true },
         },
-        generatedOutputs: {
-          select: { id: true, outputKey: true },
-          orderBy: { sequence: 'asc' },
-        },
       },
     });
+
+    return {
+      idea,
+      generatedOutputs: generatedOutputs
+        .sort((left, right) => left.sequence - right.sequence)
+        .map((output) => ({ id: output.id, outputKey: output.outputKey })),
+    };
   }
 
   /**

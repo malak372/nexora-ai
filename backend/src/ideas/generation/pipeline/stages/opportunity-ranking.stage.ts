@@ -7,8 +7,6 @@ import {
   IDEA_GENERATION_ERROR_CODES,
   MAX_EVIDENCE_RECOVERY_ATTEMPTS,
   MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
-  MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY,
-  MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY,
 } from '../../constants/idea-generation.constants';
 import {
   findIdeaGenerationStageDefinition,
@@ -34,12 +32,13 @@ import type {
 } from '../../types/community-ai-analysis.type';
 
 /**
- * Ranks evidence-backed opportunities and enforces a strict evidence gate.
+ * Ranks evidence-backed opportunities and applies bounded evidence recovery.
  *
- * When the initial ranking has no eligible opportunity, the stage tries the
- * three strongest distinct opportunities and then performs one broad recovery
- * pass. If none reaches the strict recurrence gate, the run completes normally
- * with NO_RECURRING_OPPORTUNITY and later AI stages are skipped.
+ * The stage never terminates generation solely because the strict evidence gate
+ * remains unmet. After bounded recovery it continues with the strongest ranked
+ * signal, or with a primary-domain validation hypothesis when no rankable signal
+ * exists. Downstream prompt, benchmark, and validation stages are responsible for
+ * keeping sparse-evidence claims explicitly qualified.
  */
 @Injectable()
 export class OpportunityRankingStage implements IdeaGenerationStage {
@@ -166,19 +165,20 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     /*
-     * Product policy: a completed generation request must always continue to
-     * core idea generation. Strict evidence thresholds still trigger one
-     * focused recovery pass, but they no longer convert a valid run into a
-     * successful "no idea" outcome.
+     * Generation must continue even when the strict evidence gate remains
+     * unmet. The ranking service already returns a penalized fallback whenever
+     * possible, and enforcePrimaryDomainFallback creates an auditable validation
+     * hypothesis when no rankable candidate exists.
      *
-     * When strict recurrence is unavailable, the strongest ranked signal is
-     * retained as a controlled preliminary-pilot fallback. Downstream prompt
-     * and benchmark services already qualify sparse-evidence claims, prohibit
-     * market-wide assertions, and require validation as part of the pilot.
+     * We intentionally do not create noResultOutcome here. This allows prompt
+     * building, multi-model benchmarking, output validation, persistence, and
+     * finalization to run normally. Sparse evidence is preserved through
+     * selectionEligible=false and the quality warnings, so downstream stages
+     * can qualify every claim instead of presenting the hypothesis as validated
+     * market evidence.
      */
-    if (!ranking) {
-      ranking = this.buildEmergencyFallbackRanking(workingContext);
-    }
+    ranking =
+      ranking ?? this.buildEmergencyFallbackRanking(workingContext);
 
     const aggregatedRecoveryMetadata = recoveryMetadata.length
       ? this.aggregateRecoveryMetadata(recoveryMetadata)
@@ -243,16 +243,35 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       return context.evidenceRecoveryAttempts === 0;
     }
 
-    if (this.hasDirectEvidenceInContext(context)) {
-      return false;
-    }
-
     if (!ranking) {
       return true;
     }
 
-    if (this.hasDirectUsableEvidence(ranking)) {
+    /*
+     * A single direct sample must not suppress recovery. Recovery is skipped
+     * only after the selected opportunity satisfies the configured evidence
+     * score, representative-sample count, independent-source count, and the
+     * strict selection gate. This prevents one YouTube video or one review
+     * from being promoted into a premium market claim.
+     */
+    const selectedHasEnoughEvidence =
+      ranking.selected.selectionEligible &&
+      !this.requiresEvidenceRecovery(ranking);
+
+    if (selectedHasEnoughEvidence) {
       return false;
+    }
+
+    const hasAnyDirectSignal =
+      this.hasDirectEvidenceInContext(context) ||
+      this.hasDirectUsableEvidence(ranking);
+
+    /*
+     * Direct but insufficient evidence receives a focused recovery pass. Empty
+     * or hypothesis-only corpora may use the full bounded recovery allowance.
+     */
+    if (hasAnyDirectSignal) {
+      return context.evidenceRecoveryAttempts === 0;
     }
 
     return (
@@ -600,8 +619,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           message,
           strongestSignalTitle: strongestSignal?.title ?? null,
           independentEvidenceCount:
-            strongestSignal?.evidenceSamples.length ?? 0,
-          requiredIndependentEvidenceCount: 1,
+            strongestSignal?.verifiedIndependentEvidenceCount ?? 0,
+          requiredIndependentEvidenceCount:
+            MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
           recoveryAttempts: context.evidenceRecoveryAttempts,
           collectionJobIds: [...context.evidenceRecoveryCollectionJobIds],
         },
@@ -611,8 +631,10 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         outcome: 'NO_RECURRING_OPPORTUNITY',
         strongestSignalTitle: strongestSignal?.title ?? null,
         strongestSignalScore: strongestSignal?.finalScore ?? null,
-        independentEvidenceCount: strongestSignal?.evidenceSamples.length ?? 0,
-        requiredIndependentEvidenceCount: 1,
+        independentEvidenceCount:
+          strongestSignal?.verifiedIndependentEvidenceCount ?? 0,
+        requiredIndependentEvidenceCount:
+          MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY,
         evidenceRecoveryAttempts: context.evidenceRecoveryAttempts,
         evidenceRecovery: recoveryMetadata.length
           ? this.aggregateRecoveryMetadata(recoveryMetadata)
@@ -842,6 +864,19 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         primary.confidence,
         recovered.confidence,
       ),
+      totalPostsAnalyzed:
+        (primary.totalPostsAnalyzed ?? 0) +
+        (recovered.totalPostsAnalyzed ?? 0),
+      totalCommentsAnalyzed:
+        (primary.totalCommentsAnalyzed ?? 0) +
+        (recovered.totalCommentsAnalyzed ?? 0),
+      totalTextsAnalyzed:
+        (primary.totalTextsAnalyzed ?? 0) +
+        (recovered.totalTextsAnalyzed ?? 0),
+      dataQuality: this.mergeDataQuality(
+        primary.dataQuality,
+        recovered.dataQuality,
+      ),
     };
   }
 
@@ -869,6 +904,33 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       seen.add(key);
       return true;
     });
+  }
+
+  /** Merges persisted NLP quality counters stored as generic Prisma JSON. */
+  private mergeDataQuality(
+    primary: Prisma.JsonValue | null,
+    recovered: Prisma.JsonValue | null,
+  ): Prisma.JsonValue {
+    const readMetric = (value: Prisma.JsonValue | null, key: string): number => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return 0;
+      }
+
+      const metric = (value as Prisma.JsonObject)[key];
+      return typeof metric === 'number' && Number.isFinite(metric) ? metric : 0;
+    };
+
+    return {
+      spamTextsRemoved:
+        readMetric(primary, 'spamTextsRemoved') +
+        readMetric(recovered, 'spamTextsRemoved'),
+      duplicateTextsRemoved:
+        readMetric(primary, 'duplicateTextsRemoved') +
+        readMetric(recovered, 'duplicateTextsRemoved'),
+      irrelevantTextsRemoved:
+        readMetric(primary, 'irrelevantTextsRemoved') +
+        readMetric(recovered, 'irrelevantTextsRemoved'),
+    };
   }
 
   private mergeConfidence(
@@ -1024,13 +1086,20 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
   private requiresEvidenceRecovery(ranking: IdeaOpportunityRanking): boolean {
     const selected = ranking.selected;
 
-    return (
-      selected.evidenceScore < MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY ||
-      selected.evidenceSamples.length <
-        MIN_SELECTED_EVIDENCE_SAMPLES_BEFORE_RECOVERY ||
-      (selected.verifiedIndependentSourceCount ?? 0) <
-        MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY
+    /*
+     * The fast generation path accepts one retained, directly relevant sample.
+     * A second collection pass is not useful when the product policy explicitly
+     * allows a single-report pilot; it only adds latency and often reintroduces
+     * cached noise. Recovery remains structurally available for other policies,
+     * but this path requests it only when absolutely no direct evidence exists.
+     */
+    const directEvidenceCount = Math.max(
+      selected.evidenceSamples.length,
+      selected.independentEvidence?.length ?? 0,
+      selected.verifiedIndependentEvidenceCount ?? 0,
     );
+
+    return directEvidenceCount === 0;
   }
 
   private buildSuccessResult(
@@ -1058,6 +1127,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const updatedContext: IdeaGenerationContext = {
       ...context,
       opportunityRanking: ranking,
+      // A previous checkpoint or retry must never keep a stale terminal
+      // no-result marker once this stage has selected a controlled fallback.
+      noResultOutcome: null,
     };
 
     return {
@@ -1068,7 +1140,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`
         : recoveryApplied
           ? `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot after one focused evidence-recovery pass. Idea generation will continue, while sparse-evidence claims remain explicitly qualified.`
-          : `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot from the direct evidence already collected. No evidence-recovery pass was needed; idea generation will continue while sparse-evidence claims remain explicitly qualified.`,
+          : (ranking.selected.verifiedIndependentEvidenceCount ?? 0) > 0
+            ? `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot from the retained direct evidence. No evidence-recovery pass was needed; sparse-evidence claims remain explicitly qualified.`
+            : `Selected a controlled primary-domain validation hypothesis "${ranking.selected.title}" because no direct community evidence was retained. The generated idea must remain explicitly unvalidated.`,
       metadata: {
         selectedTitle: ranking.selected.title,
         selectedScore: ranking.selected.finalScore,

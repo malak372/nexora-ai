@@ -15,6 +15,8 @@ type RecentModelUsage = {
   readonly modelIds: ReadonlySet<string>;
   readonly failedModelIds: ReadonlySet<string>;
   readonly failureCounts: ReadonlyMap<string, number>;
+  readonly successCounts: ReadonlyMap<string, number>;
+  readonly timeoutFailureCounts: ReadonlyMap<string, number>;
   readonly providerCounts: ReadonlyMap<string, number>;
 };
 
@@ -67,9 +69,7 @@ export class IdeaGenerationModelSelectorService {
       (model) => !cooledModelIds.has(model.id),
     );
     const selectableModels =
-      nonCooledModels.length >= IDEA_BENCHMARK_INITIAL_MODEL_COUNT
-        ? nonCooledModels
-        : availableModels;
+      nonCooledModels.length > 0 ? nonCooledModels : availableModels;
     const modelsByProvider = new Map<string, AiModel[]>();
 
     for (const model of selectableModels) {
@@ -85,6 +85,8 @@ export class IdeaGenerationModelSelectorService {
           second,
           recentUsage.modelIds,
           recentUsage.failedModelIds,
+          recentUsage.successCounts,
+          recentUsage.timeoutFailureCounts,
           seed,
         ),
       );
@@ -155,24 +157,29 @@ export class IdeaGenerationModelSelectorService {
    * exhausted.
    */
   getInitialModels(orderedModels: readonly AiModel[]): AiModel[] {
-    const selected: AiModel[] = [];
-    const usedProviders = new Set<string>();
+    const normalizedProvider = (model: AiModel): string =>
+      model.providerKey.trim().toLowerCase();
 
-    for (const model of orderedModels) {
-      if (selected.length >= IDEA_BENCHMARK_INITIAL_MODEL_COUNT) {
-        break;
-      }
+    const firstGoogle = orderedModels.find(
+      (model) => normalizedProvider(model) === 'google',
+    );
+    const firstOpenRouter = orderedModels.find(
+      (model) => normalizedProvider(model) === 'openrouter',
+    );
 
-      if (usedProviders.has(model.providerKey)) {
-        continue;
-      }
+    /*
+     * Start one direct Google model and one OpenRouter model in parallel.
+     * OpenRouter is a first-wave benchmark participant, not a fallback.
+     */
+    const providerDiverseModels = [firstGoogle, firstOpenRouter].filter(
+      (model): model is AiModel => Boolean(model),
+    );
 
-      usedProviders.add(model.providerKey);
-      selected.push(model);
-    }
-
-    if (selected.length > 0) {
-      return selected;
+    if (providerDiverseModels.length > 0) {
+      return providerDiverseModels.slice(
+        0,
+        IDEA_BENCHMARK_INITIAL_MODEL_COUNT,
+      );
     }
 
     return orderedModels.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);
@@ -183,14 +190,32 @@ export class IdeaGenerationModelSelectorService {
     second: AiModel,
     recentModelIds: ReadonlySet<string>,
     recentFailedModelIds: ReadonlySet<string>,
+    successCounts: ReadonlyMap<string, number>,
+    timeoutFailureCounts: ReadonlyMap<string, number>,
     seed: number,
   ): number {
+    const timeoutFailureDifference =
+      (timeoutFailureCounts.get(first.id) ?? 0) -
+      (timeoutFailureCounts.get(second.id) ?? 0);
+
+    if (timeoutFailureDifference !== 0) {
+      return timeoutFailureDifference;
+    }
+
     const failureDifference =
       (recentFailedModelIds.has(first.id) ? 1 : 0) -
       (recentFailedModelIds.has(second.id) ? 1 : 0);
 
     if (failureDifference !== 0) {
       return failureDifference;
+    }
+
+    const successDifference =
+      (successCounts.get(second.id) ?? 0) -
+      (successCounts.get(first.id) ?? 0);
+
+    if (successDifference !== 0) {
+      return successDifference;
     }
 
     const recentDifference =
@@ -245,6 +270,7 @@ export class IdeaGenerationModelSelectorService {
             providerKey: true,
             selected: true,
             errorCode: true,
+            errorMessage: true,
           },
         },
       },
@@ -255,6 +281,8 @@ export class IdeaGenerationModelSelectorService {
     const modelIds = new Set<string>();
     const failedModelIds = new Set<string>();
     const failureCounts = new Map<string, number>();
+    const successCounts = new Map<string, number>();
+    const timeoutFailureCounts = new Map<string, number>();
     const providerCounts = new Map<string, number>();
 
     for (const candidate of recentRuns.flatMap(
@@ -262,6 +290,10 @@ export class IdeaGenerationModelSelectorService {
     )) {
       if (candidate.selected && candidate.aiModelId) {
         modelIds.add(candidate.aiModelId);
+        successCounts.set(
+          candidate.aiModelId,
+          (successCounts.get(candidate.aiModelId) ?? 0) + 1,
+        );
       }
 
       if (candidate.errorCode && candidate.aiModelId) {
@@ -270,6 +302,13 @@ export class IdeaGenerationModelSelectorService {
           candidate.aiModelId,
           (failureCounts.get(candidate.aiModelId) ?? 0) + 1,
         );
+
+        if (/timeout|exceeded/i.test(candidate.errorMessage ?? '')) {
+          timeoutFailureCounts.set(
+            candidate.aiModelId,
+            (timeoutFailureCounts.get(candidate.aiModelId) ?? 0) + 1,
+          );
+        }
       }
 
       if (candidate.selected) {
@@ -280,7 +319,14 @@ export class IdeaGenerationModelSelectorService {
       }
     }
 
-    return { modelIds, failedModelIds, failureCounts, providerCounts };
+    return {
+      modelIds,
+      failedModelIds,
+      failureCounts,
+      successCounts,
+      timeoutFailureCounts,
+      providerCounts,
+    };
   }
 
   private healthRank(status: AiModel['healthStatus']): number {
