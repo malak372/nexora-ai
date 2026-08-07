@@ -70,6 +70,7 @@ export type PromptTemplateResponse = {
 @Injectable()
 export class PromptTemplateService {
   private readonly logger = new Logger(PromptTemplateService.name);
+  private templateCache: { value: string; expiresAt: number } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -106,6 +107,7 @@ export class PromptTemplateService {
     adminId: string,
   ): Promise<PromptTemplateResponse> {
     const normalizedTemplate = ideaPromptTemplate.trim();
+    this.templateCache = null;
 
     const normalizedAdminId = adminId.trim();
 
@@ -191,6 +193,11 @@ export class PromptTemplateService {
    * The selected template is always validated before being returned.
    */
   async getIdeaPromptTemplate(): Promise<string> {
+    const now = Date.now();
+    if (this.templateCache && this.templateCache.expiresAt > now) {
+      return this.templateCache.value;
+    }
+
     const settings = await this.prisma.systemSetting.findUnique({
       where: {
         key: GLOBAL_SYSTEM_SETTINGS_KEY,
@@ -206,6 +213,7 @@ export class PromptTemplateService {
     if (configuredTemplate) {
       try {
         this.validateTemplate(configuredTemplate);
+        this.templateCache = { value: configuredTemplate, expiresAt: now + 60_000 };
         return configuredTemplate;
       } catch (error: unknown) {
         this.logger.warn(
@@ -216,6 +224,7 @@ export class PromptTemplateService {
 
     const defaultTemplate = DEFAULT_IDEA_PROMPT_TEMPLATE.trim();
     this.validateTemplate(defaultTemplate);
+    this.templateCache = { value: defaultTemplate, expiresAt: now + 60_000 };
     return defaultTemplate;
   }
 

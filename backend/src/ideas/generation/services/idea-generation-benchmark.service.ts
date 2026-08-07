@@ -44,6 +44,7 @@ import {
   IDEA_DUPLICATE_REGENERATION_MAX_ATTEMPTS,
   IDEA_MIN_ACCEPTED_QUALITY_SCORE,
   IDEA_QUALITY_REVISION_MAX_ATTEMPTS,
+  IDEA_QUALITY_REVISION_TRIGGER_SCORE,
 } from '../constants/idea-generation.constants';
 import type { ParsedIdeaAiOutput } from '../types/idea-ai-output.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
@@ -1659,6 +1660,20 @@ export class IdeaGenerationBenchmarkService {
       return initialAttempt;
     }
 
+    /*
+     * A candidate far below the acceptance threshold is normally a concept or
+     * evidence mismatch, not a wording defect. Re-asking the same model to
+     * rewrite a sub-60 candidate consumes another full provider window while
+     * rarely crossing the quality gate. Reserve self-revision for near-miss
+     * candidates and let the benchmark rotate to another model otherwise.
+     */
+    if (initialAttempt.quality.score < IDEA_QUALITY_REVISION_TRIGGER_SCORE) {
+      this.logger.debug(
+        `Skipping quality revision for model "${model.displayName ?? model.modelName}" because score ${initialAttempt.quality.score} is below revision trigger ${IDEA_QUALITY_REVISION_TRIGGER_SCORE}.`,
+      );
+      return initialAttempt;
+    }
+
     let bestAttempt = initialAttempt;
 
     for (
@@ -1974,6 +1989,7 @@ export class IdeaGenerationBenchmarkService {
         "- Respect operating-system and application sandbox boundaries. A standalone mobile or desktop app cannot read another app's secure receipts, private logs, storage, or identifiers unless a host-integrated SDK, supported API/export, or explicit user-authorized import makes that access possible.",
         '- Make the supported integration path primary in the title direction, objectives, architecture, and abstract; do not mention an SDK only as an optional afterthought when the core workflow depends on host-app access.',
         "- For subscription, receipt, entitlement, or account-recovery concepts involving third-party apps, use one of these primary designs: (a) an SDK embedded by the host application plus a vendor-owned verification backend, or (b) a user-authorized diagnostic/import workflow that does not claim to change the host app entitlement. A standalone independent verification bridge that reads or restores another app's subscription is technically invalid.",
+        "- For authentication, login, regional MFA, or identity-provider limitations involving third-party apps, never claim that a standalone product can bypass the host authentication flow, mint or restore a host session, or make the host application recognize a session. Use a host-supported OAuth/identity-provider integration when the vendor adopts the solution; otherwise use a user-authorized diagnostic, compatibility check, and recovery-guidance workflow that does not change the host authentication state.",
         '<selected_opportunity>',
         JSON.stringify({
           rank: opportunity.rank,

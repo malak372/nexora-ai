@@ -32,6 +32,7 @@ import {
 } from '../../utilities/base-query/builder';
 
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 /**
  * Service responsible for administrative user-management operations.
@@ -180,14 +181,6 @@ export class UsersService {
           isVerified: true,
           createdAt: true,
           updatedAt: true,
-          _count: {
-            select: {
-              ideas: true,
-              payments: true,
-              creditTransactions: true,
-              complaints: true,
-            },
-          },
         },
       }),
 
@@ -575,14 +568,17 @@ export class UsersService {
    * @throws NotFoundException When the user does not exist.
    */
   async getUserById(id: string) {
+    // Keep the details endpoint intentionally lean. The previous implementation
+    // loaded up to 80 related records (ideas, payments, credit transactions and
+    // complaints) even though the admin detail modal only renders profile data
+    // and aggregate counts. That unnecessary work made View User feel slow.
     const user = await this.prisma.user.findUnique({
-      where: {
-        id,
-      },
+      where: { id },
       select: {
         id: true,
         fullName: true,
         email: true,
+        avatarUrl: true,
         role: true,
         accountStatus: true,
         userType: true,
@@ -591,70 +587,11 @@ export class UsersService {
         freeGenerationLimit: true,
         isActive: true,
         isVerified: true,
+        emailVerifiedAt: true,
+        lastLoginAt: true,
+        premiumActivatedAt: true,
         createdAt: true,
         updatedAt: true,
-
-        ideas: {
-          take: 20,
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            id: true,
-            title: true,
-            generationType: true,
-            isUnlocked: true,
-            unlockMethod: true,
-            createdAt: true,
-          },
-        },
-
-        payments: {
-          take: 20,
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            id: true,
-            amount: true,
-            currency: true,
-            paymentMethodKey: true,
-            paymentPurpose: true,
-            status: true,
-            creditsAmount: true,
-            createdAt: true,
-          },
-        },
-
-        creditTransactions: {
-          take: 20,
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            id: true,
-            type: true,
-            amount: true,
-            balanceAfter: true,
-            description: true,
-            createdAt: true,
-          },
-        },
-
-        complaints: {
-          take: 20,
-          orderBy: {
-            createdAt: 'desc',
-          },
-          select: {
-            id: true,
-            subject: true,
-            status: true,
-            priority: true,
-            createdAt: true,
-          },
-        },
-
         _count: {
           select: {
             ideas: true,
@@ -670,12 +607,136 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    return user;
+  }
+
+  /**
+   * Updates the subset of user fields that an administrator may safely edit.
+   *
+   * The operation is transactional with its audit record so an account update
+   * can never succeed without a matching audit trail entry.
+   */
+  async updateUser(
+    userId: string,
+    input: UpdateUserDto,
+    currentAdminId: string,
+  ) {
+    if (userId === currentAdminId) {
+      throw new BadRequestException(
+        'Use Profile & Security to edit your own administrator account',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        accountStatus: true,
+        userType: true,
+        freeGenerationLimit: true,
+        isVerified: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      throw new BadRequestException('Cannot edit another administrator account');
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException('Cannot edit a deleted user account');
+    }
+
+    const data: Prisma.UserUpdateInput = {};
+
+    if (input.fullName !== undefined) {
+      const fullName = input.fullName.trim();
+      if (fullName.length < 2) {
+        throw new BadRequestException('Full name must contain at least 2 characters');
+      }
+      data.fullName = fullName;
+    }
+    if (input.userType !== undefined) data.userType = input.userType;
+    if (input.accountStatus !== undefined) data.accountStatus = input.accountStatus;
+    if (input.freeGenerationLimit !== undefined) {
+      data.freeGenerationLimit = input.freeGenerationLimit;
+    }
+    if (input.isVerified !== undefined) {
+      data.isVerified = input.isVerified;
+      data.emailVerifiedAt = input.isVerified ? new Date() : null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return {
+        message: 'No changes detected',
+        user,
+        updated: false,
+      };
+    }
+
+    const oldValue = {
+      fullName: user.fullName,
+      userType: user.userType,
+      accountStatus: user.accountStatus,
+      freeGenerationLimit: user.freeGenerationLimit,
+      isVerified: user.isVerified,
+    };
+
+    const updatedUser = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          avatarUrl: true,
+          role: true,
+          accountStatus: true,
+          userType: true,
+          creditBalance: true,
+          freeGenerationsUsed: true,
+          freeGenerationLimit: true,
+          isActive: true,
+          isVerified: true,
+          emailVerifiedAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.auditLogsService.createLog(
+        {
+          actorId: currentAdminId,
+          action: AuditAction.ADMIN_UPDATE_USER,
+          targetType: AuditTargetType.USER,
+          targetId: userId,
+          oldValue,
+          newValue: {
+            fullName: updated.fullName,
+            userType: updated.userType,
+            accountStatus: updated.accountStatus,
+            freeGenerationLimit: updated.freeGenerationLimit,
+            isVerified: updated.isVerified,
+          },
+        },
+        tx,
+      );
+
+      return updated;
+    });
+
     return {
-      ...user,
-      payments: user.payments.map((payment) => ({
-        ...payment,
-        amount: toNumber(payment.amount),
-      })),
+      message: 'User updated successfully',
+      user: updatedUser,
+      updated: true,
     };
   }
 

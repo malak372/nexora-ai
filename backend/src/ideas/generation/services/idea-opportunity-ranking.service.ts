@@ -1587,37 +1587,52 @@ export class IdeaOpportunityRankingService {
       this.calculateSelectedDomainRelevance(candidate, selectedDomainTerms);
 
     const weightedScore =
-      (frequencyScore * 0.07 +
-        severityScore * 0.09 +
-        evidenceScore * 0.08 +
-        directEvidenceRatio * 0.1 +
+      (frequencyScore * 0.13 +
+        severityScore * 0.07 +
+        evidenceScore * 0.13 +
+        directEvidenceRatio * 0.12 +
         evidenceQualityScore * 0.17 +
-        evidenceReliabilityScore * 0.15 +
+        evidenceReliabilityScore * 0.16 +
         specificityScore * 0.06 +
-        feasibilityScore * 0.06 +
-        localRelevanceScore * 0.03 +
-        evidenceTypeScore * 0.04 +
-        noveltyScore * 0.06 +
-        businessValueScore * 0.05 +
-        marketGapScore * 0.02 +
-        competitionScore * 0.01 +
-        (1 - technicalRiskScore) * 0.01) *
+        feasibilityScore * 0.05 +
+        localRelevanceScore * 0.02 +
+        evidenceTypeScore * 0.03 +
+        noveltyScore * 0.02 +
+        businessValueScore * 0.02 +
+        marketGapScore * 0.01 +
+        competitionScore * 0.005 +
+        (1 - technicalRiskScore) * 0.005) *
         0.84 +
       selectedDomainRelevanceScore * 0.16;
 
-    // A historically repeated direction must not win merely because it has
-    // high frequency or severity. The multiplier turns novelty into a real
-    // gate while keeping evidence-backed alternatives comparable.
+    /*
+     * Historical diversity is a tie-breaker, not a substitute for evidence.
+     * A problem family with two or more distinct retained reports must not lose
+     * primarily because a one-off direction is more novel. Keep a small
+     * diversity penalty for genuinely repeated ideas, but protect recurrent
+     * evidence clusters from the old 0.55-0.72 score collapse.
+     */
+    const retainedEvidenceCount = this.deduplicateEvidenceSamples(
+      candidate.evidenceSamples,
+    ).length;
+    const hasEvidenceRecurrence =
+      candidate.frequency >= 2 || retainedEvidenceCount >= 2;
     const historicalDiversityMultiplier =
       previousIdeaTexts.length === 0
         ? 1
-        : noveltyScore < 0.2
-          ? 0.55
-          : noveltyScore < 0.35
-            ? 0.72
-            : noveltyScore < 0.5
-              ? 0.88
-              : 1;
+        : hasEvidenceRecurrence
+          ? noveltyScore < 0.2
+            ? 0.9
+            : noveltyScore < 0.35
+              ? 0.95
+              : 1
+          : noveltyScore < 0.2
+            ? 0.75
+            : noveltyScore < 0.35
+              ? 0.84
+              : noveltyScore < 0.5
+                ? 0.93
+                : 1;
 
     const baseScore = Math.max(
       0,

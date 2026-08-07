@@ -2,29 +2,37 @@ import type { AiJsonSchema } from '../../../ai/types/ai-json-schema.type';
 import { COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES } from '../constants/community-ai-analysis.constants';
 
 /**
- * Provider-compatible structured-output contract for community analysis.
+ * Strict provider-compatible structured-output contract for community analysis.
  *
- * Empty item schemas caused some providers to reject the request itself with
- * "Request contains an invalid argument". This concrete schema is accepted by
- * Gemini-style structured-output APIs and still allows runtime normalization
- * of optional aliases and evidence fields.
+ * This schema intentionally mirrors CommunityAiOpportunity exactly. Keeping the
+ * provider schema and runtime parser aligned prevents valid models from falling
+ * back to an empty opportunities array because they were asked for legacy keys
+ * such as `targetUsers` / `evidence` while the runtime expects
+ * `affectedUsers` / `evidenceSamples`.
  */
 export function buildCommunityAiAnalysisSchema(): AiJsonSchema {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['summary', 'opportunities', 'overallConfidence'],
+    required: [
+      'summary',
+      'dominantProblems',
+      'unmetNeeds',
+      'opportunities',
+      'overallConfidence',
+      'qualityWarnings',
+    ],
     properties: {
-      summary: { type: 'string', maxLength: 300 },
+      summary: { type: 'string', maxLength: 420 },
       dominantProblems: {
         type: 'array',
-        maxItems: 3,
-        items: { type: 'string', maxLength: 220 },
+        maxItems: 4,
+        items: { type: 'string', maxLength: 320 },
       },
       unmetNeeds: {
         type: 'array',
-        maxItems: 3,
-        items: { type: 'string', maxLength: 220 },
+        maxItems: 4,
+        items: { type: 'string', maxLength: 320 },
       },
       opportunities: {
         type: 'array',
@@ -34,40 +42,73 @@ export function buildCommunityAiAnalysisSchema(): AiJsonSchema {
           type: 'object',
           additionalProperties: false,
           required: [
+            'domainName',
             'title',
             'problem',
             'unmetNeed',
             'solutionArea',
-            'targetUsers',
-            'evidence',
+            'affectedUsers',
+            'evidenceSamples',
+            'frequency',
+            'severity',
             'confidence',
+            'problemImportance',
+            'localEvidenceAvailable',
+            'localEvidenceSamples',
+            'localRelevance',
+            'technicalFeasibility',
+            'marketPotential',
+            'innovationPotential',
+            'risks',
           ],
           properties: {
-            title: { type: 'string', maxLength: 120 },
-            problem: { type: 'string', maxLength: 420 },
-            unmetNeed: { type: 'string', maxLength: 300 },
-            solutionArea: { type: 'string', maxLength: 500 },
-            targetUsers: {
+            domainName: { type: 'string', maxLength: 100 },
+            title: { type: 'string', maxLength: 140 },
+            problem: { type: 'string', maxLength: 520 },
+            unmetNeed: { type: 'string', maxLength: 360 },
+            solutionArea: { type: 'string', maxLength: 420 },
+            affectedUsers: {
               type: 'array',
               minItems: 1,
               maxItems: 5,
-              items: { type: 'string', maxLength: 100 },
+              items: { type: 'string', maxLength: 140 },
             },
-            evidence: {
+            evidenceSamples: {
               type: 'array',
               minItems: 1,
               maxItems: 3,
-              items: { type: 'string', maxLength: 260 },
+              items: { type: 'string', maxLength: 700 },
+            },
+            frequency: { type: 'integer', minimum: 1, maximum: 1000 },
+            severity: {
+              type: 'string',
+              enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
             },
             confidence: { type: 'number', minimum: 0, maximum: 100 },
+            problemImportance: { type: 'number', minimum: 0, maximum: 100 },
+            localEvidenceAvailable: { type: 'boolean' },
+            localEvidenceSamples: {
+              type: 'array',
+              maxItems: 3,
+              items: { type: 'string', maxLength: 700 },
+            },
+            localRelevance: { type: 'number', minimum: 0, maximum: 100 },
+            technicalFeasibility: { type: 'number', minimum: 0, maximum: 100 },
+            marketPotential: { type: 'number', minimum: 0, maximum: 100 },
+            innovationPotential: { type: 'number', minimum: 0, maximum: 100 },
+            risks: {
+              type: 'array',
+              maxItems: 4,
+              items: { type: 'string', maxLength: 260 },
+            },
           },
         },
       },
       overallConfidence: { type: 'number', minimum: 0, maximum: 100 },
       qualityWarnings: {
         type: 'array',
-        maxItems: 4,
-        items: { type: 'string', maxLength: 220 },
+        maxItems: 5,
+        items: { type: 'string', maxLength: 280 },
       },
     },
   } as const;

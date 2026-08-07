@@ -94,19 +94,19 @@ export const IDEA_CORE_MODEL_TIMEOUT_MS = 14_000;
  * requests consume the complete benchmark window without improving quality.
  * Direct Google models keep the wider quality-safe allowance.
  */
-export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 12_000;
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 10_000;
 export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 16_000;
 
 /** Local core-model fallback is disabled inside the strict minute path. */
 export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
 
 /**
- * Disables the additional comparative AI-judge request in the strict fast path.
- * Deterministic quality, semantic diversity, output validation, and duplicate
- * detection remain enabled. This removes one sequential provider call after
- * the candidate models have already completed.
+ * Enables comparative AI judging when at least two quality-approved candidates
+ * survive the existing benchmark flow. The one-candidate early-stop path is
+ * unchanged, and deterministic selection remains the fallback when judge
+ * confidence is insufficient or no comparison can be performed.
  */
-export const IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED = false;
+export const IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED = true;
 
 /**
  * Maximum number of milliseconds reserved for deterministic cleanup and
@@ -553,7 +553,7 @@ export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
 export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 
 /** Skip expensive self-revision when the first pass is already usable. */
-export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 60;
+export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 65;
 
 /**
  * Number of AI models selected initially for each ranked opportunity.
@@ -562,7 +562,7 @@ export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 60;
  * selected providers fail, but it should attempt this many models first for
  * every opportunity.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
@@ -607,7 +607,7 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
  * attempt limit from becoming inconsistent with the configured opportunity
  * and model counts.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 4;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 3;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved

@@ -19,7 +19,10 @@ import type {
   IdeaGenerationStageExecutionResult,
 } from '../../interfaces/idea-generation-stage.interface';
 import { IdeaEvidenceRecoveryService } from '../../services/idea-evidence-recovery.service';
-import { IndependentEvidenceVerificationService } from '../../services/independent-evidence-verification.service';
+import {
+  IndependentEvidenceVerificationService,
+  type EvidenceProvenanceHint,
+} from '../../services/independent-evidence-verification.service';
 import type { EvidenceRecoveryOutcome } from '../../services/idea-evidence-recovery.service';
 import {
   IdeaOpportunityRankingService,
@@ -181,15 +184,20 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     const hasVerifiedDirectEvidence = rankedCandidates.some(
       (candidate) => (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
     );
+    const hasRetainedDirectEvidence = rankedCandidates.some((candidate) =>
+      candidate.evidenceSamples.some((sample) =>
+        this.looksLikeDirectProblemEvidence(sample),
+      ),
+    );
 
     /*
-     * Never finish a healthy run without an idea. If collection/recovery still
-     * produced no independently verifiable complaint, continue with an explicit
-     * validation hypothesis instead of returning NO_RESULT. Downstream prompts
-     * already distinguish observed evidence from hypotheses, so this preserves
-     * scientific honesty without turning sparse data into a technical failure.
+     * Independent recurrence is a confidence/reporting gate, not a generation
+     * gate. One retained, concrete, in-domain community complaint is enough for
+     * a cautious preliminary pilot. Never overwrite that real evidence with a
+     * synthetic PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS merely because it has not
+     * yet been observed across several independent sources.
      */
-    if (!hasVerifiedDirectEvidence) {
+    if (!hasVerifiedDirectEvidence && !hasRetainedDirectEvidence) {
       ranking = this.buildEmergencyFallbackRanking(workingContext);
     }
 
@@ -1142,6 +1150,55 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     return output as Prisma.JsonArray;
   }
 
+  private buildEvidenceProvenanceHints(
+    context: IdeaGenerationContext,
+  ): EvidenceProvenanceHint[] {
+    const hints: EvidenceProvenanceHint[] = [];
+    const seen = new Set<string>();
+
+    const parseId = (
+      value: string,
+      expectedKind: 'post' | 'comment',
+    ): { sourceKey: string; externalId: string } | null => {
+      if (!value || value.startsWith('nlp:')) return null;
+      const marker = `:${expectedKind}:`;
+      const markerIndex = value.indexOf(marker);
+      if (markerIndex <= 0) return null;
+      const sourceKey = value.slice(0, markerIndex).trim();
+      const externalId = value.slice(markerIndex + marker.length).trim();
+      return sourceKey && externalId ? { sourceKey, externalId } : null;
+    };
+
+    for (const domain of context.domainEvidence) {
+      if (!Array.isArray(domain.sampleComments)) continue;
+
+      for (const raw of domain.sampleComments) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const item = raw as Prisma.JsonObject;
+        const id = typeof item.id === 'string' ? item.id : '';
+        const postId = typeof item.postId === 'string' ? item.postId : '';
+        const text = typeof item.text === 'string' ? item.text.trim() : '';
+        if (!text) continue;
+
+        const comment = parseId(id, 'comment');
+        const post = parseId(postId, 'post');
+        if (!comment || !post || comment.sourceKey !== post.sourceKey) continue;
+
+        const key = `${comment.sourceKey}|${post.externalId}|${comment.externalId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        hints.push({
+          text,
+          sourceKey: comment.sourceKey,
+          postExternalId: post.externalId,
+          commentExternalId: comment.externalId,
+        });
+      }
+    }
+
+    return hints;
+  }
+
   private async tryRankContext(
     context: IdeaGenerationContext,
     previousIdeaTexts: readonly string[],
@@ -1184,10 +1241,12 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       }
 
       const collectionJobIds = this.resolveEvidenceCollectionJobIds(context);
+      const provenanceHints = this.buildEvidenceProvenanceHints(context);
       const verifiedRanking =
         await this.independentEvidenceVerificationService.verifyRanking(
           ranking,
           collectionJobIds,
+          provenanceHints,
         );
 
       const verifiedHasDirectEvidence =
@@ -1216,14 +1275,44 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         await this.independentEvidenceVerificationService.verifyRanking(
           groundedCommunityFallback,
           collectionJobIds,
+          provenanceHints,
         );
       const fallbackHasDirectEvidence =
         verifiedCommunityFallback.selected.evidenceSamples.length > 0 ||
         (verifiedCommunityFallback.selected.verifiedIndependentEvidenceCount ??
           0) > 0;
 
-      return fallbackHasDirectEvidence
-        ? verifiedCommunityFallback
+      if (fallbackHasDirectEvidence) {
+        return verifiedCommunityFallback;
+      }
+
+      /*
+       * Final provenance-safe rescue. Community AI is allowed to fail or return
+       * an empty array, but an exact retained direct complaint in domainEvidence
+       * must never be converted into a no-evidence validation hypothesis. Build
+       * a conservative candidate from the verbatim retained text and pass it
+       * through the same independent DB verification service before accepting it.
+       */
+      const directDomainFallback =
+        this.buildDirectDomainEvidenceFallbackRanking(context);
+
+      if (!directDomainFallback) {
+        return verifiedRanking;
+      }
+
+      const verifiedDirectDomainFallback =
+        await this.independentEvidenceVerificationService.verifyRanking(
+          directDomainFallback,
+          collectionJobIds,
+          provenanceHints,
+        );
+      const directFallbackHasEvidence =
+        verifiedDirectDomainFallback.selected.evidenceSamples.length > 0 ||
+        (verifiedDirectDomainFallback.selected.verifiedIndependentEvidenceCount ??
+          0) > 0;
+
+      return directFallbackHasEvidence
+        ? verifiedDirectDomainFallback
         : verifiedRanking;
     } catch (error: unknown) {
       if (error instanceof NoRankedIdeaOpportunityError) {
@@ -1247,6 +1336,133 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
    * independent provenance verification still runs immediately afterward and
    * recurrence/source-diversity requirements remain unchanged.
    */
+  private buildDirectDomainEvidenceFallbackRanking(
+    context: IdeaGenerationContext,
+  ): IdeaOpportunityRanking | null {
+    const primaryDomainName =
+      context.domainName ?? context.selectedDomains[0]?.name ?? 'Selected domain';
+    const primaryDomainId = context.domainId ?? context.selectedDomains[0]?.id;
+    const domainEvidence = context.domainEvidence.find(
+      (entry) =>
+        (primaryDomainId && entry.domainId === primaryDomainId) ||
+        entry.domainName.trim().toLowerCase() ===
+          primaryDomainName.trim().toLowerCase(),
+    );
+
+    if (!domainEvidence) {
+      return null;
+    }
+
+    const candidates = this.readDomainEvidenceTexts(domainEvidence.sampleComments)
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter((sample) => sample.length >= 20)
+      .map((sample) => {
+        const body = sample.replace(
+          /^.*?\bCommunity comment:\s*/isu,
+          '',
+        ).trim();
+        const directKind = classifyDirectCommunityEvidence(body, 'COMMENT');
+        let score = Math.min(body.length, 320) / 100;
+        if (directKind === 'USER_COMPLAINT') score += 8;
+        if (directKind === 'FEATURE_REQUEST') score += 6;
+        if (/\b(?:cannot|can['’]?t|unable|fail|error|wrong|crash|slow|delay|wait|missing|risk|unsafe|bias|liability|privacy|problem|issue|struggle|difficult)\b/iu.test(body)) {
+          score += 3;
+        }
+        return { sample, body, directKind, score };
+      })
+      .filter(
+        (item) =>
+          item.directKind === 'USER_COMPLAINT' ||
+          item.directKind === 'FEATURE_REQUEST',
+      )
+      .sort((first, second) => second.score - first.score);
+
+    const strongest = candidates[0];
+    if (!strongest) {
+      return null;
+    }
+
+    const problem = strongest.body
+      .split(/(?<=[.!?])\s+/u)
+      .find((sentence) => {
+        const kind = classifyDirectCommunityEvidence(sentence, 'COMMENT');
+        return kind === 'USER_COMPLAINT' || kind === 'FEATURE_REQUEST';
+      }) ?? strongest.body;
+    const boundedProblem = problem.slice(0, 260).trim();
+    const titleWords = boundedProblem
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(' ')
+      .slice(0, 10)
+      .join(' ');
+    const title = titleWords.length >= 18
+      ? titleWords
+      : `${primaryDomainName} Direct Community Problem`;
+
+    return {
+      selected: {
+        rank: 1,
+        title,
+        problem: boundedProblem,
+        need:
+          'A focused software response that addresses the retained direct community problem while validating broader recurrence during the pilot.',
+        solutionArea:
+          'Evidence-grounded diagnosis, guided resolution, and pilot validation workflow.',
+        evidenceType: 'OPPORTUNITY',
+        sourceIndex: 0,
+        frequency: 1,
+        severity: 'MEDIUM',
+        evidenceSamples: [strongest.sample],
+        frequencyScore: 0.2,
+        severityScore: 0.6,
+        evidenceScore: 0.2,
+        evidenceReliabilityScore: 0.9,
+        weakEvidencePenalty: 0.08,
+        specificityScore: 0.86,
+        feasibilityScore: 0.72,
+        localRelevanceScore: 0.25,
+        noveltyScore: 0.5,
+        businessValueScore: 0.5,
+        marketGapScore: 0.45,
+        competitionScore: 0.5,
+        technicalRiskScore: 0.28,
+        supportScore: 0.72,
+        nlpConfidenceScore: context.nlp?.confidence ?? 0.4,
+        baseScore: 0.58,
+        confidencePenalty: 0.04,
+        finalScore: 0.5,
+        selectionEligible: false,
+        disqualificationReasons: [
+          'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+        ],
+        verifiedIndependentEvidenceCount: 0,
+        verifiedIndependentSourceCount: 0,
+        independentEvidence: [],
+        raw: {
+          title,
+          source: 'DIRECT_DOMAIN_EVIDENCE_FALLBACK',
+          problem: boundedProblem,
+          unmetNeed:
+            'A focused software response that addresses the retained direct community problem while validating broader recurrence during the pilot.',
+          domainName: primaryDomainName,
+          solutionArea:
+            'Evidence-grounded diagnosis, guided resolution, and pilot validation workflow.',
+          evidenceSamples: [strongest.sample],
+          groundingScore: 100,
+        } as unknown as Prisma.JsonValue,
+      },
+      alternatives: [],
+      evaluatedCount: 1,
+      evidenceCoverage: 1,
+      selectionReason:
+        'Recovered one exact direct complaint from retained primary-domain evidence after the Community AI path did not produce a provenance-verifiable candidate. Independent DB verification remains mandatory.',
+      qualityWarnings: [
+        'Only one independently retained direct report supports this opportunity; claims must remain preliminary until recurrence is validated.',
+      ],
+    };
+  }
+
   private buildGroundedCommunityFallbackRanking(
     context: IdeaGenerationContext,
   ): IdeaOpportunityRanking | null {
@@ -1482,7 +1698,9 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       readonly recoveryOutcome: EvidenceRecoveryOutcome;
     } | null,
   ): IdeaGenerationStageExecutionResult {
-    const normalizedRanking = this.normalizeFinalRankingEvidenceCoverage(ranking);
+    const normalizedRanking = this.normalizeFinalRankingWarnings(
+      this.normalizeFinalRankingEvidenceCoverage(ranking),
+    );
     const synchronizedDomainEvidence = this.synchronizeSelectedOpportunityEvidence(
       context,
       normalizedRanking,
@@ -1539,6 +1757,46 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
         evaluatedCount: normalizedRanking.evaluatedCount,
         qualityWarnings: [...normalizedRanking.qualityWarnings],
       },
+    };
+  }
+
+  /**
+   * Removes stale pre-verification fallback warnings once independent evidence
+   * verification has promoted the selected candidate to an eligible, traceable
+   * preliminary opportunity. The numeric score is intentionally left untouched:
+   * one verified report can justify a pilot while still being below recurrence
+   * and market-confidence thresholds.
+   */
+  private normalizeFinalRankingWarnings(
+    ranking: IdeaOpportunityRanking,
+  ): IdeaOpportunityRanking {
+    if (!ranking.selected.selectionEligible) {
+      return ranking;
+    }
+
+    const verifiedCount =
+      ranking.selected.verifiedIndependentEvidenceCount ?? 0;
+    if (verifiedCount <= 0) {
+      return ranking;
+    }
+
+    const staleFallbackWarning =
+      /^(?:No opportunity reached the strict minimum score|No opportunity passed the strict selection gate)/iu;
+    const cleanedWarnings = ranking.qualityWarnings.filter(
+      (warning) => !staleFallbackWarning.test(warning),
+    );
+
+    const preliminaryWarning =
+      `The selected opportunity is supported by ${verifiedCount} verified direct community report(s). ` +
+      `It is eligible for a preliminary pilot, while recurrence and market-wide claims remain unproven.`;
+
+    if (!cleanedWarnings.includes(preliminaryWarning)) {
+      cleanedWarnings.unshift(preliminaryWarning);
+    }
+
+    return {
+      ...ranking,
+      qualityWarnings: cleanedWarnings,
     };
   }
 

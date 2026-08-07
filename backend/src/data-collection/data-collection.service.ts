@@ -78,6 +78,23 @@ export type IdeaGenerationCollectionInput = {
 
   readonly collectionMode?: CollectorInput['collectionMode'];
   readonly collectorLimits?: CollectorInput['limits'];
+
+  /**
+   * Trusted metadata already resolved by the idea-generation selection stages.
+   * FAST_GENERATION can reuse it to avoid repeating remote Domain/DataSource
+   * lookups immediately before collectors start. Manual collection never sets
+   * these hints and keeps the full database validation path.
+   */
+  readonly resolvedDomain?: {
+    readonly id: string;
+    readonly name: string;
+    readonly keywords: readonly string[];
+  };
+  readonly resolvedDataSources?: readonly {
+    readonly id: string;
+    readonly key: string;
+    readonly displayName: string;
+  }[];
 };
 
 /**
@@ -172,87 +189,114 @@ export class DataCollectionService {
    */
   private async runInternal(
     dto: RunCollectionDto | IdeaGenerationCollectionInput,
-
     trigger: CollectionTrigger,
-
     actorId?: string,
   ) {
+    const collectionMode =
+      'collectionMode' in dto ? dto.collectionMode : undefined;
+    const collectorLimits =
+      'collectorLimits' in dto ? dto.collectorLimits : undefined;
+    const isFastInternal =
+      trigger === 'SYSTEM_INTERNAL' && collectionMode === 'FAST_GENERATION';
+
+    const trustedResolvedDomain =
+      isFastInternal && 'resolvedDomain' in dto ? dto.resolvedDomain : undefined;
+    const trustedResolvedSources =
+      isFastInternal && 'resolvedDataSources' in dto
+        ? dto.resolvedDataSources
+        : undefined;
+
+    /*
+     * DataSourceSelectionStage and DomainResolutionService have already
+     * validated these exact records for an idea-generation run. Reusing that
+     * immutable snapshot removes two redundant Supabase reads from the
+     * pre-collector critical path. Manual collection intentionally retains the
+     * database-backed validation path.
+     */
     const [domain, dataSources] = await Promise.all([
-      this.collectionJobService.validateActiveDomain(dto.domainId),
-      this.collectionJobService.resolveActiveImplementedDataSources(
-        dto.dataSourceKeys,
-      ),
+      trustedResolvedDomain
+        ? Promise.resolve({
+            id: trustedResolvedDomain.id,
+            name: trustedResolvedDomain.name,
+            domainKeywords: [],
+          })
+        : this.collectionJobService.validateActiveDomain(dto.domainId),
+      trustedResolvedSources?.length
+        ? Promise.resolve(
+            this.validateTrustedRuntimeSources(trustedResolvedSources),
+          )
+        : this.collectionJobService.resolveActiveImplementedDataSources(
+            dto.dataSourceKeys,
+          ),
     ]);
 
     const isGeneralDomain = this.isGeneralDomain(domain.name);
-
-    const domainKeywords = isGeneralDomain
-      ? await this.collectionJobService.getAllActiveDomainKeywords(dto.language)
-      : this.getDomainKeywordsByLanguage(domain.domainKeywords, dto.language);
+    const domainKeywords = trustedResolvedDomain
+      ? this.unique(trustedResolvedDomain.keywords)
+      : isGeneralDomain
+        ? await this.collectionJobService.getAllActiveDomainKeywords(dto.language)
+        : this.getDomainKeywordsByLanguage(domain.domainKeywords, dto.language);
 
     const userKeywords = this.unique(dto.keywords ?? []);
-
     const relevanceTerms = this.unique([
       ...(isGeneralDomain ? [] : [domain.name]),
-
       ...domainKeywords,
       ...userKeywords,
     ]);
 
-    const job = await this.collectionJobService.createRunningJob(
-      dto,
-      dataSources,
-      actorId,
+    /*
+     * In FAST_GENERATION the collectors do not need CollectionJob.id for any
+     * network request or relevance calculation. Start the remote job insert and
+     * all collector HTTP work in the same latency window; each source awaits the
+     * job only immediately before persistence. This hides most CollectionJob
+     * creation latency behind collector I/O instead of paying it first.
+     */
+    let resolvedJob: { id: string } | null = null;
+    const jobPromise = this.collectionJobService
+      .createRunningJob(dto, dataSources, actorId)
+      .then((job) => {
+        resolvedJob = job;
+        return job;
+      });
+
+    const getJob = async () => resolvedJob ?? jobPromise;
+
+    if (!isFastInternal) {
+      await jobPromise;
+    }
+
+    const startAuditPromise = jobPromise.then((job) =>
+      this.auditService.createLog({
+        actorId,
+        action: AuditAction.RUN_DATA_COLLECTION,
+        targetType: AuditTargetType.DATA_COLLECTION,
+        targetId: job.id,
+        newValue: {
+          trigger,
+          domainId: dto.domainId,
+          domainName: isGeneralDomain ? 'General / All Domains' : domain.name,
+          dataSourceKeys: dataSources.map((source) => source.key),
+          country: dto.country,
+          city: dto.city,
+          region: dto.region,
+          language: dto.language,
+          radiusKm: dto.radiusKm,
+          domainKeywords,
+          userKeywords,
+        },
+      }),
     );
 
-    const startAudit = this.auditService.createLog({
-      actorId,
-
-      action: AuditAction.RUN_DATA_COLLECTION,
-
-      targetType: AuditTargetType.DATA_COLLECTION,
-
-      targetId: job.id,
-
-      newValue: {
-        trigger,
-
-        domainId: dto.domainId,
-
-        domainName: isGeneralDomain ? 'General / All Domains' : domain.name,
-
-        dataSourceKeys: dataSources.map((source) => source.key),
-
-        country: dto.country,
-
-        city: dto.city,
-
-        region: dto.region,
-
-        language: dto.language,
-
-        radiusKm: dto.radiusKm,
-
-        domainKeywords,
-        userKeywords,
-      },
-    });
-
     if (trigger === 'USER_MANUAL') {
-      await startAudit;
+      await startAuditPromise;
     } else {
-      void startAudit.catch((error: unknown) => {
+      void startAuditPromise.catch((error: unknown) => {
+        const id = resolvedJob?.id ?? 'pending';
         this.logger.warn(
-          `Could not persist the internal collection-start audit for job ${job.id}: ${this.getErrorMessage(error)}.`,
+          `Could not persist the internal collection-start audit for job ${id}: ${this.getErrorMessage(error)}.`,
         );
       });
     }
-
-    const collectionMode =
-      'collectionMode' in dto ? dto.collectionMode : undefined;
-
-    const collectorLimits =
-      'collectorLimits' in dto ? dto.collectorLimits : undefined;
 
     let completedSources = 0;
     let failedSources = 0;
@@ -264,36 +308,26 @@ export class DataCollectionService {
     try {
       const sourceResults = await Promise.all(
         dataSources.map(async (dataSource) => {
-          /*
-           * Every selected source is submitted immediately in the same
-           * Promise.all() wave. CollectorQueueService has enough default
-           * concurrency for the complete registered collector set, so sources
-           * are not serialized into multiple batches.
-           */
+          const jobForStopCheck = resolvedJob;
           if (
             trigger === 'USER_MANUAL' &&
-            (await this.isStopped(job.id))
+            jobForStopCheck &&
+            (await this.isStopped(jobForStopCheck.id))
           ) {
             return 'STOPPED' as const;
           }
 
-          const markSourceRunningPromise =
-            this.collectionJobService.markSourceRunning(
-              job.id,
-              dataSource.id,
-            );
+          const sourceStartedAt = new Date();
+          const sourceStartedMs = Date.now();
+          let jobForSource: { id: string } | null = null;
 
           try {
-            const collector = this.collectorsFactory.getCollector(
+            const collector = this.collectorsFactory.getCollector(dataSource.key);
+            const effectiveCollectorLimits = this.resolveSourceCollectorLimits(
               dataSource.key,
+              collectionMode,
+              collectorLimits,
             );
-
-            const effectiveCollectorLimits =
-              this.resolveSourceCollectorLimits(
-                dataSource.key,
-                collectionMode,
-                collectorLimits,
-              );
 
             const collectorInput: CollectorInput = {
               domainName: isGeneralDomain ? 'All Domains' : domain.name,
@@ -318,6 +352,7 @@ export class DataCollectionService {
               );
             }
 
+            const collectorStartedMs = Date.now();
             const postsPromise = this.collectorQueueService.run(
               () =>
                 collector.runWithLimits(collectorInput, () =>
@@ -332,161 +367,132 @@ export class DataCollectionService {
               },
             );
 
-            const [posts] = await Promise.all([
-              postsPromise,
-              markSourceRunningPromise,
-            ]);
-
             /*
-             * A collector may finish after an administrator stopped the job.
-             * Do not persist late results in that case.
+             * Manual jobs still expose RUNNING source state. FAST_GENERATION
+             * deliberately avoids that write and starts collection immediately.
              */
+            const posts =
+              collectionMode === 'FAST_GENERATION'
+                ? await postsPromise
+                : (
+                    await Promise.all([
+                      postsPromise,
+                      (async () => {
+                        jobForSource = await getJob();
+                        await this.collectionJobService.markSourceRunning(
+                          jobForSource.id,
+                          dataSource.id,
+                        );
+                      })(),
+                    ])
+                  )[0];
+
+            jobForSource = jobForSource ?? (await getJob());
+
             if (
               trigger === 'USER_MANUAL' &&
-              (await this.isStopped(job.id))
+              (await this.isStopped(jobForSource.id))
             ) {
               return 'STOPPED' as const;
             }
 
+            const collectorElapsedMs = Date.now() - collectorStartedMs;
+            const relevanceStartedMs = Date.now();
             const relevantPosts = this.filterRelevantPosts(
               posts,
               relevanceTerms,
               collectionMode,
               dataSource.key,
             );
+            const relevanceElapsedMs = Date.now() - relevanceStartedMs;
+
+            let totals: { totalPosts: number; totalComments: number };
 
             if (collectionMode === 'FAST_GENERATION') {
+              const persistenceStartedMs = Date.now();
+              const fastPersistence =
+                await this.socialPostService.createManyWithCommentsFast(
+                  jobForSource.id,
+                  dataSource.id,
+                  {
+                    country: dto.country,
+                    city: dto.city,
+                    region: dto.region,
+                  },
+                  relevantPosts,
+                );
+
+              totals = {
+                totalPosts: fastPersistence.totalPosts,
+                totalComments: fastPersistence.totalComments,
+              };
+
+              const sourceFastEvidenceInputs =
+                this.buildFastEvidenceInputsForPersistedPosts(
+                  fastPersistence.persistedPosts,
+                  dataSource.key,
+                  relevanceTerms,
+                  effectiveCollectorLimits?.maxSavedComments ?? 1,
+                );
+
               completedSourceKeys.push(dataSource.key);
-              for (const post of relevantPosts) {
-                const postId = `${dataSource.key}:post:${post.externalId}`;
-                const isMarketplaceSource =
-                  dataSource.key === 'google-play' ||
-                  dataSource.key === 'app-store';
+              fastEvidenceInputs.push(...sourceFastEvidenceInputs);
+              fastPersistedPosts += fastPersistence.totalPosts;
+              fastPersistedComments += fastPersistence.totalComments;
 
-                /*
-                 * App-store listing descriptions are publisher marketing copy,
-                 * not community evidence. Keep the listing as the parent row,
-                 * but send only its user reviews to the fast NLP corpus.
-                 */
-                if (!isMarketplaceSource) {
-                  fastEvidenceInputs.push({
-                    id: postId,
-                    sourceType: 'POST',
-                    title: post.title ?? null,
-                    content: [post.title?.trim(), post.content.trim()]
-                      .filter(Boolean)
-                      .join(' ')
-                      .slice(0, 2_000),
-                    language: this.parseFastLanguageCode(post.languageCode),
-                    likesCount: post.likesCount,
-                    repliesCount: post.repliesCount ?? post.comments.length,
-                  });
-                }
-
-                const rankedFastComments = [...post.comments]
-                  .filter((comment) => comment.content.trim().length > 0)
-                  .sort((first, second) => {
-                    const evidencePattern =
-                      /\b(?:cannot|can'?t|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|need|needs|should|please add|feature request|wish|is it possible|can i|could i|how can i|why can'?t i)\b/iu;
-                    const firstEvidence = evidencePattern.test(first.content)
-                      ? 1
-                      : 0;
-                    const secondEvidence = evidencePattern.test(second.content)
-                      ? 1
-                      : 0;
-
-                    return (
-                      secondEvidence - firstEvidence ||
-                      Math.max(second.likesCount ?? 0, 0) -
-                        Math.max(first.likesCount ?? 0, 0)
-                    );
-                  })
-                  .slice(
-                    0,
-                    effectiveCollectorLimits?.maxSavedComments ?? 1,
-                  );
-
-                for (const comment of rankedFastComments) {
-                  fastEvidenceInputs.push({
-                    id: `${dataSource.key}:comment:${comment.externalId}`,
-                    sourceType: 'COMMENT',
-                    postId,
-                    /*
-                     * Match the normal DB-backed NLP path: preserve the parent
-                     * post title on comments so short complaints keep their
-                     * domain context during FAST_GENERATION preprocessing.
-                     */
-                    title: post.title ?? null,
-                    content: comment.content.trim().slice(0, 1_200),
-                    language: this.parseFastLanguageCode(comment.languageCode),
-                    likesCount: comment.likesCount,
-                    /*
-                     * Preserve the exact collector decision that contributed
-                     * to complaintComments=N. Downstream NLP must not have to
-                     * rediscover the same complaint from scratch.
-                     */
-                    isComplaintEvidence: this.isProtectedComplaintEvidence(
-                      comment.content,
-                      post.title ?? '',
-                      relevanceTerms,
-                    ),
-                  });
-                }
-              }
-            }
-
-            const totals =
-              collectionMode === 'FAST_GENERATION'
-                ? await this.socialPostService.createManyWithCommentsFast(
-                    job.id,
-                    dataSource.id,
-                    {
-                      country: dto.country,
-                      city: dto.city,
-                      region: dto.region,
-                    },
-                    relevantPosts,
-                  )
-                : await this.socialPostService.createManyWithComments(
-                    job.id,
-                    dataSource.id,
-                    {
-                      country: dto.country,
-                      city: dto.city,
-                      region: dto.region,
-                    },
-                    relevantPosts,
-                  );
-
-            if (collectionMode === 'FAST_GENERATION') {
-              fastPersistedPosts += totals.totalPosts;
-              fastPersistedComments += totals.totalComments;
+              const persistenceElapsedMs = Date.now() - persistenceStartedMs;
+              this.logger.debug(
+                `FAST_GENERATION persisted source=${dataSource.key} | ` +
+                  `posts=${fastPersistence.totalPosts} | ` +
+                  `comments=${fastPersistence.totalComments} | ` +
+                  `nlpInputs=${sourceFastEvidenceInputs.length} | ` +
+                  `collectorMs=${collectorElapsedMs} | ` +
+                  `relevanceMs=${relevanceElapsedMs} | ` +
+                  `persistenceMs=${persistenceElapsedMs} | ` +
+                  `sourceMs=${Date.now() - sourceStartedMs}`,
+              );
+            } else {
+              totals = await this.socialPostService.createManyWithComments(
+                jobForSource.id,
+                dataSource.id,
+                {
+                  country: dto.country,
+                  city: dto.city,
+                  region: dto.region,
+                },
+                relevantPosts,
+              );
             }
 
             await this.collectionJobService.markSourceCompleted(
-              job.id,
+              jobForSource.id,
               dataSource.id,
               totals,
+              collectionMode === 'FAST_GENERATION' ? sourceStartedAt : undefined,
             );
 
             return 'COMPLETED' as const;
           } catch (error: unknown) {
-            /*
-             * A source may fail after some records were already persisted. Count
-             * those rows before marking the source failed so source-level and
-             * parent counters remain consistent with data consumed by NLP.
-             */
+            jobForSource = jobForSource ?? (await getJob());
             const persistedTotals =
               await this.socialPostService.countByCollectionJobSource(
-                job.id,
+                jobForSource.id,
                 dataSource.id,
               );
 
+            this.logger.warn(
+              `Collection source persistence failed | source=${dataSource.key} | ` +
+                `persistedPosts=${persistedTotals.totalPosts} | ` +
+                `persistedComments=${persistedTotals.totalComments} | ` +
+                `error=${this.getErrorMessage(error)}`,
+            );
+
             await this.collectionJobService.markSourceFailed(
-              job.id,
+              jobForSource.id,
               dataSource.id,
               error,
               persistedTotals,
+              collectionMode === 'FAST_GENERATION' ? sourceStartedAt : undefined,
             );
 
             return 'FAILED' as const;
@@ -494,6 +500,7 @@ export class DataCollectionService {
         }),
       );
 
+      const job = await getJob();
       completedSources = sourceResults.filter(
         (result) => result === 'COMPLETED',
       ).length;
@@ -506,15 +513,9 @@ export class DataCollectionService {
         (trigger === 'USER_MANUAL' && (await this.isStopped(job.id)))
       ) {
         await this.collectionJobService.markRemainingSourcesStopped(job.id);
-
         return this.collectionJobService.findJobOrThrow(job.id);
       }
 
-      /*
-       * The parent job fails only when every selected source
-       * failed. A successful source returning zero posts is
-       * still considered a successful source execution.
-       */
       const authoritativeTotals =
         collectionMode === 'FAST_GENERATION'
           ? {
@@ -524,12 +525,6 @@ export class DataCollectionService {
           : await this.collectionJobService.countPersistedJobData(job.id);
 
       if (completedSources === 0 && authoritativeTotals.totalPosts === 0) {
-        /*
-         * Sparse or temporarily unavailable public sources must not convert a
-         * valid idea-generation request into a technical failure. Completing
-         * the job with zero rows lets the NLP and prompt layers create a clearly
-         * labelled context-only pilot hypothesis instead of blocking the run.
-         */
         this.logger.warn(
           `Collection job ${job.id} completed without persisted posts. The generation pipeline will continue with a context-only fallback.`,
         );
@@ -543,24 +538,16 @@ export class DataCollectionService {
 
       const completionAudit = this.auditService.createLog({
         actorId,
-
         action: AuditAction.COMPLETE_DATA_COLLECTION,
-
         targetType: AuditTargetType.DATA_COLLECTION,
-
         targetId: job.id,
-
         newValue: {
           trigger,
-
           status: CollectionJobStatus.COMPLETED,
-
           completedSources,
           failedSources,
-
           totalPosts: completedJob.totalPosts,
           totalComments: completedJob.totalComments,
-
           completedAt: completedJob.completedAt,
         },
       });
@@ -576,56 +563,63 @@ export class DataCollectionService {
       }
 
       if (collectionMode === 'FAST_GENERATION') {
-        TextInputBuilderService.primeFastContext({
-          collectionJobId: job.id,
-          language: dto.language,
-          domain: {
-            id: domain.id,
-            name: domain.name,
-            keywords: domainKeywords,
-          },
-          location: {
-            country: dto.country,
-            city: dto.city,
-            region: dto.region,
-          },
-          platforms: [...new Set(completedSourceKeys)],
-          inputs: fastEvidenceInputs,
-        });
+        if (fastEvidenceInputs.length > 0) {
+          TextInputBuilderService.primeFastContext({
+            collectionJobId: job.id,
+            language: dto.language,
+            domain: {
+              id: domain.id,
+              name: domain.name,
+              keywords: domainKeywords,
+            },
+            location: {
+              country: dto.country,
+              city: dto.city,
+              region: dto.region,
+            },
+            platforms: [...new Set(completedSourceKeys)],
+            inputs: fastEvidenceInputs,
+          });
+        } else if (
+          authoritativeTotals.totalPosts > 0 ||
+          authoritativeTotals.totalComments > 0
+        ) {
+          this.logger.warn(
+            `FAST_GENERATION cache bypass for job ${job.id}: persisted corpus ` +
+              `contains ${authoritativeTotals.totalPosts} post(s) and ` +
+              `${authoritativeTotals.totalComments} comment(s), but no fast NLP inputs were built.`,
+          );
+        }
       }
 
       return completedJob;
     } catch (error: unknown) {
-      const latestJob = await this.collectionJobService.findJobOrThrow(job.id);
+      let job: { id: string };
 
-      /*
-       * Do not overwrite a stopped job with FAILED.
-       */
+      try {
+        job = await jobPromise;
+      } catch {
+        /* CollectionJob creation failed; there is no persistent job to mutate. */
+        throw error;
+      }
+
+      const latestJob = await this.collectionJobService.findJobOrThrow(job.id);
       if (latestJob.status === CollectionJobStatus.STOPPED) {
         return latestJob;
       }
 
       const failedJob = await this.collectionJobService.failJob(job.id, error);
-
       await this.auditService.createLog({
         actorId,
-
         action: AuditAction.FAIL_DATA_COLLECTION,
-
         targetType: AuditTargetType.DATA_COLLECTION,
-
         targetId: job.id,
-
         newValue: {
           trigger,
-
           status: CollectionJobStatus.FAILED,
-
           completedSources,
           failedSources,
-
           failedReason: this.getErrorMessage(error),
-
           completedAt: failedJob.completedAt,
         },
       });
@@ -634,6 +628,115 @@ export class DataCollectionService {
     }
   }
 
+  private validateTrustedRuntimeSources(
+    sources: readonly {
+      readonly id: string;
+      readonly key: string;
+      readonly displayName: string;
+    }[],
+  ): { id: string; key: string; displayName: string }[] {
+    const runtimeKeys = new Set(
+      this.collectorsFactory.getImplementedSourceKeys().map((key) =>
+        key.trim().toLowerCase(),
+      ),
+    );
+
+    const normalized = sources.map((source) => ({
+      id: source.id.trim(),
+      key: source.key.trim().toLowerCase(),
+      displayName: source.displayName.trim(),
+    }));
+
+    const invalid = normalized.filter(
+      (source) => !source.id || !source.key || !runtimeKeys.has(source.key),
+    );
+    if (invalid.length > 0) {
+      throw new Error(
+        `Resolved idea-generation data source is no longer implemented: ${invalid
+          .map((source) => source.key || source.id)
+          .join(', ')}.`,
+      );
+    }
+
+    return [...new Map(normalized.map((source) => [source.key, source])).values()];
+  }
+
+
+  private buildFastEvidenceInputsForPersistedPosts(
+    posts: readonly CollectorPost[],
+    sourceKey: string,
+    relevanceTerms: readonly string[],
+    maxSavedComments: number,
+  ): IntelligentTextInput[] {
+    const inputs: IntelligentTextInput[] = [];
+    const isMarketplaceSource =
+      sourceKey === 'google-play' || sourceKey === 'app-store';
+
+    for (const post of posts) {
+      const externalPostId = post.externalId.trim();
+      if (!externalPostId) continue;
+
+      const postId = `${sourceKey}:post:${externalPostId}`;
+
+      if (!isMarketplaceSource) {
+        const postContent = [post.title?.trim(), post.content.trim()]
+          .filter(Boolean)
+          .join(' ')
+          .slice(0, 2_000);
+
+        if (postContent) {
+          inputs.push({
+            id: postId,
+            sourceType: 'POST',
+            title: post.title ?? null,
+            content: postContent,
+            language: this.parseFastLanguageCode(post.languageCode),
+            likesCount: post.likesCount,
+            repliesCount: post.repliesCount ?? post.comments.length,
+          });
+        }
+      }
+
+      const evidencePattern =
+        /\b(?:cannot|can'?t|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|need|needs|should|please add|feature request|wish|is it possible|can i|could i|how can i|why can'?t i)\b/iu;
+
+      const rankedComments = [...post.comments]
+        .filter((comment) => comment.content.trim().length > 0)
+        .sort((first, second) => {
+          const firstEvidence = evidencePattern.test(first.content) ? 1 : 0;
+          const secondEvidence = evidencePattern.test(second.content) ? 1 : 0;
+
+          return (
+            secondEvidence - firstEvidence ||
+            Math.max(second.likesCount ?? 0, 0) -
+              Math.max(first.likesCount ?? 0, 0)
+          );
+        })
+        .slice(0, Math.max(0, maxSavedComments));
+
+      for (const comment of rankedComments) {
+        const externalCommentId = comment.externalId.trim();
+        if (!externalCommentId) continue;
+
+        inputs.push({
+          id: `${sourceKey}:comment:${externalCommentId}`,
+          sourceType: 'COMMENT',
+          postId,
+          title: post.title ?? null,
+          content: comment.content.trim().slice(0, 1_200),
+          language: this.parseFastLanguageCode(comment.languageCode),
+          likesCount: comment.likesCount,
+          isComplaintEvidence: this.isProtectedComplaintEvidence(
+            comment.content,
+            post.title ?? '',
+            relevanceTerms,
+          ),
+        });
+      }
+    }
+
+    return inputs;
+  }
 
   private parseFastLanguageCode(
     value: string | null | undefined,
@@ -1281,7 +1384,7 @@ export class DataCollectionService {
   /**
    * Trims, removes empty values, and deduplicates strings.
    */
-  private unique(values: string[]): string[] {
+  private unique(values: readonly string[]): string[] {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 

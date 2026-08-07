@@ -20,7 +20,7 @@ const DEFAULT_PROVIDER_QUOTA_COOLDOWN_MINUTES = 15;
 const MIN_PROVIDER_QUOTA_COOLDOWN_MINUTES = 1;
 const MAX_PROVIDER_QUOTA_COOLDOWN_MINUTES = 24 * 60;
 
-const DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES = 3;
+const DEFAULT_MODEL_TRANSIENT_COOLDOWN_MINUTES = 10;
 const MIN_MODEL_TRANSIENT_COOLDOWN_MINUTES = 1;
 const MAX_MODEL_TRANSIENT_COOLDOWN_MINUTES = 60;
 
@@ -70,7 +70,11 @@ export class AiModelRoutingService {
   /** Duration for which an account-level provider quota failure is cached. */
   private readonly providerQuotaCooldownMs: number;
 
-  /** Duration for which one temporarily overloaded model is skipped. */
+  /**
+   * Duration for which one model with TIMEOUT/RATE_LIMIT/NETWORK/provider
+   * failure is skipped. Ten minutes prevents the next generation run from
+   * immediately paying the same timeout again while keeping recovery automatic.
+   */
   private readonly modelTransientCooldownMs: number;
 
   constructor(

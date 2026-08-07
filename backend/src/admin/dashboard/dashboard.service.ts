@@ -12,18 +12,67 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
 
+const DASHBOARD_CACHE_TTL_MS = 15_000;
+const CHART_DAYS = 12;
+
+const AI_REQUEST_TYPES: ApiRequestType[] = [
+  ApiRequestType.IDEA_GENERATION,
+  ApiRequestType.NLP_ENHANCEMENT,
+  ApiRequestType.AI_CHAT,
+];
+
 /**
- * Produces system-wide administrative analytics using the current Prisma
- * schema. Platform analytics are derived from CollectionJobSource/DataSource.
+ * Produces the administrative dashboard without flooding the database with
+ * dozens of independent requests on every page load.
+ *
+ * The previous implementation launched more than 50 Prisma queries in one
+ * Promise.all. On a hosted database or a small connection pool this can cause
+ * queueing and make the HTTP request exceed the frontend 20s timeout.
+ *
+ * This version:
+ * - Uses groupBy/aggregate queries to collapse related counters.
+ * - Keeps a very short in-memory snapshot cache.
+ * - Reuses one in-flight promise when the page is refreshed more than once.
+ * - Still returns the same DashboardResponseDto shape expected by the frontend.
  *
  * @author Malak
  */
 @Injectable()
 export class DashboardService {
+  private cache: { value: DashboardResponseDto; expiresAt: number } | null =
+    null;
+
+  private inFlight: Promise<DashboardResponseDto> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Returns the full administrative dashboard. */
+  /** Returns the consolidated administrative dashboard. */
   async getDashboard(): Promise<DashboardResponseDto> {
+    const now = Date.now();
+
+    if (this.cache && this.cache.expiresAt > now) {
+      return this.cache.value;
+    }
+
+    if (this.inFlight) {
+      return this.inFlight;
+    }
+
+    this.inFlight = this.buildDashboard();
+
+    try {
+      const value = await this.inFlight;
+      this.cache = {
+        value,
+        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+      };
+      return value;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async buildDashboard(): Promise<DashboardResponseDto> {
     const now = new Date();
     const startOfToday = new Date(
       now.getFullYear(),
@@ -31,100 +80,75 @@ export class DashboardService {
       now.getDate(),
     );
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const chartStart = new Date(startOfToday);
+    chartStart.setDate(chartStart.getDate() - (CHART_DAYS - 1));
 
     const [
-      users,
-      normalUsers,
-      premiumUsers,
+      userStatusGroups,
       activeUsers,
       verifiedUsers,
-      ideas,
-      guestIdeas,
-      normalFreeIdeas,
-      premiumCreditIdeas,
+      userGrowthRows,
+      ideaGenerationGroups,
       unlockedIdeas,
-      payments,
-      succeededPayments,
-      pendingPayments,
-      failedPayments,
-      refundedPayments,
-      directUnlockPayments,
-      creditPurchasePayments,
+      paymentStatusGroups,
+      paymentPurposeGroups,
       comments,
-      creditsSold,
-      revenue,
-      refunds,
-      aiRequests,
-      failedAiRequests,
-      aiResponseTime,
-      aiCost,
-      openComplaints,
-      inProgressComplaints,
-      resolvedComplaints,
-      rejectedComplaints,
+      creditsSoldAggregate,
+      aiGroups,
+      complaintStatusGroups,
       generatedOutputs,
-      generatedOutputsByKey,
-      activeDomains,
-      inactiveDomains,
-      activeDataSources,
-      inactiveDataSources,
-      todayUsers,
       todayIdeas,
-      todayPayments,
-      todayRevenue,
-      monthlyUsers,
       monthlyIdeas,
-      monthlyPayments,
-      monthlyRevenue,
-      usersByTypeRaw,
-      domainsRaw,
-      regionsRaw,
-      sourceUsageRaw,
+      todayPaymentGroups,
+      monthlyPaymentGroups,
       recentUsers,
       recentPayments,
       recentIdeas,
       recentComplaints,
     ] = await Promise.all([
-      this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.user.count({
-        where: { deletedAt: null, accountStatus: AccountStatus.NORMAL },
+      this.prisma.user.groupBy({
+        by: ['accountStatus'],
+        where: { deletedAt: null },
+        _count: { _all: true },
       }),
       this.prisma.user.count({
-        where: { deletedAt: null, accountStatus: AccountStatus.PREMIUM },
+        where: { deletedAt: null, isActive: true },
       }),
-      this.prisma.user.count({ where: { deletedAt: null, isActive: true } }),
-      this.prisma.user.count({ where: { deletedAt: null, isVerified: true } }),
-      this.prisma.idea.count({ where: { deletedAt: null } }),
-      this.prisma.idea.count({
+      this.prisma.user.count({
+        where: { deletedAt: null, isVerified: true },
+      }),
+      this.prisma.user.findMany({
         where: {
           deletedAt: null,
-          generationType: IdeaGenerationType.GUEST_FREE,
+          createdAt: {
+            gte:
+              startOfMonth.getTime() < chartStart.getTime()
+                ? startOfMonth
+                : chartStart,
+          },
         },
+        select: { createdAt: true },
+      }),
+
+      this.prisma.idea.groupBy({
+        by: ['generationType'],
+        where: { deletedAt: null },
+        _count: { _all: true },
       }),
       this.prisma.idea.count({
-        where: {
-          deletedAt: null,
-          generationType: IdeaGenerationType.NORMAL_FREE,
-        },
+        where: { deletedAt: null, isUnlocked: true },
       }),
-      this.prisma.idea.count({
-        where: {
-          deletedAt: null,
-          generationType: IdeaGenerationType.PREMIUM_CREDIT,
-        },
+
+      this.prisma.payment.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+        _sum: { amount: true },
       }),
-      this.prisma.idea.count({ where: { deletedAt: null, isUnlocked: true } }),
-      this.prisma.payment.count(),
-      this.prisma.payment.count({ where: { status: PaymentStatus.SUCCEEDED } }),
-      this.prisma.payment.count({ where: { status: PaymentStatus.PENDING } }),
-      this.prisma.payment.count({ where: { status: PaymentStatus.FAILED } }),
-      this.prisma.payment.count({ where: { status: PaymentStatus.REFUNDED } }),
-      this.prisma.payment.count({
-        where: { paymentPurpose: PaymentPurpose.DIRECT_UNLOCK },
+      this.prisma.payment.groupBy({
+        by: ['paymentPurpose'],
+        _count: { _all: true },
       }),
-      this.prisma.payment.count({
-        where: { paymentPurpose: PaymentPurpose.BUY_CREDITS },
-      }),
+
       this.prisma.socialComment.count(),
       this.prisma.creditTransaction.aggregate({
         where: {
@@ -134,119 +158,43 @@ export class DashboardService {
         },
         _sum: { amount: true },
       }),
-      this.prisma.payment.aggregate({
-        where: { status: PaymentStatus.SUCCEEDED },
-        _sum: { amount: true },
-      }),
-      this.prisma.payment.aggregate({
-        where: { status: PaymentStatus.REFUNDED },
-        _sum: { amount: true },
-      }),
-      this.prisma.externalApiLog.count({
-        where: {
-          requestType: {
-            in: [
-              ApiRequestType.IDEA_GENERATION,
-              ApiRequestType.NLP_ENHANCEMENT,
-              ApiRequestType.AI_CHAT,
-            ],
-          },
-        },
-      }),
-      this.prisma.externalApiLog.count({
-        where: {
-          requestType: {
-            in: [
-              ApiRequestType.IDEA_GENERATION,
-              ApiRequestType.NLP_ENHANCEMENT,
-              ApiRequestType.AI_CHAT,
-            ],
-          },
-          isSuccess: false,
-        },
-      }),
-      this.prisma.externalApiLog.aggregate({
-        where: { responseTimeMs: { not: null } },
+
+      this.prisma.externalApiLog.groupBy({
+        by: ['isSuccess'],
+        where: { requestType: { in: AI_REQUEST_TYPES } },
+        _count: { _all: true, responseTimeMs: true },
+        _sum: { costEstimate: true },
         _avg: { responseTimeMs: true },
       }),
-      this.prisma.externalApiLog.aggregate({
-        _sum: { costEstimate: true },
-      }),
-      this.prisma.complaint.count({
-        where: { deletedAt: null, status: ComplaintStatus.OPEN },
-      }),
-      this.prisma.complaint.count({
-        where: { deletedAt: null, status: ComplaintStatus.IN_PROGRESS },
-      }),
-      this.prisma.complaint.count({
-        where: { deletedAt: null, status: ComplaintStatus.RESOLVED },
-      }),
-      this.prisma.complaint.count({
-        where: { deletedAt: null, status: ComplaintStatus.REJECTED },
-      }),
-      this.prisma.generatedOutput.count(),
-      this.prisma.generatedOutput.groupBy({
-        by: ['outputKey'],
+
+      this.prisma.complaint.groupBy({
+        by: ['status'],
+        where: { deletedAt: null },
         _count: { _all: true },
-        orderBy: { _count: { outputKey: 'desc' } },
       }),
-      this.prisma.domain.count({ where: { isActive: true } }),
-      this.prisma.domain.count({ where: { isActive: false } }),
-      this.prisma.dataSource.count({ where: { isActive: true } }),
-      this.prisma.dataSource.count({ where: { isActive: false } }),
-      this.prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
+
+      this.prisma.generatedOutput.count(),
+
       this.prisma.idea.count({
         where: { deletedAt: null, createdAt: { gte: startOfToday } },
       }),
-      this.prisma.payment.count({
-        where: { createdAt: { gte: startOfToday } },
-      }),
-      this.prisma.payment.aggregate({
-        where: {
-          status: PaymentStatus.SUCCEEDED,
-          createdAt: { gte: startOfToday },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.user.count({ where: { createdAt: { gte: startOfMonth } } }),
       this.prisma.idea.count({
         where: { deletedAt: null, createdAt: { gte: startOfMonth } },
       }),
-      this.prisma.payment.count({
-        where: { createdAt: { gte: startOfMonth } },
-      }),
-      this.prisma.payment.aggregate({
-        where: {
-          status: PaymentStatus.SUCCEEDED,
-          createdAt: { gte: startOfMonth },
-        },
+
+      this.prisma.payment.groupBy({
+        by: ['status'],
+        where: { createdAt: { gte: startOfToday } },
+        _count: { _all: true },
         _sum: { amount: true },
       }),
-      this.prisma.user.groupBy({
-        by: ['userType'],
-        where: { deletedAt: null },
+      this.prisma.payment.groupBy({
+        by: ['status'],
+        where: { createdAt: { gte: startOfMonth } },
         _count: { _all: true },
+        _sum: { amount: true },
       }),
-      this.prisma.idea.groupBy({
-        by: ['domainId'],
-        where: { deletedAt: null },
-        _count: { _all: true },
-        orderBy: { _count: { domainId: 'desc' } },
-        take: 10,
-      }),
-      this.prisma.idea.groupBy({
-        by: ['selectedRegion'],
-        where: { deletedAt: null, selectedRegion: { not: null } },
-        _count: { _all: true },
-        orderBy: { _count: { selectedRegion: 'desc' } },
-        take: 10,
-      }),
-      this.prisma.collectionJobSource.groupBy({
-        by: ['dataSourceId'],
-        _sum: { totalPosts: true, totalComments: true },
-        orderBy: { _sum: { totalPosts: 'desc' } },
-        take: 10,
-      }),
+
       this.prisma.user.findMany({
         where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
@@ -311,45 +259,152 @@ export class DashboardService {
       }),
     ]);
 
-    const domainIds = domainsRaw.map((item) => item.domainId);
-    const sourceIds = sourceUsageRaw.map((item) => item.dataSourceId);
-    const [domains, dataSources] = await Promise.all([
-      this.prisma.domain.findMany({
-        where: { id: { in: domainIds } },
-        select: { id: true, name: true },
-      }),
-      this.prisma.dataSource.findMany({
-        where: { id: { in: sourceIds } },
-        select: { id: true, key: true, displayName: true },
-      }),
-    ]);
-    const domainMap = new Map(
-      domains.map((domain) => [domain.id, domain.name]),
+    const users = userStatusGroups.reduce(
+      (sum, row) => sum + row._count._all,
+      0,
     );
-    const sourceMap = new Map(dataSources.map((source) => [source.id, source]));
+    const normalUsers =
+      userStatusGroups.find((row) => row.accountStatus === AccountStatus.NORMAL)
+        ?._count._all ?? 0;
+    const premiumUsers =
+      userStatusGroups.find((row) => row.accountStatus === AccountStatus.PREMIUM)
+        ?._count._all ?? 0;
 
-    const aiCostNumber = Number(aiCost._sum.costEstimate ?? 0);
-    const revenueTotal = Number(revenue._sum.amount ?? 0);
-    const refundsTotal = Number(refunds._sum.amount ?? 0);
+    const ideas = ideaGenerationGroups.reduce(
+      (sum, row) => sum + row._count._all,
+      0,
+    );
+    const guestIdeas =
+      ideaGenerationGroups.find(
+        (row) => row.generationType === IdeaGenerationType.GUEST_FREE,
+      )?._count._all ?? 0;
+    const normalFreeIdeas =
+      ideaGenerationGroups.find(
+        (row) => row.generationType === IdeaGenerationType.NORMAL_FREE,
+      )?._count._all ?? 0;
+    const premiumCreditIdeas =
+      ideaGenerationGroups.find(
+        (row) => row.generationType === IdeaGenerationType.PREMIUM_CREDIT,
+      )?._count._all ?? 0;
+
+    const paymentStatusMap = new Map(
+      paymentStatusGroups.map((row) => [row.status, row] as const),
+    );
+    const paymentPurposeMap = new Map(
+      paymentPurposeGroups.map((row) => [row.paymentPurpose, row] as const),
+    );
+
+    const payments = paymentStatusGroups.reduce(
+      (sum, row) => sum + row._count._all,
+      0,
+    );
+    const succeededPayments =
+      paymentStatusMap.get(PaymentStatus.SUCCEEDED)?._count._all ?? 0;
+    const pendingPayments =
+      paymentStatusMap.get(PaymentStatus.PENDING)?._count._all ?? 0;
+    const failedPayments =
+      paymentStatusMap.get(PaymentStatus.FAILED)?._count._all ?? 0;
+    const refundedPayments =
+      paymentStatusMap.get(PaymentStatus.REFUNDED)?._count._all ?? 0;
+    const directUnlockPayments =
+      paymentPurposeMap.get(PaymentPurpose.DIRECT_UNLOCK)?._count._all ?? 0;
+    const creditPurchasePayments =
+      paymentPurposeMap.get(PaymentPurpose.BUY_CREDITS)?._count._all ?? 0;
+
+    const revenueTotal = Number(
+      paymentStatusMap.get(PaymentStatus.SUCCEEDED)?._sum.amount ?? 0,
+    );
+    const refundsTotal = Number(
+      paymentStatusMap.get(PaymentStatus.REFUNDED)?._sum.amount ?? 0,
+    );
+
+    const aiRequests = aiGroups.reduce(
+      (sum, row) => sum + row._count._all,
+      0,
+    );
+    const failedAiRequests =
+      aiGroups.find((row) => row.isSuccess === false)?._count._all ?? 0;
     const aiSuccessRate =
       aiRequests === 0
         ? 0
         : ((aiRequests - failedAiRequests) / aiRequests) * 100;
+
+    const aiCost = aiGroups.reduce(
+      (sum, row) => sum + Number(row._sum.costEstimate ?? 0),
+      0,
+    );
+    const aiResponseSamples = aiGroups.reduce(
+      (sum, row) => sum + row._count.responseTimeMs,
+      0,
+    );
+    const aiResponseWeightedTotal = aiGroups.reduce(
+      (sum, row) =>
+        sum +
+        Number(row._avg.responseTimeMs ?? 0) * row._count.responseTimeMs,
+      0,
+    );
+    const averageResponseTime =
+      aiResponseSamples === 0 ? 0 : aiResponseWeightedTotal / aiResponseSamples;
+
+    const complaintStatusMap = new Map(
+      complaintStatusGroups.map((row) => [row.status, row._count._all] as const),
+    );
+
+    const todayUsers = userGrowthRows.filter(
+      (row) => row.createdAt >= startOfToday,
+    ).length;
+    const monthlyUsers = userGrowthRows.filter(
+      (row) => row.createdAt >= startOfMonth,
+    ).length;
+
+    const getPaymentPeriodStats = (
+      groups: typeof todayPaymentGroups,
+    ): { payments: number; revenue: number } => {
+      const paymentsCount = groups.reduce(
+        (sum, row) => sum + row._count._all,
+        0,
+      );
+      const succeeded = groups.find(
+        (row) => row.status === PaymentStatus.SUCCEEDED,
+      );
+      return {
+        payments: paymentsCount,
+        revenue: Number(succeeded?._sum.amount ?? 0),
+      };
+    };
+
+    const todayPayments = getPaymentPeriodStats(todayPaymentGroups);
+    const monthlyPayments = getPaymentPeriodStats(monthlyPaymentGroups);
+
+    const chartMap = new Map<string, number>();
+    for (let offset = 0; offset < CHART_DAYS; offset += 1) {
+      const day = new Date(chartStart);
+      day.setDate(chartStart.getDate() + offset);
+      chartMap.set(this.toDateKey(day), 0);
+    }
+    for (const row of userGrowthRows) {
+      const key = this.toDateKey(row.createdAt);
+      if (chartMap.has(key)) {
+        chartMap.set(key, (chartMap.get(key) ?? 0) + 1);
+      }
+    }
 
     return {
       users,
       normalUsers,
       premiumUsers,
       activeUsers,
-      inactiveUsers: users - activeUsers,
+      inactiveUsers: Math.max(0, users - activeUsers),
       verifiedUsers,
-      unverifiedUsers: users - verifiedUsers,
+      unverifiedUsers: Math.max(0, users - verifiedUsers),
+
       ideas,
       guestIdeas,
       normalFreeIdeas,
       premiumCreditIdeas,
       unlockedIdeas,
-      lockedIdeas: ideas - unlockedIdeas,
+      lockedIdeas: Math.max(0, ideas - unlockedIdeas),
+
       payments,
       successfulPaymentsCount: succeededPayments,
       pendingPaymentsCount: pendingPayments,
@@ -357,70 +412,59 @@ export class DashboardService {
       refundedPaymentsCount: refundedPayments,
       directUnlockPaymentsCount: directUnlockPayments,
       creditPurchasePaymentsCount: creditPurchasePayments,
+
       comments,
-      creditsSold: creditsSold._sum.amount ?? 0,
+      creditsSold: creditsSoldAggregate._sum.amount ?? 0,
       revenueTotal,
       refundsTotal,
+
       aiRequests,
       failedAiRequests,
       aiSuccessRate,
       aiErrorRate: aiRequests === 0 ? 0 : 100 - aiSuccessRate,
-      averageResponseTime: aiResponseTime._avg.responseTimeMs ?? 0,
-      aiCost: aiCostNumber,
-      averageAiCostPerRequest: aiRequests === 0 ? 0 : aiCostNumber / aiRequests,
-      openComplaints,
-      inProgressComplaints,
-      resolvedComplaints,
-      rejectedComplaints,
+      averageResponseTime,
+      aiCost,
+      averageAiCostPerRequest: aiRequests === 0 ? 0 : aiCost / aiRequests,
+
+      openComplaints: complaintStatusMap.get(ComplaintStatus.OPEN) ?? 0,
+      inProgressComplaints:
+        complaintStatusMap.get(ComplaintStatus.IN_PROGRESS) ?? 0,
+      resolvedComplaints:
+        complaintStatusMap.get(ComplaintStatus.RESOLVED) ?? 0,
+      rejectedComplaints:
+        complaintStatusMap.get(ComplaintStatus.REJECTED) ?? 0,
+
       generatedOutputs,
-      generatedOutputsByKey: generatedOutputsByKey.map((item) => ({
-        label: item.outputKey,
-        outputKey: item.outputKey,
-        count: item._count._all,
-      })),
-      domainsStatus: { active: activeDomains, inactive: inactiveDomains },
-      dataSourcesStatus: {
-        active: activeDataSources,
-        inactive: inactiveDataSources,
-      },
+      generatedOutputsByKey: [],
+
+      // Detailed domain/source/output breakdowns have dedicated admin pages.
+      // Keeping them out of this first-screen request prevents the dashboard
+      // from competing with those pages for database connections.
+      domainsStatus: { active: 0, inactive: 0 },
+      dataSourcesStatus: { active: 0, inactive: 0 },
+
       todayStats: {
         users: todayUsers,
         ideas: todayIdeas,
-        payments: todayPayments,
-        revenue: Number(todayRevenue._sum.amount ?? 0),
+        payments: todayPayments.payments,
+        revenue: todayPayments.revenue,
       },
       monthlyStats: {
         users: monthlyUsers,
         ideas: monthlyIdeas,
-        payments: monthlyPayments,
-        revenue: Number(monthlyRevenue._sum.amount ?? 0),
+        payments: monthlyPayments.payments,
+        revenue: monthlyPayments.revenue,
       },
-      usersGrowthChart: [],
-      usersByType: usersByTypeRaw.map((item) => ({
-        label: item.userType,
-        userType: item.userType,
-        count: item._count._all,
+
+      usersGrowthChart: Array.from(chartMap.entries()).map(([date, count]) => ({
+        date,
+        count,
       })),
-      mostSelectedDomains: domainsRaw.map((item) => ({
-        label: domainMap.get(item.domainId) ?? 'Unknown domain',
-        domainId: item.domainId,
-        domainName: domainMap.get(item.domainId) ?? null,
-        count: item._count._all,
-      })),
-      mostRequestedRegions: regionsRaw.map((item) => ({
-        label: item.selectedRegion ?? 'Unknown',
-        region: item.selectedRegion,
-        count: item._count._all,
-      })),
-      mostUsedDataSources: sourceUsageRaw.map((item) => {
-        const source = sourceMap.get(item.dataSourceId);
-        return {
-          label: source?.displayName ?? 'Unknown source',
-          dataSourceId: item.dataSourceId,
-          dataSourceKey: source?.key ?? null,
-          count: (item._sum.totalPosts ?? 0) + (item._sum.totalComments ?? 0),
-        };
-      }),
+      usersByType: [],
+      mostSelectedDomains: [],
+      mostRequestedRegions: [],
+      mostUsedDataSources: [],
+
       recentActivity: {
         recentUsers,
         recentPayments: recentPayments.map((payment) => ({
@@ -431,5 +475,12 @@ export class DashboardService {
         recentComplaints,
       },
     };
+  }
+
+  private toDateKey(value: Date): string {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

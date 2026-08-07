@@ -559,11 +559,28 @@ export default function GuestGenerateIdeaPage() {
      */
     if (loading) {
         return (
-            <div className="guest-idea-loading">
-                <LoaderCircle className="guest-spin" />
+            <section className="guest-bootstrap-page">
+                <div className="guest-bootstrap-mark" aria-hidden="true">
+                    <span className="guest-bootstrap-ring guest-bootstrap-ring--one" />
+                    <span className="guest-bootstrap-ring guest-bootstrap-ring--two" />
+                    <span className="guest-bootstrap-core">
+                        <Lightbulb />
+                    </span>
+                    <i className="guest-bootstrap-node guest-bootstrap-node--one" />
+                    <i className="guest-bootstrap-node guest-bootstrap-node--two" />
+                    <i className="guest-bootstrap-node guest-bootstrap-node--three" />
+                </div>
 
-                <b>Preparing your guest studio…</b>
-            </div>
+                <div className="guest-bootstrap-copy">
+                    <span>Voxidence guest studio</span>
+                    <b>Preparing your discovery space</b>
+                    <small>Loading the domains and context you can build from.</small>
+                </div>
+
+                <div className="guest-bootstrap-line" aria-hidden="true">
+                    <span />
+                </div>
+            </section>
         );
     }
 
@@ -739,7 +756,16 @@ export default function GuestGenerateIdeaPage() {
     if (run) {
         return (
             <section className="guest-progress-page">
-                <div className="guest-progress-card">
+                <div
+                    className={[
+                        'guest-progress-card',
+                        !generationFailed && !generationCompleted
+                            ? 'guest-progress-card--creating'
+                            : '',
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
+                >
                     {generationFailed ? (
                         <>
                             <span className="guest-icon">
@@ -799,48 +825,91 @@ export default function GuestGenerateIdeaPage() {
                             </small>
                         </>
                     ) : !generationCompleted ? (
-                        <>
-                            <div className="guest-progress-orb">
-                                <LoaderCircle className="guest-spin" />
+                        <div className="guest-creation-stage">
+                            <div className="guest-creation-visual" aria-hidden="true">
+                                <div className="guest-creation-field">
+                                    <span className="guest-creation-halo guest-creation-halo--one" />
+                                    <span className="guest-creation-halo guest-creation-halo--two" />
+
+                                    <div className="guest-creation-core">
+                                        <Lightbulb />
+                                    </div>
+
+                                    <div className="guest-creation-chip guest-creation-chip--voices">
+                                        <span className="guest-creation-chip-icon">
+                                            <Sparkles />
+                                        </span>
+                                        <div>
+                                            <small>01</small>
+                                            <b>Signal</b>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-creation-chip guest-creation-chip--evidence">
+                                        <span className="guest-creation-chip-icon">
+                                            <Check />
+                                        </span>
+                                        <div>
+                                            <small>02</small>
+                                            <b>Evidence</b>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-creation-chip guest-creation-chip--idea">
+                                        <span className="guest-creation-chip-icon">
+                                            <WandSparkles />
+                                        </span>
+                                        <div>
+                                            <small>03</small>
+                                            <b>Idea</b>
+                                        </div>
+                                    </div>
+
+                                    <span className="guest-creation-pulse guest-creation-pulse--one" />
+                                    <span className="guest-creation-pulse guest-creation-pulse--two" />
+                                    <span className="guest-creation-pulse guest-creation-pulse--three" />
+                                </div>
                             </div>
 
-                            <p className="guest-eyebrow">
-                                Voxidence intelligence is working
-                            </p>
-
-                            <h1>
-                                Turning your signal into a
-                                validated software idea.
-                            </h1>
-
-                            <p
-                                className="guest-progress-message"
-                                aria-live="polite"
-                            >
-                                {
-                                    GUEST_PROGRESS_MESSAGES[
-                                    progressMessageIndex
-                                    ]
-                                }
-                            </p>
-
-                            <div
-                                className="guest-progress-bar guest-progress-bar--indeterminate"
-                                role="progressbar"
-                                aria-label="Your idea generation is in progress"
-                            >
-                                <span />
-                            </div>
-
-                            <div className="guest-progress-note">
-                                <Sparkles />
-
-                                <span>
-                                    Please keep this page open. This may take a
-                                    few minutes.
+                            <div className="guest-creation-copy">
+                                <span className="guest-creation-kicker">
+                                    <span className="guest-creation-live-dot" />
+                                    Voxidence is discovering
                                 </span>
+
+                                <h1>
+                                    Your signal is becoming
+                                    <span> a buildable idea.</span>
+                                </h1>
+
+                                <p
+                                    className="guest-creation-message"
+                                    aria-live="polite"
+                                >
+                                    {
+                                        GUEST_PROGRESS_MESSAGES[
+                                            progressMessageIndex
+                                        ]
+                                    }
+                                </p>
+
+                                <div className="guest-creation-track" aria-hidden="true">
+                                    <span />
+                                </div>
+
+                                <div className="guest-creation-foot">
+                                    <div>
+                                        <Sparkles />
+                                        <span>
+                                            Looking for a meaningful direction,
+                                            not just generating random text.
+                                        </span>
+                                    </div>
+
+                                    <small>Please keep this page open.</small>
+                                </div>
                             </div>
-                        </>
+                        </div>
                     ) : (
                         <>
                             <span className="guest-success-icon">
@@ -932,444 +1001,511 @@ export default function GuestGenerateIdeaPage() {
      */
     return (
         <section className="guest-generator-page">
-            <div className="guest-generator-shell">
-                <header className="guest-generator-header">
-                    <div className="guest-generator-toolbar">
-                        <button
-                            type="button"
-                            className="guest-back-home"
-                            onClick={() => navigate('/')}
-                        >
-                            <ArrowLeft />
-                            Back home
-                        </button>
+            <div className="guest-generator-shell guest-canvas-shell">
+                <div className="guest-canvas-topbar">
+                    <button
+                        type="button"
+                        className="guest-back-home guest-canvas-back"
+                        onClick={() => navigate('/')}
+                    >
+                        <ArrowLeft />
+                        Back home
+                    </button>
 
-                        <span className="guest-eyebrow">
-                            <WandSparkles />
-                            One free guest idea
+                    <div className="guest-canvas-brand">
+                        <span className="guest-canvas-brand-mark">
+                            <Lightbulb />
+                        </span>
+
+                        <span>
+                            <b>Voxidence</b>
+                            <small>Evidence-led idea discovery</small>
                         </span>
                     </div>
 
-                    <h1>
-                        Describe the problem.
-                        <br />
-
-                        <span>
-                            We’ll discover what is worth
-                            building.
-                        </span>
-                    </h1>
-
-                    <p>
-                        No account is needed to begin. You only
-                        register after your idea is generated,
-                        so you can save and continue it.
-                    </p>
-                </header>
-
-                <div className="guest-stepper">
-                    {FORM_STEPS.map((label, index) => {
-                        const isActive = index === step;
-                        const isCompleted = index < step;
-
-                        return (
-                            <div
-                                key={label}
-                                className={[
-                                    isActive
-                                        ? 'active'
-                                        : '',
-                                    isCompleted
-                                        ? 'done'
-                                        : '',
-                                ]
-                                    .filter(Boolean)
-                                    .join(' ')}
-                            >
-                                <span>
-                                    {isCompleted ? (
-                                        <Check />
-                                    ) : (
-                                        index + 1
-                                    )}
-                                </span>
-
-                                <b>{label}</b>
-                            </div>
-                        );
-                    })}
+                    <div className="guest-canvas-pass">
+                        <Sparkles />
+                        <span>1 free guest idea</span>
+                    </div>
                 </div>
 
-                <div className="guest-form-card">
-                    {step === 0 ? (
-                        <div className="guest-panel">
-                            <span className="guest-panel-icon">
-                                <Sparkles />
+                <div className="guest-canvas">
+                    <header className="guest-canvas-head">
+                        <div className="guest-canvas-head-copy">
+                            <span className="guest-canvas-overline">
+                                Step {String(step + 1).padStart(2, '0')}
+                                <i />
+                                {FORM_STEPS[step]}
                             </span>
 
-                            <h2>
-                                What problem have you noticed?
-                            </h2>
+                            <h1>
+                                {step === 0
+                                    ? 'Start with the problem, not the solution.'
+                                    : step === 1
+                                        ? 'Give the signal a direction.'
+                                        : step === 2
+                                            ? 'Anchor the idea in a real place.'
+                                            : 'Your discovery brief is ready.'}
+                            </h1>
 
                             <p>
-                                Explain who faces it, what keeps
-                                happening, and why current
-                                solutions are not enough.
+                                {step === 0
+                                    ? 'Tell us what keeps going wrong, who feels it, and why it matters.'
+                                    : step === 1
+                                        ? 'Choose a software space, or let Voxidence infer the best fit from your signal.'
+                                        : step === 2
+                                            ? 'Local context helps shape relevance, regulations, and realistic market assumptions.'
+                                            : 'Check the essentials once, then let Voxidence turn them into an evidence-backed software idea.'}
                             </p>
+                        </div>
 
-                            <textarea
-                                value={draft.description}
-                                maxLength={2000}
-                                placeholder="Example: University students struggle to coordinate shared transportation when class schedules change…"
-                                onChange={(event) =>
-                                    updateDraft({
-                                        description:
-                                            event.target.value,
-                                    })
-                                }
-                            />
+                        <div className="guest-canvas-progress" aria-label={`Step ${step + 1} of ${FORM_STEPS.length}`}>
+                            {FORM_STEPS.map((label, index) => {
+                                const isActive = index === step;
+                                const isCompleted = index < step;
 
-                            <div
-                                className={[
-                                    'guest-field-meta',
-                                    descriptionExceedsLimit
-                                        ? 'limit-exceeded'
-                                        : hasValidDescription
-                                            ? 'ready'
-                                            : '',
-                                ]
-                                    .filter(Boolean)
-                                    .join(' ')}
-                            >
-                                <span>
-                                    {descriptionExceedsLimit
-                                        ? `Reduce the description to ${MAX_DESCRIPTION_WORDS} words.`
-                                        : hasValidDescription
-                                            ? 'Detailed enough — you can continue.'
-                                            : `Write at least ${MIN_DESCRIPTION_WORDS} words, or choose a domain instead.`}
+                                return (
+                                    <div
+                                        key={label}
+                                        className={[
+                                            'guest-canvas-progress-step',
+                                            isActive ? 'active' : '',
+                                            isCompleted ? 'done' : '',
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' ')}
+                                    >
+                                        <span>
+                                            {isCompleted ? <Check /> : index + 1}
+                                        </span>
+                                        <b>{label}</b>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </header>
+
+                    <div className="guest-canvas-body">
+                        <aside className="guest-canvas-visual">
+                            <div className="guest-canvas-visual-top">
+                                <span className="guest-canvas-visual-tag">
+                                    {step === 0
+                                        ? 'Community signal'
+                                        : step === 1
+                                            ? 'Opportunity focus'
+                                            : step === 2
+                                                ? 'Local context'
+                                                : 'Discovery brief'}
                                 </span>
 
-                                <b>
-                                    {descriptionWordCount}/
-                                    {MAX_DESCRIPTION_WORDS} words
-                                </b>
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {step === 1 ? (
-                        <div className="guest-panel">
-                            <span className="guest-panel-icon">
-                                <Lightbulb />
-                            </span>
-
-                            <h2>
-                                Choose the opportunity area.
-                            </h2>
-
-                            <p>
-                                {hasValidDescription
-                                    ? 'Choose a software domain to narrow the analysis, or skip this step and let Voxidence infer it from your written signal.'
-                                    : `Select the software domain that should guide generation. A domain is required because the written signal contains fewer than ${MIN_DESCRIPTION_WORDS} words.`}
-                            </p>
-
-                            {hasValidDescription ? (
-                                <button
-                                    type="button"
-                                    className={[
-                                        'guest-auto-domain',
-                                        !draft.domainId
-                                            ? 'selected'
-                                            : '',
-                                    ]
-                                        .filter(Boolean)
-                                        .join(' ')}
-                                    onClick={() =>
-                                        updateDraft({
-                                            domainId: '',
-                                        })
-                                    }
-                                >
-                                    <Sparkles />
-
-                                    <span>
-                                        <b>
-                                            Let Voxidence choose
-                                        </b>
-
-                                        <small>
-                                            Optional — inferred from
-                                            your written signal
-                                        </small>
-                                    </span>
-
-                                    <Check />
-                                </button>
-                            ) : null}
-
-                            <div className="guest-domain-grid">
-                                {domains.map((domain) => {
-                                    const isSelected =
-                                        String(
-                                            draft.domainId,
-                                        ) ===
-                                        String(domain.id);
-
-                                    return (
-                                        <button
-                                            type="button"
-                                            key={domain.id}
-                                            className={
-                                                isSelected
-                                                    ? 'selected'
-                                                    : ''
-                                            }
-                                            onClick={() =>
-                                                updateDraft({
-                                                    domainId:
-                                                        domain.id,
-                                                })
-                                            }
-                                        >
-                                            <span>
-                                                {domain.icon ||
-                                                    '✦'}
-                                            </span>
-
-                                            <b>
-                                                {domain.name ||
-                                                    domain.displayName}
-                                            </b>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {step === 2 ? (
-                        <div className="guest-panel">
-                            <span className="guest-panel-icon">
-                                <MapPin />
-                            </span>
-
-                            <h2>
-                                Where should the idea create
-                                impact?
-                            </h2>
-
-                            <p>
-                                Location improves local
-                                relevance, regulations, and
-                                market assumptions.
-                            </p>
-
-                            <div className="guest-location-grid">
-                                <label>
-                                    <span>Country *</span>
-
-                                    <input
-                                        value={draft.country}
-                                        onChange={(event) =>
-                                            updateDraft({
-                                                country:
-                                                    event.target
-                                                        .value,
-                                            })
-                                        }
-                                    />
-                                </label>
-
-                                <label>
-                                    <span>City</span>
-
-                                    <input
-                                        value={draft.city}
-                                        placeholder="Nablus"
-                                        onChange={(event) =>
-                                            updateDraft({
-                                                city: event
-                                                    .target
-                                                    .value,
-                                            })
-                                        }
-                                    />
-                                </label>
-
-                                <label>
-                                    <span>Region</span>
-
-                                    <input
-                                        value={draft.region}
-                                        placeholder="West Bank"
-                                        onChange={(event) =>
-                                            updateDraft({
-                                                region:
-                                                    event.target
-                                                        .value,
-                                            })
-                                        }
-                                    />
-                                </label>
-
-                                <label>
-                                    <span>Language</span>
-
-                                    <select
-                                        value={draft.language}
-                                        onChange={(event) =>
-                                            updateDraft({
-                                                language:
-                                                    event.target
-                                                        .value,
-                                            })
-                                        }
-                                    >
-                                        {languages.map(
-                                            (language) => (
-                                                <option
-                                                    key={
-                                                        language.code
-                                                    }
-                                                    value={
-                                                        language.code
-                                                    }
-                                                >
-                                                    {language.name}
-                                                </option>
-                                            ),
-                                        )}
-                                    </select>
-                                </label>
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {step === 3 ? (
-                        <div className="guest-panel">
-                            <span className="guest-panel-icon">
-                                <Globe2 />
-                            </span>
-
-                            <h2>Ready for discovery.</h2>
-
-                            <p>
-                                Review your signal before Voxidence
-                                starts the evidence and AI
-                                pipeline.
-                            </p>
-
-                            <div className="guest-review">
-                                <article>
-                                    <small>
-                                        Problem signal
-                                    </small>
-
-                                    <p>
-                                        {draft.description ||
-                                            'No written signal — generation will use the selected domain.'}
-                                    </p>
-                                </article>
-
-                                <div>
-                                    <span>
-                                        <small>
-                                            Domain
-                                        </small>
-
-                                        <b>
-                                            {selectedDomain?.name ||
-                                                selectedDomain?.displayName ||
-                                                'Auto-detected'}
-                                        </b>
-                                    </span>
-
-                                    <span>
-                                        <small>
-                                            Location
-                                        </small>
-
-                                        <b>
-                                            {[
-                                                draft.city,
-                                                draft.region,
-                                                draft.country,
-                                            ]
-                                                .filter(Boolean)
-                                                .join(', ')}
-                                        </b>
-                                    </span>
-
-                                    <span>
-                                        <small>
-                                            Access
-                                        </small>
-
-                                        <b>
-                                            One guest idea
-                                        </b>
-                                    </span>
+                                <div className="guest-canvas-visual-icon">
+                                    {step === 0 ? (
+                                        <Sparkles />
+                                    ) : step === 1 ? (
+                                        <Lightbulb />
+                                    ) : step === 2 ? (
+                                        <MapPin />
+                                    ) : (
+                                        <Check />
+                                    )}
                                 </div>
                             </div>
-                        </div>
-                    ) : null}
 
-                    {error ? (
-                        <div className="guest-error">
-                            {error}
-                        </div>
-                    ) : null}
+                            <div className="guest-canvas-signal" aria-hidden="true">
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                                <span />
+                            </div>
 
-                    <footer className="guest-form-actions">
-                        <button
-                            type="button"
-                            className="guest-secondary"
-                            onClick={handlePrevious}
-                        >
-                            <ArrowLeft />
+                            <div className="guest-canvas-visual-flow">
+                                <div className={step >= 0 ? 'active' : ''}>
+                                    <span>01</span>
+                                    <b>Listen</b>
+                                </div>
 
-                            {step === 0
-                                ? 'Cancel'
-                                : 'Previous'}
-                        </button>
+                                <i />
 
-                        {step <
-                            FORM_STEPS.length - 1 ? (
-                            <button
-                                type="button"
-                                className="guest-primary"
-                                disabled={!canContinue}
-                                onClick={handleContinue}
-                            >
-                                {step === 0
-                                    ? hasValidDescription
-                                        ? 'Continue'
-                                        : 'Choose domain instead'
-                                    : step === 1 &&
-                                        hasValidDescription &&
-                                        !draft.domainId
-                                        ? 'Skip domain'
-                                        : 'Continue'}
+                                <div className={step >= 1 ? 'active' : ''}>
+                                    <span>02</span>
+                                    <b>Focus</b>
+                                </div>
 
-                                <ArrowRight />
-                            </button>
-                        ) : (
-                            <button
-                                type="button"
-                                className="guest-primary"
-                                disabled={submitting}
-                                onClick={submitGeneration}
-                            >
-                                {submitting ? (
-                                    <LoaderCircle className="guest-spin" />
+                                <i />
+
+                                <div className={step >= 2 ? 'active' : ''}>
+                                    <span>03</span>
+                                    <b>Ground</b>
+                                </div>
+
+                                <i />
+
+                                <div className={step >= 3 ? 'active' : ''}>
+                                    <span>04</span>
+                                    <b>Build</b>
+                                </div>
+                            </div>
+
+                            <div className="guest-canvas-visual-note">
+                                <WandSparkles />
+                                <span>
+                                    <b>Evidence before ideas.</b>
+                                    <small>
+                                        We use your context to search for a meaningful opportunity,
+                                        not a random concept.
+                                    </small>
+                                </span>
+                            </div>
+                        </aside>
+
+                        <main className="guest-form-card guest-canvas-form">
+                            {step === 0 ? (
+                                <div className="guest-panel guest-canvas-panel">
+                                    <div className="guest-canvas-section-title">
+                                        <span>01</span>
+                                        <div>
+                                            <b>Describe the signal</b>
+                                            <small>Four words are enough to begin.</small>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-canvas-textarea">
+                                        <textarea
+                                            value={draft.description}
+                                            maxLength={2000}
+                                            placeholder="Example: Students struggle to coordinate shared transportation when class schedules change at short notice…"
+                                            onChange={(event) =>
+                                                updateDraft({
+                                                    description: event.target.value,
+                                                })
+                                            }
+                                        />
+
+                                        <span className="guest-canvas-textarea-mark">
+                                            <Sparkles />
+                                        </span>
+                                    </div>
+
+                                    <div
+                                        className={[
+                                            'guest-field-meta',
+                                            'guest-canvas-meta',
+                                            descriptionExceedsLimit
+                                                ? 'limit-exceeded'
+                                                : hasValidDescription
+                                                    ? 'ready'
+                                                    : '',
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' ')}
+                                    >
+                                        <span>
+                                            {descriptionExceedsLimit
+                                                ? `Reduce the description to ${MAX_DESCRIPTION_WORDS} words.`
+                                                : hasValidDescription
+                                                    ? 'Good signal — there is enough context to continue.'
+                                                    : `Write at least ${MIN_DESCRIPTION_WORDS} words, or choose a domain in the next step.`}
+                                        </span>
+
+                                        <b>
+                                            {descriptionWordCount}/{MAX_DESCRIPTION_WORDS}
+                                        </b>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {step === 1 ? (
+                                <div className="guest-panel guest-canvas-panel">
+                                    <div className="guest-canvas-section-title">
+                                        <span>02</span>
+                                        <div>
+                                            <b>Choose the opportunity space</b>
+                                            <small>
+                                                {hasValidDescription
+                                                    ? 'Optional — Voxidence can infer it for you.'
+                                                    : 'Required because the signal is very short.'}
+                                            </small>
+                                        </div>
+                                    </div>
+
+                                    {hasValidDescription ? (
+                                        <button
+                                            type="button"
+                                            className={[
+                                                'guest-auto-domain',
+                                                'guest-canvas-auto-domain',
+                                                !draft.domainId ? 'selected' : '',
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' ')}
+                                            onClick={() =>
+                                                updateDraft({ domainId: '' })
+                                            }
+                                        >
+                                            <span className="guest-canvas-auto-orb">
+                                                <WandSparkles />
+                                            </span>
+
+                                            <span>
+                                                <b>Let Voxidence decide</b>
+                                                <small>
+                                                    Infer the strongest domain from the problem signal.
+                                                </small>
+                                            </span>
+
+                                            <span className="guest-canvas-auto-check">
+                                                <Check />
+                                            </span>
+                                        </button>
+                                    ) : null}
+
+                                    <div className="guest-domain-grid guest-canvas-domain-grid">
+                                        {domains.map((domain) => {
+                                            const isSelected =
+                                                String(draft.domainId) === String(domain.id);
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={domain.id}
+                                                    className={isSelected ? 'selected' : ''}
+                                                    onClick={() =>
+                                                        updateDraft({ domainId: domain.id })
+                                                    }
+                                                >
+                                                    <span className="guest-canvas-domain-icon">
+                                                        {domain.icon || '✦'}
+                                                    </span>
+
+                                                    <b>
+                                                        {domain.name || domain.displayName}
+                                                    </b>
+
+                                                    <span className="guest-canvas-domain-selected">
+                                                        <Check />
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {step === 2 ? (
+                                <div className="guest-panel guest-canvas-panel">
+                                    <div className="guest-canvas-section-title">
+                                        <span>03</span>
+                                        <div>
+                                            <b>Add local context</b>
+                                            <small>Only country is required.</small>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-location-grid guest-canvas-location-grid">
+                                        <label>
+                                            <span>Country *</span>
+                                            <div className="guest-canvas-field">
+                                                <Globe2 />
+                                                <input
+                                                    value={draft.country}
+                                                    onChange={(event) =>
+                                                        updateDraft({
+                                                            country: event.target.value,
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                        </label>
+
+                                        <label>
+                                            <span>City</span>
+                                            <div className="guest-canvas-field">
+                                                <MapPin />
+                                                <input
+                                                    value={draft.city}
+                                                    placeholder="Nablus"
+                                                    onChange={(event) =>
+                                                        updateDraft({
+                                                            city: event.target.value,
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                        </label>
+
+                                        <label>
+                                            <span>Region</span>
+                                            <div className="guest-canvas-field">
+                                                <MapPin />
+                                                <input
+                                                    value={draft.region}
+                                                    placeholder="West Bank"
+                                                    onChange={(event) =>
+                                                        updateDraft({
+                                                            region: event.target.value,
+                                                        })
+                                                    }
+                                                />
+                                            </div>
+                                        </label>
+
+                                        <label>
+                                            <span>Language</span>
+                                            <div className="guest-canvas-field">
+                                                <Globe2 />
+                                                <select
+                                                    value={draft.language}
+                                                    onChange={(event) =>
+                                                        updateDraft({
+                                                            language: event.target.value,
+                                                        })
+                                                    }
+                                                >
+                                                    {languages.map((language) => (
+                                                        <option
+                                                            key={language.code}
+                                                            value={language.code}
+                                                        >
+                                                            {language.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {step === 3 ? (
+                                <div className="guest-panel guest-canvas-panel">
+                                    <div className="guest-canvas-section-title">
+                                        <span>04</span>
+                                        <div>
+                                            <b>Final discovery brief</b>
+                                            <small>Everything Voxidence will start from.</small>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-review guest-canvas-review">
+                                        <article className="guest-canvas-review-signal">
+                                            <span>Problem signal</span>
+                                            <p>
+                                                {draft.description ||
+                                                    'No written signal — generation will use the selected domain.'}
+                                            </p>
+                                        </article>
+
+                                        <div className="guest-canvas-review-grid">
+                                            <article>
+                                                <small>Domain</small>
+                                                <b>
+                                                    {selectedDomain?.name ||
+                                                        selectedDomain?.displayName ||
+                                                        'Auto-detected'}
+                                                </b>
+                                            </article>
+
+                                            <article>
+                                                <small>Location</small>
+                                                <b>
+                                                    {[draft.city, draft.region, draft.country]
+                                                        .filter(Boolean)
+                                                        .join(', ')}
+                                                </b>
+                                            </article>
+
+                                            <article>
+                                                <small>Language</small>
+                                                <b>
+                                                    {languages.find(
+                                                        (language) =>
+                                                            language.code === draft.language,
+                                                    )?.name || draft.language}
+                                                </b>
+                                            </article>
+                                        </div>
+                                    </div>
+
+                                    <div className="guest-canvas-ready">
+                                        <span>
+                                            <Check />
+                                        </span>
+
+                                        <div>
+                                            <b>Ready to discover</b>
+                                            <small>
+                                                Your free guest idea will start from this brief.
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {error ? (
+                                <div className="guest-error guest-canvas-error">
+                                    {error}
+                                </div>
+                            ) : null}
+
+                            <footer className="guest-form-actions guest-canvas-actions">
+                                <button
+                                    type="button"
+                                    className="guest-secondary"
+                                    onClick={handlePrevious}
+                                >
+                                    <ArrowLeft />
+                                    {step === 0 ? 'Cancel' : 'Previous'}
+                                </button>
+
+                                <span className="guest-canvas-actions-note">
+                                    {step + 1} of {FORM_STEPS.length}
+                                </span>
+
+                                {step < FORM_STEPS.length - 1 ? (
+                                    <button
+                                        type="button"
+                                        className="guest-primary"
+                                        disabled={!canContinue}
+                                        onClick={handleContinue}
+                                    >
+                                        {step === 0
+                                            ? hasValidDescription
+                                                ? 'Continue'
+                                                : 'Choose domain instead'
+                                            : step === 1 &&
+                                                hasValidDescription &&
+                                                !draft.domainId
+                                                ? 'Skip domain'
+                                                : 'Continue'}
+
+                                        <ArrowRight />
+                                    </button>
                                 ) : (
-                                    <Sparkles />
-                                )}
+                                    <button
+                                        type="button"
+                                        className="guest-primary guest-canvas-generate"
+                                        disabled={submitting}
+                                        onClick={submitGeneration}
+                                    >
+                                        {submitting ? (
+                                            <LoaderCircle className="guest-spin" />
+                                        ) : (
+                                            <WandSparkles />
+                                        )}
 
-                                Generate my free idea
-                            </button>
-                        )}
-                    </footer>
+                                        Generate my free idea
+                                    </button>
+                                )}
+                            </footer>
+                        </main>
+                    </div>
                 </div>
             </div>
         </section>

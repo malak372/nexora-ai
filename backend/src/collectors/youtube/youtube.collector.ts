@@ -121,66 +121,76 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
       return [];
     }
 
-    const collectedPosts: CollectorPost[] = [];
-    const seenVideoIds = new Set<string>();
-
     try {
-      for (const query of searchQueries) {
-        if (collectedPosts.length >= this.maxSavedPosts) {
-          break;
-        }
+      /*
+       * FAST_GENERATION uses one isolated query lane per selected domain.
+       * Search + statistics calls for those lanes are independent, so execute
+       * them concurrently instead of paying three sequential network windows.
+       */
+      const queryResults = await Promise.allSettled(
+        searchQueries.map(async (query) => {
+          const videos = await this.searchVideos(input, apiKey, query);
+          const validVideos = videos
+            .filter((video) => this.isValidVideo(video))
+            .filter((video) => this.matchesInputContext(video, input));
+          const videoIds = validVideos
+            .map((video) => video.id?.videoId)
+            .filter((videoId): videoId is string => Boolean(videoId));
+          const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
 
-        const videos = await this.searchVideos(input, apiKey, query);
+          return validVideos
+            .map((video) => {
+              const videoId = video.id?.videoId;
+              const statistics = videoId
+                ? statisticsMap.get(videoId)
+                : undefined;
 
-        const validVideos = videos
-          .filter((video) => this.isValidVideo(video))
-          .filter((video) => this.matchesInputContext(video, input));
-
-        const videoIds = validVideos
-          .map((video) => video.id?.videoId)
-          .filter((videoId): videoId is string => Boolean(videoId));
-
-        const statisticsMap = await this.fetchVideoStatistics(videoIds, apiKey);
-
-        const rankedVideos = validVideos
-          .map((video) => {
-            const videoId = video.id?.videoId;
-
-            return {
-              video,
-
-              score: this.calculateVideoRelevanceScore(
+              return {
                 video,
-                input,
-                videoId ? statisticsMap.get(videoId) : undefined,
-              ),
-            };
-          })
-          .filter((item) => item.score > 5)
-          .sort((first, second) => second.score - first.score);
+                statistics,
+                score: this.calculateVideoRelevanceScore(
+                  video,
+                  input,
+                  statistics,
+                ),
+              };
+            })
+            .filter((item) => item.score > 5);
+        }),
+      );
 
-        for (const item of rankedVideos) {
-          if (collectedPosts.length >= this.maxSavedPosts) {
-            break;
-          }
-
+      const seenVideoIds = new Set<string>();
+      const selectedVideos = queryResults
+        .flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : [],
+        )
+        .sort((first, second) => second.score - first.score)
+        .filter((item) => {
           const videoId = item.video.id?.videoId;
-
           if (!videoId || seenVideoIds.has(videoId)) {
-            continue;
+            return false;
           }
-
           seenVideoIds.add(videoId);
+          return true;
+        })
+        .slice(0, this.maxSavedPosts);
 
-          collectedPosts.push(
-            await this.mapVideoToCollectorPost(
-              item.video,
-              input,
-              statisticsMap.get(videoId),
-            ),
-          );
-        }
-      }
+      /*
+       * Comment threads are also independent. Fetch them concurrently for the
+       * already-ranked bounded video set; this removes the previous one-video-
+       * at-a-time comment latency while keeping the same evidence limits.
+       */
+      const collectedPosts = (await Promise.allSettled(
+        selectedVideos.map((item) =>
+          this.mapVideoToCollectorPost(
+            item.video,
+            input,
+            item.statistics,
+          ),
+        ),
+      )).flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : [],
+      );
 
       this.logger.log(
         `YouTube collection completed. Posts: ${collectedPosts.length}`,
@@ -278,6 +288,7 @@ export class YouTubeCollector extends BaseCollector implements SocialCollector {
 
     return CollectorQueryBuilderUtil.buildYouTubeAnchoredQueries({
       domainName: input.domainName,
+      userKeywords: input.keywords,
       maxQueries: isBoundedMode ? 3 : this.maxSearchQueries,
     });
   }

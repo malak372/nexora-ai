@@ -118,8 +118,15 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
           : this.filterEvidenceForDomain(nlp.samplePosts, domain),
         10,
       );
+      const canonicalNlpComments =
+        domain.id === primaryDomain.id
+          ? this.buildCanonicalDirectNlpEvidence(nlp, result.fastEvidenceInputs ?? [])
+          : [];
       const sampleComments = this.mergeRepresentativeEvidence(
-        fastDomainEvidence.comments,
+        [
+          ...canonicalNlpComments,
+          ...fastDomainEvidence.comments,
+        ],
         (analyzedDomainEvidence.comments.length > 0
           ? analyzedDomainEvidence.comments
           : this.filterEvidenceForDomain(nlp.sampleComments, domain)
@@ -243,6 +250,16 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       keywords: this.buildUnifiedKeywords(context, domains),
       forceRefresh: context.forceRefresh,
       collectionMode: 'FAST_GENERATION',
+      resolvedDomain: {
+        id: primaryDomain.id,
+        name: primaryDomain.name,
+        keywords: primaryDomain.keywords,
+      },
+      resolvedDataSources: context.selectedDataSources.map((source) => ({
+        id: source.id,
+        key: source.key,
+        displayName: source.displayName,
+      })),
       /*
        * Collect a stronger first-pass corpus so most runs satisfy evidence
        * requirements without a second targeted-recovery collection. All
@@ -290,50 +307,45 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     context: IdeaGenerationContext,
     domains: readonly SelectedGenerationDomain[],
   ): string[] {
-    const primaryDomain =
-      domains.find((domain) => domain.id === context.domainId) ?? domains[0];
-    const secondaryDomains = domains.filter(
-      (domain) => domain.id !== primaryDomain?.id,
-    );
-
-    const primaryTerms = primaryDomain
-      ? this.selectSpecificDomainTerms(primaryDomain, 10)
-      : [];
-    const secondaryTerms = secondaryDomains.flatMap((domain) =>
-      this.selectSpecificDomainTerms(domain, 2),
-    );
-
-    const problemFocusedPrimaryQueries = primaryDomain
-      ? this.buildProblemFocusedQueries(primaryDomain)
-      : [];
-    const problemFocusedSecondaryQueries = secondaryDomains.flatMap((domain) =>
-      this.buildProblemFocusedQueries(domain).slice(0, 1),
-    );
-
     /*
-     * Do not send the complete generated keyword catalogue to collectors.
-     * Generic phrases such as "government software" or a bare domain name
-     * produce political news, unrelated developer tickets, and promotional
-     * pages. Prefer specific domain workflows paired with explicit user-pain
-     * intent so the first pass retains more usable evidence with fewer calls.
+     * Every selected domain receives the same bounded query budget. This keeps
+     * one unified parallel collector wave (fast) while preventing the primary
+     * domain from monopolizing all searches.
      */
-    return [
-      ...problemFocusedPrimaryQueries,
-      ...primaryTerms,
-      ...problemFocusedSecondaryQueries,
-      ...secondaryTerms,
-    ]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .filter(
-        (value, index, values) =>
-          values.findIndex(
-            (candidate) =>
-              this.normalizeTerm(candidate) === this.normalizeTerm(value),
-          ) === index,
-      )
-      .slice(0, 12);
+    const buckets = domains.map((domain) => {
+      const focused = this.buildProblemFocusedQueries(domain).slice(0, 2);
+      const specific = this.selectSpecificDomainTerms(domain, 3);
+      return [domain.name, ...focused, ...specific];
+    });
+
+    const balanced: string[] = [];
+    for (let index = 0; balanced.length < 15; index += 1) {
+      let added = false;
+      for (const bucket of buckets) {
+        const value = bucket[index];
+        if (!value) continue;
+        const normalized = this.normalizeTerm(value);
+        if (!balanced.some((candidate) => this.normalizeTerm(candidate) === normalized)) {
+          balanced.push(value.trim());
+        }
+        added = true;
+        if (balanced.length >= 15) break;
+      }
+      if (!added) break;
+    }
+
+    // Keep a very small requester-keyword tail for explicit user intent.
+    for (const keyword of context.keywords.slice(0, 4)) {
+      if (balanced.length >= 18) break;
+      const normalized = this.normalizeTerm(keyword);
+      if (!balanced.some((candidate) => this.normalizeTerm(candidate) === normalized)) {
+        balanced.push(keyword.trim());
+      }
+    }
+
+    return balanced;
   }
+
 
 
   /** Builds high-intent queries that describe a user problem, not a topic. */
@@ -506,28 +518,205 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     return { posts, comments };
   }
 
-  /** Deduplicates representative evidence while preserving source order. */
+  /**
+   * Promotes direct evidence samples already retained by deterministic NLP into
+   * the primary-domain evidence registry. Community AI and deterministic NLP
+   * can retain a complaint even when the bounded representative sampler omits
+   * it; ranking must still receive the exact quote so provenance verification
+   * can resolve it against the persisted collection rows.
+   */
+  private buildCanonicalDirectNlpEvidence(
+    nlp: ResolveCollectionJobResult['nlpOutput'],
+    fastEvidenceInputs: readonly {
+      readonly id: string;
+      readonly sourceType: 'POST' | 'COMMENT';
+      readonly postId?: string;
+      readonly content: string;
+    }[],
+  ): Array<{
+    readonly id: string;
+    readonly postId: string;
+    readonly text: string;
+    readonly sentiment: string;
+  }> {
+    const containers: unknown[] = [
+      nlp.recurringProblems,
+      nlp.extractedNeeds,
+      nlp.featureRequests,
+      nlp.opportunities,
+    ];
+    const seen = new Set<string>();
+    const output: Array<{
+      readonly id: string;
+      readonly postId: string;
+      readonly text: string;
+      readonly sentiment: string;
+    }> = [];
+
+    const normalizeBody = (value: string): string =>
+      value
+        .replace(/\s+/gu, ' ')
+        .replace(/^.*?\bCommunity comment:\s*/isu, '')
+        .normalize('NFKC')
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+    const originalComments = fastEvidenceInputs.filter(
+      (input) =>
+        input.sourceType === 'COMMENT' &&
+        Boolean(input.postId) &&
+        !input.id.startsWith('nlp:'),
+    );
+
+    const findOriginal = (sample: string) => {
+      const normalizedSample = normalizeBody(sample);
+      if (normalizedSample.length < 8) return null;
+
+      return (
+        originalComments.find((input) => {
+          const normalizedInput = normalizeBody(input.content);
+          return (
+            normalizedInput === normalizedSample ||
+            (normalizedSample.length >= 24 &&
+              (normalizedInput.includes(normalizedSample) ||
+                normalizedSample.includes(normalizedInput)))
+          );
+        }) ?? null
+      );
+    };
+
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (!value || typeof value !== 'object') return;
+      const record = value as Record<string, unknown>;
+      const samples = Array.isArray(record.evidenceSamples)
+        ? record.evidenceSamples
+        : [];
+
+      for (const sample of samples) {
+        if (output.length >= 12) return;
+        if (typeof sample !== 'string') continue;
+        const text = sample.replace(/\s+/gu, ' ').trim();
+        if (text.length < 20) continue;
+        const body = text.replace(/^.*?\bCommunity comment:\s*/isu, '').trim();
+        const kind = classifyDirectCommunityEvidence(body, 'COMMENT');
+        if (kind !== 'USER_COMPLAINT' && kind !== 'FEATURE_REQUEST') continue;
+
+        const original = findOriginal(text);
+        /*
+         * Never invent nlp:direct identifiers. If an NLP quote cannot be
+         * mapped back to the original collector comment, it remains available
+         * in NLP/Community-AI context but is not promoted as canonical
+         * provenance evidence. The verifier may still resolve it from DB text.
+         */
+        if (!original?.postId) continue;
+
+        const key = `${original.id}:${original.postId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        output.push({
+          id: original.id,
+          postId: original.postId,
+          text,
+          sentiment: 'NEUTRAL',
+        });
+      }
+    };
+
+    containers.forEach(visit);
+    return output;
+  }
+
+  /**
+   * Deduplicates representative evidence by real provenance whenever possible.
+   *
+   * NLP may surface a short sentence fragment while the fast collector corpus
+   * still contains the complete original review/comment under the same
+   * external id. Text-only deduplication treated those as two different pieces
+   * of evidence and could bias Community AI toward the shorter fragment.
+   *
+   * When two values share the same provenance id, retain the richer text while
+   * preserving the first-seen position. Values without provenance still fall
+   * back to normalized-text deduplication.
+   */
   private mergeRepresentativeEvidence(
     preferred: readonly unknown[],
     fallback: readonly unknown[],
     limit: number,
   ): unknown[] {
-    const output: unknown[] = [];
-    const seen = new Set<string>();
+    const orderedKeys: string[] = [];
+    const bestByKey = new Map<
+      string,
+      { readonly value: unknown; readonly richness: number }
+    >();
 
     for (const value of [...preferred, ...fallback]) {
       const text = this.extractEvidenceText(value)
         .replace(/\s+/gu, ' ')
         .trim();
       if (!text) continue;
-      const key = this.normalizeTerm(text).slice(0, 500);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      output.push(value);
-      if (output.length >= limit) break;
+
+      const provenanceKey = this.extractEvidenceProvenanceKey(value);
+      const key = provenanceKey ?? `text:${this.normalizeTerm(text).slice(0, 500)}`;
+      const richness = this.scoreEvidenceRichness(text);
+      const existing = bestByKey.get(key);
+
+      if (!existing) {
+        orderedKeys.push(key);
+        bestByKey.set(key, { value, richness });
+        continue;
+      }
+
+      if (richness > existing.richness) {
+        bestByKey.set(key, { value, richness });
+      }
     }
 
-    return output;
+    return orderedKeys
+      .slice(0, limit)
+      .map((key) => bestByKey.get(key)?.value)
+      .filter((value): value is unknown => value !== undefined);
+  }
+
+  /** Returns a stable real-source key for a representative evidence object. */
+  private extractEvidenceProvenanceKey(value: unknown): string | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    const postId =
+      typeof record.postId === 'string' ? record.postId.trim() : '';
+
+    if (id && !id.startsWith('nlp:')) {
+      return `id:${id.toLowerCase()}`;
+    }
+
+    if (postId && !postId.startsWith('nlp:')) {
+      return `post:${postId.toLowerCase()}`;
+    }
+
+    return null;
+  }
+
+  /** Prefers complete complaint/request context over extracted sentence fragments. */
+  private scoreEvidenceRichness(text: string): number {
+    const normalized = text.replace(/\s+/gu, ' ').trim();
+    const directBody = normalized
+      .replace(/^.*?\bCommunity comment:\s*/isu, '')
+      .trim();
+    const contextBonus = /\bCommunity comment:\s*/iu.test(normalized) ? 120 : 0;
+    const problemBonus =
+      classifyDirectCommunityEvidence(directBody, 'COMMENT') !== 'NONE' ? 80 : 0;
+    const detailBonus = Math.min(120, directBody.split(/\s+/u).length * 3);
+
+    return normalized.length + contextBonus + problemBonus + detailBonus;
   }
 
   /**

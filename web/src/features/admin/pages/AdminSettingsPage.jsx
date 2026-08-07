@@ -1,0 +1,17 @@
+import { useEffect, useState } from 'react';
+import { RefreshCw, Save, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { adminApi, getApiErrorMessage } from '../api/adminApi';
+import '../styles/admin-pages.css';
+
+const SETTING_KEYS = ['creditPrice','premiumIdeaCreditCost','directUnlockPrice','premiumActivationFee','normalAcceptancePrice','normalPublicationAdvancedPrice','publicationAdvancedCreditCost','bonusThreshold','bonusCredits'];
+const isPrimitive = (v) => ['string','number','boolean'].includes(typeof v);
+const labelize = (v) => String(v).replace(/([a-z0-9])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/\b\w/g,m=>m.toUpperCase());
+
+export default function AdminSettingsPage(){
+  const [settings,setSettings]=useState(null); const [form,setForm]=useState({}); const [loading,setLoading]=useState(true); const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const [notice,setNotice]=useState('');
+  const load=async()=>{setLoading(true);setError('');try{const data=await adminApi.settings.get();setSettings(data);setForm(data||{});}catch(e){setError(getApiErrorMessage(e,'Could not load system settings.'));}finally{setLoading(false);}};
+  useEffect(()=>{load();},[]);
+  const save=async()=>{setBusy(true);setError('');try{await adminApi.settings.update(Object.fromEntries(SETTING_KEYS.filter((key) => form[key] !== undefined).map((key) => [key, form[key]])));setNotice('System settings saved.');setTimeout(()=>setNotice(''),3000);await load();}catch(e){setError(getApiErrorMessage(e,'Could not update system settings.'));}finally{setBusy(false);}};
+  const entries=SETTING_KEYS.filter((key)=>isPrimitive(form?.[key])).map((key)=>[key,form[key]]);
+  return <div className="admin-page"><section className="admin-hero"><div className="admin-hero__eyebrow"><SlidersHorizontal size={14}/> Platform configuration</div><h2>System settings</h2><p>Control runtime product settings exposed by the backend. Changes are sent to the protected administrator settings endpoint and recorded through the backend audit flow.</p></section>{error&&<div className="admin-error">{error}</div>}{notice&&<div className="admin-status" style={{padding:'10px 13px'}}>{notice}</div>}<section className="admin-panel"><header className="admin-panel__head"><div><h3>Configuration</h3><p>Current backend values</p></div><div className="admin-toolbar"><button className="admin-btn" onClick={load}><RefreshCw size={13}/> Reload</button><button className="admin-btn admin-btn--primary" onClick={save} disabled={busy}><Save size={13}/> {busy?'Saving…':'Save changes'}</button></div></header>{loading?<div className="admin-loading"><div className="admin-spinner"/></div>:<div className="admin-modal__body"><div className="admin-form-grid">{entries.map(([key,value])=><div key={key} className="admin-field"><label>{labelize(key)}</label>{typeof value==='boolean'?<select value={String(form[key])} onChange={e=>setForm(old=>({...old,[key]:e.target.value==='true'}))}><option value="true">Enabled</option><option value="false">Disabled</option></select>:<input type={typeof value==='number'?'number':'text'} value={form[key]??''} onChange={e=>setForm(old=>({...old,[key]:typeof value==='number'?Number(e.target.value):e.target.value}))}/>}</div>)}</div>{settings&&Object.keys(settings).some(k=>!isPrimitive(settings[k]))&&<div className="admin-json-card" style={{marginTop:18}}><pre>{JSON.stringify(Object.fromEntries(Object.entries(settings).filter(([,v])=>!isPrimitive(v))),null,2)}</pre></div>}</div>}</section></div>;
+}

@@ -16,6 +16,7 @@ import { UserRole } from '@prisma/client';
 import { UsersService } from './users.service';
 import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -130,6 +131,25 @@ export class UsersController {
   @Get(':id')
   getUserById(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.getUserById(id);
+  }
+
+  /**
+   * Updates editable user account fields.
+   *
+   * PATCH /admin/users/:id
+   *
+   * The endpoint intentionally excludes email, role and creditBalance:
+   * - Email changes must preserve the verified email-change workflow.
+   * - Role changes are not exposed to avoid privilege escalation.
+   * - Credit changes must use the dedicated audited credit ledger endpoint.
+   */
+  @Patch(':id')
+  updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateUserDto,
+    @CurrentUser() currentUser: AuthenticatedAdmin,
+  ) {
+    return this.usersService.updateUser(id, body, currentUser.id);
   }
 
   /**

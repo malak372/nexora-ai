@@ -34,6 +34,7 @@ import type {
 } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationContext } from '../types/idea-generation-context.type';
 import { CommunityAiAnalysisPromptService } from './community-ai-analysis-prompt.service';
+import { buildCommunityAiAnalysisSchema } from '../schemas/community-ai-analysis.schema';
 import { isTransientDatabaseError } from '../utils/transient-database-error.util';
 
 /**
@@ -73,8 +74,18 @@ export class CommunityAiAnalysisService {
     const startedAt = Date.now();
 
     if (onlineModels.length === 0) {
+      const retainedFallback =
+        this.buildRetainedEvidenceFallbackOpportunities(context);
+
+      if (retainedFallback.length > 0) {
+        this.logger.warn(
+          'No healthy online community-analysis model is available; using retained direct evidence immediately without failing the community-analysis stage.',
+        );
+        return this.buildFallbackAnalysis(retainedFallback);
+      }
+
       this.logger.warn(
-        'No healthy online community-analysis model is available. Deterministic NLP analysis will continue immediately.',
+        'No healthy online community-analysis model is available and no retained direct evidence exists; deterministic NLP analysis will continue.',
       );
       return null;
     }
@@ -129,11 +140,8 @@ export class CommunityAiAnalysisService {
               ? context.owner.guestSessionId
               : undefined,
           responseFormat: AiResponseFormat.JSON,
-          responseSchema: {
-            type: 'object',
-            additionalProperties: true,
-          },
-          responseSchemaName: `${COMMUNITY_AI_ANALYSIS_SCHEMA_NAME}_tolerant`,
+          responseSchema: buildCommunityAiAnalysisSchema(),
+          responseSchemaName: COMMUNITY_AI_ANALYSIS_SCHEMA_NAME,
           estimatedOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
           maxOutputTokens: COMMUNITY_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
           temperature: COMMUNITY_AI_ANALYSIS_TEMPERATURE,
@@ -226,30 +234,13 @@ export class CommunityAiAnalysisService {
 
     const retainedFallback = this.buildRetainedEvidenceFallbackOpportunities(context);
     if (retainedFallback.length > 0) {
-      const averageConfidence =
-        retainedFallback.reduce((sum, item) => sum + item.confidence, 0) /
-        retainedFallback.length;
-      const analysis: CommunityAiAnalysis = {
-        summary: `Recovered ${retainedFallback.length} cautious opportunity candidate(s) from retained NLP evidence after online providers returned no acceptable portfolio.`,
-        dominantProblems: retainedFallback.map((item) => item.problem),
-        unmetNeeds: retainedFallback.map((item) => item.unmetNeed),
-        opportunities: retainedFallback,
-        overallConfidence: averageConfidence,
-        qualityWarnings: [
-          'Online community-analysis providers returned no acceptable opportunity portfolio; retained NLP evidence was preserved instead of being discarded.',
-          'The recovered direction is supported by a small evidence sample and requires broader validation.',
-        ],
-        modelId: null,
-        apiModelId: null,
-        attemptCount: models.length,
-      };
       const grounded = this.applyEvidenceGrounding(
         context,
-        analysis,
+        this.buildFallbackAnalysis(retainedFallback, models.length),
         true,
       );
       this.logger.warn(
-        `Community AI online fallback chain was exhausted within ${Date.now() - startedAt}ms; recovered ${grounded.opportunities.length} retained evidence-backed candidate(s).`,
+        `Community AI online enrichment was unavailable within ${Date.now() - startedAt}ms; retained direct evidence produced ${grounded.opportunities.length} grounded candidate(s), so the stage completed successfully.`,
       );
       return grounded;
     }
@@ -564,29 +555,60 @@ export class CommunityAiAnalysisService {
       opportunities.reduce((sum, item) => sum + item.confidence, 0) /
       opportunities.length;
 
+    const usedRetainedEvidenceFallback = providerOpportunities.length === 0;
+    const providerWarnings = this.normalizeTextArray(
+      parsed.qualityWarnings,
+      [],
+      true,
+    );
+    const safeProviderWarnings = usedRetainedEvidenceFallback
+      ? providerWarnings.filter(
+          (warning) =>
+            !/(?:no|without|lacking|only|entirely)\s+(?:direct\s+)?(?:user\s+)?(?:complaints?|problem|problem context|actionable)|non-problem|promotional text|video titles/iu.test(
+              warning,
+            ),
+        )
+      : providerWarnings;
+
     return {
-      summary: this.optionalString(
-        parsed.summary,
-        `Extracted ${opportunities.length} evidence-grounded opportunity candidate(s).`,
-      ),
-      dominantProblems: this.normalizeTextArray(
-        parsed.dominantProblems,
-        opportunities.map((item) => item.problem),
-      ),
-      unmetNeeds: this.normalizeTextArray(
-        parsed.unmetNeeds,
-        opportunities.map((item) => item.unmetNeed),
-      ),
+      /*
+       * When the provider returns zero opportunity objects its accompanying
+       * summary/confidence may describe the corpus as evidence-free even though
+       * the deterministic retained-evidence fallback just recovered a concrete
+       * direct complaint. In that case the fallback becomes authoritative for
+       * semantic fields; provider prose is not allowed to contradict verified
+       * retained evidence.
+       */
+      summary: usedRetainedEvidenceFallback
+        ? `Recovered ${opportunities.length} direct evidence-grounded opportunity candidate(s) from retained community evidence after the online model returned no opportunity objects.`
+        : this.optionalString(
+            parsed.summary,
+            `Extracted ${opportunities.length} evidence-grounded opportunity candidate(s).`,
+          ),
+      dominantProblems: usedRetainedEvidenceFallback
+        ? opportunities.map((item) => item.problem)
+        : this.normalizeTextArray(
+            parsed.dominantProblems,
+            opportunities.map((item) => item.problem),
+          ),
+      unmetNeeds: usedRetainedEvidenceFallback
+        ? opportunities.map((item) => item.unmetNeed)
+        : this.normalizeTextArray(
+            parsed.unmetNeeds,
+            opportunities.map((item) => item.unmetNeed),
+          ),
       opportunities,
-      overallConfidence: this.normalizeOptionalScore(
-        parsed.overallConfidence,
-        inferredConfidence,
-      ),
+      overallConfidence: usedRetainedEvidenceFallback
+        ? inferredConfidence
+        : this.normalizeOptionalScore(
+            parsed.overallConfidence,
+            inferredConfidence,
+          ),
       qualityWarnings: [
-        ...this.normalizeTextArray(parsed.qualityWarnings, [], true),
-        ...(providerOpportunities.length === 0
+        ...safeProviderWarnings,
+        ...(usedRetainedEvidenceFallback
           ? [
-              'The online model returned no opportunity objects; retained NLP evidence was converted into a cautious grounded opportunity so the community-analysis stage could continue.',
+              'The online model returned no opportunity objects; retained direct community evidence was converted into a cautious grounded opportunity and still requires independent provenance verification.',
             ]
           : []),
         ...(opportunities.length <
@@ -706,7 +728,8 @@ export class CommunityAiAnalysisService {
             this.normalizeComparableText(sample),
           ) >= 0.12,
       );
-      const evidenceSample = groundedEvidence[0] ?? corpusFallback;
+      const evidenceSample =
+        this.selectStrongestFallbackEvidence(groundedEvidence) ?? corpusFallback;
 
       if (
         !evidenceSample ||
@@ -772,7 +795,7 @@ export class CommunityAiAnalysisService {
           25,
           this.normalizeOptionalScore(record.localRelevance, 20),
         ),
-        groundingScore: 0,
+        groundingScore: 100,
         technicalFeasibility: this.normalizeOptionalScore(
           record.technicalFeasibility ?? record.feasibility,
           65,
@@ -832,7 +855,7 @@ export class CommunityAiAnalysisService {
         localEvidenceAvailable: false,
         localEvidenceSamples: [],
         localRelevance: 20,
-        groundingScore: 0,
+        groundingScore: 100,
         technicalFeasibility: 65,
         marketPotential: 40,
         innovationPotential: 50,
@@ -841,6 +864,35 @@ export class CommunityAiAnalysisService {
         ],
       },
     ];
+  }
+
+  /**
+   * Builds the guaranteed non-throwing community-analysis fallback from direct
+   * evidence already retained by deterministic NLP. This is intentionally not
+   * presented as an online-model result: model identifiers remain null.
+   */
+  private buildFallbackAnalysis(
+    opportunities: readonly CommunityAiOpportunity[],
+    attemptCount = 0,
+  ): CommunityAiAnalysis {
+    const averageConfidence =
+      opportunities.reduce((sum, item) => sum + item.confidence, 0) /
+      Math.max(opportunities.length, 1);
+
+    return {
+      summary: `Recovered ${opportunities.length} cautious opportunity candidate(s) from retained direct community evidence.`,
+      dominantProblems: opportunities.map((item) => item.problem),
+      unmetNeeds: opportunities.map((item) => item.unmetNeed),
+      opportunities: [...opportunities],
+      overallConfidence: averageConfidence,
+      qualityWarnings: [
+        'Online community enrichment was unavailable or unusable; retained direct evidence was preserved instead of failing the stage.',
+        'The recovered direction remains preliminary until broader independent evidence is collected.',
+      ],
+      modelId: null,
+      apiModelId: null,
+      attemptCount,
+    };
   }
 
   private firstAvailableString(
@@ -1470,10 +1522,66 @@ export class CommunityAiAnalysisService {
     };
   }
 
+  private extractStrongestDirectProblemSentence(value: string): string | null {
+    const body = value
+      .replace(
+        /^.*?\bCommunity comment:\s*/isu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (!body) {
+      return null;
+    }
+
+    const candidates = body
+      .split(/(?<=[.!?])\s+/u)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length >= 20)
+      .filter((sentence) => this.looksLikeDirectProblemEvidence(sentence))
+      .map((sentence) => {
+        const normalized = this.normalizeComparableText(sentence);
+        let score = Math.min(sentence.length, 240) / 80;
+
+        if (/(?:cannot|can t|unable|not working|fail|failed|error|wrong|incorrect|crash|slow|delay|wait too long|missing|risk|bias|liability|responsib|transparent|privacy|unsafe|struggle|difficult|problem|issue)/u.test(normalized)) {
+          score += 5;
+        }
+        if (/(?:i |my |we |our |user |users |patient |patients |developer |developers |clinician |clinicians )/u.test(normalized)) {
+          score += 2;
+        }
+
+        return { sentence, score };
+      })
+      .sort((first, second) => second.score - first.score);
+
+    return candidates[0]?.sentence ?? null;
+  }
+
   private buildProfessionalFallbackProblem(
     candidateProblem: string,
     evidenceSample: string,
   ): string {
+    const directEvidenceSentence =
+      this.extractStrongestDirectProblemSentence(evidenceSample);
+    const candidateIsDirectProblem =
+      this.looksLikeDirectProblemEvidence(candidateProblem);
+
+    /*
+     * Provider/NLP fallback records sometimes expose the parent video title as
+     * the candidate problem while the actual complaint lives inside
+     * "Community comment:". Prefer the verbatim direct-problem sentence in that
+     * case so downstream problem-family matching can resolve the same persisted
+     * source without synthetic paraphrase drift.
+     */
+    if (
+      directEvidenceSentence &&
+      (!candidateIsDirectProblem ||
+        this.looksLikePromotionalOrPublisherText(candidateProblem))
+    ) {
+      return this.boundProblemText(directEvidenceSentence, 260);
+    }
+
     const semanticText = this.normalizeComparableText(
       `${candidateProblem} ${evidenceSample}`,
     );

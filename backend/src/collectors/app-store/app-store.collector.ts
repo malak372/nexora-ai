@@ -335,7 +335,19 @@ export class AppStoreCollector
     const isBoundedMode =
       input.collectionMode === 'FAST_GENERATION' ||
       input.collectionMode === 'TARGETED_RECOVERY';
-    const focused = terms.slice(0, isBoundedMode ? 2 : 5);
+
+    /*
+     * In FAST_GENERATION the first balanced keywords are the selected domain
+     * anchors (for example AI, Finance, Food). Keep them as independent search
+     * lanes instead of joining them into one cross-domain query. That gives
+     * every selected domain a real App Store discovery attempt while all lanes
+     * still execute concurrently in the single collector wave.
+     */
+    if (isBoundedMode) {
+      return this.unique(terms.slice(0, 3)).slice(0, 3);
+    }
+
+    const focused = terms.slice(0, 5);
     const intentQueries = [
       terms.find((term) =>
         /irrigat|schedule|controller|offline|farm management|computer vision|segmentation|nutrition tracking|route planning/iu.test(
@@ -345,10 +357,7 @@ export class AppStoreCollector
       terms.slice(0, 2).join(' '),
     ].filter((term): term is string => Boolean(term));
 
-    return this.unique([...intentQueries, ...focused]).slice(
-      0,
-      isBoundedMode ? 2 : 6,
-    );
+    return this.unique([...intentQueries, ...focused]).slice(0, 6);
   }
 
   /** Deduplicates applications returned by multiple focused searches. */

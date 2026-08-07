@@ -23,6 +23,8 @@ export class CommunityAiAnalysisPromptService {
       throw new Error('NLP context is required before community AI analysis.');
     }
 
+    const canonicalEvidence = this.collectCanonicalEvidenceSamples(context);
+
     return {
       systemInstruction: this.buildSystemInstruction(),
       userPrompt: JSON.stringify({
@@ -33,10 +35,10 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
         selectedDomains: context.selectedDomains.map((domain) => ({
           id: domain.id,
           name: domain.name,
-          keywords: domain.keywords.slice(0, 20),
+          keywords: domain.keywords.slice(0, 6),
         })),
         location: context.location,
-        requestedKeywords: context.keywords,
+        requestedKeywords: context.keywords.slice(0, 12),
         evidenceRules: {
           useOnlySuppliedEvidence: true,
           doNotInventLocalFacts: true,
@@ -53,73 +55,77 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
           requireDistinctProblemFamilies: true,
           requireDomainCoverageWhenEvidenceSupportsIt: true,
         },
+        /*
+         * Keep the online enrichment prompt small. The verbatim evidence is
+         * already supplied below, so repeating sentiment/topic/keyword payloads
+         * only increases provider latency without strengthening grounding.
+         */
         nlpSummary: {
           totalTextsAnalyzed: context.nlp.totalTextsAnalyzed,
           totalPostsAnalyzed: context.nlp.totalPostsAnalyzed,
           totalCommentsAnalyzed: context.nlp.totalCommentsAnalyzed,
           confidence: context.nlp.confidence,
-          sentimentStats: this.compactJson(context.nlp.sentimentStats),
-          keywords: this.compactJson(context.nlp.keywords),
-          topics: this.compactJson(context.nlp.topics),
-          recurringProblems: this.compactJson(context.nlp.recurringProblems),
-          extractedNeeds: this.compactJson(context.nlp.extractedNeeds),
-          featureRequests: this.compactJson(context.nlp.featureRequests),
-          existingOpportunities: this.compactJson(context.nlp.opportunities),
-          insights: this.compactJson(context.nlp.insights),
+          recurringProblems: this.enrichEvidenceFragments(
+            this.compactJson(context.nlp.recurringProblems),
+            canonicalEvidence,
+          ),
+          extractedNeeds: this.enrichEvidenceFragments(
+            this.compactJson(context.nlp.extractedNeeds),
+            canonicalEvidence,
+          ),
+          featureRequests: this.enrichEvidenceFragments(
+            this.compactJson(context.nlp.featureRequests),
+            canonicalEvidence,
+          ),
+          existingOpportunities: this.enrichEvidenceFragments(
+            this.compactJson(context.nlp.opportunities),
+            canonicalEvidence,
+          ),
           dataQuality: this.compactJson(context.nlp.dataQuality),
         },
         cleanedCommunitySamples: {
           posts: this.normalizeSamples(context.nlp.samplePosts),
           comments: this.normalizeSamples(context.nlp.sampleComments),
-          retainedEvidence: this.collectRetainedEvidenceSamples(context),
+          canonicalEvidence,
+          retainedEvidence: this.collectRetainedEvidenceSamples(
+            context,
+            canonicalEvidence,
+          ),
         },
       }),
     };
   }
 
   private buildSystemInstruction(): string {
+    /*
+     * Provider-facing instructions are intentionally compact. Grounding rules
+     * remain strict, but removing repeated prose substantially lowers input
+     * tokens and gives the online community-analysis race a better chance to
+     * finish inside its sub-five-second request budget.
+     */
     return [
       'You are Voxidence community research analyst.',
-      'Extract evidence-grounded software opportunities from the supplied cleaned community data.',
-      'Do not generate finished project ideas, product names, architectures, or implementation plans.',
-      'Identify recurring problems, unmet needs, affected users, and solution areas only.',
-      `Return between ${COMMUNITY_AI_ANALYSIS_TARGET_MIN_OPPORTUNITIES} and ${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} materially distinct opportunities when evidence supports that range; return fewer only when additional opportunities would be unsupported or duplicative.`,
-      'Cover different problem families and user jobs instead of producing wording variations of one complaint.',
-      'When selectedDomains contains multiple domains, assign every opportunity to exactly one selected domain using domainName and return at least one evidence-backed opportunity per selected domain whenever supplied evidence supports it.',
-      'Do not invent an opportunity merely to fill a missing domain. Add a quality warning naming any domain whose supplied evidence was insufficient.',
-      'Do not combine unrelated problem dimensions inside one opportunity. Keep domain-specific evidence units atomic so the idea-generation stage can combine only compatible units into one cross-domain workflow.',
-      'A single evidence quote may ground only one returned opportunity. When one quote mentions multiple issues, select the most concrete actionable user problem as the primary opportunity and mention the secondary issue only as context or a risk; do not emit a second opportunity backed by the same quote.',
-      'Two opportunities must not contain the same normalized evidence quote. If their evidenceSamples overlap exactly, merge them into one atomic opportunity and choose the title/problem pair that best matches the dominant user job.',
-      'For example, session recovery and storage persistence must remain separate opportunities when they come from different comments. A multi-part title is allowed only when at least one supplied quote explicitly supports all included parts.',
-      'Set frequency from the number of distinct supplied evidence samples supporting that exact problem family. Never copy topic frequency, keyword frequency, or the total number of mentions into opportunity frequency.',
-      'Order opportunities from strongest to weakest evidence support, while preserving different confidence values rather than assigning the same score to every item.',
-      'Keep summary under 260 characters. Keep each problem, unmetNeed, and solutionArea under 150 characters. Keep affectedUsers to at most 2 short items, risks to at most 2 short items, and evidenceSamples to exactly 1 strongest supplied quote per opportunity. Return compact JSON only; no markdown and no explanatory prose outside the schema.',
-      'Never derive a problem from publisher marketing copy, app feature listings, product descriptions, tutorials, or promotional promises. Such text may describe an existing solution but is not evidence that users experience the claimed problem.',
-      'Treat video titles, article headlines, app-store descriptions, review-video descriptions, calls to action, download links, referral links, and phrases such as check out, app review, download, install, subscribe, or link in description as non-problem context unless an explicit user complaint appears separately in the supplied evidence.',
-      'Never place URLs, tracking parameters, store links, creator calls to action, channel promotion, or publisher copy inside title, problem, unmetNeed, solutionArea, dominantProblems, or unmetNeeds.',
-      'Write title, problem, unmetNeed, and solutionArea in polished professional English. Correct grammar, remove fragments and filler, preserve the factual meaning of the evidence, and prefer precise user-impact language over copying raw wording.',
-      'A problem statement must describe an observed user difficulty, failure, cost, risk, delay, missing capability, or repeated manual effort. A question, topic headline, product review title, or tutorial title by itself is not a problem statement.',
-      'If the evidence is too weak to support a clean problem statement, return fewer opportunities or an empty opportunities array rather than converting a headline into a user problem.',
-      'A single explicit direct user complaint, failure, cost, security risk, missing capability, or concrete request is sufficient to return one preliminary opportunity with frequency 1. Do not return an empty opportunities array solely because independent recurrence has not yet been established; recurrence is verified by a later ranking stage.',
-      'When exactly one direct evidence sample supports a problem, keep the opportunity cautious: describe one reported case, set frequency to 1, keep confidence conservative, and add a risk or quality warning that broader validation is required. Do not generalize the report into a market-wide pattern.',
-      'Prefer explicit first-person complaints, review comments, bug reports, failures, missing capabilities, and direct requests. When none exists, return fewer opportunities rather than converting product features into unmet needs.',
-      'Every opportunity must include at least one supplied evidence sample; use two or more distinct samples when available for that problem family.',
-      'Do not fabricate facts, statistics, regulations, market sizes, local conditions, or user behavior.',
-      'Treat country, city, region, requested keywords, and source selection as context rather than proof.',
-      'Merge semantically equivalent complaints and avoid generic labels such as app, platform, issue, or solution.',
-      'Use cautious wording when evidence is limited.',
-      'Return one JSON object only. Do not wrap it in Markdown.',
-      'Use these exact root keys: summary, dominantProblems, unmetNeeds, opportunities, overallConfidence, qualityWarnings.',
-      'Every opportunity must use these exact keys: domainName, title, problem, unmetNeed, solutionArea, affectedUsers, evidenceSamples, frequency, severity, confidence, problemImportance, localEvidenceAvailable, localEvidenceSamples, localRelevance, technicalFeasibility, marketPotential, innovationPotential, risks.',
-      'domainName must exactly equal one selectedDomains.name value. dominantProblems, unmetNeeds, affectedUsers, evidenceSamples, localEvidenceSamples, risks, and qualityWarnings must be arrays of strings.',
-      'Set localEvidenceAvailable to true only when a supplied evidence quote explicitly mentions the requested country, city, or region.',
-      'When localEvidenceAvailable is false, localEvidenceSamples must be empty, localRelevance must not exceed 25, and risks must not invent location-specific infrastructure, expertise, economic, or regulatory claims.',
-      'Every evidenceSamples item must be copied verbatim from one supplied cleanedCommunitySamples posts, comments, or retainedEvidence value. Do not paraphrase, summarize, translate, combine, or rewrite evidence text.',
-      'All score fields must be numbers from 0 to 100. frequency must be a positive integer. severity must be LOW, MEDIUM, HIGH, or CRITICAL. Confidence, importance, feasibility, market potential, innovation potential, and local relevance must be assessed independently and should vary when evidence strength differs.',
-      'Never return objects inside dominantProblems or unmetNeeds.',
-      'Each opportunity must include concrete risks grounded in technical uncertainty, adoption constraints, evidence limitations, or integration boundaries; do not invent local regulations or infrastructure constraints.',
-      'If fewer than the preferred minimum can be supported, return only the supported opportunities and add a quality warning explaining the evidence limitation instead of padding the response.',
-      'If evidence is limited, still use the exact structure and add a quality warning rather than changing field names or types.',
+      'Return one JSON object only; never use Markdown.',
+      `Return 0-${COMMUNITY_AI_ANALYSIS_MAX_OPPORTUNITIES} evidence-grounded software opportunities.`,
+      'Use only supplied cleanedCommunitySamples and retained NLP evidence.',
+      'Never invent local facts, statistics, regulations, market size, recurrence, or user behavior.',
+      'A single explicit complaint, failure, cost, security risk, missing capability, or feature request may support one preliminary opportunity with frequency 1.',
+      'Do not reject a valid direct complaint only because independent recurrence is not established; later ranking handles recurrence.',
+      'Treat cleanedCommunitySamples.canonicalEvidence as the authoritative richest quotes. If a shorter fragment is repeated elsewhere, use the canonical full quote instead.',
+      'Prefer complete evidence that contains both the cause/context and the user impact over short fragments from the same report.',
+      'Every opportunity must include at least one verbatim evidenceSamples item copied exactly from supplied evidence.',
+      'One evidence quote may ground only one opportunity. Merge equivalent complaints and keep unrelated problems separate.',
+      'domainName must exactly match one selectedDomains.name value.',
+      'When selected domains lack evidence, add a quality warning instead of inventing an opportunity.',
+      'Location is pilot context, never proof. localEvidenceAvailable is true only when evidence explicitly names the requested location.',
+      'Keep problem, unmetNeed, solutionArea, and title concise professional English. Do not copy URLs, marketing copy, tutorial titles, or publisher promotion as a problem.',
+      'frequency is the count of distinct supplied evidence samples for that exact problem family.',
+      'Use conservative confidence for single-report opportunities and mention broader validation as a risk.',
+      'Use exact root keys: summary, dominantProblems, unmetNeeds, opportunities, overallConfidence, qualityWarnings.',
+      'Each opportunity must use exact keys: domainName, title, problem, unmetNeed, solutionArea, affectedUsers, evidenceSamples, frequency, severity, confidence, problemImportance, localEvidenceAvailable, localEvidenceSamples, localRelevance, technicalFeasibility, marketPotential, innovationPotential, risks.',
+      'dominantProblems, unmetNeeds, affectedUsers, evidenceSamples, localEvidenceSamples, risks, qualityWarnings are arrays of strings.',
+      'severity is LOW, MEDIUM, HIGH, or CRITICAL; all score fields are numbers from 0 to 100; frequency is a positive integer.',
+      'Return fewer opportunities rather than unsupported or duplicated ones.',
     ].join(' ');
   }
 
@@ -186,6 +192,7 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
    */
   private collectRetainedEvidenceSamples(
     context: IdeaGenerationContext,
+    canonicalEvidence: readonly string[],
   ): readonly string[] {
     const extracted: string[] = [];
     const evidenceKeys = new Set([
@@ -238,10 +245,204 @@ Analyze cleaned community evidence and extract up to ${COMMUNITY_AI_ANALYSIS_MAX
 
     visit(context.nlp);
 
-    return [...new Set(extracted)].slice(
-      0,
-      COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS,
+    return [...new Set(
+      extracted.map((sample) =>
+        this.resolveCanonicalEvidence(sample, canonicalEvidence),
+      ),
+    )].slice(0, COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS);
+  }
+
+  /**
+   * Builds the richest authoritative quote list from domainEvidence. The
+   * collection stage has already deduplicated these entries by real provenance
+   * identity, so this is a safer source for provider grounding than short NLP
+   * fragments produced by deterministic problem extraction.
+   */
+  private collectCanonicalEvidenceSamples(
+    context: IdeaGenerationContext,
+  ): readonly string[] {
+    const samples: string[] = [];
+
+    const visit = (value: unknown): void => {
+      if (typeof value === 'string') {
+        const normalized = value.replace(/\s+/gu, ' ').trim();
+        if (normalized.length >= 24) {
+          samples.push(
+            normalized.slice(0, COMMUNITY_AI_ANALYSIS_MAX_SAMPLE_LENGTH),
+          );
+        }
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        for (const entry of value) visit(entry);
+        return;
+      }
+
+      if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        const text =
+          record.text ?? record.content ?? record.body ?? record.sample;
+        if (typeof text === 'string') {
+          visit(text);
+        }
+      }
+    };
+
+    for (const domain of context.domainEvidence ?? []) {
+      visit(domain.sampleComments);
+      visit(domain.samplePosts);
+    }
+
+    const uniqueSamples = [...new Set(samples)];
+    const nlpFragments = this.collectNlpEvidenceFragments(context);
+
+    /*
+     * Canonical evidence that explains a fragment already present in NLP gets
+     * first priority. This prevents a long but unrelated review from consuming
+     * the bounded canonical-evidence budget while the full source text behind
+     * "So I'm unable to claim the offer" is omitted.
+     */
+    return uniqueSamples
+      .map((sample) => ({
+        sample,
+        matchesNlpFragment: nlpFragments.some((fragment) =>
+          this.evidenceTextsOverlap(fragment, sample),
+        ),
+      }))
+      .sort((left, right) => {
+        if (left.matchesNlpFragment !== right.matchesNlpFragment) {
+          return left.matchesNlpFragment ? -1 : 1;
+        }
+        return right.sample.length - left.sample.length;
+      })
+      .slice(0, COMMUNITY_AI_ANALYSIS_MAX_SUMMARY_ITEMS)
+      .map(({ sample }) => sample);
+  }
+
+  private collectNlpEvidenceFragments(
+    context: IdeaGenerationContext,
+  ): readonly string[] {
+    const fragments: string[] = [];
+
+    const visit = (value: unknown, parentKey = ''): void => {
+      if (typeof value === 'string') {
+        if (
+          ['evidenceSamples', 'samplePosts', 'sampleComments', 'localEvidenceSamples'].includes(
+            parentKey,
+          )
+        ) {
+          const normalized = value.replace(/\s+/gu, ' ').trim();
+          if (normalized.length >= 8) fragments.push(normalized);
+        }
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        for (const entry of value) visit(entry, parentKey);
+        return;
+      }
+
+      if (value && typeof value === 'object') {
+        for (const [key, entry] of Object.entries(value)) {
+          visit(entry, key);
+        }
+      }
+    };
+
+    visit(context.nlp?.recurringProblems);
+    visit(context.nlp?.extractedNeeds);
+    visit(context.nlp?.featureRequests);
+    visit(context.nlp?.opportunities);
+
+    return [...new Set(fragments)];
+  }
+
+  private evidenceTextsOverlap(first: string, second: string): boolean {
+    const left = this.normalizeEvidenceText(first);
+    const right = this.normalizeEvidenceText(second);
+
+    if (!left || !right) return false;
+    if (left === right || left.includes(right) || right.includes(left)) {
+      return true;
+    }
+
+    const leftTokens = new Set(
+      left.split(' ').filter((token) => token.length >= 3),
     );
+    const rightTokens = new Set(
+      right.split(' ').filter((token) => token.length >= 3),
+    );
+    if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+
+    const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+    const smaller = Math.min(leftTokens.size, rightTokens.size);
+
+    return smaller >= 4 && shared / smaller >= 0.72;
+  }
+
+  /** Replaces short evidence fragments with a matching richer canonical quote. */
+  private enrichEvidenceFragments(
+    value: Prisma.JsonValue | null | undefined,
+    canonicalEvidence: readonly string[],
+    parentKey = '',
+  ): Prisma.JsonValue | null {
+    if (value == null) return null;
+
+    if (typeof value === 'string') {
+      if (!['evidenceSamples', 'samplePosts', 'sampleComments', 'localEvidenceSamples'].includes(parentKey)) {
+        return value;
+      }
+      return this.resolveCanonicalEvidence(value, canonicalEvidence);
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) =>
+          this.enrichEvidenceFragments(entry, canonicalEvidence, parentKey),
+        )
+        .filter((entry): entry is Prisma.JsonValue => entry !== null);
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, entry]): [string, Prisma.JsonValue | null] => [
+          key,
+          this.enrichEvidenceFragments(entry, canonicalEvidence, key),
+        ])
+        .filter(
+          (entry): entry is [string, Prisma.JsonValue] => entry[1] !== null,
+        ),
+    );
+  }
+
+  private resolveCanonicalEvidence(
+    sample: string,
+    canonicalEvidence: readonly string[],
+  ): string {
+    const normalizedSample = this.normalizeEvidenceText(sample);
+    if (!normalizedSample) return sample;
+
+    const matches = canonicalEvidence.filter((candidate) =>
+      this.evidenceTextsOverlap(sample, candidate),
+    );
+
+    if (matches.length === 0) return sample;
+    return matches.sort((left, right) => right.length - left.length)[0];
+  }
+
+  private normalizeEvidenceText(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/^[^.]{0,180}\.\s*community comment:\s*/u, '')
+      .replace(/^community comment:\s*/u, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   private normalizeSamples(value: Prisma.JsonValue | null): readonly string[] {

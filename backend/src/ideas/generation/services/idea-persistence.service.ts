@@ -369,6 +369,7 @@ export class IdeaPersistenceService {
       try {
         return await this.prisma.$transaction(
           async (transaction): Promise<IdeaPersistenceTransactionResult> => {
+            const timingStartedAt = Date.now();
             const [run] = await Promise.all([
               this.validateGenerationRun(transaction, input),
               this.duplicateDetectionService.assertNoExactTitleDuplicate(
@@ -376,6 +377,7 @@ export class IdeaPersistenceService {
                 transaction,
               ),
             ]);
+            const validationMs = Date.now() - timingStartedAt;
             /*
              * CollectionJob is normally attached to the run before this stage.
              * Keep a defensive fallback for legacy/direct callers so removing
@@ -392,22 +394,43 @@ export class IdeaPersistenceService {
              * generated outputs in one nested Prisma write. This removes two
              * remote database round-trips from the serializable transaction.
              */
+            const ideaCreateStartedAt = Date.now();
             const created = await this.createIdeaWithRelations(
               transaction,
               input,
               commentsCount,
             );
+            const ideaCreateMs = Date.now() - ideaCreateStartedAt;
             const idea = created.idea;
 
+            const parallelWritesStartedAt = Date.now();
+            const entitlementPromise = this.consumeEntitlement(
+              transaction,
+              input,
+              idea.id,
+            );
+            const runAttachPromise = this.attachIdeaToGenerationRun(
+              transaction,
+              run.id,
+              idea.id,
+              input.collectionJobId,
+            );
+            /*
+             * Generated outputs and PromptHistory are now nested into the idea
+             * creation query. Only the entitlement deduction and guarded run
+             * attachment remain after the base create, reducing the number of
+             * serial round-trips on Prisma's single interactive-transaction
+             * connection.
+             */
             const [creditAdjustment] = await Promise.all([
-              this.consumeEntitlement(transaction, input, idea.id),
-              this.attachIdeaToGenerationRun(
-                transaction,
-                run.id,
-                idea.id,
-                input.collectionJobId,
-              ),
+              entitlementPromise,
+              runAttachPromise,
             ]);
+            const parallelWritesMs = Date.now() - parallelWritesStartedAt;
+
+            this.logger.debug(
+              `Idea persistence DB timing for run "${input.runId}": validation=${validationMs}ms, ideaCreate=${ideaCreateMs}ms, parallelWrites=${parallelWritesMs}ms, transactionBody=${Date.now() - timingStartedAt}ms.`,
+            );
 
             return {
               ideaId: idea.id,
@@ -853,12 +876,6 @@ export class IdeaPersistenceService {
           select: { id: true },
           take: 1,
         },
-        collectionJob: {
-          select: {
-            id: true,
-            domainId: true,
-          },
-        },
       },
     });
 
@@ -907,12 +924,6 @@ export class IdeaPersistenceService {
       );
     }
 
-    if (run.collectionJob && run.collectionJob.domainId !== input.domainId) {
-      throw new BadRequestException(
-        'The collection job does not belong to the selected domain.',
-      );
-    }
-
     if (run.cancelRequestedAt) {
       throw new BadRequestException(
         'The generation run was cancelled before idea persistence.',
@@ -920,48 +931,12 @@ export class IdeaPersistenceService {
     }
 
     if (run.promptHistories.length !== 1) {
-      throw new BadRequestException(
-        'The prompt history does not belong to the provided generation run.',
+      throw new NotFoundException(
+        `Prompt history "${input.promptHistoryId}" was not found for generation run "${input.runId}".`,
       );
     }
 
     return run;
-  }
-
-  /**
-   * Validates the referenced prompt history.
-   *
-   * The prompt must exist and belong to the same generation run.
-   *
-   * @param transaction Active Prisma transaction.
-   * @param input Normalized persistence input.
-   */
-  private async validatePromptHistory(
-    transaction: IdeaPersistenceDatabaseClient,
-    input: PersistGeneratedIdeaInput,
-  ): Promise<void> {
-    const promptHistory = await transaction.promptHistory.findUnique({
-      where: {
-        id: input.promptHistoryId,
-      },
-
-      select: {
-        id: true,
-        generationRunId: true,
-      },
-    });
-
-    if (!promptHistory) {
-      throw new NotFoundException(
-        `Prompt history "${input.promptHistoryId}" was not found.`,
-      );
-    }
-
-    if (promptHistory.generationRunId !== input.runId) {
-      throw new BadRequestException(
-        'The prompt history does not belong to the provided generation run.',
-      );
-    }
   }
 
   /**
@@ -1271,13 +1246,37 @@ export class IdeaPersistenceService {
           ? UnlockMethod.CREDIT_GENERATION
           : UnlockMethod.NONE,
         unlockedAt: isPremium ? now : null,
+
+        /*
+         * These relations do not depend on entitlement consumption and can be
+         * persisted by Prisma as part of the same nested create. This removes
+         * separate PromptHistory.update + GeneratedOutput.createMany calls.
+         */
         promptHistories: {
           connect: { id: input.promptHistoryId },
         },
-        generatedOutputs:
-          generatedOutputs.length > 0
-            ? { create: generatedOutputs }
-            : undefined,
+        ...(generatedOutputs.length > 0
+          ? {
+              generatedOutputs: {
+                createMany: {
+                  data: generatedOutputs.map((output) => ({
+                    id: output.id,
+                    outputKey: output.outputKey,
+                    title: output.title,
+                    sequence: output.sequence,
+                    status: output.status,
+                    content: output.content,
+                    structuredContent:
+                      output.structuredContent === undefined
+                        ? Prisma.JsonNull
+                        : output.structuredContent,
+                    errorMessage: output.errorMessage,
+                    generatedAt: output.generatedAt,
+                  })),
+                },
+              },
+            }
+          : {}),
       },
       select: {
         id: true,
@@ -1291,8 +1290,12 @@ export class IdeaPersistenceService {
     return {
       idea,
       generatedOutputs: generatedOutputs
-        .sort((left, right) => left.sequence - right.sequence)
-        .map((output) => ({ id: output.id, outputKey: output.outputKey })),
+        .slice()
+        .sort((first, second) => first.sequence - second.sequence)
+        .map((output) => ({
+          id: output.id,
+          outputKey: output.outputKey,
+        })),
     };
   }
 

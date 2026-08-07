@@ -85,10 +85,12 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
 
     const policy = await this.policyService.evaluate(policyInput);
 
-    await this.synchronizeAuthorizedGenerationType(
-      context.runId,
-      policy.generationType,
-    );
+    if (context.generationType !== policy.generationType) {
+      await this.synchronizeAuthorizedGenerationType(
+        context.runId,
+        policy.generationType,
+      );
+    }
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -187,32 +189,41 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
   private async buildUserPolicyInput(
     context: IdeaGenerationContext,
   ): Promise<IdeaGenerationPolicyInput> {
-    const user = await this.databaseRetry.execute(
-      () =>
-        this.prisma.user.findUnique({
-          where: {
-            id: context.owner.userId,
-          },
+    const [user, settings] = await Promise.all([
+      this.databaseRetry.execute(
+        () =>
+          this.prisma.user.findUnique({
+            where: { id: context.owner.userId },
+            select: {
+              id: true,
+              role: true,
+              userType: true,
+              accountStatus: true,
+              isActive: true,
+              isVerified: true,
+              creditBalance: true,
+              freeGenerationLimit: true,
+              freeGenerationsUsed: true,
+              deletedAt: true,
+            },
+          }),
+        {
+          operationName: 'load user generation entitlement',
+          runId: context.runId,
+          maxAttempts: 4,
+        },
+      ),
+      this.prisma.systemSetting.findUnique({
+        where: { key: 'GLOBAL' },
+        select: { premiumIdeaCreditCost: true },
+      }),
+    ]);
 
-          select: {
-            id: true,
-            role: true,
-            userType: true,
-            accountStatus: true,
-            isActive: true,
-            isVerified: true,
-            creditBalance: true,
-            freeGenerationLimit: true,
-            freeGenerationsUsed: true,
-            deletedAt: true,
-          },
-        }),
-      {
-        operationName: 'load user generation entitlement',
-        runId: context.runId,
-        maxAttempts: 4,
-      },
-    );
+    if (settings?.premiumIdeaCreditCost !== undefined) {
+      this.policyService.warmPremiumIdeaCreditCost(
+        settings.premiumIdeaCreditCost ?? 15,
+      );
+    }
 
     if (!user || user.deletedAt) {
       throw new NotFoundException({

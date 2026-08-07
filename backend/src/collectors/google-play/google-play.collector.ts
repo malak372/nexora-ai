@@ -236,13 +236,20 @@ export class GooglePlayCollector
     const isBoundedMode =
       input.collectionMode === 'FAST_GENERATION' ||
       input.collectionMode === 'TARGETED_RECOVERY';
-    const focusedQueries = terms.slice(0, isBoundedMode ? 2 : 4);
-    const combinedQuery = terms.slice(0, isBoundedMode ? 2 : 3).join(' ');
+    const focusedQueries = terms.slice(0, isBoundedMode ? 3 : 4);
 
+    // FAST_GENERATION keeps one standalone query per selected-domain anchor.
+    // A combined "AI Finance Food" query weakens store relevance and makes
+    // secondary domains disappear even though their keywords were balanced.
+    if (isBoundedMode) {
+      return this.unique(focusedQueries).slice(0, 3);
+    }
+
+    const combinedQuery = terms.slice(0, 3).join(' ');
     return this.unique([
       ...focusedQueries,
       ...(combinedQuery ? [combinedQuery] : []),
-    ]).slice(0, isBoundedMode ? 2 : 5);
+    ]).slice(0, 5);
   }
 
   /** Removes duplicate applications returned by multiple focused searches. */

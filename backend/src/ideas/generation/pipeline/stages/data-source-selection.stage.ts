@@ -80,10 +80,29 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
           keywords: selection.domain.keywords,
         }];
 
+    const balancedDomainTerms: string[] = [];
+    const domainTermBuckets = selectedDomains.map((domain) => [
+      domain.name,
+      ...domain.keywords,
+    ]);
+    for (let termIndex = 0; balancedDomainTerms.length < 30; termIndex += 1) {
+      let added = false;
+      for (const bucket of domainTermBuckets) {
+        const term = bucket[termIndex];
+        if (!term) continue;
+        balancedDomainTerms.push(term);
+        added = true;
+        if (balancedDomainTerms.length >= 30) break;
+      }
+      if (!added) break;
+    }
+
     const mergedKeywords = mergeGenerationStringArrays(
       [
-        selectedDomains.flatMap((domain) => [domain.name, ...domain.keywords]),
-        context.keywords,
+        // Preserve explicit requester terms first, then fill the remaining
+        // budget fairly across every selected domain.
+        context.keywords.slice(0, 10),
+        balancedDomainTerms,
       ],
       {
         lowercase: true,

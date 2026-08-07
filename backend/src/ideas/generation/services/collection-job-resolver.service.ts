@@ -128,6 +128,18 @@ export type ResolveCollectionJobInput = {
 
   readonly collectionMode?: CollectorInput['collectionMode'];
   readonly collectorLimits?: CollectorInput['limits'];
+
+  /** Already validated generation metadata used by FAST_GENERATION. */
+  readonly resolvedDomain?: {
+    readonly id: string;
+    readonly name: string;
+    readonly keywords: readonly string[];
+  };
+  readonly resolvedDataSources?: readonly {
+    readonly id: string;
+    readonly key: string;
+    readonly displayName: string;
+  }[];
 };
 
 /**
@@ -292,6 +304,8 @@ export class CollectionJobResolverService {
 
       collectionMode: normalizedInput.collectionMode,
       collectorLimits: normalizedInput.collectorLimits,
+      resolvedDomain: normalizedInput.resolvedDomain,
+      resolvedDataSources: normalizedInput.resolvedDataSources,
     };
 
     const startedJob =
@@ -832,6 +846,8 @@ export class CollectionJobResolverService {
       forceRefresh: input.forceRefresh === true,
       collectionMode: input.collectionMode,
       collectorLimits: input.collectorLimits,
+      resolvedDomain: input.resolvedDomain,
+      resolvedDataSources: input.resolvedDataSources,
     };
   }
 

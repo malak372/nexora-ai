@@ -41,47 +41,48 @@ export class IdeaGenerationSelectionService {
   async resolveSelection(
     input: ResolveIdeaGenerationSelectionInput,
   ): Promise<IdeaGenerationSelectionResult> {
-    const domain = await this.prisma.domain.findFirst({
-      where: {
-        id: input.domainId,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        domainKeywords: {
-          select: {
-            keyword: true,
-          },
-          orderBy: {
-            createdAt: 'asc',
+    const [domain, dataSources] = await Promise.all([
+      this.prisma.domain.findFirst({
+        where: {
+          id: input.domainId,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          domainKeywords: {
+            select: {
+              keyword: true,
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.dataSource.findMany({
+        where: {
+          isActive: true,
+          isImplemented: true,
+        },
+        select: {
+          id: true,
+          key: true,
+          displayName: true,
+          supportsPosts: true,
+          supportsComments: true,
+          supportsRegion: true,
+          supportsLanguage: true,
+        },
+        orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
+      }),
+    ]);
 
     if (!domain) {
       throw new NotFoundException(
         'The selected idea-generation domain was not found or is inactive.',
       );
     }
-
-    const dataSources = await this.prisma.dataSource.findMany({
-      where: {
-        isActive: true,
-        isImplemented: true,
-      },
-      select: {
-        id: true,
-        key: true,
-        displayName: true,
-        supportsPosts: true,
-        supportsComments: true,
-        supportsRegion: true,
-        supportsLanguage: true,
-      },
-      orderBy: [{ displayName: 'asc' }, { key: 'asc' }],
-    });
 
     if (dataSources.length === 0) {
       throw new BadRequestException(

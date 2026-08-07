@@ -153,10 +153,15 @@ export class CollectorQueryBuilderUtil {
       ...domainTerms,
     ]).slice(0, 4);
 
-    const fallbackQueries = workflowTerms.flatMap((workflow) => [
-      `${workflow} not working`,
-      `${workflow} data is wrong`,
-      `cannot use ${workflow}`,
+    /*
+     * Round-robin the first query wave across workflow/domain terms. Earlier
+     * flatMap()+slice() generated every variant for the first term before the
+     * second selected domain was ever queried.
+     */
+    const fallbackQueries = this.unique([
+      ...workflowTerms.map((workflow) => `${workflow} not working`),
+      ...workflowTerms.map((workflow) => `${workflow} data is wrong`),
+      ...workflowTerms.map((workflow) => `cannot use ${workflow}`),
     ]);
 
     return this.unique([...naturalTemplates, ...fallbackQueries]).slice(
@@ -266,10 +271,28 @@ export class CollectorQueryBuilderUtil {
    */
   static buildYouTubeAnchoredQueries(input: {
     readonly domainName?: string | null;
+    readonly userKeywords?: readonly string[];
     readonly maxQueries?: number;
   }): string[] {
     const domainName = this.normalize(input.domainName ?? '');
     const maxQueries = Math.max(1, input.maxQueries ?? 3);
+    const balancedDomainTerms = this.cleanTerms(input.userKeywords ?? [])
+      .filter((term) => !/^(?:coherent cross-domain workflow|cross-domain workflow)/iu.test(term))
+      .filter((term) => !this.isGenericProductExpansion(term))
+      .filter((term) => !/(?:user complaint problem|not working difficult confusing|review missing feature)$/iu.test(term))
+      .slice(0, maxQueries);
+
+    if (balancedDomainTerms.length > 1) {
+      return this.unique(
+        balancedDomainTerms.map((term, index) =>
+          index % 3 === 0
+            ? `${term} app problems review`
+            : index % 3 === 1
+              ? `${term} user complaint`
+              : `${term} software issue review`,
+        ),
+      ).slice(0, maxQueries);
+    }
 
     const queries =
       domainName.includes('smart cit')
