@@ -98,9 +98,9 @@ function toLocalDateValue(value) {
 function matchesDateRange(item, fromDate, toDate) {
   const itemDate = toLocalDateValue(
     item?.acceptedAt ??
-      item?.createdAt ??
-      item?.publication?.publishedAt ??
-      item?.updatedAt,
+    item?.createdAt ??
+    item?.publication?.publishedAt ??
+    item?.updatedAt,
   );
 
   if (!itemDate) return false;
@@ -207,7 +207,7 @@ function normalizeAcceptedRecord(record) {
 
     isUnlocked: Boolean(
       record?.hasAdvancedAccess ??
-        sourceIdea?.isUnlocked,
+      sourceIdea?.isUnlocked,
     ),
 
     publication,
@@ -398,7 +398,7 @@ export default function MyIdeasPage() {
               1,
               Math.ceil(
                 filtered.length /
-                  PAGE_SIZE,
+                PAGE_SIZE,
               ),
             ),
           });
@@ -460,13 +460,13 @@ export default function MyIdeasPage() {
         const statusFiltered =
           filter === 'generating'
             ? allIdeas.filter((item) =>
-                ACTIVE_RUN_STATUSES.has(
-                  String(
-                    item?.generationRun
-                      ?.status ?? '',
-                  ).toUpperCase(),
-                ),
-              )
+              ACTIVE_RUN_STATUSES.has(
+                String(
+                  item?.generationRun
+                    ?.status ?? '',
+                ).toUpperCase(),
+              ),
+            )
             : allIdeas;
 
         const dateFiltered =
@@ -496,7 +496,7 @@ export default function MyIdeasPage() {
             1,
             Math.ceil(
               dateFiltered.length /
-                PAGE_SIZE,
+              PAGE_SIZE,
             ),
           ),
         });
@@ -510,13 +510,13 @@ export default function MyIdeasPage() {
       const visibleItems =
         filter === 'generating'
           ? result.items.filter((item) =>
-              ACTIVE_RUN_STATUSES.has(
-                String(
-                  item?.generationRun
-                    ?.status ?? '',
-                ).toUpperCase(),
-              ),
-            )
+            ACTIVE_RUN_STATUSES.has(
+              String(
+                item?.generationRun
+                  ?.status ?? '',
+              ).toUpperCase(),
+            ),
+          )
           : result.items;
 
       setItems(visibleItems);
@@ -534,18 +534,18 @@ export default function MyIdeasPage() {
           filter === 'generating'
             ? visibleItems.length
             : result.pagination?.total ??
-              visibleItems.length,
+            visibleItems.length,
 
         totalPages:
           filter === 'generating'
             ? 1
             : result.pagination
-                ?.totalPages ?? 1,
+              ?.totalPages ?? 1,
       });
     } catch (requestError) {
       setError(
         requestError.message ||
-          'Unable to load ideas.',
+        'Unable to load ideas.',
       );
     } finally {
       setLoading(false);
@@ -638,7 +638,7 @@ export default function MyIdeasPage() {
 
     const runStatus = String(
       idea?.generationRun?.status ??
-        '',
+      '',
     ).toUpperCase();
 
     if (
@@ -656,6 +656,12 @@ export default function MyIdeasPage() {
 
     navigate(
       `/normal/ideas/${idea.id}`,
+      {
+        state: {
+          returnTo: '/normal/ideas',
+          returnLabel: 'My ideas',
+        },
+      },
     );
   }
 
@@ -676,9 +682,8 @@ export default function MyIdeasPage() {
 
     const confirmed =
       window.confirm(
-        `Delete “${
-          idea?.title ||
-          'this idea'
+        `Delete “${idea?.title ||
+        'this idea'
         }”? It will be removed from your library.`,
       );
 
@@ -706,7 +711,7 @@ export default function MyIdeasPage() {
     } catch (requestError) {
       setError(
         requestError.message ||
-          'Unable to delete the idea.',
+        'Unable to delete the idea.',
       );
     }
   }
@@ -756,16 +761,16 @@ export default function MyIdeasPage() {
         current.map((item) =>
           item === idea
             ? {
-                ...item,
-                isFavorite: !idea?.isFavorite,
-              }
+              ...item,
+              isFavorite: !idea?.isFavorite,
+            }
             : item,
         ),
       );
     } catch (requestError) {
       setError(
         requestError.message ||
-          'The favorite status could not be updated.',
+        'The favorite status could not be updated.',
       );
     } finally {
       setFavoriteProcessingId('');
@@ -796,13 +801,12 @@ export default function MyIdeasPage() {
         </div>
 
         <div
-          className={`ideas-page__count${
-            isAcceptedView
+          className={`ideas-page__count${isAcceptedView
               ? ' ideas-page__count--accepted'
               : isFavoritesView
                 ? ' ideas-page__count--favorites'
                 : ''
-          }`}
+            }`}
         >
           {isAcceptedView ? (
             <CheckCircle2 size={18} />
@@ -857,11 +861,10 @@ export default function MyIdeasPage() {
         </form>
 
         <div
-          className={`ideas-date-filter${
-            fromDate || toDate
+          className={`ideas-date-filter${fromDate || toDate
               ? ' has-value'
               : ''
-          }`}
+            }`}
           aria-label="Creation date range"
         >
           <div className="ideas-date-filter__heading">
@@ -955,19 +958,17 @@ export default function MyIdeasPage() {
               <button
                 key={option.value}
                 type="button"
-                className={`${
-                  filter ===
-                  option.value
+                className={`${filter ===
+                    option.value
                     ? 'is-active'
                     : ''
-                }${
-                  option.value ===
-                  'accepted'
+                  }${option.value ===
+                    'accepted'
                     ? ' is-accepted-filter'
                     : option.value === 'favorites'
                       ? ' is-favorites-filter'
                       : ''
-                }`}
+                  }`}
                 onClick={() =>
                   handleFilterChange(option.value)
                 }
@@ -987,8 +988,8 @@ export default function MyIdeasPage() {
       </div>
 
       {isAcceptedView &&
-      !loading &&
-      !error ? (
+        !loading &&
+        !error ? (
         <div className="ideas-accepted-note">
           <span>
             <CheckCircle2
@@ -1046,11 +1047,10 @@ export default function MyIdeasPage() {
         </div>
       ) : items.length === 0 ? (
         <div
-          className={`ideas-state${
-            isAcceptedView
+          className={`ideas-state${isAcceptedView
               ? ' ideas-state--accepted'
               : ''
-          }`}
+            }`}
         >
           {isAcceptedView ? (
             <CheckCircle2 size={30} />
@@ -1089,22 +1089,21 @@ export default function MyIdeasPage() {
         <div className="ideas-grid">
           {items.map((idea) => (
             <IdeaLibraryCard
-              key={`${
-                idea.__libraryKind ??
+              key={`${idea.__libraryKind ??
                 'idea'
-              }-${idea.id}`}
+                }-${idea.id}`}
               idea={idea}
               onOpen={() =>
                 openIdea(idea)
               }
               onDelete={
                 idea.__libraryKind ===
-                'accepted'
+                  'accepted'
                   ? undefined
                   : () =>
-                      handleDelete(
-                        idea,
-                      )
+                    handleDelete(
+                      idea,
+                    )
               }
               onToggleFavorite={() =>
                 handleToggleFavorite(idea)
@@ -1121,7 +1120,7 @@ export default function MyIdeasPage() {
       {!loading &&
         !error &&
         pagination.totalPages >
-          1 && (
+        1 && (
           <nav
             className="ideas-pagination"
             aria-label="Ideas pagination"

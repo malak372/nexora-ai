@@ -58,10 +58,26 @@ export default function DirectUnlockPage() {
   const [pricing, setPricing] = useState(null);
 
   useEffect(() => {
-    if (!isPremium) {
-      getPaymentPricing().then(setPricing).catch((e) => setError(e.message));
-    }
-  }, [isPremium]);
+    let mounted = true;
+
+    getPaymentPricing()
+      .then((data) => {
+        if (mounted) setPricing(data);
+      })
+      .catch((e) => {
+        if (mounted) setError(e.message);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const requiredCredits = Number(pricing?.premiumIdeaCreditCost);
+  const hasCreditCost = Number.isInteger(requiredCredits) && requiredCredits > 0;
+  const creditLabel = hasCreditCost
+    ? `${requiredCredits} ${requiredCredits === 1 ? 'credit' : 'credits'}`
+    : 'Loading credit cost…';
 
   const checkout = async () => {
     setBusy(true);
@@ -168,7 +184,7 @@ export default function DirectUnlockPage() {
           <div className="unlock-story__content">
             <span className="unlock-story__eyebrow">
               <Sparkles size={15} />
-              {isPremium ? 'Premium credit unlock' : 'Direct unlock'}
+              {isPremium ? 'Unlock idea' : 'Direct unlock'}
             </span>
 
             <h1>
@@ -178,7 +194,9 @@ export default function DirectUnlockPage() {
 
             <p>
               {isPremium
-                ? 'Spend one credit to unlock the advanced features and AI Chat for this free idea.'
+                ? hasCreditCost
+                  ? `Spend ${creditLabel} to unlock the advanced features and AI Chat for this free idea.`
+                  : 'Loading the required credit amount from your workspace settings…'
                 : 'Unlock the full execution package for this idea through a secure, provider-hosted checkout.'}
             </p>
 
@@ -228,7 +246,7 @@ export default function DirectUnlockPage() {
 
             <span>
               <LockKeyhole size={15} />
-              {isPremium ? '1 credit only' : 'Secure redirect'}
+              {isPremium ? (hasCreditCost ? `${creditLabel} only` : 'Database-priced credits') : 'Secure redirect'}
             </span>
           </div>
         </motion.article>
@@ -266,7 +284,9 @@ export default function DirectUnlockPage() {
           <h2>Unlock this idea</h2>
           <div className="unlock-backend-price">
             {isPremium
-              ? `1 credit · ${creditBalance} available`
+              ? hasCreditCost
+                ? `${creditLabel} · ${creditBalance} available`
+                : 'Loading credit cost…'
               : pricing
                 ? `${pricing.directUnlockPrice} ${pricing.currency}`
                 : 'Loading price…'}
@@ -274,7 +294,9 @@ export default function DirectUnlockPage() {
 
           <p>
             {isPremium
-              ? 'Premium users do not pay directly here. Confirming will deduct one credit and generate the advanced workspace.'
+              ? hasCreditCost
+                ? `Premium users do not pay directly here. Confirming will deduct ${creditLabel} and generate the advanced workspace.`
+                : 'Loading the required credit amount from the database…'
               : "Choose a payment method. Voxidence sends you to the provider's secure checkout and unlocks access only after verified confirmation."}
           </p>
 
@@ -353,7 +375,7 @@ export default function DirectUnlockPage() {
           <motion.button
             className="unlock-pay"
             type="button"
-            disabled={busy}
+            disabled={busy || (isPremium && !hasCreditCost)}
             onClick={checkout}
             whileHover={
               shouldReduceMotion || busy
@@ -380,7 +402,7 @@ export default function DirectUnlockPage() {
               </>
             ) : (
               <>
-                {isPremium ? 'Use 1 credit' : 'Continue to payment'}
+                {isPremium ? `Use ${creditLabel}` : 'Continue to payment'}
                 {isPremium ? <Sparkles size={18} /> : <CreditCard size={18} />}
               </>
             )}
@@ -393,7 +415,9 @@ export default function DirectUnlockPage() {
               <strong>{isPremium ? 'Credit-protected unlock' : 'Protected payment flow'}</strong>
               <small>
                 {isPremium
-                  ? 'One credit is deducted only for this free idea. Failed generation is refunded automatically.'
+                  ? hasCreditCost
+                    ? `${creditLabel} ${requiredCredits === 1 ? 'is' : 'are'} deducted only for this free idea. Failed generation is refunded automatically.`
+                    : 'The required credit amount is loaded from system settings before unlock.'
                   : 'Access is granted only after the provider webhook is verified.'}
               </small>
             </span>

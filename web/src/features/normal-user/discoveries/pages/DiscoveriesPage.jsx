@@ -9,6 +9,7 @@
 
 import {
   ArrowRight,
+  ChevronDown,
   Filter,
   Search,
   Sparkles,
@@ -21,7 +22,7 @@ import {
   motion,
   useReducedMotion,
 } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import DiscoveryCard from '../components/DiscoveryCard';
@@ -65,13 +66,13 @@ function sortPublications(publications, sortValue) {
     (left, right) =>
       new Date(
         right?.publishedAt ??
-          right?.updatedAt ??
-          0,
+        right?.updatedAt ??
+        0,
       ).getTime() -
       new Date(
         left?.publishedAt ??
-          left?.updatedAt ??
-          0,
+        left?.updatedAt ??
+        0,
       ).getTime(),
   );
 }
@@ -83,8 +84,27 @@ export default function DiscoveriesPage() {
   const [publications, setPublications] = useState([]);
   const [searchValue, setSearchValue] = useState('');
   const [sortValue, setSortValue] = useState('newest');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (
+        sortMenuRef.current &&
+        !sortMenuRef.current.contains(event.target)
+      ) {
+        setSortMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -110,7 +130,7 @@ export default function DiscoveriesPage() {
         if (isActive) {
           setErrorMessage(
             error?.message ||
-              'Discoveries could not be loaded.',
+            'Discoveries could not be loaded.',
           );
         }
       } finally {
@@ -133,10 +153,10 @@ export default function DiscoveriesPage() {
 
     const filtered = normalizedSearch
       ? publications.filter((publication) =>
-          getSearchableText(publication).includes(
-            normalizedSearch,
-          ),
-        )
+        getSearchableText(publication).includes(
+          normalizedSearch,
+        ),
+      )
       : publications;
 
     return sortPublications(filtered, sortValue);
@@ -173,10 +193,10 @@ export default function DiscoveriesPage() {
           shouldReduceMotion
             ? undefined
             : {
-                opacity: 0,
-                y: 24,
-                scale: 0.985,
-              }
+              opacity: 0,
+              y: 24,
+              scale: 0.985,
+            }
         }
         animate={{
           opacity: 1,
@@ -247,9 +267,9 @@ export default function DiscoveriesPage() {
           shouldReduceMotion
             ? undefined
             : {
-                opacity: 0,
-                y: 18,
-              }
+              opacity: 0,
+              y: 18,
+            }
         }
         whileInView={{
           opacity: 1,
@@ -291,28 +311,70 @@ export default function DiscoveriesPage() {
           )}
         </label>
 
-        <label className="discover-sort">
+        <div className="discover-sort" ref={sortMenuRef}>
           <Filter size={17} />
 
-          <div>
+          <div className="discover-sort__content">
             <small>Sort discoveries</small>
-            <select
-              value={sortValue}
-              onChange={(event) =>
-                setSortValue(event.target.value)
+
+            <button
+              type="button"
+              className="discover-sort__trigger"
+              onClick={() =>
+                setSortMenuOpen((current) => !current)
               }
+              aria-haspopup="listbox"
+              aria-expanded={sortMenuOpen}
               aria-label="Sort discoveries"
             >
-              <option value="newest">Newest</option>
-              <option value="rating">
-                Highest rated
-              </option>
-              <option value="upvotes">
-                Most upvoted
-              </option>
-            </select>
+              <span>
+                {sortValue === 'rating'
+                  ? 'Highest rated'
+                  : sortValue === 'upvotes'
+                    ? 'Most upvoted'
+                    : 'Newest'}
+              </span>
+              <ChevronDown
+                size={15}
+                className={
+                  sortMenuOpen ? 'is-open' : ''
+                }
+              />
+            </button>
+
+            {sortMenuOpen ? (
+              <div
+                className="discover-sort__menu"
+                role="listbox"
+                aria-label="Sort discoveries"
+              >
+                {[
+                  ['newest', 'Newest'],
+                  ['rating', 'Highest rated'],
+                  ['upvotes', 'Most upvoted'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="option"
+                    aria-selected={sortValue === value}
+                    className={
+                      sortValue === value
+                        ? 'is-selected'
+                        : ''
+                    }
+                    onClick={() => {
+                      setSortValue(value);
+                      setSortMenuOpen(false);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-        </label>
+        </div>
       </motion.section>
 
       {isLoading ? (
@@ -340,8 +402,8 @@ export default function DiscoveriesPage() {
       ) : null}
 
       {!isLoading &&
-      !errorMessage &&
-      !featuredPublication ? (
+        !errorMessage &&
+        !featuredPublication ? (
         <section className="discover-state">
           <Sparkles size={28} />
           <h2>No discoveries found</h2>
@@ -353,8 +415,8 @@ export default function DiscoveriesPage() {
       ) : null}
 
       {!isLoading &&
-      !errorMessage &&
-      featuredPublication ? (
+        !errorMessage &&
+        featuredPublication ? (
         <>
           <motion.section
             className="discover-featured"
@@ -362,9 +424,9 @@ export default function DiscoveriesPage() {
               shouldReduceMotion
                 ? undefined
                 : {
-                    opacity: 0,
-                    y: 28,
-                  }
+                  opacity: 0,
+                  y: 28,
+                }
             }
             whileInView={{
               opacity: 1,
@@ -413,7 +475,7 @@ export default function DiscoveriesPage() {
                   <Star size={14} />
                   {Number(
                     featuredPublication?.averageRating ??
-                      0,
+                    0,
                   ).toFixed(1)}{' '}
                   rating
                 </strong>

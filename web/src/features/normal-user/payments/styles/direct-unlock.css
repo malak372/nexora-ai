@@ -31,15 +31,14 @@
 }
 
 .unlock-back:hover {
-  color: #2f7774;
+  color: #287f7a;
   transform: translateX(-3px);
 }
 
 .unlock-shell {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.08fr)
-    minmax(390px, 0.72fr);
+    minmax(0, 1.08fr) minmax(390px, 0.72fr);
   gap: 18px;
   align-items: stretch;
   margin-top: 20px;
@@ -61,12 +60,12 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 36px;
   background:
-    radial-gradient(circle at 82% 12%, rgba(183, 221, 216, 0.42), transparent 28%),
-    radial-gradient(circle at 12% 91%, rgba(243, 201, 211, 0.40), transparent 32%),
-    linear-gradient(145deg, #244744 0%, #2f7774 48%, #4fa9a4 74%, #69b7b1 100%);
+    radial-gradient(circle at 86% 12%, rgba(220, 232, 226, 0.46), transparent 28%),
+    radial-gradient(circle at 8% 92%, rgba(250, 220, 227, 0.28), transparent 31%),
+    linear-gradient(145deg, #287b77 0%, #36958f 42%, #56b7b1 72%, #89d3cf 100%);
   box-shadow:
-    0 36px 94px rgba(47, 119, 116, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.17);
+    0 28px 72px rgba(39, 126, 121, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
   color: #fff;
 }
 
@@ -80,12 +79,10 @@
     linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 36px 36px;
   mask-image:
-    linear-gradient(
-      90deg,
+    linear-gradient(90deg,
       #000 0%,
       rgba(0, 0, 0, 0.65) 65%,
-      transparent 100%
-    );
+      transparent 100%);
 }
 
 .unlock-story__orb {
@@ -101,11 +98,9 @@
   width: 360px;
   height: 360px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(183, 221, 216, 0.34),
-      transparent 68%
-    );
+      transparent 68%);
   animation: unlockOrbOne 9s ease-in-out infinite;
 }
 
@@ -115,11 +110,9 @@
   width: 400px;
   height: 400px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(243, 201, 211, 0.34),
-      transparent 68%
-    );
+      transparent 68%);
   animation: unlockOrbTwo 11s ease-in-out infinite;
 }
 
@@ -160,18 +153,16 @@
   margin-top: 8px;
   color: transparent;
   background:
-    linear-gradient(
-      90deg,
+    linear-gradient(90deg,
       #fff 0%,
-      #f3c9d3 44%,
-      #b7ddd8 100%
-    );
+      #dff3ef 52%,
+      #f7e5e9 100%);
   -webkit-background-clip: text;
   background-clip: text;
   font-style: normal;
 }
 
-.unlock-story__content > p {
+.unlock-story__content>p {
   max-width: 700px;
   margin: 22px 0 0;
   color: rgba(247, 251, 249, 0.84);
@@ -186,7 +177,7 @@
   margin-top: 30px;
 }
 
-.unlock-benefits > div {
+.unlock-benefits>div {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 10px;
@@ -196,11 +187,9 @@
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 18px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.13),
-      rgba(255, 255, 255, 0.07)
-    );
+      rgba(255, 255, 255, 0.07));
   box-shadow:
     0 14px 34px rgba(31, 66, 62, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.13);
@@ -210,17 +199,15 @@
     background 200ms ease;
 }
 
-.unlock-benefits > div:hover {
+.unlock-benefits>div:hover {
   transform: translateY(-4px);
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.17),
-      rgba(255, 255, 255, 0.09)
-    );
+      rgba(255, 255, 255, 0.09));
 }
 
-.unlock-benefits > div > span {
+.unlock-benefits>div>span {
   display: grid;
   width: 38px;
   height: 38px;
@@ -230,7 +217,7 @@
   color: #9ce4c6;
 }
 
-.unlock-benefits > div > div {
+.unlock-benefits>div>div {
   display: grid;
   gap: 4px;
 }
@@ -283,14 +270,15 @@
   justify-content: center;
   overflow: hidden;
   padding: clamp(30px, 4vw, 52px);
-  border: 1px solid rgba(47, 119, 116, 0.13);
+  border: 1px solid rgba(71, 181, 176, 0.24);
   border-radius: 36px;
   background:
-    radial-gradient(circle at 88% 8%, rgba(183, 221, 216, 0.27), transparent 27%),
-    linear-gradient(150deg, rgba(255, 255, 255, 0.98), rgba(250, 249, 246, 0.98) 60%, rgba(234, 245, 242, 0.98));
+    radial-gradient(circle at 92% 8%, rgba(143, 212, 208, 0.30), transparent 30%),
+    radial-gradient(circle at 8% 92%, rgba(248, 231, 235, 0.34), transparent 27%),
+    linear-gradient(150deg, #fffdfc 0%, #fbf8f7 57%, #edf8f5 100%);
   box-shadow:
-    0 30px 80px rgba(73, 83, 79, 0.11),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    0 26px 66px rgba(72, 101, 94, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
 }
 
 .unlock-checkout::after {
@@ -302,11 +290,9 @@
   height: 260px;
   border-radius: 50%;
   background:
-    radial-gradient(
-      circle,
-      rgba(217, 143, 160, 0.12),
-      transparent 68%
-    );
+    radial-gradient(circle,
+      rgba(79, 185, 180, 0.14),
+      transparent 68%);
   pointer-events: none;
 }
 
@@ -315,25 +301,23 @@
   width: 64px;
   height: 64px;
   place-items: center;
-  border: 1px solid rgba(92, 189, 185, 0.16);
+  border: 1px solid rgba(71, 181, 176, 0.22);
   border-radius: 21px;
   background:
-    linear-gradient(
-      145deg,
-      #eaf5f2,
-      #eaf5f2
-    );
-  color: #2f7774;
+    linear-gradient(145deg,
+      #e8f0ec,
+      #fbecef);
+  color: #287f7a;
   box-shadow:
-    0 16px 34px rgba(47, 119, 116, 0.13),
-    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+    0 16px 34px rgba(40, 127, 122, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98);
   animation: unlockLockFloat 4s ease-in-out infinite;
 }
 
 .unlock-checkout__eyebrow {
   display: block;
   margin-top: 18px;
-  color: #2f7774;
+  color: #287f7a;
   font-size: 0.62rem;
   font-weight: 900;
   letter-spacing: 0.12em;
@@ -347,7 +331,7 @@
   letter-spacing: -0.045em;
 }
 
-.unlock-checkout > p {
+.unlock-checkout>p {
   margin: 0 0 24px;
   color: #78827e;
   font-size: 0.84rem;
@@ -370,11 +354,9 @@
   border: 1px solid rgba(73, 83, 79, 0.10);
   border-radius: 20px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.92),
-      rgba(249, 247, 253, 0.86)
-    );
+      rgba(249, 247, 253, 0.86));
   box-shadow:
     0 12px 28px rgba(73, 83, 79, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.93);
@@ -395,11 +377,9 @@
 .unlock-methods label.selected {
   border-color: rgba(92, 189, 185, 0.48);
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #fff6f8,
-      #eaf5f2
-    );
+      #eaf5f2);
   box-shadow:
     0 18px 38px rgba(47, 119, 116, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.94);
@@ -418,12 +398,10 @@
   place-items: center;
   border-radius: 14px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #eaf5f2,
-      #eaf5f2
-    );
-  color: #2f7774;
+      #eaf5f2);
+  color: #287f7a;
   box-shadow:
     0 10px 22px rgba(73, 83, 79, 0.08);
 }
@@ -434,7 +412,7 @@
   gap: 5px;
 }
 
-.unlock-methods__copy > span {
+.unlock-methods__copy>span {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -453,7 +431,7 @@
   border-radius: 999px;
   padding: 0 8px;
   background: #fff6f8;
-  color: #2f7774;
+  color: #287f7a;
   font-size: 0.55rem;
   font-weight: 850;
   text-transform: uppercase;
@@ -479,11 +457,9 @@
 
 .unlock-methods label.selected .unlock-methods__check {
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #2f7774,
-      #69b7b1
-    );
+      #69b7b1);
   box-shadow:
     0 9px 20px rgba(47, 119, 116, 0.22);
 }
@@ -510,17 +486,15 @@
   border: 0;
   border-radius: 17px;
   background:
-    linear-gradient(
-      135deg,
-      #2f7774,
-      #2f7774 58%,
-      #69b7b1
-    );
+    linear-gradient(135deg,
+      #287f7a 0%,
+      #43a7a1 58%,
+      #77cbc6 100%);
   color: #fff;
   font-weight: 900;
   cursor: pointer;
   box-shadow:
-    0 16px 34px rgba(47, 119, 116, 0.23),
+    0 14px 30px rgba(45, 151, 145, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.17);
   transition:
     box-shadow 180ms ease,
@@ -528,9 +502,9 @@
 }
 
 .unlock-pay:hover:not(:disabled) {
-  filter: saturate(1.08);
+  filter: brightness(1.04);
   box-shadow:
-    0 22px 42px rgba(47, 119, 116, 0.30),
+    0 20px 38px rgba(45, 151, 145, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
@@ -548,13 +522,13 @@
   color: #8b9490;
 }
 
-.unlock-secure > svg {
+.unlock-secure>svg {
   flex: none;
   margin-top: 2px;
-  color: #2c9d75;
+  color: #4fb9b4;
 }
 
-.unlock-secure > span {
+.unlock-secure>span {
   display: grid;
   gap: 3px;
 }
@@ -614,11 +588,9 @@
   width: 300px;
   height: 300px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(183, 221, 216, 0.30),
-      transparent 68%
-    );
+      transparent 68%);
   animation: unlockResultOrb 8s ease-in-out infinite;
 }
 
@@ -628,11 +600,9 @@
   width: 330px;
   height: 330px;
   background:
-    radial-gradient(
-      circle,
+    radial-gradient(circle,
       rgba(243, 201, 211, 0.28),
-      transparent 68%
-    );
+      transparent 68%);
   animation: unlockResultOrb 10s ease-in-out infinite reverse;
 }
 
@@ -646,11 +616,9 @@
   border: 1px solid rgba(38, 164, 119, 0.16);
   border-radius: 29px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       #ebfbf5,
-      #eaf5f2
-    );
+      #eaf5f2);
   color: #2aa878;
   box-shadow:
     0 20px 48px rgba(42, 151, 114, 0.12),
@@ -694,7 +662,7 @@
   letter-spacing: -0.052em;
 }
 
-.unlock-result > p {
+.unlock-result>p {
   max-width: 620px;
   margin: 0;
   color: #78827e;
@@ -720,14 +688,12 @@
   border: 1px solid rgba(73, 83, 79, 0.09);
   border-radius: 17px;
   background:
-    linear-gradient(
-      145deg,
+    linear-gradient(145deg,
       rgba(255, 255, 255, 0.92),
-      rgba(249, 247, 253, 0.86)
-    );
+      rgba(249, 247, 253, 0.86));
 }
 
-.unlock-result__steps article > svg {
+.unlock-result__steps article>svg {
   width: 40px;
   height: 40px;
   padding: 10px;
@@ -736,18 +702,18 @@
   color: #78827e;
 }
 
-.unlock-result__steps article.is-complete > svg {
+.unlock-result__steps article.is-complete>svg {
   background: #eafaf3;
   color: #269d70;
 }
 
-.unlock-result__steps article.is-processing > svg {
+.unlock-result__steps article.is-processing>svg {
   background: #fff6f8;
   color: #5cbdb9;
   animation: unlockProcessingPulse 2s ease-in-out infinite;
 }
 
-.unlock-result__steps article > div {
+.unlock-result__steps article>div {
   display: grid;
   gap: 3px;
 }
@@ -763,7 +729,7 @@
   line-height: 1.45;
 }
 
-.unlock-result > button {
+.unlock-result>button {
   display: inline-flex;
   min-height: 50px;
   align-items: center;
@@ -774,12 +740,10 @@
   border-radius: 15px;
   padding: 0 18px;
   background:
-    linear-gradient(
-      135deg,
+    linear-gradient(135deg,
       #2f7774,
       #2f7774 58%,
-      #69b7b1
-    );
+      #69b7b1);
   color: #fff;
   font-weight: 900;
   cursor: pointer;
@@ -790,7 +754,7 @@
     box-shadow 180ms ease;
 }
 
-.unlock-result > button:hover {
+.unlock-result>button:hover {
   transform: translateY(-3px);
   box-shadow:
     0 20px 40px rgba(47, 119, 116, 0.31);
@@ -811,6 +775,7 @@
 }
 
 @keyframes unlockOrbOne {
+
   0%,
   100% {
     transform: translateY(0) scale(1);
@@ -822,6 +787,7 @@
 }
 
 @keyframes unlockOrbTwo {
+
   0%,
   100% {
     transform: translateX(0) scale(1);
@@ -833,6 +799,7 @@
 }
 
 @keyframes unlockLockFloat {
+
   0%,
   100% {
     transform: translateY(0) rotate(0deg);
@@ -844,6 +811,7 @@
 }
 
 @keyframes unlockResultOrb {
+
   0%,
   100% {
     transform: translateY(0) scale(1);
@@ -855,6 +823,7 @@
 }
 
 @keyframes unlockResultRing {
+
   0%,
   100% {
     opacity: 0.5;
@@ -868,6 +837,7 @@
 }
 
 @keyframes unlockProcessingPulse {
+
   0%,
   100% {
     box-shadow: 0 0 0 0 rgba(92, 189, 185, 0.15);
@@ -917,28 +887,35 @@
     border-radius: 28px;
   }
 
-  .unlock-result > button {
+  .unlock-result>button {
     width: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .unlock-story__orb,
   .unlock-lock,
   .unlock-result__orb,
   .unlock-result__icon span,
-  .unlock-result__steps article.is-processing > svg {
+  .unlock-result__steps article.is-processing>svg {
     animation: none !important;
   }
 
-  .unlock-benefits > div,
+  .unlock-benefits>div,
   .unlock-methods label,
   .unlock-pay,
-  .unlock-result > button {
+  .unlock-result>button {
     transition: none !important;
   }
 }
-.unlock-backend-price{margin:12px 0 18px;color:#2f7774;font-size:1.45rem;font-weight:900}
+
+.unlock-backend-price {
+  margin: 12px 0 18px;
+  color: #287f7a;
+  font-size: 1.45rem;
+  font-weight: 900
+}
 
 @media (min-width: 981px) and (min-height: 720px) {
   .unlock-page {
@@ -993,7 +970,7 @@
     margin-top: 4px;
   }
 
-  .unlock-story__content > p {
+  .unlock-story__content>p {
     max-width: 760px;
     margin-top: 12px;
     font-size: 0.86rem;
@@ -1005,7 +982,7 @@
     gap: 8px;
   }
 
-  .unlock-benefits > div {
+  .unlock-benefits>div {
     min-height: 62px;
     padding: 9px 11px;
     border-radius: 15px;
@@ -1052,7 +1029,7 @@
     font-size: 1.25rem;
   }
 
-  .unlock-checkout > p {
+  .unlock-checkout>p {
     margin-bottom: 13px;
     font-size: 0.78rem;
     line-height: 1.45;
@@ -1105,7 +1082,50 @@
     font-size: clamp(2.4rem, 3.5vw, 3.45rem);
   }
 
-  .unlock-benefits > div {
+  .unlock-benefits>div {
     min-height: 66px;
   }
+}
+
+/* Final Commivox/Voxidence Buy More Credits palette lock */
+.unlock-story {
+  background:
+    radial-gradient(circle at 86% 12%, rgba(220, 232, 226, 0.46), transparent 28%),
+    radial-gradient(circle at 8% 92%, rgba(250, 220, 227, 0.28), transparent 31%),
+    linear-gradient(145deg, #287b77 0%, #36958f 42%, #56b7b1 72%, #89d3cf 100%) !important;
+}
+
+.unlock-checkout {
+  border-color: rgba(71, 181, 176, 0.24) !important;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(143, 212, 208, 0.30), transparent 30%),
+    radial-gradient(circle at 8% 92%, rgba(248, 231, 235, 0.34), transparent 27%),
+    linear-gradient(150deg, #fffdfc 0%, #fbf8f7 57%, #edf8f5 100%) !important;
+}
+
+.unlock-checkout__eyebrow,
+.unlock-backend-price {
+  color: #287f7a !important;
+}
+
+.unlock-lock {
+  color: #287f7a !important;
+  border-color: rgba(71, 181, 176, 0.22) !important;
+  background: linear-gradient(145deg, #e8f0ec, #fbecef) !important;
+}
+
+.unlock-pay,
+.unlock-checkout .unlock-pay,
+button.unlock-pay {
+  background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%) !important;
+  color: #fff !important;
+  box-shadow:
+    0 14px 30px rgba(45, 151, 145, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
+}
+
+.unlock-pay:hover:not(:disabled),
+.unlock-checkout .unlock-pay:hover:not(:disabled),
+button.unlock-pay:hover:not(:disabled) {
+  background: linear-gradient(135deg, #72c2bc 0%, #5cbdb9 48%, #459d98 100%) !important;
 }

@@ -297,8 +297,11 @@
   color: #6e657d;
 }
 
-.discover-sort>div {
+.discover-sort__content {
+  position: relative;
   display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 2px;
 }
 
@@ -310,15 +313,79 @@
   text-transform: uppercase;
 }
 
-.discover-sort select {
+.discover-sort__trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border: 0;
   outline: 0;
+  padding: 0;
   background: transparent;
   color: #393249;
   font: inherit;
   font-size: .79rem;
   font-weight: 800;
+  text-align: left;
   cursor: pointer;
+}
+
+.discover-sort__trigger svg {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 5px;
+  border-radius: 8px;
+  background: rgba(47, 119, 116, .08);
+  color: #2f7774;
+  stroke-width: 2.25;
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.discover-sort__trigger svg.is-open {
+  transform: rotate(180deg);
+}
+
+.discover-sort__menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 9px);
+  right: -8px;
+  width: 170px;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid rgba(47, 119, 116, .16);
+  border-radius: 12px;
+  background: #fffdfa;
+  box-shadow: 0 16px 34px rgba(47, 119, 116, .16);
+}
+
+.discover-sort__menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: transparent;
+  color: #36413d;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.discover-sort__menu button:hover {
+  background: #eaf5f2;
+  color: #2f7774;
+}
+
+.discover-sort__menu button.is-selected {
+  background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
+  color: #fff;
 }
 
 /* Featured */
@@ -992,12 +1059,6 @@
   box-shadow: 0 14px 30px rgba(47, 119, 116, .24)
 }
 
-
-
-/* ========================================================================== */
-/* V11 — Voxidence Discover hero refinement                                   */
-/* ========================================================================== */
-
 /**
  * Discover page foundation.
  *
@@ -1361,9 +1422,8 @@
 
 
 
-/* ========================================================================== */
-/* V12 — compact Voxidence Discover hero                                      */
-/* ========================================================================== */
+
+/* compact Voxidence Discover hero */
 
 /**
  * Reduces the hero footprint while preserving its existing structure,
@@ -1513,9 +1573,7 @@
 
 
 
-/* ========================================================================== */
-/* V13 — Voxidence featured discovery and gallery cards                       */
-/* ========================================================================== */
+/*Voxidence featured discovery and gallery card*/
 
 /**
  * Featured discovery.
@@ -1797,11 +1855,7 @@
       rgba(244, 251, 249, 0.9));
 }
 
-
-
-/* ========================================================================== */
-/* V15 — refined multicolor Discover palette                                  */
-/* ========================================================================== */
+/* refined multicolor Discover palette */
 
 /**
  * Discovery card palette.
@@ -2028,7 +2082,7 @@
   margin-top: 0;
 }
 
-/* V15 — Show the complete description without clipping or an inner scrollbar.
+/* Show the complete description without clipping or an inner scrollbar.
  * CSS Grid stretches every card in the same row to the tallest card, while the
  * flex layout below keeps the metrics and action button aligned at the bottom. */
 .discover-page .discovery-story p {

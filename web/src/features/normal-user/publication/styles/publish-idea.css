@@ -491,7 +491,7 @@
   width: 19px;
   height: 19px;
   margin: 0;
-  accent-color: #2f7774;
+  accent-color: #5cbdb9;
   cursor: pointer;
 }
 
@@ -537,9 +537,9 @@
 .publish-actions .publish-submit {
   border-color: transparent;
   padding-inline: 22px;
-  background: linear-gradient(135deg, #2f7774, #2f7774 60%, #69b7b1);
+  background: linear-gradient(135deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
   color: #fff;
-  box-shadow: 0 14px 30px rgba(47, 119, 116, .22);
+  box-shadow: 0 14px 30px rgba(92, 189, 185, .24);
 }
 
 .publish-actions button:disabled {
@@ -599,9 +599,9 @@
   background:
     radial-gradient(circle at 86% 10%, rgba(183, 221, 216, .42), transparent 25%),
     radial-gradient(circle at 14% 90%, rgba(243, 201, 211, .34), transparent 31%),
-    linear-gradient(155deg, #2f7774, #4fa9a4 72%, #4fa9a4);
+    linear-gradient(155deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
   box-shadow:
-    0 24px 54px rgba(47, 119, 116, .24),
+    0 24px 54px rgba(92, 189, 185, .24),
     inset 0 1px 0 rgba(255, 255, 255, .12);
   color: #fff;
 }
