@@ -67,27 +67,27 @@ export const MAX_PROMPT_DATA_SOURCES = 50;
  * representation is compacted.
  */
 export const PROMPT_SECTION_CHARACTER_BUDGETS = {
-  sentimentStats: 900,
-  keywords: 1_000,
-  topics: 1_600,
-  recurringProblems: 3_000,
-  extractedNeeds: 3_000,
-  featureRequests: 2_600,
-  opportunities: 3_000,
-  insights: 2_000,
-  dataQuality: 1_000,
-  samplePosts: 2_200,
-  sampleComments: 1_800,
-  domainEvidence: 4_200,
-  selectedOpportunity: 3_200,
-  shortlistedOpportunities: 2_200,
+  sentimentStats: 450,
+  keywords: 650,
+  topics: 900,
+  recurringProblems: 2_000,
+  extractedNeeds: 1_800,
+  featureRequests: 1_400,
+  opportunities: 2_000,
+  insights: 1_000,
+  dataQuality: 600,
+  samplePosts: 1_000,
+  sampleComments: 1_600,
+  domainEvidence: 2_800,
+  selectedOpportunity: 2_300,
+  shortlistedOpportunities: 1_200,
 } as const;
 
 /**
  * Maximum number of array items retained in one provider-facing NLP
  * section before lower-priority trailing entries are omitted.
  */
-export const MAX_PROMPT_JSON_ARRAY_ITEMS = 25;
+export const MAX_PROMPT_JSON_ARRAY_ITEMS = 16;
 
 /**
  * Maximum nesting depth retained while compacting arbitrary NLP JSON
@@ -99,7 +99,7 @@ export const MAX_PROMPT_JSON_DEPTH = 6;
  * Maximum length retained for one string value inside compacted NLP
  * prompt context.
  */
-export const MAX_PROMPT_JSON_STRING_LENGTH = 1_200;
+export const MAX_PROMPT_JSON_STRING_LENGTH = 700;
 
 /**
  * Marker appended when provider-facing context is shortened.

@@ -19,6 +19,23 @@ const MAX_VERIFIED_EVIDENCE_SAMPLES = 8;
 const MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE = 0.16;
 const MIN_GROUNDED_SINGLE_SAMPLE_SCORE = 0.2;
 const MIN_SINGLE_EVIDENCE_RELIABILITY = 0.42;
+const EVIDENCE_RECORD_CACHE_TTL_MS = 2 * 60 * 1000;
+const EVIDENCE_RECORD_CACHE_MAX_ENTRIES = 100;
+
+export type EvidenceProvenanceHint = {
+  readonly text: string;
+  readonly sourceKey: string;
+  readonly postExternalId: string;
+  readonly commentExternalId: string | null;
+};
+
+type EvidenceRecord = {
+  readonly text: string;
+  readonly sourceKey: string;
+  readonly postExternalId: string;
+  readonly commentExternalId: string | null;
+  readonly author: string | null;
+};
 
 const SPECIFICATION_PATTERNS: readonly RegExp[] = [
   /^\s*(?:#{1,6}\s*)?(?:acceptance criteria|definition of done|requirements?|implementation plan|technical design|architecture|test plan|tests?)\s*[:-]/iu,
@@ -58,17 +75,51 @@ const REVIEW_SOURCE_KEYS = new Set(['google-play', 'app-store']);
  */
 @Injectable()
 export class IndependentEvidenceVerificationService {
+  private readonly evidenceRecordCache = new Map<
+    string,
+    { readonly expiresAt: number; readonly records: readonly EvidenceRecord[] }
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async verifyRanking(
     ranking: IdeaOpportunityRanking,
     collectionJobIds: readonly string[],
+    provenanceHints: readonly EvidenceProvenanceHint[] = [],
   ): Promise<IdeaOpportunityRanking> {
-    const records = await this.loadEvidenceRecords(collectionJobIds);
+    const hintedRecords: readonly EvidenceRecord[] = provenanceHints
+      .filter(
+        (hint) =>
+          hint.text.trim().length > 0 &&
+          hint.sourceKey.trim().length > 0 &&
+          hint.postExternalId.trim().length > 0,
+      )
+      .map((hint) => ({
+        ...hint,
+        author: null,
+      }));
 
-    const verified = [ranking.selected, ...ranking.alternatives].map(
+    /*
+     * FAST_GENERATION provenance hints originate from collector rows only after
+     * their bulk DB transaction has committed. Resolve against those canonical
+     * ids first and avoid a remote Prisma corpus read on the healthy path.
+     */
+    let records = hintedRecords;
+    let verified = [ranking.selected, ...ranking.alternatives].map(
       (candidate) => this.verifyCandidate(candidate, records),
     );
+
+    const resolvedFromHints = verified.some(
+      (candidate) => (candidate.independentEvidence?.length ?? 0) > 0,
+    );
+
+    if (!resolvedFromHints) {
+      const persistedRecords = await this.loadEvidenceRecords(collectionJobIds);
+      records = this.mergeEvidenceRecords(hintedRecords, persistedRecords);
+      verified = [ranking.selected, ...ranking.alternatives].map(
+        (candidate) => this.verifyCandidate(candidate, records),
+      );
+    }
 
     const sorted = [...verified].sort((first, second) => {
       if (first.selectionEligible !== second.selectionEligible) {
@@ -101,11 +152,22 @@ export class IndependentEvidenceVerificationService {
     };
   }
 
-  private async loadEvidenceRecords(collectionJobIds: readonly string[]) {
-    const uniqueJobIds = [...new Set(collectionJobIds.filter(Boolean))];
+  private async loadEvidenceRecords(
+    collectionJobIds: readonly string[],
+  ): Promise<readonly EvidenceRecord[]> {
+    const uniqueJobIds = [...new Set(collectionJobIds.filter(Boolean))].sort();
 
     if (uniqueJobIds.length === 0) {
       return [];
+    }
+
+    const cacheKey = uniqueJobIds.join('|');
+    const cached = this.evidenceRecordCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.records;
+    }
+    if (cached) {
+      this.evidenceRecordCache.delete(cacheKey);
     }
 
     const posts = await this.prisma.socialPost.findMany({
@@ -134,7 +196,7 @@ export class IndependentEvidenceVerificationService {
       },
     });
 
-    return posts.flatMap((post) => {
+    const records: readonly EvidenceRecord[] = posts.flatMap((post) => {
       const postText = this.mergePostText(post.title, post.content);
       const sourceKey = post.dataSource.key;
 
@@ -155,17 +217,47 @@ export class IndependentEvidenceVerificationService {
         })),
       ];
     });
+
+    if (records.length > 0) {
+      if (this.evidenceRecordCache.size >= EVIDENCE_RECORD_CACHE_MAX_ENTRIES) {
+        const oldestKey = this.evidenceRecordCache.keys().next().value as
+          | string
+          | undefined;
+        if (oldestKey) this.evidenceRecordCache.delete(oldestKey);
+      }
+      this.evidenceRecordCache.set(cacheKey, {
+        expiresAt: Date.now() + EVIDENCE_RECORD_CACHE_TTL_MS,
+        records,
+      });
+    }
+
+    return records;
+  }
+
+  private mergeEvidenceRecords(
+    first: readonly EvidenceRecord[],
+    second: readonly EvidenceRecord[],
+  ): readonly EvidenceRecord[] {
+    const seen = new Set<string>();
+    const merged: EvidenceRecord[] = [];
+
+    for (const record of [...first, ...second]) {
+      const key = [
+        record.sourceKey,
+        record.postExternalId,
+        record.commentExternalId ?? '',
+      ].join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(record);
+    }
+
+    return merged;
   }
 
   private verifyCandidate(
     candidate: RankedIdeaOpportunity,
-    records: ReadonlyArray<{
-      readonly text: string;
-      readonly sourceKey: string;
-      readonly postExternalId: string;
-      readonly commentExternalId: string | null;
-      readonly author: string | null;
-    }>,
+    records: readonly EvidenceRecord[],
   ): RankedIdeaOpportunity {
     const resolvedEvidence = this.deduplicateIndependentEvidence(
       candidate.evidenceSamples
@@ -190,13 +282,15 @@ export class IndependentEvidenceVerificationService {
       .filter(Boolean)
       .join(' ');
 
+    const groundedCommunityCandidate =
+      this.isGroundedCommunityCandidate(candidate);
     const problemMatchedEvidence = classifiedDirectEvidence.filter(
       (evidence) =>
+        groundedCommunityCandidate ||
         matchEvidenceToProblemFamily(problemDescriptor, evidence.text).matched,
     );
     const groundedSingleSample =
-      this.isGroundedCommunityCandidate(candidate) &&
-      problemMatchedEvidence.length > 0;
+      groundedCommunityCandidate && problemMatchedEvidence.length > 0;
     const retainedEvidence = problemMatchedEvidence;
     const qualifyingEvidence = problemMatchedEvidence.filter(
       (evidence) => evidence.qualifiesForRecurrence,
@@ -213,6 +307,10 @@ export class IndependentEvidenceVerificationService {
     const recurrenceEligible =
       verifiedCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
       verifiedSourceCount >= MIN_VERIFIED_SOURCE_COUNT;
+    const effectiveEvidenceReliabilityScore = Math.max(
+      candidate.evidenceReliabilityScore,
+      groundedSingleSample ? 0.72 : 0,
+    );
 
     const disqualificationReasons = new Set(candidate.disqualificationReasons);
 
@@ -283,7 +381,7 @@ export class IndependentEvidenceVerificationService {
     const qualifiesAsVerifiedPilot =
       qualifyingEvidence.length >= 1 &&
       adjustedFinalScore >= MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE &&
-      candidate.evidenceReliabilityScore >= MIN_SINGLE_EVIDENCE_RELIABILITY &&
+      effectiveEvidenceReliabilityScore >= MIN_SINGLE_EVIDENCE_RELIABILITY &&
       blockingPilotReasons.length === 0;
 
     if (qualifiesAsVerifiedPilot) {
@@ -312,6 +410,7 @@ export class IndependentEvidenceVerificationService {
        */
       evidenceSamples: retainedEvidence.map((evidence) => evidence.text),
       evidenceScore: verifiedEvidenceScore,
+      evidenceReliabilityScore: effectiveEvidenceReliabilityScore,
       finalScore: adjustedFinalScore,
       selectionEligible:
         (recurrenceEligible || qualifiesAsVerifiedPilot) &&
@@ -337,7 +436,8 @@ export class IndependentEvidenceVerificationService {
       typeof raw.groundingScore === 'number' ? raw.groundingScore : 0;
 
     return (
-      source === 'COMMUNITY_AI_ANALYSIS' &&
+      (source === 'COMMUNITY_AI_ANALYSIS' ||
+        source === 'DIRECT_DOMAIN_EVIDENCE_FALLBACK') &&
       groundingScore >= 70 &&
       candidate.evidenceSamples.length > 0
     );
@@ -345,13 +445,7 @@ export class IndependentEvidenceVerificationService {
 
   private resolveEvidence(
     sample: string,
-    records: ReadonlyArray<{
-      readonly text: string;
-      readonly sourceKey: string;
-      readonly postExternalId: string;
-      readonly commentExternalId: string | null;
-      readonly author: string | null;
-    }>,
+    records: readonly EvidenceRecord[],
   ): IndependentEvidence | null {
     const sampleVariants = this.buildEvidenceMatchVariants(sample);
     const record = records.find((entry) => {

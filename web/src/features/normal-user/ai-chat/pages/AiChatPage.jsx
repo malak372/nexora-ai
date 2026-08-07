@@ -145,8 +145,6 @@ export default function AiChatPage() {
     const shouldAutoScrollRef = useRef(true);
     const recognitionRef = useRef(null);
     const voiceBaseDraftRef = useRef('');
-    const voiceFinalTranscriptRef = useRef('');
-    const voiceStoppedByUserRef = useRef(false);
     const sessionRequestRef = useRef(0);
     const pendingMessageRef = useRef(null);
     const titleRefreshTimerRef = useRef(null);
@@ -429,55 +427,74 @@ export default function AiChatPage() {
         const SpeechRecognition =
             window.SpeechRecognition || window.webkitSpeechRecognition;
 
-        if (!SpeechRecognition) {
-            setVoiceSupported(false);
-            return undefined;
+        setVoiceSupported(Boolean(SpeechRecognition));
+
+        return () => {
+            try {
+                recognitionRef.current?.abort();
+            } catch {
+            }
+            recognitionRef.current = null;
+        };
+    }, []);
+
+    const toggleVoiceInput = () => {
+        if (sending) return;
+
+        setError('');
+        setVoiceHint('');
+
+        if (isListening) {
+            recognitionRef.current?.stop();
+            return;
         }
 
-        const recognition = new SpeechRecognition();
+        const SpeechRecognition =
+            window.SpeechRecognition || window.webkitSpeechRecognition;
 
+        if (!SpeechRecognition) {
+            setVoiceSupported(false);
+            setVoiceHint('Voice typing is unavailable in this browser');
+            setError('Voice typing is not supported here. Use Chrome or Edge.');
+            return;
+        }
+
+        setVoiceSupported(true);
+
+        const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
 
-        const pageLanguage = document.documentElement.lang?.trim();
-        const isArabicPage =
-            document.documentElement.dir === 'rtl' ||
-            pageLanguage?.toLowerCase().startsWith('ar');
+        const pageLanguage = document.documentElement.lang?.trim().toLowerCase();
+        recognition.lang = pageLanguage?.startsWith('ar')
+            ? 'ar'
+            : pageLanguage?.startsWith('en')
+                ? 'en-US'
+                : navigator.language || 'en-US';
 
-        recognition.lang = isArabicPage
-            ? 'ar-PS'
-            : pageLanguage || navigator.language || 'en-US';
+        let committed = draft;
+        voiceBaseDraftRef.current = draft;
 
         recognition.onstart = () => {
-            voiceStoppedByUserRef.current = false;
-            voiceFinalTranscriptRef.current = '';
             setIsListening(true);
             setVoiceHint('Listening… speak naturally');
         };
 
         recognition.onresult = (event) => {
-            let interimTranscript = '';
+            let interim = '';
 
             for (let index = event.resultIndex; index < event.results.length; index += 1) {
-                const result = event.results[index];
-                const transcript = result[0]?.transcript || '';
+                const transcript = event.results[index][0]?.transcript || '';
 
-                if (result.isFinal) {
-                    voiceFinalTranscriptRef.current += `${transcript} `;
+                if (event.results[index].isFinal) {
+                    committed = `${committed} ${transcript}`.trim();
                 } else {
-                    interimTranscript += transcript;
+                    interim += transcript;
                 }
             }
 
-            const base = voiceBaseDraftRef.current.trimEnd();
-            const spokenText = `${voiceFinalTranscriptRef.current}${interimTranscript}`.trim();
-
-            setDraft(
-                base && spokenText
-                    ? `${base} ${spokenText}`
-                    : base || spokenText,
-            );
+            setDraft(`${committed} ${interim}`.trim());
         };
 
         recognition.onerror = (event) => {
@@ -485,7 +502,7 @@ export default function AiChatPage() {
 
             if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                 setVoiceHint('Microphone permission is required');
-                setError('Please allow microphone access to use Premium voice typing.');
+                setError('Please allow microphone access to use voice typing.');
                 return;
             }
 
@@ -495,52 +512,22 @@ export default function AiChatPage() {
             }
 
             setVoiceHint('Voice typing stopped');
-            setError('Voice typing could not continue. Please try again.');
+            setError('Voice typing stopped. Please try again.');
         };
 
         recognition.onend = () => {
             setIsListening(false);
-            setVoiceHint(
-                voiceStoppedByUserRef.current
-                    ? ''
-                    : 'Voice input ended — tap the microphone to continue',
-            );
+            recognitionRef.current = null;
         };
 
         recognitionRef.current = recognition;
 
-        return () => {
-            recognition.onstart = null;
-            recognition.onresult = null;
-            recognition.onerror = null;
-            recognition.onend = null;
-            recognition.abort();
-            recognitionRef.current = null;
-        };
-    }, []);
-
-    const toggleVoiceInput = () => {
-        if (!voiceSupported || !recognitionRef.current || sending) {
-            return;
-        }
-
-        setError('');
-
-        if (isListening) {
-            voiceStoppedByUserRef.current = true;
-            recognitionRef.current.stop();
-            return;
-        }
-
-        voiceBaseDraftRef.current = draft;
-        voiceFinalTranscriptRef.current = '';
-        voiceStoppedByUserRef.current = false;
-
         try {
-            recognitionRef.current.start();
-        } catch (recognitionError) {
+            recognition.start();
+        } catch {
+            recognitionRef.current = null;
             setIsListening(false);
-            setError('The microphone is already starting. Please wait a moment and try again.');
+            setError('The microphone could not start. Please try again.');
         }
     };
 

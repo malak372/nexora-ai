@@ -41,6 +41,8 @@ import type {
  */
 @Injectable()
 export class IdeaGenerationPolicyService {
+  private premiumCostCache: { value: number; expiresAt: number } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
   /**
    * Evaluates generation entitlement for either a registered user
@@ -219,11 +221,7 @@ export class IdeaGenerationPolicyService {
     const { user } = input;
 
     const currentCreditBalance = Math.max(0, user.creditBalance);
-    const settings = await this.prisma.systemSetting.findUnique({
-      where: { key: 'GLOBAL' },
-      select: { premiumIdeaCreditCost: true },
-    });
-    const requiredCredits = settings?.premiumIdeaCreditCost ?? 15;
+    const requiredCredits = await this.getPremiumIdeaCreditCost();
 
     if (currentCreditBalance < requiredCredits) {
       throw new ForbiddenException({
@@ -280,4 +278,24 @@ export class IdeaGenerationPolicyService {
       });
     }
   }
+  warmPremiumIdeaCreditCost(value: number): void {
+    if (!Number.isInteger(value) || value < 0) return;
+    this.premiumCostCache = { value, expiresAt: Date.now() + 60_000 };
+  }
+
+  private async getPremiumIdeaCreditCost(): Promise<number> {
+    const now = Date.now();
+    if (this.premiumCostCache && this.premiumCostCache.expiresAt > now) {
+      return this.premiumCostCache.value;
+    }
+
+    const settings = await this.prisma.systemSetting.findUnique({
+      where: { key: 'GLOBAL' },
+      select: { premiumIdeaCreditCost: true },
+    });
+    const value = settings?.premiumIdeaCreditCost ?? 15;
+    this.premiumCostCache = { value, expiresAt: now + 60_000 };
+    return value;
+  }
+
 }

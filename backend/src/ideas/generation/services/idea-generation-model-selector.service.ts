@@ -150,36 +150,45 @@ export class IdeaGenerationModelSelectorService {
   /**
    * Returns the provider-diverse initial benchmark group.
    *
-   * At most one model per provider is started concurrently. Additional models
-   * are attempted sequentially only when the initial group does not produce
-   * enough accepted candidates. This avoids sending multiple simultaneous
-   * requests to an account whose provider-wide daily quota may already be
-   * exhausted.
+   * The fast path starts up to three bounded candidates: one direct Google,
+   * one OpenRouter, and a second direct Google when available. This avoids a
+   * second serial provider wave when OpenRouter times out while still keeping
+   * the race small enough to protect provider quotas.
    */
   getInitialModels(orderedModels: readonly AiModel[]): AiModel[] {
     const normalizedProvider = (model: AiModel): string =>
       model.providerKey.trim().toLowerCase();
 
-    const firstGoogle = orderedModels.find(
+    const googleModels = orderedModels.filter(
       (model) => normalizedProvider(model) === 'google',
     );
-    const firstOpenRouter = orderedModels.find(
+    const openRouterModels = orderedModels.filter(
       (model) => normalizedProvider(model) === 'openrouter',
     );
 
     /*
-     * Start one direct Google model and one OpenRouter model in parallel.
-     * OpenRouter is a first-wave benchmark participant, not a fallback.
+     * Fast benchmark race:
+     * - first direct Google model,
+     * - first OpenRouter model,
+     * - second direct Google model when available.
+     *
+     * The third lane is important because a provider-diverse pair can still
+     * end with one sub-threshold Google result plus one OpenRouter timeout.
+     * Launching the next healthy Google model in the same first wave turns
+     * that previous 35-40 second serial fallback into one bounded race.
      */
-    const providerDiverseModels = [firstGoogle, firstOpenRouter].filter(
-      (model): model is AiModel => Boolean(model),
-    );
+    const fastRace = [
+      googleModels[0],
+      openRouterModels[0],
+      googleModels[1],
+    ].filter((model): model is AiModel => Boolean(model));
 
-    if (providerDiverseModels.length > 0) {
-      return providerDiverseModels.slice(
-        0,
-        IDEA_BENCHMARK_INITIAL_MODEL_COUNT,
-      );
+    const uniqueFastRace = [...new Map(
+      fastRace.map((model) => [model.id, model] as const),
+    ).values()];
+
+    if (uniqueFastRace.length > 0) {
+      return uniqueFastRace.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);
     }
 
     return orderedModels.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);

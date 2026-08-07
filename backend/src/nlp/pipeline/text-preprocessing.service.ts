@@ -175,7 +175,8 @@ type LanguageResolvedTextItem = CleanedTextItem & {
  */
 @Injectable()
 export class TextPreprocessingService {
-  private static readonly MAX_FAST_ANALYSIS_TEXTS = 24;
+  private static readonly MAX_FAST_ANALYSIS_TEXTS = 30;
+  private static readonly MAX_FINAL_EVIDENCE_TEXTS = 20;
 
   private readonly logger = new Logger(TextPreprocessingService.name);
 
@@ -356,7 +357,7 @@ export class TextPreprocessingService {
             this.contextualEvidencePriority(first) ||
           second.relevanceScore - first.relevanceScore,
       )
-      .slice(0, 6);
+      .slice(0, 12);
 
     if (protectedDirectComments.length > 0) {
       relevantTexts = [...relevantTexts, ...protectedDirectComments];
@@ -400,7 +401,7 @@ export class TextPreprocessingService {
             second.relevanceScore - first.relevanceScore
           );
         })
-        .slice(0, 6);
+        .slice(0, 12);
 
       if (relevantTexts.length > 0) {
         this.logger.warn(
@@ -408,6 +409,53 @@ export class TextPreprocessingService {
         );
       }
     }
+
+    /*
+     * A strict relevance pass can be technically correct yet too destructive
+     * for discovery (for example 90+ collected records collapsing to 2-3
+     * texts). Top up a sparse result from the already-cleaned/evaluated corpus
+     * using only concrete complaint/request/privacy/performance/reliability
+     * signals. This adds no provider call and keeps the AI payload bounded.
+     */
+    const minimumEvidenceTarget = Math.min(
+      12,
+      TextPreprocessingService.MAX_FINAL_EVIDENCE_TEXTS,
+    );
+    if (relevantTexts.length < minimumEvidenceTarget) {
+      const currentIds = new Set(relevantTexts.map((text) => text.id));
+      const topUpCandidates = evaluatedTexts
+        .map((item) => item.text)
+        .filter((text) => !currentIds.has(text.id))
+        .filter((text) => this.isDiscoveryEvidenceCandidate(text))
+        .sort(
+          (first, second) =>
+            this.contextualEvidencePriority(second) -
+              this.contextualEvidencePriority(first) ||
+            second.relevanceScore - first.relevanceScore,
+        );
+
+      for (const candidate of topUpCandidates) {
+        if (relevantTexts.length >= minimumEvidenceTarget) break;
+        relevantTexts.push(candidate);
+        currentIds.add(candidate.id);
+      }
+
+      if (topUpCandidates.length > 0) {
+        this.logger.debug(
+          `Evidence top-up retained ${relevantTexts.length} bounded discovery text(s) after strict relevance filtering.`,
+        );
+      }
+    }
+
+    /*
+     * Keep the synchronous/AI corpus broad enough to cover several problem
+     * families, but bounded enough for a sub-minute generation target. Avoid
+     * letting one video/thread or one problem family monopolize all 20 slots.
+     */
+    relevantTexts = this.selectDiverseFinalEvidence(
+      relevantTexts,
+      TextPreprocessingService.MAX_FINAL_EVIDENCE_TEXTS,
+    );
 
     const irrelevantTextsRemoved =
       evaluatedTexts.length - relevantTexts.length + technicalNoiseTextsRemoved;
@@ -507,8 +555,8 @@ export class TextPreprocessingService {
       }
     };
 
-    take('COMMENT', 16);
-    take('POST', 8);
+    take('COMMENT', 20);
+    take('POST', 10);
 
     for (const entry of ranked) {
       if (selected.length >= TextPreprocessingService.MAX_FAST_ANALYSIS_TEXTS) {
@@ -631,6 +679,13 @@ export class TextPreprocessingService {
       'hard to',
       'confusing',
       'slow',
+      'lag',
+      'latency',
+      'privacy',
+      'security',
+      'inaccurate',
+      'wrong',
+      'deleted',
       'crash',
       'error',
       'fails',
@@ -700,6 +755,99 @@ export class TextPreprocessingService {
     }
 
     return text.relevanceScore >= 0.05;
+  }
+
+  /**
+   * Accepts concrete discovery evidence even when strict domain relevance is
+   * borderline. The text has already passed language, duplicate, publisher-copy
+   * and technical-noise filtering before reaching this method.
+   */
+  private isDiscoveryEvidenceCandidate(text: PreprocessedTextInput): boolean {
+    const normalized = `${text.title ?? ''} ${text.content}`
+      .replace(/\s+/gu, ' ')
+      .toLowerCase();
+    const concreteSignal = /\b(?:cannot|can't|unable|not working|does not work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|deleted|inaccurate|wrong|hallucinat(?:e|es|ed|ion)|unsafe|security|privacy|permission|history|need|needs|should|please add|please improve|feature request|wish|frustrat(?:e|ed|ing))\b/iu.test(normalized);
+    if (!concreteSignal) return false;
+
+    if (text.sourceType === 'COMMENT' && this.isDirectUserCommentEvidence(text.content)) {
+      return true;
+    }
+
+    return (
+      text.isComplaintEvidence === true ||
+      text.relevanceScore >= 0.05 ||
+      text.matchedKeywords.length > 0 ||
+      text.matchedPhrases.length > 0
+    );
+  }
+
+  /**
+   * Produces a deterministic, diverse final evidence set. At most two comments
+   * from the same parent thread are retained during the first pass and each
+   * major problem family receives representation before remaining slots are
+   * filled by overall evidence strength.
+   */
+  private selectDiverseFinalEvidence(
+    texts: ReadonlyArray<PreprocessedTextInput>,
+    limit: number,
+  ): PreprocessedTextInput[] {
+    if (texts.length <= limit) return [...texts];
+
+    const ranked = [...texts].sort(
+      (first, second) =>
+        this.contextualEvidencePriority(second) -
+          this.contextualEvidencePriority(first) ||
+        second.relevanceScore - first.relevanceScore,
+    );
+    const selected: PreprocessedTextInput[] = [];
+    const selectedIds = new Set<string>();
+    const threadCounts = new Map<string, number>();
+    const familyCounts = new Map<string, number>();
+
+    const familyOf = (text: PreprocessedTextInput): string => {
+      const value = `${text.title ?? ''} ${text.content}`.toLowerCase();
+      if (/privacy|permission|consent|deleted.*history|data exposure/iu.test(value)) return 'privacy';
+      if (/slow|lag|latency|timeout|performance/iu.test(value)) return 'performance';
+      if (/crash|freeze|broken|not working|fail|error|stability|reliab/iu.test(value)) return 'reliability';
+      if (/inaccurate|wrong|hallucinat|incorrect|quality/iu.test(value)) return 'accuracy';
+      if (/feature request|please add|please improve|wish|need|should/iu.test(value)) return 'request';
+      return 'other';
+    };
+
+    const tryAdd = (text: PreprocessedTextInput, enforceFamilyCap: boolean): boolean => {
+      if (selectedIds.has(text.id) || selected.length >= limit) return false;
+      const threadKey = text.postId ?? (text.sourceType === 'POST' ? text.id : 'orphan-comment');
+      const threadCount = threadCounts.get(threadKey) ?? 0;
+      if (threadCount >= 2) return false;
+      const family = familyOf(text);
+      const familyCount = familyCounts.get(family) ?? 0;
+      if (enforceFamilyCap && familyCount >= 4) return false;
+      selected.push(text);
+      selectedIds.add(text.id);
+      threadCounts.set(threadKey, threadCount + 1);
+      familyCounts.set(family, familyCount + 1);
+      return true;
+    };
+
+    for (const family of ['reliability', 'privacy', 'performance', 'accuracy', 'request', 'other']) {
+      for (const text of ranked) {
+        if (familyOf(text) === family) {
+          tryAdd(text, true);
+          if ((familyCounts.get(family) ?? 0) >= 2 || selected.length >= limit) break;
+        }
+      }
+    }
+
+    for (const text of ranked) {
+      if (selected.length >= limit) break;
+      tryAdd(text, true);
+    }
+    for (const text of ranked) {
+      if (selected.length >= limit) break;
+      tryAdd(text, false);
+    }
+
+    return selected;
   }
 
   /** Ranks bounded fallback evidence without another provider call. */

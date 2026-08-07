@@ -319,7 +319,7 @@ export class IdeaQualityEvaluatorService {
       issues.push({
         code: 'UNSUPPORTED_PLATFORM_ACCESS',
         message:
-          "Replace unsupported cross-application access with a concrete platform-compliant integration. A standalone app cannot read or validate another app's receipts, private logs, secure storage, subscription status, or entitlements. Make a host-integrated SDK, vendor-owned backend, StoreKit/Play Billing integration, supported export, or explicit user-authorized import the primary workflow.",
+          "Replace unsupported cross-application access with a concrete platform-compliant integration. A standalone app cannot read or validate another app's receipts, private logs, secure storage, subscription status, entitlements, or authentication session; it also cannot bypass regional MFA or make a third-party host application recognize a session. Use a host-integrated SDK/vendor backend or supported OAuth/identity-provider integration when the host adopts the solution. Otherwise use a user-authorized diagnostic, compatibility-check, export/import, or recovery-guidance workflow that does not change the host application's protected state.",
         penalty: 30,
       });
     }
@@ -719,6 +719,14 @@ export class IdeaQualityEvaluatorService {
         platformText,
       );
 
+    const unsupportedAuthenticationControl =
+      /\b(?:bypass|circumvent|proxy\s+around|bridge|mint|create|restore|establish|inject|synchroni[sz]e)\b[^.!?]{0,150}\b(?:authentication|login|mfa|multi[- ]factor|two[- ]factor|2fa|host\s+(?:app|application)\s+session|authenticated\s+session)\b/iu.test(
+        platformText,
+      ) ||
+      /\b(?:host|third[- ]party)\s+(?:app|application)\b[^.!?]{0,180}\b(?:recognize|accept|trust)\b[^.!?]{0,100}\b(?:session|token|authentication|login)\b/iu.test(
+        platformText,
+      );
+
     const supportedPrimaryPath =
       /\b(?:host[- ]integrated\s+sdk|sdk\s+(?:embedded|integrated)\s+(?:in|into|within)\s+(?:the\s+)?host\s+app(?:lication)?|host\s+app(?:lication)?\s+integrates?\s+(?:the\s+)?sdk|vendor[- ]owned\s+backend|application\s+developer(?:'s)?\s+backend|storekit(?:\s*2)?\s+integration|google\s+play\s+billing\s+integration|play\s+billing\s+integration|official\s+supported\s+(?:api|export)|explicit\s+user[- ]authorized\s+(?:receipt\s+)?import|user[- ]authorized\s+(?:receipt\s+)?import)\b/iu.test(
         coreWorkflowText,
@@ -732,7 +740,8 @@ export class IdeaQualityEvaluatorService {
       crossApplicationContext &&
       (sensitiveCrossAppAccess ||
         directStoreVerification ||
-        unsupportedEntitlementControl) &&
+        unsupportedEntitlementControl ||
+        unsupportedAuthenticationControl) &&
       (!supportedPrimaryPath || integrationIsOnlyOptional)
     );
   }

@@ -211,9 +211,15 @@ export class PromptBuilderService {
   async buildIdeaPrompt(
     input: PromptBuilderInput,
   ): Promise<PromptBuilderOutput> {
-    const collectionJob = await this.getCollectionJobContext(
-      input.collectionJobId,
-    );
+    /*
+     * Collection context and the active template are independent reads. Start
+     * them together so prompt building pays one remote-DB latency wave instead
+     * of two. The template service also keeps its own short cache.
+     */
+    const [collectionJob, template] = await Promise.all([
+      this.getCollectionJobContext(input.collectionJobId),
+      this.promptTemplateService.getIdeaPromptTemplate(),
+    ]);
 
     this.validateCollectionJob(collectionJob, input);
 
@@ -231,9 +237,8 @@ export class PromptBuilderService {
      * Running them in parallel removes two serial Supabase round-trips from
      * every prompt-building stage without changing any prompt content.
      */
-    const [existingIdea, template, recentIdeas] = await Promise.all([
+    const [existingIdea, recentIdeas] = await Promise.all([
       this.getExistingIdea(input),
-      this.promptTemplateService.getIdeaPromptTemplate(),
       this.getRecentIdeasForDiversity(input, collectionJob),
     ]);
 
@@ -734,19 +739,9 @@ export class PromptBuilderService {
       where: {
         domainId: collectionJob.domain.id,
         deletedAt: null,
-        collectionJob: {
-          is: {
-            country: {
-              equals: normalizedCountry,
-              mode: 'insensitive',
-            },
-            city: normalizedCity
-              ? { equals: normalizedCity, mode: 'insensitive' }
-              : null,
-            region: normalizedRegion
-              ? { equals: normalizedRegion, mode: 'insensitive' }
-              : null,
-          },
+        selectedRegion: {
+          equals: normalizedCity ?? normalizedRegion ?? normalizedCountry,
+          mode: 'insensitive',
         },
       },
       select: {
@@ -758,13 +753,12 @@ export class PromptBuilderService {
       },
       orderBy: { createdAt: 'desc' },
       /*
-       * Keep a wider duplicate-prevention window while loading only compact
-       * fields. Thirty signatures cover older same-domain ideas that may
-       * otherwise trigger an expensive duplicate-redesign AI call. Full
-       * abstracts are deliberately excluded, so the database payload remains
-       * smaller than the old thirty-full-abstract implementation.
+       * Keep only the latest compact regional signatures. A later dedicated
+       * duplicate stage remains authoritative; this prompt hint exists only to
+       * discourage obvious repeats and should not add a large relational query
+       * to the critical generation path.
        */
-      take: 18,
+      take: 8,
     });
 
     return ideas.map((idea) => ({

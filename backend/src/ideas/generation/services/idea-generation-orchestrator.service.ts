@@ -320,21 +320,39 @@ export class IdeaGenerationOrchestratorService {
       throw new NotFoundException('No selected generation domain is active.');
     }
 
-    const userKeywords = this.normalizeStringArray(dto.keywords);
-    const domainKeywords = selectedDomains.flatMap((domain) => [
-      domain.name,
-      ...domain.keywords,
-    ]);
+    const userKeywords = this.normalizeStringArray(dto.keywords).slice(0, 6);
     const bridgeKeyword = selectedDomains.length > 1
       ? `coherent cross-domain workflow combining ${selectedDomains.map((domain) => domain.name).join(' and ')}`
       : selectedDomains[0].name;
+
+    /*
+     * Build the collection keyword budget in round-robin order. A simple
+     * flatMap().slice() allowed the first domain to consume the whole budget,
+     * leaving secondary selected domains with no search coverage.
+     */
+    const balancedDomainKeywords: string[] = [];
+    const perDomainTerms = selectedDomains.map((domain) => [
+      domain.name,
+      ...domain.keywords,
+    ]);
+    for (let termIndex = 0; balancedDomainKeywords.length < 24; termIndex += 1) {
+      let added = false;
+      for (const terms of perDomainTerms) {
+        const term = terms[termIndex];
+        if (!term) continue;
+        balancedDomainKeywords.push(term);
+        added = true;
+        if (balancedDomainKeywords.length >= 24) break;
+      }
+      if (!added) break;
+    }
 
     return {
       selectedDomains,
       keywords: [...new Set([
         ...userKeywords,
         bridgeKeyword,
-        ...domainKeywords,
+        ...balancedDomainKeywords,
       ])].slice(0, 30),
     };
   }

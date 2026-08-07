@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 import { BaseCollector } from '../base/base.collector';
 import { SocialCollector } from '../base/collector.interface';
@@ -49,6 +50,8 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
   readonly sourceKey = 'news';
 
   private readonly apiBaseUrl = 'https://newsapi.org/v2';
+  private static unavailableUntil = 0;
+  private static readonly RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
   constructor(configService: ConfigService) {
     super(configService, NewsCollector.name);
@@ -59,6 +62,14 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
     try {
+      if (
+        input.collectionMode === 'FAST_GENERATION' &&
+        NewsCollector.unavailableUntil > Date.now()
+      ) {
+        this.logger.warn('News collection skipped by rate-limit circuit breaker.');
+        return [];
+      }
+
       const apiKey = this.getApiKey();
       const searchQueries = this.buildSearchQueries(input);
 
@@ -120,6 +131,21 @@ export class NewsCollector extends BaseCollector implements SocialCollector {
 
       return rankedArticles;
     } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        NewsCollector.unavailableUntil =
+          Date.now() + NewsCollector.RATE_LIMIT_COOLDOWN_MS;
+        this.logger.warn(
+          'NewsAPI rate limit reached; FAST_GENERATION news requests are disabled for 30 minutes.',
+        );
+
+        /*
+         * News is an optional evidence source. A provider quota must never mark
+         * the complete fast collection as failed or trigger recovery work.
+         */
+        if (input.collectionMode === 'FAST_GENERATION') {
+          return [];
+        }
+      }
       this.logger.error('News collection failed', this.getErrorMessage(error));
 
       throw new ServiceUnavailableException(

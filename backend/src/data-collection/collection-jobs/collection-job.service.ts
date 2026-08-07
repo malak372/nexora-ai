@@ -270,7 +270,7 @@ export class CollectionJobService {
         },
       },
 
-      include: collectionJobInclude,
+      select: { id: true },
     });
   }
 
@@ -388,6 +388,7 @@ export class CollectionJobService {
       totalPosts: number;
       totalComments: number;
     },
+    startedAt?: Date,
   ) {
     return this.prisma.collectionJobSource.update({
       where: {
@@ -399,6 +400,8 @@ export class CollectionJobService {
 
       data: {
         status: CollectionJobStatus.COMPLETED,
+
+        ...(startedAt ? { startedAt } : {}),
 
         totalPosts: this.toNonNegativeInteger(totals.totalPosts),
 
@@ -421,6 +424,7 @@ export class CollectionJobService {
       totalPosts: number;
       totalComments: number;
     },
+    startedAt?: Date,
   ) {
     return this.prisma.collectionJobSource.update({
       where: {
@@ -432,6 +436,7 @@ export class CollectionJobService {
 
       data: {
         status: CollectionJobStatus.FAILED,
+        ...(startedAt ? { startedAt } : {}),
         totalPosts: this.toNonNegativeInteger(totals?.totalPosts ?? 0),
         totalComments: this.toNonNegativeInteger(totals?.totalComments ?? 0),
         completedAt: new Date(),

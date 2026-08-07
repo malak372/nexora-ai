@@ -60,48 +60,77 @@ export class SocialPostService {
       region?: string | null;
     },
     posts: CollectorPost[],
-  ): Promise<{ totalPosts: number; totalComments: number }> {
+  ): Promise<{
+    totalPosts: number;
+    totalComments: number;
+    persistedPosts: CollectorPost[];
+  }> {
     const uniquePosts = new Map<string, CollectorPost>();
 
     for (const post of posts) {
       const externalId = post.externalId.trim();
       const content = post.content.trim();
-      if (!externalId || !content || uniquePosts.has(externalId)) continue;
+      const title = post.title?.trim() ?? '';
+      const hasPersistableComment = (post.comments ?? []).some(
+        (comment) =>
+          comment.externalId.trim().length > 0 &&
+          comment.content.trim().length > 0,
+      );
+
+      /*
+       * YouTube/app-store evidence often lives entirely in user comments while
+       * the parent description is empty. The parent row is still required as
+       * the foreign-key container for those comments, so never drop a valid
+       * comment thread merely because post.content is blank.
+       */
+      if (
+        !externalId ||
+        (!content && !title && !hasPersistableComment) ||
+        uniquePosts.has(externalId)
+      ) {
+        continue;
+      }
       uniquePosts.set(externalId, post);
     }
 
     const now = new Date();
     const preparedPosts = [...uniquePosts.values()].map((post) => ({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       post,
     }));
 
     if (preparedPosts.length === 0) {
-      return { totalPosts: 0, totalComments: 0 };
+      return {
+        totalPosts: 0,
+        totalComments: 0,
+        persistedPosts: [],
+      };
     }
 
-    await this.prisma.socialPost.createMany({
-      data: preparedPosts.map(({ id, post }) => ({
-        id,
-        collectionJobId,
-        dataSourceId,
-        externalId: post.externalId.trim(),
-        title: this.normalizeOptionalText(post.title),
-        content: post.content.trim(),
-        author: this.normalizeOptionalText(post.author),
-        url: this.normalizeOptionalText(post.url),
-        country: this.normalizeOptionalText(post.country ?? location.country),
-        city: this.normalizeOptionalText(post.city ?? location.city),
-        region: this.normalizeOptionalText(post.region ?? location.region),
-        languageCode: this.normalizeOptionalText(post.languageCode),
-        likesCount: this.toNonNegativeInteger(post.likesCount),
-        repliesCount: this.toNonNegativeInteger(
-          post.repliesCount ?? (post.comments ?? []).length,
-        ),
-        publishedAt: post.publishedAt,
-        collectedAt: now,
-      })),
-    });
+    const postData = preparedPosts.map(({ id, post }) => ({
+      id,
+      collectionJobId,
+      dataSourceId,
+      externalId: post.externalId.trim(),
+      title: this.normalizeOptionalText(post.title),
+      content:
+        post.content.trim() ||
+        post.title?.trim() ||
+        'Community discussion',
+      author: this.normalizeOptionalText(post.author),
+      url: this.normalizeOptionalText(post.url),
+      country: this.normalizeOptionalText(post.country ?? location.country),
+      city: this.normalizeOptionalText(post.city ?? location.city),
+      region: this.normalizeOptionalText(post.region ?? location.region),
+      languageCode: this.normalizeOptionalText(post.languageCode),
+      likesCount: this.toNonNegativeInteger(post.likesCount),
+      repliesCount: this.toNonNegativeInteger(
+        post.repliesCount ?? (post.comments ?? []).length,
+      ),
+      publishedAt: post.publishedAt,
+      collectedAt: now,
+      createdAt: now,
+    }));
 
     const seenComments = new Set<string>();
     const comments = preparedPosts.flatMap(({ id: postId, post }) =>
@@ -123,17 +152,38 @@ export class SocialPostService {
           likesCount: this.toNonNegativeInteger(comment.likesCount),
           publishedAt: comment.publishedAt,
           collectedAt: now,
+          createdAt: now,
         }];
       }),
     );
+
+    /*
+     * Keep the two operations as sequential bulk writes. SocialComment rows
+     * reference the locally generated SocialPost ids, so the parent INSERT
+     * must be visible before the comment INSERT is issued. A Prisma batch
+     * transaction can prepare both statements together and proved unreliable
+     * for this FK-dependent fast path against the remote PostgreSQL pool.
+     *
+     * This is still O(1) database writes per source (one bulk post write and
+     * one bulk comment write), not one transaction per row.
+     */
+    await this.prisma.socialPost.createMany({ data: postData });
 
     if (comments.length > 0) {
       await this.prisma.socialComment.createMany({ data: comments });
     }
 
+    /*
+     * createMany throws on a failed write. Reaching this point therefore means
+     * the complete prepared corpus was persisted successfully. Use the
+     * prepared cardinalities directly instead of relying on provider-specific
+     * BatchPayload count behavior. The same exact posts are returned so the
+     * FAST_GENERATION NLP cache cannot diverge from persisted provenance.
+     */
     return {
       totalPosts: preparedPosts.length,
       totalComments: comments.length,
+      persistedPosts: preparedPosts.map(({ post }) => post),
     };
   }
 

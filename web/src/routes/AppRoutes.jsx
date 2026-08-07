@@ -14,6 +14,7 @@ import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import AuthLayout from '../layouts/AuthLayout';
 import PublicLayout from '../layouts/PublicLayout';
 import { normalUserRoutes } from './normal-user.routes';
+import { adminRoutes } from './admin.routes';
 
 const HomePage = lazy(() => import('../pages/public/HomePage'));
 const NotFoundPage = lazy(() => import('../pages/public/NotFoundPage'));
@@ -47,6 +48,7 @@ export default function AppRoutes() {
                 </Route>
 
                 {normalUserRoutes}
+                {adminRoutes}
 
                 <Route path="*" element={<NotFoundPage />} />
             </Routes>

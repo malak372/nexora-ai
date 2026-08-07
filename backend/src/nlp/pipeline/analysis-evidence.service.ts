@@ -7,7 +7,7 @@ import type { TextAnalysisResult } from './types/intelligent-analysis.types';
 
 const MAX_OUTPUT_POST_SAMPLES = 5;
 const MAX_OUTPUT_COMMENT_SAMPLES = 5;
-const MAX_AI_ENHANCEMENT_EVIDENCE = 40;
+const MAX_AI_ENHANCEMENT_EVIDENCE = 20;
 
 /**
  * Selects representative evidence from analyzed NLP texts.
