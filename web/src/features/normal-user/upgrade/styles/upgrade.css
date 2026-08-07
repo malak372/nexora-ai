@@ -1,12 +1,12 @@
 .upgrade-page {
-  --upgrade-ink: #263b39;
-  --upgrade-muted: #74817f;
-  --upgrade-line: rgba(62, 126, 121, 0.16);
-  --upgrade-eucalyptus: #2f817c;
-  --upgrade-eucalyptus-dark: #236762;
-  --upgrade-mint: #6fc3bc;
-  --upgrade-pearl: #fffdfb;
-  --upgrade-rose: #f7e8eb;
+  --upgrade-ink: #3f514c;
+  --upgrade-muted: #788984;
+  --upgrade-line: rgba(71, 181, 176, 0.22);
+  --upgrade-eucalyptus: #4fb9b4;
+  --upgrade-eucalyptus-dark: #287f7a;
+  --upgrade-mint: #8fd4d0;
+  --upgrade-pearl: #fffdfc;
+  --upgrade-rose: #f8e7eb;
   width: min(100%, 1480px);
   height: calc(100dvh - 94px);
   min-height: 650px;
@@ -46,10 +46,10 @@
   padding: clamp(25px, 3.2vw, 44px);
   border: 1px solid rgba(255, 255, 255, 0.34);
   background:
-    radial-gradient(circle at 86% 12%, rgba(183, 231, 226, 0.34), transparent 27%),
-    radial-gradient(circle at 8% 92%, rgba(247, 213, 220, 0.22), transparent 30%),
-    linear-gradient(145deg, #1f5551 0%, #2d7671 48%, #43948d 76%, #72bbb5 100%);
-  box-shadow: 0 28px 72px rgba(38, 102, 97, 0.2), inset 0 1px 0 rgba(255, 255, 255, .22);
+    radial-gradient(circle at 86% 12%, rgba(220, 232, 226, 0.46), transparent 28%),
+    radial-gradient(circle at 8% 92%, rgba(250, 220, 227, 0.28), transparent 31%),
+    linear-gradient(145deg, #287b77 0%, #36958f 42%, #56b7b1 72%, #89d3cf 100%);
+  box-shadow: 0 28px 72px rgba(39, 126, 121, 0.18), inset 0 1px 0 rgba(255, 255, 255, .24);
   color: #fff;
 }
 
@@ -78,7 +78,7 @@
   right: 2%;
   width: 350px;
   height: 350px;
-  background: radial-gradient(circle, rgba(212, 246, 242, .28), transparent 68%);
+  background: radial-gradient(circle, rgba(220, 232, 226, .30), transparent 68%);
   animation: upgradeOrbOne 9s ease-in-out infinite;
 }
 
@@ -128,7 +128,7 @@
   display: block;
   margin-top: 7px;
   color: transparent;
-  background: linear-gradient(90deg, #fff, #d9f5f1 50%, #f5dfe4);
+  background: linear-gradient(90deg, #fff, #dff3ef 52%, #f7e5e9);
   -webkit-background-clip: text;
   background-clip: text;
   font-style: normal;
@@ -159,7 +159,7 @@
   border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 16px;
   background: linear-gradient(145deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .075));
-  box-shadow: 0 12px 28px rgba(22, 74, 70, .13), inset 0 1px 0 rgba(255, 255, 255, .14);
+  box-shadow: 0 12px 28px rgba(56, 88, 80, .12), inset 0 1px 0 rgba(255, 255, 255, .14);
   backdrop-filter: blur(13px);
   transition: transform 200ms ease, background 200ms ease, border-color 200ms ease;
 }
@@ -240,10 +240,10 @@
   padding: clamp(22px, 2.8vw, 36px);
   border: 1px solid var(--upgrade-line);
   background:
-    radial-gradient(circle at 92% 8%, rgba(113, 195, 188, .15), transparent 28%),
+    radial-gradient(circle at 92% 8%, rgba(169, 190, 180, .18), transparent 28%),
     radial-gradient(circle at 8% 92%, rgba(246, 219, 224, .18), transparent 24%),
     linear-gradient(150deg, rgba(255, 255, 255, .99), rgba(253, 250, 249, .98) 58%, rgba(240, 249, 247, .98));
-  box-shadow: 0 26px 66px rgba(48, 103, 99, .12), inset 0 1px 0 rgba(255, 255, 255, .98);
+  box-shadow: 0 26px 66px rgba(72, 101, 94, .11), inset 0 1px 0 rgba(255, 255, 255, .98);
 }
 
 .upgrade-checkout::after {
@@ -254,7 +254,7 @@
   width: 250px;
   height: 250px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(58, 139, 132, .08), transparent 68%);
+  background: radial-gradient(circle, rgba(79, 185, 180, .10), transparent 68%);
   pointer-events: none;
 }
 
@@ -318,7 +318,7 @@
 
 .upgrade-quantity button.selected {
   border-color: rgba(47, 129, 124, .48);
-  background: linear-gradient(145deg, #edf9f7, #fff5f6);
+  background: linear-gradient(145deg, #f1f6f3, #fff7f8);
   color: var(--upgrade-eucalyptus-dark);
   box-shadow: 0 12px 27px rgba(45, 126, 120, .13);
 }
@@ -360,7 +360,7 @@
   place-items: center;
   border: 1px solid rgba(47, 129, 124, .14);
   border-radius: 12px;
-  background: #eef7f5;
+  background: #eef4f1;
   color: var(--upgrade-eucalyptus);
   cursor: pointer;
 }
@@ -370,7 +370,7 @@
   min-height: 40px;
   border: 1px solid rgba(47, 129, 124, .2);
   border-radius: 12px;
-  background: #fffefd;
+  background: #fffdfc;
   color: #2b403d;
   text-align: center;
   outline: 0;
@@ -422,7 +422,7 @@
 
 .upgrade-methods label.selected {
   border-color: rgba(47, 129, 124, .48);
-  background: linear-gradient(145deg, #edf9f7, #fff6f7);
+  background: linear-gradient(145deg, #eef5f2, #fff6f7);
   box-shadow: 0 13px 28px rgba(45, 126, 120, .12);
 }
 
@@ -438,7 +438,7 @@
   height: 40px;
   place-items: center;
   border-radius: 12px;
-  background: linear-gradient(145deg, #e7f6f3, #fff1f3);
+  background: linear-gradient(145deg, #e8f0ec, #fbecef);
   color: var(--upgrade-eucalyptus);
 }
 
@@ -465,7 +465,7 @@
   align-items: center;
   border-radius: 999px;
   padding: 0 7px;
-  background: #e8f6f3;
+  background: #eaf2ee;
   color: var(--upgrade-eucalyptus-dark);
   font-size: .49rem;
   font-weight: 850;
@@ -489,7 +489,7 @@
 }
 
 .upgrade-methods label.selected .upgrade-methods__check {
-  background: linear-gradient(135deg, #276f69, #58aaa3);
+  background: linear-gradient(135deg, #31938e, #63c2bc);
   box-shadow: 0 7px 17px rgba(39, 111, 105, .2);
 }
 
@@ -502,7 +502,7 @@
   padding: 10px 11px;
   border: 1px solid rgba(47, 129, 124, .14);
   border-radius: 13px;
-  background: linear-gradient(145deg, #f0faf8, #fff5f6);
+  background: linear-gradient(145deg, #f1f5f3, #fff7f8);
 }
 
 .upgrade-activation-fee>span {
@@ -511,7 +511,7 @@
   height: 36px;
   place-items: center;
   border-radius: 11px;
-  background: #e3f4f1;
+  background: #e8efec;
   color: var(--upgrade-eucalyptus);
 }
 
@@ -533,11 +533,11 @@
 
 .upgrade-activation-fee.is-inactive {
   border-color: rgba(47, 129, 124, .16);
-  background: linear-gradient(145deg, #edf9f6, #f7fbfa);
+  background: linear-gradient(145deg, #f0f4f2, #fafcfb);
 }
 
 .upgrade-activation-fee.is-inactive>span {
-  background: #dff3ee;
+  background: #e6eeea;
   color: #237a67;
 }
 
@@ -550,7 +550,7 @@
   padding: 10px 11px;
   border: 1px solid rgba(47, 129, 124, .13);
   border-radius: 13px;
-  background: linear-gradient(135deg, #edf9f7, #fff5f6);
+  background: linear-gradient(135deg, #f1f6f3, #fff7f8);
 }
 
 .upgrade-order-summary>div {
@@ -597,11 +597,11 @@
   margin-top: 11px;
   border: 0;
   border-radius: 14px;
-  background: linear-gradient(135deg, #245f5a, #33847e 58%, #66b9b1);
+  background: linear-gradient(135deg, #287f7a, #43a7a1 58%, #77cbc6);
   color: #fff;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 14px 30px rgba(36, 95, 90, .22), inset 0 1px 0 rgba(255, 255, 255, .18);
+  box-shadow: 0 14px 30px rgba(45, 151, 145, .22), inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
 .upgrade-checkout-button:disabled {

@@ -33,7 +33,7 @@ import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
 import '../styles/upgrade.css';
 
-const QUICK_AMOUNTS = [1, 3, 5, 10];
+const QUICK_AMOUNTS = [15, 30, 45, 60];
 
 const BENEFITS = [
   {
@@ -89,7 +89,7 @@ export default function UpgradePage() {
   const storedUser = getStoredUser() || {};
   const isAlreadyPremium = storedUser.accountStatus === 'PREMIUM';
 
-  const [credits, setCredits] = useState(1);
+  const [credits, setCredits] = useState(15);
   const [method, setMethod] = useState('card');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -125,7 +125,7 @@ export default function UpgradePage() {
   const updateCredits = (value) => {
     const nextValue = Math.max(
       1,
-      Math.min(100, Number(value) || 1),
+      Number(value) || 1,
     );
 
     setCredits(nextValue);
@@ -356,7 +356,7 @@ export default function UpgradePage() {
         <div className="upgrade-custom-quantity">
           <div>
             <span>Custom quantity</span>
-            <small>1 to 100 credits</small>
+            <small>No purchase limit</small>
           </div>
 
           <div className="upgrade-custom-quantity__control">
@@ -373,7 +373,6 @@ export default function UpgradePage() {
             <input
               type="number"
               min="1"
-              max="100"
               value={credits}
               onChange={(event) =>
                 updateCredits(event.target.value)

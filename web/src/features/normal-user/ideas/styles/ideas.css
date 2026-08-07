@@ -3228,3 +3228,55 @@
 .ideas-page__header h1 {
   color: #274b47 !important;
 }
+
+/* Refined bottom action placement: keep “Open idea” + arrow slightly higher and cleaner. */
+.idea-tile footer button {
+  position: relative;
+  top: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 2px 2px 4px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.idea-tile footer button svg {
+  flex: 0 0 auto;
+  transform: translateY(-1px);
+}
+
+/* Polished card footer alignment: lift date + action together and keep one clean baseline. */
+.idea-tile footer {
+  padding-top: 14px;
+  padding-bottom: 4px;
+  transform: translateY(-5px);
+  align-items: center;
+}
+
+.idea-tile footer>span,
+.idea-tile footer button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.idea-tile footer>span {
+  gap: 7px;
+}
+
+.idea-tile footer button {
+  position: static;
+  top: auto;
+  padding: 0 2px;
+}
+
+.idea-tile footer>span svg,
+.idea-tile footer button svg {
+  flex: 0 0 auto;
+  transform: translateY(-1px);
+}

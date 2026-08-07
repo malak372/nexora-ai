@@ -727,7 +727,7 @@
 
 .guest-limit-showcase-actions {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) 170px;
+    grid-template-columns: minmax(260px, 1.22fr) minmax(215px, 1fr);
     gap: 12px;
     max-width: 650px;
     margin-top: 14px;
@@ -758,14 +758,15 @@
     gap: 10px;
     padding: 6px 14px 6px 7px;
     color: #fff;
-    background: #5c9a8e;
-    box-shadow: 0 14px 30px rgba(92, 154, 142, 0.22);
+    background: linear-gradient(90deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
+    border: 1px solid rgba(92, 189, 185, 0.35);
+    box-shadow: 0 16px 35px rgba(47, 119, 116, 0.22);
 }
 
 .guest-limit-create:hover {
     transform: translateY(-2px);
-    background: #528f84;
-    box-shadow: 0 18px 36px rgba(92, 154, 142, 0.28);
+    background: linear-gradient(90deg, #69b7b1 0%, #5cbdb9 52%, #4fa9a4 100%);
+    box-shadow: 0 20px 40px rgba(47, 119, 116, 0.28);
 }
 
 .guest-limit-action-icon {

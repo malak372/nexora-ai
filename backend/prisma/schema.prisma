@@ -180,7 +180,7 @@ model SystemSetting {
 
   /// Price of one credit.
   /// One credit allows one premium idea generation.
-  creditPrice Decimal @map("credit_price") @db.Decimal(10, 2)
+  creditPrice Decimal @default(1.00) @map("credit_price") @db.Decimal(10, 2)
 
   /// Credits required to generate one Premium idea.
   premiumIdeaCreditCost Int @default(15) @map("premium_idea_credit_cost")
@@ -468,7 +468,8 @@ model ChatSession {
   messages      ChatMessage[]
   idea          Idea          @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  titleManuallyEdited Boolean   @default(false) @map("title_manually_edited")
+titleGeneratedAt    DateTime? @map("title_generated_at")
   @@index([userId, deletedAt, lastMessageAt])
   @@index([ideaId, deletedAt])
   @@map("chat_sessions")

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, Min } from 'class-validator';
 export class GetPaymentPricingQueryDto {
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) creditsQuantity?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) creditsQuantity?: number;
 }

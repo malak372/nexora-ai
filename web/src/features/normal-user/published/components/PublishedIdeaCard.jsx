@@ -64,7 +64,7 @@ export default function PublishedIdeaCard({
       whileHover={
         shouldReduceMotion
           ? undefined
-          : { y: -8, scale: 1.006 }
+          : { y: -8, scale: 1.008 }
       }
     >
       <div className="published-card__visual" aria-hidden="true">
