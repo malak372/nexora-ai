@@ -230,6 +230,8 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     parsedOutput: ParsedIdeaAiOutput,
   ): ParsedIdeaAiOutput {
     const selectedRegion = context.location.city?.trim() ?? '';
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    const noDirectEvidence = directEvidenceCount === 0;
 
     const sanitizeText = (value: string): string => {
       let sanitized = value
@@ -244,7 +246,137 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
           'One retained community report indicates that ',
         )
         .replace(/\bindicates that\s+indicates that\b/giu, 'indicates that')
+        .replace(/\bpotential\s+potentially\b/giu, 'potentially')
+        .replace(/\bpotentially\s+potentially\b/giu, 'potentially')
         .trim();
+
+      if (noDirectEvidence) {
+        sanitized = sanitized
+          .replace(
+            /(?:Explicit evidence limitations apply:\s*)?(?:because\s+)?the foundational evidence sample is limited to (?:a\s+)?(?:single|one)\s+[^.!?]+[.!?]/giu,
+            'No direct community evidence was retained, so all problem-prevalence claims remain unvalidated pilot hypotheses.',
+          )
+          .replace(
+            /[^.!?]*\b(?:single|one)\s+(?:developer|user|community)\s+(?:observation|report|comment|sample)\b[^.!?]*[.!?]/giu,
+            ' No direct community evidence was retained, so this claim remains an unvalidated pilot hypothesis.',
+          )
+          .replace(
+            /\b(?:one|a single)\s+retained\s+(?:direct\s+)?community\s+report\b/giu,
+            'no retained direct community report',
+          )
+          .replace(
+            /\b(?:the\s+)?([A-Z][^.!?]{0,100}?)\s+(?:addresses|solves|targets|responds to)\s+(?:the\s+)?(?:operational\s+)?(?:friction|problem|issue|challenge|difficulty|failure)s?\s+(?:encountered|experienced|faced|reported)\s+by\s+([^.!?]{2,120})/gu,
+            'The pilot tests whether $2 experience that operational friction',
+          )
+          .replace(
+            /\b(?:the\s+)?(?:product|platform|system|solution|suite|application|app|tool|workflow)\s+(?:addresses|solves|targets|responds to)\s+(?:the\s+)?(?:operational\s+)?(?:friction|problem|issue|challenge|difficulty|failure)s?\s+(?:encountered|experienced|faced|reported)\s+by\s+([^.!?]{2,120})/giu,
+            'The pilot tests whether $1 experience that operational friction',
+          )
+          .replace(
+            /\b(?:engineering teams|development teams|developers|operators|users|customers|learners|students|participants|workers|staff|businesses|organizations|farmers|drivers|buyers|sellers|patients|clinicians)\s+(?:often|frequently|commonly|typically|potentially)?\s*(?:struggle|struggles|face|faces|encounter|encounters|experience|experiences|suffer|suffers)\s+(?:to\s+)?([^.!?]{3,160})/giu,
+            'the pilot tests whether the intended participants may experience $1',
+          )
+          .replace(
+            /\b(?:recurring|widespread|common|frequent|systemic)\s+(friction|failures?|problems?|issues?|challenges?|difficulties)\b/giu,
+            'potential $1',
+          )
+          .replace(
+            /\b(?:collected feedback|community feedback|community evidence|the supplied community discussion|the collected discussion)\s+(?:indicates|shows|demonstrates|highlights|confirms|reveals)\b/giu,
+            'the pilot hypothesis considers whether',
+          )
+          .replace(/[ \t]{2,}/gu, ' ')
+          .trim();
+      }
+
+      if (directEvidenceCount === 1) {
+        sanitized = sanitized
+          .replace(
+            /\bOne retained community report indicates that users of ([^.!?]{2,120}?) may (?:experience|encounter|face)\b/giu,
+            'One retained community report describes one user of $1 who may experience',
+          )
+          .replace(
+            /\bOne retained community report indicates that (?:users|operators|participants|customers|learners|students) may (?:experience|encounter|face)\b/giu,
+            'One retained community report describes one observed user who may experience',
+          )
+          .replace(
+            /\brecurring\s+(friction|failures?|problems?|issues?|challenges?)\b/giu,
+            'reported $1',
+          )
+          .replace(
+            /\bOne retained community report indicates that users (?:encounter|experience|face)\b/giu,
+            'One retained community report describes a user who encountered',
+          )
+          .replace(
+            /\bOne collected report(?: from [^.!?]{0,120})? indicates that users (?:encounter|experience|face)\b/giu,
+            'One collected report describes a user who encountered',
+          )
+          .replace(
+            /\b(?:users|operators|students|learners|developers|customers) (?:often|frequently|commonly|typically) (?:encounter|experience|face|report|struggle)\b/giu,
+            'the retained report describes one user who encountered',
+          )
+          .replace(
+            /\bEvidence indicates that (?:users|operators|students|learners|developers|customers) (?:often|frequently|commonly|typically)\b/giu,
+            'The retained report indicates that one observed user',
+          )
+          .replace(
+            /\baddresses the recurring challenge where vehicle owners fail to\b/giu,
+            'addresses a pairing difficulty reported by one vehicle owner who was unable to',
+          )
+          .replace(
+            /\bvehicle owners (?:frequently|often|commonly) (?:encounter|experience|face|fail to)\b/giu,
+            'one observed vehicle owner reported experiencing',
+          )
+          .replace(
+            /\busers experience complete failure when attempting to\b/giu,
+            'one user reported a complete failure when attempting to',
+          )
+          .replace(
+            /\bOne retained community report indicates that ([A-Z][\p{L}'’&-]*(?:\s+[A-Z][\p{L}'’&-]*){0,3}) buyers (?:experience|encounter|face)\b/gu,
+            'One retained community report describes a buyer in $1 who experienced',
+          )
+          .replace(
+            /\bOne retained community report indicates that buyers (?:experience|encounter|face)\b/giu,
+            'One retained community report describes a buyer who experienced',
+          )
+          .replace(
+            /\bCollected community feedback(?: from [^.!?]{0,120})? (?:highlights|indicates|shows) a specific friction point where buyers (?:encounter|experience|face) recurring\b/giu,
+            'The retained community report describes one buyer who experienced repeated',
+          )
+          .replace(
+            /\bbuyers (?:encounter|experience|face) recurring\b/giu,
+            'the retained report describes one buyer who experienced repeated',
+          )
+          .replace(
+            /\b([A-Z][\p{L}'’&-]*(?:\s+[A-Z][\p{L}'’&-]*){0,3}) buyers (?:experience|encounter|face)\b/gu,
+            'one buyer in $1 reported experiencing',
+          )
+          .replace(
+            /\bBuyers (?:experience|encounter|face)\b/giu,
+            'one buyer reported experiencing',
+          )
+          .replace(
+            /\bOne collected report(?: from [^.!?]{0,140})? indicates that participants may fail ([^.!?]{3,160})/giu,
+            'One collected report describes one participant who experienced $1',
+          )
+          .replace(
+            /\bOne collected report(?: from [^.!?]{0,140})? indicates that participants (?:experience|encounter|face) ([^.!?]{3,160})/giu,
+            'One collected report describes one participant who experienced $1',
+          )
+          .replace(
+            /\bparticipants (?:often|frequently|commonly|typically) (?:abandon|leave|stop using|return to)\b/giu,
+            'the observed participant may abandon',
+          )
+          .replace(
+            /,?\s*often causing them to\b/giu,
+            ', which the report described as causing the observed user to',
+          )
+          .replace(
+            /\b(?:Language learners|Online learners|Learners|Students) lack\b/giu,
+            'one observed learner reported lacking',
+          )
+          .replace(/[ \t]{2,}/gu, ' ')
+          .trim();
+      }
 
       if (selectedRegion.length >= 2) {
         const escaped = selectedRegion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -677,9 +809,18 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
      * Run final copy cleanup after every possible overview/full-abstract
      * reconstruction so duplicated zero-evidence wording cannot reappear.
      */
-    overview = this.finalizePersistedNarrativeCopy(overview);
-    problemStatement = this.finalizePersistedNarrativeCopy(problemStatement);
-    fullAbstract = this.finalizePersistedNarrativeCopy(fullAbstract);
+    overview = this.enforceEvidenceNarrativeDiscipline(
+      context,
+      this.finalizePersistedNarrativeCopy(overview),
+    );
+    problemStatement = this.enforceEvidenceNarrativeDiscipline(
+      context,
+      this.finalizePersistedNarrativeCopy(problemStatement),
+    );
+    fullAbstract = this.enforceEvidenceNarrativeDiscipline(
+      context,
+      this.finalizePersistedNarrativeCopy(fullAbstract),
+    );
 
     return {
       ...parsedOutput,
@@ -710,6 +851,234 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     };
   }
 
+
+  /**
+   * Final evidence-aware language guard. This runs after every narrative
+   * reconstruction step, so a single retained report can never be rewritten
+   * into a market-wide or recurring claim by a provider or an earlier helper.
+   */
+  private enforceEvidenceNarrativeDiscipline(
+    context: IdeaGenerationContext,
+    value: string,
+  ): string {
+    if (!value.trim()) {
+      return value;
+    }
+
+    const directEvidenceCount = this.countRetainedDirectEvidence(context);
+    let cleaned = value
+      .replace(
+        /\bOne retained community report indicates that\s+collected community feedback(?:\s+from\s+[^.!?]{1,140})?\s+indicates that\s+/giu,
+        'One retained community report indicates that ',
+      )
+      .replace(
+        /\bOne retained community report indicates that\s+one collected report(?:\s+from\s+[^.!?]{1,140})?\s+indicates that\s+/giu,
+        'One retained community report indicates that ',
+      )
+      .replace(
+        /\bcollected community\s+one collected report indicates that\s+/giu,
+        'one collected report indicates that ',
+      )
+      .replace(
+        /\bA preliminary community signal from ([^.:]+) reports an operational challenge:\s*(?:Collected community\s+)?one collected report indicates that\s+/giu,
+        'A preliminary community report from $1 indicates that ',
+      )
+      .replace(
+        /\bA preliminary community signal from ([^.:]+) reports an operational challenge:\s*One retained community report indicates that\s+/giu,
+        'A preliminary community report from $1 indicates that ',
+      )
+      .replace(
+        /\bindicates that\s+(?:collected community feedback|one collected report)\s+indicates that\s+/giu,
+        'indicates that ',
+      )
+      .replace(
+        /\bOne retained community report indicates that\s+(?:a|one)\s+(developer|user|creator|operator|practitioner)\s+reported that\s+/giu,
+        'One retained community report describes a $1 reporting that ',
+      )
+      .replace(
+        /\bA preliminary community report from ([^.:]+) indicates that\s+(?:a|one)\s+(developer|user|creator|operator|practitioner)\s+reported that\s+/giu,
+        'A preliminary community report from $1 describes a $2 reporting that ',
+      )
+      .replace(
+        /\bOne retained community report describes a (developer|user|creator|operator|practitioner) who reported that\s+/giu,
+        'One retained community report describes a $1 reporting that ',
+      )
+      .replace(
+        /\bA preliminary community report from ([^.:]+) describes a (developer|user|creator|operator|practitioner) who reported that\s+/giu,
+        'A preliminary community report from $1 describes a $2 reporting that ',
+      )
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+
+    if (directEvidenceCount === 0) {
+      cleaned = cleaned
+        .replace(
+          /\bThe proposed software product addresses the technical friction encountered when\b/giu,
+          'The proposed pilot tests whether technical friction may arise when',
+        )
+        .replace(
+          /\bThe supplied community discussion highlights an opportunity to\b/giu,
+          'The pilot explores the possibility of using',
+        )
+        .replace(
+          /\bCollected feedback(?: from [^.!?]{0,140})? indicates that\b/giu,
+          'The pilot tests the hypothesis that',
+        )
+        .replace(
+          /\bcollected feedback(?: from [^.!?]{0,140})? indicates that\b/giu,
+          'the pilot tests the hypothesis that',
+        )
+        .replace(
+          /\b(?:operators|users|farmers|planners|teams) lack\b/giu,
+          'the pilot tests whether operators may lack',
+        )
+        .replace(
+          /\b(?:operators|users|farmers|planners|teams) struggle to\b/giu,
+          'the pilot tests whether operators may struggle to',
+        )
+        .replace(
+          /\brecurring\s+(challenges?|problems?|issues?|categories?|friction|failures?)\b/giu,
+          'potential $1',
+        )
+        .replace(
+          /\bgathers explicit user complaints\b/giu,
+          'gathers explicit user feedback during validation',
+        )
+        .replace(
+          /\b(?:engineering teams|developers|users|creators|builders|practitioners)([^.!?]{0,140}?)\s+(?:often|frequently|commonly)\s+(experience|encounter|face|introduce)\b/giu,
+          (_match, qualifier: string, verb: string) =>
+            `the pilot tests whether teams${qualifier.trim() ? ` ${qualifier.trim()}` : ''} may ${verb}`,
+        )
+        .replace(
+          /\b(?:engineering teams|developers|users|creators|builders|practitioners)\s+(experience|encounter|face)\b/giu,
+          (_match, verb: string) => `the pilot tests whether teams may ${verb}`,
+        )
+        .replace(
+          /\b(?:many|most|numerous|widespread|commonly|frequently|often)\b/giu,
+          (match) =>
+            /^(?:often|frequently|commonly)$/iu.test(match)
+              ? 'potentially'
+              : 'potential',
+        );
+    }
+
+    if (directEvidenceCount === 1) {
+      cleaned = cleaned
+        .replace(
+          /\bOne retained community report indicates that users of ([^.!?]{2,120}?) may (?:experience|encounter|face)\b/giu,
+          'One retained community report describes one user of $1 who may experience',
+        )
+        .replace(
+          /\bOne retained community report indicates that (?:users|operators|participants|customers|learners|students) may (?:experience|encounter|face)\b/giu,
+          'One retained community report describes one observed user who may experience',
+        )
+        .replace(
+          /\brecurring\s+(friction|failures?|problems?|issues?|challenges?)\b/giu,
+          'reported $1',
+        )
+        .replace(
+          /\bOne retained community report indicates that\s+(developers|users|creators|builders|practitioners)\s+(experience|encounter|face)\b/giu,
+          (_match, subject: string, verb: string) => {
+            const singularSubject: Record<string, string> = {
+              developers: 'developer',
+              users: 'user',
+              creators: 'creator',
+              builders: 'builder',
+              practitioners: 'practitioner',
+            };
+            const singularVerb =
+              verb.toLowerCase() === 'face' ? 'faced' : 'encountered';
+            return `One retained community report describes a ${
+              singularSubject[subject.toLowerCase()] ?? 'user'
+            } who ${singularVerb}`;
+          },
+        )
+        .replace(
+          /\b((?:novice|independent|non-technical|amateur|self-taught)\s+)?(builders|developers|creators|users|practitioners)\s+([^.!?]{1,100}?)\s+(?:often|frequently|commonly)\s+(inadvertently\s+)?(introduce|encounter|experience|face)\b/giu,
+          (
+            _match,
+            descriptor: string | undefined,
+            subject: string,
+            qualifier: string,
+            manner: string | undefined,
+            verb: string,
+          ) => {
+            const singularNoun: Record<string, string> = {
+              builders: 'builder',
+              developers: 'developer',
+              creators: 'creator',
+              users: 'user',
+              practitioners: 'practitioner',
+            };
+            const subjectNoun = singularNoun[subject.toLowerCase()] ?? 'user';
+            const singularSubject = descriptor?.trim()
+              ? `${descriptor.trim()} ${subjectNoun}`
+              : subjectNoun;
+            const normalizedQualifier = qualifier.trim();
+            const normalizedManner = manner?.trim();
+            return `the retained report suggests that a ${singularSubject}${
+              normalizedQualifier ? ` ${normalizedQualifier}` : ''
+            } may${normalizedManner ? ` ${normalizedManner}` : ''} ${verb}`;
+          },
+        )
+        .replace(
+          /\bThese users frequently introduce\b/giu,
+          'The retained report suggests that a user may introduce',
+        )
+        .replace(
+          /\bThese users often introduce\b/giu,
+          'The retained report suggests that a user may introduce',
+        )
+        .replace(
+          /\bThese users commonly introduce\b/giu,
+          'The retained report suggests that a user may introduce',
+        )
+        .replace(
+          /\busers ([^.!?]{0,120}?) frequently (encounter|experience|introduce|face)\b/giu,
+          (_match, qualifier: string, verb: string) =>
+            `the retained report suggests that a user ${qualifier.trim()} may ${verb}`,
+        )
+        .replace(
+          /\busers ([^.!?]{0,120}?) often (encounter|experience|introduce|face)\b/giu,
+          (_match, qualifier: string, verb: string) =>
+            `the retained report suggests that a user ${qualifier.trim()} may ${verb}`,
+        )
+        .replace(
+          /\busers ([^.!?]{0,120}?) commonly (encounter|experience|introduce|face)\b/giu,
+          (_match, qualifier: string, verb: string) =>
+            `the retained report suggests that a user ${qualifier.trim()} may ${verb}`,
+        )
+        .replace(
+          /\b(?:users|developers|creators|practitioners) frequently\b/giu,
+          'the retained report suggests that a user may',
+        )
+        .replace(
+          /\b(?:users|developers|creators|practitioners) often\b/giu,
+          'the retained report suggests that a user may',
+        )
+        .replace(
+          /\b(?:users|developers|creators|practitioners) commonly\b/giu,
+          'the retained report suggests that a user may',
+        )
+        .replace(
+          /\b(?:students|learners|teams|operators|customers|people)\s+(?:often|frequently|commonly)\s+(struggle|experience|encounter|face|report)\b/giu,
+          (_match, verb: string) =>
+            `the retained report suggests that one observed user may ${verb}`,
+        )
+        .replace(
+          /\bEvidence indicates that\s+([^.!?]{0,80}?)\s+(?:often|frequently|commonly)\s+(struggle|experience|encounter|face|report)\b/giu,
+          (_match, subject: string, verb: string) =>
+            `The retained report suggests that ${subject.trim()} may ${verb}`,
+        );
+    }
+
+    return cleaned
+      .replace(/\s{2,}/gu, ' ')
+      .replace(/\s+([,.;:!?])/gu, '$1')
+      .trim();
+  }
+
   /**
    * Final persisted-copy cleanup. This deliberately runs after all narrative
    * builders, sparse-evidence qualifiers, and abstract expansion.
@@ -737,11 +1106,45 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       .replace(/\bNext\s*\.\s*js\b/giu, 'Next.js')
       .replace(/\bNest\s*\.\s*js\b/giu, 'NestJS')
       .replace(/\bnablus\b/giu, 'Nablus')
+      .replace(
+        /\bA preliminary community signal from ([^.:]+) reports an operational challenge:\s*(?:one collected report from \1 communities indicates that\s*)/giu,
+        'A preliminary community signal from $1 reports that ',
+      )
+      .replace(
+        /\bA preliminary community signal from ([^.:]+) reports an operational challenge:\s*one collected report from ([^.]+?) indicates that\s*(?:the collected report indicates that\s*)?/giu,
+        'A preliminary community report from $2 indicates that ',
+      )
+      .replace(
+        /\bone collected report from ([^.]+?) indicates that\s+the collected report indicates that\s+/giu,
+        'one collected report from $1 indicates that ',
+      )
+      .replace(
+        /\bthe collected report indicates that\s+one user experienced\b/giu,
+        'one user experienced',
+      )
+      .replace(
+        /\bsoftware\s+one user experienced\b/giu,
+        'one software developer experienced',
+      )
+      .replace(
+        /\bsoftware\s+(?:a|an)\s+user experienced\b/giu,
+        'a software user experienced',
+      )
+      .replace(
+        /\bindicates that\s+software\s+one user\b/giu,
+        'indicates that one software developer',
+      )
       .replace(/\s{2,}/gu, ' ')
       .replace(/\s+([,.;:!?])/gu, '$1')
       .trim();
 
-    return this.removeRepeatedLeadingNarrative(cleaned);
+    const deduplicated = this.removeRepeatedLeadingNarrative(cleaned);
+
+    return deduplicated.replace(
+      /(^|[.!?]\s+)([a-z])/gu,
+      (_match, boundary: string, letter: string) =>
+        `${boundary}${letter.toUpperCase()}`,
+    );
   }
 
   private removeRepeatedLeadingNarrative(value: string): string {
@@ -1141,10 +1544,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
     const title = parsedOutput.coreIdea.title.trim();
     const normalizedProblem = selectedProblem.replace(/[.]+$/u, '').trim();
     const hasAnyDirectEvidence =
-      (context.opportunityRanking?.selected.evidenceSamples.length ?? 0) > 0 ||
-      (context.opportunityRanking?.selected
-        .verifiedIndependentEvidenceCount ?? 0) > 0 ||
-      context.domainEvidence.some((domain) => domain.evidenceAvailable);
+      this.countRetainedDirectEvidence(context) > 0;
 
     const evidenceSentence = hasAnyDirectEvidence
       ? this.buildSparseEvidenceSentence(normalizedProblem)
@@ -1307,6 +1707,22 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   ): number {
     const selected = context.opportunityRanking?.selected;
 
+    /*
+     * The ranking decision is authoritative for narrative evidence state.
+     * A retained contextual post may exist even when no direct community
+     * problem supports the selected opportunity. Never promote such context
+     * into a "retained direct report" when the selected direction is explicitly
+     * marked NO_DIRECT_EVIDENCE / PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS.
+     */
+    if (
+      selected?.disqualificationReasons?.includes('NO_DIRECT_EVIDENCE') ||
+      selected?.disqualificationReasons?.includes(
+        'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
+      )
+    ) {
+      return 0;
+    }
+
     // Narrative counts must describe evidence supporting the selected
     // opportunity, not every retained text from all selected domains.
     const verifiedCount = selected?.verifiedIndependentEvidenceCount;
@@ -1339,13 +1755,12 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
       if (samples.size > 0) return samples.size;
     }
 
-    // Domain evidence is only a boolean last resort. It must never inflate the
-    // report count shown in the persisted narrative.
-    return (context.domainEvidence ?? []).some(
-      (item) => item.evidenceAvailable && item.totalTextsAnalyzed > 0,
-    )
-      ? 1
-      : 0;
+    /*
+     * Domain-level context is not enough to prove that the selected opportunity
+     * has a direct supporting community report. If the selected opportunity
+     * itself carries no traceable evidence, keep the narrative count at zero.
+     */
+    return 0;
   }
 
   private correctEvidenceQualifierCount(
@@ -1415,21 +1830,7 @@ export class AiOutputValidationStage implements IdeaGenerationStage {
   private hasAnyRetainedDirectEvidence(
     context: IdeaGenerationContext,
   ): boolean {
-    const selected = context.opportunityRanking?.selected;
-
-    return (
-      (selected?.verifiedIndependentEvidenceCount ?? 0) > 0 ||
-      (selected?.independentEvidence?.length ?? 0) > 0 ||
-      (selected?.evidenceSamples.length ?? 0) > 0 ||
-      context.domainEvidence.some(
-        (item) =>
-          item.evidenceAvailable &&
-          item.totalTextsAnalyzed > 0 &&
-          ((Array.isArray(item.samplePosts) && item.samplePosts.length > 0) ||
-            (Array.isArray(item.sampleComments) &&
-              item.sampleComments.length > 0)),
-      )
-    );
+    return this.countRetainedDirectEvidence(context) > 0;
   }
 
   /**

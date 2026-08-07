@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
+import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
 
 import {
   IDEA_GENERATION_ERROR_CODES,
@@ -165,20 +166,34 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     /*
-     * Generation must continue even when the strict evidence gate remains
-     * unmet. The ranking service already returns a penalized fallback whenever
-     * possible, and enforcePrimaryDomainFallback creates an auditable validation
-     * hypothesis when no rankable candidate exists.
+     * A generated idea must have at least one independently verified direct
+     * community evidence sample. A primary-domain validation hypothesis is
+     * useful internally for recovery targeting, but it is not sufficient to
+     * justify charging the user or persisting a premium idea.
      *
-     * We intentionally do not create noResultOutcome here. This allows prompt
-     * building, multi-model benchmarking, output validation, persistence, and
-     * finalization to run normally. Sparse evidence is preserved through
-     * selectionEligible=false and the quality warnings, so downstream stages
-     * can qualify every claim instead of presenting the hypothesis as validated
-     * market evidence.
+     * One verified report is enough for a cautious preliminary pilot. The
+     * existing recurrence gate remains stricter and still requires independent
+     * multi-source support before recurring-demand language is allowed.
      */
-    ranking =
-      ranking ?? this.buildEmergencyFallbackRanking(workingContext);
+    const rankedCandidates = ranking
+      ? [ranking.selected, ...ranking.alternatives]
+      : [];
+    const hasVerifiedDirectEvidence = rankedCandidates.some(
+      (candidate) => (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
+    );
+
+    /*
+     * Never finish a healthy run without an idea. If collection/recovery still
+     * produced no independently verifiable complaint, continue with an explicit
+     * validation hypothesis instead of returning NO_RESULT. Downstream prompts
+     * already distinguish observed evidence from hypotheses, so this preserves
+     * scientific honesty without turning sparse data into a technical failure.
+     */
+    if (!hasVerifiedDirectEvidence) {
+      ranking = this.buildEmergencyFallbackRanking(workingContext);
+    }
+
+    ranking = ranking ?? this.buildEmergencyFallbackRanking(workingContext);
 
     const aggregatedRecoveryMetadata = recoveryMetadata.length
       ? this.aggregateRecoveryMetadata(recoveryMetadata)
@@ -248,12 +263,43 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     /*
-     * A single direct sample must not suppress recovery. Recovery is skipped
-     * only after the selected opportunity satisfies the configured evidence
-     * score, representative-sample count, independent-source count, and the
-     * strict selection gate. This prevents one YouTube video or one review
-     * from being promoted into a premium market claim.
+     * One traceable in-domain complaint/request is enough to continue with a
+     * cautious preliminary pilot. Recurrence remains a reporting qualifier,
+     * while provenance verification still decides whether the sample is
+     * eligible evidence.
      */
+    const selectedIsInDomain =
+      !ranking.selected.disqualificationReasons.includes('OFF_SELECTED_DOMAIN');
+    const selectedHasVerifiedEvidence =
+      (ranking.selected.verifiedIndependentEvidenceCount ?? 0) > 0;
+    const selectedHasDirectEvidence = ranking.selected.evidenceSamples.some(
+      (sample) => this.looksLikeDirectProblemEvidence(sample),
+    );
+
+    /*
+     * One direct in-domain report is explicitly sufficient for a cautious
+     * pilot. Do not spend another collection + NLP + Community-AI cycle merely
+     * to satisfy recurrence; recurrence remains a reporting qualifier, not a
+     * generation gate. This removes the ~20-30s recovery penalty seen in
+     * healthy single-evidence runs.
+     */
+    if (
+      selectedIsInDomain &&
+      (selectedHasVerifiedEvidence || selectedHasDirectEvidence)
+    ) {
+      return false;
+    }
+
+    /*
+     * domainEvidence is produced from the original collector corpus before
+     * recovery. If it already contains one direct in-domain report, recovery
+     * would only rediscover evidence we possess. Skip it even if a conservative
+     * ranking fallback has not yet promoted that report.
+     */
+    if (this.hasDirectEvidenceInContext(context)) {
+      return false;
+    }
+
     const selectedHasEnoughEvidence =
       ranking.selected.selectionEligible &&
       !this.requiresEvidenceRecovery(ranking);
@@ -267,11 +313,17 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       this.hasDirectUsableEvidence(ranking);
 
     /*
-     * Direct but insufficient evidence receives a focused recovery pass. Empty
-     * or hypothesis-only corpora may use the full bounded recovery allowance.
+     * If direct evidence exists but the selected winner is off-domain, allow
+     * one targeted recovery pass to find an in-domain replacement. Otherwise
+     * direct in-domain evidence has already returned above.
      */
     if (hasAnyDirectSignal) {
-      return context.evidenceRecoveryAttempts === 0;
+      /*
+       * Direct evidence that survived ranking is already more valuable than a
+       * second broad collection for a preliminary pilot. Recovery is reserved
+       * for genuinely evidence-free runs.
+       */
+      return false;
     }
 
     return (
@@ -319,29 +371,15 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
    * This is deliberately stricter than generic keyword relevance.
    */
   private looksLikeDirectProblemEvidence(value: string): boolean {
-    const normalized = value.toLowerCase();
-
-    const explicitRequest =
-      /\b(?:feature request|bug report|is your feature request related to a problem|describe the problem|steps to reproduce|expected behavior|actual behavior)\b/iu.test(
-        normalized,
-      );
-    const concreteFailure =
-      /\b(?:cannot|can'?t|cant|unable|fails?|failed|failure|error|broken|missing|lack(?:s|ing)?|absence|not working|does not work|doesn't work|unsupported|no support|request(?:ed)?|should support|need(?:s|ed)?|not accurate enough|inaccurate|imprecise|too slow|confusing)\b/iu.test(
-        normalized,
-      );
-    const explicitCapabilityQuestion =
-      /\b(?:is it possible|is it possable|can i|could i|how can i|why can'?t i|why cant i)\b.{0,140}\b(?:add|create|manage|support|use|connect|sync|export|import|access|check|track)\b/iu.test(
-        normalized,
-      );
-    const marketingOnly =
-      /\b(?:download now|subscription|auto-renew|unlock the future|ultimate assistant|discover the power|experience the remarkable|available exclusively|terms of service|privacy policy)\b/iu.test(
-        normalized,
-      ) &&
-      !explicitRequest;
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    const commentMatch = normalized.match(/\bCommunity comment:\s*(.+)$/iu);
+    const evidenceText = commentMatch?.[1]?.trim() ?? normalized;
 
     return (
-      !marketingOnly &&
-      (explicitRequest || concreteFailure || explicitCapabilityQuestion)
+      classifyDirectCommunityEvidence(
+        evidenceText,
+        commentMatch ? 'COMMENT' : 'POST',
+      ) !== 'NONE'
     );
   }
 
@@ -405,14 +443,46 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     const candidates = [ranking.selected, ...ranking.alternatives];
-    const directCandidate = candidates.find(
-      (candidate) =>
-        candidate.evidenceSamples.length > 0 ||
-        (candidate.verifiedIndependentEvidenceCount ?? 0) > 0,
-    );
+    const directCandidate = candidates.find((candidate) => {
+      if (candidate.disqualificationReasons.includes('OFF_SELECTED_DOMAIN')) {
+        return false;
+      }
+
+      const hasVerifiedQualifyingEvidence =
+        candidate.independentEvidence?.some(
+          (evidence) =>
+            evidence.qualifiesForRecurrence &&
+            evidence.evidenceKind !== 'UNKNOWN',
+        ) ?? false;
+      const hasDirectProblemSample = candidate.evidenceSamples.some((sample) =>
+        this.looksLikeDirectProblemEvidence(sample),
+      );
+
+      return hasVerifiedQualifyingEvidence || hasDirectProblemSample;
+    });
 
     if (directCandidate) {
-      return ranking;
+      const directEvidenceCount = directCandidate.evidenceSamples.filter(
+        (sample) => this.looksLikeDirectProblemEvidence(sample),
+      ).length;
+      const verifiedEvidenceCount =
+        directCandidate.verifiedIndependentEvidenceCount ?? 0;
+      const verifiedSourceCount =
+        directCandidate.verifiedIndependentSourceCount ?? 0;
+      const retainedDirectEvidenceCount = Math.max(
+        directEvidenceCount,
+        verifiedEvidenceCount,
+      );
+
+      const selectionReason =
+        directCandidate.selectionEligible
+          ? `Selected the strongest evidence-backed opportunity after verifying ${Math.max(1, verifiedEvidenceCount)} independent community report(s) across ${Math.max(1, verifiedSourceCount)} independent source(s).`
+          : `${retainedDirectEvidenceCount === 1 ? 'One direct grounded community report was retained' : `${retainedDirectEvidenceCount} direct grounded community reports were retained`}, but the evidence does not yet satisfy the independent recurrence requirement of at least 3 verified reports across 2 independent sources.`;
+
+      return {
+        ...ranking,
+        selectionReason,
+      };
     }
 
     const primaryDomainName =
@@ -432,6 +502,16 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       !this.isMissingEvidencePlaceholder(primaryCandidate.problem)
     ) {
       const selected = { ...primaryCandidate, rank: 1 };
+      const retainedDirectEvidenceCount = Math.max(
+        primaryCandidate.evidenceSamples.length,
+        primaryCandidate.independentEvidence?.length ?? 0,
+        primaryCandidate.verifiedIndependentEvidenceCount ?? 0,
+      );
+      const selectionReason =
+        retainedDirectEvidenceCount > 0
+          ? `${retainedDirectEvidenceCount === 1 ? 'One direct grounded community report was retained' : `${retainedDirectEvidenceCount} direct grounded community reports were retained`}, but the evidence does not yet satisfy the independent recurrence requirement of at least 3 verified reports across 2 independent sources.`
+          : `No direct community evidence was retained, so the preliminary direction remains in the user-selected primary domain "${primaryDomainName}".`;
+
       return {
         ...ranking,
         selected,
@@ -443,8 +523,7 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
               primaryDomainName.toLowerCase(),
           )
           .map((candidate, index) => ({ ...candidate, rank: index + 2 })),
-        selectionReason:
-          `No direct community evidence was retained, so the preliminary direction remains in the user-selected primary domain "${primaryDomainName}".`,
+        selectionReason,
       };
     }
 
@@ -991,6 +1070,78 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
   }
 
+  /** Builds deterministic domain anchors for evidence-first ranking. */
+  private buildSelectedDomainTerms(context: IdeaGenerationContext): string[] {
+    return [
+      ...new Set(
+        context.selectedDomains.flatMap((domain) => [
+          domain.name,
+          ...domain.keywords,
+        ]),
+      ),
+    ]
+      .map((term) => term.trim())
+      .filter(Boolean);
+  }
+
+  /**
+   * Makes representative domainEvidence a first-class ranking input. The NLP
+   * pipeline is intentionally bounded for speed, so direct collector evidence
+   * must not disappear merely because it fell outside that top slice.
+   */
+  private hydrateNlpWithDomainEvidence(
+    context: IdeaGenerationContext,
+  ): NonNullable<IdeaGenerationContext['nlp']> {
+    const nlp = context.nlp!;
+    const posts = context.domainEvidence.flatMap((domain) =>
+      this.readDomainEvidenceObjects(domain.samplePosts),
+    );
+    const comments = context.domainEvidence.flatMap((domain) =>
+      this.readDomainEvidenceObjects(domain.sampleComments),
+    );
+
+    return {
+      ...nlp,
+      samplePosts: this.mergeDomainEvidenceJson(nlp.samplePosts, posts),
+      sampleComments: this.mergeDomainEvidenceJson(nlp.sampleComments, comments),
+    };
+  }
+
+  private readDomainEvidenceObjects(
+    value: Prisma.JsonValue | null,
+  ): Prisma.JsonValue[] {
+    return Array.isArray(value) ? [...value] : [];
+  }
+
+  private mergeDomainEvidenceJson(
+    existing: Prisma.JsonValue | null,
+    additions: readonly Prisma.JsonValue[],
+  ): Prisma.JsonArray {
+    const values: Prisma.JsonValue[] = [
+      ...(Array.isArray(existing) ? existing : []),
+      ...additions,
+    ];
+    const output: Prisma.JsonValue[] = [];
+    const seen = new Set<string>();
+
+    for (const value of values) {
+      const text =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Prisma.JsonObject).text
+          : null;
+      const key =
+        typeof text === 'string'
+          ? text.replace(/\s+/gu, ' ').trim().toLowerCase().slice(0, 500)
+          : JSON.stringify(value);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      output.push(value);
+      if (output.length >= 24) break;
+    }
+
+    return output as Prisma.JsonArray;
+  }
+
   private async tryRankContext(
     context: IdeaGenerationContext,
     previousIdeaTexts: readonly string[],
@@ -1003,23 +1154,77 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
     }
 
     try {
-      const ranking = this.opportunityRankingService.rank(
-        context.nlp,
-        [
-          context.location.country,
-          context.location.city ?? '',
-          context.location.region ?? '',
-        ],
-        previousIdeaTexts,
-        context.communityAiAnalysis,
-      );
+      let ranking: IdeaOpportunityRanking;
+
+      try {
+        ranking = this.opportunityRankingService.rank(
+          this.hydrateNlpWithDomainEvidence(context),
+          [
+            context.location.country,
+            context.location.city ?? '',
+            context.location.region ?? '',
+          ],
+          previousIdeaTexts,
+          context.communityAiAnalysis,
+          this.buildSelectedDomainTerms(context),
+        );
+      } catch (error: unknown) {
+        if (!(error instanceof NoRankedIdeaOpportunityError)) {
+          throw error;
+        }
+
+        const groundedCommunityFallback =
+          this.buildGroundedCommunityFallbackRanking(context);
+
+        if (!groundedCommunityFallback) {
+          return null;
+        }
+
+        ranking = groundedCommunityFallback;
+      }
 
       const collectionJobIds = this.resolveEvidenceCollectionJobIds(context);
+      const verifiedRanking =
+        await this.independentEvidenceVerificationService.verifyRanking(
+          ranking,
+          collectionJobIds,
+        );
 
-      return await this.independentEvidenceVerificationService.verifyRanking(
-        ranking,
-        collectionJobIds,
-      );
+      const verifiedHasDirectEvidence =
+        verifiedRanking.selected.evidenceSamples.length > 0 ||
+        (verifiedRanking.selected.verifiedIndependentEvidenceCount ?? 0) > 0;
+
+      if (verifiedHasDirectEvidence) {
+        return verifiedRanking;
+      }
+
+      /*
+       * Defensive rescue: a schema-validated Community AI opportunity with an
+       * exact grounded corpus quote must not be replaced by a no-evidence
+       * hypothesis merely because a generic NLP normalization rule discarded
+       * it. Re-run provenance verification on the strongest grounded community
+       * opportunity and keep the strict recurrence gate unchanged.
+       */
+      const groundedCommunityFallback =
+        this.buildGroundedCommunityFallbackRanking(context);
+
+      if (!groundedCommunityFallback) {
+        return verifiedRanking;
+      }
+
+      const verifiedCommunityFallback =
+        await this.independentEvidenceVerificationService.verifyRanking(
+          groundedCommunityFallback,
+          collectionJobIds,
+        );
+      const fallbackHasDirectEvidence =
+        verifiedCommunityFallback.selected.evidenceSamples.length > 0 ||
+        (verifiedCommunityFallback.selected.verifiedIndependentEvidenceCount ??
+          0) > 0;
+
+      return fallbackHasDirectEvidence
+        ? verifiedCommunityFallback
+        : verifiedRanking;
     } catch (error: unknown) {
       if (error instanceof NoRankedIdeaOpportunityError) {
         return null;
@@ -1033,6 +1238,153 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
             : 'Unable to rank the discovered product opportunities.',
       });
     }
+  }
+
+  /**
+   * Builds a conservative ranking record from the strongest schema-validated
+   * Community AI opportunity when the generic NLP candidate normalizer drops
+   * that opportunity. This is a rescue path, not an eligibility bypass:
+   * independent provenance verification still runs immediately afterward and
+   * recurrence/source-diversity requirements remain unchanged.
+   */
+  private buildGroundedCommunityFallbackRanking(
+    context: IdeaGenerationContext,
+  ): IdeaOpportunityRanking | null {
+    const analysis = context.communityAiAnalysis;
+
+    if (!analysis) {
+      return null;
+    }
+
+    const primaryDomainName = (
+      context.domainName ??
+      context.selectedDomains[0]?.name ??
+      ''
+    )
+      .trim()
+      .toLowerCase();
+
+    const candidates = analysis.opportunities
+      .filter((opportunity) => {
+        const evidenceSamples = opportunity.evidenceSamples
+          .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+          .filter(Boolean);
+        const domainMatches =
+          !primaryDomainName ||
+          opportunity.domainName.trim().toLowerCase() === primaryDomainName;
+
+        return (
+          domainMatches &&
+          evidenceSamples.length > 0 &&
+          opportunity.groundingScore >= 50
+        );
+      })
+      .sort(
+        (first, second) =>
+          second.groundingScore - first.groundingScore ||
+          second.confidence - first.confidence ||
+          second.problemImportance - first.problemImportance,
+      );
+
+    const opportunity = candidates[0];
+
+    if (!opportunity) {
+      return null;
+    }
+
+    const evidenceSamples = opportunity.evidenceSamples
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    const confidence = Math.max(0, Math.min(1, opportunity.confidence / 100));
+    const grounding = Math.max(
+      0,
+      Math.min(1, opportunity.groundingScore / 100),
+    );
+    const evidenceScore = Math.min(1, evidenceSamples.length / 5);
+    const reliability = Number(
+      Math.max(0.7, grounding * 0.8 + confidence * 0.2).toFixed(4),
+    );
+    const supportScore = Number(
+      Math.min(1, reliability * 0.7 + evidenceScore * 0.3).toFixed(4),
+    );
+    const baseScore = Number(
+      Math.min(
+        1,
+        supportScore * 0.4 +
+          (opportunity.problemImportance / 100) * 0.25 +
+          (opportunity.technicalFeasibility / 100) * 0.2 +
+          (opportunity.innovationPotential / 100) * 0.15,
+      ).toFixed(4),
+    );
+    const weakEvidencePenalty = evidenceSamples.length === 1 ? 0.08 : 0.04;
+    const finalScore = Number(
+      Math.max(0, baseScore - weakEvidencePenalty).toFixed(4),
+    );
+
+    return {
+      selected: {
+        rank: 1,
+        title: opportunity.title,
+        problem: opportunity.problem,
+        need: opportunity.unmetNeed,
+        solutionArea: opportunity.solutionArea,
+        evidenceType: 'OPPORTUNITY',
+        sourceIndex: 0,
+        frequency: evidenceSamples.length,
+        severity: opportunity.severity,
+        evidenceSamples,
+        frequencyScore: Math.min(1, evidenceSamples.length / 5),
+        severityScore:
+          opportunity.severity === 'CRITICAL'
+            ? 1
+            : opportunity.severity === 'HIGH'
+              ? 0.85
+              : opportunity.severity === 'MEDIUM'
+                ? 0.6
+                : 0.35,
+        evidenceScore,
+        evidenceReliabilityScore: reliability,
+        weakEvidencePenalty,
+        specificityScore: 0.82,
+        feasibilityScore: opportunity.technicalFeasibility / 100,
+        localRelevanceScore: opportunity.localEvidenceAvailable
+          ? opportunity.localRelevance / 100
+          : 0.25,
+        noveltyScore: opportunity.innovationPotential / 100,
+        businessValueScore: opportunity.marketPotential / 100,
+        marketGapScore: Math.max(0.4, opportunity.marketPotential / 100 - 0.1),
+        competitionScore: 0.5,
+        technicalRiskScore: 1 - opportunity.technicalFeasibility / 100,
+        supportScore,
+        nlpConfidenceScore: context.nlp?.confidence ?? confidence,
+        baseScore,
+        confidencePenalty: Number(((1 - confidence) * 0.08).toFixed(4)),
+        finalScore,
+        selectionEligible: false,
+        disqualificationReasons: [
+          'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+        ],
+        verifiedIndependentEvidenceCount: 0,
+        verifiedIndependentSourceCount: 0,
+        independentEvidence: [],
+        raw: {
+          ...opportunity,
+          source: 'COMMUNITY_AI_ANALYSIS',
+        } as unknown as Prisma.JsonValue,
+      },
+      alternatives: [],
+      evaluatedCount: analysis.opportunities.length,
+      evidenceCoverage: Number(
+        Math.min(1, evidenceSamples.length / 3).toFixed(4),
+      ),
+      selectionReason:
+        `Recovered schema-validated grounded Community AI opportunity "${opportunity.title}" after generic NLP normalization produced no direct-evidence ranking. Independent recurrence verification remains required.`,
+      qualityWarnings: [
+        `Only ${evidenceSamples.length} direct grounded evidence sample(s) support the selected opportunity; claims must remain preliminary and must not be presented as market-wide facts.`,
+        'The requested location remains a pilot deployment target unless direct local evidence is independently verified.',
+      ],
+    };
   }
 
   /**
@@ -1085,21 +1437,27 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
    */
   private requiresEvidenceRecovery(ranking: IdeaOpportunityRanking): boolean {
     const selected = ranking.selected;
-
-    /*
-     * The fast generation path accepts one retained, directly relevant sample.
-     * A second collection pass is not useful when the product policy explicitly
-     * allows a single-report pilot; it only adds latency and often reintroduces
-     * cached noise. Recovery remains structurally available for other policies,
-     * but this path requests it only when absolutely no direct evidence exists.
-     */
     const directEvidenceCount = Math.max(
       selected.evidenceSamples.length,
       selected.independentEvidence?.length ?? 0,
       selected.verifiedIndependentEvidenceCount ?? 0,
     );
+    const independentSourceCount = Math.max(
+      selected.verifiedIndependentSourceCount ?? 0,
+      new Set(
+        (selected.independentEvidence ?? [])
+          .map((evidence) => evidence.sourceKey)
+          .filter(Boolean),
+      ).size,
+    );
 
-    return directEvidenceCount === 0;
+    /*
+     * Recovery is justified only for a sparse winning cluster: zero/one direct
+     * sample or evidence coming from a single independent source. A cluster with
+     * multiple reports across multiple sources is already useful and must not
+     * pay the 20-30 second recovery penalty.
+     */
+    return directEvidenceCount <= 1 || independentSourceCount <= 1;
   }
 
   private buildSuccessResult(
@@ -1124,9 +1482,16 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
       readonly recoveryOutcome: EvidenceRecoveryOutcome;
     } | null,
   ): IdeaGenerationStageExecutionResult {
+    const normalizedRanking = this.normalizeFinalRankingEvidenceCoverage(ranking);
+    const synchronizedDomainEvidence = this.synchronizeSelectedOpportunityEvidence(
+      context,
+      normalizedRanking,
+    );
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
-      opportunityRanking: ranking,
+      domainEvidence: synchronizedDomainEvidence,
+      opportunityRanking: normalizedRanking,
       // A previous checkpoint or retry must never keep a stale terminal
       // no-result marker once this stage has selected a controlled fallback.
       noResultOutcome: null,
@@ -1134,25 +1499,29 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
 
     return {
       context: updatedContext,
-      resultPreview: ranking.selected.selectionEligible
+      resultPreview: normalizedRanking.selected.selectionEligible
         ? recoveryApplied
-          ? `Targeted evidence recovery completed; ranked ${ranking.evaluatedCount} candidate(s) and selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}.`
-          : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected opportunity "${ranking.selected.title}" with score ${(ranking.selected.finalScore * 100).toFixed(1)}. ${ranking.selectionReason}`
+          ? `Targeted evidence recovery completed; ranked ${normalizedRanking.evaluatedCount} candidate(s) and selected opportunity "${normalizedRanking.selected.title}" with score ${(normalizedRanking.selected.finalScore * 100).toFixed(1)}.`
+          : `Ranked ${ranking.evaluatedCount} opportunity candidate(s); selected opportunity "${normalizedRanking.selected.title}" with score ${(normalizedRanking.selected.finalScore * 100).toFixed(1)}. ${normalizedRanking.selectionReason}`
         : recoveryApplied
-          ? `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot after one focused evidence-recovery pass. Idea generation will continue, while sparse-evidence claims remain explicitly qualified.`
-          : (ranking.selected.verifiedIndependentEvidenceCount ?? 0) > 0
-            ? `Selected the strongest available domain-aligned signal "${ranking.selected.title}" as a controlled preliminary pilot from the retained direct evidence. No evidence-recovery pass was needed; sparse-evidence claims remain explicitly qualified.`
-            : `Selected a controlled primary-domain validation hypothesis "${ranking.selected.title}" because no direct community evidence was retained. The generated idea must remain explicitly unvalidated.`,
+          ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot after one focused evidence-recovery pass. Idea generation will continue, while sparse-evidence claims remain explicitly qualified.`
+          : Math.max(
+                normalizedRanking.selected.evidenceSamples.length,
+                normalizedRanking.selected.independentEvidence?.length ?? 0,
+                normalizedRanking.selected.verifiedIndependentEvidenceCount ?? 0,
+              ) > 0
+            ? `Selected the strongest available domain-aligned signal "${normalizedRanking.selected.title}" as a controlled preliminary pilot from retained direct evidence. The evidence is insufficient for independent recurrence, so claims remain explicitly qualified.`
+            : `Selected a controlled primary-domain validation hypothesis "${normalizedRanking.selected.title}" because no direct community evidence was retained. The generated idea must remain explicitly unvalidated.`,
       metadata: {
-        selectedTitle: ranking.selected.title,
-        selectedScore: ranking.selected.finalScore,
-        selectedEligible: ranking.selected.selectionEligible,
+        selectedTitle: normalizedRanking.selected.title,
+        selectedScore: normalizedRanking.selected.finalScore,
+        selectedEligible: normalizedRanking.selected.selectionEligible,
         evidenceRecoveryApplied: recoveryApplied,
         evidenceRecoveryAttempts: updatedContext.evidenceRecoveryAttempts,
         evidenceRecovery: recoveryMetadata,
         shortlistedOpportunities: [
-          ranking.selected,
-          ...ranking.alternatives.slice(0, 4),
+          normalizedRanking.selected,
+          ...normalizedRanking.alternatives.slice(0, 4),
         ].map((opportunity) => ({
           rank: opportunity.rank,
           title: opportunity.title,
@@ -1165,12 +1534,141 @@ export class OpportunityRankingStage implements IdeaGenerationStage {
           selectionEligible: opportunity.selectionEligible,
           disqualificationReasons: opportunity.disqualificationReasons,
         })),
-        selectionReason: ranking.selectionReason,
-        evidenceCoverage: ranking.evidenceCoverage,
-        evaluatedCount: ranking.evaluatedCount,
-        qualityWarnings: [...ranking.qualityWarnings],
+        selectionReason: normalizedRanking.selectionReason,
+        evidenceCoverage: normalizedRanking.evidenceCoverage,
+        evaluatedCount: normalizedRanking.evaluatedCount,
+        qualityWarnings: [...normalizedRanking.qualityWarnings],
       },
     };
+  }
+
+  private normalizeFinalRankingEvidenceCoverage(
+    ranking: IdeaOpportunityRanking,
+  ): IdeaOpportunityRanking {
+    const retainedEvidenceCount = Math.max(
+      ranking.selected.evidenceSamples.length,
+      ranking.selected.verifiedIndependentEvidenceCount ?? 0,
+    );
+    const normalizedCoverage = Math.max(
+      ranking.evidenceCoverage,
+      retainedEvidenceCount > 0
+        ? Math.min(1, retainedEvidenceCount / 3)
+        : 0,
+    );
+
+    if (normalizedCoverage === ranking.evidenceCoverage) {
+      return ranking;
+    }
+
+    return {
+      ...ranking,
+      evidenceCoverage: Number(normalizedCoverage.toFixed(4)),
+    };
+  }
+
+  private synchronizeSelectedOpportunityEvidence(
+    context: IdeaGenerationContext,
+    ranking: IdeaOpportunityRanking,
+  ): IdeaGenerationContext['domainEvidence'] {
+    const selectedDomainName = (
+      this.readCandidateDomainName(ranking.selected.raw) ??
+      context.domainName ??
+      ''
+    ).trim();
+    const selectedSamples = ranking.selected.evidenceSamples
+      .map((sample) => sample.replace(/\s+/gu, ' ').trim())
+      .filter(Boolean);
+
+    if (!selectedDomainName || selectedSamples.length === 0) {
+      return context.domainEvidence;
+    }
+
+    const provenanceByText = new Map(
+      (ranking.selected.independentEvidence ?? []).map((item) => [
+        this.normalizeEvidenceKey(item.text),
+        item,
+      ]),
+    );
+
+    return context.domainEvidence.map((entry) => {
+      if (
+        entry.domainName.trim().toLowerCase() !==
+        selectedDomainName.toLowerCase()
+      ) {
+        return entry;
+      }
+
+      const existingPosts = Array.isArray(entry.samplePosts)
+        ? entry.samplePosts.filter(
+            (item): item is Prisma.JsonObject =>
+              Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+          )
+        : [];
+      const existingComments = Array.isArray(entry.sampleComments)
+        ? entry.sampleComments.filter(
+            (item): item is Prisma.JsonObject =>
+              Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+          )
+        : [];
+      const existingKeys = new Set(
+        [...existingPosts, ...existingComments]
+          .map((item) =>
+            typeof item.text === 'string'
+              ? this.normalizeEvidenceKey(item.text)
+              : '',
+          )
+          .filter(Boolean),
+      );
+
+      const synchronizedPosts: Prisma.JsonObject[] = [];
+      const synchronizedComments: Prisma.JsonObject[] = [];
+
+      selectedSamples.forEach((sample, index) => {
+        const key = this.normalizeEvidenceKey(sample);
+        if (existingKeys.has(key)) return;
+
+        const provenance = provenanceByText.get(key);
+        if (provenance?.commentExternalId) {
+          synchronizedComments.push({
+            id: provenance.commentExternalId,
+            postId: provenance.postExternalId || provenance.threadExternalId,
+            text: sample,
+            sentiment: 'NEUTRAL',
+          });
+          return;
+        }
+
+        synchronizedPosts.push({
+          id: provenance?.postExternalId || `selected-opportunity:evidence:${index + 1}`,
+          text: sample,
+          sentiment: 'NEUTRAL',
+        });
+      });
+
+      const mergedPosts = [...synchronizedPosts, ...existingPosts].slice(0, 8);
+      const mergedComments = [
+        ...synchronizedComments,
+        ...existingComments,
+      ].slice(0, 8);
+      const totalPostsAnalyzed = Math.max(
+        entry.totalPostsAnalyzed,
+        mergedPosts.length,
+      );
+      const totalCommentsAnalyzed = Math.max(
+        entry.totalCommentsAnalyzed,
+        mergedComments.length,
+      );
+
+      return {
+        ...entry,
+        samplePosts: mergedPosts,
+        sampleComments: mergedComments,
+        evidenceAvailable: mergedPosts.length + mergedComments.length > 0,
+        totalPostsAnalyzed,
+        totalCommentsAnalyzed,
+        totalTextsAnalyzed: totalPostsAnalyzed + totalCommentsAnalyzed,
+      };
+    });
   }
 
   /**

@@ -21,6 +21,7 @@ import type {
   SelectedGenerationDomain,
 } from '../../types/idea-generation-context.type';
 import { IDEA_OWNER_TYPES } from '../../../shared/constants/ideas.constants';
+import { classifyDirectCommunityEvidence } from '../../../../nlp/common/utils/community-evidence.util';
 
 /**
  * Resolves one bounded collection job for the complete generation request.
@@ -74,6 +75,24 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
     );
 
     const nlp = result.nlpOutput;
+
+    /*
+     * FAST_GENERATION keeps a richer in-memory collector corpus than the
+     * intentionally bounded NLP pass. Preserve direct problem evidence from
+     * that first collection here so ranking never needs to recollect a bug or
+     * complaint that was already found initially.
+     */
+    const fastEvidenceByDomain = new Map(
+      domains.map((domain) => [
+        domain.id,
+        this.buildFastEvidenceForDomain(
+          result.fastEvidenceInputs ?? [],
+          domain,
+          domain.id === primaryDomain.id,
+        ),
+      ]),
+    );
+
     const domainEvidence = domains.map((domain) => {
       /*
        * samplePosts/sampleComments may be empty while analyzedTexts already
@@ -88,14 +107,27 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         domain.id === primaryDomain.id,
       );
 
-      const samplePosts =
+      const fastDomainEvidence = fastEvidenceByDomain.get(domain.id) ?? {
+        posts: [],
+        comments: [],
+      };
+      const samplePosts = this.mergeRepresentativeEvidence(
+        fastDomainEvidence.posts,
         analyzedDomainEvidence.posts.length > 0
           ? analyzedDomainEvidence.posts
-          : this.filterEvidenceForDomain(nlp.samplePosts, domain);
-      const sampleComments =
-        analyzedDomainEvidence.comments.length > 0
+          : this.filterEvidenceForDomain(nlp.samplePosts, domain),
+        10,
+      );
+      const sampleComments = this.mergeRepresentativeEvidence(
+        fastDomainEvidence.comments,
+        (analyzedDomainEvidence.comments.length > 0
           ? analyzedDomainEvidence.comments
-          : this.filterEvidenceForDomain(nlp.sampleComments, domain);
+          : this.filterEvidenceForDomain(nlp.sampleComments, domain)
+        ).filter((value) =>
+          this.isRepresentativeProblemEvidence(this.extractEvidenceText(value)),
+        ),
+        14,
+      );
 
       const totalPostsAnalyzed = samplePosts.length;
       const totalCommentsAnalyzed = sampleComments.length;
@@ -114,6 +146,21 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         sampleComments: this.toJsonValue(sampleComments),
       };
     });
+
+    const firstPassPosts = this.mergeRepresentativeEvidence(
+      domains.flatMap((domain) =>
+        fastEvidenceByDomain.get(domain.id)?.posts ?? [],
+      ),
+      Array.isArray(nlp.samplePosts) ? nlp.samplePosts : [],
+      16,
+    );
+    const firstPassComments = this.mergeRepresentativeEvidence(
+      domains.flatMap((domain) =>
+        fastEvidenceByDomain.get(domain.id)?.comments ?? [],
+      ),
+      Array.isArray(nlp.sampleComments) ? nlp.sampleComments : [],
+      20,
+    );
 
     const updatedContext: IdeaGenerationContext = {
       ...context,
@@ -140,8 +187,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         opportunities: this.toJsonValue(nlp.opportunities) as Prisma.JsonArray,
         insights: this.toJsonValue(nlp.insights) as Prisma.JsonArray,
         dataQuality: this.toJsonValue(nlp.dataQuality) as Prisma.JsonObject,
-        samplePosts: this.toJsonValue(nlp.samplePosts) as Prisma.JsonArray,
-        sampleComments: this.toJsonValue(nlp.sampleComments) as Prisma.JsonArray,
+        samplePosts: this.toJsonValue(firstPassPosts) as Prisma.JsonArray,
+        sampleComments: this.toJsonValue(firstPassComments) as Prisma.JsonArray,
         aiUsed: nlp.aiUsed,
         confidence: nlp.confidence,
       },
@@ -162,6 +209,8 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
         totalTextsAnalyzed: nlp.totalTextsAnalyzed,
         totalPostsAnalyzed: nlp.totalPostsAnalyzed,
         totalCommentsAnalyzed: nlp.totalCommentsAnalyzed,
+        firstPassDirectEvidenceCount:
+          firstPassPosts.length + firstPassComments.length,
         nlpAnalysisId:
           result.job.nlpAnalysis?.id ?? nlp.collectionJobId,
         nlpAiUsed: nlp.aiUsed,
@@ -201,10 +250,10 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
        * improves recall without creating one sequential request chain.
        */
       collectorLimits: {
-        maxFetchedPosts: 10,
-        maxSavedPosts: 7,
-        maxFetchedComments: 16,
-        maxSavedComments: 10,
+        maxFetchedPosts: 14,
+        maxSavedPosts: 10,
+        maxFetchedComments: 24,
+        maxSavedComments: 16,
       },
     });
   }
@@ -392,6 +441,96 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
 
 
   /**
+   * Converts the richer FAST_GENERATION collector corpus into direct,
+   * domain-matched representative evidence. The collector corpus is already
+   * centrally relevance-filtered; this method adds the stricter selected-domain
+   * and direct-problem gates required by idea generation.
+   */
+  private buildFastEvidenceForDomain(
+    inputs: readonly {
+      readonly id: string;
+      readonly sourceType: 'POST' | 'COMMENT';
+      readonly postId?: string;
+      readonly title?: string | null;
+      readonly content: string;
+      readonly isComplaintEvidence?: boolean;
+    }[],
+    domain: SelectedGenerationDomain,
+    isPrimaryDomain: boolean,
+  ): {
+    readonly posts: unknown[];
+    readonly comments: unknown[];
+  } {
+    const candidates = inputs
+      .map((input) => {
+        const title = input.title?.replace(/\s+/gu, ' ').trim() ?? '';
+        const content = input.content.replace(/\s+/gu, ' ').trim();
+        const text =
+          input.sourceType === 'COMMENT' && title
+            ? `${title}. Community comment: ${content}`
+            : [title, content].filter(Boolean).join(' ');
+
+        return { input, text };
+      })
+      .filter(({ input, text }) => {
+        if (!text) return false;
+        const domainMatched =
+          this.textMatchesDomain(text, domain) ||
+          (isPrimaryDomain && this.textHasSpecificDomainAnchor(text, domain));
+        if (!domainMatched) return false;
+
+        return (
+          input.isComplaintEvidence === true ||
+          this.isRepresentativeProblemEvidence(text)
+        );
+      });
+
+    const posts = candidates
+      .filter(({ input }) => input.sourceType === 'POST')
+      .slice(0, 10)
+      .map(({ input, text }) => ({
+        id: input.id,
+        text,
+        sentiment: 'NEUTRAL',
+      }));
+    const comments = candidates
+      .filter(({ input }) => input.sourceType === 'COMMENT')
+      .slice(0, 14)
+      .map(({ input, text }) => ({
+        id: input.id,
+        postId: input.postId ?? input.id,
+        text,
+        sentiment: 'NEUTRAL',
+      }));
+
+    return { posts, comments };
+  }
+
+  /** Deduplicates representative evidence while preserving source order. */
+  private mergeRepresentativeEvidence(
+    preferred: readonly unknown[],
+    fallback: readonly unknown[],
+    limit: number,
+  ): unknown[] {
+    const output: unknown[] = [];
+    const seen = new Set<string>();
+
+    for (const value of [...preferred, ...fallback]) {
+      const text = this.extractEvidenceText(value)
+        .replace(/\s+/gu, ' ')
+        .trim();
+      if (!text) continue;
+      const key = this.normalizeTerm(text).slice(0, 500);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(value);
+      if (output.length >= limit) break;
+    }
+
+    return output;
+  }
+
+  /**
    * Builds representative domain evidence directly from the authoritative
    * analyzed-text records returned by the in-memory NLP pipeline.
    *
@@ -436,7 +575,12 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
       matching.length > 0
         ? matching
         : isPrimaryDomain
-          ? analyzedTexts
+          ? analyzedTexts.filter((item) =>
+              this.textHasSpecificDomainAnchor(
+                `${item.originalText} ${item.cleanedText}`,
+                domain,
+              ),
+            )
           : [];
 
     const representative = resolved.filter((item) =>
@@ -476,21 +620,76 @@ export class CollectionJobResolutionStage implements IdeaGenerationStage {
    * may remain in NLP totals but are not shown as problem evidence.
    */
   private isRepresentativeProblemEvidence(value: string): boolean {
-    const text = this.normalizeTerm(value);
-    if (!text || text.length < 35) {
+    const fullText = value.replace(/\s+/gu, ' ').trim();
+    if (fullText.length < 35) {
       return false;
     }
 
-    const genericEducational =
-      /\b(?:explained|introduction to|what is|learn more|register here|tutorial|course|roadmap|complete guide|beginner guide|from zero|خطة كاملة|شرح|تعلم)\b/iu.test(
-        text,
-      );
-    const problemSignal =
-      /\b(?:not accurate enough|insufficient|inaccurate|imprecise|unable|cannot|can't|failed|fails|failure|error|issue|problem|difficulty|struggle|missing|lack|unsupported|need|request|wish|would love|does not work|not working|too slow|confusing|friction)\b/iu.test(
-        text,
-      );
+    const commentMarker = /\bCommunity comment:\s*/iu;
+    const match = fullText.match(commentMarker);
+    const evidenceText = match
+      ? fullText.slice((match.index ?? 0) + match[0].length).trim()
+      : fullText;
 
-    return problemSignal && !genericEducational;
+    return (
+      classifyDirectCommunityEvidence(
+        evidenceText,
+        match ? 'COMMENT' : 'POST',
+      ) !== 'NONE'
+    );
+  }
+
+  /**
+   * A one-term fallback used only when the strict two-term domain matcher
+   * produced no evidence for the primary domain. Generic cross-domain words
+   * are excluded so unrelated comments cannot inherit the primary domain.
+   */
+  private textHasSpecificDomainAnchor(
+    value: string,
+    domain: SelectedGenerationDomain,
+  ): boolean {
+    const text = this.normalizeTerm(value);
+    if (!text) return false;
+
+    const domainName = this.normalizeTerm(domain.name);
+    if (domainName.length >= 4 && text.includes(domainName)) return true;
+
+    const genericTerms = new Set([
+      'privacy',
+      'secure',
+      'security',
+      'data',
+      'system',
+      'platform',
+      'application',
+      'software',
+      'monitoring',
+      'management',
+      'analytics',
+      'integration',
+      'smart',
+      'technology',
+      'digital',
+      'online',
+      'optimization',
+      'automation',
+      'prediction',
+      'recommendation',
+      'workflow',
+    ]);
+
+    return domain.keywords
+      .map((term) => this.normalizeTerm(term))
+      .filter(
+        (term) =>
+          term.length >= 5 &&
+          !genericTerms.has(term) &&
+          !term.endsWith(' platform') &&
+          !term.endsWith(' system') &&
+          !term.endsWith(' application') &&
+          !term.endsWith(' software'),
+      )
+      .some((term) => text.includes(term));
   }
 
   private textMatchesDomain(

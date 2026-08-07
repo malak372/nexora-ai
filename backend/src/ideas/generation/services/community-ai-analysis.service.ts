@@ -243,7 +243,11 @@ export class CommunityAiAnalysisService {
         apiModelId: null,
         attemptCount: models.length,
       };
-      const grounded = this.applyEvidenceGrounding(context, analysis);
+      const grounded = this.applyEvidenceGrounding(
+        context,
+        analysis,
+        true,
+      );
       this.logger.warn(
         `Community AI online fallback chain was exhausted within ${Date.now() - startedAt}ms; recovered ${grounded.opportunities.length} retained evidence-backed candidate(s).`,
       );
@@ -397,6 +401,8 @@ export class CommunityAiAnalysisService {
     apiModelId: string,
     attemptCount: number,
   ): CommunityAiAnalysis {
+    const providerReturnedNoOpportunities =
+      this.providerReturnedNoOpportunities(text);
     const parsedAnalysis = this.parseAndValidate(
       context,
       text,
@@ -408,9 +414,45 @@ export class CommunityAiAnalysisService {
       context,
       parsedAnalysis,
     );
-    const analysis = this.applyEvidenceGrounding(
-      context,
-      domainNormalizedAnalysis,
+    let groundedAnalysis: CommunityAiAnalysis;
+
+    try {
+      groundedAnalysis = this.applyEvidenceGrounding(
+        context,
+        domainNormalizedAnalysis,
+        providerReturnedNoOpportunities,
+      );
+    } catch (error) {
+      const retainedFallback =
+        this.buildRetainedEvidenceFallbackOpportunities(context);
+
+      if (retainedFallback.length === 0) {
+        throw error;
+      }
+
+      groundedAnalysis = this.applyEvidenceGrounding(
+        context,
+        {
+          ...domainNormalizedAnalysis,
+          summary:
+            'The online model did not return a usable grounded opportunity, so one cautious candidate was recovered from retained direct NLP evidence.',
+          dominantProblems: retainedFallback.map((item) => item.problem),
+          unmetNeeds: retainedFallback.map((item) => item.unmetNeed),
+          opportunities: retainedFallback,
+          overallConfidence:
+            retainedFallback.reduce((sum, item) => sum + item.confidence, 0) /
+            retainedFallback.length,
+          qualityWarnings: [
+            ...domainNormalizedAnalysis.qualityWarnings,
+            'The provider output was unusable after grounding; retained direct evidence was recovered within the same community-analysis attempt.',
+          ],
+        },
+        true,
+      );
+    }
+
+    const analysis = this.preserveGroundedLowConfidenceAnalysis(
+      groundedAnalysis,
     );
 
     this.validateBusinessQuality(analysis, context);
@@ -574,9 +616,20 @@ export class CommunityAiAnalysisService {
       return [];
     }
 
-    const corpus = this.collectEvidenceCorpus(context.nlp);
     const primaryDomainName =
       context.selectedDomains[0]?.name ?? context.domainName ?? 'Unassigned';
+    const primaryDomainId =
+      context.selectedDomains[0]?.id ?? context.domainId;
+    const primaryDomainEvidence = context.domainEvidence.find(
+      (entry) =>
+        entry.domainId === primaryDomainId ||
+        this.normalizeComparableText(entry.domainName) ===
+          this.normalizeComparableText(primaryDomainName),
+    );
+    const corpus = this.collectEvidenceCorpus({
+      nlp: context.nlp,
+      primaryDomainEvidence: primaryDomainEvidence ?? null,
+    });
     const selectedDomainNames = new Map(
       context.selectedDomains.map((domain) => [
         this.normalizeComparableText(domain.name),
@@ -655,11 +708,29 @@ export class CommunityAiAnalysisService {
       );
       const evidenceSample = groundedEvidence[0] ?? corpusFallback;
 
-      if (!evidenceSample) {
+      if (
+        !evidenceSample ||
+        this.looksLikePromotionalOrPublisherText(evidenceSample) ||
+        !this.looksLikeDirectProblemEvidence(evidenceSample)
+      ) {
         continue;
       }
 
-      const signature = this.normalizeComparableText(problem);
+      const repairedProblem = this.buildProfessionalFallbackProblem(
+        problem,
+        evidenceSample,
+      );
+      const repairedUnmetNeed = this.buildProfessionalFallbackNeed(
+        unmetNeed,
+        repairedProblem,
+      );
+      const repairedTitle = this.deriveTitle(
+        repairedProblem,
+        repairedUnmetNeed,
+        evidenceSample,
+      );
+
+      const signature = this.normalizeComparableText(repairedProblem);
       if (!signature || seenSignatures.has(signature)) {
         continue;
       }
@@ -679,11 +750,9 @@ export class CommunityAiAnalysisService {
 
       recovered.push({
         domainName,
-        title:
-          this.firstAvailableString(record, ['title', 'name']) ??
-          this.deriveTitle(problem, unmetNeed),
-        problem: this.boundProblemText(problem, 240),
-        unmetNeed: this.boundProblemText(unmetNeed, 220),
+        title: repairedTitle,
+        problem: repairedProblem,
+        unmetNeed: repairedUnmetNeed,
         solutionArea: this.boundProblemText(solutionArea, 180),
         affectedUsers: this.normalizeTextArray(
           record.affectedUsers ?? record.targetUsers,
@@ -729,21 +798,26 @@ export class CommunityAiAnalysisService {
       return recovered;
     }
 
-    const strongestCorpusSample = corpus.find((sample) => sample.length >= 40);
+    const strongestCorpusSample = this.selectStrongestFallbackEvidence(corpus);
     if (!strongestCorpusSample) {
       return [];
     }
 
-    const problem =
+    const extractedProblem =
       this.extractProblemSection(strongestCorpusSample) ||
       this.boundProblemText(strongestCorpusSample, 220);
+    const problem = this.buildProfessionalFallbackProblem(
+      extractedProblem,
+      strongestCorpusSample,
+    );
+    const unmetNeed = this.buildProfessionalFallbackNeed('', problem);
 
     return [
       {
         domainName: primaryDomainName,
-        title: this.deriveTitle(problem, problem),
+        title: this.deriveTitle(problem, unmetNeed, strongestCorpusSample),
         problem,
-        unmetNeed: `A reliable workflow that resolves: ${problem}`,
+        unmetNeed,
         solutionArea:
           'A focused software workflow for diagnosis, validation, and guided resolution.',
         affectedUsers: ['Affected community users'],
@@ -784,34 +858,26 @@ export class CommunityAiAnalysisService {
   }
 
   /**
-   * Rejects suspicious but schema-valid responses so the next attempt uses a
-   * different model instead of polluting opportunity ranking.
+   * Rejects schema-valid responses only when they are unusable or ungrounded.
+   * Confidence is preserved as metadata and a warning, not treated as a hard
+   * provider failure. This keeps documented low-confidence evidence available
+   * for a clearly bounded pilot while still refusing evidence-free output.
    */
   private validateBusinessQuality(
     analysis: CommunityAiAnalysis,
     context: IdeaGenerationContext,
   ): void {
-    if (
-      analysis.overallConfidence < COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE
-    ) {
-      throw new Error(
-        `Overall confidence ${analysis.overallConfidence} is below the accepted minimum ${COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE}.`,
-      );
-    }
-
-    const credibleOpportunities = analysis.opportunities.filter(
-      (opportunity) =>
-        opportunity.confidence >=
-        COMMUNITY_AI_ANALYSIS_MIN_OPPORTUNITY_CONFIDENCE,
+    const evidenceBackedOpportunities = analysis.opportunities.filter(
+      (opportunity) => opportunity.evidenceSamples.length > 0,
     );
 
-    if (credibleOpportunities.length === 0) {
+    if (evidenceBackedOpportunities.length === 0) {
       throw new Error(
-        'No opportunity met the minimum domain-confidence requirement.',
+        'Community AI analysis returned no evidence-backed opportunity.',
       );
     }
 
-    const totalEvidenceSamples = credibleOpportunities.reduce(
+    const totalEvidenceSamples = evidenceBackedOpportunities.reduce(
       (total, opportunity) => total + opportunity.evidenceSamples.length,
       0,
     );
@@ -832,7 +898,7 @@ export class CommunityAiAnalysisService {
     );
     const representedDomains = new Set<string>();
 
-    for (const opportunity of credibleOpportunities) {
+    for (const opportunity of evidenceBackedOpportunities) {
       const normalizedDomain = this.normalizeComparableText(
         opportunity.domainName,
       );
@@ -1046,6 +1112,87 @@ export class CommunityAiAnalysisService {
     throw new Error('Community AI analysis returned an invalid opportunity.');
   }
 
+  /**
+   * Selects the most informative retained evidence sample for deterministic
+   * fallback construction. Complaint specificity and concrete risk signals
+   * outrank length, praise, calls to action, and generic commentary.
+   */
+  private selectStrongestFallbackEvidence(
+    corpus: readonly string[],
+  ): string | undefined {
+    return [...corpus]
+      .filter((sample) => sample.trim().length >= 40)
+      .filter((sample) => !this.looksLikePromotionalOrPublisherText(sample))
+      .filter((sample) => this.looksLikeDirectProblemEvidence(sample))
+      .map((sample) => {
+        const normalized = this.normalizeComparableText(sample);
+        let score = Math.min(sample.length, 320) / 80;
+
+        if (/(?:security|vulnerabilit|hack|breach|unsafe)/u.test(normalized)) {
+          score += 6;
+        }
+        if (/(?:bill|billing|cloud cost|cost spike|30k|2k|financial exposure)/u.test(normalized)) {
+          score += 5;
+        }
+        if (/(?:found|detected|reported|caused|risk|problem|failed|missing|broken|slow|cannot|can t|doesn t|does not)/u.test(normalized)) {
+          score += 4;
+        }
+        if (/(?:i |my |we |our |user |developer |customer )/u.test(normalized)) {
+          score += 2;
+        }
+        if (/(?:liked and subbed|thank you|kudos|part 2|please do)/u.test(normalized)) {
+          score -= 4;
+        }
+
+        return { sample, score };
+      })
+      .sort((first, second) => second.score - first.score)[0]?.sample;
+  }
+
+  /**
+   * Promotional titles, app-review descriptions, tutorials, and outbound links
+   * describe content or products; they are not evidence that a user actually
+   * experienced a problem. Keeping them out of deterministic fallback prevents
+   * strings such as "Check out the app here" from becoming opportunity text.
+   */
+  private looksLikePromotionalOrPublisherText(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim().toLowerCase();
+    const hasUrl = /https?:\/\/|www\.|play\.google\.|apps\.apple\.com|app\s*store/u.test(normalized);
+    const promotionalPhrase = /(?:check out|download|install|app review|review of|subscribe|liked and subbed|link in (?:the )?description|use my code|sponsored|available now|try it|watch the full|tutorial|guide)/u.test(normalized);
+    const titleLike = /\|/u.test(value) && !/(?:i |my |we |our |can t|cannot|doesn t|does not|failed|broken|missing|problem|issue|bug|need|wish|want)/u.test(normalized);
+
+    return (hasUrl && promotionalPhrase) || promotionalPhrase || titleLike;
+  }
+
+  /** Returns true only for text that contains an observable user pain signal. */
+  private looksLikeDirectProblemEvidence(value: string): boolean {
+    const raw = value.replace(/\s+/gu, ' ').trim();
+    const communityCommentMatch = raw.match(/\bCommunity comment:\s*(.+)$/iu);
+    const evidenceBody = communityCommentMatch?.[1]?.trim() ?? raw;
+    const normalized = this.normalizeComparableText(evidenceBody);
+
+    if (!normalized || this.looksLikePromotionalOrPublisherText(evidenceBody)) {
+      return false;
+    }
+
+    const explicitPain = /(?:cannot|can t|unable|does not work|doesn t work|not working|fail|failed|failure|error|wrong|incorrect|inaccurate|miscalculat|hallucinat|crash|slow|delay|missing|lost|loss|risk|unsafe|vulnerabilit|hack|breach|expensive|cost|bill|manual|rewrite|refactor|confusing|frustrat|struggle|please add|feature request)/u.test(normalized);
+    const directNeedOrWish =
+      /(?:^|\s)(?:i|we|my|our|user|users|customer|customers|developer|developers|operator|operators|learner|learners)(?:\s+[^.!?]{0,45})?\s+(?:need|needs|needed|wish|wishes)\b/u.test(normalized) ||
+      /\b(?:need|needs|needed)\s+(?:a|an|the|better|more|less|to)\s+(?:app|application|platform|service|feature|option|setting|support|workflow|tool|software|system|way|ability|integration)\b/u.test(normalized);
+    const comprehensionOrPraiseOnly = /(?:i think i understand|i understand now|makes sense|so much easier|helped me understand|great explanation|thank you|thanks|love this|amazing|awesome)/u.test(normalized) &&
+      !/(?:cannot|can t|unable|error|fail|broken|missing|wrong|confusing|difficult|frustrat|struggle|need|wish)/u.test(normalized);
+    const positiveRecommendationOnly =
+      /(?:highly recommend|recommend(?:ed|ing)?|great company|great app|excellent|works great|very satisfied|five stars?|5 stars?|love (?:the|this) app)/u.test(normalized) &&
+      !/(?:cannot|can t|unable|does not work|doesn t work|not working|error|fail|broken|bug|missing|incorrect|wrong|crash|freeze|slow|confusing|difficult|frustrat|struggle|support|refund|withdraw)/u.test(normalized);
+    const firstPersonExperience = /(?:^|\s)(?:i|my|we|our|user|users|developer|developers|customer|customers)(?:\s|$)/u.test(normalized);
+    const concreteOutcome = /(?:hours?|days?|times?|\$\s*\d+|\d+\s*(?:bugs?|issues?|vulnerabilities|errors?)|racked up|data loss|financial exposure)/u.test(evidenceBody.toLowerCase());
+
+    return (explicitPain || directNeedOrWish) &&
+      !comprehensionOrPraiseOnly &&
+      !positiveRecommendationOnly &&
+      (firstPersonExperience || concreteOutcome || directNeedOrWish || /(?:please add|feature request)/u.test(normalized));
+  }
+
   private firstString(
     record: Record<string, unknown>,
     keys: readonly string[],
@@ -1107,8 +1254,14 @@ export class CommunityAiAnalysisService {
       .replace(/\s+/gu, ' ')
       .trim();
 
+    /*
+     * Treat these words as section labels only when they appear at the start
+     * of the text or are followed by an explicit colon. A normal sentence
+     * such as "the security problem of the apps..." must never be split at
+     * the word "problem" because doing so drops the semantic subject.
+     */
     const labeled = normalized.match(
-      /(?:^|\s)(?:#{1,6}\s*)?(?:🤔\s*)?(?:problem statement|problem|issue|pain point)\s*:?\s*(.+?)(?=\s+(?:#{1,6}\s*)?(?:🛠️\s*)?(?:proposed solution|solution|alternatives considered|feature summary|mockups|additional context)\b|$)/iu,
+      /^(?:#{1,6}\s*)?(?:🤔\s*)?(?:problem statement|problem|issue|pain point)\s*(?::|[-–—])\s*(.+?)(?=\s+(?:#{1,6}\s*)?(?:🛠️\s*)?(?:proposed solution|solution|alternatives considered|feature summary|mockups|additional context)\b|$)/iu,
     );
 
     if (labeled?.[1]) {
@@ -1224,10 +1377,293 @@ export class CommunityAiAnalysisService {
     return 'MEDIUM';
   }
 
-  private deriveTitle(problem: string, unmetNeed: string): string {
-    const source = unmetNeed || problem;
-    const title = source.replace(/\s+/gu, ' ').trim().slice(0, 120);
-    return title.length >= 3 ? title : 'Community Opportunity';
+  /**
+   * Builds a stable, professional title from the semantic content of the
+   * retained evidence. It intentionally avoids copying an arbitrary substring
+   * from the middle of a community comment.
+   */
+  private deriveTitle(
+    problem: string,
+    unmetNeed: string,
+    evidenceSample = '',
+  ): string {
+    const semanticText = this.normalizeComparableText(
+      `${problem} ${unmetNeed} ${evidenceSample}`,
+    );
+
+    if (
+      /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
+      /(?:bill|billing|cloud cost|cost spike|financial exposure|30k|2k)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'AI-Generated Application Security and Cost Risk';
+    }
+
+    if (
+      /(?:llm|large language model|ai coding|generated code|code assistant)/u.test(
+        semanticText,
+      ) &&
+      /(?:bloated|poorly organized|refactor|rewrite|pushback|doesn t understand|does not understand|invalid request|nonsensical)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'LLM-Generated Code Quality and Validation Failures';
+    }
+
+    if (
+      /(?:accounting|invoice|quickbooks|customer email|financial software)/u.test(
+        semanticText,
+      ) &&
+      /(?:slow|load|save|saved|missing|disappear|persistence|data loss)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Accounting Software Performance and Data Persistence Failures';
+    }
+
+    if (
+      /(?:energy|solar|power|telemetry|generation|monitor)/u.test(semanticText) &&
+      /(?:offline|reconnect|connection|doesn t work|does not work|not reliable|incorrect location|unable to correct|unresponsive|error)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Energy Monitoring Reliability and Connection Failures';
+    }
+
+    const source = this.cleanFallbackFragment(unmetNeed || problem);
+    if (this.looksLikePromotionalOrPublisherText(source)) {
+      return 'Evidence-Grounded Software Workflow Opportunity';
+    }
+    const words = source
+      .replace(/^(?:a|an|the)\s+/iu, '')
+      .split(/\s+/u)
+      .filter(Boolean)
+      .slice(0, 10)
+      .join(' ')
+      .replace(/[.,;:!?]+$/u, '')
+      .trim();
+
+    return words.length >= 8 ? this.toTitleCase(words) : 'Evidence-Grounded Software Workflow Opportunity';
+  }
+
+  /**
+   * Low confidence is evidence metadata, not a transport failure. A grounded
+   * response remains usable as a preliminary pilot and carries an explicit
+   * warning instead of forcing an unnecessary provider failure/fallback.
+   */
+  private preserveGroundedLowConfidenceAnalysis(
+    analysis: CommunityAiAnalysis,
+  ): CommunityAiAnalysis {
+    if (
+      analysis.overallConfidence >= COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE
+    ) {
+      return analysis;
+    }
+
+    return {
+      ...analysis,
+      qualityWarnings: [
+        ...analysis.qualityWarnings,
+        `Overall confidence is ${analysis.overallConfidence}/100, below the preferred ${COMMUNITY_AI_ANALYSIS_MIN_OVERALL_CONFIDENCE}/100 threshold. The grounded opportunity is retained only as a preliminary pilot and must not be presented as a market-wide conclusion.`,
+      ],
+    };
+  }
+
+  private buildProfessionalFallbackProblem(
+    candidateProblem: string,
+    evidenceSample: string,
+  ): string {
+    const semanticText = this.normalizeComparableText(
+      `${candidateProblem} ${evidenceSample}`,
+    );
+
+    if (
+      /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
+      /(?:bill|billing|cloud cost|cost spike|financial exposure|30k|2k)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A developer reported that security vulnerabilities in an AI-assisted application could have caused substantial unexpected cloud costs before deployment.';
+    }
+
+    if (
+      /(?:llm|large language model|ai coding|generated code|code assistant)/u.test(
+        semanticText,
+      ) &&
+      /(?:bloated|refactor|rewrite|pushback|doesn t understand|does not understand|pretends|nonsensical)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Developers report that LLM coding assistants may accept invalid or unclear requests without challenge, hide uncertainty instead of requesting clarification, and generate bloated or poorly organized code that requires extensive manual refactoring.';
+    }
+
+    if (
+      /(?:finance|financial|budget|spreadsheet|equation|algorithm|math|calculation)/u.test(
+        semanticText,
+      ) &&
+      /(?:wrong|incorrect|inaccurate|error|miscalculat|confident|same dumb loop|kept doing|repeated)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A finance user reported that an AI assistant produced an incorrect equation with high confidence and continued returning incorrect revisions after the error was explicitly reported.';
+    }
+
+    if (
+      /(?:accounting|invoice|quickbooks|customer email|financial software)/u.test(
+        semanticText,
+      ) &&
+      /(?:slow|load|save|saved|missing|disappear|persistence|data loss)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'Users report slow financial-software workflows and data-persistence failures in which customer details or invoice actions appear to save but later disappear, forcing repeated manual entry.';
+    }
+
+    const cleaned = this.cleanFallbackFragment(candidateProblem);
+    if (
+      cleaned.length >= 35 &&
+      !this.looksLikePromotionalOrPublisherText(cleaned)
+    ) {
+      return this.boundProblemText(cleaned, 260);
+    }
+
+    const extracted = this.extractProblemSection(evidenceSample);
+    const evidenceDerived = this.cleanFallbackFragment(extracted || evidenceSample);
+    if (
+      evidenceDerived.length >= 35 &&
+      !this.looksLikePromotionalOrPublisherText(evidenceDerived)
+    ) {
+      return this.boundProblemText(evidenceDerived, 260);
+    }
+
+    return 'The retained evidence indicates a possible software-workflow concern, but it does not contain a sufficiently explicit user complaint or unmet need to support a stronger problem statement.';
+  }
+
+  private buildProfessionalFallbackNeed(
+    candidateNeed: string,
+    repairedProblem: string,
+  ): string {
+    const cleanedNeed = this.cleanFallbackFragment(candidateNeed)
+      .replace(/^a reliable workflow that resolves\s*:\s*/iu, '')
+      .trim();
+
+    const semanticText = this.normalizeComparableText(
+      `${cleanedNeed} ${repairedProblem}`,
+    );
+
+    if (
+      /(?:security|vulnerabilit|hack|breach|unsafe)/u.test(semanticText) &&
+      /(?:bill|billing|cloud cost|cost spike|financial exposure)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A focused security-audit workflow that identifies high-risk vulnerabilities and cost-inflating configurations before an AI-assisted application reaches production.';
+    }
+
+    if (
+      /(?:llm|large language model|ai coding|generated code)/u.test(semanticText)
+    ) {
+      return 'A validation workflow that challenges ambiguous AI coding requests, exposes uncertainty, and flags bloated or poorly structured generated code before repository integration.';
+    }
+
+    if (
+      /(?:finance|financial|budget|spreadsheet|equation|algorithm|math|calculation)/u.test(
+        semanticText,
+      ) &&
+      /(?:wrong|incorrect|inaccurate|error|miscalculat|confident|repeated)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A verification workflow that checks AI-generated financial equations against deterministic calculations, exposes mismatches, and requires human review before the result is reused.';
+    }
+
+    if (
+      /(?:accounting|invoice|financial software|customer details)/u.test(
+        semanticText,
+      )
+    ) {
+      return 'A fast, reliable accounting workflow that persists customer and invoice data without silent loss or duplicate manual entry.';
+    }
+
+    return cleanedNeed.length >= 30 &&
+      !this.looksLikePromotionalOrPublisherText(cleanedNeed)
+      ? this.boundProblemText(cleanedNeed, 220)
+      : 'A bounded validation workflow that gathers explicit user complaints, classifies the recurring problem, and tests a focused software response before broader implementation.';
+  }
+
+  /** Removes broken sentence prefixes created by upstream bounded slicing. */
+  private cleanFallbackFragment(value: string): string {
+    let normalized = value.replace(/\s+/gu, ' ').trim();
+
+    normalized = normalized
+      .replace(/^s that leap out at me the most[.!?]?\s*/iu, '')
+      .replace(/^that leap out at me the most[.!?]?\s*/iu, '')
+      .replace(/^the most[.!?]?\s*/iu, '')
+      .replace(/^(?:and|but|so|because)\s+/iu, '')
+      .trim();
+
+    if (normalized && /^[a-z]/u.test(normalized)) {
+      normalized = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+
+    return normalized;
+  }
+
+  private toTitleCase(value: string): string {
+    const minorWords = new Set(['and', 'or', 'for', 'to', 'of', 'in', 'on', 'with']);
+    return value
+      .split(/\s+/u)
+      .map((word, index) => {
+        const lower = word.toLowerCase();
+        if (index > 0 && minorWords.has(lower)) {
+          return lower;
+        }
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(' ');
+  }
+
+  private singularizeSingleReportProblem(value: string): string {
+    return value
+      .replace(
+        /\bUsers experience complete failure when attempting to\b/giu,
+        'One user reported a complete failure when attempting to',
+      )
+      .replace(
+        /\bUsers (?:experience|encounter|face)\b/giu,
+        'One user reported experiencing',
+      )
+      .replace(
+        /\bVehicle owners (?:experience|encounter|face|fail to)\b/giu,
+        'One vehicle owner reported experiencing',
+      )
+      .replace(
+        /\b([A-Z][\p{L}'’&-]*(?:\s+[A-Z][\p{L}'’&-]*){0,3}) buyers (?:experience|encounter|face)\b/gu,
+        'One buyer in $1 reported experiencing',
+      )
+      .replace(
+        /\bBuyers (?:experience|encounter|face)\b/giu,
+        'One buyer reported experiencing',
+      )
+      .replace(
+        /\b(?:Language learners|Online learners|Learners|Students) lack\b/giu,
+        'One learner reported lacking',
+      )
+      .replace(
+        /\b(?:Language learners|Online learners|Learners|Students) (?:experience|encounter|face)\b/giu,
+        'One learner reported experiencing',
+      )
+      .replace(
+        /\b(?:a )?recurring challenge where vehicle owners fail to\b/giu,
+        'a pairing difficulty reported by one vehicle owner who was unable to',
+      )
+      .replace(
+        /\b(?:users|operators|customers|developers|creators|learners|students|buyers|sellers) (?:often|frequently|commonly|typically)\b/giu,
+        'one observed user',
+      )
+      .replace(/\s{2,}/gu, ' ')
+      .trim();
   }
 
   private normalizeComparableText(value: string): string {
@@ -1250,6 +1686,7 @@ export class CommunityAiAnalysisService {
   private applyEvidenceGrounding(
     context: IdeaGenerationContext,
     analysis: CommunityAiAnalysis,
+    allowExactRetainedEvidence = false,
   ): CommunityAiAnalysis {
     if (!context.nlp) {
       throw new Error('NLP evidence is required for grounding validation.');
@@ -1275,10 +1712,27 @@ export class CommunityAiAnalysisService {
 
     const groundedOpportunities = analysis.opportunities.flatMap(
       (opportunity): CommunityAiOpportunity[] => {
-        const groundedEvidence = opportunity.evidenceSamples
-          .map((sample) => this.findGroundedCorpusMatch(sample, corpus))
-          .filter((sample): sample is string => sample !== null)
-          .filter((sample) => this.supportsOpportunity(opportunity, sample));
+        const groundedEvidence = opportunity.evidenceSamples.flatMap(
+          (sample): string[] => {
+            const groundedSample = this.findGroundedCorpusMatch(sample, corpus);
+            if (!groundedSample) {
+              return [];
+            }
+
+            const exactRetainedEvidence =
+              allowExactRetainedEvidence &&
+              this.isExactOrContainedEvidenceMatch(sample, groundedSample);
+
+            if (
+              !exactRetainedEvidence &&
+              !this.supportsOpportunity(opportunity, groundedSample)
+            ) {
+              return [];
+            }
+
+            return [groundedSample];
+          },
+        );
 
         const uniqueEvidence = [...new Set(groundedEvidence)].slice(0, 5);
 
@@ -1311,9 +1765,43 @@ export class CommunityAiAnalysisService {
               (risk) => !this.isUnsupportedLocalRisk(risk, locationTerms),
             );
 
+        const primaryEvidence = uniqueEvidence[0] ?? '';
+        const problemIsDirect =
+          this.looksLikeDirectProblemEvidence(opportunity.problem) &&
+          !this.looksLikePromotionalOrPublisherText(opportunity.problem);
+        const problemMatchesEvidence =
+          this.tokenOverlap(
+            this.normalizeComparableText(opportunity.problem),
+            this.normalizeComparableText(primaryEvidence),
+          ) >= 0.16;
+
+        const baseGroundedProblem =
+          problemIsDirect && problemMatchesEvidence
+            ? opportunity.problem
+            : this.buildProfessionalFallbackProblem(
+                opportunity.problem,
+                primaryEvidence,
+              );
+        const groundedProblem =
+          uniqueEvidence.length === 1
+            ? this.singularizeSingleReportProblem(baseGroundedProblem)
+            : baseGroundedProblem;
+        const groundedNeed = this.buildProfessionalFallbackNeed(
+          opportunity.unmetNeed,
+          groundedProblem,
+        );
+        const groundedTitle = this.deriveTitle(
+          groundedProblem,
+          groundedNeed,
+          primaryEvidence,
+        );
+
         return [
           {
             ...opportunity,
+            title: groundedTitle,
+            problem: groundedProblem,
+            unmetNeed: groundedNeed,
             evidenceSamples: uniqueEvidence,
             groundingScore,
             localEvidenceAvailable,
@@ -1340,6 +1828,12 @@ export class CommunityAiAnalysisService {
 
     return {
       ...analysis,
+      dominantProblems: groundedOpportunities.map(
+        (opportunity) => opportunity.problem,
+      ),
+      unmetNeeds: groundedOpportunities.map(
+        (opportunity) => opportunity.unmetNeed,
+      ),
       opportunities: groundedOpportunities,
       qualityWarnings: [
         ...analysis.qualityWarnings,
@@ -1397,6 +1891,40 @@ export class CommunityAiAnalysisService {
 
     visit(value);
     return [...new Set(collected)];
+  }
+
+  private providerReturnedNoOpportunities(text: string): boolean {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      return (
+        this.isRecord(parsed) &&
+        Array.isArray(parsed.opportunities) &&
+        parsed.opportunities.length === 0
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private isExactOrContainedEvidenceMatch(
+    sample: string,
+    corpusSample: string,
+  ): boolean {
+    const normalizedSample = this.normalizeComparableText(sample);
+    const normalizedCorpusSample = this.normalizeComparableText(corpusSample);
+
+    if (
+      normalizedSample.length < 12 ||
+      normalizedCorpusSample.length < 12
+    ) {
+      return false;
+    }
+
+    return (
+      normalizedSample === normalizedCorpusSample ||
+      normalizedCorpusSample.includes(normalizedSample) ||
+      normalizedSample.includes(normalizedCorpusSample)
+    );
   }
 
   private findGroundedCorpusMatch(

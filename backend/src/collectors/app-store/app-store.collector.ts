@@ -280,7 +280,7 @@ export class AppStoreCollector
       }
 
       if (
-        input.collectionMode === 'FAST_GENERATION' &&
+        input.collectionMode !== 'FAST_GENERATION' &&
         requestedCountry === 'us'
       ) {
         try {

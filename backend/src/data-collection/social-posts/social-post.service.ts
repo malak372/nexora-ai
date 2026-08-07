@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 
 import { Prisma, UserRole } from '@prisma/client';
 
@@ -37,6 +38,104 @@ export class SocialPostService {
   private static readonly POST_PERSISTENCE_CONCURRENCY = 4;
 
   constructor(private readonly prisma: PrismaService) {}
+
+
+  /**
+   * Fast-generation persistence path for a brand-new collection job.
+   *
+   * FAST_GENERATION always writes into a newly created CollectionJob, so the
+   * expensive per-post interactive upsert transactions are unnecessary on
+   * this path. We deduplicate collector rows in memory, generate stable row
+   * ids locally, then persist all posts and all comments with two bulk writes.
+   *
+   * The normal/manual path continues to use createManyWithComments(), which
+   * preserves full upsert/update semantics for reruns.
+   */
+  async createManyWithCommentsFast(
+    collectionJobId: string,
+    dataSourceId: string,
+    location: {
+      country?: string | null;
+      city?: string | null;
+      region?: string | null;
+    },
+    posts: CollectorPost[],
+  ): Promise<{ totalPosts: number; totalComments: number }> {
+    const uniquePosts = new Map<string, CollectorPost>();
+
+    for (const post of posts) {
+      const externalId = post.externalId.trim();
+      const content = post.content.trim();
+      if (!externalId || !content || uniquePosts.has(externalId)) continue;
+      uniquePosts.set(externalId, post);
+    }
+
+    const now = new Date();
+    const preparedPosts = [...uniquePosts.values()].map((post) => ({
+      id: crypto.randomUUID(),
+      post,
+    }));
+
+    if (preparedPosts.length === 0) {
+      return { totalPosts: 0, totalComments: 0 };
+    }
+
+    await this.prisma.socialPost.createMany({
+      data: preparedPosts.map(({ id, post }) => ({
+        id,
+        collectionJobId,
+        dataSourceId,
+        externalId: post.externalId.trim(),
+        title: this.normalizeOptionalText(post.title),
+        content: post.content.trim(),
+        author: this.normalizeOptionalText(post.author),
+        url: this.normalizeOptionalText(post.url),
+        country: this.normalizeOptionalText(post.country ?? location.country),
+        city: this.normalizeOptionalText(post.city ?? location.city),
+        region: this.normalizeOptionalText(post.region ?? location.region),
+        languageCode: this.normalizeOptionalText(post.languageCode),
+        likesCount: this.toNonNegativeInteger(post.likesCount),
+        repliesCount: this.toNonNegativeInteger(
+          post.repliesCount ?? (post.comments ?? []).length,
+        ),
+        publishedAt: post.publishedAt,
+        collectedAt: now,
+      })),
+    });
+
+    const seenComments = new Set<string>();
+    const comments = preparedPosts.flatMap(({ id: postId, post }) =>
+      (post.comments ?? []).flatMap((comment) => {
+        const externalId = comment.externalId.trim();
+        const content = comment.content.trim();
+        if (!externalId || !content) return [];
+
+        const dedupeKey = `${postId}:${externalId}`;
+        if (seenComments.has(dedupeKey)) return [];
+        seenComments.add(dedupeKey);
+
+        return [{
+          postId,
+          externalId,
+          content,
+          author: this.normalizeOptionalText(comment.author),
+          languageCode: this.normalizeOptionalText(comment.languageCode),
+          likesCount: this.toNonNegativeInteger(comment.likesCount),
+          publishedAt: comment.publishedAt,
+          collectedAt: now,
+        }];
+      }),
+    );
+
+    if (comments.length > 0) {
+      await this.prisma.socialComment.createMany({ data: comments });
+    }
+
+    return {
+      totalPosts: preparedPosts.length,
+      totalComments: comments.length,
+    };
+  }
 
   /**
    * Saves normalized posts and comments for one

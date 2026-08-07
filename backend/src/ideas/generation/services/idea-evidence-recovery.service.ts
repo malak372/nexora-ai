@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { CollectionJobStatus, Prisma } from '@prisma/client';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
+import { filterEvidenceByProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
 import { CollectionJobResolverService } from './collection-job-resolver.service';
 import { CommunityAiAnalysisService } from './community-ai-analysis.service';
 import type {
@@ -93,15 +96,16 @@ export class IdeaEvidenceRecoveryService {
    * Three sources are enough to improve evidence recall without repeating the
    * full nine-source collection pass.
    */
-  private readonly maximumRecoverySources = 5;
+  private readonly maximumRecoverySources = 2;
 
   /** Keeps provider queries bounded and natural-language complaint focused. */
-  private readonly maximumRecoveryKeywords = 6;
+  private readonly maximumRecoveryKeywords = 3;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly collectionJobResolver: CollectionJobResolverService,
     private readonly communityAiAnalysisService: CommunityAiAnalysisService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -116,15 +120,41 @@ export class IdeaEvidenceRecoveryService {
     selectedOpportunity: RankedIdeaOpportunity | null = null,
   ): Promise<IdeaEvidenceRecoveryResult> {
     const evidenceFamilies = this.detectEvidenceFamilies(selectedOpportunity);
+    const excludedSourceKeys = await this.resolveLowYieldSourceKeys(context);
     const recoverySources = this.selectRecoverySources(
       context.selectedDataSources,
       evidenceFamilies,
+      selectedOpportunity,
+      excludedSourceKeys,
     );
     const recoveryKeywords = this.buildRecoveryKeywords(
       context,
       selectedOpportunity,
       evidenceFamilies,
     );
+
+    if (recoverySources.length === 0) {
+      this.logger.debug(
+        'Skipping targeted recovery because every eligible primary source already failed, was rate-limited, or returned zero records.',
+      );
+      return {
+        collectionJobId: context.collection?.collectionJobId ?? 'recovery-skipped',
+        selectedDataSourceKeys: [],
+        recoveryKeywords,
+        evidenceFamilies,
+        totalPosts: 0,
+        totalComments: 0,
+        usefulCleanTextCount: 0,
+        complaintEvidenceCount: 0,
+        newCorpusEvidenceSampleCount: 0,
+        newEvidenceSampleCount: 0,
+        novelEvidenceSamples: [],
+        recoveryOutcome: 'RECOVERY_RETURNED_NO_USABLE_EVIDENCE',
+        communityAiRecoveryExecuted: false,
+        nlp: context.nlp!,
+        communityAiAnalysis: null,
+      };
+    }
 
     const result = await this.collectionJobResolver.resolve({
       userId:
@@ -171,14 +201,30 @@ export class IdeaEvidenceRecoveryService {
       opportunityRanking: null,
     };
     const retainedRecoveryTextCount = this.countRetainedRecoveryTexts(nlp);
-    const rawCommunityAiAnalysis =
-      retainedRecoveryTextCount > 0
-        ? await this.communityAiAnalysisService.analyze(recoveryContext)
-        : null;
+    const retainedDirectEvidenceCount =
+      this.countDirectCommunityEvidenceSamples(nlp);
+
+    /*
+     * If deterministic preprocessing already retained direct complaint/request
+     * samples, do not spend another provider call asking Community AI to
+     * rediscover the same evidence. The deterministic recovery opportunity
+     * preserves the quotes unchanged and independent verification remains the
+     * final eligibility gate.
+     */
+    const shouldRunCommunityAiRecovery =
+      retainedRecoveryTextCount > 0 && retainedDirectEvidenceCount === 0;
+    const rawCommunityAiAnalysis = shouldRunCommunityAiRecovery
+      ? await this.communityAiAnalysisService.analyze(recoveryContext)
+      : null;
 
     if (retainedRecoveryTextCount === 0) {
       this.logger.warn(
         'Targeted recovery retained zero final evidence texts; skipping Community AI recovery analysis.',
+      );
+    } else if (retainedDirectEvidenceCount > 0) {
+      this.logger.debug(
+        `Targeted recovery retained ${retainedDirectEvidenceCount} direct evidence sample(s); ` +
+          'skipping redundant Community AI recovery analysis.',
       );
     }
 
@@ -233,7 +279,7 @@ export class IdeaEvidenceRecoveryService {
       newEvidenceSampleCount: novelEvidenceSamples.length,
       novelEvidenceSamples,
       recoveryOutcome,
-      communityAiRecoveryExecuted: retainedRecoveryTextCount > 0,
+      communityAiRecoveryExecuted: shouldRunCommunityAiRecovery,
       nlp: novelNlp,
       communityAiAnalysis,
     };
@@ -243,6 +289,26 @@ export class IdeaEvidenceRecoveryService {
    * Counts only the corpus that survived central relevance, preprocessing, and
    * NLP persistence. Raw collector hits do not justify an AI recovery call.
    */
+  private countDirectCommunityEvidenceSamples(
+    nlp: IdeaGenerationNlpContext,
+  ): number {
+    const postTexts = this.readTextEntries(nlp.samplePosts);
+    const commentTexts = this.readTextEntries(nlp.sampleComments);
+
+    const directPosts = postTexts.filter(
+      (text) => classifyDirectCommunityEvidence(text, 'POST') !== 'NONE',
+    ).length;
+    const directComments = commentTexts.filter((text) => {
+      const commentBody =
+        text.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? text;
+      return (
+        classifyDirectCommunityEvidence(commentBody, 'COMMENT') !== 'NONE'
+      );
+    }).length;
+
+    return directPosts + directComments;
+  }
+
   private countRetainedRecoveryTexts(nlp: IdeaGenerationNlpContext): number {
     const samplePosts = Array.isArray(nlp.samplePosts)
       ? nlp.samplePosts.length
@@ -257,6 +323,50 @@ export class IdeaEvidenceRecoveryService {
   }
 
   /**
+   * Excludes sources that already failed, were rate-limited, or returned zero
+   * records in the primary job. Recovery should not repeat known-dead work.
+   */
+  private async resolveLowYieldSourceKeys(
+    context: IdeaGenerationContext,
+  ): Promise<ReadonlySet<string>> {
+    const collectionJobId = context.collection?.collectionJobId;
+    if (!collectionJobId) return new Set<string>();
+
+    try {
+      const diagnostics = await this.prisma.collectionJobSource.findMany({
+        where: { collectionJobId },
+        select: {
+          status: true,
+          totalPosts: true,
+          totalComments: true,
+          failureReason: true,
+          dataSource: { select: { key: true } },
+        },
+      });
+
+      return new Set(
+        diagnostics
+          .filter((entry) => {
+            const noYield = entry.totalPosts + entry.totalComments <= 0;
+            const failed = entry.status === CollectionJobStatus.FAILED;
+            const rateLimited = /(?:429|rate\s*limit|too many requests)/iu.test(
+              entry.failureReason ?? '',
+            );
+            return noYield || failed || rateLimited;
+          })
+          .map((entry) => entry.dataSource.key),
+      );
+    } catch (error: unknown) {
+      this.logger.debug(
+        `Unable to load primary source diagnostics for recovery; continuing without exclusions. error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return new Set<string>();
+    }
+  }
+
+  /**
    * Selects review-rich sources for end-user friction and technical sources for
    * developer-facing failures. GitHub and DEV are intentionally deprioritized
    * for paywall, taxonomy, mobile parity, and session complaints.
@@ -264,6 +374,8 @@ export class IdeaEvidenceRecoveryService {
   private selectRecoverySources(
     selectedSources: readonly SelectedIdeaDataSource[],
     evidenceFamilies: readonly EvidenceRecoveryFamily[],
+    selectedOpportunity: RankedIdeaOpportunity | null,
+    excludedSourceKeys: ReadonlySet<string>,
   ): SelectedIdeaDataSource[] {
     const byKey = new Map(
       selectedSources.map((source) => [source.key, source] as const),
@@ -290,12 +402,41 @@ export class IdeaEvidenceRecoveryService {
      * listings. It starts with direct complaint sources, then uses one review
      * source as a complementary signal.
      */
-    const preferredOrder: readonly string[] =
-      isDeveloperTechnicalRecovery || isGenericZeroEvidenceRecovery
+    const familyPreferredOrder: readonly string[] =
+      isDeveloperTechnicalRecovery
         ? this.technicalSourceOrder
-        : this.reviewSourceOrder;
+        : isGenericZeroEvidenceRecovery
+          ? [
+              'youtube',
+              'app-store',
+              'google-play',
+              'forum',
+              'stackoverflow',
+              'github',
+            ]
+          : this.reviewSourceOrder;
+
+    /*
+     * Prefer the platform that produced the original verified complaint. This
+     * is especially important for YouTube/comment evidence: recovery should not
+     * ignore the only source that already demonstrated yield.
+     */
+    const originalEvidenceSources = [
+      ...new Set(
+        (selectedOpportunity?.independentEvidence ?? [])
+          .map((evidence) => evidence.sourceKey)
+          .filter(Boolean),
+      ),
+    ];
+    const preferredOrder = [
+      ...originalEvidenceSources,
+      ...familyPreferredOrder.filter(
+        (key) => !originalEvidenceSources.includes(key),
+      ),
+    ];
 
     const ordered = preferredOrder
+      .filter((key) => !excludedSourceKeys.has(key))
       .map((key: string) => byKey.get(key))
       .filter((source): source is SelectedIdeaDataSource => Boolean(source));
 
@@ -310,7 +451,9 @@ export class IdeaEvidenceRecoveryService {
       return selected;
     }
 
-    return selectedSources.slice(0, this.maximumRecoverySources);
+    return selectedSources
+      .filter((source) => !excludedSourceKeys.has(source.key))
+      .slice(0, this.maximumRecoverySources);
   }
 
   /**
@@ -345,8 +488,8 @@ export class IdeaEvidenceRecoveryService {
 
     return [
       ...new Set([
-        ...familyTerms,
         ...opportunityTerms,
+        ...familyTerms,
         ...genericComplaintTerms,
         ...boundedBaseTerms,
       ]),
@@ -575,9 +718,35 @@ export class IdeaEvidenceRecoveryService {
       return null;
     }
 
-    const evidenceSamples = this.deduplicateEvidenceSamples(
+    const problemDescriptor = [
+      selectedOpportunity.problem ?? '',
+      selectedOpportunity.need ?? '',
+      selectedOpportunity.title,
+      selectedOpportunity.solutionArea ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const familyMatchedNovelEvidence = filterEvidenceByProblemFamily(
+      problemDescriptor,
       novelEvidenceSamples,
-    ).slice(0, 8);
+    );
+    const familyMatchedExistingEvidence = filterEvidenceByProblemFamily(
+      problemDescriptor,
+      selectedOpportunity.evidenceSamples,
+    );
+
+    const evidenceSamples = this.deduplicateEvidenceSamples([
+      ...familyMatchedExistingEvidence,
+      ...familyMatchedNovelEvidence,
+    ]).slice(0, 8);
+    if (evidenceSamples.length === 0) {
+      this.logger.debug(
+        'Targeted recovery found direct evidence, but none matched the selected problem family; no deterministic recovery opportunity was created.',
+      );
+      return null;
+    }
+
     const rawDomainName = this.readRecoveredDomainName(
       selectedOpportunity,
     );
@@ -1039,19 +1208,19 @@ export class IdeaEvidenceRecoveryService {
   } {
     return {
       maxFetchedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 16),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_POSTS', 8),
         20,
       ),
       maxSavedPosts: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 10),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_POSTS', 5),
         12,
       ),
       maxFetchedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 24),
+        this.readPositiveConfig('RECOVERY_MAX_FETCHED_COMMENTS', 12),
         30,
       ),
       maxSavedComments: Math.min(
-        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 16),
+        this.readPositiveConfig('RECOVERY_MAX_SAVED_COMMENTS', 8),
         20,
       ),
     };
