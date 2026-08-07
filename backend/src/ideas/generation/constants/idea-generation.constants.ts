@@ -527,11 +527,12 @@ export type CollectionJobResolutionType =
 /**
  * Maximum targeted evidence-recovery attempts per generation run.
  *
- * The strict one-minute path disables secondary evidence recollection. The
- * initial bounded parallel collection must either provide sufficient evidence
- * or the run fails without consuming an entitlement.
+ * The pipeline allows exactly one targeted evidence-recovery pass when the
+ * initial bounded parallel collection yields no independently verified direct
+ * evidence. If recovery also yields zero verified evidence, generation ends
+ * with a normal no-result outcome and consumes no entitlement.
  */
-export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 0;
+export const MAX_EVIDENCE_RECOVERY_ATTEMPTS = 1;
 
 /** Minimum evidence-quality score required for the selected opportunity. */
 export const MIN_SELECTED_EVIDENCE_SCORE_BEFORE_RECOVERY = 0;

@@ -143,6 +143,13 @@ export type PersistGeneratedIdeaInput = {
   readonly creditsToConsume: number;
 
   /**
+   * Number of analyzed community comments already available in pipeline
+   * context. Passing it avoids re-reading NlpAnalysis inside the persistence
+   * transaction solely to populate Idea.commentsCount.
+   */
+  readonly analyzedCommentsCount: number;
+
+  /**
    * Parsed and normalized AI output.
    */
   readonly parsedOutput: ParsedIdeaAiOutput;
@@ -362,14 +369,23 @@ export class IdeaPersistenceService {
       try {
         return await this.prisma.$transaction(
           async (transaction): Promise<IdeaPersistenceTransactionResult> => {
-            const [run, commentsCount] = await Promise.all([
+            const [run] = await Promise.all([
               this.validateGenerationRun(transaction, input),
-              this.validateCollectionJob(transaction, input),
               this.duplicateDetectionService.assertNoExactTitleDuplicate(
                 input.parsedOutput.coreIdea,
                 transaction,
               ),
             ]);
+            /*
+             * CollectionJob is normally attached to the run before this stage.
+             * Keep a defensive fallback for legacy/direct callers so removing
+             * the normal-path round-trip never weakens domain validation.
+             */
+            if (!run.collectionJobId) {
+              await this.validateCollectionJob(transaction, input);
+            }
+
+            const commentsCount = input.analyzedCommentsCount;
 
             /*
              * Create the base idea, attach prompt history, and insert all
@@ -487,6 +503,10 @@ export class IdeaPersistenceService {
         input.generationType === IdeaGenerationType.PREMIUM_CREDIT
           ? Math.max(1, Math.floor(input.creditsToConsume))
           : 0,
+      analyzedCommentsCount: Math.max(
+        0,
+        Math.floor(input.analyzedCommentsCount || 0),
+      ),
       parsedOutput: this.sanitizeParsedOutput(input.parsedOutput, selectedRegion),
     };
   }
@@ -508,6 +528,22 @@ export class IdeaPersistenceService {
           'One retained community report indicates that ',
         )
         .replace(/\bindicates that\s+indicates that\b/giu, 'indicates that')
+        .replace(
+          /\bOne retained community report indicates that ([A-Z][\p{L}'’&-]*(?:\s+[A-Z][\p{L}'’&-]*){0,3}) buyers (?:experience|encounter|face)\b/gu,
+          'One retained community report describes a buyer in $1 who experienced',
+        )
+        .replace(
+          /\bOne retained community report indicates that buyers (?:experience|encounter|face)\b/giu,
+          'One retained community report describes a buyer who experienced',
+        )
+        .replace(
+          /\bOne collected report(?: from [^.!?]{0,140})? indicates that participants may fail ([^.!?]{3,160})/giu,
+          'One collected report describes one participant who experienced $1',
+        )
+        .replace(
+          /,?\s*often causing them to\b/giu,
+          ', which the report described as causing the observed user to',
+        )
         .trim();
 
       const region = selectedRegion.trim();
@@ -817,6 +853,12 @@ export class IdeaPersistenceService {
           select: { id: true },
           take: 1,
         },
+        collectionJob: {
+          select: {
+            id: true,
+            domainId: true,
+          },
+        },
       },
     });
 
@@ -862,6 +904,12 @@ export class IdeaPersistenceService {
     ) {
       throw new BadRequestException(
         'The generation run is already associated with a different collection job.',
+      );
+    }
+
+    if (run.collectionJob && run.collectionJob.domainId !== input.domainId) {
+      throw new BadRequestException(
+        'The collection job does not belong to the selected domain.',
       );
     }
 

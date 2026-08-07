@@ -773,10 +773,30 @@ export class IdeaQualityEvaluatorService {
         idea.partialAbstract ?? '',
         idea.fullAbstract ?? '',
       ].join(' '),
-    ).replace(
-      /\b(?:the\s+)?(?:first|initial)\s+pilot\s+(?:deployment\s+)?(?:is\s+)?(?:planned|proposed|designed)\s+(?:for|in)\s+[^.!?]+[.!?]?/giu,
-      ' ',
-    );
+    )
+      .replace(
+        /\b(?:the\s+)?(?:first|initial)\s+pilot\s+(?:deployment\s+)?(?:is\s+)?(?:planned|proposed|designed)\s+(?:for|in)\s+[^.!?]+[.!?]?/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:designed|planned|proposed)\s+for\s+(?:an?\s+)?(?:initial\s+|first\s+)?(?:pilot\s+)?deployment\s+(?:in|for)\s+[^.!?]+[.!?]?/giu,
+        ' ',
+      )
+      /*
+       * A target location may legitimately appear as a bounded deployment
+       * constraint, e.g. "For a pilot deployment in Nablus, ...". Remove
+       * those deployment-target clauses before looking for unsupported local
+       * evidence claims. Statements such as "users in Nablus report..." are
+       * intentionally left untouched and remain blockable below.
+       */
+      .replace(
+        /\bfor\s+(?:an?\s+)?(?:first\s+|initial\s+|bounded\s+|controlled\s+)?pilot\s+(?:deployment|implementation|evaluation|trial)\s+(?:in|for|within)\s+[^,.;!?]+[,;]?/giu,
+        ' ',
+      )
+      .replace(
+        /\b(?:during|within)\s+(?:an?\s+)?(?:first\s+|initial\s+|bounded\s+|controlled\s+)?pilot\s+(?:deployment|implementation|evaluation|trial)\s+(?:in|for|within)\s+[^,.;!?]+[,;]?/giu,
+        ' ',
+      );
 
     return locations.some((location) => {
       const escapedLocation = this.escapeRegExp(location);

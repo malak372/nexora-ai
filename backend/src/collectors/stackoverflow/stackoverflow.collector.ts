@@ -70,7 +70,7 @@ export class StackOverflowCollector
 
   private readonly apiBaseUrl = 'https://api.stackexchange.com/2.3';
 
-  private throttleBlockedUntil = 0;
+  private static throttleBlockedUntil = 0;
 
   constructor(configService: ConfigService) {
     super(configService, StackOverflowCollector.name);
@@ -80,9 +80,9 @@ export class StackOverflowCollector
    * Collects and ranks Stack Overflow questions.
    */
   async collect(input: CollectorInput): Promise<CollectorPost[]> {
-    if (Date.now() < this.throttleBlockedUntil) {
+    if (Date.now() < StackOverflowCollector.throttleBlockedUntil) {
       const remainingSeconds = Math.ceil(
-        (this.throttleBlockedUntil - Date.now()) / 1000,
+        (StackOverflowCollector.throttleBlockedUntil - Date.now()) / 1000,
       );
       this.logger.warn(
         `Stack Overflow collection skipped because the API throttle is active for approximately ${remainingSeconds} more second(s).`,
@@ -151,6 +151,21 @@ export class StackOverflowCollector
         }),
       );
 
+      const rejectedResults = queryResults.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      const throttleSeconds = this.resolveThrottleSeconds(
+        rejectedResults.map((result) => result.reason),
+      );
+
+      if (throttleSeconds !== null) {
+        StackOverflowCollector.throttleBlockedUntil =
+          Date.now() + Math.max(throttleSeconds, 60) * 1000;
+        this.logger.warn(
+          `Stack Overflow API throttle detected. Future collection attempts will be skipped for ${throttleSeconds} second(s).`,
+        );
+      }
+
       const allQuestions = queryResults.flatMap((result) =>
         result.status === 'fulfilled' ? result.value.items ?? [] : [],
       );
@@ -198,7 +213,7 @@ export class StackOverflowCollector
 
       if (throttleMatch) {
         const throttleSeconds = Number(throttleMatch[1]);
-        this.throttleBlockedUntil =
+        StackOverflowCollector.throttleBlockedUntil =
           Date.now() + Math.max(throttleSeconds, 60) * 1000;
         this.logger.warn(
           `Stack Overflow collection skipped because the API throttle limit was reached. Cooldown: ${throttleSeconds} second(s).`,
@@ -240,6 +255,22 @@ export class StackOverflowCollector
     return typeof message === 'string' ? message : '';
   }
 
+
+  private resolveThrottleSeconds(errors: readonly unknown[]): number | null {
+    for (const error of errors) {
+      const combined = `${this.getErrorMessage(error)} ${this.extractProviderErrorMessage(error)}`;
+      const match = combined.match(
+        /more requests available in\s+(\d+)\s+seconds/iu,
+      );
+
+      if (match) {
+        return Number(match[1]);
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Builds Stack Overflow search queries.
    */
@@ -252,7 +283,7 @@ export class StackOverflowCollector
     const technicalQueries =
       CollectorQueryBuilderUtil.buildStackOverflowTechnicalQueries({
         domainName: input.domainName,
-        maxQueries: isBoundedMode ? 3 : 6,
+        maxQueries: isBoundedMode ? 1 : 6,
       });
 
     return technicalQueries.map((query, index) =>

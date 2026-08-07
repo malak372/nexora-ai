@@ -299,6 +299,16 @@ export class IdeaGenerationPipelineService {
 
       this.assertCompletionIntegrity(currentContext);
 
+      /*
+       * A no-result outcome is a durable product result, not an error. Persist
+       * its final context synchronously before completing the run so API clients
+       * receive the real recovery metadata, collection job IDs, and no-result
+       * payload instead of the last asynchronous pre-ranking snapshot.
+       */
+      if (currentContext.noResultOutcome) {
+        await this.enqueueContextCheckpoint(currentContext);
+      }
+
       const completedRun = await this.runService.completeRun(
         currentContext.runId,
       );

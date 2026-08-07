@@ -97,31 +97,31 @@ export class IdeaGenerationSelectionService {
           domain.domainKeywords.map((item) => item.keyword),
         ),
       },
-      dataSources: this.selectFastEvidenceSources(dataSources),
+      dataSources: this.selectAllEvidenceSources(dataSources),
     };
   }
 
   /**
-   * Selects every active and implemented collector.
+   * Keeps every active and implemented collector in the initial run.
    *
-   * Sources are still ordered by expected community-evidence value, but no
-   * source is silently removed. DataCollectionService executes the complete
-   * list in one bounded parallel wave and applies a per-source timeout, so one
-   * slow or unavailable platform does not block the remaining collectors.
+   * Collectors already execute concurrently through CollectorQueueService, so
+   * coverage is preserved without forcing a sequential source wave. Runtime
+   * optimization belongs in per-collector timeouts/cache and in downstream
+   * recovery decisions, not in silently dropping evidence sources.
    */
-  private selectFastEvidenceSources<T extends { readonly key: string }>(
+  private selectAllEvidenceSources<T extends { readonly key: string }>(
     sources: readonly T[],
   ): T[] {
     const priority = [
-      'reddit',
-      'stack-overflow',
-      'github',
+      'youtube',
       'google-play',
       'app-store',
-      'hacker-news',
+      'github',
+      'stackoverflow',
       'dev-to',
+      'reddit',
+      'hacker-news',
       'product-hunt',
-      'youtube',
       'forum',
       'news',
       'blog',

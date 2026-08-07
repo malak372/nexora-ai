@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { IdeaGenerationType } from '@prisma/client';
+import {
+  IdeaGenerationRunStatus,
+  IdeaGenerationType,
+} from '@prisma/client';
 
 import {
   findIdeaGenerationStageDefinition,
@@ -82,6 +85,11 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
 
     const policy = await this.policyService.evaluate(policyInput);
 
+    await this.synchronizeAuthorizedGenerationType(
+      context.runId,
+      policy.generationType,
+    );
+
     const updatedContext: IdeaGenerationContext = {
       ...context,
 
@@ -111,6 +119,47 @@ export class EntitlementCheckStage implements IdeaGenerationStage {
         expectedCreditBalance: policy.expectedCreditBalance,
       },
     };
+  }
+
+  /**
+   * Persists the final policy-authorized generation type on the run.
+   *
+   * A run is created before entitlement evaluation, so its initial type can
+   * differ from the final authorized type. Keeping the database run and
+   * pipeline context synchronized prevents persistence from receiving two
+   * different entitlement types while preserving strict validation.
+   */
+  private async synchronizeAuthorizedGenerationType(
+    runId: string,
+    generationType: IdeaGenerationType,
+  ): Promise<void> {
+    const result = await this.databaseRetry.execute(
+      () =>
+        this.prisma.ideaGenerationRun.updateMany({
+          where: {
+            id: runId,
+            status: IdeaGenerationRunStatus.RUNNING,
+            ideaId: null,
+            cancelRequestedAt: null,
+          },
+          data: {
+            generationType,
+          },
+        }),
+      {
+        operationName: 'synchronize authorized generation type',
+        runId,
+        maxAttempts: 4,
+      },
+    );
+
+    if (result.count !== 1) {
+      throw new NotFoundException({
+        code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
+        message:
+          'The active generation run could not be synchronized with the authorized entitlement.',
+      });
+    }
   }
 
   /**

@@ -11,7 +11,8 @@ import {
 
 import { IntelligentAnalysisService } from '../../../nlp/pipeline/intelligent-analysis.service';
 
-import type { IntelligentAnalysisOutput } from '../../../nlp/pipeline/types/intelligent-analysis.types';
+import type { IntelligentAnalysisOutput, IntelligentTextInput } from '../../../nlp/pipeline/types/intelligent-analysis.types';
+import { TextInputBuilderService } from '../../../nlp/pipeline/text-input-builder.service';
 import { Sentiment } from '../../../nlp/common/enums/sentiment.enum';
 
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -158,6 +159,13 @@ export type ResolveCollectionJobResult = {
    * referenced record belongs to DataSource.
    */
   readonly selectedPlatformId?: string;
+
+  /**
+   * Direct in-memory evidence captured by FAST_GENERATION before bounded NLP
+   * pruning. It is used only for evidence handoff/ranking and does not replace
+   * the persisted collection corpus.
+   */
+  readonly fastEvidenceInputs?: readonly IntelligentTextInput[];
 };
 
 /**
@@ -296,6 +304,14 @@ export class CollectionJobResolverService {
     }
 
     /*
+     * Snapshot the collector-built in-memory corpus before NLP consumes the
+     * fast context. This gives downstream ranking access to strong direct
+     * evidence even when the bounded NLP pass keeps only a smaller top slice.
+     */
+    const fastEvidenceInputs =
+      TextInputBuilderService.peekFastContext(startedJob.id)?.inputs ?? [];
+
+    /*
      * Loading the relation-rich job and starting deterministic NLP used to be
      * serialized. NLP reads the completed job by id internally, so both remote
      * database operations can safely overlap after collection is committed.
@@ -311,6 +327,7 @@ export class CollectionJobResolverService {
       nlpOutput,
       reused: false,
       selectedPlatformId: this.resolveSingleDataSourceId(completedJob),
+      fastEvidenceInputs,
     };
     this.setHotReuseResult(cacheKey, result);
     return result;

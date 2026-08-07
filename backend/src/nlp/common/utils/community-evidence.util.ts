@@ -74,6 +74,106 @@ export function normalizeCommunityText(value: string): string {
     : '';
 }
 
+
+export type DirectCommunityEvidenceKind =
+  | 'USER_COMPLAINT'
+  | 'FEATURE_REQUEST'
+  | 'NONE';
+
+
+/**
+ * Community comments may describe a concrete shared/systemic problem without
+ * using first-person wording. These patterns capture explicit negative impact,
+ * bottlenecks, unreliability, congestion, delays, access failures, and similar
+ * operational pain while remaining narrower than generic topic commentary.
+ *
+ * They are applied to COMMENT evidence only, so publisher/video/news narration
+ * cannot become direct community evidence from these phrases alone.
+ */
+const SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS: readonly RegExp[] = [
+  /\b(?:stuck in|caus(?:e|es|ed|ing))\s+(?:so much\s+)?(?:traffic|congestion|delay|delays|backlog|downtime|confusion|waste)\b/iu,
+  /\b(?:major|serious|significant|constant|chronic)\s+(?:bottleneck|delay|congestion|problem|issue|failure)\b/iu,
+  /\b(?:unreliable|unreliability|inconsistent|inconsistency)\b[^.!?]{0,100}\b(?:worse|delay|fail|problem|issue|service|connection|arrival|route|data)\b/iu,
+  /\b(?:takes?|taking)\s+(?:too long|forever|hours?)\b/iu,
+  /\b(?:no|poor|insufficient|limited)\s+(?:access|coverage|service|connectivity|availability|reliability)\b/iu,
+  /\b(?:keeps?|constantly|repeatedly)\s+(?:failing|breaking|disconnecting|delaying|cancelling|canceling|changing)\b/iu,
+  /\b(?:for no good reason|makes? (?:it|things?|the situation) (?:even )?worse)\b/iu,
+  /(?:ازدحام شديد|عالق(?:ون)? في الازدحام|تأخير مستمر|خدمة غير موثوقة|انقطاع متكرر|مشكلة متكررة)/iu,
+];
+
+const FEATURE_REQUEST_EVIDENCE_PATTERNS: readonly RegExp[] = [
+  /\b(?:feature request|please add|please support|should add|would like|requesting support for)\b/iu,
+  /\bi wish\b[^.!?]{0,100}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu,
+  /(?:أرجو إضافة|يرجى إضافة|نحتاج ميزة|أتمنى إضافة|اقتراح ميزة|طلب ميزة)/iu,
+];
+
+/**
+ * Detects proposals to deliberately cause a failure, disruption, overload,
+ * confusion, resource drain, or similar harmful behavior. These statements
+ * are ideas/actions, not reports that the author experienced a product pain.
+ * The rule is deliberately domain-agnostic.
+ */
+export function isProposedAdversarialAction(value: string): boolean {
+  const normalized = normalizeCommunityText(value);
+  if (!normalized) return false;
+
+  const proposal =
+    /\b(?:we should|should we|let['’]?s|lets|you should|they should|can we|could we|why don['’]?t we|fight back (?:by|with)|how about we)\b[^.!?]{0,180}\b(?:break|crash|confus(?:e|ing)|overload|flood|spam|attack|bomb|waste|drain|loop|jam|disable|disrupt|take down|knock offline|exhaust)\b/iu.test(normalized) ||
+    /\b(?:make|force|cause)\s+(?:it|them|the\s+(?:app|system|service|model|server|platform))\b[^.!?]{0,100}\b(?:loop|crash|fail|freeze|confus(?:e|ed|ing)|waste|drain|overload|hang|break)\b/iu.test(normalized);
+
+  if (!proposal) return false;
+
+  const explicitExperiencedFailure =
+    /\b(?:i|we|my|our)\b[^.!?]{0,100}\b(?:cannot|can['’]?t|unable|doesn['’]?t work|didn['’]?t work|failed|crashed|froze|broken|stuck|unresponsive|lost|missing|charged|blocked)\b/iu.test(normalized);
+
+  return !explicitExperiencedFailure;
+}
+
+/**
+ * One canonical evidence classifier used by collection, domain-evidence
+ * projection, and recurrence verification.
+ */
+export function classifyDirectCommunityEvidence(
+  value: string,
+  sourceType: TextSourceType,
+): DirectCommunityEvidenceKind {
+  const normalized = normalizeCommunityText(value);
+  if (!normalized || normalized.length < 8) return 'NONE';
+
+  if (
+    isProposedAdversarialAction(normalized) ||
+    isLikelyPromotionalEvidence(normalized) ||
+    isLikelyProductDescription(normalized, sourceType) ||
+    isLikelyGamingEvidence(normalized)
+  ) {
+    return 'NONE';
+  }
+
+  const negatedProblemOnly =
+    /\b(?:i|we)\s+(?:do not|don['’]?t|dont|did not|didn['’]?t|didnt)\s+(?:have|see|find|experience)\s+(?:a\s+)?(?:problem|issue|difficulty)\b/iu.test(normalized) &&
+    !/\b(?:but|however|except|although)\b[^.!?]{0,120}\b(?:cannot|can['’]?t|unable|failed|failure|error|bug|wrong|incorrect|missing|issue|problem|difficulty|struggle|need|request)\b/iu.test(normalized);
+  if (negatedProblemOnly) return 'NONE';
+
+  if (FEATURE_REQUEST_EVIDENCE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return 'FEATURE_REQUEST';
+  }
+
+  const contextualUserNeed =
+    /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners|student|students|developer|developers|farmer|farmers|seller|sellers|buyer|buyers)\b[^.!?]{0,80}\b(?:need|needs)\b/iu.test(normalized);
+
+  const systemicCommunityProblem =
+    sourceType === 'COMMENT' &&
+    SYSTEMIC_COMMUNITY_PROBLEM_PATTERNS.some((pattern) =>
+      pattern.test(normalized),
+    );
+
+  return hasDirectCommunityComplaint(normalized) ||
+    contextualUserNeed ||
+    systemicCommunityProblem
+    ? 'USER_COMPLAINT'
+    : 'NONE';
+}
+
 /**
  * Returns true when the supplied value contains an explicit user complaint.
  */
@@ -314,12 +414,7 @@ export function isDirectCommunityEvidence(
   value: string,
   sourceType: TextSourceType,
 ): boolean {
-  return (
-    !isLikelyPromotionalEvidence(value) &&
-    !isLikelyProductDescription(value, sourceType) &&
-    !isLikelyGamingEvidence(value) &&
-    hasDirectCommunityComplaint(value)
-  );
+  return classifyDirectCommunityEvidence(value, sourceType) !== 'NONE';
 }
 
 /**

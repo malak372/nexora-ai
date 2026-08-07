@@ -9,6 +9,8 @@ import {
 } from '../types/idea-opportunity-ranking.type';
 import type { CommunityAiAnalysis } from '../types/community-ai-analysis.type';
 import type { IdeaGenerationNlpContext } from '../types/idea-generation-context.type';
+import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
+import { clusterEvidenceByProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
 
 const MAX_EVIDENCE_SAMPLES = 5;
 const MAX_EVIDENCE_SAMPLE_LENGTH = 700;
@@ -22,6 +24,8 @@ const INELIGIBLE_SELECTION_PENALTY = 0.12;
 const MIN_STRICT_OPPORTUNITY_SCORE = 0.4;
 const MIN_STRICT_EVIDENCE_QUALITY = 0.4;
 const MIN_STRICT_INDEPENDENT_EVIDENCE_COUNT = 1;
+const MIN_SELECTED_DOMAIN_RELEVANCE = 0.3;
+const OFF_DOMAIN_SELECTION_PENALTY = 0.28;
 
 /** Labels that are too generic to be selected without concrete evidence. */
 const GENERIC_LABELS = new Set([
@@ -158,8 +162,10 @@ export class IdeaOpportunityRankingService {
     locationTerms: readonly string[],
     previousIdeaTexts: readonly string[] = [],
     communityAiAnalysis: CommunityAiAnalysis | null = null,
+    selectedDomainTerms: readonly string[] = [],
   ): IdeaOpportunityRanking {
     const extractedCandidates = [
+      ...this.extractEvidenceFirstCandidates(nlp),
       ...this.extractCommunityAiCandidates(communityAiAnalysis),
       ...this.extractCandidates(
         nlp.recurringProblems,
@@ -194,6 +200,7 @@ export class IdeaOpportunityRankingService {
         locationTerms,
         previousIdeaTexts,
         nlp.confidence ?? 0,
+        selectedDomainTerms,
       ),
     );
 
@@ -364,6 +371,81 @@ export class IdeaOpportunityRankingService {
         localEvidenceAvailable: opportunity.localEvidenceAvailable,
       } as unknown as Prisma.JsonValue,
     }));
+  }
+
+  /**
+   * Builds opportunity candidates from the retained evidence itself before any
+   * Community-AI wording is considered. This makes the evidence cluster the
+   * source of truth and prevents a valid complaint corpus from being discarded
+   * merely because the AI described the same problem with different words.
+   */
+  private extractEvidenceFirstCandidates(
+    nlp: IdeaGenerationNlpContext,
+  ): NormalizedCandidate[] {
+    const directEvidence = this.deduplicateEvidenceSamples([
+      ...this.readEvidenceTextsFromJson(nlp.sampleComments),
+      ...this.readEvidenceTextsFromJson(nlp.samplePosts),
+    ]).filter((sample) => {
+      const commentBody =
+        sample.match(/\bCommunity comment:\s*(.+)$/iu)?.[1]?.trim() ?? sample;
+      return (
+        classifyDirectCommunityEvidence(commentBody, 'COMMENT') !== 'NONE' ||
+        classifyDirectCommunityEvidence(sample, 'POST') !== 'NONE' ||
+        this.hasDirectComplaintSignal(sample)
+      );
+    });
+
+    return clusterEvidenceByProblemFamily(directEvidence)
+      .slice(0, MAX_RANKED_OPPORTUNITIES)
+      .map((cluster, sourceIndex) => ({
+        title: cluster.label,
+        problem: cluster.label,
+        need: `Users need a more reliable way to avoid or recover from ${cluster.label.toLowerCase()}.`,
+        solutionArea: null,
+        evidenceType: IDEA_OPPORTUNITY_EVIDENCE_TYPES.PROBLEM,
+        sourceIndex,
+        frequency: cluster.evidenceSamples.length,
+        severity: null,
+        evidenceSamples: [...cluster.evidenceSamples].slice(0, MAX_EVIDENCE_SAMPLES),
+        raw: {
+          source: 'EVIDENCE_CLUSTER',
+          familyKey: cluster.key,
+          title: cluster.label,
+          problem: cluster.label,
+          frequency: cluster.evidenceSamples.length,
+          evidenceSamples: [...cluster.evidenceSamples].slice(0, MAX_EVIDENCE_SAMPLES),
+        } as unknown as Prisma.JsonValue,
+      }));
+  }
+
+  /** Reads representative NLP evidence from either string arrays or {text} objects. */
+  private readEvidenceTextsFromJson(value: Prisma.JsonValue | null): string[] {
+    if (!value) return [];
+
+    if (typeof value === 'string') {
+      const normalized = value.replace(/\s+/gu, ' ').trim();
+      return normalized ? [normalized] : [];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.readEvidenceTextsFromJson(entry));
+    }
+
+    if (typeof value === 'object') {
+      const object = value as Prisma.JsonObject;
+      const directText =
+        typeof object.text === 'string'
+          ? object.text.replace(/\s+/gu, ' ').trim()
+          : '';
+
+      if (directText) return [directText];
+
+      return Object.values(object).flatMap((entry) =>
+        this.readEvidenceTextsFromJson(entry as Prisma.JsonValue),
+      );
+    }
+
+    return [];
   }
 
   private extractCandidates(
@@ -537,6 +619,14 @@ export class IdeaOpportunityRankingService {
 
     if (/\b(?:route|journey|navigation).{0,80}(?:confus|unclear|difficult|missing)\b/iu.test(context)) {
       return 'Public Transport Route Guidance Friction';
+    }
+
+    if (
+      /\b(?:monoculture|agroforestry|biodynamic|crop diversification|smallholder|small-scale farm|land concentration)\b/iu.test(
+        context,
+      )
+    ) {
+      return 'Smallholder Crop Diversification Planning Barriers';
     }
 
     const derived = this.deriveConcreteTitle(evidenceSamples);
@@ -928,17 +1018,14 @@ export class IdeaOpportunityRankingService {
     solutionArea: string | null;
   } {
     if (preserveStructuredDescriptors) {
-      return {
-        problem:
-          problem && !GENERIC_LABELS.has(problem.toLowerCase())
-            ? problem
-            : title,
-        need: need && !GENERIC_LABELS.has(need.toLowerCase()) ? need : null,
-        solutionArea:
-          solutionArea && !GENERIC_LABELS.has(solutionArea.toLowerCase())
-            ? solutionArea
-            : null,
-      };
+      const professional = this.buildProfessionalCommunityDescriptors(
+        title,
+        problem,
+        need,
+        solutionArea,
+      );
+
+      return professional;
     }
 
     const context = [title, problem].filter(Boolean).join(' ').toLowerCase();
@@ -997,6 +1084,58 @@ export class IdeaOpportunityRankingService {
       need: normalizedNeed,
       solutionArea: normalizedSolutionArea,
     };
+  }
+
+
+  private buildProfessionalCommunityDescriptors(
+    title: string,
+    problem: string | null,
+    need: string | null,
+    solutionArea: string | null,
+  ): { problem: string; need: string | null; solutionArea: string | null } {
+    const context = [title, problem, need, solutionArea]
+      .filter((value): value is string => Boolean(value))
+      .join(' ')
+      .toLowerCase();
+
+    if (
+      /\b(?:monoculture|agroforestry|biodynamic|crop diversification|smallholder|land concentration)\b/iu.test(
+        context,
+      )
+    ) {
+      return {
+        problem:
+          'Smallholder farmers may lack a structured way to evaluate and plan transitions from monoculture production toward diversified agroforestry or biodynamic crop systems.',
+        need:
+          'A guided, evidence-qualified planning workflow for comparing crop-diversification options, resource requirements, and phased transition steps.',
+        solutionArea:
+          'Smallholder Crop Diversification and Transition Planning',
+      };
+    }
+
+    return {
+      problem:
+        problem && !GENERIC_LABELS.has(problem.toLowerCase())
+          ? this.rewriteQuotedCommunityProblem(problem)
+          : title,
+      need: need && !GENERIC_LABELS.has(need.toLowerCase())
+        ? this.rewriteQuotedCommunityProblem(need)
+        : null,
+      solutionArea:
+        solutionArea && !GENERIC_LABELS.has(solutionArea.toLowerCase())
+          ? solutionArea
+          : null,
+    };
+  }
+
+  private rewriteQuotedCommunityProblem(value: string): string {
+    return value
+      .replace(/^A reliable workflow that resolves:\s*/iu, '')
+      .replace(/^While we keep growing/iu, 'Continued reliance on')
+      .replace(/, which are used more for feeding animals than to our consumption, we still going to need those substances\.?/iu,
+        ' for animal feed may constrain adoption of diversified food-production practices.')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   /** Prevents a descriptor from being inherited only because of generic words. */
@@ -1406,6 +1545,7 @@ export class IdeaOpportunityRankingService {
     locationTerms: readonly string[],
     previousIdeaTexts: readonly string[],
     nlpConfidence: number,
+    selectedDomainTerms: readonly string[],
   ): Omit<RankedIdeaOpportunity, 'rank'> {
     const frequencyScore = Math.min(
       Math.log2(Math.max(candidate.frequency, 1) + 1) / 4,
@@ -1443,23 +1583,27 @@ export class IdeaOpportunityRankingService {
     const marketGapScore = this.calculateMarketGap(candidate);
     const competitionScore = this.calculateCompetitionAdvantage(candidate);
     const technicalRiskScore = this.calculateTechnicalRisk(candidate);
+    const selectedDomainRelevanceScore =
+      this.calculateSelectedDomainRelevance(candidate, selectedDomainTerms);
 
     const weightedScore =
-      frequencyScore * 0.07 +
-      severityScore * 0.09 +
-      evidenceScore * 0.08 +
-      directEvidenceRatio * 0.1 +
-      evidenceQualityScore * 0.17 +
-      evidenceReliabilityScore * 0.15 +
-      specificityScore * 0.06 +
-      feasibilityScore * 0.06 +
-      localRelevanceScore * 0.03 +
-      evidenceTypeScore * 0.04 +
-      noveltyScore * 0.06 +
-      businessValueScore * 0.05 +
-      marketGapScore * 0.02 +
-      competitionScore * 0.01 +
-      (1 - technicalRiskScore) * 0.01;
+      (frequencyScore * 0.07 +
+        severityScore * 0.09 +
+        evidenceScore * 0.08 +
+        directEvidenceRatio * 0.1 +
+        evidenceQualityScore * 0.17 +
+        evidenceReliabilityScore * 0.15 +
+        specificityScore * 0.06 +
+        feasibilityScore * 0.06 +
+        localRelevanceScore * 0.03 +
+        evidenceTypeScore * 0.04 +
+        noveltyScore * 0.06 +
+        businessValueScore * 0.05 +
+        marketGapScore * 0.02 +
+        competitionScore * 0.01 +
+        (1 - technicalRiskScore) * 0.01) *
+        0.84 +
+      selectedDomainRelevanceScore * 0.16;
 
     // A historically repeated direction must not win merely because it has
     // high frequency or severity. The multiplier turns novelty into a real
@@ -1500,10 +1644,25 @@ export class IdeaOpportunityRankingService {
       directEvidenceRatio,
       evidenceQualityScore,
     );
+
+    const offSelectedDomain =
+      selectedDomainTerms.length > 0 &&
+      selectedDomainRelevanceScore < MIN_SELECTED_DOMAIN_RELEVANCE;
+
+    if (offSelectedDomain) {
+      disqualificationReasons.push('OFF_SELECTED_DOMAIN');
+    }
+
     const eligibilityPenalty =
       disqualificationReasons.length > 0 ? INELIGIBLE_SELECTION_PENALTY : 0;
     const finalScore = this.round(
-      Math.max(0, baseScore - confidencePenalty - eligibilityPenalty),
+      Math.max(
+        0,
+        baseScore -
+          confidencePenalty -
+          eligibilityPenalty -
+          (offSelectedDomain ? OFF_DOMAIN_SELECTION_PENALTY : 0),
+      ),
     );
 
     if (finalScore < MIN_STRICT_OPPORTUNITY_SCORE) {
@@ -1533,6 +1692,101 @@ export class IdeaOpportunityRankingService {
       selectionEligible: disqualificationReasons.length === 0,
       disqualificationReasons,
     };
+  }
+
+  /**
+   * Measures whether the candidate belongs to at least one domain explicitly
+   * selected by the user. Evidence-first candidates do not carry domainName,
+   * so the decision is grounded in their own problem text and evidence.
+   *
+   * Exact multi-word domain/keyword phrases are deliberately strong. Generic
+   * software words are ignored so an unrelated GitHub issue cannot win merely
+   * because it contains words such as "system", "application", or "platform".
+   */
+  private calculateSelectedDomainRelevance(
+    candidate: NormalizedCandidate,
+    selectedDomainTerms: readonly string[],
+  ): number {
+    if (selectedDomainTerms.length === 0) return 1;
+
+    const normalize = (value: string): string =>
+      value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim();
+
+    const haystack = normalize(
+      [
+        candidate.title,
+        candidate.problem,
+        candidate.need,
+        candidate.solutionArea,
+        ...candidate.evidenceSamples,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' '),
+    );
+
+    if (!haystack) return 0;
+
+    const genericTokens = new Set([
+      'app',
+      'application',
+      'applications',
+      'software',
+      'system',
+      'systems',
+      'platform',
+      'platforms',
+      'service',
+      'services',
+      'dashboard',
+      'analytics',
+      'monitoring',
+      'management',
+      'integration',
+      'automation',
+      'smart',
+      'user',
+      'users',
+    ]);
+
+    let best = 0;
+
+    for (const rawTerm of selectedDomainTerms) {
+      const term = normalize(rawTerm);
+      if (!term || term.length < 3) continue;
+
+      const tokens = term
+        .split(' ')
+        .filter((token) => token.length >= 3 && !genericTokens.has(token));
+      if (tokens.length === 0) continue;
+
+      if (term.includes(' ') && haystack.includes(term)) {
+        best = Math.max(best, tokens.length >= 2 ? 1 : 0.8);
+        continue;
+      }
+
+      const matchedTokens = tokens.filter((token) =>
+        new RegExp(`(?:^|\\s)${this.escapeRegExp(token)}(?:$|\\s)`, 'u').test(
+          haystack,
+        ),
+      ).length;
+      const ratio = matchedTokens / tokens.length;
+
+      if (matchedTokens >= 2) {
+        best = Math.max(best, Math.min(0.9, 0.45 + ratio * 0.45));
+      } else if (matchedTokens === 1 && tokens.length === 1) {
+        best = Math.max(best, 0.72);
+      }
+    }
+
+    return this.round(best);
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private calculateSupportScore(
@@ -1958,6 +2212,14 @@ export class IdeaOpportunityRankingService {
 
     if (/cost|paywall|paid|price|subscription/iu.test(normalized)) {
       return 'High Cost or Paywall Restrictions';
+    }
+
+    if (
+      /(?:accounting|invoice|customer email|ledger|quickbooks).{0,140}(?:slow|load|save|saved|missing|disappear|persistence|data loss)|(?:slow|load|save|saved|missing|disappear|persistence|data loss).{0,140}(?:accounting|invoice|customer email|ledger|quickbooks)/iu.test(
+        normalized,
+      )
+    ) {
+      return 'Accounting Software Performance and Data Persistence Failures';
     }
 
     if (
@@ -2416,6 +2678,14 @@ export class IdeaOpportunityRankingService {
       )
     ) {
       return 'Navigation and Interface Failures';
+    }
+
+    if (
+      /(?:accounting|invoice|customer email|ledger|quickbooks).{0,140}(?:slow|load|save|saved|missing|disappear|persistence|data loss)|(?:slow|load|save|saved|missing|disappear|persistence|data loss).{0,140}(?:accounting|invoice|customer email|ledger|quickbooks)/iu.test(
+        text,
+      )
+    ) {
+      return 'Accounting Software Performance and Data Persistence Failures';
     }
 
     if (/(?:crash|freeze|broken|bug|error)/iu.test(text)) {

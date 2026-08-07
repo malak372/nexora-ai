@@ -274,23 +274,27 @@ export class IdeaGenerationBenchmarkService {
 
       const attemptedModelIdsForDirection = new Set<string>();
       const acceptedCandidatesForDirection: IdeaBenchmarkCandidate[] = [];
-      const isUnvalidatedHypothesis =
+      const hasRetainedDirectEvidence =
+        direction.opportunity.evidenceSamples.length > 0 ||
+        (direction.opportunity.independentEvidence?.length ?? 0) > 0;
+      const isNoEvidenceHypothesis =
         direction.opportunity.disqualificationReasons.includes(
           'PRIMARY_DOMAIN_VALIDATION_HYPOTHESIS',
         ) ||
         direction.opportunity.disqualificationReasons.includes(
           'NO_DIRECT_EVIDENCE',
-        );
+        ) ||
+        !hasRetainedDirectEvidence;
       /*
-       * A no-evidence validation hypothesis cannot honestly reach the ordinary
-       * market-fit threshold by repeated rewriting. Generate one complete,
-       * clearly qualified availability fallback and stop instead of spending
-       * three provider/revision windows on the same unsupported premise.
+       * Only a genuinely no-evidence hypothesis is limited to one availability
+       * fallback. A sparse-evidence pilot still has retained direct evidence,
+       * so it receives the normal bounded comparison and revision budget while
+       * all generated claims remain explicitly preliminary.
        */
-      const targetCandidateCount = isUnvalidatedHypothesis
+      const targetCandidateCount = isNoEvidenceHypothesis
         ? 1
         : IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
-      const directionAttemptLimit = isUnvalidatedHypothesis
+      const directionAttemptLimit = isNoEvidenceHypothesis
         ? Math.min(attemptedCandidateCount + 1, IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS)
         : IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS;
 
@@ -334,7 +338,7 @@ export class IdeaGenerationBenchmarkService {
           modelsForDirection,
           direction,
           blockedModelIds,
-          !isUnvalidatedHypothesis,
+          true,
         );
 
         for (const candidate of settledAttempts) {
@@ -386,10 +390,21 @@ export class IdeaGenerationBenchmarkService {
        * exists, stop the outer opportunity loop as well; trying additional
        * unsupported hypotheses only repeats provider and revision cost.
        */
-      if (isUnvalidatedHypothesis && acceptedCandidatesForDirection.length > 0) {
-        this.logger.warn(
-          `Stopped benchmark after one availability fallback for unvalidated opportunity "${direction.opportunity.title}"; the preferred quality gate was not treated as satisfied.`,
+      if (isNoEvidenceHypothesis && acceptedCandidatesForDirection.length > 0) {
+        const qualityGateSatisfied = acceptedCandidatesForDirection.some(
+          (candidate) =>
+            candidate.quality.accepted &&
+            candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE,
         );
+        if (qualityGateSatisfied) {
+          this.logger.log(
+            `Stopped benchmark after one qualified candidate for preliminary opportunity "${direction.opportunity.title}"; the preferred quality gate was satisfied without additional provider requests.`,
+          );
+        } else {
+          this.logger.warn(
+            `Stopped benchmark after one availability fallback for unvalidated opportunity "${direction.opportunity.title}"; the preferred quality gate was not satisfied.`,
+          );
+        }
         break;
       }
 
@@ -1126,8 +1141,14 @@ export class IdeaGenerationBenchmarkService {
     direction: CandidateConceptDirection,
   ): AcceptedModelAttempt {
     const coreIdea = attempt.parsedOutput.coreIdea;
-    const baseTitle = coreIdea.title.replace(/\b(?:platform|workbench|system|solution)\b/giu, '').replace(/\s+/gu, ' ').trim();
-    const diversifiedTitle = `${baseTitle} Evidence Intake Pilot`;
+    const baseTitle = coreIdea.title
+      .replace(
+        /\b(?:platform|workbench|system|solution|evidence|intake|pilot|validation)\b/giu,
+        '',
+      )
+      .replace(/\s+/gu, ' ')
+      .trim();
+    const diversifiedTitle = `${baseTitle || 'Primary Domain'} Evidence Validation Pilot`;
     return {
       ...attempt,
       parsedOutput: {

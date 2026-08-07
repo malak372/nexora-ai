@@ -130,6 +130,14 @@ export type IntelligentTextInput = {
    * Reply count used for post-level relevance and importance ranking.
    */
   repliesCount?: number;
+
+  /**
+   * Collector-authored protection flag for comments that were already
+   * classified as direct complaint/request evidence during central relevance
+   * evaluation. This metadata is intentionally optional so persisted/legacy
+   * inputs remain backward compatible.
+   */
+  isComplaintEvidence?: boolean;
 };
 
 /**

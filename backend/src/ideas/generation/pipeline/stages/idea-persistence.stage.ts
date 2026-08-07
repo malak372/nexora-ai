@@ -135,6 +135,9 @@ export class IdeaPersistenceStage implements IdeaGenerationStage {
 
       creditsToConsume: policy.creditsToConsume,
 
+      analyzedCommentsCount:
+        context.nlp?.totalCommentsAnalyzed ?? collection.totalComments ?? 0,
+
       parsedOutput,
     });
 

@@ -214,10 +214,15 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
       const evidenceProfile = (context.domainEvidence ?? []).find(
         (item) => item.domainId === domain.id,
       );
-      const evidence = this.extractFirstEvidence([
-        evidenceProfile?.sampleComments ?? null,
-        evidenceProfile?.samplePosts ?? null,
-      ]);
+      const evidence =
+        this.extractFirstEvidence(
+          evidenceProfile?.sampleComments ?? null,
+          'COMMENT',
+        ) ??
+        this.extractFirstEvidence(
+          evidenceProfile?.samplePosts ?? null,
+          'POST',
+        );
       const hasEvidence = Boolean(evidence);
 
       const evidenceProblem = evidence
@@ -397,34 +402,96 @@ export class CommunityAiAnalysisStage implements IdeaGenerationStage {
     return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
   }
 
-  private extractFirstEvidence(values: readonly unknown[]): string | null {
-    const visit = (value: unknown): string | null => {
-      if (typeof value === 'string') {
-        const normalized = value.replace(/\s+/gu, ' ').trim();
-        return normalized.length >= 8 ? normalized.slice(0, 450) : null;
+  private extractFirstEvidence(
+    value: unknown,
+    sourceType: 'POST' | 'COMMENT',
+  ): string | null {
+    const candidates: string[] = [];
+
+    const visit = (entry: unknown): void => {
+      if (typeof entry === 'string') {
+        const normalized = entry.replace(/\s+/gu, ' ').trim();
+        if (normalized.length >= 8) candidates.push(normalized.slice(0, 450));
+        return;
       }
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          const found = visit(item);
-          if (found) return found;
-        }
-      } else if (value && typeof value === 'object') {
-        const record = value as Record<string, unknown>;
+      if (Array.isArray(entry)) {
+        for (const item of entry) visit(item);
+        return;
+      }
+      if (entry && typeof entry === 'object') {
+        const record = entry as Record<string, unknown>;
         for (const key of ['text', 'content', 'body', 'sample', 'samples']) {
-          if (key in record) {
-            const found = visit(record[key]);
-            if (found) return found;
-          }
+          if (key in record) visit(record[key]);
         }
       }
-      return null;
     };
 
-    for (const value of values) {
-      const found = visit(value);
-      if (found) return found;
+    visit(value);
+
+    return (
+      candidates
+        .filter((candidate) =>
+          this.isUsableFallbackEvidence(candidate, sourceType),
+        )
+        .sort(
+          (first, second) =>
+            this.scoreFallbackEvidence(second, sourceType) -
+            this.scoreFallbackEvidence(first, sourceType),
+        )[0] ?? null
+    );
+  }
+
+  /**
+   * Deterministic fallback may only treat a retained text as a community
+   * problem when it contains observable user pain or a concrete request.
+   * Publisher titles, reviews, tutorials, calls to action, and store links are
+   * context only and cannot independently ground an opportunity.
+   */
+  private isUsableFallbackEvidence(
+    value: string,
+    sourceType: 'POST' | 'COMMENT',
+  ): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim().toLowerCase();
+    const hasProblemSignal =
+      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|unexpected (?:cost|bill)|billing|charged|need|needs|should|please add|feature request|wish|is it possible|can i|could i|how can i|why can'?t i)\b/iu.test(
+        normalized,
+      );
+
+    if (!hasProblemSignal) return false;
+
+    const publisherOrPromotional =
+      /https?:\/\//iu.test(normalized) ||
+      /\b(?:check out|download|install|app review|review of|subscribe|link in (?:the )?description|use my code|sponsored|available now|try it|watch the full|tutorial|guide|best .* tools?)\b/iu.test(
+        normalized,
+      );
+
+    if (sourceType === 'POST') {
+      const firstPersonComplaint =
+        /\b(?:i|we|my|our)\b/iu.test(normalized) &&
+        /\b(?:cannot|can'?t|unable|error|fail|broken|problem|issue|bug|missing|wrong|unsafe|security|privacy|billing|charged|cost|need)\b/iu.test(
+          normalized,
+        );
+      return firstPersonComplaint && !publisherOrPromotional;
     }
-    return null;
+
+    return !publisherOrPromotional ||
+      /\b(?:cannot|can'?t|unable|error|fail|broken|problem|issue|bug|missing|wrong|unsafe|security|privacy|billing|charged|cost|need|should)\b/iu.test(
+        normalized,
+      );
+  }
+
+  private scoreFallbackEvidence(
+    value: string,
+    sourceType: 'POST' | 'COMMENT',
+  ): number {
+    const normalized = value.toLowerCase();
+    let score = sourceType === 'COMMENT' ? 30 : 0;
+    if (/\b(?:cannot|can'?t|unable|failed|broken|bug|error|blocked|missing)\b/iu.test(normalized)) score += 30;
+    if (/\b(?:security|privacy|billing|charged|unexpected (?:cost|bill)|cost)\b/iu.test(normalized)) score += 25;
+    if (/\b(?:need|should|please add|feature request|wish|is it possible|can i|could i)\b/iu.test(normalized)) score += 15;
+    if (/\b(?:i|we|my|our)\b/iu.test(normalized)) score += 10;
+    if (/https?:\/\/|\b(?:check out|download|app review|subscribe|tutorial)\b/iu.test(normalized)) score -= 50;
+    return score;
   }
 
   private mergeJsonArrays(

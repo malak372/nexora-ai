@@ -25,6 +25,7 @@ import { RelevanceScoreUtil } from '../collectors/base/relevance-score.util';
 import { CollectorsFactory } from '../collectors/collectors.factory';
 
 import { TextInputBuilderService } from '../nlp/pipeline/text-input-builder.service';
+import { classifyDirectCommunityEvidence } from '../nlp/common/utils/community-evidence.util';
 import type { IntelligentTextInput } from '../nlp/pipeline/types/intelligent-analysis.types';
 
 import { CollectionJobService } from './collection-jobs/collection-job.service';
@@ -382,33 +383,80 @@ export class DataCollectionService {
                   });
                 }
 
-                for (const comment of post.comments.slice(
-                  0,
-                  effectiveCollectorLimits?.maxSavedComments ?? 1,
-                )) {
-                  if (!comment.content.trim()) continue;
+                const rankedFastComments = [...post.comments]
+                  .filter((comment) => comment.content.trim().length > 0)
+                  .sort((first, second) => {
+                    const evidencePattern =
+                      /\b(?:cannot|can'?t|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|need|needs|should|please add|feature request|wish|is it possible|can i|could i|how can i|why can'?t i)\b/iu;
+                    const firstEvidence = evidencePattern.test(first.content)
+                      ? 1
+                      : 0;
+                    const secondEvidence = evidencePattern.test(second.content)
+                      ? 1
+                      : 0;
+
+                    return (
+                      secondEvidence - firstEvidence ||
+                      Math.max(second.likesCount ?? 0, 0) -
+                        Math.max(first.likesCount ?? 0, 0)
+                    );
+                  })
+                  .slice(
+                    0,
+                    effectiveCollectorLimits?.maxSavedComments ?? 1,
+                  );
+
+                for (const comment of rankedFastComments) {
                   fastEvidenceInputs.push({
                     id: `${dataSource.key}:comment:${comment.externalId}`,
                     sourceType: 'COMMENT',
                     postId,
+                    /*
+                     * Match the normal DB-backed NLP path: preserve the parent
+                     * post title on comments so short complaints keep their
+                     * domain context during FAST_GENERATION preprocessing.
+                     */
+                    title: post.title ?? null,
                     content: comment.content.trim().slice(0, 1_200),
                     language: this.parseFastLanguageCode(comment.languageCode),
                     likesCount: comment.likesCount,
+                    /*
+                     * Preserve the exact collector decision that contributed
+                     * to complaintComments=N. Downstream NLP must not have to
+                     * rediscover the same complaint from scratch.
+                     */
+                    isComplaintEvidence: this.isProtectedComplaintEvidence(
+                      comment.content,
+                      post.title ?? '',
+                      relevanceTerms,
+                    ),
                   });
                 }
               }
             }
 
-            const totals = await this.socialPostService.createManyWithComments(
-              job.id,
-              dataSource.id,
-              {
-                country: dto.country,
-                city: dto.city,
-                region: dto.region,
-              },
-              relevantPosts,
-            );
+            const totals =
+              collectionMode === 'FAST_GENERATION'
+                ? await this.socialPostService.createManyWithCommentsFast(
+                    job.id,
+                    dataSource.id,
+                    {
+                      country: dto.country,
+                      city: dto.city,
+                      region: dto.region,
+                    },
+                    relevantPosts,
+                  )
+                : await this.socialPostService.createManyWithComments(
+                    job.id,
+                    dataSource.id,
+                    {
+                      country: dto.country,
+                      city: dto.city,
+                      region: dto.region,
+                    },
+                    relevantPosts,
+                  );
 
             if (collectionMode === 'FAST_GENERATION') {
               fastPersistedPosts += totals.totalPosts;
@@ -785,7 +833,11 @@ export class DataCollectionService {
       const hasCommunityProblemSignal =
         this.hasCommunityProblemSignal(post, sourceKey);
       const complaintComments = post.comments.filter((comment) =>
-        this.hasComplaintSignal(comment.content),
+        this.isProtectedComplaintEvidence(
+          comment.content,
+          post.title ?? '',
+          normalizedTerms,
+        ),
       );
       const hasComplaintComment = complaintComments.length > 0;
 
@@ -894,14 +946,79 @@ export class DataCollectionService {
     return this.hasComplaintSignal(content);
   }
 
+
+  /**
+   * Marks only direct, domain-aligned user pain as protected evidence.
+   * Generic educational questions, moments of understanding, praise, and
+   * broad words such as "optimization" must not become complaint evidence.
+   */
+  private isProtectedComplaintEvidence(
+    comment: string,
+    parentTitle: string,
+    relevanceTerms: readonly string[],
+  ): boolean {
+    const normalizedComment = comment
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/\s+/gu, ' ')
+      .trim();
+
+    if (normalizedComment.length < 12) {
+      return false;
+    }
+
+    const evidenceKind = classifyDirectCommunityEvidence(
+      normalizedComment,
+      'COMMENT',
+    );
+
+    if (evidenceKind === 'NONE') {
+      return false;
+    }
+
+    return this.hasStrongDomainAnchor(
+      `${parentTitle} ${comment}`,
+      relevanceTerms,
+    );
+  }
+
+  /**
+   * Requires a substantive domain anchor. Generic workflow/product words are
+   * ignored so "Optimization Problems in Calculus" cannot become Agriculture
+   * evidence merely because the domain contains "agriculture optimization".
+   */
+  private hasStrongDomainAnchor(
+    value: string,
+    relevanceTerms: readonly string[],
+  ): boolean {
+    const normalizedValue = value.normalize('NFKC').toLowerCase();
+    const genericTokens = new Set([
+      'app', 'application', 'platform', 'software', 'system', 'service',
+      'technology', 'management', 'monitoring', 'automation', 'optimization',
+      'prediction', 'recommendation', 'integration', 'analytics', 'dashboard',
+      'problem', 'problems', 'workflow', 'tool', 'tools',
+    ]);
+
+    const anchors = new Set<string>();
+    for (const term of relevanceTerms) {
+      const normalizedTerm = term.normalize('NFKC').toLowerCase().trim();
+      if (!normalizedTerm) continue;
+      for (const token of normalizedTerm.split(/\s+/u)) {
+        if (token.length >= 4 && !genericTokens.has(token)) anchors.add(token);
+      }
+    }
+
+    return [...anchors].some((anchor) =>
+      new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])${anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{M}\\p{N}])`, 'u').test(normalizedValue),
+    );
+  }
+
   /**
    * Detects direct complaints, failed workflows, incorrect data, and feature
    * requests in user-controlled text.
    */
   private hasComplaintSignal(value: string): boolean {
-    return /(?:\b(?:cannot|can't|unable|doesn't work|not working|not updating|outdated|stale|incorrect|wrong|failed|failure|error|bug|crash|freeze|missing|limited|blocked|need|needs|wish|request|feature request|should add|please add|paywall|subscription|slow|confusing|difficult|problem|issue|frustrating|unavailable|inaccessible|before departures|invalid wire type)\b|(?:لا يعمل|لا أستطيع|غير متاح|مشكلة|خطأ|تعطل|بطيء|صعب|مفقود|اشتراك|مدفوع|أحتاج|نحتاج|اقتراح|طلب ميزة))/iu.test(
-      value,
-    );
+    return classifyDirectCommunityEvidence(value, 'POST') !== 'NONE';
   }
 
   /**

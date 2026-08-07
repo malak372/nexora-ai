@@ -98,7 +98,7 @@ export class ForumCollector extends BaseCollector implements SocialCollector {
       const sources = isFastGeneration
         ? this.forumSources
             .filter((source) => source.url !== 'https://meta.discourse.org')
-            .slice(0, 3)
+            .slice(0, 1)
         : this.forumSources;
 
       this.logger.debug(

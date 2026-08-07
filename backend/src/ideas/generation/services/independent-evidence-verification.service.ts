@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { classifyDirectCommunityEvidence } from '../../../nlp/common/utils/community-evidence.util';
+import { matchEvidenceToProblemFamily } from '../../../nlp/common/utils/problem-family-matching.util';
 import {
   INDEPENDENT_EVIDENCE_KINDS,
   type IndependentEvidence,
@@ -14,7 +16,9 @@ import type {
 const MIN_VERIFIED_RECURRENCE_COUNT = 3;
 const MIN_VERIFIED_SOURCE_COUNT = 2;
 const MAX_VERIFIED_EVIDENCE_SAMPLES = 8;
-const MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE = 0.25;
+const MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE = 0.16;
+const MIN_GROUNDED_SINGLE_SAMPLE_SCORE = 0.2;
+const MIN_SINGLE_EVIDENCE_RELIABILITY = 0.42;
 
 const SPECIFICATION_PATTERNS: readonly RegExp[] = [
   /^\s*(?:#{1,6}\s*)?(?:acceptance criteria|definition of done|requirements?|implementation plan|technical design|architecture|test plan|tests?)\s*[:-]/iu,
@@ -169,12 +173,32 @@ export class IndependentEvidenceVerificationService {
         .filter((evidence): evidence is IndependentEvidence => Boolean(evidence)),
     ).slice(0, MAX_VERIFIED_EVIDENCE_SAMPLES);
 
-    const directEvidence = resolvedEvidence.filter(
+    const nonSpecificationEvidence = resolvedEvidence.filter(
       (evidence) =>
-        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.UNKNOWN &&
         evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION,
     );
-    const qualifyingEvidence = directEvidence.filter(
+    const classifiedDirectEvidence = nonSpecificationEvidence.filter(
+      (evidence) =>
+        evidence.evidenceKind !== INDEPENDENT_EVIDENCE_KINDS.UNKNOWN,
+    );
+    const problemDescriptor = [
+      candidate.problem ?? '',
+      candidate.need ?? '',
+      candidate.title,
+      candidate.solutionArea ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const problemMatchedEvidence = classifiedDirectEvidence.filter(
+      (evidence) =>
+        matchEvidenceToProblemFamily(problemDescriptor, evidence.text).matched,
+    );
+    const groundedSingleSample =
+      this.isGroundedCommunityCandidate(candidate) &&
+      problemMatchedEvidence.length > 0;
+    const retainedEvidence = problemMatchedEvidence;
+    const qualifyingEvidence = problemMatchedEvidence.filter(
       (evidence) => evidence.qualifiesForRecurrence,
     );
 
@@ -182,7 +206,10 @@ export class IndependentEvidenceVerificationService {
     const verifiedSourceCount = new Set(
       qualifyingEvidence.map((evidence) => evidence.sourceKey),
     ).size;
-    const verifiedEvidenceScore = Math.min(verifiedCount / 5, 1);
+    const verifiedEvidenceScore = Math.max(
+      Math.min(verifiedCount / 5, 1),
+      groundedSingleSample ? MIN_GROUNDED_SINGLE_SAMPLE_SCORE : 0,
+    );
     const recurrenceEligible =
       verifiedCount >= MIN_VERIFIED_RECURRENCE_COUNT &&
       verifiedSourceCount >= MIN_VERIFIED_SOURCE_COUNT;
@@ -216,7 +243,7 @@ export class IndependentEvidenceVerificationService {
       candidate.evidenceScore - verifiedEvidenceScore,
     );
     const unknownOnlyEvidence =
-      resolvedEvidence.length > 0 && directEvidence.length === 0;
+      resolvedEvidence.length > 0 && retainedEvidence.length === 0;
     const unsupportedProblemPenalty = unknownOnlyEvidence ? 0.22 : 0;
     const adjustedFinalScore = Math.max(
       0,
@@ -240,18 +267,38 @@ export class IndependentEvidenceVerificationService {
      * verified evidence is reliable. Scientific-validity failures remain
      * blocking and can never be bypassed by this pilot fallback.
      */
-    const nonScoreReasons = [...disqualificationReasons].filter(
-      (reason) => reason !== 'LOW_OPPORTUNITY_SCORE',
+    const pilotNonBlockingReasons = new Set([
+      'LOW_OPPORTUNITY_SCORE',
+      'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+      'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
+      'INSUFFICIENT_EVIDENCE_COUNT',
+      'INSUFFICIENT_SUPPORT',
+      'LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE',
+      'LOW_EVIDENCE_RELIABILITY',
+      'LOW_EVIDENCE_QUALITY',
+    ]);
+    const blockingPilotReasons = [...disqualificationReasons].filter(
+      (reason) => !pilotNonBlockingReasons.has(reason),
     );
     const qualifiesAsVerifiedPilot =
-      recurrenceEligible &&
       qualifyingEvidence.length >= 1 &&
       adjustedFinalScore >= MIN_VERIFIED_SINGLE_EVIDENCE_PILOT_SCORE &&
-      candidate.evidenceReliabilityScore >= 0.7 &&
-      nonScoreReasons.length === 0;
+      candidate.evidenceReliabilityScore >= MIN_SINGLE_EVIDENCE_RELIABILITY &&
+      blockingPilotReasons.length === 0;
 
     if (qualifiesAsVerifiedPilot) {
       disqualificationReasons.delete('LOW_OPPORTUNITY_SCORE');
+      disqualificationReasons.delete(
+        'INSUFFICIENT_INDEPENDENT_COMMUNITY_EVIDENCE',
+      );
+      disqualificationReasons.delete(
+        'INSUFFICIENT_INDEPENDENT_SOURCE_DIVERSITY',
+      );
+      disqualificationReasons.delete('INSUFFICIENT_EVIDENCE_COUNT');
+      disqualificationReasons.delete('INSUFFICIENT_SUPPORT');
+      disqualificationReasons.delete('LOW_CONFIDENCE_REQUIRES_STRONGER_EVIDENCE');
+      disqualificationReasons.delete('LOW_EVIDENCE_RELIABILITY');
+      disqualificationReasons.delete('LOW_EVIDENCE_QUALITY');
     }
 
     return {
@@ -263,16 +310,37 @@ export class IndependentEvidenceVerificationService {
        * an exact one-off developer report must not disappear merely because it
        * has not reached the multi-source recurrence gate.
        */
-      evidenceSamples: directEvidence.map((evidence) => evidence.text),
+      evidenceSamples: retainedEvidence.map((evidence) => evidence.text),
       evidenceScore: verifiedEvidenceScore,
       finalScore: adjustedFinalScore,
       selectionEligible:
-        recurrenceEligible && disqualificationReasons.size === 0,
+        (recurrenceEligible || qualifiesAsVerifiedPilot) &&
+        disqualificationReasons.size === 0,
       disqualificationReasons: [...disqualificationReasons],
-      independentEvidence: directEvidence,
+      independentEvidence: retainedEvidence,
       verifiedIndependentEvidenceCount: verifiedCount,
       verifiedIndependentSourceCount: verifiedSourceCount,
     };
+  }
+
+
+  private isGroundedCommunityCandidate(
+    candidate: RankedIdeaOpportunity,
+  ): boolean {
+    if (!candidate.raw || typeof candidate.raw !== 'object' || Array.isArray(candidate.raw)) {
+      return false;
+    }
+
+    const raw = candidate.raw as Record<string, unknown>;
+    const source = typeof raw.source === 'string' ? raw.source : '';
+    const groundingScore =
+      typeof raw.groundingScore === 'number' ? raw.groundingScore : 0;
+
+    return (
+      source === 'COMMUNITY_AI_ANALYSIS' &&
+      groundingScore >= 70 &&
+      candidate.evidenceSamples.length > 0
+    );
   }
 
   private resolveEvidence(
@@ -285,14 +353,14 @@ export class IndependentEvidenceVerificationService {
       readonly author: string | null;
     }>,
   ): IndependentEvidence | null {
-    const normalizedSample = this.normalizeText(sample);
+    const sampleVariants = this.buildEvidenceMatchVariants(sample);
     const record = records.find((entry) => {
-      const normalizedRecord = this.normalizeText(entry.text);
-      return (
-        normalizedRecord === normalizedSample ||
-        normalizedRecord.includes(normalizedSample) ||
-        normalizedSample.includes(normalizedRecord) ||
-        this.hasStrongTokenContainment(normalizedSample, normalizedRecord)
+      const recordVariants = this.buildEvidenceMatchVariants(entry.text);
+
+      return sampleVariants.some((normalizedSample) =>
+        recordVariants.some((normalizedRecord) =>
+          this.evidenceVariantsMatch(normalizedSample, normalizedRecord),
+        ),
       );
     });
 
@@ -318,57 +386,122 @@ export class IndependentEvidenceVerificationService {
     };
   }
 
+  /**
+   * Builds provenance-safe text variants for evidence matching. Collector and
+   * NLP layers sometimes wrap a raw comment as
+   * "<parent title>. Community comment: <body>" while Prisma stores only the
+   * comment body. Matching the canonical body as well as the complete text
+   * preserves the original DB provenance without accepting synthetic evidence.
+   */
+  private buildEvidenceMatchVariants(value: string): string[] {
+    const normalizedFull = this.normalizeText(value);
+    const commentBody = this.extractCommunityCommentBody(value);
+    const normalizedCommentBody = this.normalizeText(commentBody);
+    const labelledBody = value
+      .replace(
+        /^\s*(?:community\s+comment|user\s+comment|review|community\s+review)\s*:\s*/iu,
+        '',
+      )
+      .trim();
+    const normalizedLabelledBody = this.normalizeText(labelledBody);
+
+    return [...new Set([
+      normalizedFull,
+      normalizedCommentBody,
+      normalizedLabelledBody,
+    ].filter((item) => item.length >= 6))];
+  }
+
+  private evidenceVariantsMatch(sample: string, record: string): boolean {
+    if (!sample || !record) {
+      return false;
+    }
+
+    if (sample === record) {
+      return true;
+    }
+
+    const shorter = sample.length <= record.length ? sample : record;
+    const longer = sample.length > record.length ? sample : record;
+
+    /*
+     * Exact substring matching is reliable for a meaningful comment body, but
+     * very short snippets are intentionally excluded to prevent accidental
+     * provenance matches on generic phrases such as "not working".
+     */
+    if (shorter.length >= 24 && longer.includes(shorter)) {
+      return true;
+    }
+
+    return (
+      this.hasStrongTokenContainment(sample, record) ||
+      this.hasStrongTokenContainment(record, sample)
+    );
+  }
+
   private classifyEvidence(
     text: string,
     sourceKey: string,
     isComment: boolean,
   ): IndependentEvidenceKind {
-    if (SPECIFICATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    const evidenceText = isComment
+      ? this.extractCommunityCommentBody(text)
+      : text;
+    const githubPlanningOrAcceptanceText =
+      sourceKey === 'github' &&
+      !isComment &&
+      /(?:\bproduct outcome\b|\bacceptance\b|\bacceptance criteria\b|\bdefinition of done\b|\bimplementation plan\b|\btechnical design\b|\btest plan\b|\bscope\b|\bdepends on\b|\bverify that\b|\bthe goal is\b|\bmust remain\b|\bmust not\b|\bshould remain\b|\boperators no longer see\b|\bproposed architecture\b)/iu.test(
+        evidenceText,
+      );
+
+    if (
+      githubPlanningOrAcceptanceText ||
+      SPECIFICATION_PATTERNS.some((pattern) => pattern.test(evidenceText))
+    ) {
       return INDEPENDENT_EVIDENCE_KINDS.SPECIFICATION;
     }
 
-    if (REVIEW_SOURCE_KEYS.has(sourceKey)) {
-      if (!isComment) {
-        return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
-      }
+    const directKind = classifyDirectCommunityEvidence(
+      evidenceText,
+      isComment ? 'COMMENT' : 'POST',
+    );
 
-      if (FEATURE_REQUEST_PATTERNS.some((pattern) => pattern.test(text))) {
-        return INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST;
-      }
-
-      if (
-        COMPLAINT_PATTERNS.some((pattern) => pattern.test(text)) ||
-        /\b(?:can'?t|cant|is it possible|is it possable|can i|could i)\b/iu.test(
-          text,
-        )
-      ) {
-        return INDEPENDENT_EVIDENCE_KINDS.REVIEW;
-      }
-
-      return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
-    }
-
-    if (FEATURE_REQUEST_PATTERNS.some((pattern) => pattern.test(text))) {
+    if (directKind === 'FEATURE_REQUEST') {
       return INDEPENDENT_EVIDENCE_KINDS.FEATURE_REQUEST;
     }
 
-    if (this.isNonComplaintMediaPost(text, sourceKey, isComment)) {
+    if (directKind === 'USER_COMPLAINT') {
+      return REVIEW_SOURCE_KEYS.has(sourceKey)
+        ? INDEPENDENT_EVIDENCE_KINDS.REVIEW
+        : INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT;
+    }
+
+    if (this.isNonComplaintMediaPost(evidenceText, sourceKey, isComment)) {
       return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
     }
 
-    if (COMPLAINT_PATTERNS.some((pattern) => pattern.test(text))) {
-      return INDEPENDENT_EVIDENCE_KINDS.USER_COMPLAINT;
-    }
-
-    if (sourceKey === 'github' || sourceKey === 'stackoverflow') {
-      return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
-    }
-
-    if (isComment) {
-      return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
+    /*
+     * Technical tickets remain useful engineering evidence only when they are
+     * not merely comments/proposals and were not rejected by the shared direct
+     * community classifier as adversarial, promotional, or non-problem text.
+     */
+    if (!isComment && (sourceKey === 'github' || sourceKey === 'stackoverflow')) {
+      const hasTechnicalFailure =
+        /\b(?:cannot|can['’]?t|unable|fails?|failed|error|bug|crash|broken|missing|blocked|timeout|exception|incorrect|unexpected)\b/iu.test(
+          evidenceText,
+        );
+      if (hasTechnicalFailure) {
+        return INDEPENDENT_EVIDENCE_KINDS.TECHNICAL_TICKET;
+      }
     }
 
     return INDEPENDENT_EVIDENCE_KINDS.UNKNOWN;
+  }
+
+  private extractCommunityCommentBody(value: string): string {
+    const normalized = value.replace(/\s+/gu, ' ').trim();
+    const match = normalized.match(/\bCommunity comment:\s*(.+)$/iu);
+    return match?.[1]?.trim() ?? normalized;
   }
 
   /**
@@ -501,9 +634,36 @@ export class IndependentEvidenceVerificationService {
   }
 
   private buildSelectionReason(selected: RankedIdeaOpportunity): string {
-    return selected.selectionEligible
-      ? `Selected after verifying ${selected.verifiedIndependentEvidenceCount ?? 0} independent community reports across ${selected.verifiedIndependentSourceCount ?? 0} source(s).`
-      : `No opportunity currently has at least ${MIN_VERIFIED_RECURRENCE_COUNT} independently verified community reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`;
+    const verifiedEvidenceCount =
+      selected.verifiedIndependentEvidenceCount ?? 0;
+    const verifiedSourceCount = selected.verifiedIndependentSourceCount ?? 0;
+    const retainedDirectEvidenceCount = Math.max(
+      verifiedEvidenceCount,
+      selected.independentEvidence?.length ?? 0,
+      selected.evidenceSamples.length,
+    );
+
+    if (selected.selectionEligible) {
+      if (
+        verifiedEvidenceCount < MIN_VERIFIED_RECURRENCE_COUNT ||
+        verifiedSourceCount < MIN_VERIFIED_SOURCE_COUNT
+      ) {
+        return `Selected as a preliminary pilot after retaining ${verifiedEvidenceCount} problem-matched verified community report(s) across ${verifiedSourceCount} source(s). Recurrence is not established.`;
+      }
+
+      return `Selected after verifying ${verifiedEvidenceCount} problem-matched independent community reports across ${verifiedSourceCount} source(s).`;
+    }
+
+    if (retainedDirectEvidenceCount > 0) {
+      const retainedLabel =
+        retainedDirectEvidenceCount === 1
+          ? 'One direct grounded community report was retained'
+          : `${retainedDirectEvidenceCount} direct grounded community reports were retained`;
+
+      return `${retainedLabel}, but the evidence does not yet satisfy the independent recurrence requirement of at least ${MIN_VERIFIED_RECURRENCE_COUNT} verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`;
+    }
+
+    return `No direct community evidence was retained, so the selected direction must remain an explicitly unvalidated primary-domain hypothesis.`;
   }
 
   private mergeWarnings(
@@ -514,7 +674,15 @@ export class IndependentEvidenceVerificationService {
 
     if (!selected.selectionEligible) {
       warnings.add(
-        `The strongest signal did not contain at least ${MIN_VERIFIED_RECURRENCE_COUNT} independently verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`,
+        `The strongest signal did not contain at least one problem-matched verified community report suitable for a preliminary pilot.`,
+      );
+    } else if (
+      (selected.verifiedIndependentEvidenceCount ?? 0) <
+        MIN_VERIFIED_RECURRENCE_COUNT ||
+      (selected.verifiedIndependentSourceCount ?? 0) < MIN_VERIFIED_SOURCE_COUNT
+    ) {
+      warnings.add(
+        `Only preliminary problem-matched evidence is available; recurrence requires at least ${MIN_VERIFIED_RECURRENCE_COUNT} verified reports across ${MIN_VERIFIED_SOURCE_COUNT} independent sources.`,
       );
     }
 

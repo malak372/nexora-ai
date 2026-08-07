@@ -106,6 +106,34 @@ export class TextInputBuilderService {
     });
   }
 
+  /**
+   * Returns a defensive copy of the in-memory FAST_GENERATION corpus without
+   * consuming it. Collection-job resolution uses this to preserve direct
+   * community evidence for domainEvidence/ranking while IntelligentAnalysis
+   * consumes the same cache entry independently. This avoids a second database
+   * read and prevents strong collector evidence from disappearing only because
+   * NLP relevance pruning is intentionally bounded.
+   */
+  static peekFastContext(collectionJobId: string): TextInputContext | null {
+    const cached = this.fastContextCache.get(collectionJobId);
+    if (!cached) return null;
+    if (cached.expiresAt <= Date.now()) {
+      this.fastContextCache.delete(collectionJobId);
+      return null;
+    }
+
+    return {
+      ...cached.context,
+      domain: {
+        ...cached.context.domain,
+        keywords: [...cached.context.domain.keywords],
+      },
+      location: { ...cached.context.location },
+      platforms: [...cached.context.platforms],
+      inputs: cached.context.inputs.map((input) => ({ ...input })),
+    };
+  }
+
   private static consumeFastContext(
     collectionJobId: string,
   ): TextInputContext | null {
@@ -174,7 +202,7 @@ export class TextInputBuilderService {
                   id: 'asc',
                 },
               ],
-              take: 8,
+              take: 12,
               select: {
                 id: true,
                 content: true,

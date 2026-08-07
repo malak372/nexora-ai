@@ -233,11 +233,41 @@ export class TextPreprocessingService {
     const unresolvedLanguageTextsRemoved =
       uniqueItems.length - languageResolvedItems.length;
 
-    const contentFilteredItems = languageResolvedItems.filter(
-      (item) =>
-        !this.isTechnicalNoise(item.cleaning.cleanedText) &&
-        !this.isNonComplaintContext(item.cleaning.cleanedText),
-    );
+    const contentFilteredItems = languageResolvedItems.filter((item) => {
+      const collectorProtectedComment =
+        item.input.sourceType === 'COMMENT' &&
+        item.input.isComplaintEvidence === true;
+
+      /*
+       * The central collector already classified this exact comment as one of
+       * the complaintComments=N records. Preserve that decision through NLP
+       * instead of trying to rediscover it with a second, slightly different
+       * regex. Empty/duplicate/language checks have already run above.
+       */
+      if (collectorProtectedComment) {
+        return this.isDirectUserCommentEvidence(item.input.content);
+      }
+
+      if (this.isTechnicalNoise(item.cleaning.cleanedText)) {
+        return false;
+      }
+
+      /*
+       * Parent titles are intentionally included in comment context so short
+       * comments can inherit the selected-domain signal. A promotional parent
+       * title must not, however, cause a genuine user complaint to be removed.
+       * Evaluate the raw comment independently before applying publisher-copy
+       * rejection to the combined contextual text.
+       */
+      if (
+        item.input.sourceType === 'COMMENT' &&
+        this.isDirectUserCommentEvidence(item.input.content)
+      ) {
+        return true;
+      }
+
+      return !this.isNonComplaintContext(item.cleaning.cleanedText);
+    });
     const technicalNoiseTextsRemoved =
       languageResolvedItems.length - contentFilteredItems.length;
 
@@ -286,10 +316,57 @@ export class TextPreprocessingService {
     const relevantItems = shouldApplyRelevanceFilter
       ? evaluatedTexts.filter(
           (item) =>
-            item.isRelevant || this.shouldRetainBorderlineEvidence(item.text),
+            item.text.isComplaintEvidence === true ||
+            item.isRelevant ||
+            this.shouldRetainBorderlineEvidence(item.text),
         )
       : evaluatedTexts;
     let relevantTexts = relevantItems.map((item) => item.text);
+
+    const collectorProtectedRetained = relevantTexts.filter(
+      (text) =>
+        text.sourceType === 'COMMENT' && text.isComplaintEvidence === true,
+    ).length;
+    if (collectorProtectedRetained > 0) {
+      this.logger.debug(
+        `Retained ${collectorProtectedRetained} collector-protected complaint comment(s) through NLP preprocessing.`,
+      );
+    }
+
+    /*
+     * A direct complaint comment must not disappear merely because another
+     * contextual post already passed the strict relevance filter. Earlier this
+     * recovery ran only when relevantTexts was empty, which allowed a single
+     * surviving post to suppress stronger complaint comments. Preserve a small,
+     * bounded set of traceable direct comments on every pass.
+     */
+    const retainedIds = new Set(relevantTexts.map((text) => text.id));
+    const protectedDirectComments = evaluatedTexts
+      .map((item) => item.text)
+      .filter(
+        (text) =>
+          text.sourceType === 'COMMENT' &&
+          !retainedIds.has(text.id) &&
+          this.isDirectUserCommentEvidence(text.content) &&
+          this.hasMinimumContextualDomainSignal(text),
+      )
+      .sort(
+        (first, second) =>
+          this.contextualEvidencePriority(second) -
+            this.contextualEvidencePriority(first) ||
+          second.relevanceScore - first.relevanceScore,
+      )
+      .slice(0, 6);
+
+    if (protectedDirectComments.length > 0) {
+      relevantTexts = [...relevantTexts, ...protectedDirectComments];
+      for (const comment of protectedDirectComments) {
+        retainedIds.add(comment.id);
+      }
+      this.logger.debug(
+        `Protected ${protectedDirectComments.length} direct complaint/request comment(s) from strict NLP relevance pruning.`,
+      );
+    }
 
     /*
      * A fast run must not collapse a non-empty collected corpus to zero merely
@@ -380,7 +457,12 @@ export class TextPreprocessingService {
     const ranked = inputs
       .map((input, index) => {
         const contextualText = this.buildContextualAnalysisText(input);
-        const evidenceBonus = evidencePattern.test(contextualText) ? 120 : 0;
+        const evidenceBonus =
+          input.isComplaintEvidence === true
+            ? 1_000
+            : evidencePattern.test(contextualText)
+              ? 120
+              : 0;
         /*
          * Complaint comments receive priority over generic post titles. Posts
          * still remain represented so every retained comment keeps context and
@@ -458,6 +540,38 @@ export class TextPreprocessingService {
       : content || title;
   }
 
+
+  /**
+   * Recognizes a concrete user-authored complaint/request from the raw comment
+   * body. This deliberately ignores the parent post title so promotional video
+   * metadata cannot suppress useful comment evidence.
+   */
+  private isDirectUserCommentEvidence(value: string): boolean {
+    const normalized = value.replace(/\s+/gu, ' ').trim().toLowerCase();
+    if (normalized.length < 12) {
+      return false;
+    }
+
+    const explicitPainOrRequest =
+      /\b(?:cannot|can'?t|cant|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|cost|billing|bill|charged|confusing|difficult|frustrating|struggle|please add|feature request|should add|why can'?t i|how can i)\b/iu.test(normalized) ||
+      /\b(?:i|we|my|our|user|users|customer|customers|operator|operators|learner|learners)\b[^.!?]{0,60}\b(?:need|needs)\b/iu.test(normalized) ||
+      /\bi wish\b[^.!?]{0,80}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu.test(normalized);
+
+    const comprehensionOrPraiseOnly =
+      /\b(?:i (?:think i )?(?:understand|get it)|makes sense|so much easier|helped me understand|great explanation|thank you|thanks|love this|amazing|awesome)\b/iu.test(normalized) &&
+      !/\b(?:cannot|can'?t|unable|not working|error|fail|broken|bug|missing|wrong|confusing|difficult|frustrating|struggle|need)\b/iu.test(normalized) &&
+      !/\bi wish\b[^.!?]{0,80}\b(?:app|platform|service|feature|option|setting|support|allow|let|could|would|had|add|include)\b/iu.test(normalized);
+    const positiveRecommendationOnly =
+      /\b(?:highly recommend|recommend(?:ed|ing)?|great company|great app|excellent|works great|very satisfied|five stars?|5 stars?|love (?:the|this) app)\b/iu.test(normalized) &&
+      !/\b(?:cannot|can'?t|unable|does(?:n'?t| not) work|not working|error|fail(?:s|ed|ing)?|broken|bug|missing|incorrect|wrong|crash|freeze|slow|confusing|difficult|frustrating|struggle|support|refund|withdraw)\b/iu.test(normalized);
+
+    const purePromotion =
+      /\b(?:check out|download|install|subscribe|link in (?:the )?description|use my code|sponsored|available now|try it|watch the full|app review|review of)\b/iu.test(normalized) &&
+      !explicitPainOrRequest;
+
+    return explicitPainOrRequest && !comprehensionOrPraiseOnly && !positiveRecommendationOnly && !purePromotion;
+  }
+
   /**
    * Retains useful borderline evidence under the single internal balanced
    * filtering policy.
@@ -470,6 +584,29 @@ export class TextPreprocessingService {
    * Promotional descriptions, implementation tickets, and technical noise are
    * already removed before this method is evaluated.
    */
+  /**
+   * Allows a direct complaint comment to inherit domain context from its parent
+   * title without treating completely unrelated comments as domain evidence.
+   */
+  private hasMinimumContextualDomainSignal(text: PreprocessedTextInput): boolean {
+    const genericTerms = new Set([
+      'app', 'application', 'platform', 'software', 'system', 'service', 'technology',
+      'management', 'monitoring', 'automation', 'optimization', 'prediction',
+      'recommendation', 'integration', 'analytics', 'dashboard', 'workflow',
+      'problem', 'problems', 'tool', 'tools',
+    ]);
+
+    const specificKeyword = text.matchedKeywords.some(
+      (term) => !genericTerms.has(term.toLowerCase()),
+    );
+    const specificPhrase = text.matchedPhrases.some((phrase) => {
+      const tokens = phrase.toLowerCase().split(/\s+/u);
+      return tokens.some((token) => token.length >= 4 && !genericTerms.has(token));
+    });
+
+    return specificKeyword || specificPhrase;
+  }
+
   private shouldRetainBorderlineEvidence(text: PreprocessedTextInput): boolean {
     const normalized = text.cleaning.cleanedText.toLowerCase();
 
@@ -525,8 +662,15 @@ export class TextPreprocessingService {
       text.matchedKeywords.length > 0 ||
       text.matchedPhrases.length > 0 ||
       text.relevanceScore >= 0.12;
+    if (text.sourceType === 'COMMENT') {
+      return (
+        this.isDirectUserCommentEvidence(text.content) &&
+        this.hasMinimumContextualDomainSignal(text)
+      );
+    }
+
     const hasConcreteEvidence =
-      /\b(?:cannot|can't|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|needs|should|please add|feature request|wish)\b/iu.test(
+      /\b(?:cannot|can't|unable|not working|does not work|doesn't work|crash(?:es|ed|ing)?|freeze|slow|lag|latency|error|fail(?:s|ed|ing)?|broken|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|needs|please add|feature request|wish)\b/iu.test(
         normalized,
       );
 
@@ -548,15 +692,23 @@ export class TextPreprocessingService {
     if (this.isTechnicalNoise(normalized) || this.isNonComplaintContext(normalized)) {
       return false;
     }
-    return text.sourceType === 'COMMENT' || text.relevanceScore >= 0.05;
+    if (text.sourceType === 'COMMENT') {
+      return (
+        this.isDirectUserCommentEvidence(text.content) &&
+        this.hasMinimumContextualDomainSignal(text)
+      );
+    }
+
+    return text.relevanceScore >= 0.05;
   }
 
   /** Ranks bounded fallback evidence without another provider call. */
   private contextualEvidencePriority(text: PreprocessedTextInput): number {
     const normalized = text.cleaning.cleanedText.toLowerCase();
+    const collectorProtected = text.isComplaintEvidence === true ? 20 : 0;
     const complaint = /\b(?:cannot|can't|unable|not working|does not work|crash|freeze|slow|lag|latency|error|fail|failed|broken|problem|issue|bug|blocked|missing|inaccurate|wrong|unsafe|security|privacy|need|should|feature request|wish)\b/iu.test(normalized) ? 5 : 0;
     const traceableComment = text.sourceType === 'COMMENT' && Boolean(text.postId) ? 3 : 0;
-    return complaint + traceableComment + Math.min(text.relevanceScore * 10, 2);
+    return collectorProtected + complaint + traceableComment + Math.min(text.relevanceScore * 10, 2);
   }
 
   /**

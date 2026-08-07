@@ -78,10 +78,104 @@ export class CreditBalanceService {
     const execute = async (
       tx: Prisma.TransactionClient,
     ): Promise<CreditBalanceResult> => {
+      const absoluteAmount = Math.abs(input.amount);
+      const description = input.description?.trim() || null;
+
+      /*
+       * Deductions are the hot path for Premium idea generation. Start with
+       * the conditional atomic decrement instead of reading the same user both
+       * before and after the write. On success, one post-update read gives us
+       * the authoritative balance and account status; the previous balance is
+       * derived exactly from the applied delta.
+       *
+       * If the conditional decrement fails, only the error path performs the
+       * extra lookup needed to distinguish missing/non-user accounts from an
+       * insufficient balance. Concurrency protection remains identical because
+       * the decrement condition is still enforced by the database.
+       */
+      if (input.amount < 0) {
+        const deductionResult = await tx.user.updateMany({
+          where: {
+            id: input.userId,
+            role: UserRole.USER,
+            creditBalance: { gte: absoluteAmount },
+          },
+          data: {
+            creditBalance: { decrement: absoluteAmount },
+          },
+        });
+
+        if (deductionResult.count !== 1) {
+          const failedUser = await tx.user.findUnique({
+            where: { id: input.userId },
+            select: { id: true, role: true },
+          });
+
+          if (!failedUser) {
+            throw new NotFoundException('User not found.');
+          }
+          if (failedUser.role !== UserRole.USER) {
+            throw new BadRequestException(
+              'Credits can only be changed for user accounts.',
+            );
+          }
+          throw new BadRequestException('Insufficient credit balance.');
+        }
+
+        const user = await tx.user.findUnique({
+          where: { id: input.userId },
+          select: {
+            id: true,
+            creditBalance: true,
+            accountStatus: true,
+          },
+        });
+
+        if (!user) {
+          throw new NotFoundException(
+            'User not found after credit balance update.',
+          );
+        }
+
+        const balanceAfter = user.creditBalance;
+        const previousBalance = balanceAfter + absoluteAmount;
+        const accountStatus = this.resolveAccountStatus({
+          previousStatus: user.accountStatus,
+          balanceAfter,
+          activatePremium: input.activatePremium === true,
+        });
+
+        if (user.accountStatus !== accountStatus) {
+          await tx.user.update({
+            where: { id: user.id },
+            data: { accountStatus },
+          });
+        }
+
+        const transaction = await tx.creditTransaction.create({
+          data: {
+            userId: user.id,
+            paymentId: input.paymentId ?? null,
+            ideaId: input.ideaId ?? null,
+            publicationAcceptanceId: input.publicationAcceptanceId ?? null,
+            type: input.type,
+            amount: input.amount,
+            balanceAfter,
+            description,
+          },
+        });
+
+        return {
+          previousBalance,
+          balanceAfter,
+          previousAccountStatus: user.accountStatus,
+          accountStatus,
+          transaction,
+        };
+      }
+
       const user = await tx.user.findUnique({
-        where: {
-          id: input.userId,
-        },
+        where: { id: input.userId },
         select: {
           id: true,
           role: true,
@@ -100,22 +194,11 @@ export class CreditBalanceService {
         );
       }
 
-      const absoluteAmount = Math.abs(input.amount);
-      const description = input.description?.trim() || null;
-
-      if (input.amount < 0) {
-        await this.deductCreditsAtomically(tx, user.id, absoluteAmount);
-      } else {
-        await this.addCreditsAtomically(tx, user.id, absoluteAmount);
-      }
+      await this.addCreditsAtomically(tx, user.id, absoluteAmount);
 
       const updatedUser = await tx.user.findUnique({
-        where: {
-          id: user.id,
-        },
-        select: {
-          creditBalance: true,
-        },
+        where: { id: user.id },
+        select: { creditBalance: true },
       });
 
       if (!updatedUser) {
@@ -126,7 +209,6 @@ export class CreditBalanceService {
 
       const balanceAfter = updatedUser.creditBalance;
       const previousBalance = balanceAfter - input.amount;
-
       const accountStatus = this.resolveAccountStatus({
         previousStatus: user.accountStatus,
         balanceAfter,
@@ -135,12 +217,9 @@ export class CreditBalanceService {
 
       if (user.accountStatus !== accountStatus) {
         await tx.user.update({
-          where: {
-            id: user.id,
-          },
+          where: { id: user.id },
           data: {
             accountStatus,
-
             ...(accountStatus === AccountStatus.PREMIUM &&
               input.activatePremium === true && {
                 premiumActivatedAt: new Date(),
