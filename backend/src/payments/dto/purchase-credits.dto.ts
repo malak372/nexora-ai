@@ -1,11 +1,8 @@
 import { Type } from 'class-transformer';
 
-import { IsInt, IsIn, IsString, IsUrl, Max, Min } from 'class-validator';
+import { IsInt, IsIn, IsString, IsUrl, Min } from 'class-validator';
 
-import {
-  MAX_CREDITS_PER_PURCHASE,
-  MIN_CREDITS_PER_PURCHASE,
-} from '../constants/payment.constants';
+import { MIN_CREDITS_PER_PURCHASE } from '../constants/payment.constants';
 
 /**
  * DTO used by an authenticated user to purchase
@@ -22,7 +19,6 @@ export class PurchaseCreditsDto {
   @Type(() => Number)
   @IsInt()
   @Min(MIN_CREDITS_PER_PURCHASE)
-  @Max(MAX_CREDITS_PER_PURCHASE)
   creditsQuantity!: number;
 
   /**

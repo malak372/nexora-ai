@@ -37,14 +37,6 @@ export const DEFAULT_PAYMENT_CURRENCY = 'USD';
 export const MIN_CREDITS_PER_PURCHASE = 1;
 
 /**
- * Maximum number of credits allowed in a single purchase request.
- *
- * This protects the payment endpoint from accidental,
- * malformed, or abusive requests.
- */
-export const MAX_CREDITS_PER_PURCHASE = 100;
-
-/**
  * Default page number used when retrieving payment history.
  */
 export const DEFAULT_PAYMENT_PAGE = 1;

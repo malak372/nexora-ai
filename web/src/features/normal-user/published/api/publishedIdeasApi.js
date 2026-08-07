@@ -50,16 +50,43 @@ function normalizePublishedResponse(envelope, params) {
     ? envelope
     : envelope.data ?? envelope.items ?? [];
 
+  const rawPagination = envelope.meta ?? envelope.pagination ?? {};
+
+  const total =
+    rawPagination.total ??
+    rawPagination.totalItems ??
+    rawPagination.count ??
+    envelope.total ??
+    envelope.totalItems ??
+    items.length;
+
   return {
     items,
-    pagination:
-      envelope.meta ??
-      envelope.pagination ?? {
-        page: params.page ?? 1,
-        limit: params.limit ?? 8,
-        total: items.length,
-        totalPages: 1,
-      },
+    pagination: {
+      ...rawPagination,
+
+      page:
+        rawPagination.page ??
+        params.page ??
+        1,
+
+      limit:
+        rawPagination.limit ??
+        params.limit ??
+        8,
+
+      total: Number(total) || 0,
+
+      totalPages:
+        rawPagination.totalPages ??
+        Math.max(
+          1,
+          Math.ceil(
+            (Number(total) || 0) /
+            (params.limit ?? 8),
+          ),
+        ),
+    },
   };
 }
 
@@ -72,7 +99,9 @@ function normalizeFeedbackResponse(envelope, params) {
 
   return {
     publication: envelope.publication ?? null,
+
     responses,
+
     pagination:
       envelope.meta ??
       envelope.pagination ?? {
@@ -100,6 +129,7 @@ export async function getMyPublishedIdeas(
   try {
     return await cachedRequest(
       key,
+
       async () => {
         const response = await normalUserApi.get(
           '/users/publications/mine',
@@ -113,11 +143,21 @@ export async function getMyPublishedIdeas(
           requestParams,
         );
       },
+
       {
         ttlMs: PUBLISHED_CACHE_TTL_MS,
-        force: Boolean(options.forceRefresh),
+
+        force: Boolean(
+          options.forceRefresh,
+        ),
+
         persist: true,
-        allowStaleOnError: true,
+
+        // Publication History uses forceRefresh
+        // so the counter is correct immediately
+        // when the page opens.
+        allowStaleOnError:
+          !options.forceRefresh,
       },
     );
   } catch (error) {
@@ -152,6 +192,7 @@ export async function getReceivedFeedback(
   try {
     return await cachedRequest(
       key,
+
       async () => {
         const response = await normalUserApi.get(
           `/users/publications/${publicationId}/received-feedback`,
@@ -165,10 +206,16 @@ export async function getReceivedFeedback(
           params,
         );
       },
+
       {
         ttlMs: FEEDBACK_CACHE_TTL_MS,
-        force: Boolean(options.forceRefresh),
+
+        force: Boolean(
+          options.forceRefresh,
+        ),
+
         persist: false,
+
         allowStaleOnError: true,
       },
     );
@@ -182,7 +229,9 @@ export async function getReceivedFeedback(
   }
 }
 
-export async function stopPublication(ideaId) {
+export async function stopPublication(
+  ideaId,
+) {
   if (!ideaId) {
     throw new Error(
       'The publication is missing its idea identifier.',
@@ -190,13 +239,20 @@ export async function stopPublication(ideaId) {
   }
 
   try {
-    const response = await normalUserApi.post(
-      `/users/ideas/${ideaId}/publication/archive`,
-    );
+    const response =
+      await normalUserApi.post(
+        `/users/ideas/${ideaId}/publication/archive`,
+      );
 
     invalidatePublishedIdeasCache();
-    invalidateRequestCache('dashboard-summary:');
-    invalidateRequestCache('idea-workspace:');
+
+    invalidateRequestCache(
+      'dashboard-summary:',
+    );
+
+    invalidateRequestCache(
+      'idea-workspace:',
+    );
 
     return unwrapEnvelope(response);
   } catch (error) {
@@ -209,7 +265,9 @@ export async function stopPublication(ideaId) {
   }
 }
 
-export async function repostPublication(ideaId) {
+export async function repostPublication(
+  ideaId,
+) {
   if (!ideaId) {
     throw new Error(
       'The publication is missing its idea identifier.',
@@ -217,14 +275,24 @@ export async function repostPublication(ideaId) {
   }
 
   try {
-    const response = await normalUserApi.post(
-      `/users/ideas/${ideaId}/publication/repost`,
-    );
+    const response =
+      await normalUserApi.post(
+        `/users/ideas/${ideaId}/publication/repost`,
+      );
 
     invalidatePublishedIdeasCache();
-    invalidateRequestCache('dashboard-summary:');
-    invalidateRequestCache('idea-workspace:');
-    invalidateRequestCache('discoveries:');
+
+    invalidateRequestCache(
+      'dashboard-summary:',
+    );
+
+    invalidateRequestCache(
+      'idea-workspace:',
+    );
+
+    invalidateRequestCache(
+      'discoveries:',
+    );
 
     return unwrapEnvelope(response);
   } catch (error) {
@@ -248,17 +316,28 @@ export async function updatePublicationAcceptanceSetting(
   }
 
   try {
-    const response = await normalUserApi.patch(
-      `/users/ideas/${ideaId}/publication/acceptance-setting`,
-      {
-        allowAdoption: Boolean(allowAdoption),
-      },
-    );
+    const response =
+      await normalUserApi.patch(
+        `/users/ideas/${ideaId}/publication/acceptance-setting`,
+        {
+          allowAdoption:
+            Boolean(allowAdoption),
+        },
+      );
 
     invalidatePublishedIdeasCache();
-    invalidateRequestCache('publication-discovery:');
-    invalidateRequestCache('discoveries:');
-    invalidateRequestCache('idea-workspace:');
+
+    invalidateRequestCache(
+      'publication-discovery:',
+    );
+
+    invalidateRequestCache(
+      'discoveries:',
+    );
+
+    invalidateRequestCache(
+      'idea-workspace:',
+    );
 
     return unwrapEnvelope(response);
   } catch (error) {
@@ -272,8 +351,9 @@ export async function updatePublicationAcceptanceSetting(
 }
 
 /**
- * Clears published lists after publishing, archiving,
- * reposting, or changing acceptance settings.
+ * Clears published lists after publishing,
+ * archiving, reposting, or changing
+ * acceptance settings.
  */
 export function invalidatePublishedIdeasCache() {
   invalidateRequestCache(
