@@ -321,7 +321,7 @@ export default function IdeaWorkspacePage() {
             >
               <LockKeyhole size={17} />
               <span>
-                <strong>Direct unlock</strong>
+                <strong>{isPremium ? 'Unlock idea' : 'Direct unlock'}</strong>
                 <small>Open advanced outputs</small>
               </span>
               <ChevronRight size={17} />
@@ -359,7 +359,14 @@ export default function IdeaWorkspacePage() {
 
           <button
             type="button"
-            onClick={() => navigate(`/normal/ideas/${ideaId}/publish`)}
+            onClick={() =>
+              navigate(`/normal/ideas/${ideaId}/publish`, {
+                state: {
+                  returnTo: location.state?.returnTo || '/normal/ideas',
+                  returnLabel: location.state?.returnLabel || 'My ideas',
+                },
+              })
+            }
           >
             <Globe2 size={17} />
             <span>

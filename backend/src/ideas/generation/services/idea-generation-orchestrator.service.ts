@@ -20,6 +20,7 @@ import {
 } from '../types/idea-generation-context.type';
 
 import type { IdeaOwner } from '../../shared/types/idea-owner.type';
+import type { IdeaGenerationPolicy } from '../types/idea-generation-policy.type';
 
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
@@ -191,7 +192,7 @@ export class IdeaGenerationOrchestratorService {
 
     @Inject(IDEA_GENERATION_STAGES)
     private readonly stages: readonly IdeaGenerationStage[],
-  ) {}
+  ) { }
 
   /**
    * Restarts an interrupted run from its latest durable context checkpoint.
@@ -370,6 +371,10 @@ export class IdeaGenerationOrchestratorService {
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
     const userId = this.normalizeRequiredValue(input.userId, 'User ID');
+    const policy = await this.resolveUserQueuePolicy(
+      userId,
+      input.dto.generationType,
+    );
 
     const owner: IdeaOwner = {
       type: IDEA_OWNER_TYPES.USER,
@@ -384,7 +389,7 @@ export class IdeaGenerationOrchestratorService {
     return this.executeOwnedGeneration({
       owner,
 
-      generationType: input.dto.generationType,
+      generationType: policy.generationType,
 
       domainId: resolvedDomain.domainId,
 
@@ -487,7 +492,10 @@ export class IdeaGenerationOrchestratorService {
      * The pipeline entitlement stage still performs the same validation again
      * to protect against balance changes between queue acceptance and execution.
      */
-    await this.assertUserCanQueueGeneration(userId, input.dto.generationType);
+    const policy = await this.resolveUserQueuePolicy(
+      userId,
+      input.dto.generationType,
+    );
 
     const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
     const domainProfile = await this.buildCrossDomainProfile(
@@ -497,7 +505,7 @@ export class IdeaGenerationOrchestratorService {
 
     return this.queueOwnedGeneration({
       owner: { type: IDEA_OWNER_TYPES.USER, userId },
-      generationType: input.dto.generationType,
+      generationType: policy.generationType,
       domainId: resolvedDomain.domainId,
       selectedDomains: domainProfile.selectedDomains,
       keywords: domainProfile.keywords,
@@ -521,13 +529,13 @@ export class IdeaGenerationOrchestratorService {
    * entitlement stage remains authoritative and validates the state again when
    * the pipeline starts.
    */
-  private async assertUserCanQueueGeneration(
+  private async resolveUserQueuePolicy(
     userId: string,
     requestedGenerationType: Exclude<
       IdeaGenerationType,
       typeof IdeaGenerationType.GUEST_FREE
     >,
-  ): Promise<void> {
+  ): Promise<IdeaGenerationPolicy> {
     const user = await this.prisma.user.findFirst({
       where: {
         id: userId,
@@ -553,7 +561,7 @@ export class IdeaGenerationOrchestratorService {
       });
     }
 
-    this.policyService.evaluate({
+    return this.policyService.evaluate({
       ownerType: IDEA_OWNER_TYPES.USER,
       requestedGenerationType,
       user,

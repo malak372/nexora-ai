@@ -10,6 +10,7 @@ import {
   Globe2,
   LoaderCircle,
   MessageSquareText,
+  RefreshCw,
   Save,
   ShieldCheck,
   Sparkles,
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import {
   generatePublicationDescription,
@@ -63,11 +64,25 @@ export default function PublishIdeaPage() {
   const shouldReduceMotion = useReducedMotion();
   const { ideaId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const returnTo =
+    location.state?.returnTo === '/normal/published'
+      ? '/normal/published'
+      : '/normal/ideas';
+  const returnLabel =
+    returnTo === '/normal/published' ? 'Published' : 'My ideas';
+
+  function handleReturn() {
+    navigate(returnTo);
+  }
   const [idea, setIdea] = useState(null);
   const [form, setForm] = useState(INITIAL_FORM);
   const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  const isAlreadyPublished = idea?.publication?.status === 'PUBLISHED';
 
   useEffect(() => {
     let active = true;
@@ -193,8 +208,15 @@ export default function PublishIdeaPage() {
     try {
       await savePublicationDraft(ideaId, publicationPayload);
       await publishIdea(ideaId);
-      setNotice('Your idea is now published.');
-      window.setTimeout(() => navigate('/normal/published'), 650);
+      setNotice(
+        isAlreadyPublished
+          ? 'Your publication updates are now live.'
+          : 'Your idea is now published.',
+      );
+      window.setTimeout(
+        () => navigate(isAlreadyPublished ? returnTo : '/normal/published'),
+        650,
+      );
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -212,7 +234,7 @@ export default function PublishIdeaPage() {
         <ShieldCheck size={28} />
         <h1>Publication studio could not be opened</h1>
         <p>{error}</p>
-        <button type="button" onClick={() => navigate(`/normal/ideas/${ideaId}`)}>Back to idea workspace</button>
+        <button type="button" onClick={handleReturn}>Back to {returnLabel}</button>
       </section>
     );
   }
@@ -245,8 +267,8 @@ export default function PublishIdeaPage() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
     >
-      <button type="button" className="publish-back" onClick={() => navigate(`/normal/ideas/${ideaId}`)}>
-        <ArrowLeft size={17} /> Idea workspace
+      <button type="button" className="publish-back" onClick={handleReturn}>
+        <ArrowLeft size={17} /> {returnLabel}
       </button>
 
       <motion.section
@@ -398,8 +420,14 @@ export default function PublishIdeaPage() {
               Save draft
             </button>
             <button type="button" className="publish-submit" onClick={handlePublish} disabled={Boolean(busyAction) || !canSave}>
-              {busyAction === 'publish' ? <LoaderCircle className="pub-spin" /> : <Globe2 size={17} />}
-              Publish idea
+              {busyAction === 'publish' ? (
+                <LoaderCircle className="pub-spin" />
+              ) : isAlreadyPublished ? (
+                <RefreshCw size={17} />
+              ) : (
+                <Globe2 size={17} />
+              )}
+              {isAlreadyPublished ? 'Republish idea' : 'Publish idea'}
             </button>
           </footer>
         </motion.form>

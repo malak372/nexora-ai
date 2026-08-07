@@ -704,6 +704,12 @@ export default function PublishedIdeasPage() {
                   publication.ideaId &&
                   navigate(
                     `/normal/ideas/${publication.ideaId}/publish`,
+                    {
+                      state: {
+                        returnTo: '/normal/published',
+                        returnLabel: 'Published',
+                      },
+                    },
                   )
                 }
                 onInsights={() =>

@@ -652,7 +652,7 @@ export default function PublicationDetailPage() {
                   <CheckCircle2 size={28} />
                 ) : (
                   <VoxidenceMark
-                    size={34}
+                    size={58}
                     className="publication-advanced-card__brand-mark"
                     title="Voxidence advanced evidence mark"
                   />
