@@ -87,13 +87,15 @@ const PAYMENT_METHODS = [
 export default function UpgradePage() {
   const shouldReduceMotion = useReducedMotion();
   const storedUser = getStoredUser() || {};
-  const isAlreadyPremium = storedUser.accountStatus === 'PREMIUM';
 
   const [credits, setCredits] = useState(15);
   const [method, setMethod] = useState('card');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pricing, setPricing] = useState(null);
+
+  const isAlreadyPremium =
+    (pricing?.accountStatus || storedUser.accountStatus) === 'PREMIUM';
 
   useEffect(() => {
     let active = true;
@@ -227,8 +229,9 @@ export default function UpgradePage() {
           </h1>
 
           <p>
-            Purchase credits for premium generation and advanced
-            idea outputs without changing your existing access.
+            {isAlreadyPremium
+              ? 'Add more credits to keep using your Premium generation and advanced idea capabilities.'
+              : 'Activate your Premium account and add credits for complete idea generation and advanced outputs.'}
           </p>
 
           <div className="upgrade-benefits">
@@ -313,14 +316,15 @@ export default function UpgradePage() {
         }}
       >
         <span className="upgrade-summary-kicker">
-          Additional premium purchase
+          {isAlreadyPremium ? 'Additional premium purchase' : 'Premium activation'}
         </span>
 
-        <h2>Choose your credit amount</h2>
+        <h2>{isAlreadyPremium ? 'Choose your credit amount' : 'Activate Premium'}</h2>
 
         <p className="upgrade-summary-copy">
-          Select a shortcut or enter the exact quantity
-          you want to add.
+          {isAlreadyPremium
+            ? 'Select a shortcut or enter the exact quantity you want to add.'
+            : 'Choose your starting credit balance. The backend will activate Premium automatically after the payment is verified.'}
         </p>
 
         <div className="upgrade-quantity">
@@ -542,7 +546,9 @@ export default function UpgradePage() {
             </strong>
 
             <small>
-              Credits are added only after a verified provider webhook.
+              {isAlreadyPremium
+                ? 'Credits are added only after a verified provider webhook.'
+                : 'Premium is activated and credits are added only after a verified provider webhook.'}
             </small>
           </span>
         </div>
