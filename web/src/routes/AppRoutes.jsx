@@ -8,7 +8,7 @@
  * @author Eman
  */
 import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 import RouteLoadingFallback from '../components/RouteLoadingFallback';
 import AuthLayout from '../layouts/AuthLayout';
@@ -48,6 +48,26 @@ export default function AppRoutes() {
                 </Route>
 
                 {normalUserRoutes}
+
+                {/*
+                 * Premium route bridge.
+                 *
+                 * This codebase currently renders Premium capabilities from the
+                 * accountStatus-aware normal workspace instead of shipping a
+                 * separate premium-user feature tree. PaymentResultPage already
+                 * sends a newly activated account to /premium/dashboard, so keep
+                 * that destination valid and hand it to the Premium-aware
+                 * workspace instead of falling through to the 404 page.
+                 */}
+                <Route
+                    path="/premium/dashboard"
+                    element={<Navigate to="/normal/dashboard" replace />}
+                />
+                <Route
+                    path="/premium/credits"
+                    element={<Navigate to="/normal/credits" replace />}
+                />
+
                 {adminRoutes}
 
                 <Route path="*" element={<NotFoundPage />} />

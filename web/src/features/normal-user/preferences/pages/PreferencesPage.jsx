@@ -164,18 +164,24 @@ export default function PreferencesPage() {
   const motionProps = shouldReduceMotion
     ? {}
     : {
-        initial: 'hidden',
-        whileInView: 'visible',
-        viewport: { once: true, amount: 0.18 },
-        variants: revealVariants,
-      };
+      initial: 'hidden',
+      whileInView: 'visible',
+      viewport: { once: true, amount: 0.18 },
+      variants: revealVariants,
+    };
 
   return (
     <main className="preferences-page reveal-page">
       <section className="preferences-hero">
-        <div className="preferences-hero__orb preferences-hero__orb--one" />
-        <div className="preferences-hero__orb preferences-hero__orb--two" />
-        <div className="preferences-hero__grid" aria-hidden="true" />
+        <div className="preferences-hero__ambient preferences-hero__ambient--pink" aria-hidden="true" />
+        <div className="preferences-hero__ambient preferences-hero__ambient--mint" aria-hidden="true" />
+        <div className="preferences-hero__flow preferences-hero__flow--top" aria-hidden="true" />
+        <div className="preferences-hero__flow preferences-hero__flow--bottom" aria-hidden="true" />
+        <div className="preferences-hero__sparkles" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
 
         <div className="preferences-hero__content">
           <span className="preferences-hero__eyebrow">
@@ -369,9 +375,8 @@ export default function PreferencesPage() {
                         <motion.button
                           key={option.id}
                           type="button"
-                          className={`preference-option ${
-                            isSelected ? 'is-selected' : ''
-                          }`}
+                          className={`preference-option ${isSelected ? 'is-selected' : ''
+                            }`}
                           onClick={() => togglePreference(option.id)}
                           whileHover={
                             shouldReduceMotion

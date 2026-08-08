@@ -140,6 +140,10 @@ export default function PaymentResultPage() {
           creditsBalance: payment.creditsBalance,
         });
 
+        if (payment.status === 'SUCCEEDED') {
+          window.dispatchEvent(new CustomEvent('nexora:credits-updated'));
+        }
+
         if (payment.status === 'FAILED') {
           setState({
             loading: false,

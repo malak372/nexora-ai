@@ -11,6 +11,7 @@ import {
   LoaderCircle, ReceiptText, ShieldCheck, Sparkles, X,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { downloadMyInvoice, getMyInvoice, getMyInvoices } from '../api/invoicesApi';
 import '../styles/billing-history.css';
@@ -156,31 +157,39 @@ export default function BillingHistoryPage() {
         ) : null}
       </section>
 
-      {detailLoading ? <div className="billing-detail-loader"><LoaderCircle className="billing-spin" /></div> : null}
+      {detailLoading && typeof document !== 'undefined'
+        ? createPortal(
+          <div className="billing-detail-loader"><LoaderCircle className="billing-spin" /></div>,
+          document.body,
+        )
+        : null}
 
-      {selected ? (
-        <div className="invoice-modal" role="dialog" aria-modal="true" aria-label="Invoice details">
-          <button type="button" className="invoice-modal__backdrop" aria-label="Close invoice" onClick={() => setSelected(null)} />
-          <article className="invoice-sheet" onClick={(event) => event.stopPropagation()}>
-            <header>
-              <div><span>VOXIDENCE</span><h2>Invoice</h2><p>{selected.invoiceNumber}</p></div>
-              <div className="invoice-sheet__status"><CheckCircle2 size={16} /> {selected.status}</div>
-              <button type="button" className="invoice-sheet__close" onClick={() => setSelected(null)}><X size={19} /></button>
-            </header>
-            <section className="invoice-sheet__meta">
-              <div><small>Billed to</small><strong>{selected.customerName}</strong><span>{selected.customerEmail}</span></div>
-              <div><small>Issued</small><strong>{formatDate(selected.issuedAt)}</strong><span>{selected.providerKey.toUpperCase()} · {selected.paymentMethodKey}</span></div>
-              <div><small>Purpose</small><strong>{PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose}</strong></div>
-              <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId}</strong></div>
-            </section>
-            <section className="invoice-sheet__total"><span>Total paid</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
-            <footer>
-              <div><ShieldCheck size={17} /><span><strong>Verified provider confirmation</strong><small>Voxidence stores no card or wallet credentials.</small></span></div>
-              <button type="button" disabled={downloadLoading} onClick={handleDownload}>{downloadLoading ? <LoaderCircle size={17} className="billing-spin" /> : <Download size={17} />} {downloadLoading ? 'Preparing PDF...' : 'Download PDF'}</button>
-            </footer>
-          </article>
-        </div>
-      ) : null}
+      {selected && typeof document !== 'undefined'
+        ? createPortal(
+          <div className="invoice-modal" role="dialog" aria-modal="true" aria-label="Invoice details">
+            <button type="button" className="invoice-modal__backdrop" aria-label="Close invoice" onClick={() => setSelected(null)} />
+            <article className="invoice-sheet" onClick={(event) => event.stopPropagation()}>
+              <header>
+                <div><span>VOXIDENCE</span><h2>Invoice</h2><p>{selected.invoiceNumber}</p></div>
+                <div className="invoice-sheet__status"><CheckCircle2 size={16} /> {selected.status}</div>
+                <button type="button" className="invoice-sheet__close" onClick={() => setSelected(null)}><X size={19} /></button>
+              </header>
+              <section className="invoice-sheet__meta">
+                <div><small>Billed to</small><strong>{selected.customerName}</strong><span>{selected.customerEmail}</span></div>
+                <div><small>Issued</small><strong>{formatDate(selected.issuedAt)}</strong><span>{selected.providerKey.toUpperCase()} · {selected.paymentMethodKey}</span></div>
+                <div><small>Purpose</small><strong>{PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose}</strong></div>
+                <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId}</strong></div>
+              </section>
+              <section className="invoice-sheet__total"><span>Total paid</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
+              <footer>
+                <div><ShieldCheck size={17} /><span><strong>Verified provider confirmation</strong><small>Voxidence stores no card or wallet credentials.</small></span></div>
+                <button type="button" disabled={downloadLoading} onClick={handleDownload}>{downloadLoading ? <LoaderCircle size={17} className="billing-spin" /> : <Download size={17} />} {downloadLoading ? 'Preparing PDF...' : 'Download PDF'}</button>
+              </footer>
+            </article>
+          </div>,
+          document.body,
+        )
+        : null}
     </main>
   );
 }

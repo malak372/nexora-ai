@@ -452,11 +452,11 @@ export default function CompliancePage() {
   const revealProps = shouldReduceMotion
     ? {}
     : {
-        initial: 'hidden',
-        whileInView: 'visible',
-        viewport: { once: true, amount: 0.14 },
-        variants: revealVariants,
-      };
+      initial: 'hidden',
+      whileInView: 'visible',
+      viewport: { once: true, amount: 0.14 },
+      variants: revealVariants,
+    };
 
 
   const loadPageData = useCallback(async ({ preserveSelection = true } = {}) => {
@@ -729,7 +729,14 @@ export default function CompliancePage() {
                     : 'Your first case will appear here with its live status.'}
                 </span>
                 {!items.length ? (
-                  <button type="button" onClick={() => setModalOpen(true)}>Create a case</button>
+                  <button
+                    type="button"
+                    className="compliance-list-state__create"
+                    onClick={() => setModalOpen(true)}
+                  >
+                    <Plus size={17} strokeWidth={2.35} />
+                    <span>Create a case</span>
+                  </button>
                 ) : null}
               </div>
             ) : (
