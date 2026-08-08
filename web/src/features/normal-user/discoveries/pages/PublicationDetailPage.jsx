@@ -44,7 +44,7 @@ import {
   setVote,
   reportPublication,
 } from '../api/discoveriesApi';
-import { getStoredUser } from '../../../auth/shared/auth.storage';
+import { getStoredUser, updateStoredUser } from '../../../auth/shared/auth.storage';
 import { getPaymentPricing } from '../../payments/api/paymentFlowApi';
 import { storePaymentReturnReference } from '../../payments/utils/paymentReturn.storage';
 import '../styles/publication-detail.css';
@@ -313,7 +313,23 @@ export default function PublicationDetailPage() {
     setNotice('');
 
     try {
-      await unlockPublicationAdvancedWithCredits(publicationId);
+      const unlockResult = await unlockPublicationAdvancedWithCredits(publicationId);
+
+      // The unlock response contains the authoritative balance produced by the
+      // same backend transaction that deducted the credits. Updating the stored
+      // user immediately also emits `nexora:user-updated`, so headers/sidebars
+      // using useAccountAccess update without requiring a page reload.
+      const nextCreditBalance = Number(unlockResult?.creditBalance);
+
+      if (Number.isFinite(nextCreditBalance)) {
+        updateStoredUser({
+          creditBalance: nextCreditBalance,
+          ...(unlockResult?.accountStatus
+            ? { accountStatus: unlockResult.accountStatus }
+            : {}),
+        });
+      }
+
       setNotice('Advanced access was unlocked with your Premium credits.');
       await load();
     } catch (error) {

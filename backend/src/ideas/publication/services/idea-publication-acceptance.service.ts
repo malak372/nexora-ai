@@ -74,7 +74,7 @@ export class IdeaPublicationAcceptanceService {
     private readonly creditBalanceService: CreditBalanceService,
     private readonly alerts: SystemAlertsService,
     private readonly audit: AuditService,
-  ) {}
+  ) { }
 
   /**
    * Accepts the basic details of a publication for a Premium user.
@@ -235,6 +235,7 @@ export class IdeaPublicationAcceptanceService {
         },
         select: {
           accountStatus: true,
+          creditBalance: true,
         },
       }),
       this.prisma.ideaPublicationAcceptance.findUnique({
@@ -279,7 +280,11 @@ export class IdeaPublicationAcceptanceService {
     }
 
     if (acceptance.advancedUnlockedAt) {
-      return acceptance;
+      return {
+        acceptance,
+        creditBalance: user.creditBalance,
+        accountStatus: user.accountStatus,
+      };
     }
 
     const availableAdvancedOutputs =
@@ -318,15 +323,28 @@ export class IdeaPublicationAcceptanceService {
       }
 
       if (freshAcceptance.advancedUnlockedAt) {
-        return freshAcceptance;
+        const currentUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: {
+            creditBalance: true,
+            accountStatus: true,
+          },
+        });
+
+        return {
+          acceptance: freshAcceptance,
+          creditBalance: currentUser?.creditBalance ?? user.creditBalance,
+          accountStatus: currentUser?.accountStatus ?? user.accountStatus,
+        };
       }
 
-      await this.creditBalanceService.consumeForPublicationAdvancedUnlock(
-        userId,
-        freshAcceptance.id,
-        settings.publicationAdvancedCreditCost,
-        tx,
-      );
+      const creditResult =
+        await this.creditBalanceService.consumeForPublicationAdvancedUnlock(
+          userId,
+          freshAcceptance.id,
+          settings.publicationAdvancedCreditCost,
+          tx,
+        );
 
       const updatedAcceptance = await tx.ideaPublicationAcceptance.update({
         where: {
@@ -348,7 +366,11 @@ export class IdeaPublicationAcceptanceService {
         tx,
       );
 
-      return updatedAcceptance;
+      return {
+        acceptance: updatedAcceptance,
+        creditBalance: creditResult.balanceAfter,
+        accountStatus: creditResult.accountStatus,
+      };
     });
   }
 

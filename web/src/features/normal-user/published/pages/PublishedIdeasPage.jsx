@@ -460,9 +460,8 @@ export default function PublishedIdeasPage() {
         <div className="published-page__grid" />
 
         <div>
-          <span>
+          <span className="published-page__eyebrow">
             <Send size={15} />
-
             Creator publishing desk
           </span>
 

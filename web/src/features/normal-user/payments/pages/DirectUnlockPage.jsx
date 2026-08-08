@@ -87,7 +87,7 @@ export default function DirectUnlockPage() {
       if (isPremium) {
         await unlockIdeaWithCredit(ideaId);
         await refresh();
-        window.dispatchEvent(new Event('credits:updated'));
+        window.dispatchEvent(new Event('nexora:credits-updated'));
         navigate(`/normal/ideas/${ideaId}`, {
           replace: true,
           state: { unlockedWithCredit: true },
