@@ -165,20 +165,22 @@
     width: 52px;
     height: 52px;
     padding: 0;
-    border: 1px solid rgba(226, 211, 214, 0.9);
+    border: 1px solid rgba(98, 186, 181, 0.34);
     border-radius: 50%;
-    color: #6d847d;
-    background: rgba(255, 252, 250, 0.88);
-    box-shadow: 0 8px 20px rgba(93, 106, 102, 0.08);
+    color: #4f8f8b;
+    background: linear-gradient(145deg, rgba(248, 253, 252, 0.96), rgba(231, 246, 243, 0.92));
+    box-shadow:
+        0 8px 20px rgba(79, 143, 139, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
     cursor: pointer;
     transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
 }
 
 .premium-welcome__close:hover {
     transform: translateY(-1px) scale(1.04);
-    background: #fff;
-    border-color: rgba(205, 225, 216, 1);
-    color: #48635b;
+    background: linear-gradient(145deg, #f4fbf9, #dff3ef);
+    border-color: rgba(79, 143, 139, 0.58);
+    color: #367b77;
 }
 
 .premium-welcome__eyebrow {
