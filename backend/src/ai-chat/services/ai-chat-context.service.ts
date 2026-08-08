@@ -36,6 +36,23 @@ import type { AiChatContext } from '../types/chat-context.type';
 const APPROXIMATE_CHARACTERS_PER_TOKEN = 4;
 
 /**
+ * Detects the dominant writing system of the latest user turn.
+ *
+ * This intentionally uses a small deterministic heuristic rather than another
+ * model call. It is only used to pin response language, not to classify intent.
+ */
+function detectLatestMessageLanguage(message: string): 'Arabic' | 'English' | null {
+  const arabicCharacters = (message.match(/[\u0600-\u06FF]/g) ?? []).length;
+  const latinCharacters = (message.match(/[A-Za-z]/g) ?? []).length;
+
+  if (arabicCharacters === 0 && latinCharacters === 0) {
+    return null;
+  }
+
+  return arabicCharacters > latinCharacters ? 'Arabic' : 'English';
+}
+
+/**
  * Stable source template used to identify chat-prompt versions.
  */
 const AI_CHAT_PROMPT_TEMPLATE = [
@@ -90,8 +107,6 @@ export class AiChatContextService {
         userId,
         deletedAt: null,
         idea: {
-          userId,
-          isUnlocked: true,
           deletedAt: null,
         },
       },
@@ -111,6 +126,23 @@ export class AiChatContextService {
             domain: {
               select: {
                 name: true,
+              },
+            },
+            businessModels: {
+              orderBy: [
+                { isCurrent: 'desc' },
+                { version: 'desc' },
+              ],
+              take: 1,
+              select: {
+                content: true,
+                version: true,
+                businessModelTemplate: {
+                  select: {
+                    name: true,
+                    key: true,
+                  },
+                },
               },
             },
             generatedOutputs: {
@@ -200,6 +232,17 @@ export class AiChatContextService {
       AI_CHAT_MAX_HISTORY_CONTEXT_CHARACTERS,
     );
 
+    const detectedLanguage = detectLatestMessageLanguage(
+      latestUserMessage,
+    );
+
+    const turnLanguageInstruction = detectedLanguage
+      ? `The latest user message is primarily ${detectedLanguage}. You MUST answer this turn entirely in ${detectedLanguage}, unless the user explicitly asks for a different language. Do not choose the reply language from older conversation history.`
+      : 'Match the language of the latest user message for this turn.';
+
+    const systemInstruction =
+      `${AI_CHAT_SYSTEM_INSTRUCTION} ${turnLanguageInstruction}`;
+
     const userPrompt = [
       '<idea_context>',
       ideaContext,
@@ -215,7 +258,7 @@ export class AiChatContextService {
     ].join('\n');
 
     const estimatedInputTokens = Math.ceil(
-      `${AI_CHAT_SYSTEM_INSTRUCTION}\n${userPrompt}`.length /
+      `${systemInstruction}\n${userPrompt}`.length /
       APPROXIMATE_CHARACTERS_PER_TOKEN,
     );
 
@@ -223,7 +266,7 @@ export class AiChatContextService {
       userId,
       ideaId: session.ideaId,
       promptType: PromptType.CHAT_RESPONSE,
-      promptText: `${AI_CHAT_SYSTEM_INSTRUCTION}\n\n${userPrompt}`,
+      promptText: `${systemInstruction}\n\n${userPrompt}`,
       templateHash: createHash('sha256')
         .update(AI_CHAT_PROMPT_TEMPLATE)
         .digest('hex'),
@@ -234,7 +277,7 @@ export class AiChatContextService {
       userId,
       sessionId,
       ideaId: session.ideaId,
-      systemInstruction: AI_CHAT_SYSTEM_INSTRUCTION,
+      systemInstruction,
       userPrompt,
       estimatedInputTokens,
     };
@@ -255,6 +298,14 @@ export class AiChatContextService {
     domain: {
       name: string;
     };
+    businessModels: Array<{
+      content: Prisma.JsonValue;
+      version: number;
+      businessModelTemplate: {
+        name: string;
+        key: string;
+      };
+    }>;
     generatedOutputs: Array<{
       outputKey: string;
       title: string;
@@ -288,6 +339,19 @@ export class AiChatContextService {
     this.pushTextSection(sections, 'Problem statement', idea.problemStatement);
     this.pushJsonSection(sections, 'Objectives', idea.objectives);
     this.pushJsonSection(sections, 'Target users', idea.targetUsers);
+
+    if (idea.businessModels.length > 0) {
+      const currentBusinessModel = idea.businessModels[0];
+
+      sections.push(
+        `Business model (${currentBusinessModel.businessModelTemplate.name}, version ${currentBusinessModel.version}):`,
+      );
+      this.pushJsonSection(
+        sections,
+        'Business model content',
+        currentBusinessModel.content,
+      );
+    }
 
     if (idea.generatedOutputs.length > 0) {
       sections.push('Generated project outputs:');

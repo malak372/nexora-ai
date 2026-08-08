@@ -284,6 +284,7 @@ export class IdeaPublicationAcceptanceService {
         acceptance,
         creditBalance: user.creditBalance,
         accountStatus: user.accountStatus,
+        creditsSpent: 0,
       };
     }
 
@@ -335,6 +336,7 @@ export class IdeaPublicationAcceptanceService {
           acceptance: freshAcceptance,
           creditBalance: currentUser?.creditBalance ?? user.creditBalance,
           accountStatus: currentUser?.accountStatus ?? user.accountStatus,
+          creditsSpent: 0,
         };
       }
 
@@ -370,6 +372,7 @@ export class IdeaPublicationAcceptanceService {
         acceptance: updatedAcceptance,
         creditBalance: creditResult.balanceAfter,
         accountStatus: creditResult.accountStatus,
+        creditsSpent: settings.publicationAdvancedCreditCost,
       };
     });
   }

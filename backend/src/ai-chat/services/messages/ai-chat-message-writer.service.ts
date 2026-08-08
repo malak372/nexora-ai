@@ -192,6 +192,19 @@ export class AiChatMessageWriterService {
           userMessage,
           aiMessage,
         };
+      }, {
+        /*
+         * Prisma interactive transactions default to 5 seconds. This chat turn
+         * performs an advisory lock, cleanup/idempotency checks, two inserts,
+         * and a session activity update against a remote PostgreSQL database.
+         * A brief network spike can therefore exceed 5s even though no AI call
+         * occurs inside the transaction.
+         *
+         * 15s is bounded but prevents valid turns from being rolled back merely
+         * because the final DB query lands just after the default deadline.
+         */
+        maxWait: 5_000,
+        timeout: 15_000,
       });
     } catch (error: unknown) {
       if (

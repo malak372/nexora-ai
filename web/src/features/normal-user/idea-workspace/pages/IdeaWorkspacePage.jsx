@@ -346,7 +346,16 @@ export default function IdeaWorkspacePage() {
             <button
               className="workspace-premium-chat"
               type="button"
-              onClick={() => navigate(`/normal/ideas/${ideaId}/chat`)}
+              onClick={() =>
+                navigate(`/normal/ideas/${ideaId}/chat`, {
+                  state: {
+                    chatOrigin: 'owned-idea',
+                    returnTo: `/normal/ideas/${ideaId}`,
+                    returnLabel: 'Idea workspace',
+                    ideaTitle: idea?.title,
+                  },
+                })
+              }
             >
               <Bot size={17} />
               <span>

@@ -18,12 +18,14 @@
 
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
   Eye,
   LoaderCircle,
   Printer,
   RefreshCw,
   Sparkles,
+  WandSparkles,
   X,
 } from 'lucide-react';
 import {
@@ -32,13 +34,16 @@ import {
   useReducedMotion,
 } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import {
   generateBusinessModel,
   getBusinessModelTemplates,
   getCurrentBusinessModel,
 } from '../api/businessModelsApi';
+import { getIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import { getDiscoveryById } from '../../discoveries/api/discoveriesApi';
 import '../styles/business-model.css';
 
 const TEMPLATE_LAYOUTS = {
@@ -253,14 +258,13 @@ function escapeHtml(value) {
 }
 
 function resolveTemplateKey(model, templates, selected) {
-  const currentKey = model?.businessModelTemplate?.key;
-
-  if (currentKey) {
-    return currentKey;
-  }
+  const selectedKey = templates.find(
+    (template) => template.id === selected,
+  )?.key;
 
   return (
-    templates.find((template) => template.id === selected)?.key ||
+    selectedKey ||
+    model?.businessModelTemplate?.key ||
     'dynamic'
   );
 }
@@ -303,7 +307,7 @@ function buildSections(content, templateKey) {
   }));
 }
 
-function buildPrintableHtml(model, sections, templateKey) {
+function buildPrintableHtml(model, sections, templateKey, ideaTitle) {
   const cards = sections
     .map((section) => {
       const items = normalizeItems(section.value);
@@ -331,7 +335,7 @@ function buildPrintableHtml(model, sections, templateKey) {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Voxidence Business Model</title>
+<title>${escapeHtml(ideaTitle || 'Untitled idea')} · Voxidence Business Model</title>
 <style>
 @page{size:A4 landscape;margin:9mm}
 *{box-sizing:border-box}
@@ -340,6 +344,8 @@ header{display:flex;justify-content:space-between;align-items:flex-end;padding:0
 header span{color:#2f7774;font-size:9pt;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
 header h1{margin:2mm 0 0;font-size:22pt;letter-spacing:-.04em}
 header small{color:#78827e}
+.idea-title{margin:2mm 0 0;max-width:230mm;color:#60706a;font-size:9.5pt;font-weight:600;line-height:1.35}
+.idea-title strong{color:#36413d;font-weight:800}
 .grid{display:grid;gap:3.4mm;padding-top:5mm}
 .grid.is-bmc{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"partners activities value relationships segments" "partners resources value channels segments" "costs costs costs revenue revenue"}
 .grid.is-lean{grid-template-columns:1.05fr 1fr 1.24fr 1fr 1.05fr;grid-template-areas:"problem solution value advantage segments" "problem metrics value channels segments" "costs costs costs revenue revenue"}
@@ -359,9 +365,15 @@ footer{margin-top:5mm;padding-top:3mm;border-top:1px solid #dce9e5;color:#87918d
 </head>
 <body>
 <header>
-  <div><span>Voxidence · Business Model Studio</span><h1>${escapeHtml(
-    TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
-  )}</h1></div>
+  <div>
+    <span>Voxidence · Business Model Studio</span>
+    <h1>${escapeHtml(
+      TEMPLATE_LAYOUTS[templateKey]?.label || 'Business Model',
+    )}</h1>
+    <p class="idea-title"><strong>Idea:</strong> ${escapeHtml(
+      ideaTitle || 'Untitled idea',
+    )}</p>
+  </div>
   <small>Version ${escapeHtml(model?.version || 1)}</small>
 </header>
 <main class="grid ${escapeHtml(
@@ -375,25 +387,64 @@ footer{margin-top:5mm;padding-top:3mm;border-top:1px solid #dce9e5;color:#87918d
 export default function BusinessModelPage() {
   const { ideaId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const shouldReduceMotion = useReducedMotion();
+
+  const isAcceptedBusinessModel =
+    location.state?.businessModelOrigin === 'accepted-publication';
+  const acceptedPublicationId = location.state?.publicationId || '';
+  const returnTo =
+    location.state?.returnTo ||
+    (isAcceptedBusinessModel && acceptedPublicationId
+      ? `/normal/accepted/${acceptedPublicationId}/workspace`
+      : `/normal/ideas/${ideaId}`);
+  const returnLabel =
+    location.state?.returnLabel ||
+    (isAcceptedBusinessModel ? 'Accepted idea' : 'Idea workspace');
 
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState('');
   const [model, setModel] = useState(null);
+  const [idea, setIdea] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+
+    const ideaRequest =
+      isAcceptedBusinessModel && acceptedPublicationId
+        ? getDiscoveryById(acceptedPublicationId, {
+            forceRefresh: true,
+          }).then((payload) => {
+            const publication = payload?.publication ?? payload;
+
+            return {
+              id: ideaId,
+              title:
+                publication?.publicTitle ||
+                location.state?.ideaTitle ||
+                'Accepted idea',
+            };
+          })
+        : getIdeaWorkspace(ideaId);
+
     Promise.all([
       getBusinessModelTemplates(),
-      getCurrentBusinessModel(ideaId),
+      getCurrentBusinessModel(ideaId, {
+        forceRefresh: true,
+      }),
+      ideaRequest,
     ])
-      .then(([list, current]) => {
+      .then(([list, current, currentIdea]) => {
+        if (!mounted) return;
+
         const safeList = list ?? [];
 
         setTemplates(safeList);
         setModel(current);
+        setIdea(currentIdea);
         setSelected(
           current?.businessModelTemplate?.id ||
             safeList.find((item) => item.isDefault)?.id ||
@@ -401,40 +452,66 @@ export default function BusinessModelPage() {
             '',
         );
       })
-      .catch((requestError) =>
+      .catch((requestError) => {
+        if (!mounted) return;
+
         setError(
           requestError?.message ||
             'Unable to load the business-model studio.',
-        ),
-      );
-  }, [ideaId]);
+        );
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    acceptedPublicationId,
+    ideaId,
+    isAcceptedBusinessModel,
+    location.state?.ideaTitle,
+  ]);
 
   const templateKey = useMemo(
     () => resolveTemplateKey(model, templates, selected),
     [model, selected, templates],
   );
 
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === selected) ?? null,
+    [selected, templates],
+  );
+
   const layout =
     TEMPLATE_LAYOUTS[templateKey] || {
       label:
+        selectedTemplate?.name ||
         model?.businessModelTemplate?.name ||
         'Business Model',
       className: 'is-dynamic',
     };
 
+  const modelMatchesSelection = Boolean(
+    model &&
+      (!selected ||
+        model.businessModelTemplate?.id === selected),
+  );
+
+  const visibleModel = modelMatchesSelection ? model : null;
+
   const sections = useMemo(
-    () => buildSections(model?.content, templateKey),
-    [model, templateKey],
+    () => buildSections(visibleModel?.content, templateKey),
+    [templateKey, visibleModel],
   );
 
   const printableHtml = useMemo(
     () =>
       buildPrintableHtml(
-        model,
+        visibleModel,
         sections,
         templateKey,
+        idea?.title,
       ),
-    [model, sections, templateKey],
+    [idea?.title, sections, templateKey, visibleModel],
   );
 
   const generate = async () => {
@@ -471,18 +548,25 @@ export default function BusinessModelPage() {
         className="bm-back"
         type="button"
         onClick={() =>
-          navigate(`/normal/ideas/${ideaId}`)
+          navigate(returnTo, {
+            state:
+              isAcceptedBusinessModel
+                ? { forceRefresh: true }
+                : undefined,
+          })
         }
       >
         <ArrowLeft size={17} />
-        Idea workspace
+        {returnLabel}
       </button>
 
       <section className="bm-hero">
         <div>
           <span>
             <Sparkles size={15} />
-            Business design studio
+            {isAcceptedBusinessModel
+              ? 'Accepted idea · Business design studio'
+              : 'Business design studio'}
           </span>
 
           <h1>
@@ -503,7 +587,7 @@ export default function BusinessModelPage() {
 
           <article>
             <small>Version</small>
-            <strong>{model?.version || 0}</strong>
+            <strong>{modelMatchesSelection ? model?.version || 0 : 'New'}</strong>
           </article>
         </div>
       </section>
@@ -551,21 +635,43 @@ export default function BusinessModelPage() {
             ))}
           </div>
 
+          {/*
+           * Primary generation action.
+           *
+           * The button intentionally mirrors the premium "Buy more credits"
+           * control from the authenticated header: turquoise gradient, inset
+           * icon tile, compact two-line copy, and a clear forward affordance.
+           * Keeping the template name on the smaller second line also prevents
+           * long framework names from making the action look oversized.
+           */}
           <button
             className="bm-generate"
             type="button"
             disabled={!selected || busy}
             onClick={generate}
           >
-            {busy ? (
-              <LoaderCircle className="spin" size={17} />
-            ) : (
-              <RefreshCw size={17} />
-            )}
+            <span className="bm-action__icon" aria-hidden="true">
+              {busy ? (
+                <LoaderCircle className="spin" size={17} />
+              ) : modelMatchesSelection ? (
+                <RefreshCw size={17} />
+              ) : (
+                <Sparkles size={17} />
+              )}
+            </span>
 
-            {model
-              ? 'Generate new version'
-              : 'Generate business model'}
+            <span className="bm-action__copy">
+              <strong>
+                {modelMatchesSelection
+                  ? 'Generate new version'
+                  : 'Generate model'}
+              </strong>
+              <small>
+                {selectedTemplate?.name || 'Choose a framework'}
+              </small>
+            </span>
+
+            <ArrowRight className="bm-action__arrow" size={16} aria-hidden="true" />
           </button>
 
           {error ? (
@@ -574,13 +680,44 @@ export default function BusinessModelPage() {
         </aside>
 
         <article className="bm-studio">
-          {!model ? (
+          {!visibleModel ? (
             <div className="bm-empty">
-              <Sparkles size={28} />
-              <h2>Your business model will appear here.</h2>
+              <div className="bm-empty__icon" aria-hidden="true">
+                <WandSparkles size={31} strokeWidth={1.8} />
+              </div>
+              <span className="bm-empty__eyebrow">Ready to build</span>
+              <h2>
+                {selectedTemplate?.name
+                  ? `${selectedTemplate.name} is ready to generate.`
+                  : 'Your business model will appear here.'}
+              </h2>
               <p>
-                Select a framework and generate the first version.
+                {model && !modelMatchesSelection
+                  ? 'You changed the framework. Generate it to create a new version with the correct canvas structure.'
+                  : 'Choose a framework, then generate a tailored model from your idea data.'}
               </p>
+              {/* Same visual language as the header credit CTA. */}
+              <button
+                className="bm-empty__generate"
+                type="button"
+                disabled={!selected || busy}
+                onClick={generate}
+              >
+                <span className="bm-action__icon" aria-hidden="true">
+                  {busy ? (
+                    <LoaderCircle className="spin" size={18} />
+                  ) : (
+                    <Sparkles size={18} />
+                  )}
+                </span>
+
+                <span className="bm-action__copy">
+                  <strong>{busy ? 'Generating…' : 'Generate now'}</strong>
+                  <small>{selectedTemplate?.name || 'Business model'}</small>
+                </span>
+
+                <ArrowRight className="bm-action__arrow" size={17} aria-hidden="true" />
+              </button>
             </div>
           ) : (
             <>
@@ -588,7 +725,7 @@ export default function BusinessModelPage() {
                 <div>
                   <span>{layout.label}</span>
                   <h2>
-                    {model.businessModelTemplate?.name ||
+                    {visibleModel.businessModelTemplate?.name ||
                       layout.label}
                   </h2>
                   <p>
@@ -673,76 +810,96 @@ export default function BusinessModelPage() {
         </article>
       </section>
 
-      <AnimatePresence>
-        {previewOpen ? (
-          <motion.div
-            className="bm-modal"
-            role="dialog"
-            aria-modal="true"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bm-modal__shell"
-              initial={
-                shouldReduceMotion
-                  ? undefined
-                  : {
+      {typeof document !== 'undefined'
+        ? createPortal(
+            <AnimatePresence>
+              {previewOpen ? (
+                <motion.div
+                  className="bm-modal"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Business model presentation preview"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) {
+                      setPreviewOpen(false);
+                    }
+                  }}
+                >
+                  <motion.div
+                    className="bm-modal__shell"
+                    initial={
+                      shouldReduceMotion
+                        ? undefined
+                        : {
+                            opacity: 0,
+                            y: 18,
+                            scale: 0.98,
+                          }
+                    }
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      scale: 1,
+                    }}
+                    exit={{
                       opacity: 0,
-                      y: 18,
-                      scale: 0.98,
-                    }
-              }
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                y: 12,
-                scale: 0.985,
-              }}
-            >
-              <header>
-                <div>
-                  <strong>Presentation preview</strong>
-                  <small>
-                    The PDF uses the same template-specific structure.
-                  </small>
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={printPdf}
+                      y: 12,
+                      scale: 0.985,
+                    }}
+                    onMouseDown={(event) => event.stopPropagation()}
                   >
-                    <Printer size={16} />
-                    Print or save PDF
-                  </button>
+                    <header>
+                      <div>
+                        <strong>Presentation preview</strong>
+                        <small>
+                          {idea?.title
+                            ? `${idea.title} · ${layout.label}`
+                            : layout.label}
+                        </small>
+                      </div>
 
-                  <button
-                    type="button"
-                    aria-label="Close"
-                    onClick={() =>
-                      setPreviewOpen(false)
-                    }
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              </header>
+                      <div>
+                        <button
+                          type="button"
+                          className="bm-preview-print"
+                          onClick={printPdf}
+                        >
+                          <Printer size={16} />
+                          Print or save PDF
+                        </button>
 
-              <iframe
-                id="business-model-preview-frame"
-                title="Business model preview"
-                srcDoc={printableHtml}
-              />
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+                        <button
+                          type="button"
+                          className="bm-preview-close"
+                          aria-label="Close"
+                          onClick={() =>
+                            setPreviewOpen(false)
+                          }
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </header>
+
+                    <iframe
+                      id="business-model-preview-frame"
+                      title={
+                        idea?.title
+                          ? `${idea.title} business model preview`
+                          : 'Business model preview'
+                      }
+                      srcDoc={printableHtml}
+                    />
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
     </main>
   );
 }
