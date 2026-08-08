@@ -768,7 +768,7 @@
 
 .ideas-filters {
   display: grid;
-  grid-template-columns: 18px repeat(5, max-content);
+  grid-template-columns: 18px repeat(6, max-content);
   align-items: center;
   justify-content: end;
   gap: 8px;
@@ -3279,4 +3279,29 @@
 .idea-tile footer button svg {
   flex: 0 0 auto;
   transform: translateY(-1px);
+}
+
+/* Published filter keeps the existing pill geometry and only adds a semantic tone. */
+.ideas-filters button.is-published-filter:hover,
+.ideas-filters button.is-published-filter.is-active {
+  border-color: rgba(45, 132, 112, 0.28);
+  background: linear-gradient(135deg, #eef9f5, #f8fcfa);
+  color: #267a66;
+  box-shadow: 0 9px 22px rgba(45, 132, 112, 0.1);
+}
+
+.ideas-page__count--published {
+  border-color: rgba(45, 132, 112, 0.16);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(239, 249, 245, 0.86));
+  color: #2d806c;
+}
+
+.ideas-state--published {
+  color: #2d806c;
+  border-color: rgba(45, 132, 112, 0.2);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(239, 249, 245, 0.76));
+}
+
+.ideas-state--published button {
+  background: linear-gradient(135deg, #2f806d, #4c9b87);
 }

@@ -24,7 +24,7 @@ import { PaymentNotificationService } from './payment-notification.service';
 import { InvoiceService } from './invoice.service';
 
 /** Maximum time Prisma may wait for a payment transaction connection. */
-const PAYMENT_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
+const PAYMENT_TRANSACTION_MAX_WAIT_MS = 60 * 1000;
 
 /**
  * Payment fulfillment may perform multiple remote PostgreSQL operations.

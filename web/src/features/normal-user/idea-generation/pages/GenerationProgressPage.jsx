@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, Clock3, LayoutDashboard, Radio, RefreshCw, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, LayoutDashboard, Radio, RefreshCw, Sparkles, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 import { cancelGenerationRun } from '../api/ideaGenerationApi';
@@ -35,7 +35,6 @@ export default function GenerationProgressPage() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState('');
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const backendPipeline = useMemo(
     () => getVisualPipeline(
@@ -50,7 +49,6 @@ export default function GenerationProgressPage() {
 
   const isComplete = COMPLETED_RUN_STATUSES.has(run?.status) && Boolean(run?.ideaId);
   const isTerminal = TERMINAL_RUN_STATUSES.has(run?.status);
-  const completedCount = pipeline.filter((stage) => stage.status === 'completed').length;
   const activeStage = pipeline.find((stage) => stage.status === 'active') ?? null;
   const preparingStage = pipeline.find((stage) => stage.key === 'prepare');
   const preparingStageKeys = preparingStage?.stageKeys ?? [];
@@ -61,37 +59,6 @@ export default function GenerationProgressPage() {
     (Boolean(currentStageKey) && !preparingStageKeys.includes(currentStageKey));
   const canCancel = !isTerminal && (preparingStage?.status === 'completed' || hasMovedBeyondPreparing);
 
-
-  useEffect(() => {
-    const stageStartedAt = (run?.stages ?? [])
-      .map((stage) => stage?.startedAt)
-      .filter(Boolean)
-      .map((value) => new Date(value).getTime())
-      .filter(Number.isFinite)
-      .sort((a, b) => a - b)[0];
-    const runStartedAt = run?.startedAt
-      ? new Date(run.startedAt).getTime()
-      : null;
-    const startedAt = Number.isFinite(runStartedAt)
-      ? runStartedAt
-      : stageStartedAt;
-
-    if (!startedAt) {
-      setElapsedSeconds(0);
-      return undefined;
-    }
-
-    const updateElapsed = () => {
-      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    };
-
-    updateElapsed();
-
-    if (isTerminal) return undefined;
-
-    const timerId = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timerId);
-  }, [isTerminal, run?.startedAt, run?.stages]);
 
   useEffect(() => {
     if (run?.cancelRequestedAt) setCancelRequested(true);
@@ -163,35 +130,31 @@ export default function GenerationProgressPage() {
         <span className="nx-run-reference">Run <b>{String(runId).slice(0, 8)}</b></span>
       </div>
 
-      <section className="nx-generation-progress__hero">
-        <div className="nx-generation-progress__hero-copy">
-          <span className="nx-kicker">
-            <Radio size={14} />
-            {connectionState === 'connected' ? 'Live generation' : 'Reconnecting safely'}
-          </span>
-
-          <h1>Your idea is taking shape.</h1>
-
-          <div className="nx-generation-progress__current">
-            <span>{String(activeStage?.number ?? 1).padStart(2, '0')}</span>
-            <div>
-              <small>Now working on</small>
-              <strong>{activeStage?.title ?? 'Waiting for backend start'}</strong>
-            </div>
+      <section className="nx-generation-progress__hero nx-generation-progress__hero--compact">
+        <div className="nx-progress-compact-main">
+          <div className="nx-progress-compact-kicker">
+            <Sparkles size={14} />
+            <span>Evidence-led generation</span>
           </div>
+
+          <h1>Building your idea.</h1>
+          <p>Voxidence is moving through the evidence pipeline automatically. You can leave this page and come back anytime.</p>
         </div>
 
-        <div className="nx-progress-summary-card">
-          <div className="nx-progress-ring" style={{ '--progress': `${displayedProgress * 3.6}deg` }}>
-            <strong>{Math.round(displayedProgress)}%</strong>
-            <span>{run.status}</span>
+        <div className="nx-progress-compact-status" aria-label="Current generation status">
+          <span className="nx-progress-compact-spinner" aria-hidden="true">
+            <RefreshCw className="nx-spin" size={22} />
+          </span>
+
+          <div className="nx-progress-compact-stage">
+            <small>Now working on</small>
+            <strong>{activeStage?.title ?? 'Waiting for backend start'}</strong>
           </div>
 
-          <div className="nx-progress-summary-card__copy">
-            <small>Elapsed time</small>
-            <b>{elapsedSeconds}s</b>
-            <span><Clock3 size={13} />Live backend progress</span>
-          </div>
+          <span className={`nx-progress-compact-live ${connectionState === 'connected' ? 'is-live' : 'is-reconnecting'}`}>
+            <i />
+            {connectionState === 'connected' ? 'Live' : 'Reconnecting'}
+          </span>
         </div>
       </section>
 
@@ -202,10 +165,7 @@ export default function GenerationProgressPage() {
             <h2>Generation progress</h2>
           </div>
 
-          <div className="nx-stage-counter">
-            <b>{completedCount}</b>
-            <span>of {pipeline.length} complete</span>
-          </div>
+
         </div>
 
         <div className="nx-horizontal-pipeline" role="list" aria-label="Idea-generation milestones">
@@ -219,7 +179,7 @@ export default function GenerationProgressPage() {
         </div>
 
         <div className="nx-pipeline-meta">
-          <p><Clock3 size={17} />You can leave this page while generation continues.</p>
+          <p><Radio size={17} />You can leave this page while generation continues. The backend keeps the run durable.</p>
           {!isTerminal ? (
             <button
               className={`nx-cancel-run ${cancelRequested ? 'is-requested' : ''}`}

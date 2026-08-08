@@ -53,6 +53,13 @@ export type ExecuteIdeaGenerationPipelineInput = {
    * have exactly one matching implementation.
    */
   stages: readonly IdeaGenerationStage[];
+
+  /**
+   * True only when restarting an interrupted run from a durable context
+   * checkpoint. Completed/skipped stage rows are preserved and not executed
+   * again, while the interrupted stage is safely retried.
+   */
+  resumeFromCheckpoint?: boolean;
 };
 
 /**
@@ -201,6 +208,22 @@ export class IdeaGenerationPipelineService {
       input.stages,
     );
 
+    const persistedStageStates = input.resumeFromCheckpoint
+      ? await this.prisma.ideaGenerationStage.findMany({
+          where: { runId: input.context.runId },
+          select: {
+            stageKey: true,
+            status: true,
+            attemptCount: true,
+            resultPreview: true,
+          },
+        })
+      : [];
+
+    const persistedStageStateByKey = new Map(
+      persistedStageStates.map((stage) => [stage.stageKey, stage]),
+    );
+
     const [startedRun] = await Promise.all([
       this.databaseRetry.execute(
         () => this.runService.startRun(input.context.runId),
@@ -209,10 +232,12 @@ export class IdeaGenerationPipelineService {
           runId: input.context.runId,
         },
       ),
-      this.initializeStageRecords(
-        input.context.runId,
-        resolvedStages.map(({ definition }) => definition),
-      ),
+      input.resumeFromCheckpoint
+        ? Promise.resolve()
+        : this.initializeStageRecords(
+            input.context.runId,
+            resolvedStages.map(({ definition }) => definition),
+          ),
     ]);
     this.realtime.publishRunUpdated(startedRun);
 
@@ -226,6 +251,29 @@ export class IdeaGenerationPipelineService {
 
     try {
       for (const resolvedStage of resolvedStages) {
+        const persistedStage = persistedStageStateByKey.get(
+          resolvedStage.definition.key,
+        );
+
+        if (
+          input.resumeFromCheckpoint &&
+          persistedStage &&
+          (
+            persistedStage.status === IdeaGenerationStageStatus.COMPLETED ||
+            persistedStage.status === IdeaGenerationStageStatus.SKIPPED
+          )
+        ) {
+          processedStages.push({
+            stageKey: resolvedStage.definition.key,
+            status: persistedStage.status,
+            attemptCount: persistedStage.attemptCount,
+            ...(typeof persistedStage.resultPreview === 'string'
+              ? { resultPreview: persistedStage.resultPreview }
+              : {}),
+          });
+          continue;
+        }
+
         this.assertExecutionBudget(
           currentContext.runId,
           resolvedStage.definition.key,

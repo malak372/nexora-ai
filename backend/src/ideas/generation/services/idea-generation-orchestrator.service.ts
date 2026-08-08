@@ -15,6 +15,7 @@ import {
 import {
   createIdeaGenerationContext,
   type IdeaGenerationContext,
+  type IdeaGenerationDomainResolutionTrace,
   type IdeaGenerationLocation,
   type SelectedGenerationDomain,
 } from '../types/idea-generation-context.type';
@@ -114,6 +115,9 @@ type ExecuteOwnedIdeaGenerationInput = {
 
   /** Ordered domains participating in this generation run. */
   selectedDomains: SelectedGenerationDomain[];
+
+  /** Explainability-only trace for how the primary domain was resolved. */
+  domainResolution: IdeaGenerationDomainResolutionTrace | null;
 
   /**
    * User-provided generation keywords.
@@ -236,6 +240,7 @@ export class IdeaGenerationOrchestratorService {
       generationType: context.generationType,
       domainId: context.domainId,
       selectedDomains: context.selectedDomains ?? [],
+      domainResolution: context.domainResolution ?? null,
       keywords: context.keywords,
       requestedDataSourceKeys: context.requestedDataSourceKeys,
       location: context.location,
@@ -367,6 +372,32 @@ export class IdeaGenerationOrchestratorService {
     });
   }
 
+  /**
+   * Converts resolver diagnostics into context-safe JSON metadata.
+   * The trace is observability only: it does not feed collectors, prompts,
+   * opportunity ranking, benchmark scoring, or persistence decisions.
+   */
+  private buildDomainResolutionTrace(
+    resolvedDomain: Awaited<ReturnType<DomainResolutionService['resolve']>>,
+  ): IdeaGenerationDomainResolutionTrace {
+    return {
+      source: resolvedDomain.source,
+      confidence: resolvedDomain.confidence,
+      selectedDomain: {
+        id: resolvedDomain.domainId,
+        name: resolvedDomain.domainName,
+      },
+      matchedInterests: [...resolvedDomain.trace.matchedInterests],
+      reasons: [...resolvedDomain.trace.reasons],
+      candidates: resolvedDomain.trace.candidates.map((candidate) => ({
+        domainId: candidate.domainId,
+        domainName: candidate.domainName,
+        score: candidate.score,
+        reasons: [...candidate.reasons],
+      })),
+    };
+  }
+
   async generateForUser(
     input: GenerateRegisteredIdeaInput,
   ): Promise<IdeaGenerationPipelineResult> {
@@ -394,6 +425,8 @@ export class IdeaGenerationOrchestratorService {
       domainId: resolvedDomain.domainId,
 
       selectedDomains: domainProfile.selectedDomains,
+
+      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
 
       keywords: domainProfile.keywords,
 
@@ -457,6 +490,8 @@ export class IdeaGenerationOrchestratorService {
 
       selectedDomains: [],
 
+      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
+
       keywords: this.normalizeStringArray(input.dto.keywords),
 
       requestedDataSourceKeys: [],
@@ -492,12 +527,10 @@ export class IdeaGenerationOrchestratorService {
      * The pipeline entitlement stage still performs the same validation again
      * to protect against balance changes between queue acceptance and execution.
      */
-    const policy = await this.resolveUserQueuePolicy(
-      userId,
-      input.dto.generationType,
-    );
-
-    const resolvedDomain = await this.resolveDomainForUser(userId, input.dto);
+    const [policy, resolvedDomain] = await Promise.all([
+      this.resolveUserQueuePolicy(userId, input.dto.generationType),
+      this.resolveDomainForUser(userId, input.dto),
+    ]);
     const domainProfile = await this.buildCrossDomainProfile(
       input.dto,
       resolvedDomain.domainId,
@@ -508,6 +541,7 @@ export class IdeaGenerationOrchestratorService {
       generationType: policy.generationType,
       domainId: resolvedDomain.domainId,
       selectedDomains: domainProfile.selectedDomains,
+      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       keywords: domainProfile.keywords,
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
@@ -585,6 +619,7 @@ export class IdeaGenerationOrchestratorService {
       generationType: IdeaGenerationType.GUEST_FREE,
       domainId: resolvedDomain.domainId,
       selectedDomains: [],
+      domainResolution: this.buildDomainResolutionTrace(resolvedDomain),
       keywords: this.normalizeStringArray(input.dto.keywords),
       requestedDataSourceKeys: [],
       forceRefresh: input.dto.forceRefresh ?? false,
@@ -679,6 +714,7 @@ export class IdeaGenerationOrchestratorService {
       const result = await this.pipelineService.executePipeline({
         context,
         stages: this.stages,
+        resumeFromCheckpoint: Boolean(checkpointContext),
       });
 
       this.logger.log(
@@ -728,6 +764,8 @@ export class IdeaGenerationOrchestratorService {
       domainId: input.domainId,
 
       selectedDomains: input.selectedDomains,
+
+      domainResolution: input.domainResolution,
 
       keywords: input.keywords,
 

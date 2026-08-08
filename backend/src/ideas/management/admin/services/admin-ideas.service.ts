@@ -1076,7 +1076,7 @@ export class AdminIdeasService {
             },
 
             posts: {
-              take: 20,
+              take: 4,
 
               orderBy: {
                 collectedAt: 'desc',
@@ -1086,7 +1086,6 @@ export class AdminIdeasService {
                 id: true,
                 externalId: true,
                 title: true,
-                content: true,
                 author: true,
                 url: true,
 
@@ -1111,7 +1110,7 @@ export class AdminIdeasService {
                 },
 
                 comments: {
-                  take: 20,
+                  take: 4,
 
                   orderBy: {
                     collectedAt: 'desc',
@@ -1120,8 +1119,7 @@ export class AdminIdeasService {
                   select: {
                     id: true,
                     externalId: true,
-                    content: true,
-                    author: true,
+                            author: true,
                     languageCode: true,
                     sentiment: true,
                     likesCount: true,
@@ -1170,11 +1168,12 @@ export class AdminIdeasService {
             },
 
             promptHistories: {
+              take: 5,
+
               orderBy: {
                 createdAt: 'desc',
               },
 
-              take: 20,
 
               select: {
                 id: true,
@@ -1182,7 +1181,6 @@ export class AdminIdeasService {
                 guestSessionId: true,
                 ideaId: true,
                 promptType: true,
-                promptText: true,
                 templateHash: true,
                 estimatedInputTokens: true,
                 createdAt: true,
@@ -1192,6 +1190,8 @@ export class AdminIdeasService {
         },
 
         payments: {
+          take: 6,
+
           orderBy: {
             createdAt: 'desc',
           },
@@ -1226,6 +1226,8 @@ export class AdminIdeasService {
         },
 
         creditTransactions: {
+          take: 8,
+
           orderBy: {
             createdAt: 'desc',
           },
@@ -1242,6 +1244,8 @@ export class AdminIdeasService {
         },
 
         generatedOutputs: {
+          take: 12,
+
           orderBy: {
             sequence: 'asc',
           },
@@ -1252,8 +1256,6 @@ export class AdminIdeasService {
             title: true,
             sequence: true,
             status: true,
-            content: true,
-            structuredContent: true,
             errorMessage: true,
             generatedAt: true,
             createdAt: true,
@@ -1262,6 +1264,8 @@ export class AdminIdeasService {
         },
 
         chatSessions: {
+          take: 6,
+
           orderBy: {
             updatedAt: 'desc',
           },
@@ -1273,7 +1277,7 @@ export class AdminIdeasService {
             updatedAt: true,
 
             messages: {
-              take: 20,
+              take: 4,
 
               orderBy: {
                 createdAt: 'desc',
@@ -1282,7 +1286,6 @@ export class AdminIdeasService {
               select: {
                 id: true,
                 sender: true,
-                message: true,
                 createdAt: true,
               },
             },

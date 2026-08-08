@@ -82,6 +82,8 @@
 
 .accepted-workspace-topbar__identity {
   min-width: 0;
+  max-width: 100%;
+  padding: 0 6px;
   text-align: center;
 }
 
@@ -94,13 +96,20 @@
 }
 
 .accepted-workspace-topbar__identity strong {
-  display: block;
-  margin-top: 5px;
+  display: -webkit-box;
+  max-width: 100%;
+  margin: 5px auto 0;
   overflow: hidden;
   color: #34413f;
-  font-size: 17px;
+  font-size: clamp(14px, 1.1vw, 17px);
+  font-weight: 850;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .accepted-workspace-topbar__meta {
@@ -656,6 +665,21 @@
   }
 }
 
+
+@media (max-width: 1180px) {
+  .accepted-workspace-topbar {
+    gap: 14px;
+  }
+
+  .accepted-workspace-back {
+    padding-inline: 13px;
+  }
+
+  .accepted-workspace-topbar__identity strong {
+    font-size: 15px;
+  }
+}
+
 @media (max-width: 1050px) {
   .accepted-workspace-topbar {
     grid-template-columns: auto minmax(0, 1fr);
@@ -685,7 +709,16 @@
   }
 
   .accepted-workspace-topbar__identity {
+    padding: 0;
     text-align: left;
+  }
+
+  .accepted-workspace-topbar__identity strong {
+    margin-left: 0;
+    margin-right: 0;
+    font-size: 15px;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 
   .accepted-workspace-topbar__meta {

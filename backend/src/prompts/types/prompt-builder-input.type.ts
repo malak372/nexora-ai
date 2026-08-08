@@ -7,6 +7,34 @@ import type {
   SelectedGenerationDomain,
 } from '../../ideas/generation/types/idea-generation-context.type';
 
+
+/**
+ * Trusted collection metadata already resolved by the generation pipeline.
+ *
+ * Supplying this snapshot avoids re-reading CollectionJob/Domain/DataSource
+ * rows during IDEA_GENERATION. It is intentionally unavailable to unlock
+ * flows, which still validate persisted ownership from the database.
+ */
+export type IdeaGenerationPromptCollectionContext = {
+  readonly id: string;
+  readonly createdById: string | null;
+  readonly country: string | null;
+  readonly city: string | null;
+  readonly region: string | null;
+  readonly domain: {
+    readonly id: string;
+    readonly name: string;
+  };
+  readonly sources: readonly {
+    readonly dataSource: {
+      readonly key: string;
+      readonly displayName: string;
+      readonly isActive: boolean;
+      readonly isImplemented: boolean;
+    };
+  }[];
+};
+
 /**
  * Input required to generate a new idea prompt.
  *
@@ -53,6 +81,9 @@ export type IdeaGenerationPromptInput = {
    * row so the prompt receives evidence from every completed domain.
    */
   readonly analysisOverride?: IdeaGenerationNlpContext;
+
+  /** Trusted collection metadata already present in the pipeline context. */
+  readonly collectionContextOverride?: IdeaGenerationPromptCollectionContext;
 
   /**
    * Domain-attributed evidence map used to keep samples and counts attached to

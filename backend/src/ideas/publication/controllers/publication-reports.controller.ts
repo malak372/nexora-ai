@@ -55,6 +55,16 @@ export class AdminPublicationReportsController {
     return this.service.findAll(query);
   }
 
+  /** Dedicated lightweight counters for the moderation workspace. */
+  @Get('summary')
+  getSummary() {
+    return this.service.getSummary();
+  }
+
+  /**
+   * Atomically stores the report decision and executes the optional moderation
+   * action (warn, hide, unpublish/archive or restore).
+   */
   @Patch(':reportId/review')
   review(
     @CurrentUser() admin: AuthenticatedUser,

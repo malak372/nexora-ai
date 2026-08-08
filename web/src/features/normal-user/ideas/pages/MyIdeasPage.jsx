@@ -13,6 +13,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Grid2X2,
+  Globe2,
   Heart,
   RefreshCw,
   Search,
@@ -21,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getAcceptedPublications } from '../../accepted/api/acceptedPublicationsApi';
+import { getMyPublishedIdeas } from '../../published/api/publishedIdeasApi';
 import {
   addIdeaToFavorites,
   deleteMyIdea,
@@ -44,6 +46,11 @@ const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'core', label: 'Free' },
   { value: 'unlocked', label: 'Unlocked' },
+  {
+    value: 'published',
+    label: 'Published',
+    icon: Globe2,
+  },
   {
     value: 'accepted',
     label: 'Accepted',
@@ -159,6 +166,65 @@ async function loadEveryPage(loader, params) {
   }
 
   return items;
+}
+
+function normalizePublishedRecord(record) {
+  const sourceIdea = record?.idea ?? {};
+
+  return {
+    ...sourceIdea,
+
+    id:
+      record?.ideaId ??
+      sourceIdea?.id ??
+      record?.id,
+
+    title:
+      record?.publicTitle ??
+      sourceIdea?.title ??
+      'Untitled published idea',
+
+    limitedAbstract:
+      sourceIdea?.limitedAbstract ??
+      null,
+
+    partialAbstract:
+      sourceIdea?.partialAbstract ??
+      record?.publicAbstract ??
+      null,
+
+    fullAbstract:
+      sourceIdea?.fullAbstract ??
+      null,
+
+    problemStatement:
+      sourceIdea?.problemStatement ??
+      record?.publicProblem ??
+      null,
+
+    domain:
+      sourceIdea?.domain ??
+      record?.domain ??
+      null,
+
+    createdAt:
+      sourceIdea?.createdAt ??
+      record?.publishedAt ??
+      record?.createdAt,
+
+    isUnlocked: Boolean(sourceIdea?.isUnlocked),
+
+    isFavorite: Boolean(sourceIdea?.isFavorite),
+
+    publication: {
+      ...record,
+      status: String(record?.status ?? 'PUBLISHED').toUpperCase(),
+    },
+
+    publishedAt: record?.publishedAt,
+
+    __libraryKind: 'published',
+  };
 }
 
 /**
@@ -342,6 +408,105 @@ export default function MyIdeasPage() {
             1,
             Math.ceil(filtered.length / PAGE_SIZE),
           ),
+        });
+
+        return;
+      }
+
+      if (filter === 'published') {
+        const publishedParams = {
+          search: search || undefined,
+          status: 'PUBLISHED',
+          sortBy: 'publishedAt',
+          sortOrder: 'desc',
+        };
+
+        if (hasDateRange) {
+          const allPublished = await loadEveryPage(
+            async (params) => {
+              const result = await getMyPublishedIdeas(
+                params,
+                { forceRefresh: force },
+              );
+
+              return {
+                items: (result.items ?? []).map(
+                  normalizePublishedRecord,
+                ),
+                pagination: result.pagination,
+              };
+            },
+            publishedParams,
+          );
+
+          const filtered = allPublished.filter(
+            (item) =>
+              matchesDateRange(
+                item,
+                fromDate,
+                toDate,
+              ),
+          );
+
+          const start =
+            (page - 1) * PAGE_SIZE;
+
+          setItems(
+            filtered.slice(
+              start,
+              start + PAGE_SIZE,
+            ),
+          );
+
+          setPagination({
+            page,
+            limit: PAGE_SIZE,
+            total: filtered.length,
+            totalPages: Math.max(
+              1,
+              Math.ceil(
+                filtered.length /
+                PAGE_SIZE,
+              ),
+            ),
+          });
+
+          return;
+        }
+
+        const publishedResult =
+          await getMyPublishedIdeas(
+            {
+              ...publishedParams,
+              page,
+              limit: PAGE_SIZE,
+            },
+            { forceRefresh: force },
+          );
+
+        const publishedItems =
+          (publishedResult.items ?? []).map(
+            normalizePublishedRecord,
+          );
+
+        setItems(publishedItems);
+
+        setPagination({
+          page:
+            publishedResult.pagination?.page ??
+            page,
+
+          limit:
+            publishedResult.pagination?.limit ??
+            PAGE_SIZE,
+
+          total:
+            publishedResult.pagination?.total ??
+            publishedItems.length,
+
+          totalPages:
+            publishedResult.pagination?.totalPages ??
+            1,
         });
 
         return;
@@ -636,6 +801,32 @@ export default function MyIdeasPage() {
       return;
     }
 
+    if (
+      idea?.__libraryKind ===
+      'published' ||
+      String(
+        idea?.publication?.status ?? '',
+      ).toUpperCase() === 'PUBLISHED'
+    ) {
+      const ideaId =
+        idea?.publication?.ideaId ??
+        idea?.id;
+
+      if (ideaId) {
+        navigate(
+          `/normal/ideas/${ideaId}`,
+          {
+            state: {
+              returnTo: '/normal/ideas',
+              returnLabel: 'My ideas',
+            },
+          },
+        );
+      }
+
+      return;
+    }
+
     const runStatus = String(
       idea?.generationRun?.status ??
       '',
@@ -675,7 +866,9 @@ export default function MyIdeasPage() {
   async function handleDelete(idea) {
     if (
       idea?.__libraryKind ===
-      'accepted'
+      'accepted' ||
+      idea?.__libraryKind ===
+      'published'
     ) {
       return;
     }
@@ -780,6 +973,9 @@ export default function MyIdeasPage() {
   const isAcceptedView =
     filter === 'accepted';
 
+  const isPublishedView =
+    filter === 'published';
+
   const isFavoritesView =
     filter === 'favorites';
 
@@ -803,13 +999,17 @@ export default function MyIdeasPage() {
         <div
           className={`ideas-page__count${isAcceptedView
               ? ' ideas-page__count--accepted'
-              : isFavoritesView
+              : isPublishedView
+                ? ' ideas-page__count--published'
+                : isFavoritesView
                 ? ' ideas-page__count--favorites'
                 : ''
             }`}
         >
           {isAcceptedView ? (
             <CheckCircle2 size={18} />
+          ) : isPublishedView ? (
+            <Globe2 size={18} />
           ) : isFavoritesView ? (
             <Heart size={18} fill="currentColor" />
           ) : (
@@ -824,7 +1024,9 @@ export default function MyIdeasPage() {
           <span>
             {isAcceptedView
               ? 'accepted'
-              : isFavoritesView
+              : isPublishedView
+                ? 'published'
+                : isFavoritesView
                 ? 'favorites'
                 : 'ideas'}
           </span>
@@ -965,7 +1167,9 @@ export default function MyIdeasPage() {
                   }${option.value ===
                     'accepted'
                     ? ' is-accepted-filter'
-                    : option.value === 'favorites'
+                    : option.value === 'published'
+                      ? ' is-published-filter'
+                      : option.value === 'favorites'
                       ? ' is-favorites-filter'
                       : ''
                   }`}
@@ -1049,11 +1253,15 @@ export default function MyIdeasPage() {
         <div
           className={`ideas-state${isAcceptedView
               ? ' ideas-state--accepted'
-              : ''
+              : isPublishedView
+                ? ' ideas-state--published'
+                : ''
             }`}
         >
           {isAcceptedView ? (
             <CheckCircle2 size={30} />
+          ) : isPublishedView ? (
+            <Globe2 size={30} />
           ) : (
             <Grid2X2 size={30} />
           )}
@@ -1061,13 +1269,17 @@ export default function MyIdeasPage() {
           <h2>
             {isAcceptedView
               ? 'No accepted ideas yet'
-              : 'No ideas in this view'}
+              : isPublishedView
+                ? 'No published ideas yet'
+                : 'No ideas in this view'}
           </h2>
 
           <p>
             {isAcceptedView
               ? 'Open Discover, review an opportunity, then choose Accept & continue.'
-              : 'Change the active filter or create a new idea from the Generate page.'}
+              : isPublishedView
+                ? 'Publish one of your completed ideas and it will appear here.'
+                : 'Change the active filter or create a new idea from the Generate page.'}
           </p>
 
           <button
@@ -1076,13 +1288,17 @@ export default function MyIdeasPage() {
               navigate(
                 isAcceptedView
                   ? '/normal/discover'
-                  : '/normal/generate',
+                  : isPublishedView
+                    ? '/normal/ideas'
+                    : '/normal/generate',
               )
             }
           >
             {isAcceptedView
               ? 'Open Discover'
-              : 'Go to Generate'}
+              : isPublishedView
+                ? 'View all ideas'
+                : 'Go to Generate'}
           </button>
         </div>
       ) : (
@@ -1098,7 +1314,9 @@ export default function MyIdeasPage() {
               }
               onDelete={
                 idea.__libraryKind ===
-                  'accepted'
+                  'accepted' ||
+                idea.__libraryKind ===
+                  'published'
                   ? undefined
                   : () =>
                     handleDelete(
