@@ -371,11 +371,15 @@ export default function IdeaWorkspacePage() {
             <Globe2 size={17} />
             <span>
               <strong>
-                {idea.publication?.status === 'PUBLISHED'
-                  ? 'Manage publication'
+                {String(idea.publication?.status ?? '').toUpperCase() === 'PUBLISHED'
+                  ? 'Edit publication'
                   : 'Publish idea'}
               </strong>
-              <small>Prepare the public story</small>
+              <small>
+                {String(idea.publication?.status ?? '').toUpperCase() === 'PUBLISHED'
+                  ? 'Update the public story'
+                  : 'Prepare the public story'}
+              </small>
             </span>
             <ChevronRight size={17} />
           </button>

@@ -307,7 +307,7 @@ export default function AcceptedIdeaWorkspacePage() {
 
         <div className="accepted-workspace-topbar__identity">
           <span>ADVANCED ACCESS UNLOCKED</span>
-          <strong>{publication.publicTitle}</strong>
+          <strong title={publication.publicTitle}>{publication.publicTitle}</strong>
         </div>
 
         <div className="accepted-workspace-topbar__meta">

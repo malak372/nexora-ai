@@ -825,6 +825,55 @@ export class IdeaGenerationRunService {
     return activeRun !== null;
   }
 
+  /**
+   * Converts orphaned RUNNING rows into RETRYING after their heartbeat has
+   * remained stale long enough to rule out normal in-flight stages.
+   *
+   * This is used after a process/server interruption. It never touches runs
+   * without a durable context checkpoint.
+   */
+  async requeueStaleRunningRuns(
+    staleBefore: Date,
+    limit = 5,
+  ): Promise<number> {
+    const candidates = await this.prisma.ideaGenerationRun.findMany({
+      where: {
+        status: IdeaGenerationRunStatus.RUNNING,
+        completedAt: null,
+        cancelRequestedAt: null,
+        contextSnapshot: { not: Prisma.JsonNull },
+        lastHeartbeatAt: { lte: staleBefore },
+      },
+      select: { id: true },
+      orderBy: { lastHeartbeatAt: 'asc' },
+      take: Math.max(1, Math.min(limit, 20)),
+    });
+
+    if (candidates.length === 0) {
+      return 0;
+    }
+
+    const result = await this.prisma.ideaGenerationRun.updateMany({
+      where: {
+        id: { in: candidates.map(({ id }) => id) },
+        status: IdeaGenerationRunStatus.RUNNING,
+        completedAt: null,
+        cancelRequestedAt: null,
+      },
+      data: {
+        status: IdeaGenerationRunStatus.RETRYING,
+        nextRetryAt: new Date(),
+        pausedAt: null,
+        errorCode: 'GENERATION_PROCESS_INTERRUPTED',
+        errorMessage:
+          'The generation process was interrupted. Automatic checkpoint recovery is resuming it.',
+        retryCount: { increment: 1 },
+      },
+    });
+
+    return result.count;
+  }
+
   /** Returns paused/retrying runs that are ready for recovery. */
   async findRecoverableRuns(limit = 20): Promise<IdeaGenerationRun[]> {
     const now = new Date();

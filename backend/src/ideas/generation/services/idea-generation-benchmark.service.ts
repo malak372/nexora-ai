@@ -187,9 +187,24 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    const eligibleModels = (
-      await this.aiModelsService.getRoutableModels()
-    ).filter((model) => {
+    const [routableModels] = await Promise.all([
+      this.aiModelsService.getRoutableModels(),
+      // Candidate cleanup is independent from model discovery. Starting both
+      // together removes one remote database latency wave without changing
+      // selection, scoring, or persistence semantics.
+      this.prisma.ideaGenerationCandidate.deleteMany({
+        where: { runId: context.runId },
+      }),
+      // Warm the bounded semantic corpus while model metadata is loading so
+      // duplicate redesign never waits for the same-domain idea query. Exact
+      // title checks remain fresh on every candidate.
+      this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
+        context.runId,
+        context.domainId,
+      ),
+    ]);
+
+    const eligibleModels = routableModels.filter((model) => {
       if (
         !model.supportsJsonOutput ||
         IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS.has(model.apiModelId)
@@ -232,11 +247,6 @@ export class IdeaGenerationBenchmarkService {
       onlineModels.length > 0
         ? await this.modelSelectorService.orderModels(context, onlineModels)
         : [];
-
-    // A retried run must start with a clean candidate snapshot.
-    await this.prisma.ideaGenerationCandidate.deleteMany({
-      where: { runId: context.runId },
-    });
 
     /*
      * Fast-path policy:
@@ -1179,6 +1189,8 @@ export class IdeaGenerationBenchmarkService {
       context.domainId,
       collectionJobId,
       attempt.parsedOutput.coreIdea,
+      undefined,
+      context.runId,
     );
   }
 

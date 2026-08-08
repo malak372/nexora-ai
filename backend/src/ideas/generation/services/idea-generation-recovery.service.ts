@@ -15,7 +15,8 @@ export class IdeaGenerationRecoveryService
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(IdeaGenerationRecoveryService.name);
-  private readonly intervalMs = 120_000;
+  private readonly intervalMs = 15_000;
+  private readonly staleRunningThresholdMs = 90_000;
   private timer: NodeJS.Timeout | null = null;
   private recoveryInProgress = false;
 
@@ -25,6 +26,10 @@ export class IdeaGenerationRecoveryService
   ) {}
 
   onApplicationBootstrap(): void {
+    // Run one scan immediately so already-paused work is resumed as soon as
+    // this process is ready, then keep a lightweight periodic safety scan.
+    void this.recoverEligibleRuns();
+
     this.timer = setInterval(() => {
       void this.recoverEligibleRuns();
     }, this.intervalMs);
@@ -47,6 +52,20 @@ export class IdeaGenerationRecoveryService
     this.recoveryInProgress = true;
 
     try {
+      const staleBefore = new Date(
+        Date.now() - this.staleRunningThresholdMs,
+      );
+      const requeued = await this.runService.requeueStaleRunningRuns(
+        staleBefore,
+        5,
+      );
+
+      if (requeued > 0) {
+        this.logger.warn(
+          `Moved ${requeued} stale generation run(s) into checkpoint recovery.`,
+        );
+      }
+
       if (await this.runService.hasActiveRuns()) {
         return;
       }

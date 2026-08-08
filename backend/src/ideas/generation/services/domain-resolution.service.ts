@@ -13,15 +13,39 @@ import { PrismaService } from '../../../prisma/prisma.service';
  * Result returned after resolving one concrete domain
  * for an idea-generation request.
  */
+export type DomainResolutionCandidate = {
+  readonly domainId: string;
+  readonly domainName: string;
+  readonly score: number;
+  readonly reasons: readonly string[];
+};
+
+export type DomainResolutionTrace = {
+  /** Human-readable explanation of why this domain was selected. */
+  readonly reasons: readonly string[];
+
+  /** Saved preferences that directly participated in domain resolution. */
+  readonly matchedInterests: readonly string[];
+
+  /** Bounded ranked alternatives captured for observability only. */
+  readonly candidates: readonly DomainResolutionCandidate[];
+};
+
 export type DomainResolutionResult = {
   /** Resolved active domain identifier. */
   readonly domainId: string;
+
+  /** Resolved active domain name. */
+  readonly domainName: string;
 
   /** Strategy that produced the selected domain. */
   readonly source: DomainResolutionSource;
 
   /** Confidence score between zero and one. */
   readonly confidence: number;
+
+  /** Explainability metadata; it never changes pipeline decisions. */
+  readonly trace: DomainResolutionTrace;
 };
 
 /**
@@ -208,8 +232,21 @@ export class DomainResolutionService {
 
     return {
       domainId: selectedDomain.id,
+      domainName: selectedDomain.name,
       source: DomainResolutionSource.USER_SELECTED,
       confidence: 1,
+      trace: {
+        reasons: ['The requester explicitly selected this domain.'],
+        matchedInterests: [],
+        candidates: [
+          {
+            domainId: selectedDomain.id,
+            domainName: selectedDomain.name,
+            score: 1,
+            reasons: ['Explicit requester selection'],
+          },
+        ],
+      },
     };
   }
 
@@ -273,10 +310,53 @@ export class DomainResolutionService {
       return null;
     }
 
+    const matchedInterests = preferredValues.filter((value) => {
+      const normalizedValue = this.normalizeComparableValue(value);
+      return (
+        matchedDomain.id === value ||
+        this.normalizeComparableValue(matchedDomain.name) === normalizedValue
+      );
+    });
+
+    const preferenceCandidates = domains
+      .map((domain) => {
+        const matchingValues = preferredValues.filter((value) => {
+          const normalizedValue = this.normalizeComparableValue(value);
+          return (
+            domain.id === value ||
+            this.normalizeComparableValue(domain.name) === normalizedValue
+          );
+        });
+
+        return {
+          domainId: domain.id,
+          domainName: domain.name,
+          score: matchingValues.length,
+          reasons: matchingValues.map(
+            (value) => `Matches saved domain preference: ${value}`,
+          ),
+        };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort(
+        (first, second) =>
+          second.score - first.score ||
+          first.domainName.localeCompare(second.domainName),
+      )
+      .slice(0, 3);
+
     return {
       domainId: matchedDomain.id,
+      domainName: matchedDomain.name,
       source: DomainResolutionSource.USER_PREFERENCE,
       confidence: 0.9,
+      trace: {
+        reasons: [
+          'Selected from the authenticated user\'s saved domain interests before using behavioral history or the system fallback.',
+        ],
+        matchedInterests: [...new Set(matchedInterests)],
+        candidates: preferenceCandidates,
+      },
     };
   }
 
@@ -417,10 +497,31 @@ export class DomainResolutionService {
       return null;
     }
 
+    const historicalCandidates = [...scores.values()]
+      .filter((item) => domainById.has(item.domainId))
+      .sort((first, second) => second.score - first.score)
+      .slice(0, 3)
+      .map((item) => ({
+        domainId: item.domainId,
+        domainName: domainById.get(item.domainId)?.name ?? item.domainId,
+        score: item.score,
+        reasons: ['Weighted generated, favorite, and accepted idea history'],
+      }));
+
     return {
       domainId: bestHistoricalMatch.domainId,
+      domainName:
+        domainById.get(bestHistoricalMatch.domainId)?.name ??
+        bestHistoricalMatch.domainId,
       source: DomainResolutionSource.USER_HISTORY,
       confidence: 0.75,
+      trace: {
+        reasons: [
+          'No explicit/current-request or saved-domain match was available, so weighted user history selected the domain.',
+        ],
+        matchedInterests: [],
+        candidates: historicalCandidates,
+      },
     };
   }
 
@@ -500,8 +601,24 @@ export class DomainResolutionService {
 
     return {
       domainId: bestMatch.domain.id,
+      domainName: bestMatch.domain.name,
       source: DomainResolutionSource.KEYWORD_MATCH,
       confidence: Math.min(0.95, 0.55 + bestMatch.score * 0.08),
+      trace: {
+        reasons: [
+          'The current generation description/keywords matched this domain more strongly than other active domains.',
+        ],
+        matchedInterests: [],
+        candidates: rankedDomains
+          .filter((candidate) => candidate.score > 0)
+          .slice(0, 3)
+          .map((candidate) => ({
+            domainId: candidate.domain.id,
+            domainName: candidate.domain.name,
+            score: candidate.score,
+            reasons: ['Matched current request text or keywords'],
+          })),
+      },
     };
   }
 
@@ -544,8 +661,23 @@ export class DomainResolutionService {
 
     return {
       domainId: selectedDomain.id,
+      domainName: selectedDomain.name,
       source: DomainResolutionSource.SYSTEM_DEFAULT,
       confidence: 0.25,
+      trace: {
+        reasons: [
+          'No explicit request, saved domain preference, or usable user-history signal was available; the deterministic least-used-domain fallback was used.',
+        ],
+        matchedInterests: [],
+        candidates: [
+          {
+            domainId: selectedDomain.id,
+            domainName: selectedDomain.name,
+            score: 0.25,
+            reasons: ['Deterministic system fallback'],
+          },
+        ],
+      },
     };
   }
 

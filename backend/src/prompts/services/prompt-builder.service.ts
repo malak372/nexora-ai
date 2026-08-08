@@ -216,8 +216,29 @@ export class PromptBuilderService {
      * them together so prompt building pays one remote-DB latency wave instead
      * of two. The template service also keeps its own short cache.
      */
+    const trustedCollectionJob =
+      input.purpose === 'IDEA_GENERATION' && input.collectionContextOverride
+        ? this.mapGenerationCollectionContext(
+            input.collectionJobId,
+            input.collectionContextOverride,
+          )
+        : null;
+
+    const collectionJobPromise = trustedCollectionJob
+      ? Promise.resolve(trustedCollectionJob)
+      : this.getCollectionJobContext(input.collectionJobId);
+
+    /*
+     * Generation already owns a validated collection snapshot, so its recent
+     * diversity lookup can start immediately alongside template resolution.
+     * Unlock flows still wait for their persisted collection ownership check.
+     */
+    const prefetchedRecentIdeasPromise = trustedCollectionJob
+      ? this.getRecentIdeasForDiversity(input, trustedCollectionJob)
+      : null;
+
     const [collectionJob, template] = await Promise.all([
-      this.getCollectionJobContext(input.collectionJobId),
+      collectionJobPromise,
       this.promptTemplateService.getIdeaPromptTemplate(),
     ]);
 
@@ -232,14 +253,10 @@ export class PromptBuilderService {
       throw new BadRequestException('NLP analysis is not ready yet.');
     }
 
-    /*
-     * These reads are independent once the collection context is available.
-     * Running them in parallel removes two serial Supabase round-trips from
-     * every prompt-building stage without changing any prompt content.
-     */
     const [existingIdea, recentIdeas] = await Promise.all([
       this.getExistingIdea(input),
-      this.getRecentIdeasForDiversity(input, collectionJob),
+      prefetchedRecentIdeasPromise ??
+        this.getRecentIdeasForDiversity(input, collectionJob),
     ]);
 
     const outputContract = this.getOutputContract(input);
@@ -966,6 +983,53 @@ export class PromptBuilderService {
       .map((item) => item.replace(/\s+/gu, ' ').trim())
       .filter(Boolean)
       .map((item) => item.slice(0, 220));
+  }
+
+  /**
+   * Converts trusted pipeline metadata into the same compact shape used by
+   * the persisted CollectionJob query. Generation has already validated the
+   * domain, location, source registry, collection completion, and NLP result,
+   * so another remote read would only add latency. Unlock flows never use
+   * this path and continue to validate directly from the database.
+   */
+  private mapGenerationCollectionContext(
+    collectionJobId: string,
+    override: NonNullable<
+      Extract<PromptBuilderInput, { purpose: 'IDEA_GENERATION' }>['collectionContextOverride']
+    >,
+  ): CollectionJobPromptContext {
+    const normalizedCollectionJobId = this.requireIdentifier(
+      collectionJobId,
+      'Collection job ID',
+    );
+
+    if (override.id.trim() !== normalizedCollectionJobId) {
+      throw new BadRequestException(
+        'Prompt collection context does not match the active collection job.',
+      );
+    }
+
+    return {
+      id: normalizedCollectionJobId,
+      createdById: override.createdById,
+      status: CollectionJobStatus.COMPLETED,
+      country: override.country,
+      city: override.city,
+      region: override.region,
+      domain: {
+        id: override.domain.id,
+        name: override.domain.name,
+      },
+      nlpAnalysis: null,
+      sources: override.sources.map((source) => ({
+        dataSource: {
+          key: source.dataSource.key,
+          displayName: source.dataSource.displayName,
+          isActive: source.dataSource.isActive,
+          isImplemented: source.dataSource.isImplemented,
+        },
+      })),
+    };
   }
 
   /**

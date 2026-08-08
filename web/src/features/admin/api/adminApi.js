@@ -42,6 +42,7 @@ export const adminApi = {
     summary: (params) => get('/admin/users/summary', params),
     charts: (params) => get('/admin/users/charts', params),
     detail: (id) => get(`/admin/users/${id}`),
+    update: (id, body) => patch(`/admin/users/${id}`, body),
     status: (id, isActive) => patch(`/admin/users/${id}/status`, { isActive }),
     resetPassword: (id) => post(`/admin/users/${id}/send-password-reset-email`),
     remove: (id) => del(`/admin/users/${id}`),
@@ -102,6 +103,7 @@ export const adminApi = {
   },
   publicationReports: {
     list: (params) => get('/admin/publication-reports', params),
+    summary: () => get('/admin/publication-reports/summary'),
     review: (id, body) => patch(`/admin/publication-reports/${id}/review`, body),
   },
   publications: {

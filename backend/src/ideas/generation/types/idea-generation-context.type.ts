@@ -300,6 +300,29 @@ export type IdeaGenerationNoResultOutcome = {
 };
 
 
+
+/**
+ * Explainability metadata describing how the primary generation domain was
+ * resolved. This is observability-only data and must never alter downstream
+ * collection, ranking, benchmark, or persistence decisions.
+ */
+export type IdeaGenerationDomainResolutionTrace = {
+  readonly source: string;
+  readonly confidence: number;
+  readonly selectedDomain: {
+    readonly id: string;
+    readonly name: string;
+  };
+  readonly matchedInterests: readonly string[];
+  readonly reasons: readonly string[];
+  readonly candidates: readonly {
+    readonly domainId: string;
+    readonly domainName: string;
+    readonly score: number;
+    readonly reasons: readonly string[];
+  }[];
+};
+
 /** One concrete domain participating in a cross-domain generation request. */
 export type SelectedGenerationDomain = {
   readonly id: string;
@@ -384,6 +407,13 @@ export type IdeaGenerationContext = {
    * from every selected domain when the corpus can support it.
    */
   selectedDomains: SelectedGenerationDomain[];
+
+  /**
+   * Trace explaining why the primary domain was selected.
+   * This is persisted in the run context for auditing/personalization evidence
+   * and is intentionally ignored by downstream generation stages.
+   */
+  domainResolution: IdeaGenerationDomainResolutionTrace | null;
 
   /**
    * User-supplied keywords.
@@ -543,6 +573,9 @@ export type CreateIdeaGenerationContextInput = {
   /** Ordered cross-domain profile resolved before pipeline execution. */
   selectedDomains?: SelectedGenerationDomain[];
 
+  /** Optional explainability trace for the primary domain resolution. */
+  domainResolution?: IdeaGenerationDomainResolutionTrace | null;
+
   /**
    * Optional user-provided keywords.
    */
@@ -587,6 +620,7 @@ export function createIdeaGenerationContext(
     domainId: input.domainId,
     domainName: null,
     selectedDomains: input.selectedDomains ?? [],
+    domainResolution: input.domainResolution ?? null,
 
     keywords: input.keywords ?? [],
 

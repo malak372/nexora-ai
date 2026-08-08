@@ -109,6 +109,32 @@ export class PromptBuildingStage implements IdeaGenerationStage {
       // primary collection job analysis.
       analysisOverride: context.nlp ?? undefined,
 
+      // Every field below was already validated by earlier pipeline stages.
+      // Reusing it removes one full Supabase read from prompt construction
+      // without changing prompt content or weakening unlock validation.
+      collectionContextOverride: {
+        id: collection.collectionJobId,
+        createdById:
+          context.owner.type === IDEA_OWNER_TYPES.USER
+            ? context.owner.userId
+            : null,
+        country: context.location.country,
+        city: context.location.city,
+        region: context.location.region,
+        domain: {
+          id: context.domainId,
+          name: context.domainName!,
+        },
+        sources: context.selectedDataSources.map((source) => ({
+          dataSource: {
+            key: source.key,
+            displayName: source.displayName,
+            isActive: true,
+            isImplemented: true,
+          },
+        })),
+      },
+
       // Preserve domain attribution for evidence-aware prompt instructions.
       domainEvidence: context.domainEvidence,
     });

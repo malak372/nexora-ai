@@ -1,37 +1,23 @@
 /**
  * Completion celebration shown after a persisted idea is confirmed.
- *
- * Normal users keep the concise completion dialog. Premium users receive a
- * separate cinematic reveal with a countdown, advanced-output indicators, and
- * a gold workspace treatment.
- *
- * @author Malak
- * @author Eman
+ * A short 3 → 2 → 1 reveal is shared by normal and premium runs.
+ * Premium keeps the richer finish, while normal uses a lighter celebration.
  */
 import {
   ArrowRight,
   CheckCircle2,
   Crown,
-  Layers3,
+  Lightbulb,
   Sparkles,
-  WandSparkles,
+  Star,
 } from 'lucide-react';
-import {
-  AnimatePresence,
-  motion,
-  useReducedMotion,
-} from 'framer-motion';
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 
-const PARTICLE_COUNT = 32;
-const PREMIUM_ORBIT_COUNT = 3;
+const NORMAL_CONFETTI_COUNT = 18;
+const PREMIUM_CONFETTI_COUNT = 34;
 
 export default function CompletionCelebration({
   ideaId,
@@ -41,50 +27,38 @@ export default function CompletionCelebration({
 }) {
   const shouldReduceMotion = useReducedMotion();
   const [countdown, setCountdown] = useState(3);
-  const [showResult, setShowResult] = useState(false);
+  const celebrationReady = countdown === 0;
 
-  const particles = useMemo(
-    () =>
-      Array.from(
-        { length: PARTICLE_COUNT },
-        (_, index) => ({
-          id: index,
-          left: `${(index * 37) % 100}%`,
-          delay: (index % 8) * 0.06,
-          rotate: (index * 47) % 360,
-          duration: 1.6 + (index % 5) * 0.16,
-        }),
-      ),
-    [],
-  );
+  const confetti = useMemo(() => {
+    const count = isPremium ? PREMIUM_CONFETTI_COUNT : NORMAL_CONFETTI_COUNT;
+
+    return Array.from({ length: count }, (_, index) => ({
+      id: index,
+      left: `${5 + ((index * 37) % 90)}%`,
+      delay: (index % 10) * 0.052,
+      drift: `${-42 + ((index * 53) % 84)}px`,
+      rotate: `${(index * 47) % 180}deg`,
+      duration: (isPremium ? 1.95 : 1.65) + (index % 5) * 0.16,
+    }));
+  }, [isPremium]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setCountdown((current) => {
-        if (current <= 1) {
-          window.clearInterval(timer);
-          setShowResult(true);
-          return 0;
-        }
+    if (countdown <= 0) return undefined;
 
-        return current - 1;
-      });
-    }, isPremium ? 920 : 760);
+    const timer = window.setTimeout(() => {
+      setCountdown((value) => Math.max(0, value - 1));
+    }, 1000);
 
-    return () => window.clearInterval(timer);
-  }, [isPremium]);
+    return () => window.clearTimeout(timer);
+  }, [countdown]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const previousPaddingRight = document.body.style.paddingRight;
-    const scrollbarWidth =
-      window.innerWidth - document.documentElement.clientWidth;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
 
     document.body.style.overflow = 'hidden';
-
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
 
     return () => {
       document.body.style.overflow = previousOverflow;
@@ -94,102 +68,174 @@ export default function CompletionCelebration({
 
   const celebration = (
     <div
-      className={`nx-celebration ${isPremium ? 'nx-celebration--premium' : 'nx-celebration--normal'}`}
+      className={`nx-celebration ${isPremium ? 'nx-celebration--premium' : 'nx-celebration--normal'} ${celebrationReady ? 'is-revealed' : 'is-counting'}`}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="generation-complete-title"
+      aria-labelledby={celebrationReady ? 'generation-complete-title' : 'generation-countdown-title'}
     >
-      <AnimatePresence mode="wait">
-        {!showResult ? (
-          <motion.div
-            key={countdown}
-            className={`nx-celebration__count ${isPremium ? 'nx-celebration__count--premium' : ''}`}
-            initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.68 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 1.24 }}
+      {!celebrationReady ? (
+        <motion.div
+          className={`nx-celebration-countdown ${isPremium ? 'nx-celebration-countdown--premium' : 'nx-celebration-countdown--normal'}`}
+          initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.28, ease: 'easeOut' }}
+        >
+          <div className="nx-celebration-countdown__ambient" aria-hidden="true">
+            <i className="nx-celebration-countdown__glow nx-celebration-countdown__glow--one" />
+            <i className="nx-celebration-countdown__glow nx-celebration-countdown__glow--two" />
+            <i className="nx-celebration-countdown__spark nx-celebration-countdown__spark--one" />
+            <i className="nx-celebration-countdown__spark nx-celebration-countdown__spark--two" />
+            <i className="nx-celebration-countdown__spark nx-celebration-countdown__spark--three" />
+          </div>
+
+          <span className="nx-celebration-countdown__eyebrow" id="generation-countdown-title">
+            {isPremium ? <Crown size={16} /> : <Sparkles size={16} />}
+            {isPremium ? 'Premium workspace prepared' : 'Your idea is ready'}
+          </span>
+
+          <div className="nx-celebration-countdown__number-stage">
+            <i className="nx-celebration-countdown__ring nx-celebration-countdown__ring--outer" aria-hidden="true" />
+            <i className="nx-celebration-countdown__ring nx-celebration-countdown__ring--middle" aria-hidden="true" />
+            <i className="nx-celebration-countdown__ring nx-celebration-countdown__ring--inner" aria-hidden="true" />
+
+            <motion.strong
+              key={countdown}
+              className="nx-celebration-countdown__number"
+              initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.34, rotate: -5 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 1.35 }}
+              transition={{ type: 'spring', stiffness: 210, damping: 16 }}
+            >
+              {countdown}
+            </motion.strong>
+          </div>
+
+          <motion.strong
+            key={`message-${countdown}`}
+            className="nx-celebration-countdown__message"
+            initial={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.08 }}
           >
-            {isPremium ? (
-              <>
-                <motion.span
-                  className="nx-premium-countdown__crown"
-                  animate={shouldReduceMotion ? undefined : { y: [0, -7, 0], rotate: [0, 4, -4, 0] }}
-                  transition={{ duration: 1.6, repeat: Infinity }}
-                >
-                  <Crown size={27} />
-                </motion.span>
-                <strong>{countdown}</strong>
-                <small>Preparing your complete premium workspace</small>
-                <span className="nx-premium-countdown__track"><i /></span>
-              </>
-            ) : countdown}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="result"
-            className={`nx-celebration__result ${isPremium ? 'nx-celebration__result--premium' : ''}`}
-            initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.9, y: 24 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 155, damping: 19 }}
-          >
-            {!shouldReduceMotion
-              ? particles.map((particle) => (
+            {countdown === 3 ? 'Evidence locked in.' : countdown === 2 ? 'Workspace coming together.' : 'Get ready to reveal it.'}
+          </motion.strong>
+
+          <div className="nx-celebration-countdown__track" aria-hidden="true">
+            <i className={countdown <= 3 ? 'is-active' : ''} />
+            <i className={countdown <= 2 ? 'is-active' : ''} />
+            <i className={countdown <= 1 ? 'is-active' : ''} />
+          </div>
+
+          <small>{isPremium ? 'Your complete premium workspace is about to open.' : 'Your validated idea is about to appear.'}</small>
+        </motion.div>
+      ) : (
+        <>
+          {!shouldReduceMotion ? (
+            <div className="nx-celebration-burst" aria-hidden="true">
+              <i className="nx-celebration-burst__ring nx-celebration-burst__ring--one" />
+              {isPremium ? <i className="nx-celebration-burst__ring nx-celebration-burst__ring--two" /> : null}
+              <i className="nx-celebration-burst__shine" />
+              {confetti.map((piece) => (
                 <i
-                  key={particle.id}
-                  className="nx-celebration__particle"
+                  key={piece.id}
+                  className="nx-celebration-confetti"
                   style={{
-                    left: particle.left,
-                    animationDelay: `${particle.delay}s`,
-                    animationDuration: `${particle.duration}s`,
-                    transform: `rotate(${particle.rotate}deg)`,
+                    '--left': piece.left,
+                    '--delay': `${piece.delay}s`,
+                    '--drift': piece.drift,
+                    '--rotate': piece.rotate,
+                    '--duration': `${piece.duration}s`,
                   }}
                 />
-              ))
-              : null}
+              ))}
+            </div>
+          ) : null}
 
-            {isPremium && !shouldReduceMotion
-              ? Array.from({ length: PREMIUM_ORBIT_COUNT }, (_, index) => (
-                <i key={index} className={`nx-premium-orbit nx-premium-orbit--${index + 1}`} />
-              ))
-              : null}
+          <motion.div
+            className={`nx-celebration__result ${isPremium ? 'nx-celebration__result--premium' : ''}`}
+            initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.88, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 185, damping: 19, delay: 0.06 }}
+          >
+            <motion.div
+              className="nx-celebration__spark-row"
+              aria-hidden="true"
+              initial={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.35 }}
+            >
+              <Sparkles size={isPremium ? 19 : 16} />
+              <Star size={isPremium ? 14 : 11} />
+              <Sparkles size={isPremium ? 15 : 13} />
+            </motion.div>
 
             <motion.span
               className="nx-celebration__icon"
-              animate={shouldReduceMotion ? undefined : { rotate: [0, 4, -4, 0], scale: [1, 1.06, 1] }}
-              transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 0.9 }}
+              initial={shouldReduceMotion ? undefined : { rotate: -10, scale: 0.75 }}
+              animate={shouldReduceMotion ? undefined : { rotate: 0, scale: [1, 1.08, 1] }}
+              transition={{ duration: 0.75, delay: 0.1, ease: 'easeOut' }}
             >
-              {isPremium ? <Crown size={30} /> : <VoxidenceMark size={38} />}
+              {isPremium ? <Crown size={30} /> : <Lightbulb size={34} strokeWidth={1.9} />}
             </motion.span>
 
-            <span className="nx-celebration__eyebrow">
+            <motion.span
+              className="nx-celebration__eyebrow"
+              initial={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.18, duration: 0.3 }}
+            >
               {isPremium ? <Sparkles size={15} /> : <CheckCircle2 size={15} />}
-              {isPremium ? 'Premium intelligence complete' : 'Generation complete'}
-            </span>
+              {isPremium ? 'Premium workspace ready' : 'Generation complete'}
+            </motion.span>
 
-            <h2 id="generation-complete-title">
+            <motion.h2
+              id="generation-complete-title"
+              initial={shouldReduceMotion ? undefined : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.24, duration: 0.35 }}
+            >
               {ideaTitle || 'Your new Voxidence idea'}
-            </h2>
+            </motion.h2>
 
-            <p>
+            <motion.p
+              initial={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.29, duration: 0.35 }}
+            >
               {isPremium
-                ? 'Your evidence-backed idea is ready with its complete advanced workspace, strategic outputs, and premium intelligence layers.'
+                ? 'Your evidence-backed idea is ready, validated, saved, and unlocked with its advanced workspace.'
                 : 'Your validated idea has been saved and its workspace is ready.'}
-            </p>
+            </motion.p>
 
             {isPremium ? (
-              <div className="nx-premium-ready-grid" aria-label="Premium workspace features ready">
-                <span><WandSparkles size={17} /><b>Advanced outputs</b><small>Ready now</small></span>
-                <span><Layers3 size={17} /><b>Complete workspace</b><small>Fully unlocked</small></span>
-                <span><CheckCircle2 size={17} /><b>Evidence validated</b><small>Saved securely</small></span>
-              </div>
+              <motion.div
+                className="nx-premium-ready-line"
+                aria-label="Premium workspace ready"
+                initial={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.34, duration: 0.35 }}
+              >
+                <span><CheckCircle2 size={16} />Advanced outputs</span>
+                <span><CheckCircle2 size={16} />Workspace unlocked</span>
+                <span><CheckCircle2 size={16} />Evidence saved</span>
+              </motion.div>
             ) : null}
 
-            <button type="button" onClick={() => onOpenIdea(ideaId)}>
-              {isPremium ? 'Enter premium workspace' : 'Open idea workspace'}
+            <motion.button
+              type="button"
+              onClick={() => onOpenIdea(ideaId)}
+              initial={shouldReduceMotion ? undefined : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.34 }}
+              whileHover={shouldReduceMotion ? undefined : { y: -2, scale: 1.01 }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
+            >
+              {isPremium ? 'Open premium workspace' : 'Open idea workspace'}
               <ArrowRight size={18} />
-            </button>
+            </motion.button>
           </motion.div>
-        )}
-      </AnimatePresence>
+        </>
+      )}
     </div>
   );
 

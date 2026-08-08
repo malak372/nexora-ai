@@ -143,6 +143,11 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
 
         mergedKeywordsCount: mergedKeywords.length,
         selectedDomains: selectedDomains.map(({ id, name }) => ({ id, name })),
+
+        // Observability only: proves whether automatic domain resolution came
+        // from explicit input, current request text, saved interests, history,
+        // or the deterministic fallback. It does not affect source selection.
+        domainResolution: context.domainResolution,
       },
     };
   }

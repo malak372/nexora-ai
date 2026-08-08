@@ -51,6 +51,15 @@ export type IdeaDuplicateCheckResult = {
   readonly matchedIdea: DuplicateIdeaCandidate | null;
 };
 
+const BENCHMARK_DUPLICATE_CORPUS_TTL_MS = 2 * 60 * 1000;
+const BENCHMARK_DUPLICATE_CORPUS_MAX_ENTRIES = 32;
+
+type CachedDuplicateCorpus = {
+  readonly domainId: string;
+  readonly candidates: readonly DuplicateIdeaCandidate[];
+  readonly expiresAt: number;
+};
+
 /**
  * Detects exact, near-title, and semantic duplicates globally across all
  * non-deleted ideas.
@@ -65,13 +74,43 @@ export type IdeaDuplicateCheckResult = {
  */
 @Injectable()
 export class IdeaDuplicateDetectionService {
+  private readonly benchmarkCorpusCache = new Map<string, CachedDuplicateCorpus>();
+  private readonly benchmarkCorpusLoads = new Map<
+    string,
+    Promise<readonly DuplicateIdeaCandidate[]>
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Starts loading the benchmark's bounded semantic comparison corpus before
+   * any provider response returns. The actual duplicate checks still perform a
+   * fresh global exact-title query, and non-benchmark checks bypass this cache.
+   */
+  async prepareBenchmarkSemanticCorpus(
+    cacheKey: string,
+    domainId: string,
+  ): Promise<void> {
+    const normalizedCacheKey = cacheKey.trim();
+    const normalizedDomainId = domainId.trim();
+
+    if (!normalizedCacheKey || !normalizedDomainId) {
+      return;
+    }
+
+    await this.getBenchmarkSemanticCorpus(
+      normalizedCacheKey,
+      normalizedDomainId,
+      this.prisma,
+    );
+  }
 
   async check(
     domainId: string,
     collectionJobId: string,
     idea: CoreIdeaAiOutput,
     database?: IdeaDuplicateDetectionDatabaseClient,
+    semanticCorpusCacheKey?: string,
   ): Promise<IdeaDuplicateCheckResult> {
     const normalizedDomainId = domainId.trim();
     const normalizedCollectionJobId = collectionJobId.trim();
@@ -139,28 +178,13 @@ export class IdeaDuplicateDetectionService {
      * is where materially equivalent ideas are most likely. Exact-title
      * protection remains global through phase 1.
      */
-    const storedIdeas = await client.idea.findMany({
-      where: {
-        deletedAt: null,
-        domainId: normalizedDomainId,
-      },
-      select: {
-        id: true,
-        title: true,
-        problemStatement: true,
-        objectives: true,
-        targetUsers: true,
-        partialAbstract: true,
-        fullAbstract: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: DUPLICATE_DETECTION_CANDIDATE_LIMIT,
-    });
-
-    const candidates = storedIdeas.map((storedIdea) =>
-      this.mapStoredIdeaToCandidate(storedIdea),
-    );
+    const candidates = semanticCorpusCacheKey
+      ? await this.getBenchmarkSemanticCorpus(
+          semanticCorpusCacheKey,
+          normalizedDomainId,
+          client,
+        )
+      : await this.loadSemanticCorpus(normalizedDomainId, client);
 
     let matchedIdea: DuplicateIdeaCandidate | null = null;
     let highestSimilarity = 0;
@@ -297,6 +321,98 @@ export class IdeaDuplicateDetectionService {
       duplicateReasons,
       matchedIdea,
     };
+  }
+
+  /**
+   * Reuses the bounded same-domain semantic corpus only inside one benchmark
+   * run. Exact-title detection remains a fresh global query on every attempt,
+   * and the final duplicate-check stage does not pass a cache key, so it always
+   * performs a fresh semantic read before persistence.
+   */
+  private async getBenchmarkSemanticCorpus(
+    cacheKey: string,
+    domainId: string,
+    client: PrismaService | IdeaDuplicateDetectionDatabaseClient,
+  ): Promise<readonly DuplicateIdeaCandidate[]> {
+    const now = Date.now();
+    const cached = this.benchmarkCorpusCache.get(cacheKey);
+
+    if (
+      cached &&
+      cached.domainId === domainId &&
+      cached.expiresAt > now
+    ) {
+      return cached.candidates;
+    }
+
+    const inFlight = this.benchmarkCorpusLoads.get(cacheKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const loadPromise = this.loadSemanticCorpus(domainId, client);
+    this.benchmarkCorpusLoads.set(cacheKey, loadPromise);
+
+    try {
+      const candidates = await loadPromise;
+      this.pruneBenchmarkCorpusCache(now);
+      this.benchmarkCorpusCache.set(cacheKey, {
+        domainId,
+        candidates,
+        expiresAt: now + BENCHMARK_DUPLICATE_CORPUS_TTL_MS,
+      });
+      return candidates;
+    } finally {
+      this.benchmarkCorpusLoads.delete(cacheKey);
+    }
+  }
+
+  private async loadSemanticCorpus(
+    domainId: string,
+    client: PrismaService | IdeaDuplicateDetectionDatabaseClient,
+  ): Promise<readonly DuplicateIdeaCandidate[]> {
+    const storedIdeas = await client.idea.findMany({
+      where: {
+        deletedAt: null,
+        domainId,
+      },
+      select: {
+        id: true,
+        title: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: DUPLICATE_DETECTION_CANDIDATE_LIMIT,
+    });
+
+    return storedIdeas.map((storedIdea) =>
+      this.mapStoredIdeaToCandidate(storedIdea),
+    );
+  }
+
+  private pruneBenchmarkCorpusCache(now: number): void {
+    for (const [key, cached] of this.benchmarkCorpusCache.entries()) {
+      if (cached.expiresAt <= now) {
+        this.benchmarkCorpusCache.delete(key);
+      }
+    }
+
+    while (
+      this.benchmarkCorpusCache.size >= BENCHMARK_DUPLICATE_CORPUS_MAX_ENTRIES
+    ) {
+      const oldestKey = this.benchmarkCorpusCache.keys().next().value as
+        | string
+        | undefined;
+      if (!oldestKey) {
+        break;
+      }
+      this.benchmarkCorpusCache.delete(oldestKey);
+    }
   }
 
   /**

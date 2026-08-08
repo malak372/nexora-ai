@@ -22,11 +22,29 @@ const unwrap = (response) => response?.data?.data ?? response?.data;
 
 async function requestWorkspaceBundle(ideaId) {
   try {
-    const response = await normalUserApi.get(`/users/ideas/${ideaId}/workspace`);
-    const payload = unwrap(response);
+    const [workspaceResponse, ideaDetailResponse] = await Promise.all([
+      normalUserApi.get(`/users/ideas/${ideaId}/workspace`),
+      normalUserApi
+        .get(`/users/ideas/${ideaId}`)
+        .catch(() => null),
+    ]);
+
+    const payload = unwrap(workspaceResponse);
+    const workspaceIdea = payload?.idea ?? null;
+    const ideaDetails = ideaDetailResponse
+      ? unwrap(ideaDetailResponse)
+      : null;
 
     return {
-      idea: payload?.idea ?? null,
+      idea: workspaceIdea
+        ? {
+            ...workspaceIdea,
+            publication:
+              workspaceIdea.publication ??
+              ideaDetails?.publication ??
+              null,
+          }
+        : ideaDetails,
       outputs: Array.isArray(payload?.outputs) ? payload.outputs : [],
     };
   } catch (error) {
