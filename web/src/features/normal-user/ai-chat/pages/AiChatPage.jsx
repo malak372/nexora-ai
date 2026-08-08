@@ -37,10 +37,11 @@ import {
     useRef,
     useState,
 } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { getIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import { getDiscoveryById } from '../../discoveries/api/discoveriesApi';
 import {
     createAiChatSocket,
     createChatSession,
@@ -133,6 +134,20 @@ const mergeMessage = (items, message) => {
 export default function AiChatPage() {
     const { ideaId } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
+
+    const chatOrigin = location.state?.chatOrigin || 'owned-idea';
+    const acceptedPublicationId = location.state?.publicationId || '';
+    const returnTo =
+        location.state?.returnTo ||
+        (chatOrigin === 'accepted-publication' && acceptedPublicationId
+            ? `/normal/accepted/${acceptedPublicationId}/workspace`
+            : `/normal/ideas/${ideaId}`);
+    const returnLabel =
+        location.state?.returnLabel ||
+        (chatOrigin === 'accepted-publication'
+            ? 'Accepted idea'
+            : 'Idea workspace');
 
     const {
         isPremium,
@@ -228,8 +243,31 @@ export default function AiChatPage() {
 
         const loadAiChatWorkspace = async () => {
             try {
+                const ideaPromise =
+                    chatOrigin === 'accepted-publication' && acceptedPublicationId
+                        ? getDiscoveryById(acceptedPublicationId, {
+                            forceRefresh: true,
+                        }).then((payload) => {
+                            const publication = payload?.publication ?? payload;
+
+                            return {
+                                id: ideaId,
+                                title:
+                                    publication?.publicTitle ||
+                                    location.state?.ideaTitle ||
+                                    'Accepted idea',
+                                domain:
+                                    publication?.domain ||
+                                    (publication?.domainName
+                                        ? { name: publication.domainName }
+                                        : null),
+                                acceptedPublicationId,
+                            };
+                        })
+                        : getIdeaWorkspace(ideaId);
+
                 const [ideaResult, sessionResult] = await Promise.all([
-                    getIdeaWorkspace(ideaId),
+                    ideaPromise,
                     listChatSessions(ideaId),
                 ]);
 
@@ -268,8 +306,11 @@ export default function AiChatPage() {
         };
     }, [
         accessLoading,
+        acceptedPublicationId,
+        chatOrigin,
         ideaId,
         isPremium,
+        location.state?.ideaTitle,
         openSession,
     ]);
 
@@ -760,10 +801,17 @@ export default function AiChatPage() {
                     <button
                         className="ai-chat-back"
                         type="button"
-                        onClick={() => navigate(`/normal/ideas/${ideaId}`)}
+                        onClick={() =>
+                            navigate(returnTo, {
+                                state:
+                                    chatOrigin === 'accepted-publication'
+                                        ? { forceRefresh: true }
+                                        : undefined,
+                            })
+                        }
                     >
                         <ArrowLeft size={17} />
-                        <span>Idea workspace</span>
+                        <span>{returnLabel}</span>
                     </button>
 
                     <div className="ai-chat-premium-mark" title="Premium AI workspace">

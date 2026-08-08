@@ -448,6 +448,46 @@ export class IdeaPublicationQueryService {
             advancedUnlockMethod: true,
           },
         },
+
+        /*
+         * Load the Business Model through the exact Idea relation used by this
+         * publication. This is more reliable than a separate lookup by id and
+         * prevents the accepted workspace from missing a model that exists in
+         * the owner's Business Model Studio.
+         *
+         * `isCurrent desc, version desc` means:
+         * - prefer the explicitly current version;
+         * - fall back to the newest version for legacy/inconsistent rows.
+         */
+        idea: {
+          select: {
+            businessModels: {
+              where: {
+                userId,
+              },
+              orderBy: [
+                { isCurrent: 'desc' },
+                { version: 'desc' },
+              ],
+              take: 1,
+              select: {
+                id: true,
+                version: true,
+                isCurrent: true,
+                content: true,
+                createdAt: true,
+                updatedAt: true,
+                businessModelTemplate: {
+                  select: {
+                    key: true,
+                    name: true,
+                    description: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -466,7 +506,7 @@ export class IdeaPublicationQueryService {
      * This prevents selling or displaying an empty advanced package.
      */
     const advancedAccessGranted =
-      isOwner || acceptance?.advancedUnlockedAt !== null;
+      isOwner || acceptance?.advancedUnlockedAt != null;
 
     const advancedOutputsCount = await this.prisma.generatedOutput.count({
       where: {
@@ -504,7 +544,20 @@ export class IdeaPublicationQueryService {
           })
         : [];
 
-    const { acceptances: _acceptances, ...safePublication } = publication;
+    const businessModel =
+      advancedAccessGranted
+        ? publication.idea.businessModels[0] ?? null
+        : null;
+
+    /*
+     * `idea` was loaded only to resolve the read-only Business Model.
+     * Do not expose the nested owner-side Idea relation in the API response.
+     */
+    const {
+      acceptances: _acceptances,
+      idea: _idea,
+      ...safePublication
+    } = publication;
 
     return {
       ...safePublication,
@@ -515,6 +568,7 @@ export class IdeaPublicationQueryService {
       advancedOutputsAvailable,
       advancedOutputsCount,
       advancedOutputs,
+      businessModel,
     };
   }
 

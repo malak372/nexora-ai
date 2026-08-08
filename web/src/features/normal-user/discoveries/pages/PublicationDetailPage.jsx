@@ -10,7 +10,9 @@
 import {
   ArrowLeft,
   ArrowUpRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   CreditCard,
   Flag,
   LoaderCircle,
@@ -19,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Trash2,
   ThumbsDown,
   ThumbsUp,
   UserRound,
@@ -42,6 +45,9 @@ import {
   setFeedback,
   setRating,
   setVote,
+  deleteFeedback,
+  deleteRating,
+  deleteVote,
   reportPublication,
 } from '../api/discoveriesApi';
 import { getStoredUser, updateStoredUser } from '../../../auth/shared/auth.storage';
@@ -114,11 +120,14 @@ export default function PublicationDetailPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [notice, setNotice] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportReasonOpen, setReportReasonOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [advancedPaymentOpen, setAdvancedPaymentOpen] = useState(false);
   const [reportReason, setReportReason] = useState('MISLEADING');
   const [reportDetails, setReportDetails] = useState('');
   const [paymentPricing, setPaymentPricing] = useState(null);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [creditUnlockReceipt, setCreditUnlockReceipt] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,6 +161,8 @@ export default function PublicationDetailPage() {
 
       const engagementResults = await Promise.allSettled(engagementRequests);
 
+      let loadedAcceptance = null;
+
       engagementResults.forEach((result, index) => {
         if (result.status !== 'fulfilled') return;
 
@@ -159,15 +170,45 @@ export default function PublicationDetailPage() {
         const payload = result.value;
 
         if (key === 'acceptance') {
-          setAcceptance(extractAcceptance(payload));
+          loadedAcceptance = extractAcceptance(payload);
+          setAcceptance(loadedAcceptance);
         } else if (key === 'rating') {
           setRatingValue(Number(payload?.rating?.value ?? payload?.value ?? 0));
         } else if (key === 'vote') {
           setVoteValue(payload?.vote?.value ?? payload?.value ?? '');
         } else if (key === 'feedback') {
-          setFeedbackValue(payload?.feedback?.comment ?? payload?.comment ?? '');
+          const savedComment = payload?.feedback?.comment ?? payload?.comment ?? '';
+          setFeedbackValue(savedComment);
+          setFeedbackSaved(Boolean(savedComment.trim()));
         }
       });
+
+      /*
+       * Premium basic access is intentionally silent.
+       * Opening a discoverable publication creates/returns the free basic
+       * acceptance immediately, so Premium users never see an "Open basic"
+       * CTA. The backend remains authoritative for ownership/capacity rules.
+       */
+      const viewer = getStoredUser();
+      if (
+        viewer?.accountStatus === 'PREMIUM' &&
+        nextPublication.allowAdoption !== false &&
+        !loadedAcceptance
+      ) {
+        try {
+          const autoAcceptResult = await acceptPublication(publicationId, 'card');
+          const premiumAcceptance = extractAcceptance(autoAcceptResult);
+
+          if (premiumAcceptance) {
+            setAcceptance(premiumAcceptance);
+          }
+        } catch (acceptError) {
+          // Do not replace the whole discovery with an error if auto-accept is
+          // unavailable (for example, owner/capacity rules). The protected
+          // section simply remains unavailable.
+          console.warn('Premium basic access could not be opened automatically.', acceptError);
+        }
+      }
     } catch (error) {
       setErrorMessage(error?.message || 'This discovery could not be opened.');
     } finally {
@@ -190,6 +231,8 @@ export default function PublicationDetailPage() {
       setPaymentOpen(false);
       setAdvancedPaymentOpen(false);
       setReportOpen(false);
+      setReportReasonOpen(false);
+      setCreditUnlockReceipt(null);
     }
 
     window.addEventListener('keydown', handleEscape);
@@ -330,7 +373,15 @@ export default function PublicationDetailPage() {
         });
       }
 
-      setNotice('Advanced access was unlocked with your Premium credits.');
+      const backendCost = Number(
+        unlockResult?.creditsSpent ??
+        paymentPricing?.publicationAdvancedCreditCost,
+      );
+
+      setCreditUnlockReceipt({
+        spent: Number.isFinite(backendCost) ? backendCost : null,
+        balance: Number.isFinite(nextCreditBalance) ? nextCreditBalance : null,
+      });
       await load();
     } catch (error) {
       setErrorMessage(
@@ -346,6 +397,14 @@ export default function PublicationDetailPage() {
     setErrorMessage('');
 
     try {
+      if (rating === value) {
+        await deleteRating(publicationId);
+        setRatingValue(0);
+        setNotice('Your rating was removed.');
+        await load();
+        return;
+      }
+
       const result = await setRating(publicationId, value);
       setRatingValue(value);
       setPublication((current) => ({
@@ -363,11 +422,56 @@ export default function PublicationDetailPage() {
     }
   }
 
+  async function handleRemoveRating() {
+    if (!rating) return;
+    setBusyAction('rating');
+    setErrorMessage('');
+
+    try {
+      const result = await deleteRating(publicationId);
+      setRatingValue(0);
+      setPublication((current) => ({
+        ...current,
+        averageRating:
+          result?.publicationRating?.averageRating ??
+          result?.averageRating ??
+          current?.averageRating,
+        ratingsCount:
+          result?.publicationRating?.ratingsCount ??
+          result?.ratingsCount ??
+          Math.max(0, Number(current?.ratingsCount ?? 0) - 1),
+      }));
+      setNotice('Your rating was removed.');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusyAction('');
+    }
+  }
+
   async function handleVote(value) {
     setBusyAction('vote');
     setErrorMessage('');
 
     try {
+      if (vote === value) {
+        const result = await deleteVote(publicationId);
+        setVoteValue('');
+        const summary =
+          result?.publicationVotes ??
+          result?.publicationVoting ??
+          result?.counters ??
+          result;
+
+        setPublication((current) => ({
+          ...current,
+          upvotesCount: summary?.upvotesCount ?? current?.upvotesCount,
+          downvotesCount: summary?.downvotesCount ?? current?.downvotesCount,
+        }));
+        setNotice('Your vote was removed.');
+        return;
+      }
+
       const result = await setVote(publicationId, value);
       setVoteValue(value);
       const summary = result?.publicationVoting ?? result?.counters ?? result;
@@ -398,6 +502,7 @@ export default function PublicationDetailPage() {
         ...current,
         feedbackCount: result?.feedbackCount ?? current?.feedbackCount,
       }));
+      setFeedbackSaved(true);
       setNotice('Your feedback was saved.');
     } catch (error) {
       setErrorMessage(error.message);
@@ -405,6 +510,31 @@ export default function PublicationDetailPage() {
       setBusyAction('');
     }
   }
+
+  async function handleRemoveFeedback() {
+    if (!feedbackSaved) return;
+
+    setBusyAction('feedback-remove');
+    setErrorMessage('');
+
+    try {
+      const result = await deleteFeedback(publicationId);
+      setFeedbackValue('');
+      setFeedbackSaved(false);
+      setPublication((current) => ({
+        ...current,
+        feedbackCount:
+          result?.feedbackCount ??
+          Math.max(0, Number(current?.feedbackCount ?? 0) - 1),
+      }));
+      setNotice('Your feedback was removed.');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusyAction('');
+    }
+  }
+
 
 
   async function handleReport(event) {
@@ -418,6 +548,7 @@ export default function PublicationDetailPage() {
         ...(reportDetails.trim() ? { details: reportDetails.trim() } : {}),
       });
       setReportOpen(false);
+      setReportReasonOpen(false);
       setReportDetails('');
       setNotice('Your report was sent privately to the moderation team.');
     } catch (error) {
@@ -515,16 +646,32 @@ export default function PublicationDetailPage() {
                     type="button"
                     key={value}
                     className={value <= rating ? 'active' : ''}
-                    aria-pressed={value <= rating}
+                    aria-pressed={rating === value}
                     data-rating-value={value}
                     disabled={busyAction === 'rating'}
                     onClick={() => handleRating(value)}
-                    aria-label={`Rate ${value} out of 5`}
+                    aria-label={
+                      rating === value
+                        ? `Remove ${value} star rating`
+                        : `Rate ${value} out of 5`
+                    }
                   >
                     <Star size={22} />
                   </button>
                 ))}
               </div>
+
+              {rating ? (
+                <button
+                  type="button"
+                  className="engagement-remove-action"
+                  disabled={busyAction === 'rating'}
+                  onClick={handleRemoveRating}
+                >
+                  <X size={15} />
+                  Remove rating
+                </button>
+              ) : null}
             </article>
           ) : null}
 
@@ -541,7 +688,8 @@ export default function PublicationDetailPage() {
                   disabled={busyAction === 'vote'}
                   onClick={() => handleVote('UP')}
                 >
-                  <ThumbsUp /> Upvote
+                  <ThumbsUp />
+                  {vote === 'UP' ? 'Upvoted' : 'Upvote'}
                 </button>
                 <button
                   type="button"
@@ -550,9 +698,22 @@ export default function PublicationDetailPage() {
                   disabled={busyAction === 'vote'}
                   onClick={() => handleVote('DOWN')}
                 >
-                  <ThumbsDown /> Downvote
+                  <ThumbsDown />
+                  {vote === 'DOWN' ? 'Downvoted' : 'Downvote'}
                 </button>
               </div>
+
+              {vote ? (
+                <button
+                  type="button"
+                  className="engagement-remove-action"
+                  disabled={busyAction === 'vote'}
+                  onClick={() => handleVote(vote)}
+                >
+                  <X size={15} />
+                  Remove my vote
+                </button>
+              ) : null}
             </article>
           ) : null}
 
@@ -567,19 +728,42 @@ export default function PublicationDetailPage() {
                 onChange={(event) => setFeedbackValue(event.target.value)}
                 placeholder="What is strong, unclear, or worth validating?"
               />
-              <button
-                type="submit"
-                disabled={!feedback.trim() || busyAction === 'feedback'}
-              >
-                {busyAction === 'feedback' ? <LoaderCircle className="publication-spin" /> : <MessageCircleMore />}
-                Save feedback
-              </button>
+              <div className="publication-feedback-actions">
+                <button
+                  type="submit"
+                  className="publication-feedback-save"
+                  disabled={!feedback.trim() || busyAction === 'feedback'}
+                >
+                  {busyAction === 'feedback' ? (
+                    <LoaderCircle className="publication-spin" />
+                  ) : (
+                    <MessageCircleMore />
+                  )}
+                  {feedbackSaved ? 'Update feedback' : 'Save feedback'}
+                </button>
+
+                {feedbackSaved ? (
+                  <button
+                    type="button"
+                    className="publication-feedback-remove"
+                    disabled={busyAction === 'feedback-remove'}
+                    onClick={handleRemoveFeedback}
+                  >
+                    {busyAction === 'feedback-remove' ? (
+                      <LoaderCircle className="publication-spin" />
+                    ) : (
+                      <Trash2 size={16} />
+                    )}
+                    Delete my feedback
+                  </button>
+                ) : null}
+              </div>
             </form>
           ) : null}
         </section>
       ) : null}
 
-      {!accepted && acceptanceEnabled ? (
+      {!accepted && acceptanceEnabled && !isPremiumUser ? (
         <section className="publication-access-card">
           <div>
             <span><LockKeyhole size={16} /> PROTECTED OPPORTUNITY BRIEF</span>
@@ -587,44 +771,40 @@ export default function PublicationDetailPage() {
             <p>
               The public title and abstract stay available before acceptance.
               Accepting opens the public problem, objectives, and target users.
-              Normal accounts continue to secure sandbox checkout; Premium
-              accounts accept the basic brief immediately.
+              Continue through secure sandbox checkout to open the protected
+              problem, objectives, and target-user brief.
             </p>
           </div>
 
           <div className="publication-access-action">
             <div className="publication-access-action__price">
-              <small>{isPremiumUser ? 'Included with Premium' : 'One-time protected access'}</small>
+              <small>One-time protected access</small>
               <strong>
-                {isPremiumUser
-                  ? 'Free basic access'
-                  : paymentPricing
-                    ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
-                    : 'Open the complete opportunity'}
+                {paymentPricing
+                  ? `${paymentPricing.publicationAcceptancePrice} ${paymentPricing.currency}`
+                  : 'Open the complete opportunity'}
               </strong>
               <span>
                 <ShieldCheck size={15} />
-                {isPremiumUser ? 'No payment or credits required' : 'Secure sandbox checkout'}
+                Secure sandbox checkout
               </span>
             </div>
             <button
               type="button"
               className="accept-button"
               disabled={busyAction === 'accept'}
-              onClick={isPremiumUser ? handleAccept : () => setPaymentOpen(true)}
+              onClick={() => setPaymentOpen(true)}
             >
               {busyAction === 'accept' ? (
                 <LoaderCircle className="publication-spin" size={18} />
-              ) : isPremiumUser ? (
-                <Sparkles size={18} />
               ) : (
                 <LockKeyhole />
               )}
-              {isPremiumUser ? 'Open basic outputs' : 'Unlock protected brief'}
+              Unlock protected brief
             </button>
           </div>
         </section>
-      ) : !accepted ? (
+      ) : !accepted && !isPremiumUser ? (
         <section className="publication-access-card">
           <div>
             <span><ShieldCheck size={16} /> ACCEPTANCE PAUSED BY PUBLISHER</span>
@@ -705,9 +885,13 @@ export default function PublicationDetailPage() {
                 ) : isPremiumUser ? (
                   <>
                     <div>
-                      <small>Premium credit unlock</small>
-                      <strong>Use account credits</strong>
-                      <span><ShieldCheck size={15} /> Verified by the backend</span>
+                      <small>Premium advanced unlock</small>
+                      <strong>
+                        {paymentPricing?.publicationAdvancedCreditCost
+                          ? `${paymentPricing.publicationAdvancedCreditCost} credits`
+                          : 'Loading credit cost…'}
+                      </strong>
+                      <span><ShieldCheck size={15} /> Price loaded from backend settings</span>
                     </div>
                     <button
                       type="button"
@@ -720,7 +904,7 @@ export default function PublicationDetailPage() {
                       ) : (
                         <Sparkles size={18} />
                       )}
-                      Unlock with credits
+                      Unlock advanced outputs
                     </button>
                   </>
                 ) : (
@@ -841,33 +1025,178 @@ export default function PublicationDetailPage() {
             <button type="button" className="publication-report-modal__backdrop" aria-label="Close report" onClick={() => setReportOpen(false)} />
             <form onSubmit={handleReport}>
               <header>
-                <div><span>TRUST & SAFETY</span><h2>Report this publication</h2><p>Your report is private and reviewed by the Voxidence moderation team.</p></div>
-                <button type="button" onClick={() => setReportOpen(false)}><X size={19} /></button>
+                <div className="publication-report-modal__icon"><Flag size={22} /></div>
+                <div className="publication-report-modal__heading">
+                  <span>TRUST & SAFETY</span>
+                  <h2>Report this publication</h2>
+                  <p>Your report stays private and goes directly to the moderation team.</p>
+                </div>
+                <button
+                  type="button"
+                  className="publication-report-modal__close"
+                  onClick={() => {
+                    setReportOpen(false);
+                    setReportReasonOpen(false);
+                  }}
+                >
+                  <X size={19} />
+                </button>
               </header>
               <label>
                 <span>Reason</span>
-                <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
-                  <option value="MISLEADING">Misleading information</option>
-                  <option value="SPAM">Spam or manipulation</option>
-                  <option value="OFFENSIVE">Offensive content</option>
-                  <option value="COPYRIGHT">Copyright concern</option>
-                  <option value="PRIVACY">Privacy concern</option>
-                  <option value="OTHER">Other</option>
-                </select>
+                <div className={`publication-report-reason ${reportReasonOpen ? 'is-open' : ''}`}>
+                  <button
+                    type="button"
+                    className="publication-report-reason__trigger"
+                    aria-haspopup="listbox"
+                    aria-expanded={reportReasonOpen}
+                    onClick={() => setReportReasonOpen((open) => !open)}
+                  >
+                    <span>
+                      {
+                        {
+                          MISLEADING: 'Misleading information',
+                          SPAM: 'Spam or manipulation',
+                          OFFENSIVE: 'Offensive content',
+                          COPYRIGHT: 'Copyright concern',
+                          PRIVACY: 'Privacy concern',
+                          OTHER: 'Other',
+                        }[reportReason]
+                      }
+                    </span>
+                    <ChevronDown size={18} />
+                  </button>
+
+                  {reportReasonOpen ? (
+                    <div className="publication-report-reason__menu" role="listbox">
+                      {[
+                        ['MISLEADING', 'Misleading information'],
+                        ['SPAM', 'Spam or manipulation'],
+                        ['OFFENSIVE', 'Offensive content'],
+                        ['COPYRIGHT', 'Copyright concern'],
+                        ['PRIVACY', 'Privacy concern'],
+                        ['OTHER', 'Other'],
+                      ].map(([value, label]) => (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={reportReason === value}
+                          className={reportReason === value ? 'is-selected' : ''}
+                          key={value}
+                          onClick={() => {
+                            setReportReason(value);
+                            setReportReasonOpen(false);
+                          }}
+                        >
+                          <span>{label}</span>
+                          {reportReason === value ? <Check size={16} /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </label>
               <label>
                 <span>Additional details</span>
                 <textarea value={reportDetails} minLength={5} maxLength={1000} onChange={(event) => setReportDetails(event.target.value)} placeholder="Explain what the moderation team should review." />
               </label>
-              <footer>
-                <button type="button" onClick={() => setReportOpen(false)}>Cancel</button>
-                <button type="submit" className="is-primary" disabled={busyAction === 'report'}><Flag size={16} /> Submit report</button>
+              <footer className="publication-report-actions">
+                <button
+                  type="button"
+                  className="publication-report-cancel"
+                  onClick={() => {
+                    setReportOpen(false);
+                    setReportReasonOpen(false);
+                  }}
+                >
+                  <X size={16} />
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="publication-report-submit"
+                  disabled={busyAction === 'report'}
+                >
+                  {busyAction === 'report' ? (
+                    <LoaderCircle className="publication-spin" size={17} />
+                  ) : (
+                    <Flag size={17} />
+                  )}
+                  Submit report
+                </button>
               </footer>
             </form>
           </div>,
           document.body,
         )
         : null}
+      {creditUnlockReceipt
+        ? createPortal(
+          <div
+            className="publication-credit-success"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Advanced outputs unlocked"
+          >
+            <button
+              type="button"
+              className="publication-credit-success__backdrop"
+              aria-label="Close success message"
+              onClick={() => setCreditUnlockReceipt(null)}
+            />
+            <section className="publication-credit-success__panel">
+              <div className="publication-credit-success__halo" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="publication-credit-success__icon">
+                <CheckCircle2 size={34} />
+              </div>
+              <span className="publication-credit-success__eyebrow">ADVANCED ACCESS UNLOCKED</span>
+              <h2>Done — your credits were deducted successfully.</h2>
+              <p>
+                The complete advanced-output workspace is now available for this idea.
+              </p>
+
+              <div className="publication-credit-success__receipt">
+                <div>
+                  <small>Credits used</small>
+                  <strong>
+                    {creditUnlockReceipt.spent ?? paymentPricing?.publicationAdvancedCreditCost ?? '—'}
+                  </strong>
+                </div>
+                <i />
+                <div>
+                  <small>Remaining balance</small>
+                  <strong>{creditUnlockReceipt.balance ?? '—'}</strong>
+                </div>
+              </div>
+
+              <div className="publication-credit-success__actions">
+                <button type="button" onClick={() => setCreditUnlockReceipt(null)}>
+                  Stay here
+                </button>
+                <button
+                  type="button"
+                  className="is-primary"
+                  onClick={() => {
+                    setCreditUnlockReceipt(null);
+                    navigate(`/normal/accepted/${publicationId}/workspace`, {
+                      state: { forceRefresh: true },
+                    });
+                  }}
+                >
+                  Open advanced workspace <ArrowUpRight size={18} />
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )
+        : null}
+
     </main>
   );
 }

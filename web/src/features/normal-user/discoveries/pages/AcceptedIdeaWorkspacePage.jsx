@@ -1,17 +1,14 @@
 /**
- * Workspace for an accepted publication after advanced access is unlocked.
- *
- * The page reads the accepted publication from the backend and renders the
- * protected basic brief together with every advanced output returned for the
- * authenticated acceptance. No price or access decision is made in the UI.
- *
- * @author Voxidence Team
+ * Accepted publication workspace rendered with the same visual language as
+ * the private Open Idea workspace. Advanced outputs stay protected by the
+ * acceptance API while Premium-only AI Chat follows account access.
  */
 import {
   ArrowLeft,
-  ArrowRight,
+  Bot,
+  BriefcaseBusiness,
+  CalendarDays,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   FileText,
   Globe2,
@@ -21,10 +18,13 @@ import {
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import useAccountAccess from '../../shared/hooks/useAccountAccess';
 import { getDiscoveryById, getMyAcceptance } from '../api/discoveriesApi';
+import '../../idea-workspace/styles/idea-workspace.css';
 import '../styles/accepted-idea-workspace.css';
 
 const humanizeKey = (value) =>
@@ -55,9 +55,7 @@ function hasMeaningfulContent(value) {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   if (Array.isArray(value)) return value.some(hasMeaningfulContent);
-  if (typeof value === 'object') {
-    return Object.values(value).some(hasMeaningfulContent);
-  }
+  if (typeof value === 'object') return Object.values(value).some(hasMeaningfulContent);
   return true;
 }
 
@@ -67,16 +65,35 @@ function getOutputContent(output) {
     : output?.content;
 }
 
+function getSourceIdeaId(publication, acceptance) {
+  return (
+    acceptance?.ideaId ||
+    acceptance?.idea?.id ||
+    acceptance?.acceptedIdeaId ||
+    publication?.ideaId ||
+    publication?.idea?.id ||
+    publication?.sourceIdeaId ||
+    null
+  );
+}
+
 function WorkspaceContent({ value }) {
   if (Array.isArray(value)) {
     return (
-      <ul className="accepted-workspace-list">
+      <ul className="workspace-list">
         {value.map((item, index) => (
           <li key={`${String(item)}-${index}`}>
-            <span className="accepted-workspace-list__icon">
-              <CheckCircle2 size={16} />
+            <span className="workspace-list__icon">
+              <CheckCircle2 size={17} />
             </span>
-            <span>{String(item)}</span>
+            <span className="workspace-list__index">
+              {String(index + 1).padStart(2, '0')}
+            </span>
+            <span className="workspace-list__copy">
+              {typeof item === 'object' && item !== null
+                ? JSON.stringify(item, null, 2)
+                : String(item)}
+            </span>
           </li>
         ))}
       </ul>
@@ -85,15 +102,17 @@ function WorkspaceContent({ value }) {
 
   if (value && typeof value === 'object') {
     return (
-      <div className="accepted-workspace-structured">
-        {Object.entries(value).map(([key, item]) => (
-          <article key={key}>
-            <div className="accepted-workspace-structured__header">
-              <span />
+      <div className="workspace-structured">
+        {Object.entries(value).map(([key, item], index) => (
+          <section key={key}>
+            <div className="workspace-structured__header">
+              <span className="workspace-structured__number">
+                {String(index + 1).padStart(2, '0')}
+              </span>
               <strong>{humanizeKey(key)}</strong>
             </div>
             <WorkspaceContent value={item} />
-          </article>
+          </section>
         ))}
       </div>
     );
@@ -101,14 +120,32 @@ function WorkspaceContent({ value }) {
 
   const lines = normalizeList(value);
 
-  if (lines.length > 1) {
-    return <WorkspaceContent value={lines} />;
-  }
+  if (lines.length > 1) return <WorkspaceContent value={lines} />;
 
   return (
-    <p className="accepted-workspace-copy">
-      {lines[0] || 'Not available yet.'}
-    </p>
+    <div className="workspace-paragraphs">
+      <article>
+        <span className="workspace-paragraphs__marker">
+          <Sparkles size={15} />
+        </span>
+        <p>{lines[0] || 'Not available yet.'}</p>
+      </article>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <section className="workspace-state workspace-state--loading">
+      <span className="workspace-state__orb">
+        <WandSparkles size={24} />
+      </span>
+      <div>
+        <h1>Preparing your accepted idea</h1>
+        <p>Opening the protected brief and advanced execution outputs.</p>
+      </div>
+      <span className="workspace-state__progress" aria-hidden="true"><i /></span>
+    </section>
   );
 }
 
@@ -116,6 +153,8 @@ export default function AcceptedIdeaWorkspacePage() {
   const { publicationId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const shouldReduceMotion = useReducedMotion();
+  const { isPremium } = useAccountAccess();
 
   const [publication, setPublication] = useState(null);
   const [acceptance, setAcceptance] = useState(null);
@@ -133,35 +172,25 @@ export default function AcceptedIdeaWorkspacePage() {
       try {
         const [publicationPayload, acceptancePayload] = await Promise.all([
           getDiscoveryById(publicationId, {
-            forceRefresh: Boolean(location.state?.forceRefresh),
+            forceRefresh: true,
           }),
           getMyAcceptance(publicationId),
         ]);
 
         if (!mounted) return;
 
-        const nextPublication =
-          publicationPayload?.publication ?? publicationPayload;
-        const nextAcceptance =
-          acceptancePayload?.acceptance ?? acceptancePayload;
+        const nextPublication = publicationPayload?.publication ?? publicationPayload;
+        const nextAcceptance = acceptancePayload?.acceptance ?? acceptancePayload;
 
-        if (
-          !nextAcceptance?.advancedUnlockedAt &&
-          !nextAcceptance?.hasAdvancedAccess
-        ) {
-          throw new Error(
-            'Advanced access is required before opening this workspace.',
-          );
+        if (!nextAcceptance?.advancedUnlockedAt && !nextAcceptance?.hasAdvancedAccess) {
+          throw new Error('Advanced access is required before opening this idea.');
         }
 
         setPublication(nextPublication);
         setAcceptance(nextAcceptance);
       } catch (requestError) {
         if (mounted) {
-          setError(
-            requestError?.message ||
-              'The accepted workspace could not be loaded.',
-          );
+          setError(requestError?.message || 'The accepted idea could not be loaded.');
         }
       } finally {
         if (mounted) setLoading(false);
@@ -178,29 +207,52 @@ export default function AcceptedIdeaWorkspacePage() {
 
     const advancedOutputs = Array.isArray(publication.advancedOutputs)
       ? publication.advancedOutputs
-          .filter((output) =>
-            hasMeaningfulContent(getOutputContent(output)),
-          )
+          .filter((output) => hasMeaningfulContent(getOutputContent(output)))
           .filter(
             (output, index, items) =>
               items.findIndex(
                 (candidate) =>
-                  (candidate.outputKey ||
-                    candidate.key ||
-                    candidate.id) ===
+                  (candidate.outputKey || candidate.key || candidate.id) ===
                   (output.outputKey || output.key || output.id),
               ) === index,
           )
       : [];
 
+    const explicitBusinessModel = publication.businessModel;
+
+    /*
+     * Prefer the dedicated IdeaBusinessModel returned by the backend.
+     * For compatibility with older generated datasets, also recognize an
+     * advanced output whose key/title identifies it as a business model.
+     */
+    const legacyBusinessModelOutput = advancedOutputs.find((output) =>
+      /business[-_ ]?model/i.test(
+        `${output.outputKey || ''} ${output.key || ''} ${output.title || ''}`,
+      ),
+    );
+
+    const businessModel = explicitBusinessModel
+      ? explicitBusinessModel
+      : legacyBusinessModelOutput
+        ? {
+            content: getOutputContent(legacyBusinessModelOutput),
+            businessModelTemplate: {
+              name: legacyBusinessModelOutput.title || 'Business model',
+              description: 'Business strategy and operating model',
+            },
+          }
+        : null;
+
+    const businessModelContent = businessModel?.content;
+    const hasBusinessModel = hasMeaningfulContent(businessModelContent);
+
     return [
       {
         key: 'overview',
         title: 'Overview',
-        caption: 'The accepted opportunity narrative',
+        caption: 'The complete accepted idea narrative',
         icon: FileText,
         content: publication.publicAbstract,
-        group: 'Core brief',
       },
       {
         key: 'problem',
@@ -208,7 +260,6 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'The validated need behind the idea',
         icon: Layers3,
         content: publication.publicProblem,
-        group: 'Core brief',
       },
       {
         key: 'objectives',
@@ -216,7 +267,6 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'What the solution is designed to achieve',
         icon: Rocket,
         content: normalizeList(publication.publicObjectives),
-        group: 'Core brief',
       },
       {
         key: 'users',
@@ -224,214 +274,267 @@ export default function AcceptedIdeaWorkspacePage() {
         caption: 'The audience this opportunity serves',
         icon: Globe2,
         content: normalizeList(publication.publicTargetUsers),
-        group: 'Core brief',
       },
-      ...advancedOutputs.map((output) => ({
-        key: output.outputKey || output.key,
-        title:
-          output.title ||
-          humanizeKey(output.outputKey || output.key),
-        caption: 'Advanced execution output',
-        icon: Sparkles,
-        content: getOutputContent(output),
-        group: 'Advanced package',
-      })),
+      ...advancedOutputs
+        .filter(
+          (output) =>
+            output !== legacyBusinessModelOutput,
+        )
+        .map((output) => ({
+          key: output.outputKey || output.key || output.id,
+          title: output.title || humanizeKey(output.outputKey || output.key),
+          caption: 'Advanced execution output',
+          icon: Sparkles,
+          content: getOutputContent(output),
+        })),
+      ...(hasBusinessModel
+        ? [
+            {
+              key: 'business-model',
+              title: businessModel?.businessModelTemplate?.name || 'Business model',
+              caption:
+                businessModel?.businessModelTemplate?.description ||
+                'Business strategy and operating model',
+              icon: BriefcaseBusiness,
+              content: businessModelContent,
+            },
+          ]
+        : []),
     ];
   }, [publication]);
 
-  const currentIndex = Math.max(
-    0,
-    sections.findIndex((section) => section.key === activeKey),
+  const current = sections.find((section) => section.key === activeKey) ?? sections[0];
+  const sourceIdeaId = getSourceIdeaId(publication, acceptance);
+  const businessModelSection = sections.find((section) =>
+    /business[-_ ]?model/i.test(`${section.key} ${section.title}`),
   );
-  const current = sections[currentIndex] ?? sections[0];
-  const advancedCount = Math.max(0, sections.length - 4);
+  const advancedCount = Number(
+    publication?.advancedOutputsCount ?? Math.max(0, sections.length - 4),
+  );
 
-  function openRelativeSection(offset) {
-    if (!sections.length) return;
-    const nextIndex = Math.min(
-      sections.length - 1,
-      Math.max(0, currentIndex + offset),
-    );
-    setActiveKey(sections[nextIndex].key);
-  }
-
-  if (loading) {
-    return (
-      <section className="accepted-workspace-state">
-        <div className="accepted-workspace-state__orb">
-          <WandSparkles className="accepted-workspace-spin" />
-        </div>
-        <span>ADVANCED WORKSPACE</span>
-        <h1>Preparing your accepted idea</h1>
-        <p>Loading the complete brief and unlocked execution outputs.</p>
-      </section>
-    );
-  }
+  if (loading) return <LoadingState />;
 
   if (error || !publication || !current) {
     return (
-      <section className="accepted-workspace-state accepted-workspace-state--error">
-        <div className="accepted-workspace-state__orb">
-          <LockKeyhole />
+      <section className="workspace-state">
+        <span className="workspace-state__orb workspace-state__orb--error">
+          <LockKeyhole size={24} />
+        </span>
+        <div>
+          <h1>Idea unavailable</h1>
+          <p>{error || 'This accepted idea could not be opened.'}</p>
         </div>
-        <span>ACCESS NOTICE</span>
-        <h1>Workspace unavailable</h1>
-        <p>{error || 'The accepted workspace could not be opened.'}</p>
-        <button
-          type="button"
-          onClick={() => navigate(`/normal/discover/${publicationId}`)}
-        >
+        <button type="button" onClick={() => navigate('/normal/ideas?view=accepted')}>
           <ArrowLeft size={17} />
-          Return to accepted brief
+          Accepted ideas
         </button>
       </section>
     );
   }
 
-  const CurrentIcon = current.icon;
+  const acceptedDate = acceptance?.acceptedAt
+    ? new Date(acceptance.acceptedAt).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Accepted';
 
   return (
-    <main className="accepted-workspace-page">
-      <div className="accepted-workspace-ambient accepted-workspace-ambient--one" />
-      <div className="accepted-workspace-ambient accepted-workspace-ambient--two" />
+    <motion.main
+      className="idea-workspace accepted-open-idea"
+      initial={shouldReduceMotion ? undefined : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+    >
+      <button
+        className="workspace-back"
+        type="button"
+        onClick={() => navigate('/normal/ideas?view=accepted')}
+      >
+        <ArrowLeft size={17} />
+        <span>Accepted ideas</span>
+      </button>
 
-      <header className="accepted-workspace-topbar">
-        <button
-          type="button"
-          className="accepted-workspace-back"
-          onClick={() => navigate('/normal/ideas?view=accepted')}
-        >
-          <ArrowLeft size={17} />
-          Accepted ideas
-        </button>
+      <motion.section
+        className="workspace-hero accepted-open-idea__hero"
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="workspace-hero__orb workspace-hero__orb--one" />
+        <div className="workspace-hero__orb workspace-hero__orb--two" />
+        <div className="workspace-hero__grid" aria-hidden="true" />
 
-        <div className="accepted-workspace-topbar__identity">
-          <span>ADVANCED ACCESS UNLOCKED</span>
-          <strong title={publication.publicTitle}>{publication.publicTitle}</strong>
+        <div className="workspace-hero__content">
+          <span className="workspace-eyebrow">
+            <CheckCircle2 size={14} />
+            Accepted idea · advanced access
+          </span>
+
+          <h1>{publication.publicTitle}</h1>
+
+          <p>
+            {publication.domain?.name || publication.domainName || 'Accepted opportunity'}
+            <span aria-hidden="true">·</span>
+            {advancedCount} advanced outputs unlocked
+          </p>
+
+          <div className="workspace-hero__status">
+            <span className="is-unlocked">
+              <CheckCircle2 size={14} />
+              Advanced workspace
+            </span>
+            <span>
+              <CalendarDays size={14} />
+              Accepted {acceptedDate}
+            </span>
+          </div>
         </div>
 
-        <div className="accepted-workspace-topbar__meta">
-          <div>
-            <small>Sections</small>
-            <strong>{sections.length}</strong>
-          </div>
-          <div>
-            <small>Advanced</small>
-            <strong>{advancedCount}</strong>
-          </div>
-        </div>
-      </header>
+        <div className="workspace-actions accepted-workspace-hero-actions">
+          {isPremium && sourceIdeaId ? (
+            <button
+              className="workspace-premium-chat accepted-workspace-hero-action"
+              type="button"
+              onClick={() =>
+                navigate(`/normal/ideas/${sourceIdeaId}/chat`, {
+                  state: {
+                    chatOrigin: 'accepted-publication',
+                    publicationId,
+                    returnTo: `/normal/accepted/${publicationId}/workspace`,
+                    returnLabel: 'Accepted idea',
+                    ideaTitle: publication.publicTitle,
+                  },
+                })
+              }
+            >
+              <Bot size={17} />
+              <span>
+                <strong>AI Chat</strong>
+                <small>Discuss this accepted idea</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          ) : null}
 
-      <section className="accepted-workspace-shell">
-        <aside className="accepted-workspace-sidebar">
-          <div className="accepted-workspace-sidebar__heading">
-            <div className="accepted-workspace-sidebar__mark">
-              <Sparkles size={21} />
-            </div>
+          {sourceIdeaId ? (
+            <button
+              type="button"
+              className="accepted-workspace-business-model accepted-workspace-hero-action"
+              onClick={() =>
+                navigate(`/normal/ideas/${sourceIdeaId}/business-model`, {
+                  state: {
+                    businessModelOrigin: 'accepted-publication',
+                    publicationId,
+                    returnTo: `/normal/accepted/${publicationId}/workspace`,
+                    returnLabel: 'Accepted idea',
+                    ideaTitle: publication.publicTitle,
+                  },
+                })
+              }
+            >
+              <BriefcaseBusiness size={17} />
+              <span>
+                <strong>
+                  {businessModelSection
+                    ? 'Business Model'
+                    : 'Build Business Model'}
+                </strong>
+                <small>
+                  {businessModelSection
+                    ? publication.businessModel?.businessModelTemplate?.name ||
+                      'Open your strategy canvas'
+                    : 'Create your model from this accepted idea'}
+                </small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          ) : null}
+        </div>
+      </motion.section>
+
+      <section className="accepted-open-idea__quick-stats">
+        <article>
+          <FileText size={18} />
+          <span><small>Idea document</small><strong>{sections.length} sections</strong></span>
+        </article>
+        <article>
+          <Sparkles size={18} />
+          <span><small>Advanced package</small><strong>{advancedCount} outputs</strong></span>
+        </article>
+        <article>
+          <CheckCircle2 size={18} />
+          <span><small>Access</small><strong>Unlocked</strong></span>
+        </article>
+      </section>
+
+      <motion.section
+        className="workspace-body accepted-open-idea__body"
+        initial={shouldReduceMotion ? undefined : { opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45 }}
+      >
+        <aside aria-label="Accepted idea sections">
+          <div className="workspace-nav__intro">
+            <span><FileText size={16} /></span>
             <div>
-              <span>VOXIDENCE WORKSPACE</span>
               <strong>Idea document</strong>
-              <p>{sections.length} curated sections</p>
+              <small>Select a section — no long page scroll</small>
             </div>
           </div>
 
-          <nav>
+          <div className="workspace-nav__list accepted-open-idea__nav">
             {sections.map((section, index) => {
-              const Icon = section.icon;
-              const isActive = section.key === current.key;
+              const Icon = section.icon || FileText;
+              const isActive = current.key === section.key;
 
               return (
-                <button
-                  type="button"
+                <motion.button
                   key={section.key}
-                  className={isActive ? 'active' : ''}
+                  type="button"
+                  className={isActive ? 'is-active' : ''}
                   onClick={() => setActiveKey(section.key)}
+                  whileHover={shouldReduceMotion ? undefined : { x: 3 }}
                 >
-                  <small>{String(index + 1).padStart(2, '0')}</small>
-
-                  <i>
-                    <Icon size={18} />
-                  </i>
-
-                  <span>
-                    <strong>{section.title}</strong>
-                    <em>{section.caption}</em>
+                  <span className="workspace-nav__number">
+                    {String(index + 1).padStart(2, '0')}
                   </span>
-
-                  <ArrowRight size={15} />
-                </button>
+                  <span className="workspace-nav__icon"><Icon size={16} /></span>
+                  <span className="workspace-nav__copy">
+                    <strong>{section.title}</strong>
+                    <small>{section.caption}</small>
+                  </span>
+                  <ChevronRight className="workspace-nav__arrow" size={15} />
+                </motion.button>
               );
             })}
-          </nav>
-
-          <div className="accepted-workspace-sidebar__footer">
-            <CheckCircle2 size={17} />
-            <div>
-              <strong>Verified access</strong>
-              <span>
-                Accepted{' '}
-                {acceptance?.acceptedAt
-                  ? new Date(acceptance.acceptedAt).toLocaleDateString()
-                  : 'opportunity'}
-              </span>
-            </div>
           </div>
         </aside>
 
-        <article className="accepted-workspace-document">
-          <div className="accepted-workspace-document__hero">
+        <article className="workspace-document accepted-open-idea__document">
+          <div className="workspace-document__header">
             <div>
-              <span>{current.group}</span>
-              <h1>{current.title}</h1>
+              <span>Accepted idea workspace</span>
+              <h2>{current.title}</h2>
               <p>{current.caption}</p>
             </div>
-
-            <div className="accepted-workspace-document__number">
-              {String(currentIndex + 1).padStart(2, '0')}
-            </div>
+            <span className="workspace-document__badge">
+              {String(Math.max(1, sections.findIndex((section) => section.key === current.key) + 1)).padStart(2, '0')}
+            </span>
           </div>
 
-          <div className="accepted-workspace-content">
-            <div className="accepted-workspace-content__icon">
-              <CurrentIcon size={22} />
-            </div>
-
-            <div className="accepted-workspace-content__body">
-              <WorkspaceContent value={current.content} />
-            </div>
-          </div>
-
-          <footer className="accepted-workspace-document__footer">
-            <div>
-              <span>
-                Section {currentIndex + 1} of {sections.length}
-              </span>
-              <strong>{advancedCount} advanced outputs unlocked</strong>
-            </div>
-
-            <div className="accepted-workspace-document__actions">
-              <button
-                type="button"
-                disabled={currentIndex === 0}
-                onClick={() => openRelativeSection(-1)}
-              >
-                <ChevronLeft size={18} />
-                Previous
-              </button>
-
-              <button
-                type="button"
-                className="is-primary"
-                disabled={currentIndex === sections.length - 1}
-                onClick={() => openRelativeSection(1)}
-              >
-                Next section
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </footer>
+          <motion.div
+            className="workspace-copy accepted-open-idea__copy"
+            key={current.key}
+            initial={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <WorkspaceContent value={current.content} />
+          </motion.div>
         </article>
-      </section>
-    </main>
+      </motion.section>
+    </motion.main>
   );
 }

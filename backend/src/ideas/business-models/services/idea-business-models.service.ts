@@ -28,13 +28,13 @@ type TemplateSectionKey = string;
  * Generates and versions business models after idea generation completes.
  *
  * Responsibilities:
- * - Validate ownership and persistent access to the idea.
+ * - Validate permanent advanced access to the source idea.
  * - Require the idea to be unlocked, regardless of the user's current
  *   NORMAL or PREMIUM account status.
  * - Validate the selected active template.
  * - Generate structured content matching the template sections.
- * - Preserve old versions when the owner changes the template.
- * - Keep exactly one current version per idea.
+ * - Preserve old versions when the current user changes the template.
+ * - Keep exactly one current version per idea and user.
  *
  * This service does not participate in the original idea-generation
  * pipeline. Template selection always happens after the idea exists.
@@ -50,7 +50,7 @@ export class IdeaBusinessModelsService {
   ) {}
 
   /**
-   * Generates a new current business-model version for an owned idea.
+   * Generates a new current business-model version for an accessible advanced idea.
    *
    * Reusing the same template is allowed and creates a newer version.
    * Selecting a different template also creates a newer version while
@@ -117,7 +117,10 @@ export class IdeaBusinessModelsService {
       return await this.prisma.$transaction(
         async (tx) => {
           const latest = await tx.ideaBusinessModel.findFirst({
-            where: { ideaId },
+            where: {
+              ideaId,
+              userId,
+            },
             orderBy: { version: 'desc' },
             select: { version: true },
           });
@@ -125,6 +128,7 @@ export class IdeaBusinessModelsService {
           await tx.ideaBusinessModel.updateMany({
             where: {
               ideaId,
+              userId,
               isCurrent: true,
             },
             data: {
@@ -135,6 +139,7 @@ export class IdeaBusinessModelsService {
           return tx.ideaBusinessModel.create({
             data: {
               ideaId,
+              userId,
               businessModelTemplateId: template.id,
               content,
               version: (latest?.version ?? 0) + 1,
@@ -161,13 +166,14 @@ export class IdeaBusinessModelsService {
     }
   }
 
-  /** Returns the current business model for an owned idea. */
+  /** Returns the current business model for an accessible advanced idea. */
   async findCurrent(userId: string, ideaId: string) {
     await this.findAccessibleIdea(userId, ideaId);
 
     const businessModel = await this.prisma.ideaBusinessModel.findFirst({
       where: {
         ideaId,
+        userId,
         isCurrent: true,
       },
       select: this.businessModelSelect,
@@ -182,12 +188,15 @@ export class IdeaBusinessModelsService {
     return businessModel;
   }
 
-  /** Returns all preserved business-model versions for an owned idea. */
+  /** Returns all preserved business-model versions for an accessible advanced idea. */
   async findHistory(userId: string, ideaId: string) {
     await this.findAccessibleIdea(userId, ideaId);
 
     return this.prisma.ideaBusinessModel.findMany({
-      where: { ideaId },
+      where: {
+        ideaId,
+        userId,
+      },
       orderBy: { version: 'desc' },
       select: this.businessModelSelect,
     });
@@ -211,6 +220,7 @@ export class IdeaBusinessModelsService {
     const current = await this.prisma.ideaBusinessModel.findFirst({
       where: {
         ideaId,
+        userId,
         isCurrent: true,
       },
       select: {
@@ -237,16 +247,39 @@ export class IdeaBusinessModelsService {
   }
 
   /**
-   * Ensures the user owns an existing completed idea and has permanent
-   * unlocked access to its advanced outputs.
+   * Ensures the current user has permanent advanced access to the source idea.
+   *
+   * Access paths:
+   * - owner: own unlocked idea;
+   * - accepted user: publication acceptance with advancedUnlockedAt set.
+   *
+   * This intentionally does NOT depend on the current NORMAL/PREMIUM account
+   * status. Once advanced access was purchased/unlocked, Business Model remains
+   * available permanently.
    */
   private async findAccessibleIdea(userId: string, ideaId: string) {
     const idea = await this.prisma.idea.findFirst({
       where: {
         id: ideaId,
-        userId,
         deletedAt: null,
-        isUnlocked: true,
+        OR: [
+          {
+            userId,
+            isUnlocked: true,
+          },
+          {
+            publication: {
+              acceptances: {
+                some: {
+                  userId,
+                  advancedUnlockedAt: {
+                    not: null,
+                  },
+                },
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -267,7 +300,7 @@ export class IdeaBusinessModelsService {
 
     if (!idea) {
       throw new NotFoundException(
-        'The idea was not found, is not owned by the user, or is not unlocked.',
+        'The idea was not found or advanced access is not available for this user.',
       );
     }
 
@@ -377,25 +410,40 @@ export class IdeaBusinessModelsService {
     }
 
     const record = parsed as Record<string, unknown>;
-    const returnedKeys = Object.keys(record);
+    const returnedEntries = Object.entries(record);
 
-    if (
-      returnedKeys.length !== sectionKeys.length ||
-      sectionKeys.some((key) => !returnedKeys.includes(key))
-    ) {
+    if (returnedEntries.length !== sectionKeys.length) {
       throw new BadGatewayException(
         'The generated business model does not match the selected template sections.',
       );
     }
 
+    const normalizedReturnedKeys = new Map<string, string>();
+
+    for (const [returnedKey] of returnedEntries) {
+      const normalized = this.normalizeSectionKey(returnedKey);
+
+      if (normalizedReturnedKeys.has(normalized)) {
+        throw new BadGatewayException(
+          'The generated business model contains duplicate section keys.',
+        );
+      }
+
+      normalizedReturnedKeys.set(normalized, returnedKey);
+    }
+
     const content: Record<string, Prisma.InputJsonValue> = {};
 
     for (const key of sectionKeys) {
-      const value = record[key];
+      const exactValue = record[key];
+      const returnedKey = normalizedReturnedKeys.get(
+        this.normalizeSectionKey(key),
+      );
+      const value = exactValue ?? (returnedKey ? record[returnedKey] : undefined);
 
       if (typeof value !== 'string' || value.trim().length < 10) {
         throw new BadGatewayException(
-          `The generated business-model section "${key}" is invalid.`,
+          `The generated business-model section "${key}" is invalid or missing.`,
         );
       }
 
@@ -403,6 +451,15 @@ export class IdeaBusinessModelsService {
     }
 
     return content;
+  }
+
+
+  /** Normalizes provider section keys so harmless casing/separator differences are accepted. */
+  private normalizeSectionKey(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
   }
 
   /** Converts nullable Prisma JSON into stable prompt text. */
@@ -418,6 +475,7 @@ export class IdeaBusinessModelsService {
   private readonly businessModelSelect = {
     id: true,
     ideaId: true,
+    userId: true,
     version: true,
     isCurrent: true,
     content: true,

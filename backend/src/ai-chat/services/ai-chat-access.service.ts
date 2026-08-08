@@ -67,29 +67,51 @@ export class AiChatAccessService {
     userId: string,
     ideaId: string,
   ): Promise<AiChatIdeaAccessRecord> {
-    const idea = await this.prisma.idea.findFirst({
-      where: {
-        id: ideaId,
-        userId,
-        deletedAt: null,
-      },
-      select: AI_CHAT_IDEA_ACCESS_SELECT,
-    });
+    const [viewer, idea] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { accountStatus: true },
+      }),
+      this.prisma.idea.findFirst({
+        where: {
+          id: ideaId,
+          deletedAt: null,
+        },
+        select: AI_CHAT_IDEA_ACCESS_SELECT,
+      }),
+    ]);
 
     if (!idea) {
       throw new NotFoundException('Idea was not found.');
     }
 
-    if (!idea.user || idea.user.accountStatus !== AccountStatus.PREMIUM) {
+    if (!viewer || viewer.accountStatus !== AccountStatus.PREMIUM) {
       throw new ForbiddenException(
         'AI Chat is available only while the account is Premium.',
       );
     }
 
-    if (!idea.isUnlocked) {
-      throw new ForbiddenException(
-        'AI Chat is available only for unlocked ideas.',
-      );
+    const ownsIdea = idea.userId === userId;
+    const hasAcceptedAdvancedAccess = Boolean(
+      idea.publication?.acceptances?.some(
+        (acceptance) =>
+          acceptance.userId === userId &&
+          acceptance.advancedUnlockedAt !== null,
+      ),
+    );
+
+    if (ownsIdea) {
+      if (!idea.isUnlocked) {
+        throw new ForbiddenException(
+          'AI Chat is available only for unlocked ideas.',
+        );
+      }
+
+      return idea;
+    }
+
+    if (!hasAcceptedAdvancedAccess) {
+      throw new NotFoundException('Idea was not found.');
     }
 
     return idea;
@@ -128,7 +150,6 @@ export class AiChatAccessService {
         userId,
         deletedAt: null,
         idea: {
-          userId,
           deletedAt: null,
         },
       },
@@ -139,20 +160,7 @@ export class AiChatAccessService {
       throw new NotFoundException('AI chat session was not found.');
     }
 
-    if (
-      !session.idea.user ||
-      session.idea.user.accountStatus !== AccountStatus.PREMIUM
-    ) {
-      throw new ForbiddenException(
-        'AI Chat is available only while the account is Premium.',
-      );
-    }
-
-    if (!session.idea.isUnlocked) {
-      throw new ForbiddenException(
-        'AI Chat is available only for unlocked ideas.',
-      );
-    }
+    await this.ensureIdeaChatAccess(userId, session.ideaId);
 
     return session;
   }
@@ -185,7 +193,6 @@ export class AiChatAccessService {
         deletedAt: null,
         idea: {
           id: ideaId,
-          userId,
           deletedAt: null,
         },
       },
@@ -196,21 +203,9 @@ export class AiChatAccessService {
       throw new NotFoundException('AI chat session was not found.');
     }
 
-    if (
-      !session.idea.user ||
-      session.idea.user.accountStatus !== AccountStatus.PREMIUM
-    ) {
-      throw new ForbiddenException(
-        'AI Chat is available only while the account is Premium.',
-      );
-    }
-
-    if (!session.idea.isUnlocked) {
-      throw new ForbiddenException(
-        'AI Chat is available only for unlocked ideas.',
-      );
-    }
+    await this.ensureIdeaChatAccess(userId, ideaId);
 
     return session;
   }
+
 }

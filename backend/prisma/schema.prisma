@@ -100,6 +100,7 @@ model User {
   favoriteIdeas               FavoriteIdea[]
   generationRuns              IdeaGenerationRun[]
   publicationAcceptances      IdeaPublicationAcceptance[]
+  businessModels              IdeaBusinessModel[]
   publicationFeedback         IdeaPublicationFeedback[]
   publicationRatings          IdeaPublicationRating[]
   publicationReportsSubmitted IdeaPublicationReport[]     @relation("PublicationReportsSubmitted")
@@ -210,10 +211,8 @@ model SystemSetting {
   /// advanced details of an accepted publication.
   publicationAdvancedCreditCost Int @default(10) @map("publication_advanced_credit_cost")
 
-
   /// Price paid by a NORMAL user to accept a publication.
   normalAcceptancePrice Decimal @default(5) @map("normal_acceptance_price") @db.Decimal(10, 2)
-
 
   /// Direct-payment price for a NORMAL user to unlock advanced outputs
   /// after the basic publication acceptance already exists.
@@ -457,19 +456,20 @@ model CreditTransaction {
 }
 
 model ChatSession {
-  id            String        @id @default(uuid())
-  userId        String        @map("user_id")
-  ideaId        String        @map("idea_id")
-  title         String?
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  deletedAt     DateTime?     @map("deleted_at")
-  lastMessageAt DateTime      @default(now()) @map("last_message_at")
-  messages      ChatMessage[]
-  idea          Idea          @relation(fields: [ideaId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  titleManuallyEdited Boolean   @default(false) @map("title_manually_edited")
-titleGeneratedAt    DateTime? @map("title_generated_at")
+  id                  String        @id @default(uuid())
+  userId              String        @map("user_id")
+  ideaId              String        @map("idea_id")
+  title               String?
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  deletedAt           DateTime?     @map("deleted_at")
+  lastMessageAt       DateTime      @default(now()) @map("last_message_at")
+  messages            ChatMessage[]
+  idea                Idea          @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  titleManuallyEdited Boolean       @default(false) @map("title_manually_edited")
+  titleGeneratedAt    DateTime?     @map("title_generated_at")
+
   @@index([userId, deletedAt, lastMessageAt])
   @@index([ideaId, deletedAt])
   @@map("chat_sessions")
@@ -1412,8 +1412,14 @@ model IdeaPublicationRevision {
 model IdeaBusinessModel {
   id                      String                @id @default(uuid())
   /// *
-  /// * Idea for which this business model was generated.
+  /// * Source idea for which this business model was generated.
   ideaId                  String                @map("idea_id")
+  /// *
+  /// * User who owns this business-model workspace/version.
+  /// *
+  /// * Accepted users with advanced access build their own model without
+  /// * overwriting the publisher's model.
+  userId                  String                @map("user_id")
   /// *
   /// * Template selected by the user after idea generation.
   businessModelTemplateId String                @map("business_model_template_id")
@@ -1432,9 +1438,11 @@ model IdeaBusinessModel {
   updatedAt               DateTime              @updatedAt @map("updated_at")
   businessModelTemplate   BusinessModelTemplate @relation(fields: [businessModelTemplateId], references: [id])
   idea                    Idea                  @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  user                    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([ideaId, version])
-  @@index([ideaId, isCurrent])
+  @@unique([ideaId, userId, version])
+  @@index([ideaId, userId, isCurrent])
+  @@index([userId, createdAt])
   @@index([businessModelTemplateId])
   @@map("idea_business_models")
 }
