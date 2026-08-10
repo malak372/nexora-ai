@@ -5,8 +5,7 @@
  */
 
 import { queryClient } from '../../../../config/queryClient';
-import { getDiscoveryById, getMyAcceptance } from '../../discoveries/api/discoveriesApi';
-import { getIdeaWorkspaceBundle, invalidateIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import { invalidateIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
 import { invalidateRequestCache } from '../../shared/cache/requestCache';
 
 const PAYMENT_AFFECTED_NAMESPACES = [
@@ -19,6 +18,9 @@ const PAYMENT_AFFECTED_NAMESPACES = [
   'idea-generation:',
   'discoveries:',
   'discovery:',
+  'billing-invoices:',
+  'billing-invoice-detail:',
+  'payment-pricing:',
 ];
 
 /**
@@ -47,22 +49,12 @@ export async function invalidatePaymentAffectedCaches({ ideaId, publicationId } 
  * receives fresh data instead of waiting for another cached navigation cycle.
  */
 export async function refreshPaymentDestination({ ideaId, publicationId } = {}) {
+  /*
+   * Only invalidate here. The destination route will perform exactly one fresh
+   * request when it opens. Prefetching with forceRefresh here and then
+   * navigating with forceRefresh caused the same expensive workspace/detail
+   * request to run twice after successful payment.
+   */
   await invalidatePaymentAffectedCaches({ ideaId, publicationId });
-
-  const refreshes = [];
-
-  if (ideaId) {
-    refreshes.push(getIdeaWorkspaceBundle(ideaId, { forceRefresh: true }));
-  }
-
-  if (publicationId) {
-    refreshes.push(
-      Promise.allSettled([
-        getDiscoveryById(publicationId),
-        getMyAcceptance(publicationId),
-      ]),
-    );
-  }
-
-  await Promise.allSettled(refreshes);
+  return { ideaId, publicationId };
 }

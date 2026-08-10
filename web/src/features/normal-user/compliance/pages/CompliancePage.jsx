@@ -464,22 +464,37 @@ export default function CompliancePage() {
     setError('');
 
     try {
-      const [complaintsResult, ideasResult] = await Promise.all([
-        getMyComplaints({ page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'desc' }),
-        getMyIdeas({ page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'desc' }),
-      ]);
+      // The complaint queue is the first-paint data. Load it first so the page
+      // does not wait for the much larger idea dropdown request.
+      const complaintsResult = await getMyComplaints({
+        page: 1,
+        limit: 100,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
+      });
 
       const nextItems = complaintsResult.items ?? [];
       setItems(nextItems);
-      setIdeas(ideasResult.items ?? []);
 
-      if (!preserveSelection || !selectedId) return;
+      if (preserveSelection && selectedId) {
+        const freshSelected = nextItems.find((item) => item.id === selectedId);
+        if (freshSelected) setSelectedComplaint(freshSelected);
+      }
 
-      const freshSelected = nextItems.find((item) => item.id === selectedId);
-      if (freshSelected) setSelectedComplaint(freshSelected);
+      setLoading(false);
+
+      // Ideas are only required by the Create Case form. Hydrate them after
+      // the visible compliance queue is already interactive.
+      void getMyIdeas({
+        page: 1,
+        limit: 100,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      })
+        .then((ideasResult) => setIdeas(ideasResult.items ?? []))
+        .catch(() => setIdeas([]));
     } catch (requestError) {
       setError(requestError.message || 'The compliance workspace could not be loaded.');
-    } finally {
       setLoading(false);
     }
   }, [selectedId]);

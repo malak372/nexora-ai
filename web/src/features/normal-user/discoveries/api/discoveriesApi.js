@@ -12,6 +12,15 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
+
+const DISCOVERIES_CACHE_TTL_MS = 2 * 60 * 1000;
+const DISCOVERY_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000;
+const ACCEPTANCE_CACHE_TTL_MS = 60 * 1000;
 
 function unwrap(response) {
   return extractApiData(response) ?? null;
@@ -42,41 +51,76 @@ function createUuidV4() {
   return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
 }
 
-export async function getDiscoveries(params = {}) {
-  try {
-    const payload = unwrap(
-      await normalUserApi.get('/users/publications/discover', { params }),
-    ) ?? {};
+export async function getDiscoveries(params = {}, options = {}) {
+  const cacheKey = createRequestCacheKey('discoveries', params);
 
-    return {
-      items: payload.items ?? payload.data ?? [],
-      pagination: payload.pagination ?? payload.meta ?? null,
-    };
+  try {
+    return await cachedRequest(
+      cacheKey,
+      async () => {
+        const payload = unwrap(
+          await normalUserApi.get('/users/publications/discover', { params }),
+        ) ?? {};
+
+        return {
+          items: payload.items ?? payload.data ?? [],
+          pagination: payload.pagination ?? payload.meta ?? null,
+        };
+      },
+      {
+        ttlMs: DISCOVERIES_CACHE_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: true,
+        allowStaleOnError: true,
+      },
+    );
   } catch (error) {
     throwApiError(error, 'Discoveries could not be loaded.');
   }
 }
 
 export async function getDiscoveryById(publicationId, options = {}) {
+  const cacheKey = createRequestCacheKey('discovery', { publicationId });
+
   try {
-    return unwrap(
-      await normalUserApi.get(`/users/publications/${publicationId}`, {
-        params: options.forceRefresh
-          ? { _refresh: Date.now() }
-          : undefined,
-      }),
+    return await cachedRequest(
+      cacheKey,
+      async () =>
+        unwrap(
+          await normalUserApi.get(`/users/publications/${publicationId}`),
+        ),
+      {
+        ttlMs: DISCOVERY_DETAIL_CACHE_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: true,
+        allowStaleOnError: !options.forceRefresh,
+      },
     );
   } catch (error) {
     throwApiError(error, 'This discovery could not be opened.');
   }
 }
 
-export async function getMyAcceptance(publicationId) {
+export async function getMyAcceptance(publicationId, options = {}) {
+  const cacheKey = createRequestCacheKey('discovery-acceptance', {
+    publicationId,
+  });
+
   try {
-    return unwrap(
-      await normalUserApi.get(
-        `/users/publications/${publicationId}/my-acceptance`,
-      ),
+    return await cachedRequest(
+      cacheKey,
+      async () =>
+        unwrap(
+          await normalUserApi.get(
+            `/users/publications/${publicationId}/my-acceptance`,
+          ),
+        ),
+      {
+        ttlMs: ACCEPTANCE_CACHE_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: false,
+        allowStaleOnError: true,
+      },
     );
   } catch (error) {
     if (error?.response?.status === 404) return null;
@@ -91,7 +135,7 @@ export async function acceptPublication(
   const origin = window.location.origin;
 
   try {
-    return unwrap(
+    const result = unwrap(
       await normalUserApi.post(
         `/users/publications/${publicationId}/accept`,
         {
@@ -102,6 +146,16 @@ export async function acceptPublication(
         },
       ),
     );
+
+    invalidateRequestCache('discoveries:');
+    invalidateRequestCache(
+      createRequestCacheKey('discovery', { publicationId }),
+    );
+    invalidateRequestCache(
+      createRequestCacheKey('discovery-acceptance', { publicationId }),
+    );
+
+    return result;
   } catch (error) {
     throwApiError(error, 'The publication could not be accepted.');
   }
@@ -136,11 +190,20 @@ export async function createPublicationAdvancedUnlockCheckout(
 
 export async function unlockPublicationAdvancedWithCredits(publicationId) {
   try {
-    return unwrap(
+    const result = unwrap(
       await normalUserApi.post(
         `/users/publications/${publicationId}/unlock-advanced`,
       ),
     );
+
+    invalidateRequestCache(
+      createRequestCacheKey('discovery', { publicationId }),
+    );
+    invalidateRequestCache(
+      createRequestCacheKey('discovery-acceptance', { publicationId }),
+    );
+
+    return result;
   } catch (error) {
     throwApiError(
       error,

@@ -13,7 +13,7 @@ import {
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { downloadMyInvoice, getMyInvoice, getMyInvoices } from '../api/invoicesApi';
+import { downloadMyInvoice, getMyInvoice, getMyInvoices, prefetchMyInvoice } from '../api/invoicesApi';
 import '../styles/billing-history.css';
 
 const PURPOSE_LABELS = {
@@ -56,11 +56,22 @@ export default function BillingHistoryPage() {
     return () => { mounted = false; };
   }, [page]);
 
-  async function openInvoice(invoiceId) {
+  async function openInvoice(invoice) {
+    if (!invoice?.id) return;
+
+    // Open immediately from the row data so the click feels instant. The full
+    // backend detail hydrates the same modal in the background.
+    setSelected(invoice);
     setDetailLoading(true);
-    try { setSelected(await getMyInvoice(invoiceId)); }
-    catch (requestError) { setError(requestError?.response?.data?.message || requestError.message); }
-    finally { setDetailLoading(false); }
+
+    try {
+      const detail = await getMyInvoice(invoice.id);
+      setSelected((current) => current?.id === invoice.id ? { ...current, ...detail } : current);
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || requestError.message || 'Unable to load invoice details.');
+    } finally {
+      setDetailLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -141,7 +152,7 @@ export default function BillingHistoryPage() {
                   <td><span className={`billing-provider billing-provider--${invoice.providerKey}`}>{invoice.providerKey}</span></td>
                   <td><strong>{formatMoney(invoice.amount, invoice.currency)}</strong></td>
                   <td><span className="billing-status"><CheckCircle2 size={14} />{invoice.status}</span></td>
-                  <td><button type="button" onClick={() => openInvoice(invoice.id)}>View</button></td>
+                  <td><button type="button" onMouseEnter={() => void prefetchMyInvoice(invoice.id)} onFocus={() => void prefetchMyInvoice(invoice.id)} onClick={() => openInvoice(invoice)}>View</button></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -157,13 +168,6 @@ export default function BillingHistoryPage() {
         ) : null}
       </section>
 
-      {detailLoading && typeof document !== 'undefined'
-        ? createPortal(
-          <div className="billing-detail-loader"><LoaderCircle className="billing-spin" /></div>,
-          document.body,
-        )
-        : null}
-
       {selected && typeof document !== 'undefined'
         ? createPortal(
           <div className="invoice-modal" role="dialog" aria-modal="true" aria-label="Invoice details">
@@ -171,14 +175,14 @@ export default function BillingHistoryPage() {
             <article className="invoice-sheet" onClick={(event) => event.stopPropagation()}>
               <header>
                 <div><span>VOXIDENCE</span><h2>Invoice</h2><p>{selected.invoiceNumber}</p></div>
-                <div className="invoice-sheet__status"><CheckCircle2 size={16} /> {selected.status}</div>
+                <div className="invoice-sheet__status">{detailLoading ? <LoaderCircle size={16} className="billing-spin" /> : <CheckCircle2 size={16} />} {detailLoading ? 'Refreshing' : selected.status}</div>
                 <button type="button" className="invoice-sheet__close" onClick={() => setSelected(null)}><X size={19} /></button>
               </header>
               <section className="invoice-sheet__meta">
-                <div><small>Billed to</small><strong>{selected.customerName}</strong><span>{selected.customerEmail}</span></div>
-                <div><small>Issued</small><strong>{formatDate(selected.issuedAt)}</strong><span>{selected.providerKey.toUpperCase()} · {selected.paymentMethodKey}</span></div>
+                <div><small>Billed to</small><strong>{selected.customerName || 'Voxidence account'}</strong><span>{selected.customerEmail || 'Loading account details…'}</span></div>
+                <div><small>Issued</small><strong>{formatDate(selected.issuedAt)}</strong><span>{String(selected.providerKey || 'provider').toUpperCase()} · {selected.paymentMethodKey || 'Verified payment'}</span></div>
                 <div><small>Purpose</small><strong>{PURPOSE_LABELS[selected.paymentPurpose] || selected.paymentPurpose}</strong></div>
-                <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId}</strong></div>
+                <div><small>Reference</small><strong>{selected.transactionReference || selected.providerPaymentId || 'Verified transaction'}</strong></div>
               </section>
               <section className="invoice-sheet__total"><span>Total paid</span><strong>{formatMoney(selected.amount, selected.currency)}</strong></section>
               <footer>

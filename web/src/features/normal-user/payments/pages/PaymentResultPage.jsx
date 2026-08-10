@@ -24,9 +24,9 @@ import {
 } from '../utils/paymentReturn.storage';
 import '../styles/payment-result.css';
 
-const MAX_STATUS_ATTEMPTS = 60;
-const STATUS_POLL_DELAY_MS = 750;
-const PROVIDER_RECONCILE_EVERY = 6;
+const MAX_STATUS_ATTEMPTS = 80;
+const STATUS_POLL_DELAY_MS = 350;
+const PROVIDER_RECONCILE_EVERY = 10;
 
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -35,8 +35,11 @@ function wait(milliseconds) {
 function isFulfillmentComplete(payment) {
   if (!payment || payment.status !== 'SUCCEEDED') return false;
 
+  // DIRECT_UNLOCK is intentionally considered complete as soon as the
+  // provider payment is trusted. Advanced-output generation continues in the
+  // idea workspace instead of blocking this confirmation screen.
   if (payment.paymentPurpose === 'DIRECT_UNLOCK') {
-    return payment.ideaUnlocked === true;
+    return true;
   }
 
   if (payment.paymentPurpose === 'ACCEPT_PUBLICATION') {
@@ -127,10 +130,20 @@ export default function PaymentResultPage() {
 
     for (let attempt = 0; attempt < MAX_STATUS_ATTEMPTS; attempt += 1) {
       try {
-        const payment =
-          attempt === 0 || attempt % PROVIDER_RECONCILE_EVERY === 0
-            ? await reconcilePayment(paymentId)
-            : await getPaymentState(paymentId);
+        // Check the fast local DB state first. If the webhook already
+        // completed the payment, we avoid an unnecessary provider round-trip.
+        let payment = await getPaymentState(paymentId);
+
+        if (
+          payment?.status === 'PENDING' &&
+          (attempt === 0 || attempt % PROVIDER_RECONCILE_EVERY === 0)
+        ) {
+          // Reconciliation may need a provider network round-trip. Never block
+          // this screen on that call: trigger it in the background and keep
+          // polling the lightweight local payment status instead.
+          void reconcilePayment(paymentId).catch(() => undefined);
+        }
+
         latestPayment = payment;
         lastError = null;
 
@@ -155,15 +168,34 @@ export default function PaymentResultPage() {
         }
 
         if (isFulfillmentComplete(payment)) {
-          // Show success immediately. Cache refresh continues in the background,
-          // so the user is no longer blocked by unrelated cache cleanup or
-          // workspace prefetching.
+          // Never block the return page on cache refresh or AI generation.
           void refreshPaymentDestination({
             ideaId: payment.ideaId || fallbackIdeaId,
             publicationId: payment.publicationId || fallbackPublicationId,
           });
 
           clearPaymentReturnReference();
+
+          // Direct unlock can spend several seconds generating advanced
+          // outputs. Move the user to the idea immediately and let that page
+          // show a lightweight preparation state until outputs are ready.
+          if (payment.paymentPurpose === 'DIRECT_UNLOCK') {
+            const destinationIdeaId = payment.ideaId || fallbackIdeaId;
+
+            if (destinationIdeaId) {
+              navigate(`/normal/ideas/${destinationIdeaId}`, {
+                replace: true,
+                state: {
+                  forceRefresh: true,
+                  unlockProcessing: payment.ideaUnlocked !== true,
+                  paymentId,
+                  paymentCompletedAt: Date.now(),
+                },
+              });
+              return;
+            }
+          }
+
           setState({
             loading: false,
             error: '',
@@ -200,6 +232,7 @@ export default function PaymentResultPage() {
     alreadyUnlocked,
     fallbackIdeaId,
     fallbackPublicationId,
+    navigate,
     paymentId,
   ]);
 

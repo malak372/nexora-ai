@@ -103,6 +103,7 @@ function resolveStatus(idea) {
 export default function IdeaLibraryCard({
   idea,
   onOpen,
+  onWarm,
   onDelete,
   onToggleFavorite,
   favoriteProcessing = false,
@@ -145,6 +146,9 @@ export default function IdeaLibraryCard({
   return (
     <motion.article
       className={`idea-tile idea-tile--${status.tone}`}
+      onMouseEnter={onWarm}
+      onFocusCapture={onWarm}
+      onTouchStart={onWarm}
       initial={
         shouldReduceMotion
           ? undefined

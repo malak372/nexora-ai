@@ -40,6 +40,16 @@ export class AdminPublicationModerationController {
     return this.service.restore(admin.id, publicationId);
   }
 
+  @Patch(':publicationId/unpublish')
+  unpublish(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('publicationId', new ParseUUIDPipe({ version: '4' }))
+    publicationId: string,
+    @Body() dto: AdminPublicationModerationDto,
+  ) {
+    return this.service.unpublish(admin.id, publicationId, dto);
+  }
+
   @Patch(':publicationId/archive')
   archive(
     @CurrentUser() admin: AuthenticatedUser,

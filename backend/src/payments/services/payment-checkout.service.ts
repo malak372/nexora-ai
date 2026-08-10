@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   AccountStatus,
   GeneratedOutputStatus,
@@ -113,6 +113,11 @@ export type PaymentCheckoutResult = {
  */
 @Injectable()
 export class PaymentCheckoutService {
+  private readonly logger = new Logger(PaymentCheckoutService.name);
+
+  /** Deduplicates provider reconciliation attempts inside this process. */
+  private readonly reconciliationInFlight = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly paymentGatewayFactory: PaymentGatewayFactory,
@@ -976,6 +981,12 @@ export class PaymentCheckoutService {
 
   /** Returns a trusted payment state owned by the authenticated user. */
   async getPaymentState(userId: string, paymentId: string) {
+    /*
+     * Keep the hot polling path intentionally small. While a payment is still
+     * PENDING the frontend only needs the payment row plus the user's current
+     * account/credit state. Expensive idea/publication relations are loaded
+     * only after the payment has actually completed.
+     */
     const payment = await this.prisma.payment.findFirst({
       where: {
         id: paymentId,
@@ -992,40 +1003,10 @@ export class PaymentCheckoutService {
         activatesPremium: true,
         failureReason: true,
         paidAt: true,
-        providerKey: true,
-        providerSessionId: true,
         user: {
           select: {
             accountStatus: true,
             creditBalance: true,
-          },
-        },
-        idea: {
-          select: {
-            isUnlocked: true,
-            unlockMethod: true,
-            generatedOutputs: {
-              where: {
-                outputKey: 'full-abstract',
-                status: GeneratedOutputStatus.PENDING,
-              },
-              take: 1,
-              select: { id: true },
-            },
-          },
-        },
-        publicationAcceptance: {
-          select: {
-            id: true,
-            acceptedAt: true,
-            advancedUnlockedAt: true,
-          },
-        },
-        publicationAdvancedUnlock: {
-          select: {
-            id: true,
-            acceptedAt: true,
-            advancedUnlockedAt: true,
           },
         },
       },
@@ -1044,7 +1025,7 @@ export class PaymentCheckoutService {
       );
     }
 
-    return {
+    const baseState = {
       paymentId: payment.id,
       status: payment.status,
       paymentPurpose: payment.paymentPurpose,
@@ -1059,34 +1040,180 @@ export class PaymentCheckoutService {
         payment.status === PaymentStatus.SUCCEEDED &&
         payment.user.accountStatus === AccountStatus.PREMIUM,
       ideaId: payment.ideaId,
-      ideaUnlocked: payment.idea?.isUnlocked ?? false,
-      unlockInProgress:
-        payment.paymentPurpose === PaymentPurpose.DIRECT_UNLOCK &&
-        payment.status === PaymentStatus.SUCCEEDED &&
-        !payment.idea?.isUnlocked &&
-        Boolean(payment.idea?.generatedOutputs.length),
-      unlockMethod: payment.idea?.unlockMethod ?? null,
       publicationId: payment.publicationId,
-      publicationAccepted: Boolean(
-        payment.publicationAcceptance ?? payment.publicationAdvancedUnlock,
-      ),
-      acceptanceId:
-        payment.publicationAcceptance?.id ??
-        payment.publicationAdvancedUnlock?.id ??
-        null,
-      advancedPublicationAccess: Boolean(
-        payment.publicationAcceptance?.advancedUnlockedAt ??
-          payment.publicationAdvancedUnlock?.advancedUnlockedAt,
-      ),
+    };
+
+    if (payment.status !== PaymentStatus.SUCCEEDED) {
+      return {
+        ...baseState,
+        ideaUnlocked: false,
+        unlockInProgress: false,
+        unlockMethod: null,
+        publicationAccepted: false,
+        acceptanceId: null,
+        advancedPublicationAccess: false,
+      };
+    }
+
+    if (payment.paymentPurpose === PaymentPurpose.DIRECT_UNLOCK && payment.ideaId) {
+      const idea = await this.prisma.idea.findUnique({
+        where: { id: payment.ideaId },
+        select: {
+          isUnlocked: true,
+          unlockMethod: true,
+          generatedOutputs: {
+            where: {
+              outputKey: 'full-abstract',
+              status: GeneratedOutputStatus.PENDING,
+            },
+            take: 1,
+            select: { id: true },
+          },
+        },
+      });
+
+      return {
+        ...baseState,
+        ideaUnlocked: idea?.isUnlocked ?? false,
+        unlockInProgress:
+          !idea?.isUnlocked && Boolean(idea?.generatedOutputs.length),
+        unlockMethod: idea?.unlockMethod ?? null,
+        publicationAccepted: false,
+        acceptanceId: null,
+        advancedPublicationAccess: false,
+      };
+    }
+
+    if (
+      (payment.paymentPurpose === PaymentPurpose.ACCEPT_PUBLICATION ||
+        payment.paymentPurpose === PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED) &&
+      payment.publicationId
+    ) {
+      const publicationPayment = await this.prisma.payment.findUnique({
+        where: { id: payment.id },
+        select: {
+          publicationAcceptance: {
+            select: {
+              id: true,
+              advancedUnlockedAt: true,
+            },
+          },
+          publicationAdvancedUnlock: {
+            select: {
+              id: true,
+              advancedUnlockedAt: true,
+            },
+          },
+        },
+      });
+
+      const acceptance =
+        publicationPayment?.publicationAcceptance ??
+        publicationPayment?.publicationAdvancedUnlock ??
+        null;
+
+      return {
+        ...baseState,
+        ideaUnlocked: false,
+        unlockInProgress: false,
+        unlockMethod: null,
+        publicationAccepted: Boolean(acceptance),
+        acceptanceId: acceptance?.id ?? null,
+        advancedPublicationAccess: Boolean(acceptance?.advancedUnlockedAt),
+      };
+    }
+
+    return {
+      ...baseState,
+      ideaUnlocked: false,
+      unlockInProgress: false,
+      unlockMethod: null,
+      publicationAccepted: false,
+      acceptanceId: null,
+      advancedPublicationAccess: false,
     };
   }
 
-  /** Verifies the stored provider session server-to-server and fulfills it idempotently. */
-  async reconcilePayment(userId:string,paymentId:string){
-    const payment=await this.prisma.payment.findFirst({where:{id:paymentId,userId},select:{id:true,status:true,providerKey:true,providerSessionId:true}});
-    if(!payment) throw new PaymentProcessingError(PaymentErrorCode.PAYMENT_NOT_FOUND,'The requested payment was not found.',{details:{paymentId,userId}});
-    if(payment.status===PaymentStatus.PENDING && payment.providerSessionId){ const gateway=this.paymentGatewayFactory.getGateway(payment.providerKey); if(gateway.inspectPaymentSession){ const inspection=await gateway.inspectPaymentSession(payment.providerSessionId); if(inspection.state!=='OPEN') await this.paymentProcessingService.processConfirmation(inspection.confirmation); } }
-    return this.getPaymentState(userId,paymentId);
+  /**
+   * Starts provider reconciliation without holding the HTTP response open.
+   * Stripe/PayPal inspection can take seconds on a slow network, so the
+   * frontend should be free to keep polling the local database meanwhile.
+   */
+  async reconcilePayment(userId: string, paymentId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, userId },
+      select: {
+        id: true,
+        status: true,
+        providerKey: true,
+        providerSessionId: true,
+      },
+    });
+
+    if (!payment) {
+      throw new PaymentProcessingError(
+        PaymentErrorCode.PAYMENT_NOT_FOUND,
+        'The requested payment was not found.',
+        { details: { paymentId, userId } },
+      );
+    }
+
+    if (
+      payment.status === PaymentStatus.PENDING &&
+      payment.providerSessionId
+    ) {
+      this.startBackgroundReconciliation(payment);
+    }
+
+    // Return the current local state immediately. The next lightweight status
+    // poll will observe SUCCEEDED as soon as the background transaction commits.
+    return this.getPaymentState(userId, paymentId);
+  }
+
+  private startBackgroundReconciliation(payment: {
+    readonly id: string;
+    readonly status: PaymentStatus;
+    readonly providerKey: string;
+    readonly providerSessionId: string | null;
+  }): void {
+    if (this.reconciliationInFlight.has(payment.id)) {
+      return;
+    }
+
+    const task = (async () => {
+      if (!payment.providerSessionId) {
+        return;
+      }
+
+      const gateway = this.paymentGatewayFactory.getGateway(payment.providerKey);
+
+      if (!gateway.inspectPaymentSession) {
+        return;
+      }
+
+      const inspection = await gateway.inspectPaymentSession(
+        payment.providerSessionId,
+      );
+
+      if (inspection.state === 'OPEN') {
+        return;
+      }
+
+      await this.paymentProcessingService.processConfirmation(
+        inspection.confirmation,
+      );
+    })()
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(
+          `Background payment reconciliation failed for ${payment.id}: ${message}`,
+        );
+      })
+      .finally(() => {
+        this.reconciliationInFlight.delete(payment.id);
+      });
+
+    this.reconciliationInFlight.set(payment.id, task);
   }
 
   private appendPaymentReturnParameters(successUrl:string,payment:PendingPayment,options:{ideaId?:string;publicationId?:string}){ const url=new URL(successUrl); url.searchParams.set('paymentId',payment.id); url.searchParams.set('purpose',payment.paymentPurpose); if(options.ideaId) url.searchParams.set('ideaId',options.ideaId); if(options.publicationId) url.searchParams.set('publicationId',options.publicationId); return url.toString(); }

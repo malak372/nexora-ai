@@ -18,7 +18,7 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { getAcceptedPublications } from '../../accepted/api/acceptedPublicationsApi';
@@ -31,6 +31,8 @@ import {
   removeIdeaFromFavorites,
 } from '../api/userIdeasApi';
 import IdeaLibraryCard from '../components/IdeaLibraryCard';
+import { warmIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import { preloadDiscoveryDetail } from '../../../../routes/routePreloaders';
 import '../styles/ideas.css';
 
 const PAGE_SIZE = 9;
@@ -124,48 +126,6 @@ function matchesDateRange(item, fromDate, toDate) {
     (!from || itemDate >= from) &&
     (!to || itemDate <= to)
   );
-}
-
-/**
- * Loads every page returned by a paginated backend loader.
- *
- * This is used when client-side date filtering is required.
- *
- * @param {Function} loader
- * @param {object} params
- * @returns {Promise<object[]>}
- */
-async function loadEveryPage(loader, params) {
-  const pageSize = 50;
-
-  const first = await loader({
-    ...params,
-    page: 1,
-    limit: pageSize,
-  });
-
-  const totalPages = Math.max(
-    1,
-    Number(first.pagination?.totalPages ?? 1),
-  );
-
-  const items = [...(first.items ?? [])];
-
-  for (
-    let nextPage = 2;
-    nextPage <= totalPages;
-    nextPage += 1
-  ) {
-    const next = await loader({
-      ...params,
-      page: nextPage,
-      limit: pageSize,
-    });
-
-    items.push(...(next.items ?? []));
-  }
-
-  return items;
 }
 
 function normalizePublishedRecord(record) {
@@ -334,6 +294,10 @@ export default function MyIdeasPage() {
 
   const [loading, setLoading] =
     useState(true);
+  const [isRefreshing, setIsRefreshing] =
+    useState(false);
+
+  const hasRenderedDataRef = useRef(false);
 
   const [error, setError] =
     useState('');
@@ -364,20 +328,32 @@ export default function MyIdeasPage() {
       params.isUnlocked = false;
     }
 
+    if (fromDate) {
+      params.fromDate = fromDate;
+    }
+
+    if (toDate) {
+      params.toDate = toDate;
+    }
+
     return params;
-  }, [filter, page, search]);
+  }, [filter, fromDate, page, search, toDate]);
 
   /**
    * Loads ideas for the selected filter, date range, and page.
    */
   const loadIdeas = useCallback(async ({ force = false } = {}) => {
-    setLoading(true);
+    // Keep existing cards visible while switching filters. Only the first visit
+    // blocks on the full skeleton.
+    if (hasRenderedDataRef.current) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError('');
 
     try {
-      const hasDateRange = Boolean(
-        fromDate || toDate,
-      );
+      const hasDateRange = Boolean(fromDate || toDate);
 
       if (filter === 'favorites') {
         const favoriteItems = await getMyFavoriteIdeas({ force });
@@ -410,6 +386,7 @@ export default function MyIdeasPage() {
           ),
         });
 
+        hasRenderedDataRef.current = true;
         return;
       }
 
@@ -419,60 +396,9 @@ export default function MyIdeasPage() {
           status: 'PUBLISHED',
           sortBy: 'publishedAt',
           sortOrder: 'desc',
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
         };
-
-        if (hasDateRange) {
-          const allPublished = await loadEveryPage(
-            async (params) => {
-              const result = await getMyPublishedIdeas(
-                params,
-                { forceRefresh: force },
-              );
-
-              return {
-                items: (result.items ?? []).map(
-                  normalizePublishedRecord,
-                ),
-                pagination: result.pagination,
-              };
-            },
-            publishedParams,
-          );
-
-          const filtered = allPublished.filter(
-            (item) =>
-              matchesDateRange(
-                item,
-                fromDate,
-                toDate,
-              ),
-          );
-
-          const start =
-            (page - 1) * PAGE_SIZE;
-
-          setItems(
-            filtered.slice(
-              start,
-              start + PAGE_SIZE,
-            ),
-          );
-
-          setPagination({
-            page,
-            limit: PAGE_SIZE,
-            total: filtered.length,
-            totalPages: Math.max(
-              1,
-              Math.ceil(
-                filtered.length /
-                PAGE_SIZE,
-              ),
-            ),
-          });
-
-          return;
-        }
 
         const publishedResult =
           await getMyPublishedIdeas(
@@ -509,6 +435,7 @@ export default function MyIdeasPage() {
             1,
         });
 
+        hasRenderedDataRef.current = true;
         return;
       }
 
@@ -517,59 +444,9 @@ export default function MyIdeasPage() {
           search: search || undefined,
           sortBy: 'acceptedAt',
           sortOrder: 'desc',
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
         };
-
-        if (hasDateRange) {
-          const allAccepted = await loadEveryPage(
-            async (params) => {
-              const result =
-                await getAcceptedPublications(params, { force });
-
-              return {
-                items: (result.items ?? []).map(
-                  normalizeAcceptedRecord,
-                ),
-                pagination: result.pagination,
-              };
-            },
-            acceptedParams,
-          );
-
-          const filtered = allAccepted.filter(
-            (item) =>
-              matchesDateRange(
-                item,
-                fromDate,
-                toDate,
-              ),
-          );
-
-          const start =
-            (page - 1) * PAGE_SIZE;
-
-          const pageItems =
-            filtered.slice(
-              start,
-              start + PAGE_SIZE,
-            );
-
-          setItems(pageItems);
-
-          setPagination({
-            page,
-            limit: PAGE_SIZE,
-            total: filtered.length,
-            totalPages: Math.max(
-              1,
-              Math.ceil(
-                filtered.length /
-                PAGE_SIZE,
-              ),
-            ),
-          });
-
-          return;
-        }
 
         const acceptedResult =
           await getAcceptedPublications(
@@ -606,66 +483,7 @@ export default function MyIdeasPage() {
               ?.totalPages ?? 1,
         });
 
-        return;
-      }
-
-      if (hasDateRange) {
-        const baseParams = {
-          ...queryParams,
-          page: undefined,
-          limit: undefined,
-        };
-
-        const allIdeas =
-          await loadEveryPage(
-            (params) => getMyIdeas(params, { force }),
-            baseParams,
-          );
-
-        const statusFiltered =
-          filter === 'generating'
-            ? allIdeas.filter((item) =>
-              ACTIVE_RUN_STATUSES.has(
-                String(
-                  item?.generationRun
-                    ?.status ?? '',
-                ).toUpperCase(),
-              ),
-            )
-            : allIdeas;
-
-        const dateFiltered =
-          statusFiltered.filter((item) =>
-            matchesDateRange(
-              item,
-              fromDate,
-              toDate,
-            ),
-          );
-
-        const start =
-          (page - 1) * PAGE_SIZE;
-
-        setItems(
-          dateFiltered.slice(
-            start,
-            start + PAGE_SIZE,
-          ),
-        );
-
-        setPagination({
-          page,
-          limit: PAGE_SIZE,
-          total: dateFiltered.length,
-          totalPages: Math.max(
-            1,
-            Math.ceil(
-              dateFiltered.length /
-              PAGE_SIZE,
-            ),
-          ),
-        });
-
+        hasRenderedDataRef.current = true;
         return;
       }
 
@@ -707,6 +525,7 @@ export default function MyIdeasPage() {
             : result.pagination
               ?.totalPages ?? 1,
       });
+      hasRenderedDataRef.current = true;
     } catch (requestError) {
       setError(
         requestError.message ||
@@ -714,6 +533,7 @@ export default function MyIdeasPage() {
       );
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [
     filter,
@@ -723,6 +543,97 @@ export default function MyIdeasPage() {
     search,
     toDate,
   ]);
+
+  /**
+   * Prefetches the filter the user is about to open. Matching requests are
+   * deduplicated by requestCache, so the click reuses this exact promise.
+   */
+  const warmFilter = useCallback((nextFilter) => {
+    if (!FILTERS.some((item) => item.value === nextFilter)) return;
+
+    const base = {
+      page: 1,
+      limit: PAGE_SIZE,
+      search: search || undefined,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+    };
+
+    if (nextFilter === 'favorites') {
+      void getMyFavoriteIdeas().catch(() => undefined);
+      return;
+    }
+
+    if (nextFilter === 'published') {
+      void getMyPublishedIdeas({
+        ...base,
+        status: 'PUBLISHED',
+        sortBy: 'publishedAt',
+        sortOrder: 'desc',
+      }).catch(() => undefined);
+      return;
+    }
+
+    if (nextFilter === 'accepted') {
+      void getAcceptedPublications({
+        ...base,
+        sortBy: 'acceptedAt',
+        sortOrder: 'desc',
+      }).catch(() => undefined);
+      return;
+    }
+
+    const params = {
+      ...base,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+    };
+
+    if (nextFilter === 'unlocked') params.isUnlocked = true;
+    if (nextFilter === 'core') params.isUnlocked = false;
+
+    void getMyIdeas(params).catch(() => undefined);
+  }, [fromDate, search, toDate]);
+
+  /**
+   * Warm only the cheap Free/Unlocked variants after the first My Ideas data
+   * arrives. Published/Accepted/Favorites stay intent-driven to avoid a burst
+   * of unrelated API calls.
+   */
+  useEffect(() => {
+    if (!hasRenderedDataRef.current) return undefined;
+
+    let cancelled = false;
+    const timers = [];
+
+    const warmCommonFilters = () => {
+      ['core', 'unlocked'].forEach((value, index) => {
+        const timer = window.setTimeout(() => {
+          if (!cancelled && filter !== value) warmFilter(value);
+        }, index * 250);
+        timers.push(timer);
+      });
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(warmCommonFilters, {
+        timeout: 1500,
+      });
+
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback?.(idleId);
+        timers.forEach((timer) => window.clearTimeout(timer));
+      };
+    }
+
+    const timer = window.setTimeout(warmCommonFilters, 700);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      timers.forEach((entry) => window.clearTimeout(entry));
+    };
+  }, [filter, loading, warmFilter]);
 
   const requestedView = searchParams.get('view');
 
@@ -776,6 +687,21 @@ export default function MyIdeasPage() {
   useEffect(() => {
     void loadIdeas();
   }, [loadIdeas]);
+
+
+  function warmIdea(idea) {
+    if (idea?.__libraryKind === 'accepted') {
+      const publicationId = idea?.publication?.id;
+      if (publicationId) preloadDiscoveryDetail(publicationId);
+      return;
+    }
+
+    const runStatus = String(idea?.generationRun?.status ?? '').toUpperCase();
+    if (ACTIVE_RUN_STATUSES.has(runStatus)) return;
+
+    const ideaId = idea?.publication?.ideaId ?? idea?.id;
+    if (ideaId) warmIdeaWorkspace(ideaId);
+  }
 
   /**
    * Opens the correct destination based on the library item type and state.
@@ -980,7 +906,7 @@ export default function MyIdeasPage() {
     filter === 'favorites';
 
   return (
-    <section className="ideas-page reveal-page">
+    <section className="ideas-page reveal-page" aria-busy={loading || isRefreshing}>
       <header className="ideas-page__header">
         <div>
           <span className="ideas-page__kicker">
@@ -1173,6 +1099,9 @@ export default function MyIdeasPage() {
                       ? ' is-favorites-filter'
                       : ''
                   }`}
+                onPointerEnter={() => warmFilter(option.value)}
+                onFocus={() => warmFilter(option.value)}
+                onPointerDown={() => warmFilter(option.value)}
                 onClick={() =>
                   handleFilterChange(option.value)
                 }
@@ -1217,7 +1146,7 @@ export default function MyIdeasPage() {
         </div>
       ) : null}
 
-      {loading ? (
+      {loading && items.length === 0 ? (
         <div
           className="ideas-grid"
           aria-label="Loading ideas"
@@ -1231,7 +1160,7 @@ export default function MyIdeasPage() {
             />
           ))}
         </div>
-      ) : error ? (
+      ) : error && items.length === 0 ? (
         <div className="ideas-state ideas-state--error">
           <RefreshCw size={28} />
 
@@ -1311,6 +1240,9 @@ export default function MyIdeasPage() {
               idea={idea}
               onOpen={() =>
                 openIdea(idea)
+              }
+              onWarm={() =>
+                warmIdea(idea)
               }
               onDelete={
                 idea.__libraryKind ===

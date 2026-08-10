@@ -172,9 +172,11 @@ export default function AcceptedIdeaWorkspacePage() {
       try {
         const [publicationPayload, acceptancePayload] = await Promise.all([
           getDiscoveryById(publicationId, {
-            forceRefresh: true,
+            forceRefresh: Boolean(location.state?.forceRefresh),
           }),
-          getMyAcceptance(publicationId),
+          getMyAcceptance(publicationId, {
+            forceRefresh: Boolean(location.state?.forceRefresh),
+          }),
         ]);
 
         if (!mounted) return;

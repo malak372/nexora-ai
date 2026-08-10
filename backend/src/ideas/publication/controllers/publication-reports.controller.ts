@@ -62,6 +62,22 @@ export class AdminPublicationReportsController {
   }
 
   /**
+   * Lightweight report list for one publication, used by the idea insights
+   * drawer so opening the drawer does not execute the full moderation query.
+   */
+  @Get('publication/:publicationId')
+  findForPublication(
+    @Param(
+      'publicationId',
+      new ParseUUIDPipe({ version: '4' }),
+    )
+    publicationId: string,
+    @Query() query: GetPublicationReportsQueryDto,
+  ) {
+    return this.service.findForPublication(publicationId, query);
+  }
+
+  /**
    * Atomically stores the report decision and executes the optional moderation
    * action (warn, hide, unpublish/archive or restore).
    */

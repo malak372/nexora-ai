@@ -1,30 +1,39 @@
 /**
- * Authenticated billing-history and invoice API.
+ * Fast authenticated billing-history and invoice API.
  *
- * Requests use the normal-user Axios client so the current JWT access token is
- * attached automatically and an expired access token can be refreshed once.
- *
- * @author Malak
+ * Performance change:
+ * - invoice history no longer blocks on /synchronize before every GET;
+ * - history/detail GETs are cached and deduplicated;
+ * - historical synchronization runs once in the background per browser session.
  */
 import {
   extractApiData,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
-/**
- * Creates missing invoices for historical successful payments.
- *
- * The backend operation is idempotent because one payment can own only one
- * invoice.
- *
- * @returns {Promise<{scanned:number, created:number, failed:Array}>}
- */
+const INVOICE_LIST_NAMESPACE = 'billing-invoices';
+const INVOICE_DETAIL_NAMESPACE = 'billing-invoice-detail';
+const INVOICE_LIST_TTL_MS = 2 * 60 * 1000;
+const INVOICE_DETAIL_TTL_MS = 10 * 60 * 1000;
+const SYNC_SESSION_KEY = 'voxidence:invoice-sync-started';
+
+function markSyncStarted() {
+  try {
+    if (window.sessionStorage.getItem(SYNC_SESSION_KEY)) return false;
+    window.sessionStorage.setItem(SYNC_SESSION_KEY, '1');
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 export async function synchronizeMyInvoices() {
-  const response = await normalUserApi.post(
-    '/users/invoices/synchronize',
-    {},
-  );
-
+  const response = await normalUserApi.post('/users/invoices/synchronize', {});
   const payload = extractApiData(response);
 
   return {
@@ -35,126 +44,117 @@ export async function synchronizeMyInvoices() {
 }
 
 /**
- * Loads the authenticated user's invoices.
- *
- * Synchronization is attempted first. Failure to synchronize historical
- * payments does not hide invoices that already exist in the database.
- *
- * @param {{page?: number, limit?: number}} options Pagination options.
- * @returns {Promise<object>} Billing history and synchronization information.
+ * Starts historical invoice synchronization in the background once per session.
+ * It never blocks initial billing-history paint.
  */
-export async function getMyInvoices({
-  page = 1,
-  limit = 10,
-} = {}) {
-  let synchronization;
+export function warmInvoiceSynchronization() {
+  if (!markSyncStarted()) return;
 
-  try {
-    synchronization = await synchronizeMyInvoices();
-  } catch (error) {
-    synchronization = {
-      scanned: 0,
-      created: 0,
-      failed: [
-        {
-          paymentId: null,
-          reason:
-            error?.response?.data?.message ||
-            error?.message ||
-            'Invoice synchronization failed.',
-        },
-      ],
-    };
-  }
-
-  const response = await normalUserApi.get('/users/invoices', {
-    params: {
-      page,
-      limit,
-      cacheBust: Date.now(),
-    },
-  });
-
-  const payload = extractApiData(response);
-
-  const items = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.items)
-      ? payload.items
-      : [];
-
-  return {
-    items,
-    pagination: payload?.pagination ?? {
-      page,
-      limit,
-      total: items.length,
-      totalPages: items.length > 0 ? 1 : 0,
-    },
-    synchronization: payload?.synchronization ?? synchronization,
-  };
+  void synchronizeMyInvoices()
+    .then((result) => {
+      if (Number(result?.created ?? 0) > 0) {
+        invalidateRequestCache(`${INVOICE_LIST_NAMESPACE}:`);
+      }
+    })
+    .catch(() => undefined);
 }
 
-/**
- * Loads one invoice after backend ownership validation.
- *
- * @param {string} invoiceId Invoice identifier.
- * @returns {Promise<object>} Invoice details.
- */
-export async function getMyInvoice(invoiceId) {
-  if (!invoiceId) {
-    throw new Error('An invoice identifier is required.');
-  }
+export async function getMyInvoices(
+  { page = 1, limit = 10 } = {},
+  { forceRefresh = false } = {},
+) {
+  const params = { page, limit };
+  const key = createRequestCacheKey(INVOICE_LIST_NAMESPACE, params);
 
-  const response = await normalUserApi.get(
-    `/users/invoices/${encodeURIComponent(invoiceId)}`,
+  const result = await cachedRequest(
+    key,
+    async () => {
+      const response = await normalUserApi.get('/users/invoices', { params });
+      const payload = extractApiData(response);
+      const items = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : [];
+
+      return {
+        items,
+        pagination: payload?.pagination ?? {
+          page,
+          limit,
+          total: items.length,
+          totalPages: items.length > 0 ? 1 : 0,
+        },
+        synchronization: payload?.synchronization ?? null,
+      };
+    },
     {
-      params: {
-        cacheBust: Date.now(),
-      },
+      ttlMs: INVOICE_LIST_TTL_MS,
+      force: Boolean(forceRefresh),
+      persist: true,
     },
   );
 
-  return extractApiData(response);
+  warmInvoiceSynchronization();
+  return result;
+}
+
+export async function getMyInvoice(invoiceId, { forceRefresh = false } = {}) {
+  if (!invoiceId) throw new Error('An invoice identifier is required.');
+
+  const key = createRequestCacheKey(INVOICE_DETAIL_NAMESPACE, { invoiceId });
+
+  return cachedRequest(
+    key,
+    async () => {
+      const response = await normalUserApi.get(
+        `/users/invoices/${encodeURIComponent(invoiceId)}`,
+      );
+      return extractApiData(response);
+    },
+    {
+      ttlMs: INVOICE_DETAIL_TTL_MS,
+      force: Boolean(forceRefresh),
+      persist: true,
+    },
+  );
 }
 
 /**
- * Downloads the internal Voxidence invoice as a PDF document.
- *
- * @param {string} invoiceId Invoice identifier.
- * @param {string} invoiceNumber Download filename.
- * @returns {Promise<void>}
+ * Starts loading one invoice detail before the user clicks View.
+ * cachedRequest deduplicates the call if openInvoice runs while this is still
+ * in flight, so hover/focus never creates a duplicate network request.
  */
+export function prefetchMyInvoice(invoiceId) {
+  if (!invoiceId) return Promise.resolve(null);
+  return getMyInvoice(invoiceId).catch(() => null);
+}
+
+export function invalidateInvoicesCache() {
+  invalidateRequestCache(`${INVOICE_LIST_NAMESPACE}:`);
+  invalidateRequestCache(`${INVOICE_DETAIL_NAMESPACE}:`);
+}
+
 export async function downloadMyInvoice(
   invoiceId,
   invoiceNumber = 'voxidence-invoice',
 ) {
-  if (!invoiceId) {
-    throw new Error('An invoice identifier is required.');
-  }
+  if (!invoiceId) throw new Error('An invoice identifier is required.');
 
   const response = await normalUserApi.get(
     `/users/invoices/${encodeURIComponent(invoiceId)}/download`,
     {
       responseType: 'blob',
-      params: {
-        cacheBust: Date.now(),
-      },
-      headers: {
-        Accept: 'application/pdf',
-      },
+      headers: { Accept: 'application/pdf' },
     },
   );
 
   const objectUrl = URL.createObjectURL(response.data);
   const anchor = document.createElement('a');
-
   anchor.href = objectUrl;
   anchor.download = `${invoiceNumber || 'voxidence-invoice'}.pdf`;
-
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-
   URL.revokeObjectURL(objectUrl);
 }

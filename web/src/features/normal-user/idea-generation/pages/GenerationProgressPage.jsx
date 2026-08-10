@@ -8,7 +8,7 @@
  * the Voxidence eucalyptus-and-rose identity without changing pipeline data.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, LayoutDashboard, Radio, RefreshCw, Sparkles, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -26,7 +26,9 @@ import '../styles/generation.css';
 export default function GenerationProgressPage() {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId);
+  const location = useLocation();
+  const initialRun = location.state?.initialRun ?? null;
+  const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId, initialRun);
   const { isPremium } = useAccountAccess();
   const displayedProgress = Math.max(
     0,

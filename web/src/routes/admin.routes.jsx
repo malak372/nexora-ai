@@ -4,6 +4,11 @@ import AdminLayout from '../layouts/admin/AdminLayout';
 
 const AdminDashboardPage = lazy(() => import('../features/admin/pages/AdminDashboardPage'));
 const AdminResourcePage = lazy(() => import('../features/admin/pages/AdminResourcePage'));
+const AdminIdeasPage = lazy(() => import('../features/admin/pages/AdminIdeasPage'));
+const AdminPublicationReportsPage = lazy(() => import('../features/admin/pages/AdminPublicationReportsPage'));
+const AdminEvidenceLibraryPage = lazy(() => import('../features/admin/pages/AdminEvidenceLibraryPage'));
+const AdminComplaintsPage = lazy(() => import('../features/admin/pages/AdminComplaintsPage'));
+const AdminContactInboxPage = lazy(() => import('../features/admin/pages/AdminContactInboxPage'));
 const AdminSettingsPage = lazy(() => import('../features/admin/pages/AdminSettingsPage'));
 const AdminPromptsPage = lazy(() => import('../features/admin/pages/AdminPromptsPage'));
 const AdminAiAnalyticsPage = lazy(() => import('../features/admin/pages/AdminAiAnalyticsPage'));
@@ -14,15 +19,16 @@ export const adminRoutes = (
     <Route index element={<Navigate to="dashboard" replace />} />
     <Route path="dashboard" element={<AdminDashboardPage />} />
     <Route path="users" element={<AdminResourcePage section="users" />} />
-    <Route path="ideas" element={<AdminResourcePage section="ideas" />} />
+    <Route path="ideas" element={<AdminIdeasPage />} />
     <Route path="payments" element={<AdminResourcePage section="payments" />} />
     <Route path="credits" element={<AdminResourcePage section="credits" />} />
     <Route path="domains" element={<AdminResourcePage section="domains" />} />
-    <Route path="comments" element={<AdminResourcePage section="comments" />} />
-    <Route path="feedback" element={<AdminResourcePage section="feedback" />} />
-    <Route path="complaints" element={<AdminResourcePage section="complaints" />} />
-    <Route path="contact-messages" element={<AdminResourcePage section="contactMessages" />} />
-    <Route path="publication-reports" element={<AdminResourcePage section="publicationReports" />} />
+    <Route path="evidence" element={<AdminEvidenceLibraryPage />} />
+    <Route path="comments" element={<Navigate to="/admin/evidence" replace />} />
+    <Route path="feedback" element={<Navigate to="/admin/dashboard" replace />} />
+    <Route path="complaints" element={<AdminComplaintsPage />} />
+    <Route path="contact-messages" element={<AdminContactInboxPage />} />
+    <Route path="publication-reports" element={<AdminPublicationReportsPage />} />
     <Route path="alerts" element={<AdminResourcePage section="alerts" />} />
     <Route path="data-sources" element={<AdminResourcePage section="dataSources" />} />
     <Route path="ai-models" element={<AdminResourcePage section="aiModels" />} />

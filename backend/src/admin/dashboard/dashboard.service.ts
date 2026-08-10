@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   AccountStatus,
   ApiRequestType,
@@ -12,7 +12,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
 
-const DASHBOARD_CACHE_TTL_MS = 15_000;
+const DASHBOARD_CACHE_TTL_MS = 300_000;
 const CHART_DAYS = 12;
 
 const AI_REQUEST_TYPES: ApiRequestType[] = [
@@ -38,13 +38,23 @@ const AI_REQUEST_TYPES: ApiRequestType[] = [
  * @author Malak
  */
 @Injectable()
-export class DashboardService {
+export class DashboardService implements OnModuleInit {
   private cache: { value: DashboardResponseDto; expiresAt: number } | null =
     null;
 
   private inFlight: Promise<DashboardResponseDto> | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Warm the dashboard snapshot without blocking Nest startup. In normal use
+   * the administrator reaches the dashboard after authentication, so the
+   * expensive first aggregate is usually already complete.
+   */
+  onModuleInit(): void {
+    void this.getDashboard().catch(() => undefined);
+  }
+
 
   /** Returns the consolidated administrative dashboard. */
   async getDashboard(): Promise<DashboardResponseDto> {

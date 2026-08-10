@@ -1,6 +1,8 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,9 +14,11 @@ import {
   ModerationReportStatus,
   Prisma,
 } from '@prisma/client';
+import type { Cache } from 'cache-manager';
 import { SystemAlertsService } from '../../../alerts/services/system-alerts.service';
 import { AuditService } from '../../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { userCacheKeys } from '../../../users/cache/user-cache.keys';
 import { CreatePublicationReportDto } from '../dto/create-publication-report.dto';
 import { GetPublicationReportsQueryDto } from '../dto/get-publication-reports-query.dto';
 import {
@@ -30,14 +34,28 @@ import { PublicationCacheService } from '../cache/publication-cache.service';
  * Admin review is intentionally atomic: the report state, optional publisher
  * warning, publication moderation state and audit entries are committed in the
  * same transaction whenever possible.
+ *
+ * @author Eman
  */
 @Injectable()
 export class PublicationReportService {
+  private summaryCache: { value: {
+    totalReports: number;
+    pendingReports: number;
+    reviewingReports: number;
+    resolvedReports: number;
+    dismissedReports: number;
+    affectedPublications: number;
+  }; expiresAt: number } | null = null;
+
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly systemAlerts: SystemAlertsService,
     private readonly publicationCache: PublicationCacheService,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
   async report(
@@ -179,12 +197,36 @@ export class PublicationReportService {
         : {}),
     };
 
+
+    /**
+     * Only allow known sort fields. Relation sorting is mapped explicitly so
+     * arbitrary query strings can never be forwarded to Prisma.
+     */
+    const direction: Prisma.SortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+    const orderBy: Prisma.IdeaPublicationReportOrderByWithRelationInput = (() => {
+      switch (query.sortBy) {
+        case 'status':
+          return { status: direction };
+        case 'reason':
+          return { reason: direction };
+        case 'reviewedAt':
+          return { reviewedAt: direction };
+        case 'publication':
+          return { publication: { publicTitle: direction } };
+        case 'reporter':
+          return { reporter: { fullName: direction } };
+        case 'createdAt':
+        default:
+          return { createdAt: direction };
+      }
+    })();
+
     const [data, total] = await this.prisma.$transaction([
       this.prisma.ideaPublicationReport.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         select: {
           id: true,
           publicationId: true,
@@ -193,6 +235,11 @@ export class PublicationReportService {
           details: true,
           status: true,
           adminNote: true,
+          moderationAction: true,
+          publisherMessage: true,
+          reporterMessage: true,
+          publisherNotified: true,
+          reporterNotified: true,
           reviewedAt: true,
           createdAt: true,
           updatedAt: true,
@@ -232,8 +279,85 @@ export class PublicationReportService {
     };
   }
 
+  /**
+   * Fast path used by the idea insights drawer.
+   *
+   * It deliberately does not re-select the publication, abstract, publisher,
+   * or publication counters for every report row. The drawer already loaded
+   * that data from the lightweight publication-insights endpoint.
+   */
+  async findForPublication(
+    publicationId: string,
+    query: GetPublicationReportsQueryDto,
+  ) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 20, 50);
+
+    const where: Prisma.IdeaPublicationReportWhereInput = {
+      publicationId,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.reason ? { reason: query.reason } : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.ideaPublicationReport.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          publicationId: true,
+          reporterId: true,
+          reason: true,
+          details: true,
+          status: true,
+          adminNote: true,
+          moderationAction: true,
+          publisherMessage: true,
+          reporterMessage: true,
+          publisherNotified: true,
+          reporterNotified: true,
+          reviewedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          reporter: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+          reviewedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
+        },
+      }),
+      this.prisma.ideaPublicationReport.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   /** Lightweight analytics dedicated to the moderation queue. */
   async getSummary() {
+    const now = Date.now();
+    if (this.summaryCache && this.summaryCache.expiresAt > now) {
+      return this.summaryCache.value;
+    }
+
     // Two compact queries are enough for the moderation header. Using groupBy
     // avoids issuing one COUNT query per status and keeps this endpoint cheap.
     const [statusGroups, affected] = await Promise.all([
@@ -241,9 +365,9 @@ export class PublicationReportService {
         by: ['status'],
         _count: { _all: true },
       }),
-      this.prisma.ideaPublicationReport.findMany({
-        distinct: ['publicationId'],
-        select: { publicationId: true },
+      this.prisma.ideaPublicationReport.groupBy({
+        by: ['publicationId'],
+        _count: { publicationId: true },
       }),
     ]);
 
@@ -256,7 +380,7 @@ export class PublicationReportService {
     const resolved = counts[ModerationReportStatus.RESOLVED] ?? 0;
     const dismissed = counts[ModerationReportStatus.DISMISSED] ?? 0;
 
-    return {
+    const value = {
       totalReports: pending + reviewing + resolved + dismissed,
       pendingReports: pending,
       reviewingReports: reviewing,
@@ -264,6 +388,13 @@ export class PublicationReportService {
       dismissedReports: dismissed,
       affectedPublications: affected.length,
     };
+
+    this.summaryCache = {
+      value,
+      expiresAt: Date.now() + 60_000,
+    };
+
+    return value;
   }
 
   /**
@@ -281,18 +412,21 @@ export class PublicationReportService {
     reportId: string,
     dto: ReviewPublicationReportDto,
   ) {
-    if (dto.status === ModerationReportStatus.PENDING) {
-      throw new BadRequestException(
-        'An admin cannot return a report to PENDING.',
-      );
-    }
 
     const existing = await this.prisma.ideaPublicationReport.findUnique({
       where: { id: reportId },
       select: {
         id: true,
         publicationId: true,
+        reporterId: true,
         status: true,
+        adminNote: true,
+        moderationAction: true,
+        publisherMessage: true,
+        reporterMessage: true,
+        publisherNotified: true,
+        reporterNotified: true,
+        reviewedAt: true,
         publication: {
           select: {
             id: true,
@@ -312,26 +446,43 @@ export class PublicationReportService {
 
     const action =
       dto.moderationAction ?? PublicationReportModerationAction.NONE;
+    const storedModerationAction =
+      action === PublicationReportModerationAction.NONE &&
+      existing.moderationAction &&
+      existing.moderationAction !== PublicationReportModerationAction.NONE
+        ? existing.moderationAction
+        : action;
     const note = dto.adminNote?.trim();
+    const publisherMessage = dto.publisherMessage?.trim();
+    const requestedReporterMessage = dto.reporterMessage?.trim();
     const now = new Date();
     let publicationChanged = false;
 
+    const isTerminalStatus =
+      dto.status === ModerationReportStatus.RESOLVED ||
+      dto.status === ModerationReportStatus.DISMISSED;
+
+    // A finished report always notifies the reporter. A custom reporter
+    // message also implies notification even if an older client omitted the flag.
+    const shouldNotifyReporter =
+      Boolean(dto.notifyReporter) || Boolean(requestedReporterMessage) || isTerminalStatus;
+
     const result = await this.prisma.$transaction(async (tx) => {
       let moderationResult: Record<string, unknown> | null = null;
+      let publisherNotified = false;
+      let reporterNotified = false;
+      let storedPublisherMessage: string | undefined;
+      let storedReporterMessage: string | undefined;
 
-      if (action === PublicationReportModerationAction.WARN_PUBLISHER) {
-        const warningMessage = dto.publisherMessage?.trim();
-        if (!warningMessage) {
-          throw new BadRequestException(
-            'A publisher warning message is required for WARN_PUBLISHER.',
-          );
-        }
-
+      const notifyPublisher = async (
+        title: string,
+        message: string,
+      ) => {
         const alert = await this.systemAlerts.create(
           {
             userId: existing.publication.publisherId,
-            title: 'Publication moderation notice',
-            message: warningMessage,
+            title,
+            message,
             type: AlertType.ADMIN,
           },
           tx,
@@ -348,13 +499,48 @@ export class PublicationReportService {
               publicationId: existing.publication.id,
               reportId,
               title: alert.title,
+              message: alert.message,
               type: alert.type,
+              moderationAction: action,
             },
           },
           tx,
         );
 
+        publisherNotified = true;
+        storedPublisherMessage = message;
+        return alert;
+      };
+
+      if (action === PublicationReportModerationAction.WARN_PUBLISHER) {
+        if (!publisherMessage) {
+          throw new BadRequestException(
+            'A publisher warning message is required for WARN_PUBLISHER.',
+          );
+        }
+
+        const alert = await notifyPublisher(
+          'Administrator message about your publication',
+          publisherMessage,
+        );
+
         moderationResult = { action, alertId: alert.id };
+      }
+
+      if (
+        action === PublicationReportModerationAction.NONE &&
+        publisherMessage
+      ) {
+        const alert = await notifyPublisher(
+          'Message from the moderation team',
+          publisherMessage,
+        );
+
+        moderationResult = {
+          action: PublicationReportModerationAction.NONE,
+          alertId: alert.id,
+          notificationOnly: true,
+        };
       }
 
       if (action === PublicationReportModerationAction.HIDE_PUBLICATION) {
@@ -365,7 +551,12 @@ export class PublicationReportService {
             hiddenAt: now,
             hiddenReason: note || `Moderated from report ${reportId}`,
           },
-          select: { id: true, status: true, isHidden: true, hiddenReason: true },
+          select: {
+            id: true,
+            status: true,
+            isHidden: true,
+            hiddenReason: true,
+          },
         });
         publicationChanged = true;
 
@@ -401,7 +592,12 @@ export class PublicationReportService {
             hiddenAt: now,
             hiddenReason: note || `Unpublished from report ${reportId}`,
           },
-          select: { id: true, status: true, isHidden: true, hiddenReason: true },
+          select: {
+            id: true,
+            status: true,
+            isHidden: true,
+            hiddenReason: true,
+          },
         });
         publicationChanged = true;
 
@@ -431,7 +627,17 @@ export class PublicationReportService {
       if (action === PublicationReportModerationAction.RESTORE_PUBLICATION) {
         const publication = await tx.ideaPublication.update({
           where: { id: existing.publication.id },
-          data: { isHidden: false, hiddenAt: null, hiddenReason: null },
+          data: {
+            status: IdeaPublicationStatus.PUBLISHED,
+            archivedAt: null,
+            isHidden: false,
+            hiddenAt: null,
+            hiddenReason: null,
+            publishedAt:
+              existing.publication.status === IdeaPublicationStatus.PUBLISHED
+                ? undefined
+                : now,
+          },
           select: { id: true, status: true, isHidden: true },
         });
         publicationChanged = true;
@@ -454,13 +660,103 @@ export class PublicationReportService {
         moderationResult = { action, publication };
       }
 
+      if (
+        action !== PublicationReportModerationAction.NONE &&
+        action !== PublicationReportModerationAction.WARN_PUBLISHER
+      ) {
+        const defaultPublisherMessage =
+          action === PublicationReportModerationAction.HIDE_PUBLICATION
+            ? `Your publication "${existing.publication.publicTitle}" was hidden by an administrator while a report was reviewed.`
+            : action === PublicationReportModerationAction.ARCHIVE_PUBLICATION
+              ? `Your publication "${existing.publication.publicTitle}" was unpublished by an administrator after a report review.`
+              : `Your publication "${existing.publication.publicTitle}" was restored and is visible to the community again.`;
+
+        const publisherNotificationTitle =
+          action === PublicationReportModerationAction.HIDE_PUBLICATION
+            ? 'Your publication was hidden temporarily'
+            : action === PublicationReportModerationAction.ARCHIVE_PUBLICATION
+              ? 'Your publication was unpublished'
+              : 'Your publication was restored';
+
+        await notifyPublisher(
+          publisherNotificationTitle,
+          publisherMessage || defaultPublisherMessage,
+        );
+      }
+
+      if (shouldNotifyReporter) {
+        const defaultReporterMessage =
+          dto.status === ModerationReportStatus.RESOLVED
+            ? `Your report about "${existing.publication.publicTitle}" has been resolved. Thank you for helping keep the community safe.`
+            : dto.status === ModerationReportStatus.DISMISSED
+              ? `Your report about "${existing.publication.publicTitle}" has been reviewed and closed.`
+              : `Your report about "${existing.publication.publicTitle}" is now ${String(dto.status)
+                  .toLowerCase()
+                  .replace(/_/g, ' ')}.`;
+
+        storedReporterMessage =
+          requestedReporterMessage || defaultReporterMessage;
+
+        const reporterAlert = await this.systemAlerts.create(
+          {
+            userId: existing.reporterId,
+            title:
+              dto.status === ModerationReportStatus.RESOLVED
+                ? 'Your publication report was resolved'
+                : dto.status === ModerationReportStatus.DISMISSED
+                  ? 'Your publication report was closed'
+                  : 'Publication report update',
+            message: storedReporterMessage,
+            type: AlertType.ADMIN,
+          },
+          tx,
+        );
+
+        await this.audit.createLog(
+          {
+            actorId: adminId,
+            action: AuditAction.ADMIN_CREATE_ALERT,
+            targetType: AuditTargetType.ALERT,
+            targetId: reporterAlert.id,
+            newValue: {
+              userId: existing.reporterId,
+              publicationId: existing.publication.id,
+              reportId,
+              title: reporterAlert.title,
+              message: reporterAlert.message,
+              type: reporterAlert.type,
+              recipientRole: 'REPORTER',
+            },
+          },
+          tx,
+        );
+
+        reporterNotified = true;
+      }
+
+      const finalPublisherMessage =
+        storedPublisherMessage ?? existing.publisherMessage ?? null;
+      const finalReporterMessage =
+        storedReporterMessage ?? existing.reporterMessage ?? null;
+      const finalPublisherNotified =
+        publisherNotified || existing.publisherNotified;
+      const finalReporterNotified =
+        reporterNotified || existing.reporterNotified;
+
       const report = await tx.ideaPublicationReport.update({
         where: { id: reportId },
         data: {
           status: dto.status,
-          adminNote: note,
-          reviewedById: adminId,
-          reviewedAt: now,
+          adminNote: note ?? existing.adminNote ?? null,
+          moderationAction: storedModerationAction,
+          publisherMessage: finalPublisherMessage,
+          reporterMessage: finalReporterMessage,
+          publisherNotified: finalPublisherNotified,
+          reporterNotified: finalReporterNotified,
+          reviewedById:
+            dto.status === ModerationReportStatus.PENDING ? null : adminId,
+          reviewedAt:
+            dto.status === ModerationReportStatus.PENDING ? null : now,
         },
         select: {
           id: true,
@@ -469,7 +765,19 @@ export class PublicationReportService {
           details: true,
           status: true,
           adminNote: true,
+          moderationAction: true,
+          publisherMessage: true,
+          reporterMessage: true,
+          publisherNotified: true,
+          reporterNotified: true,
           reviewedAt: true,
+          reviewedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
         },
       });
 
@@ -483,7 +791,12 @@ export class PublicationReportService {
           newValue: {
             status: report.status,
             adminNote: report.adminNote,
-            moderationAction: action,
+            moderationAction: storedModerationAction,
+            moderationActionThisReview: action,
+            publisherNotified: finalPublisherNotified,
+            reporterNotified: finalReporterNotified,
+            publisherMessage: finalPublisherMessage,
+            reporterMessage: finalReporterMessage,
           },
         },
         tx,
@@ -493,6 +806,10 @@ export class PublicationReportService {
         message: this.buildReviewMessage(action),
         report,
         moderation: moderationResult,
+        publisherNotified: finalPublisherNotified,
+        reporterNotified: finalReporterNotified,
+        publisherNotifiedThisReview: publisherNotified,
+        reporterNotifiedThisReview: reporterNotified,
       };
     });
 
@@ -500,6 +817,24 @@ export class PublicationReportService {
       await this.publicationCache.invalidateDiscovery(existing.publication.id);
     }
 
+    // The moderation action creates persistent in-app alerts. Clear user-level
+    // summary/activity caches immediately so badges reflect the new message.
+    const notificationRecipients = new Set<string>();
+    if (result.publisherNotifiedThisReview) {
+      notificationRecipients.add(existing.publication.publisherId);
+    }
+    if (result.reporterNotifiedThisReview) {
+      notificationRecipients.add(existing.reporterId);
+    }
+
+    await Promise.all(
+      Array.from(notificationRecipients).flatMap((userId) => [
+        this.cacheManager.del(userCacheKeys.summary(userId)),
+        this.cacheManager.del(userCacheKeys.activity(userId)),
+      ]),
+    );
+
+    this.summaryCache = null;
     return result;
   }
 

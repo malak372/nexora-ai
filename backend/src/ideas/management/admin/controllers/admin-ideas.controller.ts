@@ -82,6 +82,73 @@ export class AdminIdeasController {
     return this.adminIdeasService.exportIdeasCsv(query);
   }
 
+
+  /**
+   * Retrieves only ideas that are currently published.
+   *
+   * IMPORTANT: keep this static route above :ideaId so the word
+   * "published" is never parsed as a UUID.
+   *
+   * GET /admin/ideas/published
+   */
+  @Get('published')
+  getPublishedIdeas(@Query() query: GetAdminIdeasQueryDto) {
+    return this.adminIdeasService.getPublishedIdeas(query);
+  }
+
+  /**
+   * Exports only currently published ideas.
+   *
+   * GET /admin/ideas/published/export/csv
+   */
+  @Get('published/export/csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="voxidence-published-ideas.csv"',
+  )
+  exportPublishedIdeasCsv(@Query() query: GetAdminIdeasQueryDto) {
+    return this.adminIdeasService.exportPublishedIdeasCsv(query);
+  }
+
+  /**
+   * Returns only the publication/community data needed by the admin insights
+   * drawer. This is intentionally much smaller than GET /admin/ideas/:ideaId.
+   *
+   * GET /admin/ideas/:ideaId/publication-insights
+   */
+  @Get(':ideaId/publication-insights')
+  getPublicationInsights(
+    @Param(
+      'ideaId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    ideaId: string,
+  ) {
+    return this.adminIdeasService.getPublicationInsights(ideaId);
+  }
+
+
+  /**
+   * Lightweight idea inspector payload.
+   *
+   * GET /admin/ideas/:ideaId/quick-detail
+   */
+  @Get(':ideaId/quick-detail')
+  getIdeaQuickDetail(
+    @Param(
+      'ideaId',
+      new ParseUUIDPipe({
+        version: '4',
+      }),
+    )
+    ideaId: string,
+  ) {
+    return this.adminIdeasService.getIdeaQuickDetail(ideaId);
+  }
+
   /**
    * Retrieves the complete administrative view of one idea.
    *

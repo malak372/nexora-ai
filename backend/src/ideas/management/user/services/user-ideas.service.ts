@@ -253,7 +253,11 @@ export class UserIdeasService {
    * List results intentionally contain summary data only.
    * Complete details are retrieved through getMyIdeaById.
    */
-  async getMyIdeas(userId: string, query: GetUserIdeasQueryDto) {
+  async getMyIdeas(
+    userId: string,
+    query: GetUserIdeasQueryDto,
+    accountStatus: AccountStatus,
+  ) {
     const { page, limit, skip, take } = buildPagination(query);
 
     const where = this.buildUserIdeasWhere(userId, query);
@@ -272,49 +276,32 @@ export class UserIdeasService {
       'createdAt',
     );
 
-    const [user, ideas, total] = await Promise.all([
-      this.prisma.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { accountStatus: true },
-      }),
-
+    const [ideas, total] = await Promise.all([
       this.prisma.idea.findMany({
         where,
         skip,
         take,
         orderBy,
-
         select: {
           id: true,
           title: true,
-
           limitedAbstract: true,
           partialAbstract: true,
-
           problemStatement: true,
-          objectives: true,
-          targetUsers: true,
-
           selectedRegion: true,
-
           generationType: true,
-
           isUnlocked: true,
           unlockMethod: true,
           unlockedAt: true,
-
           commentsCount: true,
-
           createdAt: true,
           updatedAt: true,
-
           domain: {
             select: {
               id: true,
               name: true,
             },
           },
-
           generationRun: {
             select: {
               id: true,
@@ -327,7 +314,6 @@ export class UserIdeasService {
               completedAt: true,
             },
           },
-
           publication: {
             select: {
               id: true,
@@ -337,50 +323,20 @@ export class UserIdeasService {
               publishedAt: true,
             },
           },
-
-          generatedOutputs: {
-            where: {
-              status: GeneratedOutputStatus.COMPLETED,
-            },
-
-            orderBy: {
-              sequence: 'asc',
-            },
-
-            select: {
-              id: true,
-              outputKey: true,
-              title: true,
-              sequence: true,
-              status: true,
-            },
-          },
-
           _count: {
             select: {
-              generatedOutputs: true,
-              chatSessions: true,
-              payments: true,
               favorites: true,
             },
           },
         },
       }),
-
-      this.prisma.idea.count({
-        where,
-      }),
+      this.prisma.idea.count({ where }),
     ]);
 
-    const canUseAiChat = user.accountStatus === AccountStatus.PREMIUM;
+    const canUseAiChat = accountStatus === AccountStatus.PREMIUM;
 
     const data = ideas.map((idea) => ({
       ...idea,
-
-      /**
-       * Do not expose advanced-output metadata for locked ideas.
-       */
-      generatedOutputs: idea.isUnlocked ? idea.generatedOutputs : [],
 
       isFavorite: idea._count.favorites > 0,
 

@@ -112,4 +112,6 @@ export class GetAdminIdeasQueryDto extends ListQueryDto {
   @IsOptional()
   @IsBooleanString()
   isUnlocked?: string;
+
+
 }

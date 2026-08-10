@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AlertsModule } from '../alerts/alerts.module';
 import { AuditModule } from '../audit-logs/audit-logs.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -25,7 +26,7 @@ import { UserComplaintsService } from './services/user-complaints.service';
  * @author Malak
  */
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [PrismaModule, AuditModule, AlertsModule],
   controllers: [UserComplaintsController, AdminComplaintsController],
   providers: [UserComplaintsService, AdminComplaintsService],
 })

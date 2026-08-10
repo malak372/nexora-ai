@@ -34,6 +34,7 @@ export default function DiscoveryCard({
   publication,
   index = 0,
   onOpen,
+  onPrefetch,
 }) {
   const shouldReduceMotion = useReducedMotion();
 
@@ -57,6 +58,7 @@ export default function DiscoveryCard({
       className={`discovery-story discovery-story--${
         (index % 4) + 1
       }`}
+      onMouseEnter={onPrefetch}
       initial={
         shouldReduceMotion
           ? undefined
@@ -168,6 +170,9 @@ export default function DiscoveryCard({
 
         <motion.button
           type="button"
+          onMouseEnter={onPrefetch}
+          onFocus={onPrefetch}
+          onPointerDown={onPrefetch}
           onClick={onOpen}
           whileHover={
             shouldReduceMotion

@@ -2,9 +2,9 @@
  * Real-time generation-run subscription with guaranteed live reconciliation.
  *
  * Socket.IO remains the primary channel and updates the UI immediately. A
- * lightweight HTTP reconciliation loop also runs while the generation is
- * active, so a temporary socket/auth/network issue can never leave the screen
- * frozen at 0% until a manual reload.
+ * lightweight HTTP reconciliation loop runs as a safety net. While the socket
+ * is healthy it reconciles only occasionally; when realtime is unavailable it
+ * falls back to frequent HTTP checks so the screen never freezes.
  *
  * @author Malak
  */
@@ -21,7 +21,7 @@ const SOCKET_URL =
   process.env.REACT_APP_API_URL?.replace(/\/$/, '') ||
   'http://localhost:3000';
 
-const SOCKET_RECONCILIATION_MS = 2_500;
+const SOCKET_RECONCILIATION_MS = 15_000;
 const FALLBACK_RECONCILIATION_MS = 2_000;
 const RATE_LIMIT_RETRY_MS = 15_000;
 
@@ -165,15 +165,15 @@ function mergeRunSnapshot(current, incoming) {
   };
 }
 
-export function useIdeaGenerationSocket(runId) {
+export function useIdeaGenerationSocket(runId, initialRun = null) {
   const socketRef = useRef(null);
   const mountedRef = useRef(true);
   const requestInFlightRef = useRef(false);
   const reconciliationTimerRef = useRef(null);
-  const runRef = useRef(null);
+  const runRef = useRef(initialRun);
   const socketProvenRef = useRef(false);
 
-  const [run, setRun] = useState(null);
+  const [run, setRun] = useState(initialRun);
   const [connectionState, setConnectionState] = useState('connecting');
   const [error, setError] = useState('');
   const [errorStatus, setErrorStatus] = useState(null);
@@ -227,8 +227,14 @@ export function useIdeaGenerationSocket(runId) {
 
     mountedRef.current = true;
     socketProvenRef.current = false;
-    setRun(null);
-    runRef.current = null;
+
+    const seededRun = initialRun &&
+      String(initialRun?.runId ?? initialRun?.id ?? '') === String(runId)
+      ? initialRun
+      : null;
+
+    setRun(seededRun);
+    runRef.current = seededRun;
 
     const clearReconciliationTimer = () => {
       if (reconciliationTimerRef.current) {
@@ -391,7 +397,7 @@ export function useIdeaGenerationSocket(runId) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [loadSnapshot, runId]);
+  }, [initialRun, loadSnapshot, runId]);
 
   return {
     run,

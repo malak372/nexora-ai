@@ -232,105 +232,66 @@ export class UsersService {
     const todayWhere = this.mergeCreatedAtGte(where, todayStart);
     const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
+    // Group related counters instead of sending one count query per card.
+    // This keeps the summary endpoint lightweight while the frontend paints
+    // the user list immediately and hydrates these cards in the background.
     const [
       totalUsers,
-      activeUsers,
-      inactiveUsers,
-      verifiedUsers,
-      unverifiedUsers,
-      normalUsers,
-      premiumUsers,
-      adminUsers,
       todayUsers,
       thisMonthUsers,
+      activeGroups,
+      verifiedGroups,
+      accountStatusGroups,
+      roleGroups,
       userTypesGroup,
     ] = await Promise.all([
-      this.prisma.user.count({
+      this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: todayWhere }),
+      this.prisma.user.count({ where: monthWhere }),
+      this.prisma.user.groupBy({
+        by: ['isActive'],
         where,
+        _count: { _all: true },
       }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          isActive: true,
-        },
+      this.prisma.user.groupBy({
+        by: ['isVerified'],
+        where,
+        _count: { _all: true },
       }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          isActive: false,
-        },
+      this.prisma.user.groupBy({
+        by: ['accountStatus'],
+        where,
+        _count: { _all: true },
       }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          isVerified: true,
-        },
+      this.prisma.user.groupBy({
+        by: ['role'],
+        where,
+        _count: { _all: true },
       }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          isVerified: false,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          accountStatus: AccountStatus.NORMAL,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          accountStatus: AccountStatus.PREMIUM,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: {
-          ...where,
-          role: UserRole.ADMIN,
-        },
-      }),
-
-      this.prisma.user.count({
-        where: todayWhere,
-      }),
-
-      this.prisma.user.count({
-        where: monthWhere,
-      }),
-
-      /**
-       * Count all records in every user-type group.
-       *
-       * `_all` is intentionally used instead of `_count.userType`.
-       * This produces a stable numeric result and avoids Prisma's conditional
-       * aggregate type that may otherwise include `true` or `undefined`.
-       */
       this.prisma.user.groupBy({
         by: ['userType'],
         where,
-        _count: {
-          _all: true,
-        },
+        _count: { _all: true },
       }),
     ]);
 
-    /**
-     * Retrieves the number of users assigned to a specific user type.
-     *
-     * userType is required in the current Prisma schema, so no null handling
-     * is needed for the grouped field.
-     */
+    const activeUsers =
+      activeGroups.find((item) => item.isActive === true)?._count._all ?? 0;
+    const inactiveUsers =
+      activeGroups.find((item) => item.isActive === false)?._count._all ?? 0;
+    const verifiedUsers =
+      verifiedGroups.find((item) => item.isVerified === true)?._count._all ?? 0;
+    const unverifiedUsers =
+      verifiedGroups.find((item) => item.isVerified === false)?._count._all ?? 0;
+    const normalUsers =
+      accountStatusGroups.find((item) => item.accountStatus === AccountStatus.NORMAL)?._count._all ?? 0;
+    const premiumUsers =
+      accountStatusGroups.find((item) => item.accountStatus === AccountStatus.PREMIUM)?._count._all ?? 0;
+    const adminUsers =
+      roleGroups.find((item) => item.role === UserRole.ADMIN)?._count._all ?? 0;
+
     const getUserTypeCount = (userType: UserType): number =>
-      userTypesGroup.find((item) => item.userType === userType)?._count._all ??
-      0;
+      userTypesGroup.find((item) => item.userType === userType)?._count._all ?? 0;
 
     return {
       totalUsers,

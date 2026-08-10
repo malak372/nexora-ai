@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Crown, Globe2, Layers3, LockKeyhole, MapPin, Mic, MicOff, Sparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import VoxidenceMark from '../../../../components/brand/VoxidenceMark';
 import { getAvailableDomains, startIdeaGeneration } from '../api/ideaGenerationApi';
@@ -38,7 +39,7 @@ export default function GenerateIdeaPage() {
     let active = true;
 
     Promise.all([
-      getNormalUserSummary({ force: true }),
+      getNormalUserSummary(),
       getPaymentPricing(),
     ])
       .then(([summary, pricing]) => {
@@ -67,6 +68,17 @@ export default function GenerateIdeaPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!generationBlocked) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [generationBlocked]);
 
   useEffect(() => {
     if (accountAccess.isPremium) {
@@ -114,45 +126,10 @@ export default function GenerateIdeaPage() {
     setSubmitting(true);
 
     try {
-      // Re-check entitlement immediately before queueing. This avoids sending a
-      // stale NORMAL_FREE value when the account has already become PREMIUM.
-      // The backend remains authoritative and resolves the final type again.
-      let premiumForRequest = isPremium;
-
-      try {
-        const [latestSummary, latestPricing] = await Promise.all([
-          getNormalUserSummary({ force: true }),
-          getPaymentPricing(),
-        ]);
-        const latestPremium = Boolean(
-          latestSummary?.isPremium || latestSummary?.accountStatus === 'PREMIUM',
-        );
-        const latestCredits = Number(latestSummary?.creditBalance ?? 0);
-        const latestRemaining = Number(latestSummary?.remainingFreeGenerations ?? 0);
-        const latestRequiredCredits = Number(latestPricing?.premiumIdeaCreditCost ?? 0);
-
-        premiumForRequest = latestPremium;
-        setIsPremium(latestPremium);
-        setCreditBalance(latestCredits);
-        setPremiumIdeaCreditCost(latestRequiredCredits);
-        setRemainingFreeGenerations(latestRemaining);
-        setGenerationBlocked(
-          latestPremium
-            ? latestRequiredCredits <= 0 || latestCredits < latestRequiredCredits
-            : latestRemaining <= 0,
-        );
-
-        if (
-          latestPremium
-            ? latestRequiredCredits <= 0 || latestCredits < latestRequiredCredits
-            : latestRemaining <= 0
-        ) {
-          return;
-        }
-      } catch {
-        // Do not fail generation only because the summary refresh failed.
-        // The generation endpoint performs the authoritative entitlement check.
-      }
+      // Do not add a second summary/pricing round-trip before generation.
+      // The generation endpoint is already the authoritative entitlement gate,
+      // so a client-side re-check only delays the click without adding safety.
+      const premiumForRequest = isPremium;
 
       const response = await startIdeaGeneration({
         ...(selectedDomainIds.length
@@ -178,7 +155,18 @@ export default function GenerateIdeaPage() {
 
       saveActiveGenerationRunId(result.runId);
       resetDraft();
-      navigate(`/normal/generation/${result.runId}`);
+      navigate(`/normal/generation/${result.runId}`, {
+        state: {
+          initialRun: {
+            id: result.runId,
+            runId: result.runId,
+            status: result.status || 'QUEUED',
+            progressPercent: 0,
+            currentStageKey: null,
+            stages: [],
+          },
+        },
+      });
     } catch (requestError) {
       const responseBody = requestError?.response?.data;
       const backendCode =
@@ -201,7 +189,7 @@ export default function GenerateIdeaPage() {
       setSubmitting(false);
     }
   };
-  return <div className="nx-generation-page"><section className="nx-generation-shell">
+  return <div className={`nx-generation-page ${generationBlocked ? 'is-generation-blocked' : ''}`}><section className="nx-generation-shell">
     <div className="nx-step-rail">{STEPS.map(([title, caption], index) => <div key={title} className={`nx-step ${index === step ? 'is-current' : ''} ${index < step ? 'is-complete' : ''}`}><span>{index < step ? <Check size={15} /> : index + 1}</span><div><b>{title}</b><small>{caption}</small></div>{index < STEPS.length - 1 ? <i /> : null}</div>)}</div>
     <div className="nx-generation-card">
       {step === 0 ? <section className="nx-panel nx-panel--signal"><div className="nx-panel__head"><div><span className="nx-kicker"><Sparkles size={14} />Tell us what you noticed</span><h2>What real problem should Voxidence investigate?</h2><p>Describe the frustration, who experiences it, and why current solutions are not enough.</p></div><span className="nx-private-note">Private workspace</span></div><div className="nx-speech-field"><textarea value={draft.description} maxLength={2000} onChange={e => updateDraft({ description: e.target.value, personalizedDiscovery: false })} placeholder="Example: Students in Nablus struggle to coordinate shared transport because schedules change and there is no trusted real-time matching system…" /><div className="nx-speech-field__actions"><button type="button" className={`nx-voice-button ${listening ? 'is-listening' : ''}`} onClick={toggleVoice}>{listening ? <MicOff size={20} /> : <Mic size={20} />}<span>{listening ? 'Listening…' : 'Speak to type'}</span></button><button type="button" className="nx-domain-shortcut" onClick={() => setStep(1)}><Layers3 size={19} /><span>Choose domains instead</span><ArrowRight size={16} /></button></div><small>{draft.description.length}/2000</small></div>{voiceError ? <p className="nx-inline-error">{voiceError}</p> : null}<div className="nx-signal-tips"><span>Include who is affected</span><span>Explain the repeated pain</span><span>Mention the location when relevant</span></div></section> : null}
@@ -211,55 +199,124 @@ export default function GenerateIdeaPage() {
       {error ? <div className="nx-form-error">{Array.isArray(error) ? error.join(' ') : error}</div> : null}
       <footer className="nx-wizard-actions"><button type="button" className="nx-back-button" onClick={() => step === 0 ? navigate('/normal/dashboard') : setStep(v => v - 1)}><ArrowLeft size={17} />{step === 0 ? 'Back to home' : 'Previous'}</button>{step < STEPS.length - 1 ? <button type="button" className="nx-next-button" disabled={!canContinue} aria-disabled={!canContinue} onClick={() => setStep(v => v + 1)}>Continue <ArrowRight size={18} /></button> : <button type="button" className="nx-next-button" disabled={submitting || checkingEntitlement || generationBlocked} aria-busy={submitting || checkingEntitlement} onClick={submit}>{submitting ? 'Launching intelligence…' : 'Generate validated idea'} <Sparkles size={18} /></button>}</footer>
     </div>
-    {generationBlocked ? (
-      <div className="nx-generation-blocker" role="dialog" aria-modal="true" aria-labelledby="generation-blocker-title">
-        <motion.div
+    {generationBlocked ? createPortal(
+      <div
+        className="nx-generation-blocker"
+        role="presentation"
+        aria-hidden={false}
+      >
+        <motion.section
           className="nx-generation-blocker__card"
-          initial={{ opacity: 0, y: 28, scale: 0.92 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="generation-blocker-title"
+          aria-describedby="generation-blocker-description"
+          initial={{ opacity: 0, y: 22, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 170, damping: 20 }}
+          transition={{ type: 'spring', stiffness: 190, damping: 23 }}
         >
-          <motion.span
-            className="nx-generation-blocker__mark"
-            animate={{ rotate: [0, 4, -4, 0], scale: [1, 1.04, 1] }}
-            transition={{ duration: 3, repeat: Infinity, repeatDelay: 0.8 }}
-          >
-            <VoxidenceMark size={34} />
-          </motion.span>
+          <div className="nx-generation-blocker__glow nx-generation-blocker__glow--mint" aria-hidden="true" />
+          <div className="nx-generation-blocker__glow nx-generation-blocker__glow--rose" aria-hidden="true" />
 
-          <span className="nx-generation-blocker__eyebrow">
-            <LockKeyhole size={15} />
-            Generation access
-          </span>
+          <header className="nx-generation-blocker__header">
+            <motion.span
+              className="nx-generation-blocker__mark"
+              animate={{ y: [0, -4, 0], rotate: [0, 2, -2, 0] }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <VoxidenceMark size={38} />
+            </motion.span>
 
-          <h2 id="generation-blocker-title">{isPremium ? 'You need more Premium credits.' : 'Your free discoveries are complete.'}</h2>
-          <p>
-            {isPremium
-              ? 'Your existing Premium ideas and unlocked outputs remain available. Purchase more credits to create another complete evidence-based workspace.'
-              : 'You have used all normal idea generations available on this account. Your existing ideas stay available, and you can upgrade to continue creating new evidence-based workspaces.'}
-          </p>
+            <div className="nx-generation-blocker__header-copy">
+              <span className="nx-generation-blocker__eyebrow">
+                <LockKeyhole size={14} />
+                Generation access
+              </span>
+              <span className="nx-generation-blocker__state">
+                <i />
+                Generation paused
+              </span>
+            </div>
+          </header>
 
-          <div className="nx-generation-blocker__status">
-            <span><b>{isPremium ? creditBalance : (remainingFreeGenerations ?? 0)}</b><small>{isPremium ? 'premium credits remaining' : 'free generations remaining'}</small></span>
-            <i />
-            <span><Crown size={18} /><small>{isPremium ? 'Buy credits to continue generating' : 'Premium generation available after upgrade'}</small></span>
+          <div className="nx-generation-blocker__content">
+            <h2 id="generation-blocker-title">
+              {isPremium ? 'More credits are needed to generate again.' : 'Your free generations are complete.'}
+            </h2>
+
+            <p id="generation-blocker-description">
+              {isPremium
+                ? 'Your current ideas and unlocked workspaces remain available. Add credits whenever you are ready to create another full evidence-based idea.'
+                : 'You have used the free generations available on this account. Your existing ideas stay available, and upgrading lets you continue creating new evidence-based workspaces.'}
+            </p>
+
+            <div className="nx-generation-blocker__metrics">
+              <article>
+                <span className="nx-generation-blocker__metric-icon">
+                  <LockKeyhole size={16} />
+                </span>
+                <div>
+                  <small>{isPremium ? 'Credit balance' : 'Free generations'}</small>
+                  <strong>{isPremium ? creditBalance : (remainingFreeGenerations ?? 0)}</strong>
+                  <span>{isPremium ? 'credits available' : 'remaining'}</span>
+                </div>
+              </article>
+
+              <article className="is-accent">
+                <span className="nx-generation-blocker__metric-icon">
+                  <Crown size={16} />
+                </span>
+                <div>
+                  <small>{isPremium ? 'Next step' : 'Continue with Premium'}</small>
+                  <strong>{isPremium ? (premiumIdeaCreditCost ?? '—') : 'Premium'}</strong>
+                  <span>
+                    {isPremium
+                      ? 'credits required per idea'
+                      : 'advanced generation available after upgrade'}
+                  </span>
+                </div>
+              </article>
+            </div>
+
+            <div className="nx-generation-blocker__note">
+              <Sparkles size={16} />
+              <div>
+                <strong>Your work is safe.</strong>
+                <span>No existing idea, unlock, publication, or workspace is removed when generation access is paused.</span>
+              </div>
+            </div>
           </div>
 
-          <div className="nx-generation-blocker__actions">
-            <button type="button" className="is-secondary" onClick={() => navigate('/normal/ideas')}>
+          <footer className="nx-generation-blocker__actions">
+            <button
+              type="button"
+              className="is-secondary"
+              onClick={() => navigate('/normal/ideas')}
+            >
               View my ideas
             </button>
-            <button type="button" className="is-primary" onClick={() => navigate('/normal/credits')}>
-              {isPremium ? 'Buy more credits' : 'Upgrade workspace'}
-              <ArrowRight size={18} />
-            </button>
-          </div>
 
-          <button type="button" className="nx-generation-blocker__home" onClick={() => navigate('/normal/dashboard')}>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={() => navigate('/normal/credits')}
+            >
+              {isPremium ? 'Buy more credits' : 'Upgrade workspace'}
+              <ArrowRight size={17} />
+            </button>
+          </footer>
+
+          <button
+            type="button"
+            className="nx-generation-blocker__home"
+            onClick={() => navigate('/normal/dashboard')}
+          >
+            <ArrowLeft size={14} />
             Back to dashboard
           </button>
-        </motion.div>
-      </div>
+        </motion.section>
+      </div>,
+      document.body,
     ) : null}
   </section></div>;
 }
