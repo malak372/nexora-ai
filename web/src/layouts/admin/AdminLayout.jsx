@@ -2,29 +2,39 @@ import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, BellRing, BrainCircuit, CircleDollarSign, Coins, Database, FileWarning,
-  Gauge, Layers3, Lightbulb, LogOut, Menu, MessageSquareText, MessagesSquare, PanelLeftClose, Search,
+  Gauge, Layers3, Lightbulb, LogOut, Menu, PanelLeftClose, Search,
   ShieldCheck, SlidersHorizontal, Sparkles, UserRound, UserRoundCog, UsersRound, Workflow, X, BookOpenCheck
 } from 'lucide-react';
 import VoxidenceMark from '../../components/brand/VoxidenceMark';
 import { clearAuthSession, getAccessToken, getStoredUser } from '../../features/auth/shared/auth.storage';
 import { resolveMediaUrl } from '../../utils/mediaUrl';
+import { adminApi } from '../../features/admin/api/adminApi';
 import './admin-layout.css';
 
 const groups = [
   { label: 'Overview', items: [{ to: '/admin/dashboard', label: 'Command center', icon: Gauge }] },
   { label: 'Community', items: [
-    { to: '/admin/users', label: 'Users', icon: UsersRound }, { to: '/admin/ideas', label: 'Ideas', icon: Lightbulb },
-    { to: '/admin/publication-reports', label: 'Publication reports', icon: FileWarning }, { to: '/admin/comments', label: 'Community comments', icon: MessageSquareText },
-    { to: '/admin/feedback', label: 'Feedback & ratings', icon: MessagesSquare }, { to: '/admin/complaints', label: 'Complaints', icon: ShieldCheck },
+    { to: '/admin/users', label: 'Users', icon: UsersRound },
+    { to: '/admin/ideas', label: 'Ideas', icon: Lightbulb },
+    { to: '/admin/publication-reports', label: 'Publication reports', icon: FileWarning },
+    { to: '/admin/complaints', label: 'Complaints', icon: ShieldCheck },
     { to: '/admin/contact-messages', label: 'Contact inbox', icon: BookOpenCheck },
   ]},
+  { label: 'Data & evidence', items: [
+    { to: '/admin/evidence', label: 'Evidence Library', icon: Database },
+    { to: '/admin/data-sources', label: 'Data sources', icon: Database },
+    { to: '/admin/collection', label: 'Data collection', icon: Workflow },
+    { to: '/admin/domains', label: 'Domains', icon: Layers3 },
+  ]},
   { label: 'Revenue', items: [
-    { to: '/admin/payments', label: 'Payments', icon: CircleDollarSign }, { to: '/admin/credits', label: 'Credits', icon: Coins },
+    { to: '/admin/payments', label: 'Payments', icon: CircleDollarSign },
+    { to: '/admin/credits', label: 'Credits', icon: Coins },
   ]},
   { label: 'Intelligence', items: [
-    { to: '/admin/ai-monitoring', label: 'AI monitoring', icon: Activity }, { to: '/admin/ai-analytics', label: 'AI analytics', icon: Sparkles }, { to: '/admin/ai-models', label: 'AI models', icon: BrainCircuit },
-    { to: '/admin/prompts', label: 'Prompt control', icon: Sparkles }, { to: '/admin/data-sources', label: 'Data sources', icon: Database },
-    { to: '/admin/collection', label: 'Data collection', icon: Workflow }, { to: '/admin/domains', label: 'Domains', icon: Layers3 },
+    { to: '/admin/ai-monitoring', label: 'AI monitoring', icon: Activity },
+    { to: '/admin/ai-analytics', label: 'AI analytics', icon: Sparkles },
+    { to: '/admin/ai-models', label: 'AI models', icon: BrainCircuit },
+    { to: '/admin/prompts', label: 'Prompt control', icon: Sparkles },
   ]},
   { label: 'My account', items: [
     { to: '/admin/account', label: 'Profile & security', icon: UserRound },
@@ -91,7 +101,14 @@ export default function AdminLayout() {
             <section key={group.label}>
               {!collapsed && <p>{group.label}</p>}
               {group.items.map(({ to, label, icon: Icon }) => (
-                <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'is-active' : ''} title={collapsed ? label : undefined}>
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) => isActive ? 'is-active' : ''}
+                  title={collapsed ? label : undefined}
+                  onMouseEnter={() => adminApi.prefetchRoute?.(to)}
+                  onFocus={() => adminApi.prefetchRoute?.(to)}
+                >
                   <Icon size={18} strokeWidth={1.9} /><span>{label}</span>
                 </NavLink>
               ))}

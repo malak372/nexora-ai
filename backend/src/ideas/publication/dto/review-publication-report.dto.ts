@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsOptional,
   IsString,
@@ -32,7 +33,6 @@ export class ReviewPublicationReportDto {
   /** Internal moderation note stored with the report and audit log. */
   @IsOptional()
   @IsString()
-  @MinLength(3)
   @MaxLength(1000)
   adminNote?: string;
 
@@ -42,16 +42,26 @@ export class ReviewPublicationReportDto {
   moderationAction: PublicationReportModerationAction =
     PublicationReportModerationAction.NONE;
 
-  /**
-   * Message delivered to the publisher for WARN_PUBLISHER.
-   * It is intentionally required only for the warning action.
-   */
+  /** Optional custom notification sent to the publisher. */
   @ValidateIf(
     (dto: ReviewPublicationReportDto) =>
-      dto.moderationAction === PublicationReportModerationAction.WARN_PUBLISHER,
+      dto.moderationAction === PublicationReportModerationAction.WARN_PUBLISHER ||
+      dto.publisherMessage !== undefined,
   )
   @IsString()
   @MinLength(5)
   @MaxLength(1000)
   publisherMessage?: string;
+
+  /** Whether to notify the user who submitted the report. */
+  @IsOptional()
+  @IsBoolean()
+  notifyReporter?: boolean;
+
+  /** Optional custom outcome message for the reporter. */
+  @ValidateIf((dto: ReviewPublicationReportDto) => dto.notifyReporter === true && dto.reporterMessage !== undefined)
+  @IsString()
+  @MinLength(5)
+  @MaxLength(1000)
+  reporterMessage?: string;
 }

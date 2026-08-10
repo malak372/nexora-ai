@@ -429,11 +429,18 @@ export class AdminContactMessagesService {
 
     let emailSent = false;
 
+    const isRegisteredUser = Boolean(result.contactMessage.user?.id);
+    const emailRecipient =
+      result.contactMessage.user?.email?.trim() || result.contactMessage.email;
+    const recipientName =
+      result.contactMessage.user?.fullName?.trim() ||
+      result.contactMessage.fullName;
+
     if (result.replyChanged && result.contactMessage.adminReply) {
       try {
         await this.mailService.sendContactReplyEmail(
-          result.contactMessage.email,
-          result.contactMessage.fullName,
+          emailRecipient,
+          recipientName,
           result.contactMessage.subject,
           result.contactMessage.adminReply,
         );
@@ -457,6 +464,8 @@ export class AdminContactMessagesService {
     return {
       ...response,
       emailSent,
+      emailRecipient,
+      recipientType: isRegisteredUser ? 'REGISTERED_USER' : 'GUEST',
     };
   }
 

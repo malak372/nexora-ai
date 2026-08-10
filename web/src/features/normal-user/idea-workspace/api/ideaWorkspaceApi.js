@@ -22,29 +22,19 @@ const unwrap = (response) => response?.data?.data ?? response?.data;
 
 async function requestWorkspaceBundle(ideaId) {
   try {
-    const [workspaceResponse, ideaDetailResponse] = await Promise.all([
-      normalUserApi.get(`/users/ideas/${ideaId}/workspace`),
-      normalUserApi
-        .get(`/users/ideas/${ideaId}`)
-        .catch(() => null),
-    ]);
+    /*
+     * The optimized backend workspace endpoint already returns the idea,
+     * publication snapshot and completed outputs in one Prisma query.
+     * Do not request /users/ideas/:id in parallel again.
+     */
+    const workspaceResponse = await normalUserApi.get(
+      `/users/ideas/${ideaId}/workspace`,
+    );
 
     const payload = unwrap(workspaceResponse);
-    const workspaceIdea = payload?.idea ?? null;
-    const ideaDetails = ideaDetailResponse
-      ? unwrap(ideaDetailResponse)
-      : null;
 
     return {
-      idea: workspaceIdea
-        ? {
-            ...workspaceIdea,
-            publication:
-              workspaceIdea.publication ??
-              ideaDetails?.publication ??
-              null,
-          }
-        : ideaDetails,
+      idea: payload?.idea ?? null,
       outputs: Array.isArray(payload?.outputs) ? payload.outputs : [],
     };
   } catch (error) {
@@ -95,7 +85,7 @@ export async function getIdeaWorkspaceBundle(ideaId, options = {}) {
         ttlMs: WORKSPACE_CACHE_TTL_MS,
         force: Boolean(options.forceRefresh),
         persist: true,
-        allowStaleOnError: true,
+        allowStaleOnError: false,
       },
     );
   } catch (error) {

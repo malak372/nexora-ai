@@ -55,17 +55,24 @@ export default function NormalDashboardPage() {
     setIsLoading(true);
     setError('');
     try {
-      const [summaryResult, activeRunResult] = await Promise.all([
-        getNormalUserSummary({ force }),
-        getActiveGenerationRun({ force }).catch(() => null),
-      ]);
+      // First paint depends only on the summary. Do not block the whole dashboard
+      // while checking for an active generation run.
+      const summaryResult = await getNormalUserSummary({ force });
       setSummary(summaryResult);
-      setActiveRun(activeRunResult);
-      if (activeRunResult?.id) saveActiveGenerationRunId(activeRunResult.id);
-      else clearActiveGenerationRunId();
+      setIsLoading(false);
+
+      // Active-run lookup is secondary UI data, so hydrate it in the background.
+      void getActiveGenerationRun({ force })
+        .then((activeRunResult) => {
+          setActiveRun(activeRunResult);
+          if (activeRunResult?.id) saveActiveGenerationRunId(activeRunResult.id);
+          else clearActiveGenerationRunId();
+        })
+        .catch(() => {
+          setActiveRun(null);
+        });
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'We could not load your workspace.'));
-    } finally {
       setIsLoading(false);
     }
   }, []);
@@ -170,7 +177,7 @@ export default function NormalDashboardPage() {
         <motion.button
           className="normal-active-generation"
           type="button"
-          onClick={() => navigate(`/normal/generation/${activeRun.id}`)}
+          onClick={() => navigate(`/normal/generation/${activeRun.id}`, { state: { initialRun: activeRun } })}
           {...reveal}
         >
           <span className="normal-active-generation__icon"><Radio size={20} /></span>

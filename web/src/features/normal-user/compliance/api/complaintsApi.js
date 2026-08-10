@@ -1,17 +1,18 @@
-/**
- * Authenticated complaint API helpers.
- *
- * The response normalizer accepts both direct NestJS payloads and wrapped
- * API envelopes so the case queue does not appear empty when middleware adds
- * an additional `data` level.
- *
- * @author Malak
- */
+/** Cached authenticated complaint API helpers. */
 import {
   extractApiData,
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
+
+const COMPLAINTS_NAMESPACE = 'complaints';
+const COMPLAINT_DETAIL_NAMESPACE = 'complaint-detail';
+const COMPLAINTS_TTL_MS = 60 * 1000;
 
 function unwrapEnvelope(response) {
   const first = response?.data ?? response ?? {};
@@ -41,32 +42,46 @@ function normalizeComplaintList(response, params = {}) {
 export async function createComplaint(payload) {
   try {
     const response = await normalUserApi.post('/users/complaints', payload);
+    invalidateRequestCache(`${COMPLAINTS_NAMESPACE}:`);
+    invalidateRequestCache(`${COMPLAINT_DETAIL_NAMESPACE}:`);
     return extractApiData(response);
   } catch (error) {
-    throw new Error(
-      getApiErrorMessage(error, 'Your case could not be submitted.'),
-    );
+    throw new Error(getApiErrorMessage(error, 'Your case could not be submitted.'));
   }
 }
 
-export async function getMyComplaints(params = {}) {
+export async function getMyComplaints(params = {}, options = {}) {
+  const key = createRequestCacheKey(COMPLAINTS_NAMESPACE, params);
   try {
-    const response = await normalUserApi.get('/users/complaints', { params });
-    return normalizeComplaintList(response, params);
-  } catch (error) {
-    throw new Error(
-      getApiErrorMessage(error, 'Your compliance cases could not be loaded.'),
+    return await cachedRequest(
+      key,
+      async () => {
+        const response = await normalUserApi.get('/users/complaints', { params });
+        return normalizeComplaintList(response, params);
+      },
+      {
+        ttlMs: COMPLAINTS_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: true,
+      },
     );
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Your compliance cases could not be loaded.'));
   }
 }
 
-export async function getComplaintById(complaintId) {
+export async function getComplaintById(complaintId, options = {}) {
+  const key = createRequestCacheKey(COMPLAINT_DETAIL_NAMESPACE, { complaintId });
   try {
-    const response = await normalUserApi.get(`/users/complaints/${complaintId}`);
-    return extractApiData(response);
-  } catch (error) {
-    throw new Error(
-      getApiErrorMessage(error, 'The selected case could not be opened.'),
+    return await cachedRequest(
+      key,
+      async () => {
+        const response = await normalUserApi.get(`/users/complaints/${complaintId}`);
+        return extractApiData(response);
+      },
+      { ttlMs: COMPLAINTS_TTL_MS, force: Boolean(options.forceRefresh), persist: true },
     );
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'The selected case could not be opened.'));
   }
 }

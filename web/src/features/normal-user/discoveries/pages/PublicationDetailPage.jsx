@@ -134,15 +134,39 @@ export default function PublicationDetailPage() {
     setErrorMessage('');
 
     try {
-      // Load the publication first so disabled engagement features are never
-      // queried or rendered. This avoids unnecessary 403 responses and keeps
-      // the page visually clean when the publisher turns a feature off.
-      const publicationPayload = await getDiscoveryById(publicationId);
-      const nextPublication = publicationPayload?.publication ?? publicationPayload;
-      setPublication(nextPublication);
+      /*
+       * Publication + acceptance are the only requests needed before the page
+       * can safely render. Load them in parallel. Rating/vote/feedback are
+       * secondary UI state and must never block the whole publication page.
+       */
+      const [publicationResult, acceptanceResult] = await Promise.allSettled([
+        getDiscoveryById(publicationId),
+        getMyAcceptance(publicationId),
+      ]);
 
-      const engagementRequests = [getMyAcceptance(publicationId)];
-      const engagementKeys = ['acceptance'];
+      if (publicationResult.status !== 'fulfilled') {
+        throw publicationResult.reason;
+      }
+
+      const publicationPayload = publicationResult.value;
+      const nextPublication =
+        publicationPayload?.publication ?? publicationPayload;
+
+      const loadedAcceptance =
+        acceptanceResult.status === 'fulfilled'
+          ? extractAcceptance(acceptanceResult.value)
+          : null;
+
+      setPublication(nextPublication);
+      setAcceptance(loadedAcceptance);
+      setLoading(false);
+
+      /*
+       * Load optional engagement state after first paint. These requests are
+       * independent, so one slow endpoint no longer keeps the page spinner up.
+       */
+      const engagementRequests = [];
+      const engagementKeys = [];
 
       if (nextPublication.allowRatings !== false) {
         engagementRequests.push(getMyRating(publicationId));
@@ -159,35 +183,30 @@ export default function PublicationDetailPage() {
         engagementKeys.push('feedback');
       }
 
-      const engagementResults = await Promise.allSettled(engagementRequests);
+      void Promise.allSettled(engagementRequests).then((engagementResults) => {
+        engagementResults.forEach((result, index) => {
+          if (result.status !== 'fulfilled') return;
 
-      let loadedAcceptance = null;
+          const key = engagementKeys[index];
+          const payload = result.value;
 
-      engagementResults.forEach((result, index) => {
-        if (result.status !== 'fulfilled') return;
-
-        const key = engagementKeys[index];
-        const payload = result.value;
-
-        if (key === 'acceptance') {
-          loadedAcceptance = extractAcceptance(payload);
-          setAcceptance(loadedAcceptance);
-        } else if (key === 'rating') {
-          setRatingValue(Number(payload?.rating?.value ?? payload?.value ?? 0));
-        } else if (key === 'vote') {
-          setVoteValue(payload?.vote?.value ?? payload?.value ?? '');
-        } else if (key === 'feedback') {
-          const savedComment = payload?.feedback?.comment ?? payload?.comment ?? '';
-          setFeedbackValue(savedComment);
-          setFeedbackSaved(Boolean(savedComment.trim()));
-        }
+          if (key === 'rating') {
+            setRatingValue(Number(payload?.rating?.value ?? payload?.value ?? 0));
+          } else if (key === 'vote') {
+            setVoteValue(payload?.vote?.value ?? payload?.value ?? '');
+          } else if (key === 'feedback') {
+            const savedComment =
+              payload?.feedback?.comment ?? payload?.comment ?? '';
+            setFeedbackValue(savedComment);
+            setFeedbackSaved(Boolean(savedComment.trim()));
+          }
+        });
       });
 
       /*
-       * Premium basic access is intentionally silent.
-       * Opening a discoverable publication creates/returns the free basic
-       * acceptance immediately, so Premium users never see an "Open basic"
-       * CTA. The backend remains authoritative for ownership/capacity rules.
+       * Premium automatic basic acceptance can also happen after first paint.
+       * It updates only the protected access section and no longer blocks the
+       * public publication content from appearing.
        */
       const viewer = getStoredUser();
       if (
@@ -195,23 +214,20 @@ export default function PublicationDetailPage() {
         nextPublication.allowAdoption !== false &&
         !loadedAcceptance
       ) {
-        try {
-          const autoAcceptResult = await acceptPublication(publicationId, 'card');
-          const premiumAcceptance = extractAcceptance(autoAcceptResult);
-
-          if (premiumAcceptance) {
-            setAcceptance(premiumAcceptance);
-          }
-        } catch (acceptError) {
-          // Do not replace the whole discovery with an error if auto-accept is
-          // unavailable (for example, owner/capacity rules). The protected
-          // section simply remains unavailable.
-          console.warn('Premium basic access could not be opened automatically.', acceptError);
-        }
+        void acceptPublication(publicationId, 'card')
+          .then((autoAcceptResult) => {
+            const premiumAcceptance = extractAcceptance(autoAcceptResult);
+            if (premiumAcceptance) setAcceptance(premiumAcceptance);
+          })
+          .catch((acceptError) => {
+            console.warn(
+              'Premium basic access could not be opened automatically.',
+              acceptError,
+            );
+          });
       }
     } catch (error) {
       setErrorMessage(error?.message || 'This discovery could not be opened.');
-    } finally {
       setLoading(false);
     }
   }, [publicationId]);

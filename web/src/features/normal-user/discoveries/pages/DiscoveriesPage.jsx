@@ -27,6 +27,7 @@ import { useNavigate } from 'react-router-dom';
 
 import DiscoveryCard from '../components/DiscoveryCard';
 import { getDiscoveries } from '../api/discoveriesApi';
+import { preloadDiscoveryDetail } from '../../../../routes/routePreloaders';
 import '../styles/discoveries.css';
 
 const PAGE_SIZE = 12;
@@ -183,6 +184,16 @@ export default function DiscoveriesPage() {
     }
 
     navigate(`/normal/discover/${publicationId}`);
+  };
+
+  const warmPublication = (publication) => {
+    const publicationId =
+      publication?.id ??
+      publication?.publicationId;
+
+    if (publicationId) {
+      preloadDiscoveryDetail(publicationId);
+    }
   };
 
   return (
@@ -496,6 +507,9 @@ export default function DiscoveriesPage() {
 
               <button
                 type="button"
+                onMouseEnter={() => warmPublication(featuredPublication)}
+                onFocus={() => warmPublication(featuredPublication)}
+                onPointerDown={() => warmPublication(featuredPublication)}
                 onClick={() =>
                   openPublication(featuredPublication)
                 }
@@ -537,6 +551,9 @@ export default function DiscoveriesPage() {
                   }
                   publication={publication}
                   index={index}
+                  onPrefetch={() =>
+                    warmPublication(publication)
+                  }
                   onOpen={() =>
                     openPublication(publication)
                   }

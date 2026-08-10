@@ -1,5 +1,5 @@
 /**
- * Authenticated Nexora workspace shell.
+ * Authenticated Voxidence workspace shell optimized for fast route transitions.
  *
  * Desktop navigation lives in a floating top command bar instead of a
  * permanent left sidebar. A compact drawer is used only on smaller screens.
@@ -10,9 +10,9 @@ import { getAccessToken } from '../../features/auth/shared/auth.storage';
 import NormalHeader from './NormalHeader';
 import PremiumWelcomeCelebration from '../../features/normal-user/shared/components/PremiumWelcomeCelebration';
 import NormalSidebar from './NormalSidebar';
+import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
 import './normal-user-layout.css';
 import './normal-user-theme.css';
-import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
 
 export default function NormalUserLayout() {
   const navigate = useNavigate();
@@ -23,14 +23,15 @@ export default function NormalUserLayout() {
   }, [navigate]);
 
   useEffect(() => {
-    preloadPrimaryRoutes();
-  }, []);
-
-  useEffect(() => {
     const handleExpired = () => navigate('/login', { replace: true });
     window.addEventListener('nexora:session-expired', handleExpired);
     return () => window.removeEventListener('nexora:session-expired', handleExpired);
   }, [navigate]);
+
+  // Warm the two slowest library routes only when the browser is idle.
+  // If the user opens one while prefetch is still running, requestCache
+  // returns the same pending promise instead of starting another request.
+  useEffect(() => preloadPrimaryRoutes(), []);
 
   return (
     <div className="normal-app-shell">

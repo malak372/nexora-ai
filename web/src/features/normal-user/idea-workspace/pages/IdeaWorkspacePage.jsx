@@ -22,13 +22,16 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
 
 import '../styles/idea-workspace.css';
+
+const UNLOCK_REFRESH_INTERVAL_MS = 1200;
+const UNLOCK_REFRESH_MAX_ATTEMPTS = 75;
 
 const text = (value) => {
   if (Array.isArray(value)) return value.join('\n');
@@ -146,6 +149,10 @@ export default function IdeaWorkspacePage() {
   const [activeKey, setActiveKey] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [unlockProcessing, setUnlockProcessing] = useState(
+    Boolean(location.state?.unlockProcessing),
+  );
+  const unlockRefreshAttemptsRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
@@ -161,6 +168,9 @@ export default function IdeaWorkspacePage() {
 
         setIdea(loadedIdea);
         setOutputs(loadedIdea?.isUnlocked ? loadedOutputs : []);
+        if (loadedIdea?.isUnlocked) {
+          setUnlockProcessing(false);
+        }
       } catch (requestError) {
         if (mounted) setError(requestError.message);
       } finally {
@@ -172,6 +182,58 @@ export default function IdeaWorkspacePage() {
       mounted = false;
     };
   }, [ideaId, location.state?.forceRefresh]);
+
+  useEffect(() => {
+    if (!unlockProcessing || !ideaId || idea?.isUnlocked) return undefined;
+
+    let cancelled = false;
+    let timerId = null;
+
+    const refreshUnlockState = async () => {
+      if (cancelled) return;
+
+      if (unlockRefreshAttemptsRef.current >= UNLOCK_REFRESH_MAX_ATTEMPTS) {
+        setUnlockProcessing(false);
+        return;
+      }
+
+      unlockRefreshAttemptsRef.current += 1;
+
+      try {
+        const { idea: latestIdea, outputs: latestOutputs } =
+          await getIdeaWorkspaceBundle(ideaId, { forceRefresh: true });
+
+        if (cancelled) return;
+
+        if (latestIdea) {
+          setIdea(latestIdea);
+        }
+
+        if (latestIdea?.isUnlocked) {
+          setOutputs(Array.isArray(latestOutputs) ? latestOutputs : []);
+          setUnlockProcessing(false);
+          return;
+        }
+      } catch {
+        // A transient refresh failure should not throw the user out of the
+        // workspace. The next lightweight poll will retry automatically.
+      }
+
+      if (!cancelled) {
+        timerId = window.setTimeout(
+          refreshUnlockState,
+          UNLOCK_REFRESH_INTERVAL_MS,
+        );
+      }
+    };
+
+    timerId = window.setTimeout(refreshUnlockState, 250);
+
+    return () => {
+      cancelled = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [ideaId, idea?.isUnlocked, unlockProcessing]);
 
   const sections = useMemo(() => {
     if (!idea) return [];
@@ -302,7 +364,11 @@ export default function IdeaWorkspacePage() {
               ) : (
                 <LockKeyhole size={14} />
               )}
-              {idea.isUnlocked ? 'Advanced workspace' : 'Core workspace'}
+              {idea.isUnlocked
+                ? 'Advanced workspace'
+                : unlockProcessing
+                  ? 'Preparing advanced workspace'
+                  : 'Core workspace'}
             </span>
 
             <span>
@@ -312,8 +378,25 @@ export default function IdeaWorkspacePage() {
           </div>
         </div>
 
+        {unlockProcessing && !idea.isUnlocked ? (
+          <div
+            className="workspace-unlock-progress"
+            role="status"
+            aria-live="polite"
+          >
+            <WandSparkles size={18} />
+            <span>
+              <strong>Preparing advanced outputs…</strong>
+              <small>
+                Your payment is confirmed. You can stay on this page while the
+                advanced workspace finishes in the background.
+              </small>
+            </span>
+          </div>
+        ) : null}
+
         <div className="workspace-actions">
-          {!idea.isUnlocked ? (
+          {!idea.isUnlocked && !unlockProcessing ? (
             <button
               className="workspace-primary"
               type="button"
@@ -326,7 +409,7 @@ export default function IdeaWorkspacePage() {
               </span>
               <ChevronRight size={17} />
             </button>
-          ) : (
+          ) : idea.isUnlocked ? (
             <button
               type="button"
               onClick={() =>
@@ -340,7 +423,7 @@ export default function IdeaWorkspacePage() {
               </span>
               <ChevronRight size={17} />
             </button>
-          )}
+          ) : null}
 
           {isPremium && idea.isUnlocked ? (
             <button

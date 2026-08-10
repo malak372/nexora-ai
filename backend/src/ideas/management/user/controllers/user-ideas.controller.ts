@@ -10,6 +10,7 @@ import {
 
 import { CurrentUser } from '../../../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../../../auth/guards/jwt-auth.guard';
+import type { AuthenticatedUser } from '../../../../auth/types/authenticated-user.type';
 
 import { GetIdeaCommentsQueryDto } from '../dto/get-idea-comments-query.dto';
 import { GetUserIdeasQueryDto } from '../dto/get-user-ideas-query.dto';
@@ -46,10 +47,14 @@ export class UserIdeasController {
    */
   @Get()
   getMyIdeas(
-    @CurrentUser('id') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: GetUserIdeasQueryDto,
   ) {
-    return this.userIdeasService.getMyIdeas(userId, query);
+    return this.userIdeasService.getMyIdeas(
+      user.id,
+      query,
+      user.accountStatus,
+    );
   }
 
   /**

@@ -110,7 +110,7 @@ export async function cachedRequest(
     ttlMs = 2 * 60 * 1000,
     force = false,
     persist = true,
-    allowStaleOnError = true,
+    allowStaleOnError = false,
   } = {},
 ) {
   const existing = getEntry(key);

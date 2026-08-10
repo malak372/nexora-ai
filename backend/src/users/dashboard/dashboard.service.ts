@@ -1,5 +1,5 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AccountStatus,
   ComplaintStatus,
@@ -12,35 +12,23 @@ import type { Cache } from 'cache-manager';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { userCacheKeys } from '../cache/user-cache.keys';
-import { UserValidationService } from '../validation/validation.service';
+
+const DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
 
 /**
- * Builds the authenticated user's dashboard summary.
- *
- * Dashboard reads are intentionally executed through one Prisma batch
- * transaction. This prevents a single dashboard request from starting many
- * database queries concurrently and exhausting a small connection pool.
- *
- * Paid idea outputs remain available only through the dedicated ideas and
- * outputs modules.
- *
- * @author Eman
+ * Builds the authenticated user's dashboard summary with a bounded number of
+ * database operations. The previous implementation issued many independent
+ * counts; that is expensive when PostgreSQL is remote and the Prisma pool is
+ * small. Grouping related counts dramatically reduces database round trips.
  */
 @Injectable()
 export class UserDashboardService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly userValidationService: UserValidationService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
 
-  /**
-   * Returns a cached dashboard summary for one authenticated user.
-   *
-   * @param userId - Authenticated user's UUID.
-   * @returns Account and workspace summary.
-   */
   async getSummary(userId: string) {
     const cacheKey = userCacheKeys.summary(userId);
     const cachedSummary = await this.cacheManager.get(cacheKey);
@@ -49,36 +37,67 @@ export class UserDashboardService {
       return cachedSummary;
     }
 
-    const user = await this.userValidationService.findUserOrThrow(userId);
-
-    /*
-     * Do not use Promise.all here.
-     *
-     * The database pool in the current environment is limited to 15 clients.
-     * Running all dashboard queries concurrently can consume most of that pool
-     * in one HTTP request, especially when more than one Nest process is open.
-     * Prisma's batch transaction executes these reads using one transaction
-     * context instead of creating a large burst of parallel requests.
-     */
     const [
-      ideasCount,
+      user,
       freeIdeasCount,
       premiumIdeasCount,
-      favoriteIdeasCount,
-      publishedIdeasCount,
-      unreadNotificationsCount,
       openComplaintsCount,
       resolvedComplaintsCount,
       totalPayments,
       successfulPayments,
       purchasedCredits,
-      latestIdea,
-      latestPayment,
     ] = await this.prisma.$transaction([
-      this.prisma.idea.count({
-        where: {
-          userId,
-          deletedAt: null,
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          userType: true,
+          accountStatus: true,
+          creditBalance: true,
+          freeGenerationLimit: true,
+          freeGenerationsUsed: true,
+          _count: {
+            select: {
+              ideas: {
+                where: { deletedAt: null },
+              },
+              favoriteIdeas: true,
+              publishedIdeas: {
+                where: { status: IdeaPublicationStatus.PUBLISHED },
+              },
+              alerts: {
+                where: { isRead: false },
+              },
+            },
+          },
+          ideas: {
+            where: { deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              title: true,
+              generationType: true,
+              isUnlocked: true,
+              createdAt: true,
+            },
+          },
+          payments: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              amount: true,
+              currency: true,
+              paymentMethodKey: true,
+              providerKey: true,
+              status: true,
+              paymentPurpose: true,
+              createdAt: true,
+            },
+          },
         },
       }),
 
@@ -95,26 +114,6 @@ export class UserDashboardService {
           userId,
           deletedAt: null,
           generationType: IdeaGenerationType.PREMIUM_CREDIT,
-        },
-      }),
-
-      this.prisma.favoriteIdea.count({
-        where: {
-          userId,
-        },
-      }),
-
-      this.prisma.ideaPublication.count({
-        where: {
-          publisherId: userId,
-          status: IdeaPublicationStatus.PUBLISHED,
-        },
-      }),
-
-      this.prisma.alert.count({
-        where: {
-          userId,
-          isRead: false,
         },
       }),
 
@@ -135,9 +134,7 @@ export class UserDashboardService {
       }),
 
       this.prisma.payment.count({
-        where: {
-          userId,
-        },
+        where: { userId },
       }),
 
       this.prisma.payment.count({
@@ -157,47 +154,13 @@ export class UserDashboardService {
             ],
           },
         },
-        _sum: {
-          amount: true,
-        },
-      }),
-
-      this.prisma.idea.findFirst({
-        where: {
-          userId,
-          deletedAt: null,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          title: true,
-          generationType: true,
-          isUnlocked: true,
-          createdAt: true,
-        },
-      }),
-
-      this.prisma.payment.findFirst({
-        where: {
-          userId,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          amount: true,
-          currency: true,
-          paymentMethodKey: true,
-          providerKey: true,
-          status: true,
-          paymentPurpose: true,
-          createdAt: true,
-        },
+        _sum: { amount: true },
       }),
     ]);
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
 
     const summary = {
       id: user.id,
@@ -213,22 +176,26 @@ export class UserDashboardService {
         0,
         user.freeGenerationLimit - user.freeGenerationsUsed,
       ),
-      ideasCount,
+      ideasCount: user._count.ideas,
       freeIdeasCount,
       premiumIdeasCount,
-      favoriteIdeasCount,
-      publishedIdeasCount,
-      unreadNotificationsCount,
+      favoriteIdeasCount: user._count.favoriteIdeas,
+      publishedIdeasCount: user._count.publishedIdeas,
+      unreadNotificationsCount: user._count.alerts,
       openComplaintsCount,
       resolvedComplaintsCount,
       totalPayments,
       successfulPayments,
       totalCreditsPurchased: purchasedCredits._sum.amount ?? 0,
-      latestIdea,
-      latestPayment,
+      latestIdea: user.ideas[0] ?? null,
+      latestPayment: user.payments[0] ?? null,
     };
 
-    await this.cacheManager.set(cacheKey, summary);
+    await this.cacheManager.set(
+      cacheKey,
+      summary,
+      DASHBOARD_CACHE_TTL_MS,
+    );
 
     return summary;
   }

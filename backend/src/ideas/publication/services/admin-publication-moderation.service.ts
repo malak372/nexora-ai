@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  AlertType,
   AuditAction,
   AuditTargetType,
   IdeaPublicationStatus,
 } from '@prisma/client';
+import { SystemAlertsService } from '../../../alerts/services/system-alerts.service';
 import { AuditService } from '../../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AdminPublicationModerationDto } from '../dto/admin-publication-moderation.dto';
@@ -20,6 +22,7 @@ export class AdminPublicationModerationService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly publicationCache: PublicationCacheService,
+    private readonly systemAlerts: SystemAlertsService,
   ) { }
 
   async hide(
@@ -44,6 +47,86 @@ export class AdminPublicationModerationService {
       null,
       AuditAction.ADMIN_RESTORE_PUBLICATION,
     );
+  }
+
+  /**
+   * Removes a publication from community discovery and notifies its publisher.
+   *
+   * The publication is archived rather than deleted so moderation history,
+   * votes, feedback, reports and acceptance records remain intact.
+   */
+  async unpublish(
+    adminId: string,
+    publicationId: string,
+    dto: AdminPublicationModerationDto,
+  ) {
+    const existing = await this.prisma.ideaPublication.findUnique({
+      where: { id: publicationId },
+      select: {
+        id: true,
+        status: true,
+        isHidden: true,
+        publisherId: true,
+        publicTitle: true,
+      },
+    });
+
+    if (!existing) throw new NotFoundException('Publication not found');
+
+    const reason = dto.reason.trim();
+    const now = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const publication = await tx.ideaPublication.update({
+        where: { id: publicationId },
+        data: {
+          status: IdeaPublicationStatus.ARCHIVED,
+          archivedAt: now,
+          isHidden: true,
+          hiddenAt: now,
+          hiddenReason: reason,
+        },
+      });
+
+      await this.systemAlerts.create(
+        {
+          userId: existing.publisherId,
+          title: 'Your published idea was unpublished',
+          message: `\"${existing.publicTitle}\" was removed from community discovery by an administrator. Reason: ${reason}`,
+          type: AlertType.ADMIN,
+        },
+        tx,
+      );
+
+      await this.audit.createLog(
+        {
+          actorId: adminId,
+          action: AuditAction.ADMIN_ARCHIVE_PUBLICATION,
+          targetType: AuditTargetType.IDEA_PUBLICATION,
+          targetId: publicationId,
+          oldValue: {
+            status: existing.status,
+            isHidden: existing.isHidden,
+          },
+          newValue: {
+            status: publication.status,
+            isHidden: publication.isHidden,
+            reason,
+            publisherNotified: true,
+          },
+        },
+        tx,
+      );
+
+      return {
+        message: 'Publication unpublished and publisher notified',
+        publisherNotified: true,
+        publication,
+      };
+    });
+
+    await this.publicationCache.invalidateDiscovery(publicationId);
+    return result;
   }
 
   async archive(

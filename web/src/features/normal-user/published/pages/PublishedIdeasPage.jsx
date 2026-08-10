@@ -168,14 +168,11 @@ export default function PublishedIdeasPage() {
 
   useEffect(() => {
     /*
-     * Force a fresh request whenever the current
-     * publication view changes.
-     *
-     * This prevents the hero publication counter
-     * from initially displaying an old persisted
-     * cache value.
+     * Use the short-lived publication cache during normal navigation/filtering.
+     * Writes already invalidate this namespace, so forcing every request only
+     * made pagination and filters wait on the network unnecessarily.
      */
-    void loadPublished(true);
+    void loadPublished(false);
   }, [loadPublished]);
 
   const updatePublicationStatus = (

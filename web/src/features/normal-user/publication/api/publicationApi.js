@@ -10,7 +10,10 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
-import { invalidateIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
+import {
+  getIdeaWorkspaceBundle,
+  invalidateIdeaWorkspace,
+} from '../../idea-workspace/api/ideaWorkspaceApi';
 
 /**
  * Loads an idea together with its current publication snapshot, when present.
@@ -24,8 +27,8 @@ export async function getIdeaForPublication(ideaId) {
   }
 
   try {
-    const response = await normalUserApi.get(`/users/ideas/${ideaId}`);
-    return extractApiData(response);
+    const bundle = await getIdeaWorkspaceBundle(ideaId);
+    return bundle?.idea ?? null;
   } catch (error) {
     throw new Error(
       getApiErrorMessage(

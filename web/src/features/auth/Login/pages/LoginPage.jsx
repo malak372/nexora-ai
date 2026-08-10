@@ -25,6 +25,7 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { ROUTES } from '../../../../constants/routes.constants';
+import { preloadRoute } from '../../../../routes/routePreloaders';
 import { saveAuthSession } from '../../shared/auth.storage';
 import { markPremiumWelcomePending } from '../../../normal-user/shared/components/PremiumWelcomeCelebration';
 import { login } from '../api/login.api';
@@ -112,6 +113,13 @@ export default function LoginPage() {
         setIsSubmitting(true);
 
         try {
+            // Download the most common post-login route chunk while the backend
+            // authenticates. This does not call protected APIs before a token
+            // exists, but removes the cold React-chunk wait after success.
+            const dashboardChunkPromise = import(
+                '../../../normal-user/dashboard/pages/NormalDashboardPage'
+            ).catch(() => null);
+
             const session = await login({
                 email: values.email,
                 password: values.password,
@@ -120,9 +128,17 @@ export default function LoginPage() {
             saveAuthSession(session, values.rememberMe);
             markPremiumWelcomePending(session.user);
 
-            navigate(getDestinationByUser(session.user), {
-                replace: true,
-            });
+            const destination = getDestinationByUser(session.user);
+
+            if (destination === '/normal/dashboard') {
+                // Now that the token is stored, start the first dashboard data
+                // request before navigation. cachedRequest deduplicates it with
+                // the page request if both happen at nearly the same time.
+                void dashboardChunkPromise;
+                preloadRoute('/normal/dashboard');
+            }
+
+            navigate(destination, { replace: true });
         } catch (error) {
             setServerError({
                 type: error?.type || 'error',

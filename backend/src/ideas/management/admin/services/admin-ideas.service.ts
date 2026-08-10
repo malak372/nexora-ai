@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { IdeaGenerationType, Prisma, UnlockMethod } from '@prisma/client';
+import {
+  IdeaGenerationType,
+  IdeaPublicationStatus,
+  Prisma,
+  UnlockMethod,
+} from '@prisma/client';
 
 import { PrismaService } from '../../../../prisma/prisma.service';
 
@@ -102,6 +107,7 @@ export class AdminIdeasService {
           }
         : {}),
 
+
       ...(query.dataSourceKey
         ? {
             collectionJob: {
@@ -119,6 +125,24 @@ export class AdminIdeasService {
             },
           }
         : {}),
+    };
+  }
+
+  /**
+   * Builds the published-only filter without exposing publicationStatus as a
+   * query-string property. This keeps the public DTO strict and avoids
+   * whitelist validation errors on older/running clients.
+   */
+  private buildPublishedIdeasWhere(
+    query: GetAdminIdeasQueryDto,
+  ): Prisma.IdeaWhereInput {
+    return {
+      ...this.buildIdeasWhere(query),
+      publication: {
+        is: {
+          status: IdeaPublicationStatus.PUBLISHED,
+        },
+      },
     };
   }
 
@@ -145,36 +169,57 @@ export class AdminIdeasService {
     };
   }
 
+
+  /**
+   * Builds deterministic server-side sorting for the idea directory.
+   *
+   * Scalar fields sort directly on Idea. Human-facing sort keys such as owner,
+   * domain and publication map to related fields. Tie-breakers keep pagination
+   * stable when multiple ideas share the same primary sort value.
+   */
+  private buildIdeaDirectoryOrderBy(
+    query: GetAdminIdeasQueryDto,
+  ): Prisma.IdeaOrderByWithRelationInput[] {
+    const direction: Prisma.SortOrder = query.sortOrder ?? 'desc';
+
+    let primary: Prisma.IdeaOrderByWithRelationInput;
+
+    switch (query.sortBy) {
+      case 'title': primary = { title: direction }; break;
+      case 'owner': primary = { user: { fullName: direction } }; break;
+      case 'domain': primary = { domain: { name: direction } }; break;
+      case 'generationType': primary = { generationType: direction }; break;
+      case 'isUnlocked': primary = { isUnlocked: direction }; break;
+      case 'publication': primary = { publication: { status: direction } }; break;
+      case 'updatedAt': primary = { updatedAt: direction }; break;
+      case 'createdAt':
+      default: primary = { createdAt: direction }; break;
+    }
+
+    return [primary, { createdAt: 'desc' }, { id: 'asc' }];
+  }
+
   /**
    * Retrieves generated ideas with filtering, searching,
    * pagination and safe sorting.
    */
   async getIdeas(query: GetAdminIdeasQueryDto) {
     const { page, limit, skip, take } = buildPagination(query);
-
     const where = this.buildIdeasWhere(query);
 
-    const orderBy = buildOrderBy(
-      query,
-      [
-        'title',
-        'generationType',
-        'isUnlocked',
-        'unlockMethod',
-        'commentsCount',
-        'createdAt',
-        'updatedAt',
-      ] as const,
-      'createdAt',
-    );
+    const orderBy = this.buildIdeaDirectoryOrderBy(query);
 
+    // IMPORTANT:
+    // The directory endpoint intentionally returns only what the table needs.
+    // Heavy relations such as collection sources, generated outputs, payments,
+    // credit transactions and chat sessions belong to GET /admin/ideas/:id.
+    // Loading them for every table row was the main reason this page felt slow.
     const [ideas, total] = await Promise.all([
       this.prisma.idea.findMany({
         where,
         skip,
         take,
         orderBy,
-
         select: {
           id: true,
           title: true,
@@ -182,7 +227,6 @@ export class AdminIdeasService {
           isUnlocked: true,
           unlockMethod: true,
           selectedRegion: true,
-          commentsCount: true,
           createdAt: true,
           updatedAt: true,
 
@@ -209,48 +253,11 @@ export class AdminIdeasService {
             },
           },
 
-          collectionJob: {
-            select: {
-              id: true,
-              status: true,
-              country: true,
-              city: true,
-              region: true,
-              totalPosts: true,
-              totalComments: true,
-
-              sources: {
-                select: {
-                  status: true,
-                  totalPosts: true,
-                  totalComments: true,
-
-                  dataSource: {
-                    select: {
-                      id: true,
-                      key: true,
-                      displayName: true,
-                    },
-                  },
-                },
-
-                orderBy: {
-                  dataSource: {
-                    displayName: 'asc',
-                  },
-                },
-              },
-            },
-          },
-
           generationRun: {
             select: {
-              id: true,
               status: true,
               currentStageKey: true,
               progressPercent: true,
-              startedAt: true,
-              completedAt: true,
             },
           },
 
@@ -262,26 +269,85 @@ export class AdminIdeasService {
               publishedAt: true,
             },
           },
-
-          _count: {
-            select: {
-              generatedOutputs: true,
-              payments: true,
-              creditTransactions: true,
-              chatSessions: true,
-            },
-          },
         },
       }),
 
-      this.prisma.idea.count({
-        where,
-      }),
+      this.prisma.idea.count({ where }),
     ]);
 
     return {
       data: ideas,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: calculateTotalPages(total, limit),
+      },
+    };
+  }
 
+  /**
+   * Retrieves only published ideas.
+   *
+   * A dedicated endpoint is intentionally used instead of a
+   * publicationStatus query parameter. With global ValidationPipe
+   * forbidNonWhitelisted enabled, this route is safer across frontend/backend
+   * version changes and cannot trigger "property publicationStatus should not exist".
+   */
+  async getPublishedIdeas(query: GetAdminIdeasQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
+    const where = this.buildPublishedIdeasWhere(query);
+
+    const orderBy = this.buildIdeaDirectoryOrderBy(query);
+
+    const [ideas, total] = await Promise.all([
+      this.prisma.idea.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        select: {
+          id: true,
+          title: true,
+          generationType: true,
+          isUnlocked: true,
+          unlockMethod: true,
+          selectedRegion: true,
+          createdAt: true,
+          updatedAt: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              userType: true,
+              accountStatus: true,
+            },
+          },
+          guestSession: { select: { id: true } },
+          domain: { select: { id: true, name: true } },
+          generationRun: {
+            select: {
+              status: true,
+              currentStageKey: true,
+              progressPercent: true,
+            },
+          },
+          publication: {
+            select: {
+              id: true,
+              status: true,
+              visibility: true,
+              publishedAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.idea.count({ where }),
+    ]);
+
+    return {
+      data: ideas,
       meta: {
         page,
         limit,
@@ -305,168 +371,97 @@ export class AdminIdeasService {
     monthStart.setHours(0, 0, 0, 0);
 
     const todayWhere = this.mergeCreatedAtGte(where, todayStart);
-
     const monthWhere = this.mergeCreatedAtGte(where, monthStart);
 
+    // Aggregate related counters instead of issuing a separate count query for
+    // every card. This keeps the summary endpoint supportive rather than making
+    // the whole ideas directory wait on many independent database round trips.
     const [
       totalIdeas,
       todayIdeas,
       thisMonthIdeas,
-      unlockedIdeas,
-      lockedIdeas,
-      guestFreeIdeas,
-      normalFreeIdeas,
-      premiumCreditIdeas,
-      directPaymentUnlocks,
-      creditGenerationUnlocks,
+      generationTypeGroups,
+      unlockStatusGroups,
+      unlockMethodGroups,
       publishedIdeas,
       ideasWithCompletedRuns,
       ideasWithFailedRuns,
       aggregate,
     ] = await Promise.all([
-      this.prisma.idea.count({
+      this.prisma.idea.count({ where }),
+      this.prisma.idea.count({ where: todayWhere }),
+      this.prisma.idea.count({ where: monthWhere }),
+      this.prisma.idea.groupBy({
+        by: ['generationType'],
         where,
+        _count: { _all: true },
       }),
-
-      this.prisma.idea.count({
-        where: todayWhere,
+      this.prisma.idea.groupBy({
+        by: ['isUnlocked'],
+        where,
+        _count: { _all: true },
       }),
-
-      this.prisma.idea.count({
-        where: monthWhere,
+      this.prisma.idea.groupBy({
+        by: ['unlockMethod'],
+        where,
+        _count: { _all: true },
       }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          isUnlocked: true,
-        },
-      }),
-
       this.prisma.idea.count({
         where: {
           ...where,
-          isUnlocked: false,
+          publication: { is: { status: 'PUBLISHED' } },
         },
       }),
-
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType: IdeaGenerationType.GUEST_FREE,
+          generationRun: { is: { status: 'COMPLETED' } },
         },
       }),
-
       this.prisma.idea.count({
         where: {
           ...where,
-          generationType: IdeaGenerationType.NORMAL_FREE,
+          generationRun: { is: { status: 'FAILED' } },
         },
       }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          generationType: IdeaGenerationType.PREMIUM_CREDIT,
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          unlockMethod: UnlockMethod.DIRECT_PAYMENT,
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-          unlockMethod: UnlockMethod.CREDIT_GENERATION,
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-
-          publication: {
-            is: {
-              status: 'PUBLISHED',
-            },
-          },
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-
-          generationRun: {
-            is: {
-              status: 'COMPLETED',
-            },
-          },
-        },
-      }),
-
-      this.prisma.idea.count({
-        where: {
-          ...where,
-
-          generationRun: {
-            is: {
-              status: 'FAILED',
-            },
-          },
-        },
-      }),
-
       this.prisma.idea.aggregate({
         where,
-
-        _sum: {
-          commentsCount: true,
-        },
-
-        _avg: {
-          commentsCount: true,
-        },
+        _sum: { commentsCount: true },
+        _avg: { commentsCount: true },
       }),
     ]);
+
+    const generationTypeCount = (generationType: IdeaGenerationType) =>
+      generationTypeGroups.find((item) => item.generationType === generationType)?._count._all ?? 0;
+    const unlockStatusCount = (isUnlocked: boolean) =>
+      unlockStatusGroups.find((item) => item.isUnlocked === isUnlocked)?._count._all ?? 0;
+    const unlockMethodCount = (unlockMethod: UnlockMethod) =>
+      unlockMethodGroups.find((item) => item.unlockMethod === unlockMethod)?._count._all ?? 0;
 
     return {
       totalIdeas,
       todayIdeas,
       thisMonthIdeas,
-
       access: {
-        unlockedIdeas,
-        lockedIdeas,
+        unlockedIdeas: unlockStatusCount(true),
+        lockedIdeas: unlockStatusCount(false),
       },
-
       generationTypes: {
-        guestFreeIdeas,
-        normalFreeIdeas,
-        premiumCreditIdeas,
+        guestFreeIdeas: generationTypeCount(IdeaGenerationType.GUEST_FREE),
+        normalFreeIdeas: generationTypeCount(IdeaGenerationType.NORMAL_FREE),
+        premiumCreditIdeas: generationTypeCount(IdeaGenerationType.PREMIUM_CREDIT),
       },
-
       unlockMethods: {
-        directPaymentUnlocks,
-        creditGenerationUnlocks,
+        directPaymentUnlocks: unlockMethodCount(UnlockMethod.DIRECT_PAYMENT),
+        creditGenerationUnlocks: unlockMethodCount(UnlockMethod.CREDIT_GENERATION),
       },
-
       pipeline: {
         completedRuns: ideasWithCompletedRuns,
         failedRuns: ideasWithFailedRuns,
       },
-
-      publications: {
-        publishedIdeas,
-      },
-
+      publications: { publishedIdeas },
       communityData: {
         totalCommentsUsed: aggregate._sum.commentsCount ?? 0,
-
         averageCommentsPerIdea: aggregate._avg.commentsCount ?? 0,
       },
     };
@@ -877,6 +872,176 @@ export class AdminIdeasService {
     return buildCsv(headers, rows);
   }
 
+  async exportPublishedIdeasCsv(query: GetAdminIdeasQueryDto) {
+    const where = this.buildPublishedIdeasWhere(query);
+
+    const orderBy = buildOrderBy(
+      query,
+      [
+        'title',
+        'generationType',
+        'isUnlocked',
+        'unlockMethod',
+        'commentsCount',
+        'createdAt',
+        'updatedAt',
+      ] as const,
+      'createdAt',
+    );
+
+    const ideas = await this.prisma.idea.findMany({
+      where,
+      orderBy,
+
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        commentsCount: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            userType: true,
+          },
+        },
+
+        guestSession: {
+          select: {
+            id: true,
+          },
+        },
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        collectionJob: {
+          select: {
+            id: true,
+            status: true,
+            totalPosts: true,
+            totalComments: true,
+
+            sources: {
+              select: {
+                dataSource: {
+                  select: {
+                    key: true,
+                    displayName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        generationRun: {
+          select: {
+            id: true,
+            status: true,
+            progressPercent: true,
+          },
+        },
+
+        publication: {
+          select: {
+            id: true,
+            status: true,
+            visibility: true,
+          },
+        },
+      },
+    });
+
+    const headers = [
+      'Idea ID',
+      'Title',
+      'Owner Type',
+      'User ID',
+      'User Name',
+      'User Email',
+      'User Type',
+      'Guest Session ID',
+      'Domain ID',
+      'Domain Name',
+      'Data Sources',
+      'Selected Region',
+      'Generation Type',
+      'Is Unlocked',
+      'Unlock Method',
+      'Unlocked At',
+      'Comments Count',
+      'Collection Job ID',
+      'Collection Job Status',
+      'Total Posts',
+      'Total Comments',
+      'Generation Run ID',
+      'Generation Run Status',
+      'Generation Progress',
+      'Publication ID',
+      'Publication Status',
+      'Publication Visibility',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = ideas.map((idea) => {
+      const dataSources =
+        idea.collectionJob?.sources
+          .map(
+            (source) =>
+              `${source.dataSource.displayName} (${source.dataSource.key})`,
+          )
+          .join(' | ') ?? '';
+
+      return [
+        idea.id,
+        idea.title,
+        idea.user ? 'USER' : 'GUEST',
+        idea.user?.id ?? '',
+        idea.user?.fullName ?? '',
+        idea.user?.email ?? '',
+        idea.user?.userType ?? '',
+        idea.guestSession?.id ?? '',
+        idea.domain.id,
+        idea.domain.name,
+        dataSources,
+        idea.selectedRegion ?? '',
+        idea.generationType,
+        idea.isUnlocked,
+        idea.unlockMethod,
+        idea.unlockedAt?.toISOString() ?? '',
+        idea.commentsCount,
+        idea.collectionJob?.id ?? '',
+        idea.collectionJob?.status ?? '',
+        idea.collectionJob?.totalPosts ?? 0,
+        idea.collectionJob?.totalComments ?? 0,
+        idea.generationRun?.id ?? '',
+        idea.generationRun?.status ?? '',
+        idea.generationRun?.progressPercent ?? '',
+        idea.publication?.id ?? '',
+        idea.publication?.status ?? '',
+        idea.publication?.visibility ?? '',
+        idea.createdAt.toISOString(),
+        idea.updatedAt.toISOString(),
+      ];
+    });
+
+    return buildCsv(headers, rows);
+  }
+
   /**
    * Retrieves the complete administrative view of one idea.
    *
@@ -893,6 +1058,214 @@ export class AdminIdeasService {
    * - Chat sessions.
    * - Publication, audience, votes, ratings and feedback.
    */
+  /**
+   * Lightweight publication intelligence used by the admin side drawer.
+   *
+   * The full getIdeaById() payload intentionally remains available for deep
+   * diagnostics, but it includes generation stages, evidence, outputs, logs,
+   * payments and chats. Loading all of that just to render publication metrics
+   * caused the drawer to exceed the frontend timeout.
+   */
+  async getPublicationInsights(ideaId: string) {
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            userType: true,
+            accountStatus: true,
+          },
+        },
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        publication: {
+          select: {
+            id: true,
+            status: true,
+            visibility: true,
+            isHidden: true,
+            hiddenReason: true,
+            publicTitle: true,
+            publicAbstract: true,
+            publicProblem: true,
+            publicObjectives: true,
+            publicTargetUsers: true,
+            allowRatings: true,
+            allowFeedback: true,
+            allowVoting: true,
+            averageRating: true,
+            ratingsCount: true,
+            upvotesCount: true,
+            downvotesCount: true,
+            feedbackCount: true,
+            publishedAt: true,
+            archivedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            publisher: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                userType: true,
+                accountStatus: true,
+              },
+            },
+            feedback: {
+              take: 12,
+              orderBy: { updatedAt: 'desc' },
+              select: {
+                id: true,
+                comment: true,
+                status: true,
+                createdAt: true,
+                updatedAt: true,
+                user: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    userType: true,
+                  },
+                },
+              },
+            },
+            _count: {
+              select: {
+                reports: true,
+                ratings: true,
+                votes: true,
+                feedback: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException('Idea not found');
+    }
+
+    return idea;
+  }
+
+
+  /**
+   * Lightweight details for the main admin idea inspector.
+   *
+   * Do NOT add collection posts, NLP evidence, benchmark candidates, AI logs,
+   * payments, chat messages or generated-output bodies here. Those belong to
+   * deep diagnostics. Keeping this query small prevents the inspector from
+   * timing out while still returning every field rendered by AdminIdeasPage.
+   */
+  async getIdeaQuickDetail(ideaId: string) {
+    const idea = await this.prisma.idea.findFirst({
+      where: {
+        id: ideaId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        title: true,
+        selectedRegion: true,
+        limitedAbstract: true,
+        partialAbstract: true,
+        fullAbstract: true,
+        problemStatement: true,
+        objectives: true,
+        targetUsers: true,
+        generationType: true,
+        isUnlocked: true,
+        unlockMethod: true,
+        unlockedAt: true,
+        createdAt: true,
+        updatedAt: true,
+
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            userType: true,
+            accountStatus: true,
+          },
+        },
+
+        guestSession: {
+          select: {
+            id: true,
+          },
+        },
+
+        domain: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        generationRun: {
+          select: {
+            id: true,
+            status: true,
+            currentStageKey: true,
+            progressPercent: true,
+            startedAt: true,
+            completedAt: true,
+          },
+        },
+
+        collectionJob: {
+          select: {
+            id: true,
+            region: true,
+            status: true,
+          },
+        },
+
+        publication: {
+          select: {
+            id: true,
+            status: true,
+            visibility: true,
+            publishedAt: true,
+            isHidden: true,
+          },
+        },
+
+        _count: {
+          select: {
+            generatedOutputs: true,
+            payments: true,
+          },
+        },
+      },
+    });
+
+    if (!idea) {
+      throw new NotFoundException('Idea not found');
+    }
+
+    return idea;
+  }
+
   async getIdeaById(ideaId: string) {
     const idea = await this.prisma.idea.findFirst({
       where: {

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 
 import {
+  AlertType,
   AuditAction,
   AuditTargetType,
   ComplaintPriority,
@@ -16,6 +17,7 @@ import {
 
 import type { Cache } from 'cache-manager';
 
+import { SystemAlertsService } from '../../alerts/services/system-alerts.service';
 import { AuditService } from '../../audit-logs/audit-logs.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -69,6 +71,7 @@ export class AdminComplaintsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly systemAlertsService: SystemAlertsService,
 
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
@@ -384,11 +387,16 @@ export class AdminComplaintsService {
         throw new NotFoundException('Complaint not found');
       }
 
-      const hasChanges =
-        (body.status !== undefined && body.status !== complaint.status) ||
-        (body.priority !== undefined && body.priority !== complaint.priority) ||
-        (body.adminReply !== undefined &&
-          body.adminReply !== complaint.adminReply);
+      const statusChanged =
+        body.status !== undefined && body.status !== complaint.status;
+
+      const priorityChanged =
+        body.priority !== undefined && body.priority !== complaint.priority;
+
+      const replyChanged =
+        body.adminReply !== undefined && body.adminReply !== complaint.adminReply;
+
+      const hasChanges = statusChanged || priorityChanged || replyChanged;
 
       if (!hasChanges) {
         return {
@@ -443,6 +451,28 @@ export class AdminComplaintsService {
         },
         tx,
       );
+
+      if (statusChanged || replyChanged) {
+        const statusLabel = updated.status
+          .toLowerCase()
+          .replaceAll('_', ' ');
+
+        const notificationMessage = replyChanged
+          ? statusChanged
+            ? `Your complaint “${updated.subject}” is now ${statusLabel}. The administration also sent you a response.`
+            : `The administration replied to your complaint “${updated.subject}”.`
+          : `Your complaint “${updated.subject}” is now ${statusLabel}.`;
+
+        await this.systemAlertsService.create(
+          {
+            userId: updated.userId,
+            title: 'Complaint update',
+            message: notificationMessage,
+            type: AlertType.ADMIN,
+          },
+          tx,
+        );
+      }
 
       const { userId, ...safeComplaint } = updated;
 
