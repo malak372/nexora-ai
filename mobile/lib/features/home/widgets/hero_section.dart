@@ -1,12 +1,16 @@
-/// Mobile hero section for the Voxidence public Home screen.
-///
-/// Author: Eman
+// Mobile-first Hero section inspired by the Voxidence web landing page.
+//
+// @author Eman
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../models/home_models.dart';
 
-class HeroSection extends StatelessWidget {
+class HeroSection extends StatefulWidget {
   const HeroSection({
     super.key,
     required this.onGeneratePressed,
@@ -17,135 +21,112 @@ class HeroSection extends StatelessWidget {
   final VoidCallback onExplorePressed;
 
   @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final compact = width < 380;
+  State<HeroSection> createState() => _HeroSectionState();
+}
 
+class _HeroSectionState extends State<HeroSection> {
+  static const _stageDuration = Duration(milliseconds: 4800);
+
+  Timer? _timer;
+
+  int _activeStage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _timer = Timer.periodic(_stageDuration, (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeStage = (_activeStage + 1) % HomeData.heroStages.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 34, 18, 12),
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SignalBadge(),
-          const SizedBox(height: 23),
+          const _HeroBadge(),
 
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                right: compact ? -58 : -46,
-                top: 68,
-                child: const _HeroLeafDecoration(),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _HeroHeadline(),
+          const SizedBox(height: 14),
 
-                  const SizedBox(height: 18),
-
-                  SizedBox(
-                    width: compact ? 286 : 320,
-                    child: Text.rich(
-                      TextSpan(
-                        children: const [
-                          TextSpan(
-                            text: 'Voxidence ',
-                            style: TextStyle(
-                              color: AppColors.primaryDark,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          TextSpan(
-                            text:
-                                'listens, understands, and turns community needs '
-                                'into focused software opportunities with purpose, '
-                                'context, and local relevance.',
-                          ),
-                        ],
-                      ),
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 14,
-                        height: 1.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          _PrimaryHeroButton(
-            label: 'Generate your free idea',
-            onPressed: onGeneratePressed,
-          ),
-
-          const SizedBox(height: 10),
-
-          _SecondaryHeroButton(
-            label: 'Explore how it works',
-            onPressed: onExplorePressed,
-          ),
-
-          const SizedBox(height: 20),
-
-          const _EvidenceVisualCard(),
+          const _HeroHeading(),
 
           const SizedBox(height: 12),
 
-          const _FeatureStrip(),
+          const _HeroLead(),
+
+          const SizedBox(height: 18),
+
+          _HeroActions(
+            onGeneratePressed: widget.onGeneratePressed,
+            onExplorePressed: widget.onExplorePressed,
+          ),
+
+          const SizedBox(height: 14),
+
+          const _TrustPoints(),
+
+          const SizedBox(height: 21),
+
+          _StageShowcase(
+            activeStage: _activeStage,
+            onStageChanged: (index) {
+              setState(() {
+                _activeStage = index;
+              });
+            },
+          ),
         ],
       ),
     );
   }
 }
 
-class _SignalBadge extends StatelessWidget {
-  const _SignalBadge();
+class _HeroBadge extends StatelessWidget {
+  const _HeroBadge();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(9, 8, 14, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.80),
-        borderRadius: BorderRadius.circular(999),
+        color: Colors.white.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(99),
         border: Border.all(color: AppColors.borderStrong),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 7),
-          ),
-        ],
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _BadgeDot(),
-
-          SizedBox(width: 8),
-
-          Icon(
-            Icons.auto_awesome_rounded,
-            size: 15,
-            color: AppColors.primaryDark,
-          ),
+          _LiveDot(),
 
           SizedBox(width: 7),
 
+          Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.primary),
+
+          SizedBox(width: 5),
+
           Text(
-            'COMMUNITY VOICES, VERIFIED\nINTO DIRECTION',
+            'EVIDENCE-FIRST IDEA DISCOVERY',
             style: TextStyle(
-              color: AppColors.primaryDeep,
-              fontSize: 9.5,
-              height: 1.2,
+              color: AppColors.primaryDark,
+              fontSize: 9.2,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1,
+              letterSpacing: 0.55,
             ),
           ),
         ],
@@ -154,760 +135,149 @@ class _SignalBadge extends StatelessWidget {
   }
 }
 
-class _BadgeDot extends StatelessWidget {
-  const _BadgeDot();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 24,
-      height: 24,
-      decoration: const BoxDecoration(
-        color: AppColors.primarySoft,
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 7,
-        height: 7,
-        decoration: const BoxDecoration(
-          color: AppColors.primary,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroHeadline extends StatelessWidget {
-  const _HeroHeadline();
-
-  @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    final fontSize = width < 370 ? 42.0 : 48.0;
-
-    return Text.rich(
-      TextSpan(
-        children: const [
-          TextSpan(text: 'Real voices\nreveal '),
-          TextSpan(
-            text: 'the ideas',
-            style: TextStyle(color: AppColors.primary),
-          ),
-          TextSpan(text: '\nworth building'),
-          TextSpan(
-            text: '.',
-            style: TextStyle(color: AppColors.pink),
-          ),
-        ],
-      ),
-      style: TextStyle(
-        color: AppColors.primaryDeep,
-        fontSize: fontSize,
-        height: 1.01,
-        fontWeight: FontWeight.w500,
-        letterSpacing: -2,
-      ),
-    );
-  }
-}
-
-class _HeroLeafDecoration extends StatelessWidget {
-  const _HeroLeafDecoration();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Opacity(
-        opacity: 0.17,
-        child: SizedBox(
-          width: 165,
-          height: 238,
-          child: CustomPaint(painter: _LargeLeafPainter()),
-        ),
-      ),
-    );
-  }
-}
-
-class _LargeLeafPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.primary
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final stem = Path()
-      ..moveTo(size.width * 0.50, size.height)
-      ..cubicTo(
-        size.width * 0.47,
-        size.height * 0.70,
-        size.width * 0.48,
-        size.height * 0.40,
-        size.width * 0.70,
-        size.height * 0.12,
-      );
-
-    canvas.drawPath(stem, paint);
-
-    final topLeaf = Path()
-      ..moveTo(size.width * 0.61, size.height * 0.40)
-      ..cubicTo(
-        size.width * 0.67,
-        size.height * 0.14,
-        size.width * 0.88,
-        size.height * 0.08,
-        size.width * 0.94,
-        size.height * 0.05,
-      )
-      ..cubicTo(
-        size.width * 0.93,
-        size.height * 0.29,
-        size.width * 0.80,
-        size.height * 0.43,
-        size.width * 0.61,
-        size.height * 0.40,
-      );
-
-    canvas.drawPath(topLeaf, paint);
-
-    final leftLeaf = Path()
-      ..moveTo(size.width * 0.50, size.height * 0.64)
-      ..cubicTo(
-        size.width * 0.34,
-        size.height * 0.46,
-        size.width * 0.12,
-        size.height * 0.46,
-        size.width * 0.08,
-        size.height * 0.46,
-      )
-      ..cubicTo(
-        size.width * 0.12,
-        size.height * 0.68,
-        size.width * 0.30,
-        size.height * 0.76,
-        size.width * 0.50,
-        size.height * 0.64,
-      );
-
-    canvas.drawPath(leftLeaf, paint);
-
-    final rightLeaf = Path()
-      ..moveTo(size.width * 0.48, size.height * 0.79)
-      ..cubicTo(
-        size.width * 0.62,
-        size.height * 0.61,
-        size.width * 0.86,
-        size.height * 0.62,
-        size.width * 0.91,
-        size.height * 0.64,
-      )
-      ..cubicTo(
-        size.width * 0.82,
-        size.height * 0.83,
-        size.width * 0.65,
-        size.height * 0.88,
-        size.width * 0.48,
-        size.height * 0.79,
-      );
-
-    canvas.drawPath(rightLeaf, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
-  }
-}
-
-class _PrimaryHeroButton extends StatelessWidget {
-  const _PrimaryHeroButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(19),
-        child: Ink(
-          height: 58,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Color(0xFF57B9B3), Color(0xFF71C7AF)],
-            ),
-            borderRadius: BorderRadius.circular(19),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.20),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              children: [
-                const _ButtonIconBubble(
-                  icon: Icons.lightbulb_outline_rounded,
-                  dark: false,
-                ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15.8,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-
-                const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SecondaryHeroButton extends StatelessWidget {
-  const _SecondaryHeroButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.72),
-      borderRadius: BorderRadius.circular(19),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(19),
-        child: Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(19),
-            border: Border.all(color: AppColors.primary, width: 1.15),
-          ),
-          child: Row(
-            children: [
-              const _ButtonIconBubble(icon: Icons.explore_outlined, dark: true),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 15.3,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.15,
-                  ),
-                ),
-              ),
-
-              const Icon(
-                Icons.arrow_forward_rounded,
-                color: AppColors.primaryDark,
-                size: 24,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ButtonIconBubble extends StatelessWidget {
-  const _ButtonIconBubble({required this.icon, required this.dark});
-
-  final IconData icon;
-  final bool dark;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: dark
-            ? AppColors.primarySoft
-            : Colors.white.withValues(alpha: 0.14),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: dark
-              ? Colors.transparent
-              : Colors.white.withValues(alpha: 0.18),
-        ),
-      ),
-      child: Icon(
-        icon,
-        color: dark ? AppColors.primaryDark : Colors.white,
-        size: 19,
-      ),
-    );
-  }
-}
-
-class _EvidenceVisualCard extends StatelessWidget {
-  const _EvidenceVisualCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 218,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(27),
-        border: Border.all(color: Colors.white),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomLeft,
-                  end: Alignment.topRight,
-                  colors: [
-                    AppColors.primarySoft.withValues(alpha: 0.58),
-                    Colors.white.withValues(alpha: 0.75),
-                    AppColors.pinkSoft.withValues(alpha: 0.52),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          const Positioned(left: 16, top: 16, child: _WindowDots()),
-
-          Positioned(
-            right: 18,
-            top: 17,
-            child: Container(
-              width: 30,
-              height: 5,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, Color(0xFF9DD8CE)],
-                ),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-
-          const Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(18, 27, 18, 14),
-              child: _SoftIdeaIllustration(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WindowDots extends StatelessWidget {
-  const _WindowDots();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        _WindowDot(color: Color(0xFF8CD0C5)),
-        SizedBox(width: 6),
-        _WindowDot(color: Color(0xFFE8C7CF)),
-        SizedBox(width: 6),
-        _WindowDot(color: AppColors.pink),
-      ],
-    );
-  }
-}
-
-class _WindowDot extends StatelessWidget {
-  const _WindowDot({required this.color});
-
-  final Color color;
+class _LiveDot extends StatelessWidget {
+  const _LiveDot();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 7,
       height: 7,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-class _SoftIdeaIllustration extends StatelessWidget {
-  const _SoftIdeaIllustration();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            const Positioned.fill(
-              child: CustomPaint(painter: _SoftOrbitPainter()),
-            ),
-
-            Align(
-              alignment: const Alignment(0, -0.03),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  _TopMiniNode(),
-
-                  SizedBox(height: 5),
-
-                  _MainSoftCard(),
-
-                  SizedBox(height: 5),
-
-                  _BottomCheckNode(),
-                ],
-              ),
-            ),
-
-            const Positioned(
-              left: 22,
-              bottom: 15,
-              child: _SideNode(
-                icon: Icons.trending_up_rounded,
-                iconColor: AppColors.primaryDark,
-                background: AppColors.primarySoft,
-              ),
-            ),
-
-            const Positioned(
-              right: 22,
-              bottom: 15,
-              child: _SideNode(
-                icon: Icons.view_list_rounded,
-                iconColor: AppColors.pink,
-                background: AppColors.pinkSoft,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _TopMiniNode extends StatelessWidget {
-  const _TopMiniNode();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 39,
-      height: 39,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.97),
+        color: AppColors.primary,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.07),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: AppColors.primary.withValues(alpha: 0.34),
+            blurRadius: 7,
+            spreadRadius: 2,
           ),
         ],
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 25,
-        height: 25,
-        decoration: BoxDecoration(
-          color: AppColors.primarySoft.withValues(alpha: 0.90),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.eco_outlined,
-          size: 14,
-          color: AppColors.primaryDark,
-        ),
       ),
     );
   }
 }
 
-class _MainSoftCard extends StatelessWidget {
-  const _MainSoftCard();
+class _HeroHeading extends StatelessWidget {
+  const _HeroHeading();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 106,
-      height: 67,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF82D0C1), Color(0xFF58B6AF)],
+    return const Text(
+      'Real voices reveal\nthe ideas worth building.',
+      style: TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 32,
+        height: 1.04,
+        fontWeight: FontWeight.w900,
+        letterSpacing: -1.15,
+      ),
+    );
+  }
+}
+
+class _HeroLead extends StatelessWidget {
+  const _HeroLead();
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: const TextSpan(
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12.7,
+          height: 1.5,
+          fontWeight: FontWeight.w500,
         ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.18),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+        children: [
+          TextSpan(
+            text: 'Voxidence ',
+            style: TextStyle(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          TextSpan(
+            text:
+                'listens to recurring community needs, connects them with evidence, and turns them into focused software opportunities.',
           ),
         ],
       ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 84,
-        height: 38,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(13),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 23,
-              height: 23,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.add_rounded,
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
+    );
+  }
+}
 
-            const SizedBox(width: 7),
+class _HeroActions extends StatelessWidget {
+  const _HeroActions({
+    required this.onGeneratePressed,
+    required this.onExplorePressed,
+  });
 
-            Expanded(
-              child: Column(
+  final VoidCallback onGeneratePressed;
+  final VoidCallback onExplorePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 46,
+            child: FilledButton(
+              onPressed: onGeneratePressed,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 11),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
+              ),
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.textSecondary.withValues(alpha: 0.47),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
+                  _GenerateIdeaIcon(),
 
-                  const SizedBox(height: 5),
+                  SizedBox(width: 8),
 
-                  FractionallySizedBox(
-                    widthFactor: 0.60,
-                    child: Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.borderStrong,
-                        borderRadius: BorderRadius.circular(99),
+                  Flexible(
+                    child: Text(
+                      'Generate free idea',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.7,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
+
+                  SizedBox(width: 6),
+
+                  Icon(Icons.arrow_forward_rounded, size: 16),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomCheckNode extends StatelessWidget {
-  const _BottomCheckNode();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.65)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.055),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: const Icon(
-        Icons.check_rounded,
-        size: 15,
-        color: AppColors.primaryDark,
-      ),
-    );
-  }
-}
-
-class _SideNode extends StatelessWidget {
-  const _SideNode({
-    required this.icon,
-    required this.iconColor,
-    required this.background,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 43,
-      height: 43,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.97),
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.065),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 29,
-        height: 29,
-        decoration: BoxDecoration(color: background, shape: BoxShape.circle),
-        child: Icon(icon, size: 15, color: iconColor),
-      ),
-    );
-  }
-}
-
-class _SoftOrbitPainter extends CustomPainter {
-  const _SoftOrbitPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2 + 2);
-
-    final orbitPaint = Paint()
-      ..color = AppColors.primary.withValues(alpha: 0.16)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    final connectorPaint = Paint()
-      ..color = AppColors.primary.withValues(alpha: 0.12)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    final radius1 = size.shortestSide * 0.30;
-    final radius2 = size.shortestSide * 0.19;
-
-    canvas.drawCircle(center, radius1, orbitPaint);
-
-    canvas.drawCircle(center, radius2, orbitPaint);
-
-    canvas.drawLine(
-      Offset(center.dx, center.dy - 47),
-      Offset(center.dx, center.dy - 15),
-      connectorPaint,
-    );
-
-    canvas.drawLine(
-      Offset(center.dx - 37, center.dy + 12),
-      Offset(43, size.height - 36),
-      connectorPaint,
-    );
-
-    canvas.drawLine(
-      Offset(center.dx + 37, center.dy + 12),
-      Offset(size.width - 43, size.height - 36),
-      connectorPaint,
-    );
-
-    final dotPaint = Paint()..color = AppColors.primary.withValues(alpha: 0.24);
-
-    canvas.drawCircle(Offset(center.dx, center.dy - radius1), 2, dotPaint);
-
-    canvas.drawCircle(Offset(center.dx - radius1, center.dy), 2, dotPaint);
-
-    canvas.drawCircle(Offset(center.dx + radius1, center.dy), 2, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
-  }
-}
-
-class _FeatureStrip extends StatelessWidget {
-  const _FeatureStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Row(
-      children: [
-        Expanded(
-          child: _FeatureMiniCard(
-            icon: Icons.verified_user_outlined,
-            label: 'Real community\nevidence',
           ),
         ),
 
-        SizedBox(width: 8),
+        const SizedBox(width: 8),
 
-        Expanded(
-          child: _FeatureMiniCard(
-            icon: Icons.bar_chart_rounded,
-            label: 'Multi-model\ncomparison',
-          ),
-        ),
-
-        SizedBox(width: 8),
-
-        Expanded(
-          child: _FeatureMiniCard(
-            icon: Icons.location_on_outlined,
-            label: 'Locally relevant\noutcomes',
+        SizedBox(
+          height: 46,
+          width: 46,
+          child: OutlinedButton(
+            onPressed: onExplorePressed,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.zero,
+              backgroundColor: Colors.white.withValues(alpha: 0.88),
+              foregroundColor: AppColors.primaryDark,
+              side: const BorderSide(color: AppColors.borderStrong),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            child: const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
           ),
         ),
       ],
@@ -915,57 +285,331 @@ class _FeatureStrip extends StatelessWidget {
   }
 }
 
-class _FeatureMiniCard extends StatelessWidget {
-  const _FeatureMiniCard({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
+class _GenerateIdeaIcon extends StatelessWidget {
+  const _GenerateIdeaIcon();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.045),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
-          Container(
-            width: 35,
-            height: 35,
-            decoration: const BoxDecoration(
-              color: AppColors.primarySoft,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 20, color: AppColors.primary),
+          Icon(
+            Icons.lightbulb_outline_rounded,
+            size: 18,
+            color: Colors.white.withValues(alpha: 0.98),
           ),
 
-          const SizedBox(width: 7),
-
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 10.2,
-                height: 1.22,
-                fontWeight: FontWeight.w800,
+          Positioned(
+            top: 1,
+            right: 0,
+            child: Container(
+              width: 4.5,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE7A8),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFE7A8).withValues(alpha: 0.42),
+                    blurRadius: 5,
+                    spreadRadius: 0.8,
+                  ),
+                ],
               ),
             ),
           ),
+
+          Positioned(
+            top: -1,
+            left: 1,
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              size: 6,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _TrustPoints extends StatelessWidget {
+  const _TrustPoints();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Wrap(
+      spacing: 12,
+      runSpacing: 7,
+      children: [
+        _TrustPoint(text: 'Evidence-backed'),
+        _TrustPoint(text: 'Multi-model AI'),
+        _TrustPoint(text: 'Locally relevant'),
+      ],
+    );
+  }
+}
+
+class _TrustPoint extends StatelessWidget {
+  const _TrustPoint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.check_circle_outline_rounded,
+          size: 14,
+          color: AppColors.primaryDark,
+        ),
+
+        const SizedBox(width: 5),
+
+        Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 9.8,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StageShowcase extends StatelessWidget {
+  const _StageShowcase({
+    required this.activeStage,
+    required this.onStageChanged,
+  });
+
+  final int activeStage;
+  final ValueChanged<int> onStageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = HomeData.heroStages[activeStage];
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFEAF5F2), Color(0xFFFFF2F5)],
+        ),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: 0.07),
+            blurRadius: 28,
+            offset: const Offset(0, 13),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.95),
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              children: [
+                const _WindowRail(),
+
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(18),
+                  ),
+                  child: SizedBox(
+                    height: 198,
+                    width: double.infinity,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 380),
+                      child: Container(
+                        key: ValueKey(stage.assetPath),
+                        color: const Color(0xFFFBFDFC),
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.fromLTRB(5, 3, 5, 2),
+                        child: SvgPicture.asset(
+                          stage.assetPath,
+                          width: double.infinity,
+                          height: 196,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(
+                    '0${activeStage + 1}',
+                    style: const TextStyle(
+                      color: AppColors.primaryDark,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 9),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stage.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 11.4,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+
+                      const SizedBox(height: 2),
+
+                      Text(
+                        stage.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 9.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 9),
+
+          Row(
+            children: List.generate(HomeData.heroStages.length, (index) {
+              final selected = index == activeStage;
+
+              return Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    onStageChanged(index);
+                  },
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: index == HomeData.heroStages.length - 1 ? 0 : 5,
+                    ),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      height: selected ? 5 : 3,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.borderStrong,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+
+          const SizedBox(height: 3),
+        ],
+      ),
+    );
+  }
+}
+
+class _WindowRail extends StatelessWidget {
+  const _WindowRail();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 27,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 11),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: const BoxDecoration(
+                color: AppColors.pink,
+                shape: BoxShape.circle,
+              ),
+            ),
+
+            const SizedBox(width: 5),
+
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.65),
+                shape: BoxShape.circle,
+              ),
+            ),
+
+            const SizedBox(width: 5),
+
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: AppColors.primaryDark.withValues(alpha: 0.45),
+                shape: BoxShape.circle,
+              ),
+            ),
+
+            const Spacer(),
+
+            Container(
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

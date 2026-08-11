@@ -1,130 +1,149 @@
-/// Compact mobile How It Works section for Voxidence.
-///
-/// @author Eman
+// Compact mobile workflow section for Voxidence.
+//
+// @author Eman
 
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../models/home_models.dart';
+import 'common.dart';
 
 class MobileHowItWorksSection extends StatelessWidget {
   const MobileHowItWorksSection({super.key});
 
+  static const double _cardHeight = 184;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.86),
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: Colors.white),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaryDeep.withValues(alpha: 0.05),
-              blurRadius: 22,
-              offset: const Offset(0, 11),
+      padding: const EdgeInsets.fromLTRB(16, 28, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Eyebrow(
+            text: 'HOW VOXIDENCE WORKS',
+            icon: Icons.auto_awesome_rounded,
+          ),
+
+          const SizedBox(height: 13),
+
+          const Text(
+            'From scattered voices to one clear direction.',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 29,
+              height: 1.08,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.8,
             ),
-          ],
-        ),
-        child: Column(
-          children: [
-            const Row(
+          ),
+
+          const SizedBox(height: 9),
+
+          const Text(
+            'Voxidence listens, finds repeated patterns, compares AI directions, and shapes the strongest opportunity into a clear project.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 15,
+              height: 1.58,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.86),
+              borderRadius: BorderRadius.circular(27),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDeep.withValues(alpha: 0.055),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
               children: [
-                Expanded(
-                  child: Text(
-                    'How it works',
-                    style: TextStyle(
-                      color: AppColors.primaryDeep,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: _cardHeight,
+                        child: _StepCard(step: HomeData.workflowSteps[0]),
+                      ),
                     ),
-                  ),
+
+                    const SizedBox(width: 9),
+
+                    Expanded(
+                      child: SizedBox(
+                        height: _cardHeight,
+                        child: _StepCard(step: HomeData.workflowSteps[1]),
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  'See all steps',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(width: 5),
-                Icon(
-                  Icons.arrow_forward_rounded,
-                  size: 17,
-                  color: AppColors.primary,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _HowStepCard(
-                    number: '1',
-                    icon: Icons.groups_2_outlined,
-                    title: 'Collect voices',
-                    description: 'Gather real input from your community.',
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _HowStepCard(
-                    number: '2',
-                    icon: Icons.search_rounded,
-                    title: 'Analyze signals',
-                    description: 'Find repeated needs and key patterns.',
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _HowStepCard(
-                    number: '3',
-                    icon: Icons.ads_click_rounded,
-                    title: 'Spot opportunities',
-                    description: 'Turn evidence into ideas worth building.',
-                    pink: true,
-                  ),
+
+                const SizedBox(height: 10),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: _cardHeight,
+                        child: _StepCard(step: HomeData.workflowSteps[2]),
+                      ),
+                    ),
+
+                    const SizedBox(width: 9),
+
+                    Expanded(
+                      child: SizedBox(
+                        height: _cardHeight,
+                        child: _StepCard(step: HomeData.workflowSteps[3]),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _HowStepCard extends StatelessWidget {
-  const _HowStepCard({
-    required this.number,
-    required this.icon,
-    required this.title,
-    required this.description,
-    this.pink = false,
-  });
+class _StepCard extends StatelessWidget {
+  const _StepCard({required this.step});
 
-  final String number;
-  final IconData icon;
-  final String title;
-  final String description;
-  final bool pink;
+  final WorkflowStep step;
 
   @override
   Widget build(BuildContext context) {
-    final accent = pink ? AppColors.pink : AppColors.primary;
+    final usePink = step.number == 3;
 
-    final soft = pink ? AppColors.pinkSoft : AppColors.primarySoft;
+    final accent = usePink ? AppColors.pink : AppColors.primaryDark;
+
+    final soft = usePink ? AppColors.pinkSoft : AppColors.primarySoft;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 11, 10, 12),
+      width: double.infinity,
+      height: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.82)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, soft.withValues(alpha: 0.62)],
+        ),
+        borderRadius: BorderRadius.circular(21),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,18 +151,20 @@ class _HowStepCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 39,
+                height: 39,
                 decoration: BoxDecoration(
                   color: soft,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(icon, color: accent, size: 21),
+                child: Icon(step.icon, size: 20, color: accent),
               ),
+
               const Spacer(),
+
               Container(
-                width: 25,
-                height: 25,
+                width: 29,
+                height: 29,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
@@ -151,37 +172,49 @@ class _HowStepCard extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  number,
+                  '0${step.number}',
                   style: TextStyle(
                     color: accent,
-                    fontSize: 10.5,
+                    fontSize: 9.5,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            maxLines: 2,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 11.5,
-              height: 1.2,
-              fontWeight: FontWeight.w900,
+
+          const SizedBox(height: 13),
+
+          SizedBox(
+            height: 31,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Text(
+                step.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 12.8,
+                  height: 1.18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            description,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 9.3,
-              height: 1.32,
-              fontWeight: FontWeight.w500,
+
+          const SizedBox(height: 6),
+
+          Expanded(
+            child: Text(
+              step.description,
+              maxLines: 5,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 9.8,
+                height: 1.36,
+              ),
             ),
           ),
         ],

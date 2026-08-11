@@ -1,5 +1,5 @@
 /**
- * Nexora AI application bootstrap.
+ * Voxidence application bootstrap.
  *
  * Starts and configures the backend application, including:
  * - Raw request-body preservation for webhook verification.
@@ -10,8 +10,9 @@
  * - Swagger/OpenAPI documentation.
  * - Public uploads directory.
  * - Graceful application shutdown.
- * * @module main
- * @author Nexora AI Team
+ *
+ * @module main
+ * @author Voxidence Team
  */
 
 import { ValidationPipe } from '@nestjs/common';
@@ -35,9 +36,6 @@ import { GUEST_SESSION_COOKIE_NAME } from './utilities/constants/guest-session.c
 
 /**
  * Default local frontend URL.
- *
- * This value is used only when FRONTEND_URL is not configured
- * inside the backend environment variables.
  */
 const DEFAULT_FRONTEND_URL = 'http://localhost:3001';
 
@@ -47,17 +45,16 @@ const DEFAULT_FRONTEND_URL = 'http://localhost:3001';
 const DEFAULT_BACKEND_PORT = 3000;
 
 /**
- * Starts and configures the Nexora AI backend application.
- *
- * @returns A promise that resolves after the HTTP server starts.
+ * Returns true when the origin points to a local development frontend.
+ */
+function isLocalDevelopmentOrigin(origin: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+}
+
+/**
+ * Starts and configures the Voxidence backend application.
  */
 async function bootstrap(): Promise<void> {
-  /**
-   * rawBody preserves the original incoming request payload.
-   *
-   * Payment providers such as Stripe require the exact raw body
-   * when validating webhook signatures.
-   */
   const app =
     await NestFactory.create<NestExpressApplication>(
       AppModule,
@@ -68,40 +65,13 @@ async function bootstrap(): Promise<void> {
 
   const configService = app.get(ConfigService);
 
-  /**
-   * Retrieves the underlying Express application.
-   *
-   * This is required to configure Express-specific settings,
-   * such as trusted reverse proxies.
-   */
   const expressApplication =
     app.getHttpAdapter().getInstance() as Express;
 
-  /**
-   * Trusts the first reverse proxy in front of the backend.
-   *
-   * This affects:
-   * - Client IP resolution.
-   * - HTTPS protocol detection.
-   * - Secure cookies when deployed behind a proxy.
-   */
   expressApplication.set('trust proxy', 1);
 
-  /**
-   * Parses incoming Cookie headers.
-   *
-   * Parsed values become available through request.cookies.
-   */
   app.use(cookieParser());
 
-  /**
-   * Reads one or more allowed frontend origins.
-   *
-   * FRONTEND_URL may contain multiple comma-separated URLs.
-   *
-   * Example:
-   * FRONTEND_URL=http://localhost:3000,http://localhost:3001
-   */
   const configuredFrontendUrls =
     configService.get<string>(
       'FRONTEND_URL',
@@ -113,15 +83,34 @@ async function bootstrap(): Promise<void> {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  /**
-   * Enables credentialed cross-origin requests.
-   *
-   * credentials must remain enabled so the frontend can send:
-   * - Refresh-token cookies.
-   * - Guest-session cookies.
-   */
+  const nodeEnvironment =
+    configService.get<string>('NODE_ENV', 'development');
+
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      if (
+        nodeEnvironment !== 'production' &&
+        isLocalDevelopmentOrigin(origin)
+      ) {
+        callback(null, true);
+        return;
+      }
+
+      callback(
+        new Error(`CORS blocked origin: ${origin}`),
+        false,
+      );
+    },
     credentials: true,
     methods: [
       'GET',
@@ -136,21 +125,10 @@ async function bootstrap(): Promise<void> {
       'Authorization',
       'Accept',
       'X-Requested-With',
+      'X-Admin-Sensitive-Token',
     ],
   });
 
-  /**
-   * Applies strict DTO validation globally.
-   *
-   * whitelist:
-   * Removes properties not declared by the DTO.
-   *
-   * forbidNonWhitelisted:
-   * Rejects requests containing unknown properties.
-   *
-   * transform:
-   * Converts incoming values into DTO class instances.
-   */
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -163,23 +141,19 @@ async function bootstrap(): Promise<void> {
   );
 
   const enableSwagger =
-    configService.get<string>('ENABLE_SWAGGER', 'true') === 'true';
+    configService.get<string>(
+      'ENABLE_SWAGGER',
+      'true',
+    ) === 'true';
 
-  /**
-   * Swagger generation scans every controller and DTO. Keeping it disabled
-   * in production reduces startup work and memory usage.
-   */
   if (enableSwagger) {
-    /**
-     * Configures the Nexora AI OpenAPI document.
-     */
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('Nexora AI API')
+      .setTitle('Voxidence API')
       .setDescription(
         [
-          'REST API documentation for the Nexora AI backend.',
+          'REST API documentation for the Voxidence backend.',
           '',
-          'Nexora AI provides:',
+          'Voxidence provides:',
           '- Authentication and user management.',
           '- Community data collection.',
           '- NLP analysis and AI enhancement.',
@@ -190,10 +164,6 @@ async function bootstrap(): Promise<void> {
         ].join('\n'),
       )
       .setVersion('1.0.0')
-
-      /**
-       * JWT access-token authentication.
-       */
       .addBearerAuth(
         {
           type: 'http',
@@ -203,10 +173,6 @@ async function bootstrap(): Promise<void> {
         },
         'access-token',
       )
-
-      /**
-       * Refresh-token cookie authentication.
-       */
       .addCookieAuth(
         'refresh_token',
         {
@@ -218,13 +184,6 @@ async function bootstrap(): Promise<void> {
         },
         'refresh-token',
       )
-
-      /**
-       * Guest-session cookie authentication.
-       *
-       * The imported constant ensures Swagger uses the exact same
-       * cookie name as the guest-session controller and services.
-       */
       .addCookieAuth(
         GUEST_SESSION_COOKIE_NAME,
         {
@@ -244,15 +203,6 @@ async function bootstrap(): Promise<void> {
         swaggerConfig,
       );
 
-    /**
-     * Exposes Swagger UI outside any API route prefix.
-     *
-     * Swagger UI:
-     * http://localhost:3000/docs
-     *
-     * OpenAPI JSON:
-     * http://localhost:3000/docs-json
-     */
     SwaggerModule.setup(
       'docs',
       app,
@@ -260,7 +210,7 @@ async function bootstrap(): Promise<void> {
       {
         jsonDocumentUrl: 'docs-json',
         customSiteTitle:
-          'Nexora AI API Documentation',
+          'Voxidence API Documentation',
         swaggerOptions: {
           persistAuthorization: true,
           displayRequestDuration: true,
@@ -272,63 +222,42 @@ async function bootstrap(): Promise<void> {
         },
       },
     );
-
   }
 
-  /**
-   * Serves user-uploaded files publicly.
-   *
-   * Local directory:
-   * <project-root>/uploads
-   *
-   * Public route:
-   * /uploads/*
-   */
   app.useStaticAssets(
     join(process.cwd(), 'uploads'),
     {
       prefix: '/uploads/',
-      maxAge: configService.get<string>('UPLOAD_CACHE_MAX_AGE', '1d'),
-      immutable: configService.get<string>('NODE_ENV') === 'production',
+      maxAge: configService.get<string>(
+        'UPLOAD_CACHE_MAX_AGE',
+        '1d',
+      ),
+      immutable:
+        configService.get<string>('NODE_ENV') ===
+        'production',
     },
   );
 
-  /**
-   * Enables graceful resource cleanup when the application
-   * receives a supported operating-system shutdown signal.
-   */
   app.enableShutdownHooks();
 
-  /**
-   * Reads the backend port from environment variables.
-   */
   const port = configService.get<number>(
     'PORT',
     DEFAULT_BACKEND_PORT,
   );
 
-  /**
-   * Starts the server on all available network interfaces.
-   *
-   * This allows access from:
-   * - The local web frontend.
-   * - Mobile devices on the same network.
-   * - Docker or deployment infrastructure.
-   */
   await app.listen(port, '0.0.0.0');
 
   const applicationUrl = await app.getUrl();
 
   console.log(
-    `Nexora AI backend: ${applicationUrl}`,
+    `Voxidence backend: ${applicationUrl}`,
   );
 
-  console.log(
-    `Swagger documentation: ${applicationUrl}/docs`,
-  );
+  if (enableSwagger) {
+    console.log(
+      `Swagger documentation: ${applicationUrl}/docs`,
+    );
+  }
 }
 
-/**
- * Explicitly marks the bootstrap promise as intentionally ignored.
- */
 void bootstrap();

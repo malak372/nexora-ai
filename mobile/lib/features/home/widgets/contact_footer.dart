@@ -1,9 +1,6 @@
-/// Contact and footer components for the Voxidence mobile home screen.
-///
-/// Includes the public contact form, registration call-to-action,
-/// and compact mobile navigation footer.
-///
-/// @author Eman
+// Contact and footer components for the Voxidence mobile home screen.
+//
+// @author Eman
 
 import 'package:flutter/material.dart';
 
@@ -16,14 +13,18 @@ class ContactSection extends StatefulWidget {
   final VoidCallback onGetStartedPressed;
 
   @override
-  State<ContactSection> createState() => _ContactSectionState();
+  State<ContactSection> createState() {
+    return _ContactSectionState();
+  }
 }
 
 class _ContactSectionState extends State<ContactSection> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameController = TextEditingController();
+
   final _emailController = TextEditingController();
+
   final _messageController = TextEditingController();
 
   @override
@@ -35,7 +36,6 @@ class _ContactSectionState extends State<ContactSection> {
     super.dispose();
   }
 
-  /// Validates fields that must contain a value.
   String? _requiredField(String? value) {
     if ((value ?? '').trim().isEmpty) {
       return 'This field is required.';
@@ -44,7 +44,6 @@ class _ContactSectionState extends State<ContactSection> {
     return null;
   }
 
-  /// Performs basic validation for the contact email address.
   String? _validateEmail(String? value) {
     final email = (value ?? '').trim();
 
@@ -61,7 +60,6 @@ class _ContactSectionState extends State<ContactSection> {
     return null;
   }
 
-  /// Validates the form before it is connected to the backend endpoint.
   void _submit() {
     FocusScope.of(context).unfocus();
 
@@ -98,9 +96,7 @@ class _ContactSectionState extends State<ContactSection> {
             text: 'LET’S BUILD SOMETHING USEFUL',
             icon: Icons.chat_bubble_outline_rounded,
           ),
-
           const SizedBox(height: 14),
-
           const Text(
             'Have a question?\nTalk to us.',
             style: TextStyle(
@@ -111,9 +107,7 @@ class _ContactSectionState extends State<ContactSection> {
               letterSpacing: -0.8,
             ),
           ),
-
           const SizedBox(height: 9),
-
           const Text(
             'Send a quick message and we will help you move in the right direction.',
             style: TextStyle(
@@ -122,10 +116,8 @@ class _ContactSectionState extends State<ContactSection> {
               height: 1.5,
             ),
           ),
-
           const SizedBox(height: 19),
 
-          // Public contact form.
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -150,7 +142,6 @@ class _ContactSectionState extends State<ContactSection> {
                     icon: Icons.person_outline_rounded,
                     validator: _requiredField,
                   ),
-
                   const SizedBox(height: 12),
 
                   _ContactField(
@@ -160,7 +151,6 @@ class _ContactSectionState extends State<ContactSection> {
                     keyboardType: TextInputType.emailAddress,
                     validator: _validateEmail,
                   ),
-
                   const SizedBox(height: 12),
 
                   _ContactField(
@@ -170,7 +160,6 @@ class _ContactSectionState extends State<ContactSection> {
                     maxLines: 4,
                     validator: _requiredField,
                   ),
-
                   const SizedBox(height: 14),
 
                   PrimaryButton(
@@ -186,7 +175,6 @@ class _ContactSectionState extends State<ContactSection> {
 
           const SizedBox(height: 15),
 
-          // Registration call-to-action.
           Container(
             padding: const EdgeInsets.all(19),
             decoration: BoxDecoration(
@@ -207,11 +195,12 @@ class _ContactSectionState extends State<ContactSection> {
                   ),
                   child: const Icon(
                     Icons.rocket_launch_outlined,
-                    color: AppColors.primaryDark,
+                    color: AppColors.primary,
                     size: 22,
                   ),
                 ),
                 const SizedBox(width: 12),
+
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,9 +225,11 @@ class _ContactSectionState extends State<ContactSection> {
                     ],
                   ),
                 ),
+
                 const SizedBox(width: 8),
+
                 Material(
-                  color: AppColors.primaryDark,
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(14),
                   child: InkWell(
                     onTap: widget.onGetStartedPressed,
@@ -263,7 +254,6 @@ class _ContactSectionState extends State<ContactSection> {
   }
 }
 
-/// Reusable contact form field with consistent mobile styling.
 class _ContactField extends StatelessWidget {
   const _ContactField({
     required this.controller,
@@ -275,10 +265,15 @@ class _ContactField extends StatelessWidget {
   });
 
   final TextEditingController controller;
+
   final String label;
+
   final IconData icon;
+
   final String? Function(String?) validator;
+
   final TextInputType? keyboardType;
+
   final int maxLines;
 
   @override
@@ -304,7 +299,6 @@ class _ContactField extends StatelessWidget {
   }
 }
 
-/// Compact footer designed specifically for the mobile home screen.
 class HomeFooter extends StatelessWidget {
   const HomeFooter({
     super.key,
@@ -317,79 +311,116 @@ class HomeFooter extends StatelessWidget {
   });
 
   final VoidCallback onHomePressed;
+
   final VoidCallback onHowItWorksPressed;
+
   final VoidCallback onAboutPressed;
+
   final VoidCallback onDomainsPressed;
+
   final VoidCallback onIdeasPressed;
+
   final VoidCallback onContactPressed;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 25, 16, 20),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(top: 24),
       decoration: BoxDecoration(
-        color: AppColors.textPrimary,
-        borderRadius: BorderRadius.circular(27),
+        border: Border(
+          top: BorderSide(color: AppColors.primaryDeep.withValues(alpha: 0.10)),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          const Row(
-            children: [
-              BrandMark(size: 40),
-              SizedBox(width: 10),
-              Expanded(
-                child: Column(
+          Positioned(
+            left: -72,
+            top: 8,
+            child: Container(
+              width: 185,
+              height: 185,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.07),
+              ),
+            ),
+          ),
+
+          Positioned(
+            right: -76,
+            bottom: 30,
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.pink.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 25, 18, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _FooterBrand(onHomePressed: onHomePressed),
+
+                const SizedBox(height: 23),
+
+                _FooterExplore(
+                  onHowItWorksPressed: onHowItWorksPressed,
+                  onAboutPressed: onAboutPressed,
+                  onDomainsPressed: onDomainsPressed,
+                  onIdeasPressed: onIdeasPressed,
+                ),
+
+                const SizedBox(height: 22),
+
+                _FooterContact(onContactPressed: onContactPressed),
+
+                const SizedBox(height: 22),
+
+                Container(
+                  height: 1,
+                  color: AppColors.primaryDeep.withValues(alpha: 0.10),
+                ),
+
+                const SizedBox(height: 13),
+
+                const Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Voxidence',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
+                    Expanded(
+                      child: Text(
+                        '© 2026 Voxidence. All rights reserved.',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10.4,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Real voices. Better ideas.',
-                      style: TextStyle(
-                        color: Color(0xFFB9C8C4),
-                        fontSize: 11.5,
+
+                    SizedBox(width: 12),
+
+                    Expanded(
+                      child: Text(
+                        'Community signal to evidence-backed direction.',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10.4,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 19),
-
-          // Quick section navigation.
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _FooterChip(label: 'Home', onTap: onHomePressed),
-              _FooterChip(label: 'How it works', onTap: onHowItWorksPressed),
-              _FooterChip(label: 'About', onTap: onAboutPressed),
-              _FooterChip(label: 'Domains', onTap: onDomainsPressed),
-              _FooterChip(label: 'Ideas', onTap: onIdeasPressed),
-              _FooterChip(label: 'Contact', onTap: onContactPressed),
-            ],
-          ),
-
-          const SizedBox(height: 19),
-
-          Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
-
-          const SizedBox(height: 13),
-
-          const Text(
-            '© 2026 Voxidence',
-            style: TextStyle(color: Color(0xFF91A39E), fontSize: 10.5),
+              ],
+            ),
           ),
         ],
       ),
@@ -397,30 +428,352 @@ class HomeFooter extends StatelessWidget {
   }
 }
 
-/// Small navigation button used inside the mobile footer.
-class _FooterChip extends StatelessWidget {
-  const _FooterChip({required this.label, required this.onTap});
+class _FooterBrand extends StatelessWidget {
+  const _FooterBrand({required this.onHomePressed});
+
+  final VoidCallback onHomePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onHomePressed,
+            borderRadius: BorderRadius.circular(16),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  BrandMark(size: 48),
+
+                  SizedBox(width: 11),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Voxidence',
+                          style: TextStyle(
+                            color: AppColors.primaryDark,
+                            fontSize: 18.5,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.55,
+                          ),
+                        ),
+
+                        SizedBox(height: 5),
+
+                        Text(
+                          'Community voices. Verified direction.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11.2,
+                            height: 1.25,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 13),
+
+        const Text(
+          'We listen before we generate — turning real needs into software ideas worth building.',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12.4,
+            height: 1.55,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterExplore extends StatelessWidget {
+  const _FooterExplore({
+    required this.onHowItWorksPressed,
+    required this.onAboutPressed,
+    required this.onDomainsPressed,
+    required this.onIdeasPressed,
+  });
+
+  final VoidCallback onHowItWorksPressed;
+
+  final VoidCallback onAboutPressed;
+
+  final VoidCallback onDomainsPressed;
+
+  final VoidCallback onIdeasPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _FooterLabel(
+          text: 'EXPLORE VOXIDENCE',
+          icon: Icons.auto_awesome_rounded,
+        ),
+
+        const SizedBox(height: 13),
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _FooterLink(
+                    label: 'How it works',
+                    onTap: onHowItWorksPressed,
+                  ),
+
+                  const SizedBox(height: 11),
+
+                  _FooterLink(
+                    label: 'Opportunity domains',
+                    onTap: onDomainsPressed,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 16),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _FooterLink(label: 'Why Voxidence', onTap: onAboutPressed),
+
+                  const SizedBox(height: 11),
+
+                  _FooterLink(label: 'Community ideas', onTap: onIdeasPressed),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterContact extends StatelessWidget {
+  const _FooterContact({required this.onContactPressed});
+
+  final VoidCallback onContactPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(15, 15, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDark.withValues(alpha: 0.035),
+            blurRadius: 20,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _FooterLabel(text: 'START A CONVERSATION'),
+
+          const SizedBox(height: 8),
+
+          const Text(
+            'Questions, feedback, or collaboration in mind?',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11.8,
+              height: 1.45,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Container(
+                width: 35,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.18),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.mail_outline_rounded,
+                  size: 17,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+
+              const SizedBox(width: 9),
+
+              const Expanded(
+                child: Text(
+                  'voxidence@gmail.com',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.primaryDeep,
+                    fontSize: 11.8,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: Colors.white.withValues(alpha: 0.86),
+              borderRadius: BorderRadius.circular(99),
+              child: InkWell(
+                onTap: onContactPressed,
+                borderRadius: BorderRadius.circular(99),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.20),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Contact our team',
+                        style: TextStyle(
+                          color: AppColors.primaryDark,
+                          fontSize: 11.2,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+
+                      SizedBox(width: 6),
+
+                      Icon(
+                        Icons.north_east_rounded,
+                        size: 15,
+                        color: AppColors.primaryDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FooterLabel extends StatelessWidget {
+  const _FooterLabel({required this.text, this.icon});
+
+  final String text;
+
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 13, color: AppColors.primaryDark),
+          const SizedBox(width: 6),
+        ],
+
+        Flexible(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.primaryDark,
+              fontSize: 9.5,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.05,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterLink extends StatelessWidget {
+  const _FooterLink({required this.label, required this.onTap});
 
   final String label;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.07),
-      borderRadius: BorderRadius.circular(99),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(99),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.8,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 4),
+
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 9,
+                color: AppColors.primary,
+              ),
+            ],
           ),
         ),
       ),

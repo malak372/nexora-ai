@@ -3,9 +3,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
 
-/// Shared presentation helpers used by the Voxidence mobile Home screen.
-///
-/// @author Eman
 class SectionWrap extends StatelessWidget {
   const SectionWrap({
     super.key,
@@ -114,7 +111,7 @@ class PrimaryButton extends StatelessWidget {
     final button = FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.primaryDeep,
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         padding:
@@ -193,6 +190,7 @@ class SectionHeading extends StatelessWidget {
   final String eyebrow;
   final String title;
   final String description;
+
   final CrossAxisAlignment alignment;
   final TextAlign textAlign;
 
@@ -202,13 +200,19 @@ class SectionHeading extends StatelessWidget {
       crossAxisAlignment: alignment,
       children: [
         Eyebrow(text: eyebrow, icon: Icons.auto_awesome_rounded),
+
         const SizedBox(height: 13),
+
         Text(
           title,
           textAlign: textAlign,
-          style: Theme.of(context).textTheme.headlineMedium,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineMedium?.copyWith(color: AppColors.textPrimary),
         ),
+
         const SizedBox(height: 9),
+
         Text(
           description,
           textAlign: textAlign,
