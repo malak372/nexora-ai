@@ -1,49 +1,40 @@
-// Author: Eman
+// Shared mobile authentication layout for Voxidence.
+//
+// @author Eman
 
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../home/widgets/common.dart';
 
 class AuthShell extends StatelessWidget {
-  const AuthShell({super.key, required this.form});
+  const AuthShell({super.key, required this.child, this.maxWidth = 520});
 
-  final Widget form;
-
-  static const teal = Color(0xFF5CBDB9);
-  static const darkTeal = Color(0xFF315F57);
-  static const bodyTeal = Color(0xFF2F7774);
-  static const pink = Color(0xFFD98FA0);
+  final Widget child;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFB),
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           const Positioned.fill(child: _AuthBackground()),
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Mobile breakpoint used across the auth screens.
-                final isMobile = constraints.maxWidth < 700;
-
                 return SingleChildScrollView(
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: EdgeInsets.fromLTRB(
-                    isMobile ? 14 : 28,
-                    isMobile ? 14 : 26,
-                    isMobile ? 14 : 28,
-                    isMobile ? 22 : 30,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 26),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - (isMobile ? 36 : 56),
+                      minHeight: constraints.maxHeight - 38,
                     ),
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 650),
-                        child: form,
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: child,
                       ),
                     ),
                   ),
@@ -57,141 +48,75 @@ class AuthShell extends StatelessWidget {
   }
 }
 
-// Shared Voxidence branding used by login and registration.
-class AuthBrand extends StatelessWidget {
-  const AuthBrand({super.key, this.compact = false});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    // Smaller branding keeps the mobile header clean and balanced.
-    final logoSize = compact ? 34.0 : 46.0;
-    final brandFontSize = compact ? 16.5 : 19.0;
-
-    return InkWell(
-      onTap: () {
-        Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            BrandMark(size: logoSize),
-            SizedBox(width: compact ? 8 : 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Voxidence',
-                  style: TextStyle(
-                    color: AuthShell.darkTeal,
-                    fontSize: brandFontSize,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -.35,
-                  ),
-                ),
-
-                // Keep the supporting tagline only on wider layouts.
-                if (!compact) ...[
-                  const SizedBox(height: 1),
-                  const Text(
-                    'Ideas built from real needs',
-                    style: TextStyle(
-                      color: Color(0xFF637B76),
-                      fontSize: 10.2,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Small auth context row shown below the brand.
-class AuthEyebrow extends StatelessWidget {
-  const AuthEyebrow({super.key, required this.isMobile});
-
-  final bool isMobile;
+class AuthBrandBar extends StatelessWidget {
+  const AuthBrandBar({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: isMobile ? 27 : 30,
-          height: isMobile ? 27 : 30,
-          decoration: BoxDecoration(
-            color: AuthShell.teal.withValues(alpha: .10),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: const Icon(
-            Icons.shield_outlined,
-            size: 16,
-            color: AuthShell.teal,
-          ),
-        ),
-
-        const SizedBox(width: 9),
-
-        Expanded(
-          child: Text(
-            'YOUR WORKSPACE AWAITS',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AuthShell.teal,
-              fontSize: isMobile ? 10 : 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .9,
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 8),
-
         InkWell(
           onTap: () {
             Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
           },
-          borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isMobile ? 9 : 12,
-              vertical: isMobile ? 8 : 9,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .78),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: const Color(0xFFDCEBE8)),
-            ),
+          borderRadius: BorderRadius.circular(16),
+          child: const Padding(
+            padding: EdgeInsets.all(2),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.arrow_back_rounded,
-                  color: AuthShell.teal,
-                  size: 15,
-                ),
-                if (!isMobile) ...[
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Back to home',
-                    style: TextStyle(
-                      color: AuthShell.teal,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
+                BrandMark(size: 37),
+                SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Voxidence',
+                      style: TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 16.5,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.45,
+                      ),
                     ),
-                  ),
-                ],
+                    SizedBox(height: 4),
+                    Text(
+                      'Real voices. Better ideas.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 9.1,
+                        height: 1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ],
+            ),
+          ),
+        ),
+        const Spacer(),
+        Material(
+          color: Colors.white.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: () {
+              Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Icon(
+                Icons.arrow_back_rounded,
+                size: 19,
+                color: AppColors.primaryDark,
+              ),
             ),
           ),
         ),
@@ -200,42 +125,360 @@ class AuthEyebrow extends StatelessWidget {
   }
 }
 
-// Shared security footer used across auth pages.
-class AuthFooter extends StatelessWidget {
-  const AuthFooter({super.key, required this.text});
+class AuthCard extends StatelessWidget {
+  const AuthCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.fromLTRB(18, 20, 18, 18),
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.13)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDark.withValues(alpha: 0.09),
+            blurRadius: 34,
+            offset: const Offset(0, 15),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class AuthEyebrow extends StatelessWidget {
+  const AuthEyebrow({
+    super.key,
+    required this.label,
+    this.icon = Icons.auto_awesome_rounded,
+  });
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.primaryDark),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primaryDark,
+              fontSize: 9.1,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.55,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AuthTitle extends StatelessWidget {
+  const AuthTitle({
+    super.key,
+    required this.title,
+    required this.highlight,
+    required this.description,
+  });
+
+  final String title;
+  final String highlight;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 27,
+              height: 1.05,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.9,
+            ),
+            children: [
+              TextSpan(text: '$title\n'),
+              TextSpan(
+                text: highlight,
+                style: const TextStyle(color: AppColors.primary),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          description,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11.7,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AuthField extends StatelessWidget {
+  const AuthField({
+    super.key,
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    this.keyboardType,
+    this.textInputAction,
+    this.validator,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final IconData icon;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final String? Function(String?)? validator;
+  final bool obscureText;
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.primaryDeep,
+            fontSize: 11.1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          validator: validator,
+          obscureText: obscureText,
+          onChanged: onChanged,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: Icon(icon, size: 18),
+            suffixIcon: suffixIcon,
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AuthPrimaryButton extends StatelessWidget {
+  const AuthPrimaryButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    required this.loading,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: FilledButton(
+        onPressed: loading ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.48),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 19,
+                height: 19,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.1,
+                  color: Colors.white,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12.4,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded, size: 17),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class AuthErrorBox extends StatelessWidget {
+  const AuthErrorBox({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.pinkSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.pink.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            size: 15,
+            color: Color(0xFF9F4F61),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF9F4F61),
+                fontSize: 9.8,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AuthSwitchPrompt extends StatelessWidget {
+  const AuthSwitchPrompt({
+    super.key,
+    required this.text,
+    required this.action,
+    required this.onPressed,
+  });
+
+  final String text;
+  final String action;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 3,
+        runSpacing: 3,
+        children: [
+          Text(
+            text,
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 10.4),
+          ),
+          InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              child: Text(
+                action,
+                style: const TextStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 10.4,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AuthSecurityLine extends StatelessWidget {
+  const AuthSecurityLine({super.key, required this.text});
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(height: 1, color: const Color(0xFFE5EFED)),
-        const SizedBox(height: 14),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.shield_outlined, size: 16, color: AuthShell.pink),
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF738783),
-                  fontSize: 10.8,
-                  height: 1.3,
-                ),
-              ),
+        const Icon(Icons.shield_outlined, size: 14, color: AppColors.pink),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 9.5,
+              height: 1.3,
             ),
-          ],
+          ),
         ),
       ],
     );
   }
 }
 
-// Soft branded background used behind the auth card.
 class _AuthBackground extends StatelessWidget {
   const _AuthBackground();
 
@@ -246,45 +489,34 @@ class _AuthBackground extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFF7F8FC), Color(0xFFFFFCFC), Color(0xFFF2FAF8)],
+          colors: [Color(0xFFFCFBFF), Color(0xFFF8F5FF), Color(0xFFF8FCFF)],
         ),
       ),
       child: Stack(
         children: [
           Positioned(
-            top: -190,
-            left: -130,
+            top: -145,
+            right: -125,
             child: _Glow(
-              size: 390,
-              color: const Color(0xFFF2CCD6).withValues(alpha: .28),
+              size: 320,
+              color: AppColors.primary.withValues(alpha: 0.16),
             ),
           ),
           Positioned(
-            top: -180,
-            right: -140,
+            top: 170,
+            left: -180,
             child: _Glow(
-              size: 390,
-              color: const Color(0xFFC4E9E5).withValues(alpha: .25),
+              size: 330,
+              color: AppColors.pinkLight.withValues(alpha: 0.11),
             ),
           ),
           Positioned(
             right: -150,
-            bottom: -170,
+            bottom: -150,
             child: _Glow(
-              size: 410,
-              color: const Color(0xFF5CBDB9).withValues(alpha: .18),
+              size: 340,
+              color: AppColors.pinkLight.withValues(alpha: 0.10),
             ),
-          ),
-          Positioned(
-            left: -180,
-            bottom: -210,
-            child: _Glow(
-              size: 420,
-              color: const Color(0xFFF2CCD6).withValues(alpha: .16),
-            ),
-          ),
-          const Positioned.fill(
-            child: IgnorePointer(child: CustomPaint(painter: _DotsPainter())),
           ),
         ],
       ),
@@ -305,38 +537,5 @@ class _Glow extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
-  }
-}
-
-// Decorative edge dots matching the Voxidence palette.
-class _DotsPainter extends CustomPainter {
-  const _DotsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final tealPaint = Paint()..color = AuthShell.teal.withValues(alpha: .10);
-
-    final pinkPaint = Paint()..color = AuthShell.pink.withValues(alpha: .06);
-
-    const gap = 34.0;
-
-    for (double y = 20; y < size.height; y += gap) {
-      for (double x = 12; x < size.width; x += gap) {
-        final edge = x < 120 || x > size.width - 120;
-
-        if (!edge) {
-          continue;
-        }
-
-        final paint = ((x + y) ~/ gap).isEven ? tealPaint : pinkPaint;
-
-        canvas.drawCircle(Offset(x, y), 1.45, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
   }
 }

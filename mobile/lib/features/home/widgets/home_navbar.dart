@@ -1,12 +1,13 @@
-/// Mobile navigation for the Voxidence public Home screen.
-///
-/// @author Eman
+// Mobile-first navigation for the Voxidence Home screen.
+//
+// @author Eman
 
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import 'common.dart';
 
 class HomeNavbar extends StatelessWidget {
   const HomeNavbar({
@@ -38,12 +39,11 @@ class HomeNavbar extends StatelessWidget {
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: AppColors.primaryDeep.withValues(alpha: 0.24),
+      barrierColor: AppColors.primaryDeep.withValues(alpha: 0.30),
       builder: (sheetContext) {
         return _MobileMenu(
-          onClose: () {
-            Navigator.pop(sheetContext);
-          },
+          onClose: () => Navigator.pop(sheetContext),
+          onHome: onHomePressed,
           onHowItWorks: onHowItWorksPressed,
           onAbout: onAboutPressed,
           onDomains: onDomainsPressed,
@@ -60,45 +60,66 @@ class HomeNavbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 3),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
+            height: 58,
+            padding: const EdgeInsets.fromLTRB(8, 6, 7, 6),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.87),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white),
+              color: Colors.white.withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primaryDeep.withValues(alpha: 0.07),
-                  blurRadius: 28,
-                  offset: const Offset(0, 12),
+                  color: AppColors.primaryDeep.withValues(alpha: 0.055),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
             child: Row(
               children: [
                 Expanded(
-                  child: InkWell(
-                    onTap: onHomePressed,
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Row(
-                      children: [
-                        VoxidenceLeafLogo(size: 53),
-                        SizedBox(width: 12),
-                        Expanded(child: _BrandText()),
-                      ],
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onHomePressed,
+                      borderRadius: BorderRadius.circular(16),
+                      child: const Row(
+                        children: [
+                          BrandMark(size: 40),
+                          SizedBox(width: 9),
+                          Expanded(child: _BrandText()),
+                        ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                _MenuButton(
-                  onPressed: () {
-                    _openMenu(context);
-                  },
+                Material(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(15),
+                  child: InkWell(
+                    onTap: () => _openMenu(context),
+                    borderRadius: BorderRadius.circular(15),
+                    child: Container(
+                      width: 43,
+                      height: 43,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Icon(
+                        Icons.menu_rounded,
+                        size: 23,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -115,30 +136,30 @@ class _BrandText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Voxidence',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: AppColors.primaryDeep,
-            fontSize: 19,
+            color: AppColors.primaryDark,
+            fontSize: 16.5,
             height: 1,
             fontWeight: FontWeight.w900,
-            letterSpacing: -0.55,
+            letterSpacing: -0.5,
           ),
         ),
-        SizedBox(height: 6),
+        SizedBox(height: 4),
         Text(
-          'Turning Community Voices\ninto Evidence-Based Ideas.',
-          maxLines: 2,
+          'Real voices. Better ideas.',
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: AppColors.textSecondary,
-            fontSize: 10.5,
-            height: 1.28,
+            fontSize: 9.2,
+            height: 1,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -147,194 +168,10 @@ class _BrandText extends StatelessWidget {
   }
 }
 
-class _MenuButton extends StatelessWidget {
-  const _MenuButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.88),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primaryDeep.withValues(alpha: 0.07),
-                blurRadius: 16,
-                offset: const Offset(0, 7),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.menu_rounded,
-            size: 28,
-            color: AppColors.primaryDark,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class VoxidenceLeafLogo extends StatelessWidget {
-  const VoxidenceLeafLogo({super.key, this.size = 53});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFB4E2D8), Color(0xFF79C7BC), Color(0xFF63B7AF)],
-        ),
-        borderRadius: BorderRadius.circular(size * 0.30),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.17),
-            blurRadius: 17,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Center(
-            child: SizedBox(
-              width: size * 0.62,
-              height: size * 0.62,
-              child: CustomPaint(painter: _LeafLogoPainter()),
-            ),
-          ),
-          Positioned(
-            top: size * 0.15,
-            right: size * 0.17,
-            child: Container(
-              width: size * 0.065,
-              height: size * 0.065,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF5DB).withValues(alpha: 0.95),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LeafLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final centerX = size.width * 0.5;
-
-    final stem = Path()
-      ..moveTo(centerX, size.height * 0.86)
-      ..cubicTo(
-        centerX * 0.98,
-        size.height * 0.65,
-        centerX * 1.02,
-        size.height * 0.42,
-        centerX,
-        size.height * 0.19,
-      );
-
-    canvas.drawPath(stem, paint);
-
-    final upperLeaf = Path()
-      ..moveTo(centerX, size.height * 0.46)
-      ..cubicTo(
-        size.width * 0.62,
-        size.height * 0.28,
-        size.width * 0.82,
-        size.height * 0.20,
-        size.width * 0.82,
-        size.height * 0.20,
-      )
-      ..cubicTo(
-        size.width * 0.79,
-        size.height * 0.43,
-        size.width * 0.66,
-        size.height * 0.55,
-        centerX,
-        size.height * 0.46,
-      );
-
-    canvas.drawPath(upperLeaf, paint);
-
-    final leftLeaf = Path()
-      ..moveTo(centerX, size.height * 0.61)
-      ..cubicTo(
-        size.width * 0.35,
-        size.height * 0.43,
-        size.width * 0.16,
-        size.height * 0.43,
-        size.width * 0.16,
-        size.height * 0.43,
-      )
-      ..cubicTo(
-        size.width * 0.21,
-        size.height * 0.65,
-        size.width * 0.35,
-        size.height * 0.70,
-        centerX,
-        size.height * 0.61,
-      );
-
-    canvas.drawPath(leftLeaf, paint);
-
-    final rightLeaf = Path()
-      ..moveTo(centerX, size.height * 0.72)
-      ..cubicTo(
-        size.width * 0.62,
-        size.height * 0.57,
-        size.width * 0.79,
-        size.height * 0.57,
-        size.width * 0.81,
-        size.height * 0.57,
-      )
-      ..cubicTo(
-        size.width * 0.76,
-        size.height * 0.75,
-        size.width * 0.63,
-        size.height * 0.80,
-        centerX,
-        size.height * 0.72,
-      );
-
-    canvas.drawPath(rightLeaf, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
-  }
-}
-
 class _MobileMenu extends StatelessWidget {
   const _MobileMenu({
     required this.onClose,
+    required this.onHome,
     required this.onHowItWorks,
     required this.onAbout,
     required this.onDomains,
@@ -346,6 +183,7 @@ class _MobileMenu extends StatelessWidget {
   });
 
   final VoidCallback onClose;
+  final VoidCallback onHome;
   final VoidCallback onHowItWorks;
   final VoidCallback onAbout;
   final VoidCallback onDomains;
@@ -358,22 +196,25 @@ class _MobileMenu extends StatelessWidget {
   void _run(VoidCallback callback) {
     onClose();
 
-    Future<void>.delayed(const Duration(milliseconds: 140), callback);
+    Future<void>.delayed(const Duration(milliseconds: 120), callback);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-      padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 15 + bottomInset),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFDFC),
-        borderRadius: BorderRadius.circular(30),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 38,
-            offset: const Offset(0, -10),
+            color: AppColors.primaryDeep.withValues(alpha: 0.16),
+            blurRadius: 36,
+            offset: const Offset(0, -6),
           ),
         ],
       ),
@@ -381,36 +222,37 @@ class _MobileMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 42,
+            width: 40,
             height: 4,
             decoration: BoxDecoration(
               color: AppColors.borderStrong,
               borderRadius: BorderRadius.circular(99),
             ),
           ),
-          const SizedBox(height: 17),
+          const SizedBox(height: 16),
+
           const Row(
             children: [
-              VoxidenceLeafLogo(size: 44),
-              SizedBox(width: 12),
+              BrandMark(size: 42),
+              SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Explore Voxidence',
+                      'Voxidence',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
+                        color: AppColors.primaryDark,
+                        fontSize: 17,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 3),
+                    SizedBox(height: 2),
                     Text(
-                      'Community evidence into focused ideas.',
+                      'Explore Voxidence',
                       style: TextStyle(
                         color: AppColors.textSecondary,
-                        fontSize: 11.5,
+                        fontSize: 10.5,
                       ),
                     ),
                   ],
@@ -418,106 +260,147 @@ class _MobileMenu extends StatelessWidget {
               ),
             ],
           ),
+
           const SizedBox(height: 18),
-          _MenuItem(
-            icon: Icons.route_outlined,
-            label: 'How it works',
-            onTap: () {
-              _run(onHowItWorks);
-            },
+
+          Row(
+            children: [
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.home_outlined,
+                  label: 'Home',
+                  onTap: () => _run(onHome),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.route_outlined,
+                  label: 'Process',
+                  onTap: () => _run(onHowItWorks),
+                ),
+              ),
+            ],
           ),
-          _MenuItem(
-            icon: Icons.info_outline_rounded,
-            label: 'About',
-            onTap: () {
-              _run(onAbout);
-            },
+
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.auto_awesome_outlined,
+                  label: 'About',
+                  onTap: () => _run(onAbout),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.grid_view_rounded,
+                  label: 'Domains',
+                  onTap: () => _run(onDomains),
+                ),
+              ),
+            ],
           ),
-          _MenuItem(
-            icon: Icons.grid_view_rounded,
-            label: 'Domains',
-            onTap: () {
-              _run(onDomains);
-            },
+
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.lightbulb_outline_rounded,
+                  label: 'Ideas',
+                  onTap: () => _run(onIdeas),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MenuTile(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: 'Contact',
+                  onTap: () => _run(onContact),
+                ),
+              ),
+            ],
           ),
-          _MenuItem(
-            icon: Icons.lightbulb_outline_rounded,
-            label: 'Ideas',
-            onTap: () {
-              _run(onIdeas);
-            },
-          ),
-          _MenuItem(
-            icon: Icons.mail_outline_rounded,
-            label: 'Contact',
-            onTap: () {
-              _run(onContact);
-            },
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () {
-              _run(onGenerate);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primaryDark,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+
+          const SizedBox(height: 15),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => _run(onGenerate),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded, size: 18),
+                  SizedBox(width: 7),
+                  Text(
+                    'Generate a free idea',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.auto_awesome_rounded, size: 18),
-                SizedBox(width: 8),
-                Text(
-                  'Generate your idea',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
           ),
-          const SizedBox(height: 10),
+
+          const SizedBox(height: 8),
+
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () {
-                    _run(onSignIn);
-                  },
+                  onPressed: () => _run(onSignIn),
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                    foregroundColor: AppColors.primaryDeep,
+                    foregroundColor: AppColors.primaryDark,
                     side: const BorderSide(color: AppColors.borderStrong),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(17),
+                      borderRadius: BorderRadius.circular(15),
                     ),
                   ),
                   child: const Text(
                     'Sign in',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
-                child: FilledButton.tonal(
-                  onPressed: () {
-                    _run(onRegister);
-                  },
+                child: FilledButton(
+                  onPressed: () => _run(onRegister),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(50),
-                    backgroundColor: AppColors.primarySoft,
-                    foregroundColor: AppColors.primaryDark,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(17),
+                      borderRadius: BorderRadius.circular(15),
                     ),
                   ),
                   child: const Text(
-                    'Register',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                    'Join',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -529,8 +412,8 @@ class _MobileMenu extends StatelessWidget {
   }
 }
 
-class _MenuItem extends StatelessWidget {
-  const _MenuItem({
+class _MenuTile extends StatelessWidget {
+  const _MenuTile({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -543,38 +426,32 @@ class _MenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
+      color: const Color(0xFFF6FAF8),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 11),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(icon, color: AppColors.primaryDark, size: 20),
-              ),
-              const SizedBox(width: 13),
+              Icon(icon, size: 17, color: AppColors.primaryDark),
+              const SizedBox(width: 7),
               Expanded(
                 child: Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 14,
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-              ),
-              const Icon(
-                Icons.arrow_forward_ios_rounded,
-                color: AppColors.textMuted,
-                size: 14,
               ),
             ],
           ),

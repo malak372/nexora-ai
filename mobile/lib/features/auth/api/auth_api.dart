@@ -9,11 +9,16 @@ class AuthApi {
 
   static const _storage = FlutterSecureStorage();
 
+  static const _guestCookieStorageKey = 'guest_session_cookie';
+
   late final Dio _dio = Dio(
     BaseOptions(
       baseUrl: dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:3000',
+
       connectTimeout: const Duration(seconds: 12),
+
       receiveTimeout: const Duration(seconds: 20),
+
       headers: {'Content-Type': 'application/json'},
     ),
   );
@@ -26,12 +31,14 @@ class AuthApi {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/login',
+
         data: {'email': email.trim().toLowerCase(), 'password': password},
       );
 
       final data = response.data ?? <String, dynamic>{};
 
       final accessToken = data['accessToken']?.toString();
+
       final refreshToken = data['refreshToken']?.toString();
 
       if (accessToken != null && accessToken.isNotEmpty) {
@@ -57,15 +64,27 @@ class AuthApi {
     required String userType,
   }) async {
     try {
+      final guestCookie = await _storage.read(key: _guestCookieStorageKey);
+
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/register',
+
         data: {
           'fullName': fullName.trim(),
+
           'email': email.trim().toLowerCase(),
+
           'password': password,
+
           'userType': userType,
         },
+
+        options: guestCookie == null || guestCookie.trim().isEmpty
+            ? null
+            : Options(headers: {'Cookie': guestCookie}),
       );
+
+      await _storage.delete(key: _guestCookieStorageKey);
 
       return response.data ?? <String, dynamic>{};
     } on DioException catch (error) {
@@ -80,6 +99,7 @@ class AuthApi {
     try {
       await _dio.post<void>(
         '/auth/email/verify',
+
         data: {'email': email.trim().toLowerCase(), 'code': code.trim()},
       );
     } on DioException catch (error) {
@@ -91,6 +111,7 @@ class AuthApi {
     try {
       await _dio.post<void>(
         '/auth/email/resend-verification',
+
         data: {'email': email.trim().toLowerCase()},
       );
     } on DioException catch (error) {
