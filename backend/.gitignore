@@ -4,5 +4,3 @@ node_modules
 dist
 prisma/seed.ts
 *.zip
-uploads
-uploads/avatars

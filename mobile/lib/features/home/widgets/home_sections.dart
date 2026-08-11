@@ -1015,7 +1015,7 @@ class FeaturedIdeasSection extends StatelessWidget {
                   clipBehavior: Clip.hardEdge,
                   padding: const EdgeInsets.fromLTRB(16, 0, 20, 0),
                   itemCount: ideas.length,
-                  separatorBuilder: (_, __) {
+                  separatorBuilder: (_, _) {
                     return const SizedBox(width: 12);
                   },
                   itemBuilder: (context, index) {
