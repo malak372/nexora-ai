@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { UserRole } from '@prisma/client';
 
@@ -7,17 +7,10 @@ import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
 
 import { AuthAuditService } from './audit.service';
+import { GetAuthAuditQueryDto } from '../dto/get-auth-audit-query.dto';
 
 /**
- * Exposes administrator-only endpoints for retrieving
- * authentication audit logs.
- *
- * Base route:
- * GET /admin/auth-audit-logs
- *
- * Access:
- * - Authenticated users only.
- * - Administrator role required.
+ * Administrator-only authentication security endpoints.
  *
  * @author Eman
  */
@@ -28,15 +21,18 @@ export class AuthAuditController {
   constructor(private readonly authAuditService: AuthAuditService) {}
 
   /**
-   * Retrieves the latest authentication audit logs.
-   *
-   * Endpoint:
+   * GET /admin/auth-audit-logs/summary
+   */
+  @Get('summary')
+  getSummary(@Query() query: GetAuthAuditQueryDto) {
+    return this.authAuditService.getSummary(query);
+  }
+
+  /**
    * GET /admin/auth-audit-logs
-   *
-   * @returns Authentication audit logs ordered by the service.
    */
   @Get()
-  getLogs() {
-    return this.authAuditService.getLogs();
+  getLogs(@Query() query: GetAuthAuditQueryDto) {
+    return this.authAuditService.getLogs(query);
   }
 }

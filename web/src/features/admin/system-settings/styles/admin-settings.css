@@ -1,0 +1,694 @@
+.admin-settings-page {
+    --ink: #38504b;
+    --teal: #2f8984;
+    color: var(--ink)
+}
+
+.admin-settings-page * {
+    box-sizing: border-box
+}
+
+.admin-settings-hero,
+.admin-settings-overview,
+.admin-settings-card,
+.admin-settings-footerbar {
+    border: 1px solid rgba(208, 226, 222, .9);
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 18px 45px rgba(58, 101, 93, .07)
+}
+
+.admin-settings-hero {
+    min-height: 178px;
+    padding: 30px 32px;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    background: radial-gradient(circle at 94% -4%, rgba(89, 191, 183, .11) 0 82px, transparent 83px), radial-gradient(circle at 94% -4%, transparent 0 118px, rgba(89, 191, 183, .07) 119px 153px, transparent 154px), linear-gradient(120deg, #fff, rgba(239, 249, 247, .96) 63%, rgba(255, 245, 248, .86));
+    overflow: hidden
+}
+
+.admin-settings-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #247a76;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: .13em
+}
+
+.admin-settings-hero h1 {
+    margin: 13px 0 7px;
+    font-size: clamp(30px, 3vw, 42px);
+    line-height: 1.05;
+    font-weight: 560;
+    letter-spacing: -.035em
+}
+
+.admin-settings-hero p {
+    margin: 0;
+    color: #748681;
+    font-size: 14px
+}
+
+.admin-settings-hero__actions {
+    display: flex;
+    gap: 9px
+}
+
+.admin-settings-button {
+    min-height: 44px;
+    padding: 0 15px;
+    border: 1px solid #d8e7e4;
+    border-radius: 14px;
+    background: #fff;
+    color: #526a64;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 780;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer
+}
+
+.admin-settings-button.is-primary {
+    border-color: #55b6b0;
+    background: linear-gradient(135deg, #62c3bd, #48aaa5);
+    color: #fff;
+    box-shadow: 0 12px 24px rgba(69, 169, 162, .2)
+}
+
+.admin-settings-button:disabled {
+    opacity: .45;
+    cursor: not-allowed
+}
+
+.admin-settings-feedback {
+    margin: 14px 0;
+    min-height: 46px;
+    padding: 10px 14px;
+    border: 1px solid;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11px
+}
+
+.admin-settings-feedback span {
+    flex: 1
+}
+
+.admin-settings-feedback button {
+    border: 0;
+    background: transparent;
+    color: inherit
+}
+
+.admin-settings-feedback.is-error {
+    border-color: #efd4da;
+    background: #fff3f5;
+    color: #a45b69
+}
+
+.admin-settings-feedback.is-success {
+    border-color: #d2ebe6;
+    background: #eff9f7;
+    color: #377c74
+}
+
+.admin-settings-overview {
+    margin-top: 18px;
+    border-radius: 28px;
+    overflow: hidden
+}
+
+.admin-settings-overview>header {
+    min-height: 85px;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e6efed;
+    display: flex;
+    align-items: center;
+    justify-content: space-between
+}
+
+.admin-settings-overview>header small,
+.admin-settings-card header small,
+.admin-settings-review header small {
+    color: #3e8882;
+    font-size: 9px;
+    font-weight: 850;
+    letter-spacing: .11em
+}
+
+.admin-settings-overview>header h2 {
+    margin: 5px 0 2px;
+    font-size: 19px
+}
+
+.admin-settings-overview>header p {
+    margin: 0;
+    color: #8b9b97;
+    font-size: 10px
+}
+
+.admin-settings-overview>header>span {
+    min-height: 34px;
+    padding: 0 11px;
+    border: 1px solid #dbe9e6;
+    border-radius: 999px;
+    background: #f8fcfb;
+    color: #5d756f;
+    font-size: 9px;
+    font-weight: 780;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px
+}
+
+.admin-settings-overview>header>span i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #56c1b8
+}
+
+.admin-settings-overview>header>span.is-dirty {
+    border-color: #eedfbd;
+    background: #fff9ed;
+    color: #856f40
+}
+
+.admin-settings-overview>header>span.is-dirty i {
+    background: #d6ad55
+}
+
+.admin-settings-metrics {
+    padding: 20px 22px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px
+}
+
+.admin-settings-metrics article {
+    min-height: 112px;
+    padding: 18px;
+    border: 1px solid #dce9e6;
+    border-radius: 20px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    position: relative;
+    overflow: hidden
+}
+
+.admin-settings-metrics article>span {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    border-radius: 14px;
+    background: #ebf7f4;
+    color: #2f8984;
+    display: grid;
+    place-items: center
+}
+
+.admin-settings-metrics article>div {
+    display: grid
+}
+
+.admin-settings-metrics small {
+    color: #758985;
+    font-size: 8.5px;
+    font-weight: 800
+}
+
+.admin-settings-metrics strong {
+    margin: 5px 0 2px;
+    font-size: 22px
+}
+
+.admin-settings-metrics p {
+    margin: 0;
+    color: #93a29e;
+    font-size: 8px
+}
+
+.admin-settings-grid {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px
+}
+
+.admin-settings-card {
+    border-radius: 24px;
+    overflow: hidden
+}
+
+.admin-settings-card>header {
+    min-height: 100px;
+    padding: 18px 20px;
+    border-bottom: 1px solid #e5eeec;
+    background: linear-gradient(135deg, #f8fcfb, #fff9fa);
+    display: flex;
+    align-items: flex-start;
+    gap: 11px
+}
+
+.admin-settings-card>header>span {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    border-radius: 13px;
+    background: #eaf7f4;
+    color: #31857f;
+    display: grid;
+    place-items: center
+}
+
+.admin-settings-card header h2 {
+    margin: 4px 0 3px;
+    font-size: 16px
+}
+
+.admin-settings-card header p {
+    margin: 0;
+    color: #8c9b97;
+    font-size: 9px;
+    line-height: 1.5
+}
+
+.admin-settings-card__fields {
+    padding: 16px;
+    display: grid;
+    gap: 10px
+}
+
+.admin-settings-field {
+    min-height: 88px;
+    padding: 12px;
+    border: 1px solid #dfeae8;
+    border-radius: 15px;
+    background: #fbfefd;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 165px;
+    align-items: center;
+    gap: 14px
+}
+
+.admin-settings-field.is-error {
+    border-color: #eccbd3;
+    background: #fff8f9
+}
+
+.admin-settings-field__label {
+    display: grid;
+    gap: 3px
+}
+
+.admin-settings-field__label strong {
+    font-size: 10px;
+    color: #49615c
+}
+
+.admin-settings-field__label small {
+    font-size: 8px;
+    color: #91a09c;
+    line-height: 1.4
+}
+
+.admin-settings-field__input {
+    min-height: 44px;
+    border: 1px solid #d6e6e3;
+    border-radius: 12px;
+    background: #fff;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    overflow: hidden
+}
+
+.admin-settings-field__input input {
+    min-width: 0;
+    width: 100%;
+    height: 42px;
+    padding: 0 11px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #405954;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 760
+}
+
+.admin-settings-field__input em {
+    height: 100%;
+    padding: 0 10px;
+    border-left: 1px solid #e4edeb;
+    background: #f5faf9;
+    color: #77908a;
+    font-size: 8px;
+    font-style: normal;
+    font-weight: 760;
+    display: flex;
+    align-items: center
+}
+
+.admin-settings-field__error {
+    grid-column: 1/-1;
+    color: #a55e6d;
+    font-size: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px
+}
+
+.admin-settings-footerbar {
+    margin-top: 16px;
+    min-height: 78px;
+    padding: 14px 17px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px
+}
+
+.admin-settings-footerbar>div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #5a756f
+}
+
+.admin-settings-footerbar>div:first-child>span {
+    display: grid
+}
+
+.admin-settings-footerbar strong {
+    font-size: 9px
+}
+
+.admin-settings-footerbar small {
+    color: #91a09c;
+    font-size: 8px
+}
+
+.admin-settings-footerbar>div:last-child {
+    display: flex;
+    gap: 8px
+}
+
+.admin-settings-loading {
+    min-height: 420px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 8px;
+    color: #718883
+}
+
+.admin-settings-modal-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 10080;
+    padding: 20px;
+    display: grid;
+    place-items: center
+}
+
+.admin-settings-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(35, 59, 55, .43);
+    backdrop-filter: blur(7px)
+}
+
+.admin-settings-review {
+    width: min(720px, calc(100vw - 40px));
+    max-height: calc(100vh - 40px);
+    border: 1px solid #d9e9e6;
+    border-radius: 27px;
+    background: #fff;
+    box-shadow: 0 30px 90px rgba(31, 61, 55, .25);
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto
+}
+
+.admin-settings-review>header {
+    min-height: 104px;
+    padding: 20px 22px;
+    border-bottom: 1px solid #e4eeec;
+    background: linear-gradient(110deg, #eff9f7, #fff 58%, #fff4f7);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 13px
+}
+
+.admin-settings-review>header>span {
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+    background: #e9f7f4;
+    color: #2f8983;
+    display: grid;
+    place-items: center
+}
+
+.admin-settings-review h2 {
+    margin: 4px 0 2px;
+    font-size: 20px
+}
+
+.admin-settings-review header p {
+    margin: 0;
+    color: #8c9b97;
+    font-size: 9px
+}
+
+.admin-settings-review header button {
+    width: 39px;
+    height: 39px;
+    border: 1px solid #dbe9e6;
+    border-radius: 12px;
+    background: #fff;
+    color: #58716b
+}
+
+.admin-settings-review__body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px
+}
+
+.admin-settings-review__notice {
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid #eedfbd;
+    border-radius: 13px;
+    background: #fff9ed;
+    color: #856f40;
+    display: flex;
+    align-items: center;
+    gap: 9px
+}
+
+.admin-settings-review__notice>span {
+    display: grid
+}
+
+.admin-settings-review__notice strong {
+    font-size: 9px
+}
+
+.admin-settings-review__notice small {
+    font-size: 8px
+}
+
+.admin-settings-review__changes {
+    margin-top: 10px;
+    display: grid;
+    gap: 7px
+}
+
+.admin-settings-review__changes article {
+    min-height: 62px;
+    padding: 9px 11px;
+    border: 1px solid #e0ebe9;
+    border-radius: 13px;
+    background: #fbfefd;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 10px
+}
+
+.admin-settings-review__changes article>div {
+    display: grid;
+    gap: 2px
+}
+
+.admin-settings-review__changes article>div:last-child {
+    text-align: right
+}
+
+.admin-settings-review__changes small {
+    color: #91a09c;
+    font-size: 8px
+}
+
+.admin-settings-review__changes strong {
+    font-size: 10px
+}
+
+.admin-settings-review__changes strong span {
+    color: #91a09c;
+    font-size: 7px;
+    font-weight: 600
+}
+
+.admin-settings-review>footer {
+    min-height: 72px;
+    padding: 12px 18px;
+    border-top: 1px solid #e2ecea;
+    background: #fbfdfc;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px
+}
+
+.admin-settings-review>footer button {
+    min-height: 43px;
+    padding: 0 14px;
+    border: 1px solid #d8e7e4;
+    border-radius: 13px;
+    background: #fff;
+    color: #526a64;
+    font-size: 9px;
+    font-weight: 780;
+    display: flex;
+    align-items: center;
+    gap: 7px
+}
+
+.admin-settings-review>footer button.is-primary {
+    border-color: #55b6b0;
+    background: linear-gradient(135deg, #62c3bd, #48aaa5);
+    color: #fff
+}
+
+.admin-settings-spin {
+    animation: admin-settings-spin .75s linear infinite
+}
+
+@keyframes admin-settings-spin {
+    to {
+        transform: rotate(360deg)
+    }
+}
+
+@media(max-width:1000px) {
+
+    .admin-settings-grid,
+    .admin-settings-metrics {
+        grid-template-columns: repeat(2, 1fr)
+    }
+}
+
+@media(max-width:700px) {
+    .admin-settings-hero {
+        min-height: 0;
+        padding: 24px 19px;
+        flex-direction: column;
+        align-items: stretch
+    }
+
+    .admin-settings-hero__actions,
+    .admin-settings-footerbar>div:last-child {
+        width: 100%
+    }
+
+    .admin-settings-hero__actions .admin-settings-button,
+    .admin-settings-footerbar>div:last-child .admin-settings-button {
+        flex: 1
+    }
+
+    .admin-settings-grid,
+    .admin-settings-metrics {
+        grid-template-columns: 1fr
+    }
+
+    .admin-settings-field {
+        grid-template-columns: 1fr
+    }
+
+    .admin-settings-field__input {
+        width: 100%
+    }
+
+    .admin-settings-footerbar {
+        align-items: stretch;
+        flex-direction: column
+    }
+
+    .admin-settings-modal-layer {
+        padding: 9px
+    }
+
+    .admin-settings-review {
+        width: calc(100vw - 18px);
+        max-height: calc(100vh - 18px)
+    }
+}
+.admin-settings-locked-field {
+  min-height: 78px;
+  padding: 13px 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(47, 119, 116, .09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .76);
+}
+
+.admin-settings-locked-field span,
+.admin-settings-locked-field strong,
+.admin-settings-locked-field small {
+  display: block;
+}
+
+.admin-settings-locked-field strong {
+  color: #536860;
+  font-size: 10px;
+}
+
+.admin-settings-locked-field small {
+  margin-top: 4px;
+  color: #91a09a;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.admin-settings-locked-field i {
+  min-width: 64px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  color: #6d837c;
+  background: #eef6f3;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-align: center;
+}

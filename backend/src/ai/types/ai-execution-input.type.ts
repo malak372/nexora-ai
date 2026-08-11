@@ -111,6 +111,17 @@ type AiExecutionBaseInput = {
   readonly aiModelId?: string;
 
   /**
+   * Allows an explicitly selected, otherwise routable model to bypass the
+   * short transient cooldown applied after timeout, rate-limit, network, or
+   * temporary provider failures.
+   *
+   * This must be used only by bounded recovery flows that already tried the
+   * currently healthy model set. It never bypasses isActive, supported-provider,
+   * health-status, or persistent consecutive-failure routing requirements.
+   */
+  readonly allowTemporaryModelCooldownBypass?: boolean;
+
+  /**
    * Optional model identifiers excluded from automatic routing.
    *
    * This is intended for bounded domain-level recovery flows that must avoid

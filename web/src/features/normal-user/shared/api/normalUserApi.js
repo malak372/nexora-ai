@@ -4,6 +4,12 @@
  * The shared auth storage helpers support both:
  * - localStorage when "Keep me signed in" is selected.
  * - sessionStorage for the current browser tab otherwise.
+ *
+ * Repeated concurrent GET requests are deduplicated at this shared layer so
+ * separate components can safely request the same resource without creating
+ * duplicate backend and Prisma work.
+ *
+ * @author Eman , Malak
  */
 
 import axios from 'axios';
@@ -23,6 +29,35 @@ const API_URL =
 const API_TIMEOUT_MS = Number(
     process.env.REACT_APP_API_TIMEOUT_MS || 20000,
 );
+
+function warmApiConnection() {
+    if (typeof document === 'undefined') return;
+
+    try {
+        const apiOrigin = new URL(API_URL, window.location.origin).origin;
+        const existing = document.head.querySelector(
+            `link[data-voxidence-api-preconnect="${apiOrigin}"]`,
+        );
+
+        if (existing) return;
+
+        const preconnect = document.createElement('link');
+        preconnect.rel = 'preconnect';
+        preconnect.href = apiOrigin;
+        preconnect.crossOrigin = 'anonymous';
+        preconnect.dataset.voxidenceApiPreconnect = apiOrigin;
+        document.head.appendChild(preconnect);
+
+        const dnsPrefetch = document.createElement('link');
+        dnsPrefetch.rel = 'dns-prefetch';
+        dnsPrefetch.href = apiOrigin;
+        document.head.appendChild(dnsPrefetch);
+    } catch {
+        // Connection warming is only a performance optimization.
+    }
+}
+
+warmApiConnection();
 
 export const normalUserApi = axios.create({
     baseURL: API_URL,
@@ -111,13 +146,86 @@ normalUserApi.interceptors.response.use(
             clearAuthSession();
 
             window.dispatchEvent(
-                new CustomEvent('nexora:session-expired'),
+                new CustomEvent('voxidence :session-expired'),
             );
 
             return Promise.reject(refreshError);
         }
     },
 );
+
+const inFlightGetRequests = new Map();
+const rawGet = normalUserApi.get.bind(normalUserApi);
+
+function normalizeForCache(value) {
+    if (Array.isArray(value)) {
+        return value.map(normalizeForCache);
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.keys(value)
+            .sort()
+            .reduce((result, key) => {
+                const nextValue = value[key];
+
+                if (nextValue !== undefined) {
+                    result[key] = normalizeForCache(nextValue);
+                }
+
+                return result;
+            }, {});
+    }
+
+    return value;
+}
+
+function createGetRequestKey(url, config = {}) {
+    const accessToken = getAccessToken() || '';
+    const tokenSuffix = accessToken ? accessToken.slice(-24) : 'guest';
+
+    return JSON.stringify({
+        url,
+        params: normalizeForCache(config.params || {}),
+        responseType: config.responseType || 'json',
+        token: tokenSuffix,
+    });
+}
+
+/**
+ * Deduplicates only overlapping JSON GET requests.
+ *
+ * It does not cache completed responses, so data freshness and mutation
+ * semantics remain unchanged. Requests carrying an AbortSignal or non-JSON
+ * response type stay independent because sharing those requests can change
+ * cancellation or download behavior.
+ */
+normalUserApi.get = (url, config = {}) => {
+    const responseType = config.responseType || 'json';
+    const canDedupe =
+        config.dedupe !== false &&
+        !config.signal &&
+        responseType === 'json';
+
+    if (!canDedupe) {
+        return rawGet(url, config);
+    }
+
+    const key = createGetRequestKey(url, config);
+    const existingRequest = inFlightGetRequests.get(key);
+
+    if (existingRequest) {
+        return existingRequest;
+    }
+
+    const request = rawGet(url, config).finally(() => {
+        if (inFlightGetRequests.get(key) === request) {
+            inFlightGetRequests.delete(key);
+        }
+    });
+
+    inFlightGetRequests.set(key, request);
+    return request;
+};
 
 export const extractApiData = (response) =>
     response?.data?.data ?? response?.data;

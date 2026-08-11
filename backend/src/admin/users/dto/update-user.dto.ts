@@ -9,7 +9,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { AccountStatus, UserType } from '@prisma/client';
+import { UserType } from '@prisma/client';
 
 /**
  * Editable user fields exposed to administrators.
@@ -20,6 +20,8 @@ import { AccountStatus, UserType } from '@prisma/client';
  * - Role is intentionally not editable to prevent accidental privilege escalation.
  * - Credit balance is intentionally not editable here; administrators must use
  *   the audited credit-adjustment endpoint so the credit ledger stays consistent.
+ * - Account status is not edited directly. The credit balance service keeps
+ *   NORMAL / PREMIUM synchronized with the committed balance.
  *
  * Used by:
  * PATCH /admin/users/:id
@@ -35,9 +37,12 @@ export class UpdateUserDto {
   @IsEnum(UserType)
   userType?: UserType;
 
+
   @IsOptional()
-  @IsEnum(AccountStatus)
-  accountStatus?: AccountStatus;
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  freeGenerationsUsed?: number;
 
   @IsOptional()
   @IsInt()

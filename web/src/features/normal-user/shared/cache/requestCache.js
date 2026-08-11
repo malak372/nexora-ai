@@ -1,19 +1,24 @@
 /**
- * Session-scoped cache for slow authenticated GET requests.
+ * Session-scoped cache for authenticated GET requests.
  *
- * The cache uses both memory and sessionStorage. Each key also owns a version
- * number so an HTTP request started before invalidation cannot write stale data
- * back into the cache after a payment, unlock, publication, or profile change.
+ * Memory is always updated synchronously so the next navigation can reuse the
+ * result immediately. sessionStorage persistence is deferred until the browser
+ * is idle, preventing large JSON.stringify/sessionStorage writes from delaying
+ * the first render after a network response arrives.
  *
- * @author Nexora Team
+ * @author Eman , Malak
  */
 
 const memoryCache = new Map();
 const pendingRequests = new Map();
 const cacheVersions = new Map();
-const STORAGE_PREFIX = 'nexora:request-cache:';
+const pendingStorageWrites = new Map();
+const STORAGE_PREFIX = 'voxidence :request-cache:';
+const MAX_PERSISTED_ENTRY_CHARS = 1_500_000;
 
 function safeSessionStorage() {
+  if (typeof window === 'undefined') return null;
+
   try {
     return window.sessionStorage;
   } catch {
@@ -33,18 +38,50 @@ function readStoredEntry(key) {
   }
 }
 
-function writeStoredEntry(key, entry) {
+function scheduleIdleWork(callback) {
+  if (typeof window === 'undefined') return;
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(callback, { timeout: 1200 });
+    return;
+  }
+
+  window.setTimeout(callback, 0);
+}
+
+function writeStoredEntryNow(key, entry) {
   const storage = safeSessionStorage();
   if (!storage) return;
 
   try {
-    storage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify(entry));
+    const serialized = JSON.stringify(entry);
+
+    if (serialized.length > MAX_PERSISTED_ENTRY_CHARS) {
+      storage.removeItem(`${STORAGE_PREFIX}${key}`);
+      return;
+    }
+
+    storage.setItem(`${STORAGE_PREFIX}${key}`, serialized);
   } catch {
-    // Storage can be unavailable or full. Memory caching still works.
+    // Memory caching remains available if browser storage is unavailable/full.
   }
 }
 
+function writeStoredEntry(key, entry) {
+  pendingStorageWrites.set(key, entry);
+
+  scheduleIdleWork(() => {
+    const newestEntry = pendingStorageWrites.get(key);
+    if (!newestEntry) return;
+
+    pendingStorageWrites.delete(key);
+    writeStoredEntryNow(key, newestEntry);
+  });
+}
+
 function removeStoredEntry(key) {
+  pendingStorageWrites.delete(key);
+
   const storage = safeSessionStorage();
   if (!storage) return;
 
@@ -79,9 +116,7 @@ function matchesPrefix(key, prefix) {
   return key === prefix || key.startsWith(prefix);
 }
 
-/**
- * Creates a deterministic key from a namespace and request parameters.
- */
+/** Creates a deterministic key from a namespace and request parameters. */
 export function createRequestCacheKey(namespace, params = {}) {
   const normalized = Object.keys(params)
     .sort()
@@ -101,7 +136,7 @@ export function createRequestCacheKey(namespace, params = {}) {
  *
  * A request captures the current cache version. When the key is invalidated
  * while that request is still running, its response is returned to the caller
- * but is deliberately not stored, preventing stale data from reappearing.
+ * but is not stored, preventing stale data from reappearing.
  */
 export async function cachedRequest(
   key,
@@ -133,7 +168,11 @@ export async function cachedRequest(
       };
 
       memoryCache.set(key, entry);
-      if (persist) writeStoredEntry(key, entry);
+
+      if (persist) {
+        writeStoredEntry(key, entry);
+      }
+
       return value;
     })
     .catch((error) => {
@@ -166,6 +205,7 @@ export function invalidateRequestCache(prefix) {
     ...memoryCache.keys(),
     ...pendingRequests.keys(),
     ...cacheVersions.keys(),
+    ...pendingStorageWrites.keys(),
   ]);
 
   const storage = safeSessionStorage();
@@ -188,12 +228,13 @@ export function invalidateRequestCache(prefix) {
   }
 }
 
-/** Clears all Nexora request-cache entries, normally during sign out. */
+/** Clears all request-cache entries, normally during sign out. */
 export function clearRequestCache() {
   const knownKeys = new Set([
     ...memoryCache.keys(),
     ...pendingRequests.keys(),
     ...cacheVersions.keys(),
+    ...pendingStorageWrites.keys(),
   ]);
 
   const storage = safeSessionStorage();
@@ -211,4 +252,5 @@ export function clearRequestCache() {
 
   memoryCache.clear();
   pendingRequests.clear();
+  pendingStorageWrites.clear();
 }

@@ -26,23 +26,13 @@ import { UpdateDataSourceStatusDto } from './dto/update-data-source-status.dto';
 import { UpdateDataSourceDto } from './dto/update-data-source.dto';
 
 /**
- * Service responsible for DataSource administration,
- * availability, and collector-registry synchronization.
+ * Service responsible for DataSource administration, availability, and
+ * collector-registry safety checks.
  *
- * Responsibilities:
- * - Create source metadata.
- * - Update source metadata.
- * - Activate and deactivate sources.
- * - Expose operational sources to registered users.
- * - Synchronize isImplemented with CollectorsFactory.
- * - Prevent activating unavailable collectors.
- * - Create administrative audit logs.
- *
- * This service does not:
- * - Run collection jobs.
- * - Call external APIs.
- * - Store API credentials.
- * - Delete historical collection data.
+ * isImplemented is an administrator-controlled enablement flag. A source can
+ * only be marked implemented when a matching runtime collector exists.
+ * runtimeImplemented is always derived from CollectorsFactory and is returned
+ * separately to the frontend.
  *
  * @author Malak
  */
@@ -50,29 +40,14 @@ import { UpdateDataSourceDto } from './dto/update-data-source.dto';
 export class DataSourcesService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
-
     private readonly collectorsFactory: CollectorsFactory,
-
     private readonly auditService: AuditService,
   ) {}
 
-  /**
-   * Synchronizes database implementation states when
-   * the application module starts.
-   *
-   * This ensures DataSource.isImplemented reflects the
-   * collectors available in the deployed backend.
-   */
   async onModuleInit(): Promise<void> {
     await this.synchronizeImplementationStates();
   }
 
-  /**
-   * Creates a new data-source record.
-   *
-   * @param dto Data-source metadata.
-   * @param adminId Administrator performing the operation.
-   */
   async create(dto: CreateDataSourceDto, adminId: string) {
     const key = this.normalizeSourceKey(dto.key);
 
@@ -87,36 +62,31 @@ export class DataSourcesService implements OnModuleInit {
       );
     }
 
-    const isImplemented = this.collectorsFactory.isImplemented(key);
+    const runtimeImplemented = this.collectorsFactory.isImplemented(key);
+
+    const requestedImplementationState =
+      dto.isImplemented ?? runtimeImplemented;
 
     const requestedActiveState = dto.isActive ?? false;
 
-    if (requestedActiveState && !isImplemented) {
-      throw new BadRequestException(
-        `Data source "${key}" cannot be activated because its collector is not implemented.`,
-      );
-    }
+    this.assertOperationalState({
+      key,
+      runtimeImplemented,
+      isImplemented: requestedImplementationState,
+      isActive: requestedActiveState,
+    });
 
     const dataSource = await this.prisma.dataSource.create({
       data: {
         key,
-
         displayName: dto.displayName.trim(),
-
         description: this.normalizeOptionalText(dto.description),
-
         isActive: requestedActiveState,
-
-        isImplemented,
-
+        isImplemented: requestedImplementationState,
         supportsPosts: dto.supportsPosts ?? true,
-
         supportsComments: dto.supportsComments ?? false,
-
         supportsRegion: dto.supportsRegion ?? false,
-
         supportsLanguage: dto.supportsLanguage ?? false,
-
         ...(dto.configuration !== undefined && {
           configuration: dto.configuration as Prisma.InputJsonValue,
         }),
@@ -125,25 +95,17 @@ export class DataSourcesService implements OnModuleInit {
 
     await this.auditService.createLog({
       actorId: adminId,
-
       action: AuditAction.ADMIN_CREATE_DATA_SOURCE,
-
       targetType: AuditTargetType.DATA_SOURCE,
-
       targetId: dataSource.id,
-
       newValue: this.toAuditSnapshot(dataSource),
     });
 
     return this.mapDataSourceResponse(dataSource);
   }
 
-  /**
-   * Returns a paginated administrative list.
-   */
   async findAllForAdmin(query: GetDataSourcesQueryDto) {
     const { skip, take, page, limit } = buildPagination(query);
-
     const where = this.buildWhere(query);
 
     const [data, total] = await Promise.all([
@@ -151,13 +113,11 @@ export class DataSourcesService implements OnModuleInit {
         where,
         skip,
         take,
-
         orderBy: buildOrderBy(
           query,
           ['key', 'displayName', 'createdAt', 'updatedAt'] as const,
           'displayName',
         ),
-
         include: {
           _count: {
             select: {
@@ -174,38 +134,82 @@ export class DataSourcesService implements OnModuleInit {
     ]);
 
     return {
-      data: data.map((dataSource) => this.mapDataSourceResponse(dataSource)),
+      data: data.map((dataSource) =>
+        this.mapDataSourceResponse(dataSource),
+      ),
 
       meta: {
         page,
         limit,
         total,
-
         totalPages: calculateTotalPages(total, limit),
       },
     };
   }
 
-  /**
-   * Returns all sources that registered users may select.
-   *
-   * A source is available only when:
-   * - isActive is true.
-   * - isImplemented is true.
-   * - An operational collector exists at runtime.
-   */
+  async getAdminSummary() {
+    const dataSources = await this.prisma.dataSource.findMany({
+      select: {
+        key: true,
+        isActive: true,
+        isImplemented: true,
+      },
+    });
+
+    let active = 0;
+    let implemented = 0;
+    let runtimeImplemented = 0;
+    let available = 0;
+
+    for (const source of dataSources) {
+      const runtime =
+        this.collectorsFactory.isImplemented(source.key);
+
+      if (source.isActive) {
+        active += 1;
+      }
+
+      if (source.isImplemented) {
+        implemented += 1;
+      }
+
+      if (runtime) {
+        runtimeImplemented += 1;
+      }
+
+      if (
+        source.isActive &&
+        source.isImplemented &&
+        runtime
+      ) {
+        available += 1;
+      }
+    }
+
+    return {
+      total: dataSources.length,
+      active,
+      inactive: dataSources.length - active,
+      implemented,
+      implementationDisabled:
+        dataSources.length - implemented,
+      runtimeImplemented,
+      available,
+    };
+  }
+
   async findAvailable() {
-    const implementedKeys = this.collectorsFactory.getImplementedSourceKeys();
+    const implementedKeys =
+      this.collectorsFactory.getImplementedSourceKeys();
 
     if (!implementedKeys.length) {
       return [];
     }
 
-    const dataSources = await this.prisma.dataSource.findMany({
+    return this.prisma.dataSource.findMany({
       where: {
         isActive: true,
         isImplemented: true,
-
         key: {
           in: implementedKeys,
         },
@@ -216,7 +220,6 @@ export class DataSourcesService implements OnModuleInit {
         key: true,
         displayName: true,
         description: true,
-
         supportsPosts: true,
         supportsComments: true,
         supportsRegion: true,
@@ -227,135 +230,158 @@ export class DataSourcesService implements OnModuleInit {
         displayName: 'asc',
       },
     });
-
-    return dataSources;
   }
 
-  /**
-   * Returns one data source by database identifier.
-   */
   async findOneForAdmin(id: string) {
-    const dataSource = await this.prisma.dataSource.findUnique({
-      where: { id },
+    const dataSource =
+      await this.prisma.dataSource.findUnique({
+        where: {
+          id,
+        },
 
-      include: {
-        _count: {
-          select: {
-            collectionJobSources: true,
-            socialPosts: true,
+        include: {
+          _count: {
+            select: {
+              collectionJobSources: true,
+              socialPosts: true,
+            },
           },
         },
-      },
-    });
+      });
 
     if (!dataSource) {
-      throw new NotFoundException('Data source was not found.');
+      throw new NotFoundException(
+        'Data source was not found.',
+      );
     }
 
     return this.mapDataSourceResponse(dataSource);
   }
 
-  /**
-   * Updates editable data-source metadata.
-   */
-  async update(id: string, dto: UpdateDataSourceDto, adminId: string) {
-    const existing = await this.findEntityOrThrow(id);
+  async update(
+    id: string,
+    dto: UpdateDataSourceDto,
+    adminId: string,
+  ) {
+    const existing =
+      await this.findEntityOrThrow(id);
 
-    const updated = await this.prisma.dataSource.update({
-      where: { id },
+    const runtimeImplemented =
+      this.collectorsFactory.isImplemented(
+        existing.key,
+      );
 
-      data: {
-        ...(dto.displayName !== undefined && {
-          displayName: dto.displayName.trim(),
-        }),
+    const nextImplemented =
+      dto.isImplemented ?? existing.isImplemented;
 
-        ...(dto.description !== undefined && {
-          description: this.normalizeOptionalText(dto.description),
-        }),
+    const nextActive =
+      dto.isActive ?? existing.isActive;
 
-        ...(dto.supportsPosts !== undefined && {
-          supportsPosts: dto.supportsPosts,
-        }),
-
-        ...(dto.supportsComments !== undefined && {
-          supportsComments: dto.supportsComments,
-        }),
-
-        ...(dto.supportsRegion !== undefined && {
-          supportsRegion: dto.supportsRegion,
-        }),
-
-        ...(dto.supportsLanguage !== undefined && {
-          supportsLanguage: dto.supportsLanguage,
-        }),
-
-        ...(dto.configuration !== undefined && {
-          configuration: dto.configuration as Prisma.InputJsonValue,
-        }),
-
-        /*
-         * Keep the database state synchronized with
-         * the deployed collector registry.
-         */
-        isImplemented: this.collectorsFactory.isImplemented(existing.key),
-      },
+    this.assertOperationalState({
+      key: existing.key,
+      runtimeImplemented,
+      isImplemented: nextImplemented,
+      isActive: nextActive,
     });
+
+    const updated =
+      await this.prisma.dataSource.update({
+        where: {
+          id,
+        },
+
+        data: {
+          ...(dto.displayName !== undefined && {
+            displayName: dto.displayName.trim(),
+          }),
+
+          ...(dto.description !== undefined && {
+            description:
+              this.normalizeOptionalText(
+                dto.description,
+              ),
+          }),
+
+          ...(dto.isActive !== undefined && {
+            isActive: dto.isActive,
+          }),
+
+          ...(dto.isImplemented !== undefined && {
+            isImplemented: dto.isImplemented,
+          }),
+
+          ...(dto.supportsPosts !== undefined && {
+            supportsPosts: dto.supportsPosts,
+          }),
+
+          ...(dto.supportsComments !== undefined && {
+            supportsComments:
+              dto.supportsComments,
+          }),
+
+          ...(dto.supportsRegion !== undefined && {
+            supportsRegion: dto.supportsRegion,
+          }),
+
+          ...(dto.supportsLanguage !== undefined && {
+            supportsLanguage:
+              dto.supportsLanguage,
+          }),
+
+          ...(dto.configuration !== undefined && {
+            configuration:
+              dto.configuration as Prisma.InputJsonValue,
+          }),
+        },
+      });
 
     await this.auditService.createLog({
       actorId: adminId,
-
-      action: AuditAction.ADMIN_UPDATE_DATA_SOURCE,
-
+      action:
+        AuditAction.ADMIN_UPDATE_DATA_SOURCE,
       targetType: AuditTargetType.DATA_SOURCE,
-
       targetId: id,
-
       oldValue: this.toAuditSnapshot(existing),
-
       newValue: this.toAuditSnapshot(updated),
     });
 
     return this.mapDataSourceResponse(updated);
   }
 
-  /**
-   * Activates or deactivates a data source.
-   *
-   * Activation requires an operational collector.
-   */
   async updateStatus(
     id: string,
     dto: UpdateDataSourceStatusDto,
     adminId: string,
   ) {
-    const existing = await this.findEntityOrThrow(id);
+    const existing =
+      await this.findEntityOrThrow(id);
 
-    const runtimeImplemented = this.collectorsFactory.isImplemented(
-      existing.key,
-    );
-
-    if (dto.isActive && !runtimeImplemented) {
-      throw new BadRequestException(
-        `Data source "${existing.key}" cannot be activated because its collector is not implemented.`,
+    const runtimeImplemented =
+      this.collectorsFactory.isImplemented(
+        existing.key,
       );
-    }
 
-    if (
-      existing.isActive === dto.isActive &&
-      existing.isImplemented === runtimeImplemented
-    ) {
+    this.assertOperationalState({
+      key: existing.key,
+      runtimeImplemented,
+      isImplemented: existing.isImplemented,
+      isActive: dto.isActive,
+    });
+
+    if (existing.isActive === dto.isActive) {
       return this.mapDataSourceResponse(existing);
     }
 
-    const updated = await this.prisma.dataSource.update({
-      where: { id },
+    const updated =
+      await this.prisma.dataSource.update({
+        where: {
+          id,
+        },
 
-      data: {
-        isActive: dto.isActive,
-
-        isImplemented: runtimeImplemented,
-      },
-    });
+        data: {
+          isActive: dto.isActive,
+        },
+      });
 
     await this.auditService.createLog({
       actorId: adminId,
@@ -365,11 +391,9 @@ export class DataSourcesService implements OnModuleInit {
         : AuditAction.ADMIN_DEACTIVATE_DATA_SOURCE,
 
       targetType: AuditTargetType.DATA_SOURCE,
-
       targetId: id,
 
       oldValue: this.toAuditSnapshot(existing),
-
       newValue: this.toAuditSnapshot(updated),
     });
 
@@ -377,93 +401,108 @@ export class DataSourcesService implements OnModuleInit {
   }
 
   /**
-   * Manually synchronizes all database implementation states.
+   * Safety synchronization with the deployed collector registry.
    *
-   * Useful after adding or removing a collector from the backend.
+   * This method never turns an administrator-disabled implementation back on.
+   * It only forces impossible states off when a runtime collector is missing.
    */
   async synchronizeImplementationStates() {
-    const dataSources = await this.prisma.dataSource.findMany({
-      select: {
-        id: true,
-        key: true,
-        isImplemented: true,
-        isActive: true,
+    const dataSources =
+      await this.prisma.dataSource.findMany({
+        select: {
+          id: true,
+          key: true,
+          isImplemented: true,
+          isActive: true,
+        },
+      });
+
+    const sourcesToDisable = dataSources.filter(
+      (source) => {
+        const runtimeImplemented =
+          this.collectorsFactory.isImplemented(
+            source.key,
+          );
+
+        return (
+          !runtimeImplemented &&
+          (source.isImplemented ||
+            source.isActive)
+        );
       },
-    });
+    );
+
+    const automaticallyDeactivatedCount =
+      sourcesToDisable.filter(
+        (source) => source.isActive,
+      ).length;
 
     let updatedCount = 0;
-    let automaticallyDeactivatedCount = 0;
 
-    await this.prisma.$transaction(async (transaction) => {
-      for (const source of dataSources) {
-        const runtimeImplemented = this.collectorsFactory.isImplemented(
-          source.key,
-        );
-
-        const mustDeactivate = source.isActive && !runtimeImplemented;
-
-        if (source.isImplemented === runtimeImplemented && !mustDeactivate) {
-          continue;
-        }
-
-        await transaction.dataSource.update({
+    if (sourcesToDisable.length > 0) {
+      const result =
+        await this.prisma.dataSource.updateMany({
           where: {
-            id: source.id,
+            id: {
+              in: sourcesToDisable.map(
+                (source) => source.id,
+              ),
+            },
           },
 
           data: {
-            isImplemented: runtimeImplemented,
-
-            ...(mustDeactivate && {
-              isActive: false,
-            }),
+            isImplemented: false,
+            isActive: false,
           },
         });
 
-        updatedCount += 1;
-
-        if (mustDeactivate) {
-          automaticallyDeactivatedCount += 1;
-        }
-      }
-    });
+      updatedCount = result.count;
+    }
 
     return {
       totalDataSources: dataSources.length,
-
       updatedCount,
-
       automaticallyDeactivatedCount,
 
-      implementedSourceKeys: this.collectorsFactory.getImplementedSourceKeys(),
+      implementedSourceKeys:
+        this.collectorsFactory.getImplementedSourceKeys(),
 
-      registeredSourceKeys: this.collectorsFactory.getRegisteredSourceKeys(),
+      registeredSourceKeys:
+        this.collectorsFactory.getRegisteredSourceKeys(),
     };
   }
 
-  /**
-   * Resolves an active and implemented DataSource by key.
-   *
-   * Used internally by the collection pipeline.
-   */
-  async findAvailableByKey(sourceKey: string) {
-    const key = this.normalizeSourceKey(sourceKey);
+  async findAvailableByKey(
+    sourceKey: string,
+  ) {
+    const key =
+      this.normalizeSourceKey(sourceKey);
 
-    if (!this.collectorsFactory.isImplemented(key)) {
+    if (
+      !this.collectorsFactory.isImplemented(key)
+    ) {
       throw new BadRequestException(
         `The "${key}" collector is not implemented.`,
       );
     }
 
-    const dataSource = await this.prisma.dataSource.findUnique({
-      where: { key },
-    });
+    const dataSource =
+      await this.prisma.dataSource.findUnique({
+        where: {
+          key,
+        },
+      });
 
     if (!dataSource) {
-      throw new NotFoundException(`Data source "${key}" is not configured.`);
+      throw new NotFoundException(
+        `Data source "${key}" is not configured.`,
+      );
     }
 
-    if (!dataSource.isActive || !dataSource.isImplemented) {
+    if (
+      !dataSource.isActive ||
+      !dataSource.isImplemented
+    ) {
       throw new BadRequestException(
         `Data source "${key}" is currently unavailable.`,
       );
@@ -472,21 +511,19 @@ export class DataSourcesService implements OnModuleInit {
     return dataSource;
   }
 
-  /**
-   * Builds Prisma filters.
-   */
   private buildWhere(
     query: GetDataSourcesQueryDto,
   ): Prisma.DataSourceWhereInput {
-    const dateFilter = buildDateFilter(query);
+    const dateFilter =
+      buildDateFilter(query);
 
-    const search = query.search?.trim();
+    const search =
+      query.search?.trim();
 
     return {
       ...(query.key?.trim() && {
         key: {
           contains: query.key.trim(),
-
           mode: 'insensitive',
         },
       }),
@@ -496,23 +533,30 @@ export class DataSourcesService implements OnModuleInit {
       }),
 
       ...(query.isImplemented !== undefined && {
-        isImplemented: query.isImplemented,
+        isImplemented:
+          query.isImplemented,
       }),
 
       ...(query.supportsPosts !== undefined && {
-        supportsPosts: query.supportsPosts,
+        supportsPosts:
+          query.supportsPosts,
       }),
 
-      ...(query.supportsComments !== undefined && {
-        supportsComments: query.supportsComments,
+      ...(query.supportsComments !==
+        undefined && {
+        supportsComments:
+          query.supportsComments,
       }),
 
       ...(query.supportsRegion !== undefined && {
-        supportsRegion: query.supportsRegion,
+        supportsRegion:
+          query.supportsRegion,
       }),
 
-      ...(query.supportsLanguage !== undefined && {
-        supportsLanguage: query.supportsLanguage,
+      ...(query.supportsLanguage !==
+        undefined && {
+        supportsLanguage:
+          query.supportsLanguage,
       }),
 
       ...(dateFilter ?? {}),
@@ -542,24 +586,59 @@ export class DataSourcesService implements OnModuleInit {
     };
   }
 
-  /**
-   * Returns one DataSource entity or throws.
-   */
-  private async findEntityOrThrow(id: string) {
-    const dataSource = await this.prisma.dataSource.findUnique({
-      where: { id },
-    });
+  private async findEntityOrThrow(
+    id: string,
+  ) {
+    const dataSource =
+      await this.prisma.dataSource.findUnique({
+        where: {
+          id,
+        },
+      });
 
     if (!dataSource) {
-      throw new NotFoundException('Data source was not found.');
+      throw new NotFoundException(
+        'Data source was not found.',
+      );
     }
 
     return dataSource;
   }
 
-  /**
-   * Maps a DataSource into an administrative response.
-   */
+  private assertOperationalState(input: {
+    key: string;
+    runtimeImplemented: boolean;
+    isImplemented: boolean;
+    isActive: boolean;
+  }) {
+    if (
+      input.isImplemented &&
+      !input.runtimeImplemented
+    ) {
+      throw new BadRequestException(
+        `Data source "${input.key}" cannot be marked implemented because no deployed collector is registered for that key.`,
+      );
+    }
+
+    if (
+      input.isActive &&
+      !input.isImplemented
+    ) {
+      throw new BadRequestException(
+        `Data source "${input.key}" cannot be activated while its implementation switch is disabled.`,
+      );
+    }
+
+    if (
+      input.isActive &&
+      !input.runtimeImplemented
+    ) {
+      throw new BadRequestException(
+        `Data source "${input.key}" cannot be activated because its runtime collector is unavailable.`,
+      );
+    }
+  }
+
   private mapDataSourceResponse<
     T extends {
       id: string;
@@ -575,58 +654,62 @@ export class DataSourcesService implements OnModuleInit {
       configuration: Prisma.JsonValue | null;
       createdAt: Date;
       updatedAt: Date;
+
       _count?: {
         collectionJobSources: number;
         socialPosts: number;
       };
     },
   >(dataSource: T) {
-    const runtimeImplemented = this.collectorsFactory.isImplemented(
-      dataSource.key,
-    );
+    const runtimeImplemented =
+      this.collectorsFactory.isImplemented(
+        dataSource.key,
+      );
 
     return {
       id: dataSource.id,
       key: dataSource.key,
-
       displayName: dataSource.displayName,
-
       description: dataSource.description,
-
       isActive: dataSource.isActive,
-
       isImplemented: dataSource.isImplemented,
-
       runtimeImplemented,
 
       isAvailable:
-        dataSource.isActive && dataSource.isImplemented && runtimeImplemented,
+        dataSource.isActive &&
+        dataSource.isImplemented &&
+        runtimeImplemented,
 
-      supportsPosts: dataSource.supportsPosts,
+      supportsPosts:
+        dataSource.supportsPosts,
 
-      supportsComments: dataSource.supportsComments,
+      supportsComments:
+        dataSource.supportsComments,
 
-      supportsRegion: dataSource.supportsRegion,
+      supportsRegion:
+        dataSource.supportsRegion,
 
-      supportsLanguage: dataSource.supportsLanguage,
+      supportsLanguage:
+        dataSource.supportsLanguage,
 
-      configuration: dataSource.configuration,
+      configuration:
+        dataSource.configuration,
 
       usage: {
-        collectionJobs: dataSource._count?.collectionJobSources ?? 0,
+        collectionJobs:
+          dataSource._count
+            ?.collectionJobSources ?? 0,
 
-        socialPosts: dataSource._count?.socialPosts ?? 0,
+        socialPosts:
+          dataSource._count
+            ?.socialPosts ?? 0,
       },
 
       createdAt: dataSource.createdAt,
-
       updatedAt: dataSource.updatedAt,
     };
   }
 
-  /**
-   * Produces a safe audit snapshot.
-   */
   private toAuditSnapshot(dataSource: {
     id: string;
     key: string;
@@ -645,42 +728,38 @@ export class DataSourcesService implements OnModuleInit {
     return {
       id: dataSource.id,
       key: dataSource.key,
-
       displayName: dataSource.displayName,
-
       description: dataSource.description,
-
       isActive: dataSource.isActive,
-
       isImplemented: dataSource.isImplemented,
-
-      supportsPosts: dataSource.supportsPosts,
-
-      supportsComments: dataSource.supportsComments,
-
-      supportsRegion: dataSource.supportsRegion,
-
-      supportsLanguage: dataSource.supportsLanguage,
-
-      configuration: dataSource.configuration,
-
-      createdAt: dataSource.createdAt.toISOString(),
-
-      updatedAt: dataSource.updatedAt.toISOString(),
+      supportsPosts:
+        dataSource.supportsPosts,
+      supportsComments:
+        dataSource.supportsComments,
+      supportsRegion:
+        dataSource.supportsRegion,
+      supportsLanguage:
+        dataSource.supportsLanguage,
+      configuration:
+        dataSource.configuration,
+      createdAt:
+        dataSource.createdAt.toISOString(),
+      updatedAt:
+        dataSource.updatedAt.toISOString(),
     };
   }
 
-  /**
-   * Normalizes a backend registry key.
-   */
-  private normalizeSourceKey(sourceKey: string): string {
-    return sourceKey.trim().toLowerCase();
+  private normalizeSourceKey(
+    sourceKey: string,
+  ): string {
+    return sourceKey
+      .trim()
+      .toLowerCase();
   }
 
-  /**
-   * Normalizes optional text.
-   */
-  private normalizeOptionalText(value?: string): string | null {
+  private normalizeOptionalText(
+    value?: string,
+  ): string | null {
     const normalized = value?.trim();
 
     return normalized || null;

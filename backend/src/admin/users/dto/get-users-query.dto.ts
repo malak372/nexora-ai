@@ -1,5 +1,5 @@
 import { IsBooleanString, IsEnum, IsOptional } from 'class-validator';
-import { AccountStatus, UserRole, UserType } from '@prisma/client';
+import { AccountStatus, UserType } from '@prisma/client';
 import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
 
 /**
@@ -16,7 +16,6 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * - Search.
  * - Date range filtering.
  * - Sorting.
- * - Filtering by role.
  * - Filtering by account status.
  * - Filtering by user type.
  * - Filtering by active status.
@@ -24,16 +23,6 @@ import { ListQueryDto } from '../../../utilities/dto/list-query.dto';
  * @author Malak
  */
 export class GetUsersQueryDto extends ListQueryDto {
-  /**
-   * Optional user role filter.
-   *
-   * Accepted values:
-   * - USER
-   * - ADMIN
-   */
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
 
   /**
    * Optional account status filter.

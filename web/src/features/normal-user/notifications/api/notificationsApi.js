@@ -2,9 +2,14 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
-import { invalidateRequestCache } from '../../shared/cache/requestCache';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
 const NOTIFICATIONS_CACHE_NAMESPACE = 'notifications';
+const NOTIFICATIONS_CACHE_TTL_MS = 60 * 1000;
 
 function normalizeNotificationItem(item) {
   if (!item || typeof item !== 'object') return null;
@@ -92,16 +97,28 @@ function normalizeNotificationsResponse(response) {
 }
 
 export async function getNotifications(params = {}, options = {}) {
+  const cacheKey = createRequestCacheKey(
+    NOTIFICATIONS_CACHE_NAMESPACE,
+    params,
+  );
+
   try {
-    if (options.forceRefresh) {
-      invalidateRequestCache(`${NOTIFICATIONS_CACHE_NAMESPACE}:`);
-    }
+    return await cachedRequest(
+      cacheKey,
+      async () => {
+        const response = await normalUserApi.get('/users/notifications', {
+          params,
+        });
 
-    const response = await normalUserApi.get('/users/notifications', {
-      params,
-    });
-
-    return normalizeNotificationsResponse(response);
+        return normalizeNotificationsResponse(response);
+      },
+      {
+        ttlMs: NOTIFICATIONS_CACHE_TTL_MS,
+        force: Boolean(options.forceRefresh),
+        persist: true,
+        allowStaleOnError: true,
+      },
+    );
   } catch (error) {
     const message = getApiErrorMessage(
       error,
@@ -124,6 +141,7 @@ export async function markNotificationRead(notificationId) {
     );
 
     invalidateRequestCache(`${NOTIFICATIONS_CACHE_NAMESPACE}:`);
+    invalidateRequestCache('dashboard-summary:');
     return response?.data?.data ?? response?.data;
   } catch (error) {
     throw new Error(
@@ -137,6 +155,7 @@ export async function markAllNotificationsRead() {
     const response = await normalUserApi.patch('/users/notifications/read-all');
 
     invalidateRequestCache(`${NOTIFICATIONS_CACHE_NAMESPACE}:`);
+    invalidateRequestCache('dashboard-summary:');
     return response?.data?.data ?? response?.data;
   } catch (error) {
     throw new Error(

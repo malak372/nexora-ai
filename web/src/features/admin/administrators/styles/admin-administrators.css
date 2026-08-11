@@ -1,0 +1,665 @@
+.admin-administrators-page {
+  min-width: 0;
+  gap: 16px;
+  color: #4a615a;
+}
+
+.admin-administrators-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-administrators-hero__actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-administrators-stats .admin-stat {
+  min-height: 118px;
+}
+
+.admin-administrator-current-stat strong {
+  max-width: 170px;
+  overflow: hidden;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-administrators-feedback {
+  min-height: 42px;
+  padding: 0 13px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 13px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.admin-administrators-feedback.is-error {
+  color: #a45569;
+  border: 1px solid rgba(217, 143, 160, .28);
+  background: #fff2f5;
+}
+
+.admin-administrators-feedback.is-success {
+  color: #397a70;
+  border: 1px solid rgba(92, 189, 185, .18);
+  background: #edf8f5;
+}
+
+.admin-administrators-feedback button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.admin-panel--administrators {
+  position: relative;
+  border-radius: 25px;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(92, 189, 185, .07), transparent 20%),
+    linear-gradient(145deg, rgba(255, 253, 252, .96), rgba(250, 253, 251, .91));
+  box-shadow: 0 18px 48px rgba(47, 119, 116, .06);
+}
+
+.admin-panel--administrators::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 2;
+  background: linear-gradient(90deg, #5cbdb9, #a8d3ca 55%, #efc1cd);
+  opacity: .7;
+}
+
+.admin-panel--administrators > .admin-panel__head {
+  min-height: 74px;
+  padding: 16px 19px;
+  border-bottom: 0;
+  background: linear-gradient(90deg, rgba(238, 249, 246, .72), rgba(255, 253, 252, .58) 60%, rgba(255, 247, 249, .46));
+}
+
+.admin-panel--administrators > .admin-panel__head h3 {
+  font-size: 16px;
+  letter-spacing: -.025em;
+}
+
+.admin-administrators-live-chip {
+  min-height: 31px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(47, 119, 116, .1);
+  border-radius: 999px;
+  color: #54756c;
+  background: rgba(255, 255, 255, .78);
+  font-size: 9px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.admin-administrators-live-chip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #59b9ae;
+  box-shadow: 0 0 0 4px rgba(89, 185, 174, .1);
+}
+
+.admin-administrators-tabs {
+  margin: 14px 18px 0;
+  padding: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(47, 119, 116, .09);
+  border-radius: 14px;
+  background: rgba(247, 251, 249, .82);
+}
+
+.admin-administrators-tabs button {
+  min-height: 35px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 10px;
+  color: #72857e;
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.admin-administrators-tabs button span {
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(47, 119, 116, .07);
+  font-size: 8px;
+}
+
+.admin-administrators-tabs button.is-active {
+  color: #2f7774;
+  background: #fff;
+  box-shadow: 0 6px 17px rgba(47, 119, 116, .08);
+}
+
+.admin-administrators-filterbar {
+  margin: 11px 18px 13px;
+  padding: 7px;
+  border: 1px solid rgba(47, 119, 116, .09);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 8px 22px rgba(47, 91, 81, .035);
+}
+
+.admin-administrators-filterbar .admin-searchbox {
+  height: 42px;
+  border: 0;
+  background: transparent;
+}
+
+.admin-administrators-filterbar .admin-searchbox:focus-within {
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(92, 189, 185, .08);
+}
+
+.admin-administrators-table-wrap {
+  width: calc(100% - 36px);
+  margin: 0 18px 18px;
+  overflow-x: auto;
+  border: 1px solid rgba(47, 119, 116, .08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .78);
+}
+
+.admin-administrators-table {
+  min-width: 860px;
+}
+
+.admin-administrators-table th.is-actions {
+  text-align: right;
+}
+
+.admin-staff-identity {
+  min-width: 220px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-staff-identity > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #2f7774;
+  background: linear-gradient(145deg, #e2f4ef, #f8fcfa);
+  box-shadow: inset 0 0 0 1px rgba(47, 119, 116, .06);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-staff-identity strong,
+.admin-staff-identity small,
+.admin-administrators-inviter strong,
+.admin-administrators-inviter small {
+  display: block;
+}
+
+.admin-staff-identity strong,
+.admin-administrators-inviter strong {
+  color: #3f554e;
+  font-size: 10px;
+}
+
+.admin-staff-identity strong i {
+  margin-left: 6px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #397d75;
+  background: #e9f6f2;
+  font-size: 7px;
+  font-style: normal;
+}
+
+.admin-staff-identity small,
+.admin-administrators-inviter small {
+  margin-top: 3px;
+  color: #8f9e99;
+  font-size: 8px;
+}
+
+.admin-administrators-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.admin-invite-actions {
+  min-width: 175px;
+}
+
+.admin-invite-actions .admin-btn {
+  height: 33px;
+  padding: 0 9px;
+  font-size: 8px;
+}
+
+.admin-administrators-loading,
+.admin-administrators-empty {
+  min-height: 145px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: #84958f;
+  text-align: center;
+}
+
+.admin-administrators-loading strong,
+.admin-administrators-empty strong {
+  color: #526860;
+  font-size: 10px;
+}
+
+.admin-administrators-empty span {
+  color: #96a39f;
+  font-size: 9px;
+}
+
+.admin-administrators-empty svg {
+  color: #53a79f;
+}
+
+.admin-admin-invite-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.admin-admin-invite-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(32, 52, 47, .42);
+  backdrop-filter: blur(11px) saturate(.85);
+}
+
+.admin-admin-invite-modal {
+  position: relative;
+  width: min(540px, calc(100vw - 36px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, .92);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 94% 4%, rgba(217, 143, 160, .1), transparent 28%),
+    radial-gradient(circle at 0% 100%, rgba(92, 189, 185, .09), transparent 30%),
+    #fffefd;
+  box-shadow: 0 36px 95px rgba(30, 56, 49, .28);
+  animation: adminInviteModalIn .22s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.admin-admin-invite-modal__accent {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg, #5cbdb9, #97cec6 56%, #e0a9b7);
+}
+
+.admin-admin-invite-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-admin-invite-modal__mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #2f7774;
+  background: linear-gradient(145deg, #dff2ed, #f8fcfb);
+  box-shadow: inset 0 0 0 1px rgba(47, 119, 116, .06), 0 9px 22px rgba(47, 119, 116, .08);
+}
+
+.admin-admin-invite-modal__close {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(47, 119, 116, .1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .82);
+  color: #71847e;
+  cursor: pointer;
+}
+
+.admin-admin-invite-modal__close:hover {
+  color: #2f7774;
+  background: #eef8f5;
+}
+
+.admin-admin-invite-modal__copy {
+  margin-top: 20px;
+}
+
+.admin-admin-invite-modal__copy > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3e8981;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .11em;
+}
+
+.admin-admin-invite-modal__copy h2 {
+  margin: 7px 0 6px;
+  color: #39524a;
+  font-size: 25px;
+  letter-spacing: -.035em;
+}
+
+.admin-admin-invite-modal__copy p {
+  margin: 0;
+  max-width: 470px;
+  color: #7b8d87;
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.admin-admin-invite-modal__fields {
+  margin-top: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-admin-invite-modal__fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-admin-invite-modal__fields label > span {
+  color: #536c64;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.admin-admin-invite-modal__fields label > div {
+  min-height: 47px;
+  padding: 0 13px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(47, 119, 116, .13);
+  border-radius: 13px;
+  background: #fff;
+  color: #81918c;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.admin-admin-invite-modal__fields label > div:focus-within {
+  border-color: rgba(71, 158, 148, .44);
+  box-shadow: 0 0 0 4px rgba(92, 189, 185, .09);
+}
+
+.admin-admin-invite-modal__fields input {
+  width: 100%;
+  height: 45px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #425951;
+  font: inherit;
+  font-size: 11px;
+}
+
+.admin-admin-invite-modal__security-note {
+  margin-top: 14px;
+  padding: 12px 13px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(92, 189, 185, .1);
+  border-radius: 13px;
+  color: #3f8279;
+  background: #edf8f5;
+}
+
+.admin-admin-invite-modal__security-note strong,
+.admin-admin-invite-modal__security-note small {
+  display: block;
+}
+
+.admin-admin-invite-modal__security-note strong {
+  color: #45675e;
+  font-size: 9px;
+}
+
+.admin-admin-invite-modal__security-note small {
+  margin-top: 3px;
+  color: #748a83;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.admin-admin-invite-modal__error {
+  margin-top: 11px;
+  padding: 10px 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(217, 143, 160, .25);
+  border-radius: 11px;
+  color: #a45368;
+  background: #fff1f4;
+  font-size: 9px;
+}
+
+.admin-admin-invite-modal__footer {
+  margin-top: 20px;
+  padding-top: 17px;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  border-top: 1px solid rgba(47, 119, 116, .08);
+}
+
+.admin-admin-invite-modal__cancel,
+.admin-admin-invite-modal__submit {
+  min-height: 52px;
+  border-radius: 15px;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background .18s ease,
+    opacity .18s ease;
+}
+
+.admin-admin-invite-modal__cancel {
+  border: 1px solid rgba(47, 119, 116, .12);
+  background: rgba(255, 255, 255, .82);
+  color: #61766f;
+  font-size: 10px;
+  font-weight: 850;
+  box-shadow: 0 8px 20px rgba(43, 78, 69, .035);
+}
+
+.admin-admin-invite-modal__cancel:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(71, 158, 148, .24);
+  background: #f5fbf9;
+  color: #337d77;
+}
+
+.admin-admin-invite-modal__submit {
+  position: relative;
+  overflow: hidden;
+  padding: 7px 14px 7px 8px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(49, 143, 135, .18);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(255, 255, 255, .2), transparent 30%),
+    linear-gradient(135deg, #4baaa2, #68bbb2);
+  color: #fff;
+  text-align: left;
+  box-shadow: 0 12px 26px rgba(55, 145, 136, .2);
+}
+
+.admin-admin-invite-modal__submit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 18%, rgba(255, 255, 255, .14) 48%, transparent 72%);
+  transform: translateX(-120%);
+  transition: transform .42s ease;
+  pointer-events: none;
+}
+
+.admin-admin-invite-modal__submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px rgba(55, 145, 136, .27);
+}
+
+.admin-admin-invite-modal__submit:hover:not(:disabled)::after {
+  transform: translateX(120%);
+}
+
+.admin-admin-invite-modal__submit-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
+}
+
+.admin-admin-invite-modal__submit-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.admin-admin-invite-modal__submit-copy strong,
+.admin-admin-invite-modal__submit-copy small {
+  display: block;
+}
+
+.admin-admin-invite-modal__submit-copy strong {
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
+
+.admin-admin-invite-modal__submit-copy small {
+  color: rgba(255, 255, 255, .78);
+  font-size: 7.5px;
+  font-weight: 650;
+}
+
+.admin-admin-invite-modal__cancel:disabled,
+.admin-admin-invite-modal__submit:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+  transform: none;
+  box-shadow: none;
+}
+
+@keyframes adminInviteModalIn {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 900px) {
+  .admin-administrators-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-administrators-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-administrators-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-administrators-tabs {
+    width: calc(100% - 36px);
+  }
+
+  .admin-administrators-tabs button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .admin-administrators-filterbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-admin-invite-layer {
+    padding: 12px;
+  }
+
+  .admin-admin-invite-modal {
+    padding: 23px 18px;
+    border-radius: 22px;
+  }
+
+  .admin-admin-invite-modal__footer {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-admin-invite-modal__cancel {
+    min-height: 46px;
+    order: 2;
+  }
+
+  .admin-admin-invite-modal__submit {
+    order: 1;
+  }
+}

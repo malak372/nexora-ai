@@ -1,0 +1,249 @@
+.vox-not-found {
+  min-height: min(
+    760px,
+    calc(100vh - 140px)
+  );
+
+  display: grid;
+  place-items: center;
+
+  padding: 56px 20px;
+
+  background:
+    radial-gradient(
+      circle at 18% 20%,
+      rgba(92, 189, 185, 0.12),
+      transparent 33%
+    ),
+    radial-gradient(
+      circle at 86% 8%,
+      rgba(217, 143, 160, 0.11),
+      transparent 30%
+    ),
+    #fafcfb;
+}
+
+.vox-not-found__card {
+  width: min(620px, 100%);
+
+  padding: 34px;
+
+  border:
+    1px solid rgba(
+      111,
+      145,
+      139,
+      0.2
+    );
+
+  border-radius: 28px;
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.92
+    );
+
+  box-shadow:
+    0 24px 70px
+    rgba(
+      49,
+      95,
+      87,
+      0.12
+    );
+
+  color: #405a55;
+}
+
+.vox-not-found__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  margin-bottom: 34px;
+}
+
+.vox-not-found__brand > div {
+  display: grid;
+  gap: 2px;
+}
+
+.vox-not-found__brand strong {
+  font-size: 17px;
+  color: #365852;
+}
+
+.vox-not-found__brand span {
+  font-size: 12px;
+  color: #869993;
+}
+
+.vox-not-found__icon {
+  width: 62px;
+  height: 62px;
+
+  display: grid;
+  place-items: center;
+
+  margin-bottom: 22px;
+
+  border:
+    1px solid
+    rgba(
+      92,
+      189,
+      185,
+      0.2
+    );
+
+  border-radius: 20px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #eaf8f5,
+      #fff7f9
+    );
+
+  color: #388e8a;
+}
+
+.vox-not-found__eyebrow {
+  display: inline-block;
+
+  margin-bottom: 10px;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  letter-spacing: 0.12em;
+
+  color: #388e8a;
+}
+
+.vox-not-found h1 {
+  margin: 0 0 12px;
+
+  font-size:
+    clamp(
+      30px,
+      5vw,
+      44px
+    );
+
+  line-height: 1.08;
+
+  font-weight: 650;
+
+  letter-spacing: -0.035em;
+
+  color: #3d5752;
+}
+
+.vox-not-found p {
+  max-width: 520px;
+
+  margin: 0;
+
+  font-size: 15px;
+
+  line-height: 1.75;
+
+  color: #768a85;
+}
+
+.vox-not-found__actions {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 12px;
+
+  margin-top: 30px;
+}
+
+.vox-not-found__button {
+  min-height: 46px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 9px;
+
+  padding: 0 18px;
+
+  border-radius: 14px;
+
+  font: inherit;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.vox-not-found__button:hover {
+  transform: translateY(-1px);
+}
+
+.vox-not-found__button--secondary {
+  border:
+    1px solid #d9e5e2;
+
+  background: #ffffff;
+
+  color: #526c66;
+}
+
+.vox-not-found__button--primary {
+  border:
+    1px solid #55aaa6;
+
+  background:
+    linear-gradient(
+      135deg,
+      #5cbdb9,
+      #55aaa6
+    );
+
+  color: #ffffff;
+
+  box-shadow:
+    0 10px 24px
+    rgba(
+      92,
+      189,
+      185,
+      0.22
+    );
+}
+
+@media (max-width: 600px) {
+  .vox-not-found {
+    padding: 28px 14px;
+  }
+
+  .vox-not-found__card {
+    padding: 26px 20px;
+    border-radius: 22px;
+  }
+
+  .vox-not-found__actions {
+    display: grid;
+
+    grid-template-columns:
+      1fr;
+  }
+
+  .vox-not-found__button {
+    width: 100%;
+  }
+}

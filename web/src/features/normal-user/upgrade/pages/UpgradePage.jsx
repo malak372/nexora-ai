@@ -40,7 +40,7 @@ const BENEFITS = [
     icon: Sparkles,
     title: 'Premium idea generation',
     description:
-      'Each credit generates one Premium idea with the complete technical, business, feasibility, market, budget, and execution outputs.',
+      'Each Premium idea uses the credit cost configured by the system and includes the complete technical, business, feasibility, market, budget, and execution outputs.',
   },
   {
     icon: BotMessageSquare,
@@ -97,6 +97,17 @@ export default function UpgradePage() {
   const isAlreadyPremium =
     (pricing?.accountStatus || storedUser.accountStatus) === 'PREMIUM';
 
+  const minimumCredits = useMemo(() => {
+    if (isAlreadyPremium) {
+      return 1;
+    }
+
+    return Math.max(
+      1,
+      Number(pricing?.minimumCreditsForPremiumActivation) || 1,
+    );
+  }, [isAlreadyPremium, pricing?.minimumCreditsForPremiumActivation]);
+
   useEffect(() => {
     let active = true;
 
@@ -104,6 +115,18 @@ export default function UpgradePage() {
       .then((value) => {
         if (active) {
           setPricing(value);
+
+          const responseIsPremium = value?.accountStatus === 'PREMIUM';
+          const requiredMinimum = responseIsPremium
+            ? 1
+            : Math.max(
+              1,
+              Number(value?.minimumCreditsForPremiumActivation) || 1,
+            );
+
+          setCredits((current) =>
+            current < requiredMinimum ? requiredMinimum : current,
+          );
         }
       })
       .catch((requestError) => {
@@ -125,10 +148,8 @@ export default function UpgradePage() {
   );
 
   const updateCredits = (value) => {
-    const nextValue = Math.max(
-      1,
-      Number(value) || 1,
-    );
+    const parsedValue = Math.floor(Number(value) || minimumCredits);
+    const nextValue = Math.max(minimumCredits, parsedValue);
 
     setCredits(nextValue);
   };
@@ -139,9 +160,16 @@ export default function UpgradePage() {
       setError('');
 
       const origin = window.location.origin;
+      const creditsQuantity = Math.floor(Number(credits) || 0);
+
+      if (creditsQuantity < minimumCredits) {
+        throw new Error(
+          `At least ${minimumCredits} credits are required for this purchase.`,
+        );
+      }
 
       const result = await createCreditsCheckout({
-        creditsQuantity: Number(credits),
+        creditsQuantity,
         paymentMethodKey: method,
         successUrl: `${origin}/normal/payments/success`,
         cancelUrl: `${origin}/normal/credits?payment=cancelled`,
@@ -337,6 +365,7 @@ export default function UpgradePage() {
                   : ''
               }
               onClick={() => setCredits(amount)}
+              disabled={amount < minimumCredits}
               key={amount}
               whileHover={
                 shouldReduceMotion
@@ -360,7 +389,11 @@ export default function UpgradePage() {
         <div className="upgrade-custom-quantity">
           <div>
             <span>Custom quantity</span>
-            <small>No purchase limit</small>
+            <small>
+              {isAlreadyPremium
+                ? 'No minimum beyond 1 credit'
+                : `Minimum ${minimumCredits} credits to activate Premium`}
+            </small>
           </div>
 
           <div className="upgrade-custom-quantity__control">
@@ -370,13 +403,14 @@ export default function UpgradePage() {
                 updateCredits(credits - 1)
               }
               aria-label="Decrease credits"
+              disabled={credits <= minimumCredits}
             >
               <Minus size={16} />
             </button>
 
             <input
               type="number"
-              min="1"
+              min={minimumCredits}
               value={credits}
               onChange={(event) =>
                 updateCredits(event.target.value)
@@ -477,13 +511,13 @@ export default function UpgradePage() {
             <strong>
               {isAlreadyPremium
                 ? 'No Premium activation fee'
-                : 'One-time Premium activation fee'}
+                : 'Premium activation fee'}
             </strong>
 
             <small>
               {isAlreadyPremium
                 ? 'Your account is already Premium, so the activation fee is not charged again.'
-                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is added once when this Normal account becomes Premium.` : 'Loading the current activation fee from Voxidence settings…'}
+                : pricing ? `${pricing.activationFeeApplied} ${pricing.currency} is charged when this Normal account activates Premium. If the balance later reaches 0, the account returns to Normal and this fee applies again on the next activation.` : 'Loading the current activation fee from Voxidence settings…'}
             </small>
           </div>
         </div>
@@ -508,7 +542,7 @@ export default function UpgradePage() {
         <motion.button
           className="upgrade-checkout-button"
           type="button"
-          disabled={busy}
+          disabled={busy || !pricing}
           onClick={checkout}
           whileHover={
             shouldReduceMotion || busy

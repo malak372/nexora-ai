@@ -76,10 +76,28 @@ export class IdeaGenerationPolicyService {
 
     this.validateRegisteredUser(user);
 
+    if (user.accountStatus !== AccountStatus.PREMIUM) {
+      if (requestedGenerationType === IdeaGenerationType.PREMIUM_CREDIT) {
+        throw new ForbiddenException({
+          code: IDEA_GENERATION_ERROR_CODES.PREMIUM_REQUIRED,
+          message:
+            'Premium activation is required before using Premium-credit generation.',
+        });
+      }
+
+      if (requestedGenerationType !== IdeaGenerationType.NORMAL_FREE) {
+        throw new BadRequestException({
+          code: IDEA_GENERATION_ERROR_CODES.INVALID_REQUEST,
+          message:
+            'The requested generation type is not available for registered users.',
+        });
+      }
+    }
+
     const effectiveGenerationType =
       user.accountStatus === AccountStatus.PREMIUM
         ? IdeaGenerationType.PREMIUM_CREDIT
-        : requestedGenerationType;
+        : IdeaGenerationType.NORMAL_FREE;
 
     switch (effectiveGenerationType) {
       case IdeaGenerationType.NORMAL_FREE:

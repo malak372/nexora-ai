@@ -13,7 +13,8 @@ import {
  * only to that user. Otherwise, the email is broadcast
  * to all eligible users.
  *
- * Email alerts do not create records in the Alert table.
+ * Email alerts do not create records in the Alert table, but the complete
+ * sent communication is persisted in AdminCommunication.
  *
  * @author Malak
  */
@@ -22,7 +23,7 @@ export class CreateEmailAlertDto {
    * Email subject.
    */
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(150)
   subject!: string;
 
@@ -30,7 +31,7 @@ export class CreateEmailAlertDto {
    * Email body.
    */
   @IsString()
-  @MinLength(5)
+  @MinLength(1)
   @MaxLength(3000)
   message!: string;
 

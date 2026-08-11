@@ -77,6 +77,18 @@ const TYPE_META = {
     className: 'is-payment',
     description: 'Credit balance updates',
   },
+  CREDIT_LOW: {
+    icon: WalletCards,
+    label: 'Credits',
+    className: 'is-payment',
+    description: 'Low credit balance warning',
+  },
+  CREDIT_EXHAUSTED: {
+    icon: WalletCards,
+    label: 'Credits',
+    className: 'is-payment',
+    description: 'Credit balance exhausted',
+  },
   SECURITY: {
     icon: ShieldCheck,
     label: 'Security',
@@ -141,7 +153,7 @@ export default function NotificationsPage() {
   const [markingAll, setMarkingAll] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  const load = useCallback(async ({ quiet = false, forceRefresh = false } = {}) => {
     try {
       if (!quiet) setLoading(true);
       setError('');
@@ -153,7 +165,7 @@ export default function NotificationsPage() {
           sortBy: 'createdAt',
           sortOrder: 'desc',
         },
-        { forceRefresh: true },
+        { forceRefresh },
       );
 
       setItems(result.items ?? []);
@@ -179,7 +191,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === 'visible') {
-        void load({ quiet: true });
+        void load({ quiet: true, forceRefresh: true });
       }
     };
 

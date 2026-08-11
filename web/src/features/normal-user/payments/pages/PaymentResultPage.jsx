@@ -24,9 +24,8 @@ import {
 } from '../utils/paymentReturn.storage';
 import '../styles/payment-result.css';
 
-const MAX_STATUS_ATTEMPTS = 80;
-const STATUS_POLL_DELAY_MS = 350;
-const PROVIDER_RECONCILE_EVERY = 10;
+const MAX_STATUS_ATTEMPTS = 10;
+const STATUS_POLL_DELAY_MS = 300;
 
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -130,22 +129,23 @@ export default function PaymentResultPage() {
 
     for (let attempt = 0; attempt < MAX_STATUS_ATTEMPTS; attempt += 1) {
       try {
-        // Check the fast local DB state first. If the webhook already
-        // completed the payment, we avoid an unnecessary provider round-trip.
-        let payment = await getPaymentState(paymentId);
+        // Read the local payment row first. In the common webhook-success case
+        // this completes immediately without contacting Stripe again.
+        let payment = await getPaymentState(paymentId, { force: true });
 
-        if (
-          payment?.status === 'PENDING' &&
-          (attempt === 0 || attempt % PROVIDER_RECONCILE_EVERY === 0)
-        ) {
-          // Reconciliation may need a provider network round-trip. Never block
-          // this screen on that call: trigger it in the background and keep
-          // polling the lightweight local payment status instead.
-          void reconcilePayment(paymentId).catch(() => undefined);
+        // If the redirect reached the app before the webhook, perform one
+        // trusted server-to-server reconciliation and wait for its fresh state.
+        // The backend now commits the payment before starting expensive AI work,
+        // so this normally returns in a single provider round-trip.
+        if (payment?.status === 'PENDING' && attempt === 0) {
+          try {
+            payment = await reconcilePayment(paymentId);
+          } catch (reconcileError) {
+            lastError = reconcileError;
+          }
         }
 
         latestPayment = payment;
-        lastError = null;
 
         updateStoredUser({
           accountStatus: payment.accountStatus,
@@ -154,7 +154,8 @@ export default function PaymentResultPage() {
         });
 
         if (payment.status === 'SUCCEEDED') {
-          window.dispatchEvent(new CustomEvent('nexora:credits-updated'));
+          lastError = null;
+          window.dispatchEvent(new CustomEvent('voxidence :credits-updated'));
         }
 
         if (payment.status === 'FAILED') {
@@ -168,7 +169,6 @@ export default function PaymentResultPage() {
         }
 
         if (isFulfillmentComplete(payment)) {
-          // Never block the return page on cache refresh or AI generation.
           void refreshPaymentDestination({
             ideaId: payment.ideaId || fallbackIdeaId,
             publicationId: payment.publicationId || fallbackPublicationId,
@@ -176,9 +176,6 @@ export default function PaymentResultPage() {
 
           clearPaymentReturnReference();
 
-          // Direct unlock can spend several seconds generating advanced
-          // outputs. Move the user to the idea immediately and let that page
-          // show a lightweight preparation state until outputs are ready.
           if (payment.paymentPurpose === 'DIRECT_UNLOCK') {
             const destinationIdeaId = payment.ideaId || fallbackIdeaId;
 
@@ -215,7 +212,9 @@ export default function PaymentResultPage() {
         lastError = error;
       }
 
-      await wait(STATUS_POLL_DELAY_MS);
+      if (attempt < MAX_STATUS_ATTEMPTS - 1) {
+        await wait(STATUS_POLL_DELAY_MS);
+      }
     }
 
     const paymentWasVerified = latestPayment?.status === 'SUCCEEDED';
@@ -224,7 +223,8 @@ export default function PaymentResultPage() {
       loading: false,
       error: paymentWasVerified
         ? 'Your payment is confirmed, but the unlock is still being completed. Press “Check again” to continue safely without paying again.'
-        : lastError?.message || 'Payment confirmation could not be verified.',
+        : lastError?.message ||
+          'Payment confirmation is taking longer than expected. Press “Check again”; you will not be charged twice.',
       payment: latestPayment,
       processingMessage: '',
     });
