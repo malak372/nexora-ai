@@ -25,6 +25,7 @@ const ForgotPasswordPage = lazy(() => import('../features/auth/PasswordRecovery/
 const ResetPasswordPage = lazy(() => import('../features/auth/PasswordRecovery/pages/ResetPasswordPage'));
 const GuestGenerateIdeaPage = lazy(() => import('../features/guest-idea/pages/GuestGenerateIdeaPage'));
 const PublicPublicationDetailsPage = lazy(() => import('../features/home/pages/PublicPublicationDetailsPage'));
+const AdminAcceptInvitationPage = lazy(() => import('../features/admin/admin-invite/pages/AdminAcceptInvitationPage'));
 
 export default function AppRoutes() {
     return (
@@ -46,6 +47,15 @@ export default function AppRoutes() {
                     <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                     <Route path="/reset-password" element={<ResetPasswordPage />} />
                 </Route>
+
+                <Route
+                    path="/admin-invite"
+                    element={<AdminAcceptInvitationPage />}
+                />
+                <Route
+                    path="/admin-invitation"
+                    element={<Navigate to="/admin-invite" replace />}
+                />
 
                 {normalUserRoutes}
 

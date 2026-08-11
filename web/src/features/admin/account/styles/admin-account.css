@@ -1,0 +1,374 @@
+.admin-account-host {
+  --account-green: #4fa9a4;
+  --account-green-deep: #2f7774;
+  --account-mint: #eaf5f2;
+  --account-paper: #fffdfc;
+  --account-ink: #35413d;
+  --account-muted: #71807a;
+
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Admin-specific profile sizing
+   --------------------------------------------------------------------------
+   The shared profile page is also used by normal users. In the admin shell we
+   let it follow the available workspace width instead of keeping the old
+   fixed 1180px canvas. This is especially important after the sidebar is
+   collapsed because the workspace becomes substantially wider.
+   -------------------------------------------------------------------------- */
+
+.admin-account-host .profile-settings-page {
+  width: 100%;
+  max-width: 1440px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 0 0 64px;
+  color: var(--account-ink);
+  transition:
+    max-width .22s ease,
+    padding .22s ease;
+}
+
+/* When the admin navigation is collapsed, use the newly available width
+   instead of leaving a large empty strip on the right side. */
+.admin-shell.is-collapsed .admin-account-host .profile-settings-page {
+  max-width: none;
+}
+
+/* --------------------------------------------------------------------------
+   Hero
+   -------------------------------------------------------------------------- */
+
+.admin-account-host .profile-settings-page__header {
+  min-height: clamp(205px, 24vh, 250px);
+  padding: clamp(32px, 4vw, 52px);
+  border-color: rgba(47, 119, 116, 0.12);
+  border-radius: 30px;
+  background:
+    radial-gradient(
+      circle at 85% 14%,
+      rgba(183, 221, 216, 0.34),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 13% 92%,
+      rgba(243, 201, 211, 0.22),
+      transparent 31%
+    ),
+    linear-gradient(
+      135deg,
+      #fffdfc 0%,
+      #faf9f6 58%,
+      #eef8f5 100%
+    );
+  box-shadow:
+    0 24px 65px rgba(47, 119, 116, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.97);
+}
+
+.admin-account-host .profile-settings-page__header h1 {
+  max-width: 920px;
+  margin: 20px 0 10px;
+  color: var(--account-ink);
+  font-size: clamp(2.55rem, 4.3vw, 4.25rem);
+  font-weight: 560;
+  line-height: 1.02;
+  letter-spacing: -0.055em;
+}
+
+/* Do not let the title become oversized simply because the sidebar is
+   collapsed and the content viewport is wider. */
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-page__header h1 {
+  font-size: clamp(2.6rem, 3.7vw, 4rem);
+}
+
+.admin-account-host .profile-settings-page__header p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--account-muted);
+  font-size: .96rem;
+  line-height: 1.65;
+}
+
+.admin-account-host .profile-settings-page__grid {
+  background-image:
+    linear-gradient(
+      rgba(47, 119, 116, 0.035) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(47, 119, 116, 0.035) 1px,
+      transparent 1px
+    );
+}
+
+.admin-account-host .profile-settings-page__orb--one {
+  background:
+    radial-gradient(
+      circle,
+      rgba(183, 221, 216, 0.32),
+      transparent 68%
+    );
+}
+
+.admin-account-host .profile-settings-page__orb--two {
+  background:
+    radial-gradient(
+      circle,
+      rgba(243, 201, 211, 0.24),
+      transparent 68%
+    );
+}
+
+.admin-account-host .profile-settings-page__header > span,
+.admin-account-host .profile-settings-panel__title svg,
+.admin-account-host .profile-settings-avatar-card__icon,
+.admin-account-host .profile-settings__notice svg {
+  color: var(--account-green-deep);
+}
+
+.admin-account-host .profile-settings-page__header > span {
+  border-color: rgba(47, 119, 116, 0.14);
+  background:
+    linear-gradient(
+      145deg,
+      #f5fbf9,
+      #edf8f5
+    );
+  box-shadow:
+    0 10px 22px rgba(47, 119, 116, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+/* --------------------------------------------------------------------------
+   Identity card
+   -------------------------------------------------------------------------- */
+
+.admin-account-host .profile-settings-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: clamp(18px, 2vw, 28px);
+  margin-top: 20px;
+  padding: clamp(22px, 2.5vw, 30px);
+  border-color: rgba(47, 119, 116, 0.11);
+  border-radius: 26px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, .97),
+      rgba(250, 249, 246, .96) 56%,
+      rgba(239, 249, 246, .92)
+    );
+  box-shadow:
+    0 16px 42px rgba(47, 119, 116, 0.065),
+    inset 0 1px 0 rgba(255,255,255,.96);
+}
+
+.admin-account-host .profile-settings-card__avatar {
+  width: clamp(104px, 8vw, 126px);
+  height: clamp(104px, 8vw, 126px);
+}
+
+.admin-account-host .profile-settings-card__identity strong {
+  color: var(--account-ink);
+  font-size: clamp(1.22rem, 1.5vw, 1.55rem);
+}
+
+.admin-account-host .profile-settings-card__identity > span,
+.admin-account-host .profile-settings-card__identity small {
+  color: var(--account-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Settings panels
+   -------------------------------------------------------------------------- */
+
+.admin-account-host .profile-settings-grid {
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+/* Keep panels readable when the content region grows after collapse.
+   We do not stretch field lines to extreme widths. */
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-grid {
+  grid-template-columns:
+    repeat(2, minmax(340px, 1fr));
+}
+
+.admin-account-host
+  :is(
+    .profile-settings-panel,
+    .profile-settings-avatar-card,
+    .profile-settings-danger
+  ) {
+  min-width: 0;
+  border-color: rgba(47, 119, 116, 0.11);
+  box-shadow:
+    0 16px 42px rgba(47, 119, 116, 0.065);
+}
+
+.admin-account-host .profile-settings-panel {
+  padding: clamp(22px, 2vw, 28px);
+  border-radius: 24px;
+}
+
+.admin-account-host .profile-settings-panel__title strong {
+  color: var(--account-ink);
+}
+
+.admin-account-host .profile-settings-panel__title span {
+  color: var(--account-muted);
+}
+
+.admin-account-host :is(input, select, textarea) {
+  max-width: 100%;
+}
+
+.admin-account-host :is(input, select, textarea):focus {
+  border-color: rgba(79, 169, 164, 0.58) !important;
+  box-shadow:
+    0 0 0 4px rgba(79, 169, 164, 0.11) !important;
+}
+
+.admin-account-host .profile-settings-panel > button[type='submit'],
+.admin-account-host .profile-settings-avatar-card button.is-primary,
+.admin-account-host .profile-settings-card__actions button:not(.is-danger) {
+  border-color: transparent;
+  background:
+    linear-gradient(
+      135deg,
+      #69b7b1,
+      #4fa9a4
+    );
+  color: #fff;
+  box-shadow:
+    0 10px 24px rgba(47, 119, 116, 0.18);
+}
+
+/* --------------------------------------------------------------------------
+   Collapsed-sidebar refinements
+   -------------------------------------------------------------------------- */
+
+/* The profile page should fill the content region smoothly, but keep a
+   comfortable reading width inside the hero and cards. */
+.admin-shell.is-collapsed .admin-account-host {
+  width: 100%;
+}
+
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-page__header,
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-card,
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-grid,
+.admin-shell.is-collapsed
+  .admin-account-host
+  .profile-settings-danger {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Viewport responsiveness
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1200px) {
+  .admin-account-host .profile-settings-page {
+    max-width: 100%;
+  }
+
+  .admin-account-host .profile-settings-page__header {
+    min-height: 215px;
+  }
+
+  .admin-account-host .profile-settings-page__header h1 {
+    font-size: clamp(2.4rem, 4.6vw, 3.65rem);
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-account-host .profile-settings-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .admin-account-host .profile-settings-card__actions {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-account-host .profile-settings-grid,
+  .admin-shell.is-collapsed
+    .admin-account-host
+    .profile-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-account-host .profile-settings-page {
+    padding-bottom: 42px;
+  }
+
+  .admin-account-host .profile-settings-page__header {
+    min-height: 190px;
+    padding: 25px 21px;
+    border-radius: 22px;
+  }
+
+  .admin-account-host .profile-settings-page__header h1 {
+    margin-top: 16px;
+    font-size: clamp(2rem, 10vw, 2.85rem);
+  }
+
+  .admin-account-host .profile-settings-page__header p {
+    font-size: .86rem;
+  }
+
+  .admin-account-host .profile-settings-card {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .admin-account-host .profile-settings-card__actions {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-account-host .profile-settings-card__actions button {
+    width: 100%;
+  }
+
+  .admin-account-host .profile-settings-panel {
+    padding: 20px;
+    border-radius: 21px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Shared dialogs
+   --------------------------------------------------------------------------
+   These dialogs are mounted outside the page flow. Keeping them fixed makes
+   them viewport-centered regardless of admin scroll or sidebar state.
+   -------------------------------------------------------------------------- */
+
+.email-verification-dialog,
+.avatar-crop-dialog,
+.delete-account-dialog {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+}

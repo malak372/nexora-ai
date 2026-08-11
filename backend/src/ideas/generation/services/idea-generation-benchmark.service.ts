@@ -1439,6 +1439,7 @@ export class IdeaGenerationBenchmarkService {
 
     const aiResult = await this.aiExecutionService.execute({
       aiModelId: model.id,
+      allowTemporaryModelCooldownBypass: true,
       userPrompt,
       systemInstruction: this.buildSystemInstruction(context),
       requestType: ApiRequestType.IDEA_GENERATION,

@@ -1,90 +1,45 @@
 import { Injectable } from '@nestjs/common';
 
-import { AuthenticationLog, AuthAction } from '@prisma/client';
+import {
+  AuthenticationLog,
+  AuthAction,
+  Prisma,
+} from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  buildDateFilter,
+  buildOrderBy,
+  buildPagination,
+} from '../../utilities/base-query/builder';
+import { calculateTotalPages } from '../../utilities/analytics/analytics.helper';
+
+import { GetAuthAuditQueryDto } from '../dto/get-auth-audit-query.dto';
 
 /**
- * Maximum number of authentication logs returned to the
- * administrator when pagination is not supplied.
- */
-const DEFAULT_AUTH_AUDIT_LOGS_LIMIT = 100;
-
-/**
- * Metadata extracted from an authentication request.
- *
- * Provides additional context for security monitoring
- * and authentication-event traceability.
+ * Request metadata stored with an authentication event.
  */
 export type AuthRequestMeta = {
-  /**
-   * Client IP address when available.
-   */
   readonly ipAddress?: string;
-
-  /**
-   * Client user-agent header when available.
-   */
   readonly userAgent?: string;
 };
 
 /**
- * Input required to create an authentication audit log.
+ * Input used by the authentication flows to append one security event.
  */
 export type CreateAuthLogInput = AuthRequestMeta & {
-  /**
-   * Related authenticated user identifier.
-   *
-   * It may be absent for failed authentication attempts
-   * where the user could not be identified.
-   */
   readonly userId?: string;
-
-  /**
-   * Email involved in the authentication event.
-   *
-   * It may be stored even when no user record was found,
-   * such as during a failed login attempt.
-   */
   readonly email?: string;
-
-  /**
-   * Authentication action being recorded.
-   */
   readonly action: AuthAction;
-
-  /**
-   * Indicates whether the authentication operation succeeded.
-   *
-   * Defaults to true when omitted.
-   */
   readonly isSuccess?: boolean;
-
-  /**
-   * Optional safe description of the authentication event.
-   *
-   * Passwords, tokens, secrets, and other sensitive values
-   * must never be included.
-   */
   readonly message?: string;
 };
 
 /**
- * Service responsible for recording and retrieving
- * authentication audit logs.
+ * Authentication security audit service.
  *
- * This service centralizes authentication-event persistence
- * for security monitoring and auditing purposes.
- *
- * Examples of recorded events:
- * - Registration.
- * - Successful and failed login attempts.
- * - Account locking.
- * - Logout.
- * - Refresh-token usage.
- * - Password changes and resets.
- * - Email verification.
- * - Account deactivation.
+ * The write path remains intentionally append-only. Administrator reads add
+ * pagination, filtering, sorting and summary counters without mutating logs.
  *
  * @author Eman
  */
@@ -92,12 +47,6 @@ export type CreateAuthLogInput = AuthRequestMeta & {
 export class AuthAuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Creates an authentication audit-log entry.
-   *
-   * @param input Authentication event information.
-   * @returns The newly created authentication log.
-   */
   async createLog(input: CreateAuthLogInput): Promise<AuthenticationLog> {
     return this.prisma.authenticationLog.create({
       data: {
@@ -113,20 +62,203 @@ export class AuthAuditService {
   }
 
   /**
-   * Retrieves the latest authentication audit logs,
-   * ordered from newest to oldest.
-   *
-   * This method is intended for administrator security
-   * monitoring. Access control is enforced by the controller.
-   *
-   * @returns The latest authentication audit-log records.
+   * Paginated authentication event ledger for administrators.
    */
-  async getLogs(): Promise<AuthenticationLog[]> {
-    return this.prisma.authenticationLog.findMany({
-      orderBy: {
-        createdAt: 'desc',
+  async getLogs(query: GetAuthAuditQueryDto) {
+    const { page, limit, skip, take } = buildPagination(query);
+    const where = this.buildWhere(query);
+
+    const [rows, total] = await Promise.all([
+      this.prisma.authenticationLog.findMany({
+        where,
+        skip,
+        take,
+        orderBy: buildOrderBy(
+          query,
+          ['createdAt', 'action', 'email', 'isSuccess'] as const,
+          'createdAt',
+        ),
+        select: {
+          id: true,
+          userId: true,
+          email: true,
+          action: true,
+          isSuccess: true,
+          message: true,
+          ipAddress: true,
+          userAgent: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+              isActive: true,
+              isVerified: true,
+            },
+          },
+        },
+      }),
+      this.prisma.authenticationLog.count({ where }),
+    ]);
+
+    return {
+      data: rows,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: calculateTotalPages(total, limit),
       },
-      take: DEFAULT_AUTH_AUDIT_LOGS_LIMIT,
-    });
+    };
+  }
+
+  /**
+   * Summary counters use the same action/search/date filters while deliberately
+   * ignoring result-status filtering so the UI can show success and failure
+   * counters at the same time.
+   */
+  async getSummary(query: GetAuthAuditQueryDto) {
+    const where = this.buildWhere(query, false);
+
+    const [
+      totalEvents,
+      successfulEvents,
+      failedEvents,
+      accountLockEvents,
+      distinctIps,
+      distinctUsers,
+    ] = await Promise.all([
+      this.prisma.authenticationLog.count({ where }),
+      this.prisma.authenticationLog.count({
+        where: {
+          AND: [where, { isSuccess: true }],
+        },
+      }),
+      this.prisma.authenticationLog.count({
+        where: {
+          AND: [where, { isSuccess: false }],
+        },
+      }),
+      this.prisma.authenticationLog.count({
+        where: {
+          AND: [
+            where,
+            {
+              action: AuthAction.ACCOUNT_LOCKED,
+            },
+          ],
+        },
+      }),
+      this.prisma.authenticationLog.findMany({
+        where: {
+          AND: [
+            where,
+            {
+              ipAddress: {
+                not: null,
+              },
+            },
+          ],
+        },
+        distinct: ['ipAddress'],
+        select: {
+          ipAddress: true,
+        },
+      }),
+      this.prisma.authenticationLog.findMany({
+        where: {
+          AND: [
+            where,
+            {
+              userId: {
+                not: null,
+              },
+            },
+          ],
+        },
+        distinct: ['userId'],
+        select: {
+          userId: true,
+        },
+      }),
+    ]);
+
+    return {
+      totalEvents,
+      successfulEvents,
+      failedEvents,
+      accountLockEvents,
+      uniqueIpAddresses: distinctIps.length,
+      uniqueUsers: distinctUsers.length,
+    };
+  }
+
+  private buildWhere(
+    query: GetAuthAuditQueryDto,
+    includeSuccessFilter = true,
+  ): Prisma.AuthenticationLogWhereInput {
+    const search = query.search?.trim();
+
+    return {
+      ...(buildDateFilter(query) ?? {}),
+      ...(query.action
+        ? {
+            action: query.action,
+          }
+        : {}),
+      ...(includeSuccessFilter && query.isSuccess !== undefined
+        ? {
+            isSuccess: query.isSuccess,
+          }
+        : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                email: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                message: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                ipAddress: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                userAgent: {
+                  contains: search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                user: {
+                  fullName: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+              },
+              {
+                user: {
+                  email: {
+                    contains: search,
+                    mode: 'insensitive',
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
   }
 }

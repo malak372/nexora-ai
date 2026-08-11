@@ -56,7 +56,9 @@ export async function getPaymentState(id, { force = false } = {}) {
     return await cachedRequest(
       cacheKey,
       async () => unwrap(
-        await normalUserApi.get(`/users/payments/${id}/status`),
+        await normalUserApi.get(`/users/payments/${id}/status`, {
+          timeout: 4000,
+        }),
       ),
       {
         // Only deduplicate overlapping status reads. This TTL is shorter than
@@ -76,7 +78,11 @@ export async function getPaymentState(id, { force = false } = {}) {
 export async function reconcilePayment(id) {
   try {
     const result = unwrap(
-      await normalUserApi.post(`/users/payments/${id}/reconcile`),
+      await normalUserApi.post(
+        `/users/payments/${id}/reconcile`,
+        undefined,
+        { timeout: 5000 },
+      ),
     );
 
     // A successful reconciliation may change account status, credit balance,

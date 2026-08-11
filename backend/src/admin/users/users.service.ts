@@ -71,7 +71,6 @@ export class UsersService {
    * Supported filters:
    * - Creation date range.
    * - Search by full name or email address.
-   * - User role.
    * - Account status.
    * - User type.
    * - Active status.
@@ -91,9 +90,16 @@ export class UsersService {
 
     return {
       ...(includeDeleted ? {} : { deletedAt: null }),
+
+      /*
+       * This workspace manages platform members, not administrator accounts.
+       * Keeping this constraint in the service protects every list/summary/
+       * chart/export caller instead of relying on a frontend-only filter.
+       */
+      role: UserRole.USER,
+
       ...buildDateFilter(query),
       ...buildSearchFilter(['fullName', 'email'], query.search),
-      ...buildExactFilter('role', query.role),
       ...buildExactFilter('accountStatus', query.accountStatus),
       ...buildExactFilter('userType', query.userType),
       ...buildExactFilter('isActive', isActive),
@@ -154,6 +160,7 @@ export class UsersService {
         'accountStatus',
         'userType',
         'creditBalance',
+        'freeGenerationsUsed',
         'isActive',
         'isVerified',
         'createdAt',
@@ -211,7 +218,6 @@ export class UsersService {
    * - Active and inactive users.
    * - Verified and unverified users.
    * - Normal and premium accounts.
-   * - Administrator accounts.
    * - Users created today.
    * - Users created during the current month.
    * - User counts grouped by user type.
@@ -242,7 +248,6 @@ export class UsersService {
       activeGroups,
       verifiedGroups,
       accountStatusGroups,
-      roleGroups,
       userTypesGroup,
     ] = await Promise.all([
       this.prisma.user.count({ where }),
@@ -260,11 +265,6 @@ export class UsersService {
       }),
       this.prisma.user.groupBy({
         by: ['accountStatus'],
-        where,
-        _count: { _all: true },
-      }),
-      this.prisma.user.groupBy({
-        by: ['role'],
         where,
         _count: { _all: true },
       }),
@@ -287,8 +287,6 @@ export class UsersService {
       accountStatusGroups.find((item) => item.accountStatus === AccountStatus.NORMAL)?._count._all ?? 0;
     const premiumUsers =
       accountStatusGroups.find((item) => item.accountStatus === AccountStatus.PREMIUM)?._count._all ?? 0;
-    const adminUsers =
-      roleGroups.find((item) => item.role === UserRole.ADMIN)?._count._all ?? 0;
 
     const getUserTypeCount = (userType: UserType): number =>
       userTypesGroup.find((item) => item.userType === userType)?._count._all ?? 0;
@@ -301,7 +299,6 @@ export class UsersService {
       unverifiedUsers,
       normalUsers,
       premiumUsers,
-      adminUsers,
       todayUsers,
       thisMonthUsers,
       userTypes: {
@@ -533,8 +530,11 @@ export class UsersService {
     // loaded up to 80 related records (ideas, payments, credit transactions and
     // complaints) even though the admin detail modal only renders profile data
     // and aggregate counts. That unnecessary work made View User feel slow.
-    const user = await this.prisma.user.findUnique({
-      where: { id },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id,
+        role: UserRole.USER,
+      },
       select: {
         id: true,
         fullName: true,
@@ -597,6 +597,7 @@ export class UsersService {
         role: true,
         accountStatus: true,
         userType: true,
+        freeGenerationsUsed: true,
         freeGenerationLimit: true,
         isVerified: true,
         deletedAt: true,
@@ -625,7 +626,21 @@ export class UsersService {
       data.fullName = fullName;
     }
     if (input.userType !== undefined) data.userType = input.userType;
-    if (input.accountStatus !== undefined) data.accountStatus = input.accountStatus;
+    const finalFreeGenerationLimit =
+      input.freeGenerationLimit ?? user.freeGenerationLimit;
+    const finalFreeGenerationsUsed =
+      input.freeGenerationsUsed ?? user.freeGenerationsUsed;
+
+    if (finalFreeGenerationsUsed > finalFreeGenerationLimit) {
+      throw new BadRequestException(
+        'Free generations used cannot be greater than the free generation limit',
+      );
+    }
+
+    if (input.freeGenerationsUsed !== undefined) {
+      data.freeGenerationsUsed = input.freeGenerationsUsed;
+    }
+
     if (input.freeGenerationLimit !== undefined) {
       data.freeGenerationLimit = input.freeGenerationLimit;
     }
@@ -646,6 +661,7 @@ export class UsersService {
       fullName: user.fullName,
       userType: user.userType,
       accountStatus: user.accountStatus,
+      freeGenerationsUsed: user.freeGenerationsUsed,
       freeGenerationLimit: user.freeGenerationLimit,
       isVerified: user.isVerified,
     };
@@ -684,6 +700,7 @@ export class UsersService {
             fullName: updated.fullName,
             userType: updated.userType,
             accountStatus: updated.accountStatus,
+            freeGenerationsUsed: updated.freeGenerationsUsed,
             freeGenerationLimit: updated.freeGenerationLimit,
             isVerified: updated.isVerified,
           },
@@ -725,6 +742,7 @@ export class UsersService {
         'accountStatus',
         'userType',
         'creditBalance',
+        'freeGenerationsUsed',
         'isActive',
         'isVerified',
         'createdAt',

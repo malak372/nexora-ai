@@ -7,6 +7,7 @@ import {
   IdeaGenerationType,
   PaymentPurpose,
   PaymentStatus,
+  UserRole,
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -118,18 +119,19 @@ export class DashboardService implements OnModuleInit {
     ] = await Promise.all([
       this.prisma.user.groupBy({
         by: ['accountStatus'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, role: UserRole.USER },
         _count: { _all: true },
       }),
       this.prisma.user.count({
-        where: { deletedAt: null, isActive: true },
+        where: { deletedAt: null, role: UserRole.USER, isActive: true },
       }),
       this.prisma.user.count({
-        where: { deletedAt: null, isVerified: true },
+        where: { deletedAt: null, role: UserRole.USER, isVerified: true },
       }),
       this.prisma.user.findMany({
         where: {
           deletedAt: null,
+          role: UserRole.USER,
           createdAt: {
             gte:
               startOfMonth.getTime() < chartStart.getTime()
@@ -206,7 +208,7 @@ export class DashboardService implements OnModuleInit {
       }),
 
       this.prisma.user.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, role: UserRole.USER },
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: {

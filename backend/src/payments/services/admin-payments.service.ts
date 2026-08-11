@@ -52,8 +52,18 @@ export class AdminPaymentsService {
     paymentPurpose: true,
     status: true,
     creditsAmount: true,
+    bonusCreditsAmount: true,
     creditPriceAtPurchase: true,
+    activatesPremium: true,
+    premiumActivationFeeAtPurchase: true,
     transactionReference: true,
+    providerPaymentId: true,
+    providerSessionId: true,
+    publicationId: true,
+    paidAt: true,
+    failedAt: true,
+    failureReason: true,
+    refundedAt: true,
     createdAt: true,
     updatedAt: true,
 
@@ -69,6 +79,13 @@ export class AdminPaymentsService {
       select: {
         id: true,
         title: true,
+      },
+    },
+
+    invoice: {
+      select: {
+        invoiceNumber: true,
+        status: true,
       },
     },
   } satisfies Prisma.PaymentSelect;
@@ -115,7 +132,15 @@ export class AdminPaymentsService {
 
         amount: toNumber(payment.amount),
 
-        creditPriceAtPurchase: toNumber(payment.creditPriceAtPurchase),
+        creditPriceAtPurchase:
+          payment.creditPriceAtPurchase === null
+            ? null
+            : toNumber(payment.creditPriceAtPurchase),
+
+        premiumActivationFeeAtPurchase:
+          payment.premiumActivationFeeAtPurchase === null
+            ? null
+            : toNumber(payment.premiumActivationFeeAtPurchase),
       })),
 
       meta: {

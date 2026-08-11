@@ -74,7 +74,10 @@ export class StripePaymentGateway implements PaymentGateway {
       );
     }
 
-    this.stripe = new Stripe(secretKey.trim());
+    this.stripe = new Stripe(secretKey.trim(), {
+      timeout: 5000,
+      maxNetworkRetries: 1,
+    });
 
     this.webhookSecret = webhookSecret.trim();
   }
@@ -471,7 +474,7 @@ export class StripePaymentGateway implements PaymentGateway {
   }
 
   /**
-   * Extracts the internal Nexora AI payment ID from Stripe metadata.
+   * Extracts the internal Voxidence payment ID from Stripe metadata.
    */
   private getInternalPaymentId(session: Stripe.Checkout.Session): string {
     const paymentId =
@@ -578,7 +581,7 @@ export class StripePaymentGateway implements PaymentGateway {
    * Example:
    * 10.00 USD -> 1000 cents.
    *
-   * Nexora AI currently uses USD, which has two decimal places.
+   * Voxidence currently uses USD, which has two decimal places.
    */
   private toMinorCurrencyUnits(amount: string): number {
     const normalizedAmount = Number(amount);
@@ -618,16 +621,16 @@ export class StripePaymentGateway implements PaymentGateway {
   private getProductName(purpose: PaymentPurpose): string {
     switch (purpose) {
       case PaymentPurpose.BUY_CREDITS:
-        return 'Nexora AI Credits';
+        return 'Voxidence Credits';
 
       case PaymentPurpose.DIRECT_UNLOCK:
-        return 'Nexora AI Idea Unlock';
+        return 'Voxidence Idea Unlock';
 
       case PaymentPurpose.ACCEPT_PUBLICATION:
-        return 'Nexora AI Protected Opportunity Access';
+        return 'Voxidence Protected Opportunity Access';
 
       case PaymentPurpose.UNLOCK_PUBLICATION_ADVANCED:
-        return 'Nexora AI Advanced Opportunity Outputs';
+        return 'Voxidence Advanced Opportunity Outputs';
 
       default:
         throw new PaymentProcessingError(
@@ -653,7 +656,7 @@ export class StripePaymentGateway implements PaymentGateway {
         return `${input.creditsQuantity ?? 0} premium idea-generation credit(s).`;
 
       case PaymentPurpose.DIRECT_UNLOCK:
-        return 'Unlock advanced outputs for one Nexora AI project idea.';
+        return 'Unlock advanced outputs for one Voxidence project idea.';
 
       case PaymentPurpose.ACCEPT_PUBLICATION:
         return 'Open the protected basic opportunity brief and add it to the accepted ideas library.';

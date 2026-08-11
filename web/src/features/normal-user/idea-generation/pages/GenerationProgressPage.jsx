@@ -7,7 +7,7 @@
  * backend reaches CANCELLED at the next safe checkpoint. Visual styling uses
  * the Voxidence eucalyptus-and-rose identity without changing pipeline data.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, LayoutDashboard, Radio, RefreshCw, Sparkles, X } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -19,7 +19,7 @@ import { COMPLETED_RUN_STATUSES, TERMINAL_RUN_STATUSES } from '../constants/gene
 import { useIdeaGenerationSocket } from '../hooks/useIdeaGenerationSocket';
 import { clearActiveGenerationRunId } from '../store/activeGenerationRun.storage';
 import { getVisualPipeline } from '../utils/pipeline.utils';
-import useAccountAccess from '../../shared/hooks/useAccountAccess';
+import { invalidatePaymentPricingCache } from '../../payments/api/paymentFlowApi';
 import '../styles/generation.css';
 
 
@@ -29,7 +29,7 @@ export default function GenerationProgressPage() {
   const location = useLocation();
   const initialRun = location.state?.initialRun ?? null;
   const { run, connectionState, error, errorStatus, refresh } = useIdeaGenerationSocket(runId, initialRun);
-  const { isPremium } = useAccountAccess();
+  const syncedPremiumRunRef = useRef(null);
   const displayedProgress = Math.max(
     0,
     Math.min(100, Number(run?.progressPercent ?? 0)),
@@ -66,6 +66,20 @@ export default function GenerationProgressPage() {
     if (run?.cancelRequestedAt) setCancelRequested(true);
     if (TERMINAL_RUN_STATUSES.has(run?.status)) clearActiveGenerationRunId();
   }, [run?.cancelRequestedAt, run?.status]);
+
+  useEffect(() => {
+    if (
+      !isComplete ||
+      run?.generationType !== 'PREMIUM_CREDIT' ||
+      syncedPremiumRunRef.current === runId
+    ) {
+      return;
+    }
+
+    syncedPremiumRunRef.current = runId;
+    invalidatePaymentPricingCache();
+    window.dispatchEvent(new CustomEvent('voxidence :credits-updated'));
+  }, [isComplete, run?.generationType, runId]);
 
   const handleCancel = async () => {
     if (isCancelling || isTerminal || !canCancel) return;
@@ -210,7 +224,7 @@ export default function GenerationProgressPage() {
         <CompletionCelebration
           ideaId={run.ideaId}
           ideaTitle={run.idea?.title}
-          isPremium={isPremium}
+          isPremium={run?.generationType === 'PREMIUM_CREDIT'}
           onOpenIdea={(ideaId) => navigate(`/normal/ideas/${ideaId}`, { replace: true })}
         />
       ) : null}

@@ -92,6 +92,9 @@ export class PaymentProcessingService {
    */
   private readonly logger = new Logger(PaymentProcessingService.name);
 
+  /** Prevents duplicate background AI unlock jobs for the same payment. */
+  private readonly directUnlockInFlight = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
 
@@ -227,34 +230,81 @@ export class PaymentProcessingService {
         },
       );
 
-      const completedResult =
-        await this.completeDirectUnlockAfterCommit(result);
-
       /*
-       * Cache invalidation occurs only after the database
-       * transaction commits successfully.
+       * Cache invalidation remains part of the fast confirmation path because
+       * callers must see the updated balance/account state immediately after
+       * a successful credit purchase.
        */
-      if (completedResult.creditBalanceChanged) {
+      if (result.creditBalanceChanged) {
         await this.creditCacheService.invalidateUserCreditCaches(
-          completedResult.userId,
+          result.userId,
         );
       }
 
       /*
-       * Notification delivery occurs only after the payment transaction
-       * commits. Repeated webhook events do not resend notifications.
+       * Email delivery must never delay Stripe/webhook confirmation or the
+       * user's return page. The payment is already committed at this point, so
+       * delivery can safely continue in the background.
        */
-      if (
-        !completedResult.alreadyProcessed ||
-        completedResult.unlockCompletedNow === true
-      ) {
-        await this.notifyPaymentResultSafely(completedResult);
+      if (!result.alreadyProcessed) {
+        void this.notifyPaymentResultSafely(result);
       }
 
-      return completedResult;
+      /*
+       * DIRECT_UNLOCK requires AI generation, which can legitimately take many
+       * seconds. Start that work after the payment transaction commits and
+       * return the trusted payment result immediately. The idea workspace
+       * already knows how to show a preparation state until outputs are ready.
+       */
+      if (
+        result.status === PaymentStatus.SUCCEEDED &&
+        result.paymentPurpose === PaymentPurpose.DIRECT_UNLOCK
+      ) {
+        this.startDirectUnlockCompletion(result);
+
+        return {
+          ...result,
+          ideaUnlocked: false,
+          unlockCompletedNow: false,
+          unlockInProgress: true,
+        };
+      }
+
+      return result;
     } catch (error) {
       this.rethrowKnownPaymentError(error);
     }
+  }
+
+  /**
+   * Starts the expensive paid-unlock generation without delaying payment
+   * confirmation responses. Repeated webhook/reconcile calls reuse the same
+   * in-process task. Database claim rows still provide cross-process safety.
+   */
+  private startDirectUnlockCompletion(result: PaymentProcessingResult): void {
+    if (this.directUnlockInFlight.has(result.paymentId)) {
+      return;
+    }
+
+    const task = this.completeDirectUnlockAfterCommit(result)
+      .then((completedResult) => {
+        if (completedResult.ideaUnlocked) {
+          this.logger.log(
+            `Direct unlock completed for payment ${completedResult.paymentId}.`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Background direct unlock failed for payment ${result.paymentId}.`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      })
+      .finally(() => {
+        this.directUnlockInFlight.delete(result.paymentId);
+      });
+
+    this.directUnlockInFlight.set(result.paymentId, task);
   }
 
   /**

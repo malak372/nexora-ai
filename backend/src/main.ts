@@ -1,5 +1,5 @@
 /**
- * Nexora AI application bootstrap.
+ * Voxidence application bootstrap.
  *
  * Starts and configures the backend application, including:
  * - Raw request-body preservation for webhook verification.
@@ -11,7 +11,7 @@
  * - Public uploads directory.
  * - Graceful application shutdown.
  * * @module main
- * @author Nexora AI Team
+ * @author Voxidence Team
  */
 
 import { ValidationPipe } from '@nestjs/common';
@@ -47,7 +47,7 @@ const DEFAULT_FRONTEND_URL = 'http://localhost:3001';
 const DEFAULT_BACKEND_PORT = 3000;
 
 /**
- * Starts and configures the Nexora AI backend application.
+ * Starts and configures the Voxidence backend application.
  *
  * @returns A promise that resolves after the HTTP server starts.
  */
@@ -136,6 +136,7 @@ async function bootstrap(): Promise<void> {
       'Authorization',
       'Accept',
       'X-Requested-With',
+      'X-Admin-Sensitive-Token',
     ],
   });
 
@@ -171,15 +172,15 @@ async function bootstrap(): Promise<void> {
    */
   if (enableSwagger) {
     /**
-     * Configures the Nexora AI OpenAPI document.
+     * Configures the Voxidence OpenAPI document.
      */
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('Nexora AI API')
+      .setTitle('Voxidence API')
       .setDescription(
         [
-          'REST API documentation for the Nexora AI backend.',
+          'REST API documentation for the Voxidence backend.',
           '',
-          'Nexora AI provides:',
+          'Voxidence provides:',
           '- Authentication and user management.',
           '- Community data collection.',
           '- NLP analysis and AI enhancement.',
@@ -260,7 +261,7 @@ async function bootstrap(): Promise<void> {
       {
         jsonDocumentUrl: 'docs-json',
         customSiteTitle:
-          'Nexora AI API Documentation',
+          'Voxidence API Documentation',
         swaggerOptions: {
           persistAuthorization: true,
           displayRequestDuration: true,
@@ -320,7 +321,7 @@ async function bootstrap(): Promise<void> {
   const applicationUrl = await app.getUrl();
 
   console.log(
-    `Nexora AI backend: ${applicationUrl}`,
+    `Voxidence backend: ${applicationUrl}`,
   );
 
   console.log(

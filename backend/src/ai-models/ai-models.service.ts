@@ -323,6 +323,51 @@ export class AiModelsService {
     };
   }
 
+
+  /**
+   * Returns operational totals for the administrator AI-model registry.
+   */
+  async getSummary() {
+    const [
+      totalModels,
+      activeModels,
+      inactiveModels,
+      defaultModels,
+      healthyModels,
+      degradedModels,
+      unavailableModels,
+      unknownModels,
+    ] = await this.prisma.$transaction([
+      this.prisma.aiModel.count(),
+      this.prisma.aiModel.count({ where: { isActive: true } }),
+      this.prisma.aiModel.count({ where: { isActive: false } }),
+      this.prisma.aiModel.count({ where: { isDefault: true } }),
+      this.prisma.aiModel.count({
+        where: { healthStatus: AiModelHealthStatus.HEALTHY },
+      }),
+      this.prisma.aiModel.count({
+        where: { healthStatus: AiModelHealthStatus.DEGRADED },
+      }),
+      this.prisma.aiModel.count({
+        where: { healthStatus: AiModelHealthStatus.UNAVAILABLE },
+      }),
+      this.prisma.aiModel.count({
+        where: { healthStatus: AiModelHealthStatus.UNKNOWN },
+      }),
+    ]);
+
+    return {
+      totalModels,
+      activeModels,
+      inactiveModels,
+      defaultModels,
+      healthyModels,
+      degradedModels,
+      unavailableModels,
+      unknownModels,
+    };
+  }
+
   /**
    * Returns one AI model by identifier.
    *
@@ -724,6 +769,75 @@ export class AiModelsService {
         );
 
         return updatedModel;
+      });
+    } catch (error: unknown) {
+      this.handlePrismaError(error);
+    }
+  }
+
+
+  /**
+   * Permanently removes a non-default AI-model configuration.
+   *
+   * Historical execution records are intentionally preserved. They already
+   * contain provider/model snapshots, so only their nullable aiModelId foreign
+   * key is detached before deleting the registry entry.
+   */
+  async remove(id: string, actorId: string) {
+    const normalizedId = this.requireIdentifier(id, 'AI model ID');
+    const normalizedActorId = this.requireIdentifier(actorId, 'Actor ID');
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const oldModel = await this.findOneOrThrow(tx, normalizedId);
+
+        if (oldModel.isDefault) {
+          throw new ConflictException(
+            'The default AI model cannot be deleted. Select another default model first.',
+          );
+        }
+
+        await tx.externalApiLog.updateMany({
+          where: { aiModelId: normalizedId },
+          data: { aiModelId: null },
+        });
+
+        await tx.ideaGenerationCandidate.updateMany({
+          where: { aiModelId: normalizedId },
+          data: { aiModelId: null },
+        });
+
+        await tx.aiModel.delete({
+          where: { id: normalizedId },
+        });
+
+        /*
+         * The current audit enum has no dedicated DELETE_AI_MODEL action.
+         * Reuse the existing model-update action while recording an explicit
+         * deletion marker, avoiding a database enum migration just for this
+         * administrative operation.
+         */
+        await this.auditService.createLog(
+          {
+            actorId: normalizedActorId,
+            action: AuditAction.ADMIN_UPDATE_AI_MODEL,
+            targetType: AuditTargetType.AI_MODEL,
+            targetId: normalizedId,
+            oldValue: this.toAuditJson(oldModel),
+            newValue: {
+              deleted: true,
+              providerKey: oldModel.providerKey,
+              apiModelId: oldModel.apiModelId,
+              modelName: oldModel.modelName,
+            },
+          },
+          tx,
+        );
+
+        return {
+          id: normalizedId,
+          deleted: true,
+        };
       });
     } catch (error: unknown) {
       this.handlePrismaError(error);

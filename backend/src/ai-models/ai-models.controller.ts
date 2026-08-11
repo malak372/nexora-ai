@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -153,6 +154,18 @@ export class AiModelsController {
     return this.aiModelsService.findAll(query);
   }
 
+
+  /**
+   * Returns a compact operational summary for the AI-model registry.
+   *
+   * Route:
+   * GET /ai-models/summary
+   */
+  @Get('summary')
+  getSummary() {
+    return this.aiModelsService.getSummary();
+  }
+
   /**
    * Returns the currently configured active and routable default model.
    *
@@ -300,4 +313,26 @@ export class AiModelsController {
   ): Promise<AiModel> {
     return this.aiModelsService.deactivate(id, user.id);
   }
+
+  /**
+   * Permanently removes a non-default AI-model configuration.
+   *
+   * Historical external API logs and generation candidates are retained.
+   * Their nullable aiModelId reference is cleared before the model row is
+   * deleted, while provider/model snapshot fields remain untouched.
+   *
+   * Route:
+   * DELETE /ai-models/:id
+   */
+  @Delete(':id')
+  remove(
+    @Param('id', AI_MODEL_ID_PIPE)
+    id: string,
+
+    @CurrentUser()
+    user: AuthenticatedUser,
+  ) {
+    return this.aiModelsService.remove(id, user.id);
+  }
+
 }
