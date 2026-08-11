@@ -1135,9 +1135,11 @@ export class PaymentCheckoutService {
   }
 
   /**
-   * Starts provider reconciliation without holding the HTTP response open.
-   * Stripe/PayPal inspection can take seconds on a slow network, so the
-   * frontend should be free to keep polling the local database meanwhile.
+   * Reconciles one pending payment directly with the provider and returns the
+   * newest local state in the same request. This removes the long redirect-page
+   * polling window when a webhook is delayed or unavailable in local
+   * development. The provider session id is read from our database, never from
+   * an untrusted browser value.
    */
   async reconcilePayment(userId: string, paymentId: string) {
     const payment = await this.prisma.payment.findFirst({
@@ -1162,21 +1164,27 @@ export class PaymentCheckoutService {
       payment.status === PaymentStatus.PENDING &&
       payment.providerSessionId
     ) {
-      this.startBackgroundReconciliation(payment);
+      await this.reconcileWithProvider(payment);
     }
 
-    // Return the current local state immediately. The next lightweight status
-    // poll will observe SUCCEEDED as soon as the background transaction commits.
     return this.getPaymentState(userId, paymentId);
   }
 
-  private startBackgroundReconciliation(payment: {
+  /**
+   * Runs at most one provider inspection per payment inside this process. If a
+   * webhook or another browser retry already started reconciliation, callers
+   * await that same promise instead of creating duplicate Stripe requests.
+   */
+  private async reconcileWithProvider(payment: {
     readonly id: string;
     readonly status: PaymentStatus;
     readonly providerKey: string;
     readonly providerSessionId: string | null;
-  }): void {
-    if (this.reconciliationInFlight.has(payment.id)) {
+  }): Promise<void> {
+    const existingTask = this.reconciliationInFlight.get(payment.id);
+
+    if (existingTask) {
+      await existingTask;
       return;
     }
 
@@ -1202,18 +1210,12 @@ export class PaymentCheckoutService {
       await this.paymentProcessingService.processConfirmation(
         inspection.confirmation,
       );
-    })()
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.error(
-          `Background payment reconciliation failed for ${payment.id}: ${message}`,
-        );
-      })
-      .finally(() => {
-        this.reconciliationInFlight.delete(payment.id);
-      });
+    })().finally(() => {
+      this.reconciliationInFlight.delete(payment.id);
+    });
 
     this.reconciliationInFlight.set(payment.id, task);
+    await task;
   }
 
   private appendPaymentReturnParameters(successUrl:string,payment:PendingPayment,options:{ideaId?:string;publicationId?:string}){ const url=new URL(successUrl); url.searchParams.set('paymentId',payment.id); url.searchParams.set('purpose',payment.paymentPurpose); if(options.ideaId) url.searchParams.set('ideaId',options.ideaId); if(options.publicationId) url.searchParams.set('publicationId',options.publicationId); return url.toString(); }

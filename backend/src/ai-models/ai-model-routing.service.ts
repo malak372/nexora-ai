@@ -167,7 +167,10 @@ export class AiModelRoutingService {
    * @returns Exact routable model.
    * @throws ServiceUnavailableException when the model is not routable.
    */
-  async resolveSpecificModel(modelId: string): Promise<AiModel> {
+  async resolveSpecificModel(
+    modelId: string,
+    allowTemporaryCooldownBypass = false,
+  ): Promise<AiModel> {
     const normalizedModelId = modelId.trim();
 
     if (!normalizedModelId) {
@@ -192,6 +195,10 @@ export class AiModelRoutingService {
     );
 
     if (!model) {
+      if (allowTemporaryCooldownBypass) {
+        return configuredModel;
+      }
+
       throw new ServiceUnavailableException(
         `AI model "${configuredModel.displayName ?? configuredModel.modelName}" is temporarily unavailable because of a recent provider quota, rate-limit, or availability failure.`,
       );

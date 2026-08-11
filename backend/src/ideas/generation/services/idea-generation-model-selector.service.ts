@@ -50,14 +50,23 @@ export class IdeaGenerationModelSelectorService {
         eligibleModels,
       );
 
-    if (availableModels.length <= 1) {
-      return [...availableModels];
+    const availableModelIds = new Set(availableModels.map((model) => model.id));
+    const temporarilyCooledModels = eligibleModels.filter(
+      (model) => !availableModelIds.has(model.id),
+    );
+    const recoveryPool = [...availableModels, ...temporarilyCooledModels];
+    const temporarilyCooledModelIds = new Set(
+      temporarilyCooledModels.map((model) => model.id),
+    );
+
+    if (recoveryPool.length <= 1) {
+      return recoveryPool;
     }
 
     const recentUsage = await this.findRecentUsage(context);
     const seed = this.hash(context.runId);
     const cooledModelIds = new Set(
-      availableModels
+      recoveryPool
         .filter(
           (model) =>
             (recentUsage.failureCounts.get(model.id) ?? 0) >=
@@ -65,11 +74,16 @@ export class IdeaGenerationModelSelectorService {
         )
         .map((model) => model.id),
     );
-    const nonCooledModels = availableModels.filter(
+    const nonCooledModels = recoveryPool.filter(
       (model) => !cooledModelIds.has(model.id),
     );
-    const selectableModels =
-      nonCooledModels.length > 0 ? nonCooledModels : availableModels;
+    const recentlyCooledModels = recoveryPool.filter((model) =>
+      cooledModelIds.has(model.id),
+    );
+
+    // Keep cooled models available as a last-resort fallback instead of
+    // deleting them from the benchmark whenever one fresh model exists.
+    const selectableModels = [...nonCooledModels, ...recentlyCooledModels];
     const modelsByProvider = new Map<string, AiModel[]>();
 
     for (const model of selectableModels) {
@@ -144,53 +158,25 @@ export class IdeaGenerationModelSelectorService {
       }
     }
 
-    return ordered;
+    const deprioritizedModelIds = new Set([
+      ...temporarilyCooledModelIds,
+      ...cooledModelIds,
+    ]);
+
+    return [
+      ...ordered.filter((model) => !deprioritizedModelIds.has(model.id)),
+      ...ordered.filter((model) => deprioritizedModelIds.has(model.id)),
+    ];
   }
 
   /**
    * Returns the provider-diverse initial benchmark group.
    *
-   * The fast path starts up to three bounded candidates: one direct Google,
-   * one OpenRouter, and a second direct Google when available. This avoids a
-   * second serial provider wave when OpenRouter times out while still keeping
-   * the race small enough to protect provider quotas.
+   * The fast path starts up to two provider-diverse candidates. Additional
+   * routable models, including temporarily cooled models, remain available for
+   * bounded fallback when the first wave cannot produce a usable candidate.
    */
   getInitialModels(orderedModels: readonly AiModel[]): AiModel[] {
-    const normalizedProvider = (model: AiModel): string =>
-      model.providerKey.trim().toLowerCase();
-
-    const googleModels = orderedModels.filter(
-      (model) => normalizedProvider(model) === 'google',
-    );
-    const openRouterModels = orderedModels.filter(
-      (model) => normalizedProvider(model) === 'openrouter',
-    );
-
-    /*
-     * Fast benchmark race:
-     * - first direct Google model,
-     * - first OpenRouter model,
-     * - second direct Google model when available.
-     *
-     * The third lane is important because a provider-diverse pair can still
-     * end with one sub-threshold Google result plus one OpenRouter timeout.
-     * Launching the next healthy Google model in the same first wave turns
-     * that previous 35-40 second serial fallback into one bounded race.
-     */
-    const fastRace = [
-      googleModels[0],
-      openRouterModels[0],
-      googleModels[1],
-    ].filter((model): model is AiModel => Boolean(model));
-
-    const uniqueFastRace = [...new Map(
-      fastRace.map((model) => [model.id, model] as const),
-    ).values()];
-
-    if (uniqueFastRace.length > 0) {
-      return uniqueFastRace.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);
-    }
-
     return orderedModels.slice(0, IDEA_BENCHMARK_INITIAL_MODEL_COUNT);
   }
 

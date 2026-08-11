@@ -24,6 +24,18 @@ const routeChunkPreloaders = {
 };
 
 const routeDataPreloaders = {
+  '/normal/generate': async () => {
+    const [{ getAvailableDomains }, { getNormalUserSummary }, { getPaymentPricing }] = await Promise.all([
+      import('../features/normal-user/idea-generation/api/ideaGenerationApi'),
+      import('../features/normal-user/dashboard/api/dashboardApi'),
+      import('../features/normal-user/payments/api/paymentFlowApi'),
+    ]);
+    return Promise.allSettled([
+      getAvailableDomains(),
+      getNormalUserSummary(),
+      getPaymentPricing(),
+    ]);
+  },
   '/normal/dashboard': async () => {
     const { getNormalUserSummary } = await import('../features/normal-user/dashboard/api/dashboardApi');
     return getNormalUserSummary();
@@ -42,7 +54,7 @@ const routeDataPreloaders = {
   },
   '/normal/notifications': async () => {
     const { getNotifications } = await import('../features/normal-user/notifications/api/notificationsApi');
-    return getNotifications({ page: 1, limit: 50, sortBy: 'createdAt', sortOrder: 'desc' });
+    return getNotifications({ page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'desc' });
   },
   '/normal/billing': async () => {
     const { getMyInvoices } = await import('../features/normal-user/billing/api/invoicesApi');

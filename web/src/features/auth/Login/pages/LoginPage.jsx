@@ -26,6 +26,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { ROUTES } from '../../../../constants/routes.constants';
 import { preloadRoute } from '../../../../routes/routePreloaders';
+import { preloadAdminRoute } from '../../../../routes/adminRoutePreloaders';
 import { saveAuthSession } from '../../shared/auth.storage';
 import { markPremiumWelcomePending } from '../../../normal-user/shared/components/PremiumWelcomeCelebration';
 import { login } from '../api/login.api';
@@ -136,6 +137,10 @@ export default function LoginPage() {
                 // the page request if both happen at nearly the same time.
                 void dashboardChunkPromise;
                 preloadRoute('/normal/dashboard');
+            } else if (destination === '/admin/dashboard') {
+                // Admin users get the same route-and-data warming before the
+                // workspace transition, removing the cold admin dashboard wait.
+                preloadAdminRoute('/admin/dashboard');
             }
 
             navigate(destination, { replace: true });

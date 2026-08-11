@@ -23,7 +23,7 @@ export class CreateAlertDto {
    * Alert title.
    */
   @IsString()
-  @MinLength(3)
+  @MinLength(1)
   @MaxLength(100)
   title!: string;
 
@@ -31,7 +31,7 @@ export class CreateAlertDto {
    * Alert message.
    */
   @IsString()
-  @MinLength(5)
+  @MinLength(1)
   @MaxLength(1000)
   message!: string;
 

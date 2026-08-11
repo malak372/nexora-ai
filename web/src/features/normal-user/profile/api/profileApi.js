@@ -8,11 +8,37 @@ import {
   getApiErrorMessage,
   normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+  cachedRequest,
+  createRequestCacheKey,
+  invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
-export async function getMyProfile() {
+const PROFILE_CACHE_NAMESPACE = 'my-profile';
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function invalidateProfileCache() {
+  invalidateRequestCache(`${PROFILE_CACHE_NAMESPACE}:`);
+  invalidateRequestCache('dashboard-summary:');
+}
+
+export async function getMyProfile({ forceRefresh = false } = {}) {
+  const key = createRequestCacheKey(PROFILE_CACHE_NAMESPACE);
+
   try {
-    const response = await normalUserApi.get('/users/profile');
-    return extractApiData(response);
+    return await cachedRequest(
+      key,
+      async () => {
+        const response = await normalUserApi.get('/users/profile');
+        return extractApiData(response);
+      },
+      {
+        ttlMs: PROFILE_CACHE_TTL_MS,
+        force: Boolean(forceRefresh),
+        persist: true,
+        allowStaleOnError: true,
+      },
+    );
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Your profile could not be loaded.'));
   }
@@ -21,6 +47,7 @@ export async function getMyProfile() {
 export async function updateMyProfile(payload) {
   try {
     const response = await normalUserApi.patch('/users/profile', payload);
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Your profile could not be updated.'));
@@ -33,6 +60,7 @@ export async function requestEmailChange(payload) {
       '/users/profile/email-change/request',
       payload,
     );
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(
@@ -47,6 +75,7 @@ export async function verifyCurrentEmailChange(code) {
       '/users/profile/email-change/verify-current',
       { code },
     );
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(
@@ -61,6 +90,7 @@ export async function verifyNewEmailChange(code) {
       '/users/profile/email-change/verify-new',
       { code },
     );
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(
@@ -74,6 +104,7 @@ export async function cancelEmailChange() {
     const response = await normalUserApi.post(
       '/users/profile/email-change/cancel',
     );
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(
@@ -103,6 +134,7 @@ export async function uploadProfileAvatar(file) {
     const response = await normalUserApi.patch('/users/profile/avatar', formData, {
       timeout: 45_000,
     });
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'The profile image could not be uploaded.'));
@@ -112,19 +144,19 @@ export async function uploadProfileAvatar(file) {
 export async function removeProfileAvatar() {
   try {
     const response = await normalUserApi.delete('/users/profile/avatar');
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'The profile image could not be removed.'));
   }
 }
 
-
-/** Permanently closes the current user's account after password confirmation. */
 export async function deleteMyAccount(currentPassword) {
   try {
     const response = await normalUserApi.delete('/users/account', {
       data: { currentPassword },
     });
+    invalidateProfileCache();
     return extractApiData(response);
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Your account could not be deleted.'));

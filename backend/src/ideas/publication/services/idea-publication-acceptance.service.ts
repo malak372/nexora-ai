@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -19,7 +20,9 @@ import {
 
 import { SystemAlertsService } from '../../../alerts/services/system-alerts.service';
 import { AuditService } from '../../../audit-logs/audit-logs.service';
+import { CreditBalanceNotificationService } from '../../../credits/services/credit-balance-notification.service';
 import { CreditBalanceService } from '../../../credits/services/credit-balance.service';
+import { CreditCacheService } from '../../../credits/services/credit-cache.service';
 import { GLOBAL_SYSTEM_SETTINGS_KEY } from '../../../payments/constants/payment.constants';
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -69,9 +72,13 @@ type PublicationCapacityData = {
  */
 @Injectable()
 export class IdeaPublicationAcceptanceService {
+  private readonly logger = new Logger(IdeaPublicationAcceptanceService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly creditBalanceService: CreditBalanceService,
+    private readonly creditBalanceNotificationService: CreditBalanceNotificationService,
+    private readonly creditCacheService: CreditCacheService,
     private readonly alerts: SystemAlertsService,
     private readonly audit: AuditService,
   ) { }
@@ -312,7 +319,7 @@ export class IdeaPublicationAcceptanceService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const transactionResult = await this.prisma.$transaction(async (tx) => {
       const freshAcceptance = await tx.ideaPublicationAcceptance.findUnique({
         where: {
           id: acceptance.id,
@@ -333,10 +340,13 @@ export class IdeaPublicationAcceptanceService {
         });
 
         return {
-          acceptance: freshAcceptance,
-          creditBalance: currentUser?.creditBalance ?? user.creditBalance,
-          accountStatus: currentUser?.accountStatus ?? user.accountStatus,
-          creditsSpent: 0,
+          response: {
+            acceptance: freshAcceptance,
+            creditBalance: currentUser?.creditBalance ?? user.creditBalance,
+            accountStatus: currentUser?.accountStatus ?? user.accountStatus,
+            creditsSpent: 0,
+          },
+          creditChange: null,
         };
       }
 
@@ -369,12 +379,44 @@ export class IdeaPublicationAcceptanceService {
       );
 
       return {
-        acceptance: updatedAcceptance,
-        creditBalance: creditResult.balanceAfter,
-        accountStatus: creditResult.accountStatus,
-        creditsSpent: settings.publicationAdvancedCreditCost,
+        response: {
+          acceptance: updatedAcceptance,
+          creditBalance: creditResult.balanceAfter,
+          accountStatus: creditResult.accountStatus,
+          creditsSpent: settings.publicationAdvancedCreditCost,
+        },
+        creditChange: {
+          previousBalance: creditResult.previousBalance,
+          balanceAfter: creditResult.balanceAfter,
+        },
       };
     });
+
+    if (transactionResult.creditChange) {
+      void Promise.allSettled([
+        this.creditCacheService.invalidateUserCreditCaches(userId),
+        this.creditBalanceNotificationService.notifyAfterCommittedBalanceChange({
+          userId,
+          previousBalance: transactionResult.creditChange.previousBalance,
+          balanceAfter: transactionResult.creditChange.balanceAfter,
+        }),
+      ]).then((results) => {
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            const message =
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason);
+
+            this.logger.warn(
+              `Publication advanced unlock committed, but a credit side effect failed for user "${userId}": ${message}`,
+            );
+          }
+        }
+      });
+    }
+
+    return transactionResult.response;
   }
 
   /**

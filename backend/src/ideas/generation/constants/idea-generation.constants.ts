@@ -15,13 +15,13 @@
  */
 
 /**
- * Number of credits consumed after one successful
- * premium idea generation.
+ * Legacy default retained for compatibility with older imports.
  *
- * Credits must not be deducted before the idea and all
- * required premium outputs have been persisted successfully.
+ * @deprecated Runtime Premium-generation cost must be read from
+ * SystemSetting.premiumIdeaCreditCost. Do not use this constant for billing,
+ * entitlement checks, or low-credit thresholds.
  */
-export const PREMIUM_IDEA_CREDIT_COST = 1;
+export const PREMIUM_IDEA_CREDIT_COST = 15;
 
 /**
  * Default number of free idea generations available to a
@@ -86,19 +86,20 @@ export const IDEA_GENERATION_TARGET_BUDGET_MS = 120_000;
  */
 export const IDEA_GENERATION_EXECUTION_DEADLINE_MS = 300_000;
 
-/** Maximum provider time allocated to one core-generation candidate. */
-export const IDEA_CORE_MODEL_TIMEOUT_MS = 14_000;
+/** Maximum provider time allocated to one non-specialized core model. */
+export const IDEA_CORE_MODEL_TIMEOUT_MS = 22_000;
 
 /**
- * OpenRouter models are cut off earlier because the observed slow/failing
- * requests consume the complete benchmark window without improving quality.
- * Direct Google models keep the wider quality-safe allowance.
+ * Provider-specific core-generation deadlines. Google receives a wider window
+ * because structured idea generation can legitimately exceed sixteen seconds.
+ * OpenRouter remains bounded more aggressively so a slow upstream endpoint does
+ * not consume the complete generation budget.
  */
-export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 10_000;
-export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 16_000;
+export const IDEA_CORE_OPENROUTER_TIMEOUT_MS = 18_000;
+export const IDEA_CORE_GOOGLE_TIMEOUT_MS = 28_000;
 
-/** Local core-model fallback is disabled inside the strict minute path. */
-export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = false;
+/** Use a configured local model only after every online core model fails. */
+export const IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK = true;
 
 /**
  * Enables comparative AI judging when at least two quality-approved candidates
@@ -378,6 +379,12 @@ export const IDEA_GENERATION_ERROR_CODES = {
   INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
 
   /**
+   * A NORMAL account attempted to use Premium-credit generation
+   * without completing Premium activation through checkout.
+   */
+  PREMIUM_REQUIRED: 'PREMIUM_REQUIRED',
+
+  /**
    * Another generation is already running for the same
    * owner.
    */
@@ -556,13 +563,12 @@ export const IDEA_QUALITY_REVISION_MAX_ATTEMPTS = 1;
 export const IDEA_QUALITY_REVISION_TRIGGER_SCORE = 65;
 
 /**
- * Number of AI models selected initially for each ranked opportunity.
+ * Number of AI models launched in the first provider-diverse wave.
  *
- * The benchmark service may use additional fallback models when one or more
- * selected providers fail, but it should attempt this many models first for
- * every opportunity.
+ * Keeping the first wave at two prevents transient failures from consuming the
+ * complete model-attempt budget before late fallback models can be tried.
  */
-export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 3;
+export const IDEA_BENCHMARK_INITIAL_MODEL_COUNT = 2;
 
 /**
  * Number of highest-ranked opportunities forwarded to the multi-model
@@ -593,9 +599,9 @@ export const IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY =
  * - One opportunity is attempted on the fast path.
  * - One additional opportunity is attempted only when the first opportunity
  *   does not produce enough accepted candidates.
- * - Three AI models are executed concurrently per opportunity.
- * - Up to six generated candidates are created across the bounded fast and
- *   fallback paths.
+ * - Two AI models are targeted per opportunity.
+ * - Additional models may be attempted only to replace failed candidate slots.
+ * - The global attempt budget remains independently bounded.
  */
 export const IDEA_BENCHMARK_MAX_CANDIDATES =
   IDEA_BENCHMARK_TOP_OPPORTUNITY_COUNT * IDEA_BENCHMARK_MODELS_PER_OPPORTUNITY;
@@ -603,11 +609,11 @@ export const IDEA_BENCHMARK_MAX_CANDIDATES =
 /**
  * Maximum total candidate-generation attempts allowed for one benchmark run.
  *
- * Keeping this value derived from IDEA_BENCHMARK_MAX_CANDIDATES prevents the
- * attempt limit from becoming inconsistent with the configured opportunity
- * and model counts.
+ * Failed provider attempts do not produce candidates, so the attempt budget is
+ * intentionally larger than the target candidate count. This leaves room for
+ * provider fallback without making the benchmark unbounded.
  */
-export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 3;
+export const IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS = 5;
 
 /**
  * Maximum number of bounded regeneration attempts for a quality-approved
@@ -631,12 +637,12 @@ export const IDEA_BENCHMARK_MIN_SUCCESSFUL_CANDIDATES = 1;
 /**
  * Number of same-model retries used for transient benchmark failures.
  *
- * The initial provider request is not included in this value. A value of zero means the fast path never repeats the same provider request after a
- * temporary network, timeout, rate-limit, or provider-availability failure.
+ * The initial provider request is not included in this value. One retry protects
+ * a generation run from a single transient timeout or network interruption.
  * After the retry is exhausted, IdeaGenerationBenchmarkService continues with
- * the next healthy model from the ordered fallback rotation.
+ * the next model from the ordered fallback rotation.
  */
-export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 0;
+export const IDEA_BENCHMARK_TRANSIENT_RETRIES_PER_MODEL = 1;
 
 /**
  * Number of recent generation runs inspected when rotating AI model
@@ -648,7 +654,7 @@ export const IDEA_BENCHMARK_RECENT_RUN_LOOKBACK = 6;
 export const IDEA_BENCHMARK_FAILURE_COOLDOWN_RUNS = 4;
 
 /** Repeated recent failures required before a model is cooled down. */
-export const IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD = 1;
+export const IDEA_BENCHMARK_FAILURE_COOLDOWN_THRESHOLD = 2;
 
 /**
  * Model API identifiers excluded from the normal core-generation rotation.

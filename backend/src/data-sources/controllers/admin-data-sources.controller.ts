@@ -72,6 +72,14 @@ export class AdminDataSourcesController {
   }
 
   /**
+   * Returns global administrative data-source counters.
+   */
+  @Get('summary')
+  getSummary() {
+    return this.dataSourcesService.getAdminSummary();
+  }
+
+  /**
    * Returns a paginated administrative source list.
    */
   @Get()
@@ -83,11 +91,10 @@ export class AdminDataSourcesController {
   }
 
   /**
-   * Synchronizes DataSource.isImplemented with
-   * the deployed collector registry.
+   * Synchronizes safety state with the deployed collector registry.
    *
-   * Sources without operational collectors are also
-   * deactivated automatically.
+   * Sources without operational collectors are disabled and deactivated.
+   * Administrator-disabled implementations are never turned back on here.
    */
   @Post('synchronize')
   synchronize() {

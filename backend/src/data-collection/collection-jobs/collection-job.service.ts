@@ -58,6 +58,14 @@ const collectionJobInclude = {
 
   nlpAnalysis: true,
 
+  createdBy: {
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+    },
+  },
+
   _count: {
     select: {
       posts: true,
@@ -607,7 +615,15 @@ export class CollectionJobService {
             createdById: access.userId,
           };
 
-    const [running, completed, failed, stopped] = await Promise.all([
+    const [pending, running, completed, failed, stopped] = await Promise.all([
+      this.prisma.collectionJob.count({
+        where: {
+          ...ownershipWhere,
+
+          status: CollectionJobStatus.PENDING,
+        },
+      }),
+
       this.prisma.collectionJob.count({
         where: {
           ...ownershipWhere,
@@ -642,6 +658,8 @@ export class CollectionJobService {
     ]);
 
     return {
+      total: pending + running + completed + failed + stopped,
+      pending,
       running,
       completed,
       failed,

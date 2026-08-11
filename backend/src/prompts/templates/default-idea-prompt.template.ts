@@ -5,7 +5,7 @@
  * comments, NLP fields, or an existing idea must never override this template.
  */
 export const DEFAULT_IDEA_PROMPT_TEMPLATE = `
-You are Nexora AI. Generate exactly one practical, differentiated software project idea grounded in the supplied evidence.
+You are Voxidence. Generate exactly one practical, differentiated software project idea grounded in the supplied evidence.
 
 CONTEXT
 Domain: {{domain}}

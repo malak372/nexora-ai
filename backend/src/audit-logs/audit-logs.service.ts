@@ -188,7 +188,17 @@ export class AuditService {
   async getAuditLogsSummary(query: GetAuditLogsQueryDto) {
     const where = this.buildWhere(query);
 
-    const [totalLogs, logsWithActor, logsWithoutActor] = await Promise.all([
+    const adminActions = Object.values(AuditAction).filter((action) =>
+      action.startsWith('ADMIN_'),
+    );
+
+    const [
+      totalLogs,
+      logsWithActor,
+      logsWithoutActor,
+      administrativeActions,
+      actors,
+    ] = await Promise.all([
       this.prisma.auditLog.count({
         where,
       }),
@@ -216,12 +226,46 @@ export class AuditService {
           ],
         },
       }),
+
+      this.prisma.auditLog.count({
+        where: {
+          AND: [
+            where,
+            {
+              action: {
+                in: adminActions,
+              },
+            },
+          ],
+        },
+      }),
+
+      this.prisma.auditLog.findMany({
+        where: {
+          AND: [
+            where,
+            {
+              actorId: {
+                not: null,
+              },
+            },
+          ],
+        },
+
+        distinct: ['actorId'],
+
+        select: {
+          actorId: true,
+        },
+      }),
     ]);
 
     return {
       totalLogs,
       logsWithActor,
       logsWithoutActor,
+      adminActions: administrativeActions,
+      uniqueActors: actors.length,
     };
   }
 

@@ -1077,4 +1077,132 @@ Please do not reply directly to this email.
       ),
     });
   }
+
+  /**
+   * Sends the one-time administrator invitation code.
+   *
+   * The email address itself is selected by an existing administrator and the
+   * code proves that the invited person controls that mailbox.
+   */
+  async sendAdminInvitationEmail(input: {
+    email: string;
+    fullName: string;
+    invitationCode: string;
+    invitedByName: string;
+    expiresAt: Date;
+  }): Promise<void> {
+    const frontendUrl =
+      process.env.FRONTEND_URL?.split(',')[0]?.trim() ||
+      process.env.APP_FRONTEND_URL?.trim() ||
+      'http://localhost:3001';
+
+    const invitationUrl =
+      `${frontendUrl.replace(/\/$/, '')}/admin-invite` +
+      `?email=${encodeURIComponent(input.email)}`;
+
+    const safeName = this.escapeHtml(input.fullName);
+    const safeInviter = this.escapeHtml(input.invitedByName);
+    const safeCode = this.escapeHtml(input.invitationCode);
+    const safeUrl = this.escapeHtml(invitationUrl);
+    const expiryLabel = input.expiresAt.toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    await this.sendEmail({
+      to: input.email,
+      subject: 'You are invited to administer Voxidence',
+      text: `
+Hello ${input.fullName},
+
+${input.invitedByName} invited you to join the Voxidence administration team.
+
+Administrator invitation code:
+${input.invitationCode}
+
+The invitation expires on ${expiryLabel}.
+
+Open this page to finish setup:
+${invitationUrl}
+
+You will choose your own password. Administrator accounts do not receive user generation credits or a Normal/Premium subscription plan.
+
+If you were not expecting this invitation, you can ignore this email.
+      `.trim(),
+      html: this.buildEmailTemplate(
+        'Voxidence administrator invitation',
+        `
+          <p>Hello ${safeName},</p>
+
+          <p>
+            <strong>${safeInviter}</strong> invited you to join the
+            Voxidence administration team.
+          </p>
+
+          <div style="
+            margin:24px 0;
+            padding:20px;
+            border:1px solid #cfe8e3;
+            border-radius:12px;
+            background:#f4fbf8;
+            text-align:center;
+          ">
+            <div style="
+              margin-bottom:8px;
+              color:#607871;
+              font-size:12px;
+              font-weight:700;
+              letter-spacing:.08em;
+              text-transform:uppercase;
+            ">
+              One-time invitation code
+            </div>
+
+            <div style="
+              color:#315f57;
+              font-size:30px;
+              font-weight:800;
+              letter-spacing:.18em;
+            ">
+              ${safeCode}
+            </div>
+          </div>
+
+          <p>
+            This invitation expires on
+            <strong>${this.escapeHtml(expiryLabel)}</strong>.
+          </p>
+
+          <p style="margin:24px 0;">
+            <a
+              href="${safeUrl}"
+              style="
+                display:inline-block;
+                padding:12px 20px;
+                border-radius:10px;
+                background:#4fa79f;
+                color:#ffffff;
+                text-decoration:none;
+                font-weight:700;
+              "
+            >
+              Set up administrator access
+            </a>
+          </p>
+
+          <p style="color:#6b7f79;">
+            You will choose your own password. Administrator accounts are
+            staff identities, so they do not receive free-generation limits,
+            credits, or a Normal/Premium subscription plan.
+          </p>
+
+          <p style="color:#8a9994;font-size:13px;">
+            If you were not expecting this invitation, you can safely ignore
+            this email.
+          </p>
+        `,
+      ),
+    });
+  }
+
 }

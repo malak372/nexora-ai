@@ -78,46 +78,49 @@ model User {
   lockedUntil         DateTime? @map("locked_until")
   lockDurationMinutes Int?      @map("lock_duration_minutes")
 
-  emailVerifiedAt             DateTime?                   @map("email_verified_at")
-  lastLoginAt                 DateTime?                   @map("last_login_at")
-  passwordChangedAt           DateTime?                   @map("password_changed_at")
-  userType                    UserType
-  deletedAt                   DateTime?                   @map("deleted_at")
-  verificationEmailSentAt     DateTime?                   @map("verification_email_sent_at")
-  premiumActivatedAt          DateTime?                   @map("premium_activated_at")
-  alerts                      Alert[]
-  avatarUrl                   String?                     @map("avatar_url")
-  auditLogs                   AuditLog[]                  @relation("AuditLogs")
-  authenticationLogs          AuthenticationLog[]
-  chatSessions                ChatSession[]
-  emailChangeRequests         EmailChangeRequest[]
-  collectionJobs              CollectionJob[]             @relation("CollectionJobsCreatedBy")
-  complaints                  Complaint[]
-  contactMessages             ContactMessage[]
-  creditTransactions          CreditTransaction[]
-  emailVerificationTokens     EmailVerificationToken[]
-  externalApiLogs             ExternalApiLog[]
-  favoriteIdeas               FavoriteIdea[]
-  generationRuns              IdeaGenerationRun[]
-  publicationAcceptances      IdeaPublicationAcceptance[]
-  businessModels              IdeaBusinessModel[]
-  publicationFeedback         IdeaPublicationFeedback[]
-  publicationRatings          IdeaPublicationRating[]
-  publicationReportsSubmitted IdeaPublicationReport[]     @relation("PublicationReportsSubmitted")
-  publicationReportsReviewed  IdeaPublicationReport[]     @relation("PublicationReportsReviewed")
-  publicationVotes            IdeaPublicationVote[]
-  publishedIdeas              IdeaPublication[]           @relation("PublishedIdeas")
-  ideas                       Idea[]
-  passwordResetTokens         PasswordResetToken[]
-  payments                    Payment[]
-  invoices                    Invoice[]
-  promptHistories             PromptHistory[]
-  refreshTokens               RefreshToken[]
-  savedGenerationSearches     SavedGenerationSearch[]
-  updatedSettings             SystemSetting[]             @relation("SettingsUpdatedBy")
-  devices                     UserDevice[]
-  preferenceSelections        UserPreferenceSelection[]
-  preference                  UserPreference?
+  emailVerifiedAt              DateTime?                     @map("email_verified_at")
+  lastLoginAt                  DateTime?                     @map("last_login_at")
+  passwordChangedAt            DateTime?                     @map("password_changed_at")
+  userType                     UserType
+  deletedAt                    DateTime?                     @map("deleted_at")
+  verificationEmailSentAt      DateTime?                     @map("verification_email_sent_at")
+  premiumActivatedAt           DateTime?                     @map("premium_activated_at")
+  alerts                       Alert[]
+  avatarUrl                    String?                       @map("avatar_url")
+  auditLogs                    AuditLog[]                    @relation("AuditLogs")
+  adminCommunicationsSent      AdminCommunication[]          @relation("AdminCommunicationsSent")
+  adminCommunicationRecipients AdminCommunicationRecipient[] @relation("AdminCommunicationRecipientUser")
+  authenticationLogs           AuthenticationLog[]
+  chatSessions                 ChatSession[]
+  emailChangeRequests          EmailChangeRequest[]
+  collectionJobs               CollectionJob[]               @relation("CollectionJobsCreatedBy")
+  complaints                   Complaint[]
+  contactMessages              ContactMessage[]
+  creditTransactions           CreditTransaction[]
+  emailVerificationTokens      EmailVerificationToken[]
+  adminInvitationsSent         AdminInvitation[]             @relation("AdminInvitationsSent")
+  externalApiLogs              ExternalApiLog[]
+  favoriteIdeas                FavoriteIdea[]
+  generationRuns               IdeaGenerationRun[]
+  publicationAcceptances       IdeaPublicationAcceptance[]
+  businessModels               IdeaBusinessModel[]
+  publicationFeedback          IdeaPublicationFeedback[]
+  publicationRatings           IdeaPublicationRating[]
+  publicationReportsSubmitted  IdeaPublicationReport[]       @relation("PublicationReportsSubmitted")
+  publicationReportsReviewed   IdeaPublicationReport[]       @relation("PublicationReportsReviewed")
+  publicationVotes             IdeaPublicationVote[]
+  publishedIdeas               IdeaPublication[]             @relation("PublishedIdeas")
+  ideas                        Idea[]
+  passwordResetTokens          PasswordResetToken[]
+  payments                     Payment[]
+  invoices                     Invoice[]
+  promptHistories              PromptHistory[]
+  refreshTokens                RefreshToken[]
+  savedGenerationSearches      SavedGenerationSearch[]
+  updatedSettings              SystemSetting[]               @relation("SettingsUpdatedBy")
+  devices                      UserDevice[]
+  preferenceSelections         UserPreferenceSelection[]
+  preference                   UserPreference?
 
   @@index([lockedUntil])
   @@index([loginLockLevel])
@@ -514,6 +517,57 @@ model Alert {
   @@map("alerts")
 }
 
+model AdminCommunication {
+  id                  String                   @id @default(uuid())
+  actorId             String                   @map("actor_id")
+  title               String
+  message             String                   @db.Text
+  scope               AdminCommunicationScope
+  sendInApp           Boolean                  @default(false) @map("send_in_app")
+  sendEmail           Boolean                  @default(false) @map("send_email")
+  alertType           AlertType?               @map("alert_type")
+  recipientCount      Int                      @default(0) @map("recipient_count")
+  status              AdminCommunicationStatus @default(PENDING)
+  inAppDeliveredCount Int                      @default(0) @map("in_app_delivered_count")
+  emailSentCount      Int                      @default(0) @map("email_sent_count")
+  emailFailedCount    Int                      @default(0) @map("email_failed_count")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  completedAt         DateTime?                @map("completed_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+
+  actor      User                          @relation("AdminCommunicationsSent", fields: [actorId], references: [id], onDelete: Restrict)
+  recipients AdminCommunicationRecipient[]
+
+  @@index([actorId, createdAt])
+  @@index([scope, createdAt])
+  @@index([status, createdAt])
+  @@index([sendInApp, sendEmail, createdAt])
+  @@map("admin_communications")
+}
+
+model AdminCommunicationRecipient {
+  id               String                        @id @default(uuid())
+  communicationId  String                        @map("communication_id")
+  userId           String?                       @map("user_id")
+  fullNameSnapshot String?                       @map("full_name_snapshot")
+  emailSnapshot    String                        @map("email_snapshot")
+  inAppDelivered   Boolean                       @default(false) @map("in_app_delivered")
+  emailStatus      AdminCommunicationEmailStatus @default(NOT_REQUESTED) @map("email_status")
+  emailError       String?                       @map("email_error") @db.Text
+  emailSentAt      DateTime?                     @map("email_sent_at")
+  createdAt        DateTime                      @default(now()) @map("created_at")
+  updatedAt        DateTime                      @updatedAt @map("updated_at")
+
+  communication AdminCommunication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  user          User?              @relation("AdminCommunicationRecipientUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([communicationId])
+  @@index([userId])
+  @@index([emailStatus])
+  @@index([communicationId, userId])
+  @@map("admin_communication_recipients")
+}
+
 model Complaint {
   id         String            @id @default(uuid())
   userId     String            @map("user_id")
@@ -608,6 +662,28 @@ model DomainKeyword {
   @@index([domainId])
   @@index([language])
   @@map("domain_keywords")
+}
+
+model AdminInvitation {
+  id          String    @id @default(uuid())
+  fullName    String    @map("full_name")
+  email       String
+  codeHash    String    @unique @map("code_hash")
+  expiresAt   DateTime  @map("expires_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  invitedById String    @map("invited_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  invitedBy User @relation("AdminInvitationsSent", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([acceptedAt])
+  @@index([cancelledAt])
+  @@index([invitedById])
+  @@map("admin_invitations")
 }
 
 model EmailVerificationToken {
@@ -1176,25 +1252,25 @@ model IdeaPublicationAcceptance {
 }
 
 model IdeaPublicationReport {
-  id            String                  @id @default(uuid())
-  publicationId String                  @map("publication_id")
-  reporterId    String                  @map("reporter_id")
-  reason        PublicationReportReason
-  details       String?
-  status        ModerationReportStatus  @default(PENDING)
-  reviewedById  String?                 @map("reviewed_by_id")
-  reviewedAt    DateTime?               @map("reviewed_at")
-  adminNote          String?                 @map("admin_note")
-  moderationAction   String?                 @map("moderation_action")
-  publisherMessage   String?                 @map("publisher_message")
-  reporterMessage    String?                 @map("reporter_message")
-  publisherNotified  Boolean                 @default(false) @map("publisher_notified")
-  reporterNotified   Boolean                 @default(false) @map("reporter_notified")
-  createdAt          DateTime                @default(now()) @map("created_at")
-  updatedAt     DateTime                @updatedAt @map("updated_at")
-  publication   IdeaPublication         @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  reporter      User                    @relation("PublicationReportsSubmitted", fields: [reporterId], references: [id], onDelete: Cascade)
-  reviewedBy    User?                   @relation("PublicationReportsReviewed", fields: [reviewedById], references: [id])
+  id                String                  @id @default(uuid())
+  publicationId     String                  @map("publication_id")
+  reporterId        String                  @map("reporter_id")
+  reason            PublicationReportReason
+  details           String?
+  status            ModerationReportStatus  @default(PENDING)
+  reviewedById      String?                 @map("reviewed_by_id")
+  reviewedAt        DateTime?               @map("reviewed_at")
+  adminNote         String?                 @map("admin_note")
+  moderationAction  String?                 @map("moderation_action")
+  publisherMessage  String?                 @map("publisher_message")
+  reporterMessage   String?                 @map("reporter_message")
+  publisherNotified Boolean                 @default(false) @map("publisher_notified")
+  reporterNotified  Boolean                 @default(false) @map("reporter_notified")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+  publication       IdeaPublication         @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  reporter          User                    @relation("PublicationReportsSubmitted", fields: [reporterId], references: [id], onDelete: Cascade)
+  reviewedBy        User?                   @relation("PublicationReportsReviewed", fields: [reviewedById], references: [id])
 
   @@unique([publicationId, reporterId])
   @@index([publicationId, status])
@@ -1480,6 +1556,7 @@ enum UserRole {
 enum AccountStatus {
   NORMAL
   PREMIUM
+  NOT_APPLICABLE
 }
 
 enum ExternalServiceCategory {
@@ -1591,6 +1668,25 @@ enum AlertType {
   CREDIT_LOW
   CREDIT_EXHAUSTED
   ADMIN
+}
+
+enum AdminCommunicationScope {
+  SELECTED
+  BROADCAST
+}
+
+enum AdminCommunicationStatus {
+  PENDING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum AdminCommunicationEmailStatus {
+  NOT_REQUESTED
+  PENDING
+  SENT
+  FAILED
 }
 
 enum IdeaPublicationVisibility {

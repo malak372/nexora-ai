@@ -12,6 +12,8 @@ import type { AuthenticatedUser } from '../../auth/types/authenticated-user.type
 
 import { CreateAlertDto } from '../dto/create-alert.dto';
 import { CreateEmailAlertDto } from '../dto/create-email-alert.dto';
+import { GetSentCommunicationsQueryDto } from '../dto/get-sent-communications-query.dto';
+import { SendAdminCommunicationDto } from '../dto/send-admin-communication.dto';
 import { GetAlertsQueryDto } from '../dto/get-alerts-query.dto';
 
 import { AdminAlertsService } from '../services/admin-alerts.service';
@@ -35,6 +37,33 @@ import { AdminAlertsService } from '../services/admin-alerts.service';
 export class AdminAlertsController {
   constructor(private readonly adminAlertsService: AdminAlertsService) {}
 
+
+  /**
+   * Returns summary counters for administrator alert activity.
+   *
+   * The summary respects search, category and date-range filters while
+   * intentionally ignoring read-status filtering so the UI can show
+   * All / Unread / Read counters at the same time.
+   *
+   * GET /admin/alerts/summary
+   */
+  @Get('summary')
+  getAlertsSummary(@Query() query: GetAlertsQueryDto) {
+    return this.adminAlertsService.getAlertsSummary(query);
+  }
+
+  /**
+   * Retrieves administrator-sent communication history.
+   *
+   * This history includes in-app only, email only and combined sends.
+   *
+   * GET /admin/alerts/sent
+   */
+  @Get('sent')
+  getSentCommunications(@Query() query: GetSentCommunicationsQueryDto) {
+    return this.adminAlertsService.getSentCommunications(query);
+  }
+
   /**
    * Retrieves a paginated and filtered list of in-app alerts.
    *
@@ -43,6 +72,20 @@ export class AdminAlertsController {
   @Get()
   getAlerts(@Query() query: GetAlertsQueryDto) {
     return this.adminAlertsService.getAlerts(query);
+  }
+
+  /**
+   * Sends one administrator communication to selected users or to all
+   * active users through in-app notification, email, or both channels.
+   *
+   * POST /admin/alerts/send
+   */
+  @Post('send')
+  sendCommunication(
+    @Body() dto: SendAdminCommunicationDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.adminAlertsService.sendCommunication(dto, currentUser.id);
   }
 
   /**
