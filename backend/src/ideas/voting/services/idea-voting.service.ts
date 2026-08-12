@@ -105,7 +105,11 @@ export class IdeaVotingService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Return as soon as the mutation and exact counters are committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 
@@ -142,7 +146,31 @@ export class IdeaVotingService {
   async deleteVote(actor: PublicationEngagementActor, publicationId: string) {
     await this.ensureAccessible(actor, publicationId);
 
-    const existing = await this.getMyVote(actor, publicationId);
+    // getMyVote() performs its own access check. Use the indexed identity key
+    // directly after the single access check above to keep removal responsive.
+    const existing = this.isRegisteredActor(actor)
+      ? await this.prisma.ideaPublicationVote.findUnique({
+          where: {
+            publicationId_userId: {
+              publicationId,
+              userId: actor.userId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+      : await this.prisma.ideaPublicationVote.findUnique({
+          where: {
+            publicationId_guestSessionId: {
+              publicationId,
+              guestSessionId: actor.guestSessionId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
 
     if (!existing) {
       throw new NotFoundException('Publication vote not found');
@@ -163,7 +191,11 @@ export class IdeaVotingService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Return as soon as the mutation and exact counters are committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 

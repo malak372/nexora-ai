@@ -764,12 +764,27 @@
     font-size: 0.68rem;
 }
 
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #34413f;
-    transition: background-color 9999s ease-out;
-    box-shadow: 0 0 0 1000px transparent inset;
+.nx-login .nx-field__control input:-webkit-autofill,
+.nx-login .nx-field__control input:-webkit-autofill:hover,
+.nx-login .nx-field__control input:-webkit-autofill:focus,
+.nx-login .nx-field__control input:-webkit-autofill:active {
+    -webkit-text-fill-color: #355f59 !important;
+    caret-color: #355f59;
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+    background-color: #ffffff !important;
+    transition: background-color 9999s ease-out 0s;
+}
+
+.nx-login .nx-field__control input:-moz-autofill {
+    color: #355f59 !important;
+    caret-color: #355f59;
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+}
+
+.nx-login .nx-field__control input::selection {
+    color: #355f59;
+    background: rgba(92, 189, 185, 0.18);
 }
 
 @keyframes nx-pulse {

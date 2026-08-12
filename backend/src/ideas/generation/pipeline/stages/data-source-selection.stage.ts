@@ -68,16 +68,33 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       domainId: context.domainId,
     });
 
-    const selectedDomains = context.selectedDomains.length > 0
-      ? context.selectedDomains.map((domain) =>
+    const currentSelectedDomains = Array.isArray(context.selectedDomains)
+      ? context.selectedDomains
+      : [];
+
+    const selectedDomains = currentSelectedDomains.length > 0
+      ? currentSelectedDomains.map((domain) =>
           domain.id === selection.domain.id
-            ? { ...domain, name: selection.domain.name, keywords: selection.domain.keywords }
-            : domain,
+            ? {
+                ...domain,
+                name: selection.domain.name,
+                keywords: Array.isArray(selection.domain.keywords)
+                  ? selection.domain.keywords
+                  : [],
+              }
+            : {
+                ...domain,
+                keywords: Array.isArray(domain.keywords)
+                  ? domain.keywords
+                  : [],
+              },
         )
       : [{
           id: selection.domain.id,
           name: selection.domain.name,
-          keywords: selection.domain.keywords,
+          keywords: Array.isArray(selection.domain.keywords)
+            ? selection.domain.keywords
+            : [],
         }];
 
     const balancedDomainTerms: string[] = [];
@@ -101,7 +118,7 @@ export class DataSourceSelectionStage implements IdeaGenerationStage {
       [
         // Preserve explicit requester terms first, then fill the remaining
         // budget fairly across every selected domain.
-        context.keywords.slice(0, 10),
+        (Array.isArray(context.keywords) ? context.keywords : []).slice(0, 10),
         balancedDomainTerms,
       ],
       {

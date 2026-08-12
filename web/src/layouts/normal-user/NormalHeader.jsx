@@ -1,12 +1,10 @@
 /**
- * Normal-user workspace header.
+ * Responsive normal-user workspace header.
  *
- * Displays the authenticated user's name and optional profile image. When the
- * backend does not provide an image URL, the component falls back to initials.
- * Secondary account actions remain inside the profile menu.
+ * Keeps desktop navigation, upgrade access, notifications, profile identity,
+ * and the mobile/tablet drawer trigger stable across all viewport sizes.
  *
- * The header keeps the Voxidence eucalyptus-and-rose identity consistent
- * across search focus, premium upgrade, user identity, and menu interactions.
+ * @author Eman
  */
 import {
   Bell,
@@ -20,21 +18,21 @@ import {
   LogOut,
   Menu,
   ReceiptText,
-  Settings,
-  SlidersHorizontal,
   Search,
+  Settings,
   ShieldAlert,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 
-import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
-import { resolveMediaUrl } from '../../utils/mediaUrl';
 import VoxidenceMark from '../../components/brand/VoxidenceMark';
+import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 import { preloadRoute } from '../../routes/routePreloaders';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
 const PRIMARY_ITEMS = [
   { to: '/normal/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -50,18 +48,22 @@ function getInitials(name = '') {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 }
 
-export default function NormalHeader({ onOpenMenu }) {
+export default function NormalHeader({ onOpenMenu, isMenuOpen = false }) {
   const navigate = useNavigate();
-  const menuRef = useRef(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [user, setUser] = useState(() => getStoredUser() ?? {});
   const [headerSearch, setHeaderSearch] = useState('');
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
 
   const displayName = user.fullName || user.name || 'Voxidence user';
   const accessLabel = isPremium ? 'Premium' : 'Normal access';
-  const imageUrl = resolveMediaUrl(user.avatarUrl || user.profileImageUrl || user.photoUrl || '');
+  const imageUrl = resolveMediaUrl(
+    user.avatarUrl || user.profileImageUrl || user.photoUrl || '',
+  );
   const initials = getInitials(displayName);
+  const showAvatarImage = Boolean(imageUrl && !avatarFailed);
 
   useEffect(() => {
     const handleUserUpdated = (event) => {
@@ -73,9 +75,16 @@ export default function NormalHeader({ onOpenMenu }) {
   }, []);
 
   useEffect(() => {
+    setAvatarFailed(false);
+  }, [imageUrl]);
+
+  useEffect(() => {
     const closeOnOutsideClick = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setMenuOpen(false);
+      if (
+        profileMenuRef.current
+        && !profileMenuRef.current.contains(event.target)
+      ) {
+        setProfileMenuOpen(false);
       }
     };
 
@@ -83,15 +92,29 @@ export default function NormalHeader({ onOpenMenu }) {
     return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
   }, []);
 
-  const navigateFromMenu = (path) => {
-    setMenuOpen(false);
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setProfileMenuOpen(false);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, []);
+
+  const navigateFromProfileMenu = (path) => {
+    setProfileMenuOpen(false);
     navigate(path);
   };
 
   const signOut = () => {
-    setMenuOpen(false);
+    setProfileMenuOpen(false);
     clearAuthSession();
     navigate('/login', { replace: true });
+  };
+
+  const openResponsiveMenu = () => {
+    setProfileMenuOpen(false);
+    onOpenMenu?.();
   };
 
   return (
@@ -102,10 +125,20 @@ export default function NormalHeader({ onOpenMenu }) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
       >
-        <div className="normal-header__ambient" aria-hidden="true"><i /><i /></div>
+        <div className="normal-header__ambient" aria-hidden="true">
+          <i />
+          <i />
+        </div>
 
-        <NavLink className="normal-header__brand" to="/normal/dashboard" aria-label="Voxidence workspace home">
-          <motion.span className="normal-header__brand-mark" whileHover={{ rotate: 8, scale: 1.06 }}>
+        <NavLink
+          className="normal-header__brand"
+          to="/normal/dashboard"
+          aria-label="Voxidence workspace home"
+        >
+          <motion.span
+            className="normal-header__brand-mark"
+            whileHover={{ rotate: 8, scale: 1.06 }}
+          >
             <VoxidenceMark size={46} />
           </motion.span>
           <div className="normal-header__brand-copy">
@@ -115,12 +148,23 @@ export default function NormalHeader({ onOpenMenu }) {
 
         <nav className="normal-header__nav" aria-label="Workspace navigation">
           {PRIMARY_ITEMS.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} onMouseEnter={() => preloadRoute(to)} onFocus={() => preloadRoute(to)} className={({ isActive }) => (isActive ? 'is-active' : '')}>
+            <NavLink
+              key={to}
+              to={to}
+              onMouseEnter={() => preloadRoute(to)}
+              onFocus={() => preloadRoute(to)}
+              className={({ isActive }) => (isActive ? 'is-active' : '')}
+            >
               {({ isActive }) => (
                 <>
                   <Icon size={16} strokeWidth={1.9} />
                   <span>{label}</span>
-                  {isActive ? <motion.i className="normal-header__active-line" layoutId="normal-nav-active" /> : null}
+                  {isActive ? (
+                    <motion.i
+                      className="normal-header__active-line"
+                      layoutId="normal-nav-active"
+                    />
+                  ) : null}
                 </>
               )}
             </NavLink>
@@ -134,7 +178,11 @@ export default function NormalHeader({ onOpenMenu }) {
             onSubmit={(event) => {
               event.preventDefault();
               const value = headerSearch.trim();
-              navigate(value ? `/normal/ideas?search=${encodeURIComponent(value)}` : '/normal/ideas');
+              navigate(
+                value
+                  ? `/normal/ideas?search=${encodeURIComponent(value)}`
+                  : '/normal/ideas',
+              );
             }}
           >
             <Search size={17} aria-hidden="true" />
@@ -151,13 +199,20 @@ export default function NormalHeader({ onOpenMenu }) {
             type="button"
             className={`normal-upgrade-button ${isPremium ? 'is-premium' : ''}`}
             onClick={() => navigate('/normal/credits')}
+            aria-label={isPremium ? 'Buy more credits' : 'Upgrade to Premium'}
             whileHover={{ y: -2, scale: 1.015 }}
             whileTap={{ scale: 0.975 }}
           >
-            <span className="normal-upgrade-button__icon">{isPremium ? <Coins size={16} /> : <Crown size={16} />}</span>
+            <span className="normal-upgrade-button__icon" aria-hidden="true">
+              {isPremium ? <Coins size={16} /> : <Crown size={16} />}
+            </span>
             <span className="normal-upgrade-button__copy">
               <b>{isPremium ? 'Buy more credits' : 'Upgrade'}</b>
-              <small>{isPremium ? `${creditBalance} credits remaining` : 'Premium workspace'}</small>
+              <small>
+                {isPremium
+                  ? `${creditBalance} credits remaining`
+                  : 'Premium workspace'}
+              </small>
             </span>
           </motion.button>
 
@@ -169,32 +224,47 @@ export default function NormalHeader({ onOpenMenu }) {
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.94 }}
           >
-            <Bell size={18} /><i />
+            <Bell size={18} />
+            <i aria-hidden="true" />
           </motion.button>
 
-          <div className="normal-header__profile-wrap" ref={menuRef}>
+          <div className="normal-header__profile-wrap" ref={profileMenuRef}>
             <motion.button
               type="button"
               className="normal-header__profile"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-expanded={menuOpen}
+              onClick={() => setProfileMenuOpen((open) => !open)}
+              aria-expanded={profileMenuOpen}
               aria-haspopup="menu"
+              aria-label="Open account menu"
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.97 }}
             >
-              <span className="normal-header__avatar" aria-hidden="true">
-                {imageUrl ? <img src={imageUrl} alt="" /> : initials}
+              <span className="normal-header__avatar">
+                {showAvatarImage ? (
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    onError={() => setAvatarFailed(true)}
+                  />
+                ) : (
+                  <b className="normal-header__avatar-initials" aria-hidden="true">
+                    {initials}
+                  </b>
+                )}
                 <i className="normal-header__online-dot" title="Online" />
               </span>
               <div className="normal-header__profile-copy">
                 <b>{displayName}</b>
                 <small>{accessLabel}</small>
               </div>
-              <ChevronDown className={menuOpen ? 'is-rotated' : ''} size={14} />
+              <ChevronDown
+                className={profileMenuOpen ? 'is-rotated' : ''}
+                size={14}
+              />
             </motion.button>
 
             <AnimatePresence>
-              {menuOpen ? (
+              {profileMenuOpen ? (
                 <motion.div
                   className="normal-header__profile-menu"
                   role="menu"
@@ -204,32 +274,102 @@ export default function NormalHeader({ onOpenMenu }) {
                 >
                   <div className="normal-header__profile-menu-head">
                     <span className="normal-header__menu-avatar">
-                      {imageUrl ? <img src={imageUrl} alt="" /> : initials}
-                      <i className="normal-header__online-dot normal-header__online-dot--menu" title="Online" />
+                      {showAvatarImage ? (
+                        <img
+                          src={imageUrl}
+                          alt=""
+                          onError={() => setAvatarFailed(true)}
+                        />
+                      ) : (
+                        initials
+                      )}
+                      <i
+                        className="normal-header__online-dot normal-header__online-dot--menu"
+                        title="Online"
+                      />
                     </span>
-                    <div><b>{displayName}</b><small>{user.email || 'Manage your Voxidence experience'}</small></div>
+                    <div>
+                      <b>{displayName}</b>
+                      <small>
+                        {user.email || 'Manage your Voxidence experience'}
+                      </small>
+                    </div>
                   </div>
-                  <button type="button" onClick={() => navigateFromMenu('/normal/compliance')}>
-                    <ShieldAlert size={16} /><span><b>Complaints</b><small>Cases and admin replies</small></span>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => navigateFromProfileMenu('/normal/compliance')}
+                  >
+                    <ShieldAlert size={16} />
+                    <span>
+                      <b>Complaints</b>
+                      <small>Cases and admin replies</small>
+                    </span>
                   </button>
-                  <button type="button" onClick={() => navigateFromMenu('/normal/billing')}>
-                    <ReceiptText size={16} /><span><b>Billing & invoices</b><small>Payments and downloadable records</small></span>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => navigateFromProfileMenu('/normal/billing')}
+                  >
+                    <ReceiptText size={16} />
+                    <span>
+                      <b>Billing & invoices</b>
+                      <small>Payments and downloadable records</small>
+                    </span>
                   </button>
-                  <button type="button" onClick={() => navigateFromMenu('/normal/preferences')}>
-                    <SlidersHorizontal size={16} /><span><b>Preferences</b><small>Discovery defaults</small></span>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => navigateFromProfileMenu('/normal/preferences')}
+                  >
+                    <SlidersHorizontal size={16} />
+                    <span>
+                      <b>Preferences</b>
+                      <small>Discovery defaults</small>
+                    </span>
                   </button>
-                  <button type="button" onClick={() => navigateFromMenu('/normal/settings/profile')}>
-                    <Settings size={16} /><span><b>Settings</b><small>Profile and privacy</small></span>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => navigateFromProfileMenu('/normal/settings/profile')}
+                  >
+                    <Settings size={16} />
+                    <span>
+                      <b>Settings</b>
+                      <small>Profile and privacy</small>
+                    </span>
                   </button>
-                  <button type="button" onClick={signOut} className="normal-header__sign-out">
-                    <LogOut size={16} /><span><b>Sign out</b><small>End this session safely</small></span>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={signOut}
+                    className="normal-header__sign-out"
+                  >
+                    <LogOut size={16} />
+                    <span>
+                      <b>Sign out</b>
+                      <small>End this session safely</small>
+                    </span>
                   </button>
                 </motion.div>
               ) : null}
             </AnimatePresence>
           </div>
 
-          <button type="button" className="normal-header__menu" onClick={onOpenMenu} aria-label="Open menu">
+          <button
+            type="button"
+            id="normal-responsive-menu-button"
+            className="normal-header__menu"
+            onClick={openResponsiveMenu}
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMenuOpen}
+            aria-controls="normal-responsive-drawer"
+          >
             <Menu size={20} />
           </button>
         </div>

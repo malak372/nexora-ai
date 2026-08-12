@@ -136,7 +136,12 @@ export class UserFeedbackService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Cache invalidation must not extend the interaction response time.
+    // The database mutation and exact counters are already committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 
@@ -179,7 +184,32 @@ export class UserFeedbackService {
   async deleteRating(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
-    const existing = await this.getMyRating(actor, publicationId);
+    // Avoid calling getMyRating() here because that method performs the same
+    // publication-access query again. One access check + one indexed lookup is
+    // enough for a delete action.
+    const existing = this.isUserActor(actor)
+      ? await this.prisma.ideaPublicationRating.findUnique({
+          where: {
+            publicationId_userId: {
+              publicationId,
+              userId: actor.userId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+      : await this.prisma.ideaPublicationRating.findUnique({
+          where: {
+            publicationId_guestSessionId: {
+              publicationId,
+              guestSessionId: actor.guestSessionId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
 
     if (!existing) {
       throw new NotFoundException('Publication rating not found');
@@ -203,7 +233,12 @@ export class UserFeedbackService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Cache invalidation must not extend the interaction response time.
+    // The database mutation and exact counters are already committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 
@@ -273,7 +308,12 @@ export class UserFeedbackService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Cache invalidation must not extend the interaction response time.
+    // The database mutation and exact counters are already committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 
@@ -316,7 +356,30 @@ export class UserFeedbackService {
   async deleteFeedback(actor: FeedbackActor, publicationId: string) {
     await this.ensurePublicationAccessibleToActor(actor, publicationId);
 
-    const existing = await this.getMyFeedback(actor, publicationId);
+    // Avoid a second access check through getMyFeedback().
+    const existing = this.isUserActor(actor)
+      ? await this.prisma.ideaPublicationFeedback.findUnique({
+          where: {
+            publicationId_userId: {
+              publicationId,
+              userId: actor.userId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        })
+      : await this.prisma.ideaPublicationFeedback.findUnique({
+          where: {
+            publicationId_guestSessionId: {
+              publicationId,
+              guestSessionId: actor.guestSessionId,
+            },
+          },
+          select: {
+            id: true,
+          },
+        });
 
     if (!existing) {
       throw new NotFoundException('Publication feedback not found');
@@ -337,7 +400,12 @@ export class UserFeedbackService {
       };
     });
 
-    await this.publicationCache.invalidateDiscovery(publicationId);
+    // Cache invalidation must not extend the interaction response time.
+    // The database mutation and exact counters are already committed.
+    void this.publicationCache
+      .invalidateDiscovery(publicationId)
+      .catch(() => undefined);
+
     return result;
   }
 

@@ -208,6 +208,10 @@ export class IdeaGenerationPipelineService {
       input.stages,
     );
 
+    const recoveryCheckpointSequence = input.resumeFromCheckpoint
+      ? this.resolveRecoveryCheckpointSequence(input.context, resolvedStages)
+      : null;
+
     const persistedStageStates = input.resumeFromCheckpoint
       ? await this.prisma.ideaGenerationStage.findMany({
           where: { runId: input.context.runId },
@@ -232,18 +236,19 @@ export class IdeaGenerationPipelineService {
           runId: input.context.runId,
         },
       ),
-      input.resumeFromCheckpoint
-        ? Promise.resolve()
-        : this.initializeStageRecords(
-            input.context.runId,
-            resolvedStages.map(({ definition }) => definition),
-          ),
+      this.initializeStageRecords(
+        input.context.runId,
+        resolvedStages.map(({ definition }) => definition),
+      ),
     ]);
     this.realtime.publishRunUpdated(startedRun);
 
     // The run already exists durably. Queue the initial recovery snapshot so
     // request validation can begin without another remote database round-trip.
-    void this.enqueueContextCheckpoint(input.context);
+    void this.enqueueContextCheckpoint(
+      input.context,
+      input.context.recoveryCheckpointStageKey,
+    );
 
     let currentContext = input.context;
 
@@ -257,6 +262,8 @@ export class IdeaGenerationPipelineService {
 
         if (
           input.resumeFromCheckpoint &&
+          recoveryCheckpointSequence !== null &&
+          resolvedStage.definition.sequence <= recoveryCheckpointSequence &&
           persistedStage &&
           (
             persistedStage.status === IdeaGenerationStageStatus.COMPLETED ||
@@ -329,7 +336,10 @@ export class IdeaGenerationPipelineService {
         }
 
         if (this.shouldCheckpointAfterStage(resolvedStage.definition.key)) {
-          const checkpoint = this.enqueueContextCheckpoint(currentContext);
+          const checkpoint = this.enqueueContextCheckpoint(
+            currentContext,
+            resolvedStage.definition.key,
+          );
 
           // Only durable success boundaries wait for the ordered checkpoint
           // queue. Collection, community analysis, and core generation already
@@ -354,7 +364,10 @@ export class IdeaGenerationPipelineService {
        * payload instead of the last asynchronous pre-ranking snapshot.
        */
       if (currentContext.noResultOutcome) {
-        await this.enqueueContextCheckpoint(currentContext);
+        await this.enqueueContextCheckpoint(
+          currentContext,
+          IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING,
+        );
       }
 
       const completedRun = await this.runService.completeRun(
@@ -1388,6 +1401,29 @@ export class IdeaGenerationPipelineService {
    * Writing the complete context after every small validation/checkpoint stage
    * was the largest avoidable source of remote-database latency.
    */
+  /**
+   * Resolves the highest stage sequence that may be skipped during recovery.
+   *
+   * A persisted stage row alone is insufficient because its updated context
+   * may not have reached the run checkpoint before a process interruption.
+   */
+  private resolveRecoveryCheckpointSequence(
+    context: IdeaGenerationContext,
+    resolvedStages: readonly ResolvedPipelineStage[],
+  ): number | null {
+    const checkpointStageKey = context.recoveryCheckpointStageKey;
+
+    if (!checkpointStageKey) {
+      return null;
+    }
+
+    const checkpoint = resolvedStages.find(
+      ({ definition }) => definition.key === checkpointStageKey,
+    );
+
+    return checkpoint?.definition.sequence ?? null;
+  }
+
   private shouldCheckpointAfterStage(stageKey: IdeaGenerationStageKey): boolean {
     return (
       stageKey === IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION ||
@@ -1409,13 +1445,18 @@ export class IdeaGenerationPipelineService {
    * active pipeline instead of adding an idle Supabase gap after each stage. */
   private enqueueContextCheckpoint(
     context: IdeaGenerationContext,
+    recoveryCheckpointStageKey: string | null,
   ): Promise<void> {
     const runId = context.runId;
+    const checkpointContext: IdeaGenerationContext = {
+      ...context,
+      recoveryCheckpointStageKey,
+    };
     const previous =
       this.contextCheckpointQueues.get(runId) ?? Promise.resolve();
     const current = previous
       .catch(() => undefined)
-      .then(() => this.saveContextCheckpoint(context));
+      .then(() => this.saveContextCheckpoint(checkpointContext));
 
     this.contextCheckpointQueues.set(runId, current);
 

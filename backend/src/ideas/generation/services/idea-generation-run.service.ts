@@ -66,6 +66,15 @@ export type IdeaGenerationRunOwner =
  */
 export type CreateIdeaGenerationRunInput = IdeaGenerationRunOwner & {
   /**
+   * Optional application-generated run identifier.
+   *
+   * Supplying the ID lets the orchestrator create the initial context before
+   * the database insert so the QUEUED row and its recovery checkpoint are
+   * persisted atomically.
+   */
+  id?: string;
+
+  /**
    * Authorized generation type selected by the policy layer.
    */
   generationType: IdeaGenerationType;
@@ -74,6 +83,11 @@ export type CreateIdeaGenerationRunInput = IdeaGenerationRunOwner & {
    * Optional collection job already associated with the run.
    */
   collectionJobId?: string | null;
+
+  /**
+   * Optional durable context available from the moment the run is queued.
+   */
+  contextSnapshot?: Prisma.InputJsonValue;
 };
 
 /**
@@ -234,6 +248,14 @@ export class IdeaGenerationRunService {
 
     return db.ideaGenerationRun.create({
       data: {
+        ...(input.id
+          ? {
+              id: this.normalizeRequiredValue(
+                input.id,
+                'Generation-run ID',
+              ),
+            }
+          : {}),
         userId: input.userId ?? null,
         guestSessionId: input.guestSessionId ?? null,
         generationType: input.generationType,
@@ -247,6 +269,9 @@ export class IdeaGenerationRunService {
         completedAt: null,
         errorCode: null,
         errorMessage: null,
+        ...(input.contextSnapshot !== undefined
+          ? { contextSnapshot: input.contextSnapshot }
+          : {}),
       },
     });
   }
@@ -714,6 +739,7 @@ export class IdeaGenerationRunService {
     runId: string,
     errorMessage: string,
     nextRetryAt: Date,
+    incrementRetryCount = true,
   ): Promise<IdeaGenerationRun> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
@@ -746,7 +772,9 @@ export class IdeaGenerationRunService {
         errorMessage,
         nextRetryAt,
         pausedAt: null,
-        retryCount: { increment: 1 },
+        ...(incrementRetryCount
+          ? { retryCount: { increment: 1 } }
+          : {}),
         lastHeartbeatAt: now,
       },
     });
@@ -762,7 +790,7 @@ export class IdeaGenerationRunService {
   async pauseRun(
     runId: string,
     errorMessage: string,
-    nextRetryAt: Date,
+    nextRetryAt: Date | null,
   ): Promise<IdeaGenerationRun> {
     const normalizedRunId = this.normalizeRequiredValue(
       runId,
@@ -785,7 +813,6 @@ export class IdeaGenerationRunService {
       },
       data: {
         status: IdeaGenerationRunStatus.PAUSED,
-        startedAt: now,
         completedAt: null,
         errorCode: 'GENERATION_PAUSED_TRANSIENT_FAILURE',
         errorMessage,
@@ -811,12 +838,7 @@ export class IdeaGenerationRunService {
   async hasActiveRuns(): Promise<boolean> {
     const activeRun = await this.prisma.ideaGenerationRun.findFirst({
       where: {
-        status: {
-          in: [
-            IdeaGenerationRunStatus.QUEUED,
-            IdeaGenerationRunStatus.RUNNING,
-          ],
-        },
+        status: IdeaGenerationRunStatus.RUNNING,
         cancelRequestedAt: null,
       },
       select: { id: true },
@@ -835,27 +857,41 @@ export class IdeaGenerationRunService {
   async requeueStaleRunningRuns(
     staleBefore: Date,
     limit = 5,
+    excludedRunIds: readonly string[] = [],
   ): Promise<number> {
     const candidates = await this.prisma.ideaGenerationRun.findMany({
       where: {
+        ...(excludedRunIds.length > 0
+          ? { id: { notIn: [...excludedRunIds] } }
+          : {}),
         status: IdeaGenerationRunStatus.RUNNING,
         completedAt: null,
         cancelRequestedAt: null,
-        contextSnapshot: { not: Prisma.JsonNull },
-        lastHeartbeatAt: { lte: staleBefore },
+        OR: [
+          { lastHeartbeatAt: { lte: staleBefore } },
+          { lastHeartbeatAt: null, updatedAt: { lte: staleBefore } },
+        ],
       },
-      select: { id: true },
-      orderBy: { lastHeartbeatAt: 'asc' },
-      take: Math.max(1, Math.min(limit, 20)),
+      select: {
+        id: true,
+        contextSnapshot: true,
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: Math.max(5, Math.min(limit * 4, 80)),
     });
 
-    if (candidates.length === 0) {
+    const recoverableIds = candidates
+      .filter(({ contextSnapshot }) => this.hasContextSnapshot(contextSnapshot))
+      .slice(0, Math.max(1, Math.min(limit, 20)))
+      .map(({ id }) => id);
+
+    if (recoverableIds.length === 0) {
       return 0;
     }
 
     const result = await this.prisma.ideaGenerationRun.updateMany({
       where: {
-        id: { in: candidates.map(({ id }) => id) },
+        id: { in: recoverableIds },
         status: IdeaGenerationRunStatus.RUNNING,
         completedAt: null,
         cancelRequestedAt: null,
@@ -874,25 +910,131 @@ export class IdeaGenerationRunService {
     return result.count;
   }
 
-  /** Returns paused/retrying runs that are ready for recovery. */
-  async findRecoverableRuns(limit = 20): Promise<IdeaGenerationRun[]> {
-    const now = new Date();
-
-    return this.prisma.ideaGenerationRun.findMany({
+  /**
+   * Marks stale legacy QUEUED/RUNNING rows without a recovery snapshot as
+   * failed. New runs always persist their initial context atomically, so this
+   * cleanup only prevents old orphaned rows from remaining stuck forever.
+   */
+  async failStaleUnrecoverableRuns(
+    staleBefore: Date,
+    limit = 20,
+    excludedRunIds: readonly string[] = [],
+  ): Promise<number> {
+    const candidates = await this.prisma.ideaGenerationRun.findMany({
       where: {
+        ...(excludedRunIds.length > 0
+          ? { id: { notIn: [...excludedRunIds] } }
+          : {}),
         status: {
           in: [
-            IdeaGenerationRunStatus.RETRYING,
-            IdeaGenerationRunStatus.PAUSED,
+            IdeaGenerationRunStatus.QUEUED,
+            IdeaGenerationRunStatus.RUNNING,
           ],
         },
+        completedAt: null,
         cancelRequestedAt: null,
-        contextSnapshot: { not: Prisma.JsonNull },
-        OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+        OR: [
+          {
+            status: IdeaGenerationRunStatus.QUEUED,
+            createdAt: { lte: staleBefore },
+          },
+          {
+            status: IdeaGenerationRunStatus.RUNNING,
+            OR: [
+              { lastHeartbeatAt: { lte: staleBefore } },
+              { lastHeartbeatAt: null, updatedAt: { lte: staleBefore } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        status: true,
+        startedAt: true,
+        createdAt: true,
+        contextSnapshot: true,
       },
       orderBy: { updatedAt: 'asc' },
       take: Math.max(1, Math.min(limit, 100)),
     });
+
+    const orphaned = candidates.filter(
+      ({ contextSnapshot }) => !this.hasContextSnapshot(contextSnapshot),
+    );
+
+    if (orphaned.length === 0) {
+      return 0;
+    }
+
+    let failedCount = 0;
+
+    for (const candidate of orphaned) {
+      const result = await this.prisma.ideaGenerationRun.updateMany({
+        where: {
+          id: candidate.id,
+          status: candidate.status,
+          completedAt: null,
+          cancelRequestedAt: null,
+        },
+        data: {
+          status: IdeaGenerationRunStatus.FAILED,
+          currentStageKey: null,
+          // FAILED rows must always have startedAt according to the database
+          // lifecycle constraint. Legacy QUEUED rows never had one, so use
+          // their creation timestamp as the durable lifecycle start.
+          startedAt: candidate.startedAt ?? candidate.createdAt,
+          completedAt: new Date(),
+          lastHeartbeatAt: new Date(),
+          errorCode: 'GENERATION_RECOVERY_CHECKPOINT_MISSING',
+          errorMessage:
+            'The server stopped before a recoverable generation checkpoint was persisted. Please start the generation again.',
+        },
+      });
+
+      failedCount += result.count;
+    }
+
+    return failedCount;
+  }
+
+  /** Returns queued/paused/retrying runs that are ready for recovery. */
+  async findRecoverableRuns(
+    limit = 20,
+    queuedBefore = new Date(Date.now() - 30_000),
+  ): Promise<IdeaGenerationRun[]> {
+    const now = new Date();
+
+    const candidates = await this.prisma.ideaGenerationRun.findMany({
+      where: {
+        completedAt: null,
+        cancelRequestedAt: null,
+        OR: [
+          {
+            status: IdeaGenerationRunStatus.QUEUED,
+            createdAt: { lte: queuedBefore },
+          },
+          {
+            status: IdeaGenerationRunStatus.RETRYING,
+            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+          },
+          {
+            status: IdeaGenerationRunStatus.PAUSED,
+            nextRetryAt: { lte: now },
+          },
+        ],
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: Math.max(5, Math.min(limit * 4, 100)),
+    });
+
+    return candidates
+      .filter(({ contextSnapshot }) => this.hasContextSnapshot(contextSnapshot))
+      .slice(0, Math.max(1, Math.min(limit, 100)));
+  }
+
+  /** Checks whether one Prisma JSON field contains a usable context object. */
+  private hasContextSnapshot(value: Prisma.JsonValue | null): boolean {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
   /**
