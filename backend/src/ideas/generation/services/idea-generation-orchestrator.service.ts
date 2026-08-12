@@ -1,6 +1,17 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 
-import { IdeaGenerationRunStatus, IdeaGenerationType, LanguageCode } from '@prisma/client';
+import {
+  IdeaGenerationRunStatus,
+  IdeaGenerationType,
+  LanguageCode,
+  Prisma,
+} from '@prisma/client';
 
 import type { GenerateGuestIdeaDto } from '../dto/generate-guest-idea.dto';
 import type { GenerateIdeaDto } from '../dto/generate-idea.dto';
@@ -26,6 +37,7 @@ import type { IdeaGenerationPolicy } from '../types/idea-generation-policy.type'
 import { IDEA_OWNER_TYPES } from '../../shared/constants/ideas.constants';
 
 import { IDEA_GENERATION_ERROR_CODES } from '../constants/idea-generation.constants';
+import { IDEA_GENERATION_STAGE_KEYS } from '../constants/idea-generation-stages.constants';
 
 import { GuestIdeaSessionService } from './guest-idea-session.service';
 
@@ -35,6 +47,7 @@ import { IdeaGenerationRunService } from './idea-generation-run.service';
 import { DomainResolutionService } from './domain-resolution.service';
 import { IdeaGenerationPolicyService } from './idea-generation-policy.service';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Dependency-injection token used to register all executable
@@ -176,8 +189,20 @@ type ExecuteOwnedIdeaGenerationInput = {
  * @author Malak
  */
 @Injectable()
-export class IdeaGenerationOrchestratorService {
+export class IdeaGenerationOrchestratorService implements OnApplicationShutdown {
   private readonly logger = new Logger(IdeaGenerationOrchestratorService.name);
+
+  /**
+   * Locally executing runs are tracked so graceful shutdown can persist a
+   * RETRYING state and release only locks owned by this process.
+   */
+  private readonly activeRuns = new Map<string, IdeaOwner>();
+
+  /** Per-run heartbeat timers keep long external stages from looking stale. */
+  private readonly heartbeatTimers = new Map<string, NodeJS.Timeout>();
+
+  /** One lightweight run/lock heartbeat every 15 seconds. */
+  private readonly heartbeatIntervalMs = 15_000;
 
   constructor(
     private readonly guestSessionService: GuestIdeaSessionService,
@@ -199,6 +224,65 @@ export class IdeaGenerationOrchestratorService {
   ) { }
 
   /**
+   * Persists locally active work as recoverable before a graceful shutdown.
+   *
+   * Abrupt process termination cannot run this hook, so the recovery scanner
+   * also detects stale RUNNING rows through their heartbeat timestamp.
+   */
+  async onApplicationShutdown(signal?: string): Promise<void> {
+    const activeEntries = [...this.activeRuns.entries()];
+
+    for (const runId of this.heartbeatTimers.keys()) {
+      this.stopRunHeartbeat(runId);
+    }
+
+    if (activeEntries.length === 0) {
+      return;
+    }
+
+    this.logger.warn(
+      `Preparing ${activeEntries.length} active generation run(s) for recovery${signal ? ` after ${signal}` : ''}.`,
+    );
+
+    await Promise.all(
+      activeEntries.map(async ([runId, owner]) => {
+        try {
+          await this.runService.markRetrying(
+            runId,
+            'The generation process was interrupted by a server shutdown and will resume automatically.',
+            new Date(),
+            false,
+          );
+        } catch (error: unknown) {
+          const normalized = this.normalizeError(error);
+          this.logger.warn(
+            `Could not mark generation run "${runId}" as retrying during shutdown: ${normalized.message}`,
+          );
+        }
+
+        try {
+          await this.lockService.release({ owner, runId });
+        } catch (error: unknown) {
+          const normalized = this.normalizeError(error);
+          this.logger.warn(
+            `Could not release generation lock for run "${runId}" during shutdown: ${normalized.message}`,
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Returns run IDs currently executing inside this Node.js process.
+   *
+   * The recovery scanner uses this to avoid reclaiming a local run when a
+   * temporary database outage delayed its heartbeat.
+   */
+  getLocallyActiveRunIds(): string[] {
+    return [...this.activeRuns.keys()];
+  }
+
+  /**
    * Restarts an interrupted run from its latest durable context checkpoint.
    * Completed/skipped stage rows are preserved and ignored by the pipeline.
    */
@@ -208,6 +292,7 @@ export class IdeaGenerationOrchestratorService {
     const run = await this.runService.findRunOrThrow(runId);
 
     if (
+      run.status !== IdeaGenerationRunStatus.QUEUED &&
       run.status !== IdeaGenerationRunStatus.RETRYING &&
       run.status !== IdeaGenerationRunStatus.PAUSED
     ) {
@@ -223,17 +308,7 @@ export class IdeaGenerationOrchestratorService {
     }
 
     const checkpoint = run.contextSnapshot as unknown as IdeaGenerationContext;
-    const context: IdeaGenerationContext = {
-      ...checkpoint,
-      runId: run.id,
-      evidenceRecoveryAttempts: checkpoint.evidenceRecoveryAttempts ?? 0,
-      evidenceRecoveryCollectionJobIds:
-        checkpoint.evidenceRecoveryCollectionJobIds ?? [],
-      // Checkpoints created before multi-domain evidence support do not contain
-      // this field. Defaulting keeps old paused/retrying runs resumable.
-      domainEvidence: checkpoint.domainEvidence ?? [],
-      createdAt: new Date(checkpoint.createdAt),
-    };
+    const context = this.normalizeRecoveredContext(run.id, checkpoint);
 
     const input: ExecuteOwnedIdeaGenerationInput = {
       owner: context.owner,
@@ -247,7 +322,7 @@ export class IdeaGenerationOrchestratorService {
       forceRefresh: context.forceRefresh,
     };
 
-    return this.executePreparedRun(run.id, input, context);
+    return this.executePreparedRun(run.id, input, context, true);
   }
 
   /**
@@ -643,15 +718,30 @@ export class IdeaGenerationOrchestratorService {
   private async queueOwnedGeneration(
     input: ExecuteOwnedIdeaGenerationInput,
   ): Promise<QueuedIdeaGenerationResult> {
+    const runId = randomUUID();
+    const initialContext = this.buildInitialContext(runId, input);
+
+    /*
+     * Persist the normalized request context in the same INSERT that creates
+     * the QUEUED run. If the process stops before setImmediate() executes, the
+     * recovery service still has everything required to restart the pipeline.
+     */
     const run = await this.runService.createRun({
+      id: runId,
       ...(input.owner.type === IDEA_OWNER_TYPES.USER
         ? { userId: input.owner.userId }
         : { guestSessionId: input.owner.guestSessionId }),
       generationType: input.generationType,
+      contextSnapshot: this.serializeContextSnapshot(initialContext),
     });
 
     setImmediate(() => {
-      void this.executePreparedRun(run.id, input).catch((error: unknown) => {
+      void this.executePreparedRun(
+        run.id,
+        input,
+        initialContext,
+        false,
+      ).catch((error: unknown) => {
         const normalized = this.normalizeError(error);
         this.logger.error(
           `Queued idea-generation run "${run.id}" failed: ${normalized.message}`,
@@ -685,36 +775,49 @@ export class IdeaGenerationOrchestratorService {
   private async executeOwnedGeneration(
     input: ExecuteOwnedIdeaGenerationInput,
   ): Promise<IdeaGenerationPipelineResult> {
+    const runId = randomUUID();
+    const initialContext = this.buildInitialContext(runId, input);
+
     const run = await this.runService.createRun({
+      id: runId,
       ...(input.owner.type === IDEA_OWNER_TYPES.USER
         ? { userId: input.owner.userId }
         : { guestSessionId: input.owner.guestSessionId }),
       generationType: input.generationType,
+      contextSnapshot: this.serializeContextSnapshot(initialContext),
     });
 
-    return this.executePreparedRun(run.id, input);
+    return this.executePreparedRun(
+      run.id,
+      input,
+      initialContext,
+      false,
+    );
   }
 
   /** Executes a previously created queued run. */
   private async executePreparedRun(
     runId: string,
     input: ExecuteOwnedIdeaGenerationInput,
-    checkpointContext?: IdeaGenerationContext,
+    preparedContext?: IdeaGenerationContext,
+    resumeFromCheckpoint = false,
   ): Promise<IdeaGenerationPipelineResult> {
     let lockAcquired = false;
 
     try {
       await this.lockService.acquire({ owner: input.owner, runId });
       lockAcquired = true;
+      this.activeRuns.set(runId, input.owner);
+      this.startRunHeartbeat(runId, input.owner);
 
       const context =
-        checkpointContext ?? this.buildInitialContext(runId, input);
+        preparedContext ?? this.buildInitialContext(runId, input);
       this.logger.log(`Starting idea-generation pipeline for run "${runId}".`);
 
       const result = await this.pipelineService.executePipeline({
         context,
         stages: this.stages,
-        resumeFromCheckpoint: Boolean(checkpointContext),
+        resumeFromCheckpoint,
       });
 
       this.logger.log(
@@ -733,6 +836,9 @@ export class IdeaGenerationOrchestratorService {
 
       throw error;
     } finally {
+      this.stopRunHeartbeat(runId);
+      this.activeRuns.delete(runId);
+
       if (lockAcquired) {
         await this.releaseLockSafely(input.owner, runId);
       }
@@ -775,6 +881,288 @@ export class IdeaGenerationOrchestratorService {
 
       forceRefresh: input.forceRefresh,
     });
+  }
+
+  /**
+   * Normalizes a durable checkpoint before it is passed back into the pipeline.
+   *
+   * Older run snapshots may predate fields that are required by the current
+   * in-memory context shape. JSON persistence can also turn Date values into
+   * strings. Normalizing here gives every resumed stage the same invariants as
+   * a newly created generation context.
+   */
+  private normalizeRecoveredContext(
+    runId: string,
+    checkpoint: IdeaGenerationContext,
+  ): IdeaGenerationContext {
+    const selectedDomains = this.normalizeRecoveredSelectedDomains(checkpoint);
+
+    return {
+      ...checkpoint,
+      runId,
+      domainName: checkpoint.domainName ?? null,
+      selectedDomains,
+      domainResolution: checkpoint.domainResolution ?? null,
+      keywords: this.normalizeRecoveredStringArray(checkpoint.keywords),
+      requestedDataSourceKeys: this.normalizeRecoveredStringArray(
+        checkpoint.requestedDataSourceKeys,
+      ),
+      forceRefresh: checkpoint.forceRefresh === true,
+      policy: checkpoint.policy ?? null,
+      selectedDataSources: Array.isArray(checkpoint.selectedDataSources)
+        ? checkpoint.selectedDataSources
+        : [],
+      collection: checkpoint.collection ?? null,
+      nlp: checkpoint.nlp ?? null,
+      domainEvidence: Array.isArray(checkpoint.domainEvidence)
+        ? checkpoint.domainEvidence
+        : [],
+      communityAiAnalysis: checkpoint.communityAiAnalysis ?? null,
+      opportunityRanking: checkpoint.opportunityRanking ?? null,
+      benchmarkWinnerOpportunity:
+        checkpoint.benchmarkWinnerOpportunity ?? null,
+      evidenceRecoveryAttempts:
+        typeof checkpoint.evidenceRecoveryAttempts === 'number' &&
+        Number.isFinite(checkpoint.evidenceRecoveryAttempts) &&
+        checkpoint.evidenceRecoveryAttempts >= 0
+          ? Math.floor(checkpoint.evidenceRecoveryAttempts)
+          : 0,
+      evidenceRecoveryCollectionJobIds: this.normalizeRecoveredStringArray(
+        checkpoint.evidenceRecoveryCollectionJobIds,
+      ),
+      noResultOutcome: checkpoint.noResultOutcome ?? null,
+      prompt: checkpoint.prompt ?? null,
+      coreIdea: checkpoint.coreIdea ?? null,
+      ideaId: checkpoint.ideaId ?? null,
+      advancedOutputs: Array.isArray(checkpoint.advancedOutputs)
+        ? checkpoint.advancedOutputs
+        : [],
+      generatedOutputIdsByKey: this.normalizeRecoveredOutputIds(
+        checkpoint.generatedOutputIdsByKey,
+      ),
+      cancellationRequested: checkpoint.cancellationRequested === true,
+      recoveryCheckpointStageKey:
+        typeof checkpoint.recoveryCheckpointStageKey === 'string' &&
+        checkpoint.recoveryCheckpointStageKey.trim().length > 0
+          ? checkpoint.recoveryCheckpointStageKey
+          : this.inferRecoveryCheckpointStageKey({
+              ...checkpoint,
+              selectedDomains,
+            }),
+      createdAt: this.normalizeRecoveredDate(checkpoint.createdAt),
+    };
+  }
+
+  /**
+   * Restores the ordered selected-domain list from legacy checkpoints.
+   *
+   * The selectedDomains field was added after the original single-domain
+   * generation flow. When an older checkpoint does not contain it, the primary
+   * resolved domain is reconstructed when its name is already known. If the
+   * name has not been resolved yet, DATA_SOURCE_SELECTION will populate it.
+   */
+  private normalizeRecoveredSelectedDomains(
+    checkpoint: IdeaGenerationContext,
+  ): SelectedGenerationDomain[] {
+    const rawDomains = Array.isArray(checkpoint.selectedDomains)
+      ? checkpoint.selectedDomains
+      : [];
+
+    const normalizedDomains = rawDomains.flatMap((domain) => {
+      if (!domain || typeof domain !== 'object') {
+        return [];
+      }
+
+      const id = typeof domain.id === 'string' ? domain.id.trim() : '';
+      const name = typeof domain.name === 'string' ? domain.name.trim() : '';
+
+      if (!id || !name) {
+        return [];
+      }
+
+      return [
+        {
+          id,
+          name,
+          keywords: this.normalizeRecoveredStringArray(domain.keywords),
+        },
+      ];
+    });
+
+    if (normalizedDomains.length > 0) {
+      return normalizedDomains;
+    }
+
+    const domainId =
+      typeof checkpoint.domainId === 'string' ? checkpoint.domainId.trim() : '';
+    const domainName =
+      typeof checkpoint.domainName === 'string'
+        ? checkpoint.domainName.trim()
+        : '';
+
+    if (!domainId || !domainName) {
+      return [];
+    }
+
+    return [
+      {
+        id: domainId,
+        name: domainName,
+        keywords: [],
+      },
+    ];
+  }
+
+  /**
+   * Converts an unknown checkpoint value into a clean string array.
+   */
+  private normalizeRecoveredStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+
+    for (const entry of value) {
+      if (typeof entry !== 'string') {
+        continue;
+      }
+
+      const item = entry.trim();
+
+      if (!item || seen.has(item)) {
+        continue;
+      }
+
+      seen.add(item);
+      normalized.push(item);
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Keeps only valid persisted generated-output identifiers.
+   */
+  private normalizeRecoveredOutputIds(
+    value: unknown,
+  ): IdeaGenerationContext['generatedOutputIdsByKey'] {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+
+    for (const [key, rawValue] of Object.entries(value)) {
+      if (typeof rawValue !== 'string') {
+        continue;
+      }
+
+      const id = rawValue.trim();
+
+      if (id) {
+        result[key] = id;
+      }
+    }
+
+    return result as IdeaGenerationContext['generatedOutputIdsByKey'];
+  }
+
+  /**
+   * Restores a JSON-serialized checkpoint timestamp safely.
+   */
+  private normalizeRecoveredDate(value: unknown): Date {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return new Date();
+  }
+
+  /**
+   * Converts an in-memory generation context into Prisma-safe JSON.
+   */
+  private serializeContextSnapshot(
+    context: IdeaGenerationContext,
+  ): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(context)) as Prisma.InputJsonValue;
+  }
+
+  /**
+   * Infers the newest safe checkpoint for rows created before the explicit
+   * recoveryCheckpointStageKey field existed.
+   */
+  private inferRecoveryCheckpointStageKey(
+    context: Partial<IdeaGenerationContext>,
+  ): string | null {
+    if (context.ideaId) {
+      return IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE;
+    }
+
+    if (context.noResultOutcome) {
+      return IDEA_GENERATION_STAGE_KEYS.OPPORTUNITY_RANKING;
+    }
+
+    if (context.coreIdea) {
+      return IDEA_GENERATION_STAGE_KEYS.CORE_IDEA_GENERATION;
+    }
+
+    if (context.communityAiAnalysis) {
+      return IDEA_GENERATION_STAGE_KEYS.COMMUNITY_AI_ANALYSIS;
+    }
+
+    if (context.collection) {
+      return IDEA_GENERATION_STAGE_KEYS.COLLECTION_JOB_RESOLUTION;
+    }
+
+    return null;
+  }
+
+  /**
+   * Starts a low-cost heartbeat for the durable run and its owner lock.
+   */
+  private startRunHeartbeat(runId: string, owner: IdeaOwner): void {
+    this.stopRunHeartbeat(runId);
+
+    const timer = setInterval(() => {
+      void Promise.allSettled([
+        this.runService.heartbeat(runId),
+        this.lockService.refresh(owner, runId),
+      ]).then((results) => {
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            const error = this.normalizeError(result.reason);
+            this.logger.warn(
+              `Generation heartbeat failed for run "${runId}": ${error.message}`,
+            );
+          }
+        }
+      });
+    }, this.heartbeatIntervalMs);
+
+    timer.unref();
+    this.heartbeatTimers.set(runId, timer);
+  }
+
+  /** Stops the background heartbeat associated with one local run. */
+  private stopRunHeartbeat(runId: string): void {
+    const timer = this.heartbeatTimers.get(runId);
+
+    if (!timer) {
+      return;
+    }
+
+    clearInterval(timer);
+    this.heartbeatTimers.delete(runId);
   }
 
   /**

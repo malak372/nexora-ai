@@ -1,25 +1,27 @@
+// Authentication API for Voxidence mobile.
+// Stores a complete rotating token pair so authenticated mobile requests can
+// recover cleanly from expired access tokens.
+//
+// @author Eman
+
 import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../../core/network/api_config.dart';
+import '../../../core/storage/platform_key_value_store.dart';
+import '../../../core/storage/session_store.dart';
 
 class AuthApi {
   AuthApi._();
 
   static final AuthApi instance = AuthApi._();
-
-  static const _storage = FlutterSecureStorage();
-
+  static final _storage = PlatformKeyValueStore.instance;
   static const _guestCookieStorageKey = 'guest_session_cookie';
 
   late final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:3000',
-
-      connectTimeout: const Duration(seconds: 12),
-
+      baseUrl: ApiConfig.baseUrl,
+      connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 20),
-
-      headers: {'Content-Type': 'application/json'},
+      headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
     ),
   );
 
@@ -29,27 +31,26 @@ class AuthApi {
     required bool rememberMe,
   }) async {
     try {
-      final response = await _dio.post<Map<String, dynamic>>(
+      final response = await _dio.post<dynamic>(
         '/auth/login',
-
         data: {'email': email.trim().toLowerCase(), 'password': password},
       );
 
-      final data = response.data ?? <String, dynamic>{};
+      final data = _asMap(_unwrap(response.data));
+      final accessToken = data['accessToken']?.toString() ?? '';
+      final refreshToken = data['refreshToken']?.toString() ?? '';
+      final user = _asMap(data['user']);
 
-      final accessToken = data['accessToken']?.toString();
-
-      final refreshToken = data['refreshToken']?.toString();
-
-      if (accessToken != null && accessToken.isNotEmpty) {
-        await _storage.write(key: 'access_token', value: accessToken);
+      if (accessToken.isEmpty || refreshToken.isEmpty || user.isEmpty) {
+        throw const AuthException('The login response is incomplete.');
       }
 
-      if (rememberMe && refreshToken != null && refreshToken.isNotEmpty) {
-        await _storage.write(key: 'refresh_token', value: refreshToken);
-      } else {
-        await _storage.delete(key: 'refresh_token');
-      }
+      await SessionStore.instance.saveSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        user: user,
+        rememberMe: rememberMe,
+      );
 
       return data;
     } on DioException catch (error) {
@@ -64,42 +65,30 @@ class AuthApi {
     required String userType,
   }) async {
     try {
-      final guestCookie = await _storage.read(key: _guestCookieStorageKey);
-
-      final response = await _dio.post<Map<String, dynamic>>(
+      final guestCookie = await _storage.read(_guestCookieStorageKey);
+      final response = await _dio.post<dynamic>(
         '/auth/register',
-
         data: {
           'fullName': fullName.trim(),
-
           'email': email.trim().toLowerCase(),
-
           'password': password,
-
           'userType': userType,
         },
-
         options: guestCookie == null || guestCookie.trim().isEmpty
             ? null
             : Options(headers: {'Cookie': guestCookie}),
       );
-
-      await _storage.delete(key: _guestCookieStorageKey);
-
-      return response.data ?? <String, dynamic>{};
+      await _storage.delete(_guestCookieStorageKey);
+      return _asMap(_unwrap(response.data));
     } on DioException catch (error) {
       throw AuthException(_readMessage(error));
     }
   }
 
-  Future<void> verifyEmail({
-    required String email,
-    required String code,
-  }) async {
+  Future<void> verifyEmail({required String email, required String code}) async {
     try {
       await _dio.post<void>(
         '/auth/email/verify',
-
         data: {'email': email.trim().toLowerCase(), 'code': code.trim()},
       );
     } on DioException catch (error) {
@@ -111,7 +100,6 @@ class AuthApi {
     try {
       await _dio.post<void>(
         '/auth/email/resend-verification',
-
         data: {'email': email.trim().toLowerCase()},
       );
     } on DioException catch (error) {
@@ -119,26 +107,58 @@ class AuthApi {
     }
   }
 
+  Future<void> forgotPassword(String email) async {
+    try {
+      await _dio.post<void>(
+        '/auth/password/forgot',
+        data: {'email': email.trim().toLowerCase()},
+      );
+    } on DioException catch (error) {
+      throw AuthException(_readMessage(error));
+    }
+  }
+
+  Future<void> logout() async {
+    final refreshToken = await SessionStore.instance.getRefreshToken();
+    try {
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        await _dio.post<void>('/auth/logout', data: {'refreshToken': refreshToken});
+      }
+    } finally {
+      await SessionStore.instance.clear();
+    }
+  }
+
+  dynamic _unwrap(dynamic value) {
+    dynamic current = value;
+    for (var i = 0; i < 2; i++) {
+      if (current is Map && current.length == 1 && current.containsKey('data')) {
+        current = current['data'];
+      } else {
+        break;
+      }
+    }
+    return current;
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
   String _readMessage(DioException error) {
     final data = error.response?.data;
-
-    if (data is Map<String, dynamic>) {
+    if (data is Map) {
       final message = data['message'];
-
-      if (message is List) {
-        return message.join(' ');
-      }
-
-      if (message is String && message.trim().isNotEmpty) {
-        return message.trim();
-      }
+      if (message is List) return message.join(' ');
+      if (message is String && message.trim().isNotEmpty) return message.trim();
+      if (message is Map && message['message'] != null) return message['message'].toString();
     }
 
-    if (error.type == DioExceptionType.connectionError ||
-        error.type == DioExceptionType.connectionTimeout) {
+    if (error.type == DioExceptionType.connectionError || error.type == DioExceptionType.connectionTimeout) {
       return 'Unable to reach the server. Check your connection and try again.';
     }
-
     return 'Something went wrong. Please try again.';
   }
 }

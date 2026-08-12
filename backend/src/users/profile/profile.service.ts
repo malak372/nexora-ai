@@ -25,6 +25,7 @@ const AVATAR_PUBLIC_PREFIX = '/uploads/avatars/';
 const AVATAR_DIRECTORY = join(process.cwd(), 'uploads', 'avatars');
 const EMAIL_CHANGE_CODE_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CHANGE_MAX_ATTEMPTS = 5;
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class UserProfileService {
@@ -102,11 +103,49 @@ export class UserProfileService {
   async getProfile(userId: string) {
     const cacheKey = userCacheKeys.profile(userId);
     const cachedProfile = await this.cacheManager.get(cacheKey);
-    if (cachedProfile) return cachedProfile;
 
-    const user = await this.userCommonService.findUserOrThrow(userId);
+    if (cachedProfile) {
+      return cachedProfile;
+    }
+
+    // The profile screen only needs account fields. Avoid loading the complete
+    // User row (password hashes and unrelated internal columns) on every cache
+    // miss.
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        userType: true,
+        accountStatus: true,
+        creditBalance: true,
+        freeGenerationLimit: true,
+        freeGenerationsUsed: true,
+        isActive: true,
+        isVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        avatarUrl: true,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('User was not found.');
+    }
+
     const profile = this.buildProfile(user);
-    await this.cacheManager.set(cacheKey, profile);
+
+    await this.cacheManager.set(
+      cacheKey,
+      profile,
+      PROFILE_CACHE_TTL_MS,
+    );
+
     return profile;
   }
 

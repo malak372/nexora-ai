@@ -539,6 +539,14 @@ export type IdeaGenerationContext = {
   cancellationRequested: boolean;
 
   /**
+   * Last stage whose complete context was durably checkpointed.
+   *
+   * Recovery uses this marker to avoid skipping completed stage rows whose
+   * context changes were not yet persisted when the process stopped.
+   */
+  recoveryCheckpointStageKey: string | null;
+
+  /**
    * Timestamp at which the context was initialized.
    */
   createdAt: Date;
@@ -651,6 +659,7 @@ export function createIdeaGenerationContext(
     generatedOutputIdsByKey: {},
 
     cancellationRequested: false,
+    recoveryCheckpointStageKey: null,
     createdAt: new Date(),
   };
 }

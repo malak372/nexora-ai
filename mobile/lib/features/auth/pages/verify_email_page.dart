@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/auth_api.dart';
+import 'login_page.dart';
 
 class VerifyEmailPage extends StatefulWidget {
   const VerifyEmailPage({super.key, required this.email});
@@ -47,10 +48,11 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         ),
       );
 
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (route) => route.settings.name == '/',
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        MaterialPageRoute<void>(
+          builder: (_) => LoginPage(initialEmail: widget.email),
+        ),
+        (route) => false,
       );
     } on AuthException catch (error) {
       if (mounted) {

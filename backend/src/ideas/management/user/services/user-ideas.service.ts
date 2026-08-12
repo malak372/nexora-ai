@@ -394,6 +394,42 @@ export class UserIdeasService {
             name: true,
           },
         },
+        publication: {
+          select: {
+            id: true,
+            status: true,
+            visibility: true,
+            publicTitle: true,
+            publicAbstract: true,
+            publicProblem: true,
+            publicObjectives: true,
+            publicTargetUsers: true,
+            allowRatings: true,
+            allowFeedback: true,
+            allowVoting: true,
+            allowAdoption: true,
+            averageRating: true,
+            ratingsCount: true,
+            upvotesCount: true,
+            downvotesCount: true,
+            feedbackCount: true,
+            publishedAt: true,
+            archivedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            audiences: {
+              orderBy: {
+                createdAt: 'asc',
+              },
+              select: {
+                id: true,
+                audienceType: true,
+                audienceValue: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
         user: {
           select: {
             accountStatus: true,
@@ -651,6 +687,7 @@ export class UserIdeasService {
             allowRatings: true,
             allowFeedback: true,
             allowVoting: true,
+            allowAdoption: true,
 
             averageRating: true,
             ratingsCount: true,

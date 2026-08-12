@@ -1,30 +1,35 @@
 /**
  * Responsive normal-user navigation drawer.
  *
- * @author Malak
+ * Uses the same live user identity and avatar as the desktop header and stays
+ * fully functional at the exact breakpoint where the desktop navigation hides.
+ *
+ * @author Eman
  */
 import {
   Bell,
-  Coins,
   BookOpenCheck,
-  ReceiptText,
+  Coins,
   Compass,
   FileWarning,
   LayoutDashboard,
   Lightbulb,
   LogOut,
+  ReceiptText,
   Settings,
   SlidersHorizontal,
   Sparkles,
   X,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 
 import { clearAuthSession, getStoredUser } from '../../features/auth/shared/auth.storage';
 import useAccountAccess from '../../features/normal-user/shared/hooks/useAccountAccess';
 import { preloadRoute } from '../../routes/routePreloaders';
+import { resolveMediaUrl } from '../../utils/mediaUrl';
 
-const baseItems = [
+const BASE_ITEMS = [
   ['/normal/dashboard', 'Home', LayoutDashboard],
   ['/normal/generate', 'Generate idea', Sparkles],
   ['/normal/ideas', 'My ideas', Lightbulb],
@@ -37,16 +42,49 @@ const baseItems = [
   ['/normal/settings/profile', 'Settings', Settings],
 ];
 
+function getInitials(name = '') {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'VX';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
 export default function NormalSidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
-  const user = getStoredUser();
+  const [user, setUser] = useState(() => getStoredUser() ?? {});
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const { isPremium, creditBalance } = useAccountAccess();
+
+  const displayName = user.fullName || user.name || 'Voxidence user';
+  const imageUrl = resolveMediaUrl(
+    user.avatarUrl || user.profileImageUrl || user.photoUrl || '',
+  );
+  const showAvatarImage = Boolean(imageUrl && !avatarFailed);
+  const initials = getInitials(displayName);
+
   const items = [
-    ...baseItems,
-    ['/normal/credits', isPremium ? `Buy credits (${creditBalance})` : 'Upgrade to Premium', Coins],
+    ...BASE_ITEMS,
+    [
+      '/normal/credits',
+      isPremium ? `Buy credits (${creditBalance})` : 'Upgrade to Premium',
+      Coins,
+    ],
   ];
 
+  useEffect(() => {
+    const handleUserUpdated = (event) => {
+      setUser(event.detail || getStoredUser() || {});
+    };
+
+    window.addEventListener('nexora:user-updated', handleUserUpdated);
+    return () => window.removeEventListener('nexora:user-updated', handleUserUpdated);
+  }, []);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [imageUrl]);
+
   const logout = () => {
+    onClose?.();
     clearAuthSession();
     navigate('/login', { replace: true });
   };
@@ -58,15 +96,25 @@ export default function NormalSidebar({ isOpen, onClose }) {
         className={`normal-drawer-backdrop ${isOpen ? 'is-open' : ''}`}
         onClick={onClose}
         aria-label="Close menu"
+        tabIndex={isOpen ? 0 : -1}
       />
 
-      <aside className={`normal-drawer ${isOpen ? 'is-open' : ''}`}>
+      <aside
+        id="normal-responsive-drawer"
+        className={`normal-drawer ${isOpen ? 'is-open' : ''}`}
+        aria-hidden={!isOpen}
+      >
         <div className="normal-drawer__head">
-          <strong>Voxidence workspace</strong>
-          <button type="button" onClick={onClose}><X size={19} /></button>
+          <div>
+            <strong>Voxidence</strong>
+            <small>Workspace menu</small>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close menu">
+            <X size={19} />
+          </button>
         </div>
 
-        <nav>
+        <nav aria-label="Responsive workspace navigation">
           {items.map(([to, label, Icon]) => (
             <NavLink
               key={to}
@@ -76,18 +124,37 @@ export default function NormalSidebar({ isOpen, onClose }) {
               onClick={onClose}
               className={({ isActive }) => (isActive ? 'is-active' : '')}
             >
-              <Icon size={18} />{label}
+              <span className="normal-drawer__nav-icon">
+                <Icon size={18} />
+              </span>
+              <span>{label}</span>
             </NavLink>
           ))}
         </nav>
 
         <div className="normal-drawer__user">
-          <span>{(user?.fullName || user?.email || 'N')[0].toUpperCase()}</span>
+          <span className="normal-drawer__avatar">
+            {showAvatarImage ? (
+              <img
+                src={imageUrl}
+                alt=""
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              initials
+            )}
+          </span>
           <div>
-            <b>{user?.fullName || 'Voxidence user'}</b>
-            <small>{isPremium ? `Premium · ${creditBalance} credits` : (user?.email || 'Normal account')}</small>
+            <b>{displayName}</b>
+            <small>
+              {isPremium
+                ? `Premium · ${creditBalance} credits`
+                : (user.email || 'Normal account')}
+            </small>
           </div>
-          <button type="button" onClick={logout}><LogOut size={18} /></button>
+          <button type="button" onClick={logout} aria-label="Sign out">
+            <LogOut size={18} />
+          </button>
         </div>
       </aside>
     </>

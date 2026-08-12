@@ -1,7 +1,7 @@
 /**
  * Publication report moderation workspace.
  *
- * @author Eman
+ * @author  Malak
  */
 
 import {

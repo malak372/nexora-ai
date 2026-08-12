@@ -48,7 +48,28 @@ const DEFAULT_BACKEND_PORT = 3000;
  * Returns true when the origin points to a local development frontend.
  */
 function isLocalDevelopmentOrigin(origin: string): boolean {
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return true;
+    }
+
+    if (/^10\./.test(host) || /^192\.168\./.test(host)) {
+      return true;
+    }
+
+    const private172Match = /^172\.(\d{1,2})\./.exec(host);
+    if (private172Match) {
+      const secondOctet = Number(private172Match[1]);
+      return secondOctet >= 16 && secondOctet <= 31;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /**

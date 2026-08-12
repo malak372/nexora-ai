@@ -1,16 +1,17 @@
 /**
- * Authenticated Voxidence workspace shell optimized for fast route transitions.
+ * Authenticated Voxidence workspace shell optimized for fast route transitions
+ * and reliable responsive navigation.
  *
- * Desktop navigation lives in a floating top command bar instead of a
- * permanent left sidebar. A compact drawer is used only on smaller screens.
+ * @author Eman
  */
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+
 import { getAccessToken } from '../../features/auth/shared/auth.storage';
-import NormalHeader from './NormalHeader';
 import PremiumWelcomeCelebration from '../../features/normal-user/shared/components/PremiumWelcomeCelebration';
-import NormalSidebar from './NormalSidebar';
 import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
+import NormalHeader from './NormalHeader';
+import NormalSidebar from './NormalSidebar';
 import './normal-user-layout.css';
 import './normal-user-theme.css';
 
@@ -28,18 +29,55 @@ export default function NormalUserLayout() {
     return () => window.removeEventListener('nexora:session-expired', handleExpired);
   }, [navigate]);
 
-  // Warm the two slowest library routes only when the browser is idle.
-  // If the user opens one while prefetch is still running, requestCache
-  // returns the same pending promise instead of starting another request.
   useEffect(() => preloadPrimaryRoutes(), []);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setIsMenuOpen(false);
+    };
+
+    const closeWhenReturningToDesktop = () => {
+      if (window.innerWidth > 1180) setIsMenuOpen(false);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeWhenReturningToDesktop);
+
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeWhenReturningToDesktop);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMenuOpen]);
 
   return (
     <div className="normal-app-shell">
       <PremiumWelcomeCelebration />
       <div className="normal-app-shell__aurora" aria-hidden="true" />
-      <NormalHeader onOpenMenu={() => setIsMenuOpen(true)} />
-      <NormalSidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
-      <main className="normal-app-shell__main"><Outlet /></main>
+
+      <NormalHeader
+        isMenuOpen={isMenuOpen}
+        onOpenMenu={() => setIsMenuOpen((open) => !open)}
+      />
+
+      <NormalSidebar
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+      />
+
+      <main className="normal-app-shell__main">
+        <Outlet />
+      </main>
     </div>
   );
 }
