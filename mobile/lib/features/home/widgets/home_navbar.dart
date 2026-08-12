@@ -1,4 +1,4 @@
-// Mobile-first navigation for the Voxidence Home screen.
+// Mobile navigation header for the Voxidence public Home screen.
 //
 // @author Eman
 
@@ -42,7 +42,9 @@ class HomeNavbar extends StatelessWidget {
       barrierColor: AppColors.primaryDeep.withValues(alpha: 0.30),
       builder: (sheetContext) {
         return _MobileMenu(
-          onClose: () => Navigator.pop(sheetContext),
+          onClose: () {
+            Navigator.pop(sheetContext);
+          },
           onHome: onHomePressed,
           onHowItWorks: onHowItWorksPressed,
           onAbout: onAboutPressed,
@@ -60,23 +62,23 @@ class HomeNavbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 3),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(26),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            height: 58,
-            padding: const EdgeInsets.fromLTRB(8, 6, 7, 6),
+            height: 76,
+            padding: const EdgeInsets.fromLTRB(10, 8, 9, 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.90),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+              color: Colors.white.withValues(alpha: 0.91),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.98)),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primaryDeep.withValues(alpha: 0.055),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+                  blurRadius: 25,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
@@ -85,38 +87,58 @@ class HomeNavbar extends StatelessWidget {
                 Expanded(
                   child: Material(
                     color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(18),
                     child: InkWell(
                       onTap: onHomePressed,
-                      borderRadius: BorderRadius.circular(16),
-                      child: const Row(
-                        children: [
-                          BrandMark(size: 40),
-                          SizedBox(width: 9),
-                          Expanded(child: _BrandText()),
-                        ],
+                      borderRadius: BorderRadius.circular(18),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2),
+                        child: Row(
+                          children: [
+                            // Smaller top logo.
+                            BrandMark(size: 45),
+
+                            SizedBox(width: 11),
+
+                            Expanded(child: _BrandText()),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
+
                 const SizedBox(width: 8),
+
                 Material(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(15),
+                  color: const Color(0xFFF9FCFB),
+                  borderRadius: BorderRadius.circular(19),
                   child: InkWell(
-                    onTap: () => _openMenu(context),
-                    borderRadius: BorderRadius.circular(15),
+                    onTap: () {
+                      _openMenu(context);
+                    },
+                    borderRadius: BorderRadius.circular(19),
                     child: Container(
-                      width: 43,
-                      height: 43,
+                      width: 52,
+                      height: 52,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
+                        borderRadius: BorderRadius.circular(19),
                         border: Border.all(color: AppColors.border),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primaryDeep.withValues(
+                              alpha: 0.035,
+                            ),
+                            blurRadius: 12,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
                       child: const Icon(
                         Icons.menu_rounded,
-                        size: 23,
-                        color: AppColors.primaryDark,
+                        size: 27,
+                        color: AppColors.primaryDeep,
                       ),
                     ),
                   ),
@@ -144,21 +166,23 @@ class _BrandText extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: AppColors.primaryDark,
-            fontSize: 16.5,
+            color: AppColors.primaryDeep,
+            fontSize: 18.5,
             height: 1,
             fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
+            letterSpacing: -0.55,
           ),
         ),
-        SizedBox(height: 4),
+
+        SizedBox(height: 5),
+
         Text(
           'Real voices. Better ideas.',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: AppColors.textSecondary,
-            fontSize: 9.2,
+            fontSize: 10.4,
             height: 1,
             fontWeight: FontWeight.w600,
           ),
@@ -183,12 +207,14 @@ class _MobileMenu extends StatelessWidget {
   });
 
   final VoidCallback onClose;
+
   final VoidCallback onHome;
   final VoidCallback onHowItWorks;
   final VoidCallback onAbout;
   final VoidCallback onDomains;
   final VoidCallback onIdeas;
   final VoidCallback onContact;
+
   final VoidCallback onGenerate;
   final VoidCallback onSignIn;
   final VoidCallback onRegister;
@@ -208,7 +234,7 @@ class _MobileMenu extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(16, 12, 16, 15 + bottomInset),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFDFC),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(30),
         border: Border.all(color: Colors.white),
         boxShadow: [
           BoxShadow(
@@ -229,12 +255,15 @@ class _MobileMenu extends StatelessWidget {
               borderRadius: BorderRadius.circular(99),
             ),
           ),
+
           const SizedBox(height: 16),
 
           const Row(
             children: [
-              BrandMark(size: 42),
-              SizedBox(width: 10),
+              BrandMark(size: 45),
+
+              SizedBox(width: 11),
+
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,17 +271,21 @@ class _MobileMenu extends StatelessWidget {
                     Text(
                       'Voxidence',
                       style: TextStyle(
-                        color: AppColors.primaryDark,
+                        color: AppColors.primaryDeep,
                         fontSize: 17,
+                        height: 1,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    SizedBox(height: 2),
+
+                    SizedBox(height: 5),
+
                     Text(
-                      'Explore Voxidence',
+                      'Real voices. Better ideas.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -261,7 +294,7 @@ class _MobileMenu extends StatelessWidget {
             ],
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           Row(
             children: [
@@ -269,21 +302,27 @@ class _MobileMenu extends StatelessWidget {
                 child: _MenuTile(
                   icon: Icons.home_outlined,
                   label: 'Home',
-                  onTap: () => _run(onHome),
+                  onTap: () {
+                    _run(onHome);
+                  },
                 ),
               ),
-              const SizedBox(width: 8),
+
+              const SizedBox(width: 9),
+
               Expanded(
                 child: _MenuTile(
                   icon: Icons.route_outlined,
-                  label: 'Process',
-                  onTap: () => _run(onHowItWorks),
+                  label: 'How it works',
+                  onTap: () {
+                    _run(onHowItWorks);
+                  },
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 9),
 
           Row(
             children: [
@@ -291,116 +330,128 @@ class _MobileMenu extends StatelessWidget {
                 child: _MenuTile(
                   icon: Icons.auto_awesome_outlined,
                   label: 'About',
-                  onTap: () => _run(onAbout),
+                  onTap: () {
+                    _run(onAbout);
+                  },
                 ),
               ),
-              const SizedBox(width: 8),
+
+              const SizedBox(width: 9),
+
               Expanded(
                 child: _MenuTile(
                   icon: Icons.grid_view_rounded,
                   label: 'Domains',
-                  onTap: () => _run(onDomains),
+                  onTap: () {
+                    _run(onDomains);
+                  },
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 9),
 
           Row(
             children: [
               Expanded(
                 child: _MenuTile(
-                  icon: Icons.lightbulb_outline_rounded,
+                  icon: Icons.lightbulb_outline,
                   label: 'Ideas',
-                  onTap: () => _run(onIdeas),
+                  onTap: () {
+                    _run(onIdeas);
+                  },
                 ),
               ),
-              const SizedBox(width: 8),
+
+              const SizedBox(width: 9),
+
               Expanded(
                 child: _MenuTile(
-                  icon: Icons.chat_bubble_outline_rounded,
+                  icon: Icons.mail_outline_rounded,
                   label: 'Contact',
-                  onTap: () => _run(onContact),
+                  onTap: () {
+                    _run(onContact);
+                  },
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 15),
+          const SizedBox(height: 16),
 
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: () => _run(onGenerate),
+              onPressed: () {
+                _run(onGenerate);
+              },
               style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(17),
                 ),
               ),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.lightbulb_outline_rounded, size: 18),
-                  SizedBox(width: 7),
+                  Icon(Icons.lightbulb_outline_rounded, size: 19),
+
+                  SizedBox(width: 8),
+
                   Text(
-                    'Generate a free idea',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    'Generate Free Idea',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
                   ),
                 ],
               ),
             ),
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 9),
 
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => _run(onSignIn),
+                  onPressed: () {
+                    _run(onSignIn);
+                  },
                   style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(47),
                     foregroundColor: AppColors.primaryDark,
                     side: const BorderSide(color: AppColors.borderStrong),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                   child: const Text(
-                    'Sign in',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    'Login',
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+
+              const SizedBox(width: 9),
+
               Expanded(
-                child: FilledButton(
-                  onPressed: () => _run(onRegister),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                child: OutlinedButton(
+                  onPressed: () {
+                    _run(onRegister);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(47),
+                    foregroundColor: AppColors.primaryDark,
+                    side: const BorderSide(color: AppColors.borderStrong),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                   child: const Text(
-                    'Join',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    'Register',
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
@@ -426,21 +477,32 @@ class _MenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFFF6FAF8),
-      borderRadius: BorderRadius.circular(16),
+      color: AppColors.primarySoft.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(17),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(17),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(17),
             border: Border.all(color: AppColors.border),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 17, color: AppColors.primaryDark),
-              const SizedBox(width: 7),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 18, color: AppColors.primaryDark),
+              ),
+
+              const SizedBox(width: 9),
+
               Expanded(
                 child: Text(
                   label,
@@ -448,7 +510,7 @@ class _MenuTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 10.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
                 ),

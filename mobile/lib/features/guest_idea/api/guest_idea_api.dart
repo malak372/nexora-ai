@@ -1,27 +1,35 @@
 import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../../core/network/api_config.dart';
+
+/// Handles guest idea-generation API requests.
+///
+/// Uses the same backend base URL used by authentication.
+/// Guest sessions are maintained using the guest session cookie.
+///
+/// @author Eman
 class GuestIdeaApi {
   GuestIdeaApi._();
 
   static final GuestIdeaApi instance = GuestIdeaApi._();
 
-  static const _storage = FlutterSecureStorage();
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
-  static const _cookieStorageKey = 'guest_session_cookie';
+  static const String _cookieStorageKey = 'guest_session_cookie';
 
-  static const _cookieName = 'nexora_guest_session';
+  static const String _cookieName = 'nexora_guest_session';
 
   late final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:3000',
+      baseUrl: ApiConfig.baseUrl,
       connectTimeout: const Duration(seconds: 12),
       receiveTimeout: const Duration(seconds: 30),
-      headers: {'Content-Type': 'application/json'},
+      headers: const {'Content-Type': 'application/json'},
     ),
   );
 
+  /// Creates or restores the backend guest session.
   Future<Map<String, dynamic>> ensureGuestSession() async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -37,6 +45,7 @@ class GuestIdeaApi {
     }
   }
 
+  /// Returns the same available domains used by the web application.
   Future<List<Map<String, dynamic>>> getAvailableDomains() async {
     try {
       final response = await _dio.get<dynamic>('/domains/available');
@@ -47,6 +56,7 @@ class GuestIdeaApi {
     }
   }
 
+  /// Returns the supported idea languages.
   Future<List<Map<String, dynamic>>> getAvailableLanguages() async {
     try {
       final response = await _dio.get<dynamic>('/public-metadata/languages');
@@ -57,6 +67,7 @@ class GuestIdeaApi {
     }
   }
 
+  /// Starts guest idea generation.
   Future<Map<String, dynamic>> generateIdea(
     Map<String, dynamic> payload,
   ) async {
@@ -73,6 +84,7 @@ class GuestIdeaApi {
     }
   }
 
+  /// Gets the generation-run status/results.
   Future<Map<String, dynamic>> getGenerationRun(String runId) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -154,7 +166,8 @@ class GuestIdeaApi {
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout) {
       message =
-          'Unable to reach the server. Check your connection and try again.';
+          'Unable to reach the server. '
+          'Check your connection and try again.';
     }
 
     return GuestIdeaException(
@@ -166,6 +179,9 @@ class GuestIdeaApi {
   }
 }
 
+/// Exception returned by guest idea generation.
+///
+/// @author Eman
 class GuestIdeaException implements Exception {
   const GuestIdeaException({
     required this.message,

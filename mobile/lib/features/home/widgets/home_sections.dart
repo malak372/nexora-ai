@@ -543,7 +543,9 @@ class _DomainsSectionState extends State<DomainsSection> {
             description:
                 'Voxidence can surface evidence-backed project opportunities across practical domains that matter to everyday communities.',
           ),
+
           const SizedBox(height: 18),
+
           if (_isLoading)
             const _DomainsLoading()
           else if (_errorMessage != null)
@@ -573,6 +575,7 @@ class _DomainsSectionState extends State<DomainsSection> {
           children: [
             for (var i = 0; i < firstDomains.length; i++)
               _DomainCard(domain: firstDomains[i], usePink: i == 1 || i == 4),
+
             if (moreDomains.isNotEmpty)
               _ExploreMoreCard(
                 count: moreDomains.length,
@@ -585,6 +588,7 @@ class _DomainsSectionState extends State<DomainsSection> {
               ),
           ],
         ),
+
         AnimatedSize(
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
@@ -630,7 +634,14 @@ class _DomainGrid extends StatelessWidget {
           runSpacing: gap,
           children: [
             for (final child in children)
-              SizedBox(width: width, height: 154, child: child),
+              SizedBox(
+                width: width,
+
+                // Smaller mobile domain cards.
+                height: 136,
+
+                child: child,
+              ),
           ],
         );
       },
@@ -652,7 +663,7 @@ class _DomainCard extends StatelessWidget {
 
     return SizedBox.expand(
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -662,13 +673,13 @@ class _DomainCard extends StatelessWidget {
               soft.withValues(alpha: 0.50),
             ],
           ),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.border),
           boxShadow: [
             BoxShadow(
               color: AppColors.primaryDeep.withValues(alpha: 0.035),
-              blurRadius: 16,
-              offset: const Offset(0, 7),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -676,26 +687,31 @@ class _DomainCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: soft,
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(domain.icon, size: 20, color: accent),
+              child: Icon(domain.icon, size: 18, color: accent),
             ),
-            const SizedBox(height: 12),
+
+            const SizedBox(height: 9),
+
             Text(
               domain.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 14.2,
+                fontSize: 13.3,
+                height: 1.08,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 5),
+
+            const SizedBox(height: 4),
+
             Expanded(
               child: Text(
                 domain.description,
@@ -703,8 +719,9 @@ class _DomainCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 9.9,
-                  height: 1.3,
+                  fontSize: 9.4,
+                  height: 1.25,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
@@ -732,11 +749,11 @@ class _ExploreMoreCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
           width: double.infinity,
           height: double.infinity,
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -746,7 +763,7 @@ class _ExploreMoreCard extends StatelessWidget {
                 Colors.white.withValues(alpha: 0.96),
               ],
             ),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: AppColors.primary.withValues(alpha: 0.24),
             ),
@@ -757,56 +774,65 @@ class _ExploreMoreCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(13),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
                       Icons.layers_outlined,
-                      size: 20,
+                      size: 18,
                       color: Colors.white,
                     ),
                   ),
+
                   const Spacer(),
+
                   AnimatedRotation(
                     turns: expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 220),
                     child: const Icon(
                       Icons.keyboard_arrow_down_rounded,
-                      size: 20,
+                      size: 18,
                       color: AppColors.primaryDark,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 11),
+
+              const SizedBox(height: 8),
+
               Text(
                 expanded ? 'Hide More' : 'Explore More',
                 style: const TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 14.2,
+                  fontSize: 13.3,
+                  height: 1.08,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 4),
+
+              const SizedBox(height: 3),
+
               Text(
                 '$count additional domain${count == 1 ? '' : 's'} available',
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 9.7,
-                  height: 1.25,
+                  fontSize: 9.2,
+                  height: 1.2,
                 ),
               ),
+
               const Spacer(),
+
               Text(
                 expanded ? 'Show less' : 'View all domains',
                 style: const TextStyle(
                   color: AppColors.primaryDark,
-                  fontSize: 9.2,
+                  fontSize: 8.9,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -841,6 +867,7 @@ class _ExpandedDomains extends StatelessWidget {
                 ),
               ),
             ),
+
             TextButton(
               onPressed: onCollapse,
               style: TextButton.styleFrom(
@@ -866,7 +893,9 @@ class _ExpandedDomains extends StatelessWidget {
             ),
           ],
         ),
+
         const SizedBox(height: 10),
+
         _DomainGrid(
           children: [
             for (var i = 0; i < domains.length; i++)
@@ -889,7 +918,7 @@ class _DomainsLoading extends StatelessWidget {
         (_) => Container(
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppColors.border),
           ),
         ),
@@ -917,7 +946,9 @@ class _DomainsError extends StatelessWidget {
       child: Row(
         children: [
           const Icon(Icons.cloud_off_outlined, color: AppColors.pink, size: 22),
+
           const SizedBox(width: 11),
+
           Expanded(
             child: Text(
               message,
@@ -930,6 +961,7 @@ class _DomainsError extends StatelessWidget {
               ),
             ),
           ),
+
           IconButton(
             onPressed: onRetry,
             tooltip: 'Retry',
@@ -1172,7 +1204,9 @@ class _IdeaCard extends StatelessWidget {
                                 shape: BoxShape.circle,
                               ),
                             ),
+
                             const SizedBox(width: 6),
+
                             Flexible(
                               child: Text(
                                 '${idea.score.toStringAsFixed(0)} evidence score',

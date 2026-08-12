@@ -1,13 +1,19 @@
 // Main public Home screen for the Voxidence mobile application.
 //
+// The page keeps the mobile-first visual design while using the same public
+// backend flows as the web application for featured publications and Contact Us.
+//
 // @author Eman
 
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../widgets/backend_contact_section.dart';
 import '../widgets/contact_footer.dart';
+import '../widgets/featured_publications_section.dart';
 import '../widgets/hero_section.dart';
 import '../widgets/home_background.dart';
+import '../widgets/home_bottom_nav.dart';
 import '../widgets/home_navbar.dart';
 import '../widgets/home_sections.dart';
 import '../widgets/how_it_works_section.dart';
@@ -23,15 +29,10 @@ class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
 
   final GlobalKey _homeKey = GlobalKey();
-
   final GlobalKey _howItWorksKey = GlobalKey();
-
   final GlobalKey _aboutKey = GlobalKey();
-
   final GlobalKey _domainsKey = GlobalKey();
-
   final GlobalKey _featuredIdeasKey = GlobalKey();
-
   final GlobalKey _contactKey = GlobalKey();
 
   @override
@@ -68,61 +69,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showRouteMessage(String target) {
-    final messenger = ScaffoldMessenger.of(context);
-
-    final screenWidth = MediaQuery.sizeOf(context).width;
-
-    final snackWidth = screenWidth > 362 ? 330.0 : screenWidth - 32;
-
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          width: snackWidth,
-          elevation: 8,
-          duration: const Duration(milliseconds: 1500),
-          backgroundColor: AppColors.primaryDeep,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          content: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.route_outlined,
-                  size: 15,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '$target will be connected with Flutter routing.',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11.4,
-                    height: 1.25,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-  }
-
   void _openGenerate() {
     Navigator.pushNamed(context, '/generate');
   }
@@ -133,6 +79,14 @@ class _HomePageState extends State<HomePage> {
 
   void _openRegister() {
     Navigator.pushNamed(context, '/register');
+  }
+
+  void _openProtectedArea() {
+    Navigator.pushNamed(context, '/login');
+  }
+
+  void _openPublicPublication(String publicationId) {
+    Navigator.pushNamed(context, '/publications/$publicationId');
   }
 
   @override
@@ -150,6 +104,7 @@ class _HomePageState extends State<HomePage> {
                 physics: const BouncingScrollPhysics(),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.only(bottom: 118),
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: ConstrainedBox(
@@ -178,7 +133,6 @@ class _HomePageState extends State<HomePage> {
                           onSignInPressed: _openLogin,
                           onRegisterPressed: _openRegister,
                         ),
-
                         KeyedSubtree(
                           key: _homeKey,
                           child: HeroSection(
@@ -188,43 +142,31 @@ class _HomePageState extends State<HomePage> {
                             },
                           ),
                         ),
-
                         KeyedSubtree(
                           key: _howItWorksKey,
                           child: const MobileHowItWorksSection(),
                         ),
-
                         KeyedSubtree(
                           key: _aboutKey,
                           child: const AboutSection(),
                         ),
-
                         KeyedSubtree(
                           key: _domainsKey,
                           child: const DomainsSection(),
                         ),
-
                         KeyedSubtree(
                           key: _featuredIdeasKey,
-                          child: FeaturedIdeasSection(
-                            onViewIdeaPressed: (ideaTitle) {
-                              _showRouteMessage(
-                                'Publication Details: $ideaTitle',
-                              );
-                            },
-                            onExploreAllPressed: () {
-                              _showRouteMessage('Discover Ideas');
-                            },
+                          child: BackendFeaturedIdeasSection(
+                            onViewIdeaPressed: _openPublicPublication,
+                            onCreateAccountPressed: _openRegister,
                           ),
                         ),
-
                         KeyedSubtree(
                           key: _contactKey,
-                          child: ContactSection(
+                          child: BackendContactSection(
                             onGetStartedPressed: _openRegister,
                           ),
                         ),
-
                         HomeFooter(
                           onHomePressed: _scrollHome,
                           onHowItWorksPressed: () {
@@ -243,13 +185,31 @@ class _HomePageState extends State<HomePage> {
                             _scrollTo(_contactKey);
                           },
                         ),
-
                         SizedBox(
                           height: MediaQuery.paddingOf(context).bottom + 20,
                         ),
                       ],
                     ),
                   ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 540),
+                child: HomeBottomNav(
+                  onHomePressed: _scrollHome,
+                  onDiscoverPressed: () {
+                    _scrollTo(_featuredIdeasKey);
+                  },
+                  onGeneratePressed: _openGenerate,
+                  onMyIdeasPressed: _openProtectedArea,
+                  onProfilePressed: _openProtectedArea,
                 ),
               ),
             ),

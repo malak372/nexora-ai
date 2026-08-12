@@ -1,12 +1,28 @@
+<!--
+  Android application manifest for the Voxidence mobile application.
+
+  Configures internet access, Flutter activity settings, application
+  metadata, and the custom deep link used for password recovery.
+
+  @author Eman
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Allows the application to communicate with the backend API. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
-        android:label="mobile"
+        android:label="Voxidence"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
 
+        <!--
+          Main Flutter activity.
+
+          Uses singleTop launch mode so existing activity instances can
+          receive incoming deep links without creating unnecessary copies.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -17,18 +33,38 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
+            <!-- Flutter theme applied after the initial launch screen. -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
             />
 
+            <!-- Registers the activity as the main application launcher. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
+            <!--
+              Handles Voxidence password-reset deep links.
+
+              Example:
+              voxidence://reset-password?token=...
+            -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+
+                <data
+                    android:scheme="voxidence"
+                    android:host="reset-password"/>
+            </intent-filter>
+
         </activity>
 
+        <!-- Indicates that the application uses Flutter Android embedding v2. -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"
@@ -36,6 +72,10 @@
 
     </application>
 
+    <!--
+      Declares the PROCESS_TEXT intent query required for compatible
+      Android text-processing integrations.
+    -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
