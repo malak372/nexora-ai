@@ -69,6 +69,7 @@ dev_dependencies:
   freezed: ^3.2.5
   mocktail: ^1.0.5
 
+
 flutter:
   uses-material-design: true
 

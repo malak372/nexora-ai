@@ -130,6 +130,27 @@ export class IdeaGenerationLockService {
     try {
       const existingLock = await this.getLockByKey(lockKey);
 
+      /*
+       * After a process restart, a distributed/cache lock can outlive the
+       * Node.js process that created it. Recovery of the same durable run must
+       * be allowed to reclaim that lock instead of waiting for its TTL.
+       */
+      if (existingLock?.runId === input.runId) {
+        await this.cacheManager.set(
+          lockKey,
+          {
+            ...existingLock,
+            acquiredAt: new Date().toISOString(),
+          },
+          IDEA_GENERATION_LOCK_TTL_MS,
+        );
+
+        this.logger.debug(
+          `Reclaimed idea-generation lock "${lockKey}" for run "${input.runId}".`,
+        );
+        return;
+      }
+
       if (existingLock) {
         this.throwGenerationAlreadyRunning(existingLock.runId);
       }
