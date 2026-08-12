@@ -2,11 +2,15 @@
 //
 // @author Eman
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../api/auth_api.dart';
+import '../validation/auth_validators.dart';
 import '../widgets/auth_shell.dart';
+import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,33 +22,81 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
 
+  final _emailFieldKey = GlobalKey<FormFieldState<String>>();
+
+  final _passwordFieldKey = GlobalKey<FormFieldState<String>>();
+
   final _email = TextEditingController();
 
   final _password = TextEditingController();
+
+  bool _emailTouched = false;
+  bool _passwordTouched = false;
 
   bool _rememberMe = false;
   bool _obscure = true;
   bool _submitting = false;
 
   String? _error;
+  String? _errorTitle;
+
+  String _errorType = 'error';
+
+  int? _remainingLockSeconds;
+
+  DateTime? _lockDeadline;
+
+  Timer? _lockTimer;
+
+  Timer? _lockDurationMessageTimer;
+
+  bool _showInitialLockDuration = false;
+
+  int? _lockDurationMinutes;
+
+  bool get _locked => (_remainingLockSeconds ?? 0) > 0;
+
+  bool get _emailFormatValid =>
+      _emailTouched && AuthValidators.loginEmail(_email.text) == null;
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
+
+    _lockDurationMessageTimer?.cancel();
+
     _email.dispose();
+
     _password.dispose();
+
     super.dispose();
   }
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
+    if (_locked) {
+      return;
+    }
+
+    setState(() {
+      _emailTouched = true;
+      _passwordTouched = true;
+    });
+
+    final emailValid = _emailFieldKey.currentState?.validate() ?? false;
+
+    final passwordValid = _passwordFieldKey.currentState?.validate() ?? false;
+
+    if (!emailValid || !passwordValid) {
       return;
     }
 
     setState(() {
       _submitting = true;
       _error = null;
+      _errorTitle = null;
+      _errorType = 'error';
     });
 
     try {
@@ -54,37 +106,54 @@ class _LoginPageState extends State<LoginPage> {
         rememberMe: _rememberMe,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
-      final user = session['user'];
+      final rawUser = session['user'];
 
-      final role = user is Map
-          ? (user['role']?.toString().toUpperCase() ?? '')
-          : '';
+      final user = rawUser is Map ? Map<String, dynamic>.from(rawUser) : null;
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.primaryDeep,
-            content: Text(
-              role == 'ADMIN'
-                  ? 'Signed in as administrator.'
-                  : 'Signed in successfully.',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        );
+      final role = user?['role']?.toString().trim().toUpperCase() ?? '';
+
+      final destination = role == 'ADMIN'
+          ? '/admin/dashboard'
+          : '/normal/dashboard';
+
+      Navigator.pushNamedAndRemoveUntil(context, destination, (_) => false);
     } on AuthException catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _error = error.message;
+        _errorTitle = error.title;
+        _errorType = error.type;
       });
+
+      if (error.isLocked) {
+        _lockDurationMinutes = error.lockDurationMinutes;
+
+        _showInitialLockDuration = error.justLocked;
+
+        _startLockCountdown(error);
+
+        _lockDurationMessageTimer?.cancel();
+
+        if (error.justLocked) {
+          _lockDurationMessageTimer = Timer(
+            const Duration(milliseconds: 4500),
+            () {
+              if (mounted) {
+                setState(() {
+                  _showInitialLockDuration = false;
+                });
+              }
+            },
+          );
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -94,15 +163,96 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  void _forgotPassword() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          behavior: SnackBarBehavior.floating,
-          content: Text('Password recovery routing can be connected here.'),
-        ),
-      );
+  void _startLockCountdown(AuthException error) {
+    _lockTimer?.cancel();
+
+    final parsedDeadline = error.lockedUntil == null
+        ? null
+        : DateTime.tryParse(error.lockedUntil!)?.toLocal();
+
+    final seconds = error.remainingSeconds;
+
+    _lockDeadline =
+        parsedDeadline ??
+        (seconds != null && seconds > 0
+            ? DateTime.now().add(Duration(seconds: seconds))
+            : null);
+
+    if (_lockDeadline == null) {
+      return;
+    }
+
+    void update() {
+      if (!mounted || _lockDeadline == null) {
+        return;
+      }
+
+      final remaining = _lockDeadline!.difference(DateTime.now()).inSeconds + 1;
+
+      if (remaining <= 0) {
+        _lockTimer?.cancel();
+
+        setState(() {
+          _remainingLockSeconds = 0;
+
+          _error = null;
+
+          _errorTitle = null;
+
+          _lockDeadline = null;
+
+          _showInitialLockDuration = false;
+
+          _lockDurationMinutes = null;
+        });
+
+        return;
+      }
+
+      setState(() {
+        _remainingLockSeconds = remaining;
+      });
+    }
+
+    update();
+
+    _lockTimer = Timer.periodic(const Duration(seconds: 1), (_) => update());
+  }
+
+  String _formatCountdown(int totalSeconds) {
+    final safe = totalSeconds < 0 ? 0 : totalSeconds;
+
+    final hours = safe ~/ 3600;
+
+    final minutes = (safe % 3600) ~/ 60;
+
+    final seconds = safe % 60;
+
+    String two(int value) => value.toString().padLeft(2, '0');
+
+    return '${two(hours)}:${two(minutes)}:${two(seconds)}';
+  }
+
+  String _formatLockDuration(int? totalMinutes) {
+    final safeMinutes = (totalMinutes ?? 1) < 1 ? 1 : (totalMinutes ?? 1);
+
+    if (safeMinutes < 60) {
+      return '$safeMinutes '
+          '${safeMinutes == 1 ? 'minute' : 'minutes'}';
+    }
+
+    final hours = safeMinutes ~/ 60;
+
+    final remainingMinutes = safeMinutes % 60;
+
+    final hoursText = '$hours ${hours == 1 ? 'hour' : 'hours'}';
+
+    if (remainingMinutes == 0) {
+      return hoursText;
+    }
+
+    return '$hoursText and $remainingMinutes '
+        '${remainingMinutes == 1 ? 'minute' : 'minutes'}';
   }
 
   @override
@@ -112,7 +262,9 @@ class _LoginPageState extends State<LoginPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const AuthBrandBar(),
+
           const SizedBox(height: 18),
+
           AuthCard(
             child: Form(
               key: _formKey,
@@ -120,31 +272,57 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const AuthEyebrow(label: 'WELCOME BACK'),
+
                   const SizedBox(height: 14),
+
                   const AuthTitle(
                     title: 'Continue where your',
                     highlight: 'ideas left off.',
                     description:
                         'Sign in to return to your evidence-backed ideas, discoveries, and workspace.',
                   ),
+
                   const SizedBox(height: 20),
 
                   AuthField(
+                    formFieldKey: _emailFieldKey,
                     controller: _email,
                     label: 'Email address',
-                    hint: 'you@example.com',
+                    hint: 'name@example.com',
                     icon: Icons.mail_outline_rounded,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      final text = value?.trim() ?? '';
+                    autofillHints: const [
+                      AutofillHints.username,
+                      AutofillHints.email,
+                    ],
+                    enabled: !_submitting && !_locked,
+                    validState: _emailFormatValid,
+                    validLabel: 'Valid format',
+                    onFocusChanged: (hasFocus) {
+                      if (!hasFocus && !_emailTouched) {
+                        setState(() {
+                          _emailTouched = true;
+                        });
 
-                      final valid = RegExp(
-                        r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                      ).hasMatch(text);
-
-                      return valid ? null : 'Enter a valid email address.';
+                        _emailFieldKey.currentState?.validate();
+                      }
                     },
+                    onChanged: (_) {
+                      if (_emailTouched) {
+                        _emailFieldKey.currentState?.validate();
+                      }
+
+                      if (_error != null && !_locked) {
+                        setState(() {
+                          _error = null;
+                          _errorTitle = null;
+                        });
+                      } else if (_emailTouched) {
+                        setState(() {});
+                      }
+                    },
+                    validator: AuthValidators.loginEmail,
                   ),
 
                   const SizedBox(height: 13),
@@ -159,9 +337,20 @@ class _LoginPageState extends State<LoginPage> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+
                       const Spacer(),
+
                       InkWell(
-                        onTap: _forgotPassword,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ForgotPasswordPage(
+                                initialEmail: _email.text.trim(),
+                              ),
+                            ),
+                          );
+                        },
                         borderRadius: BorderRadius.circular(8),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(
@@ -183,49 +372,71 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 6),
 
-                  TextFormField(
-                    controller: _password,
-                    obscureText: _obscure,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) {
-                      if (!_submitting) {
-                        _submit();
-                      }
-                    },
-                    validator: (value) {
-                      if ((value ?? '').isEmpty) {
-                        return 'Enter your password.';
-                      }
+                  Focus(
+                    onFocusChange: (hasFocus) {
+                      if (!hasFocus && !_passwordTouched) {
+                        setState(() {
+                          _passwordTouched = true;
+                        });
 
-                      return null;
+                        _passwordFieldKey.currentState?.validate();
+                      }
                     },
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Enter your password',
-                      prefixIcon: const Icon(
-                        Icons.lock_outline_rounded,
-                        size: 18,
-                      ),
-                      suffixIcon: IconButton(
-                        tooltip: _obscure ? 'Show password' : 'Hide password',
-                        onPressed: () {
+                    child: TextFormField(
+                      key: _passwordFieldKey,
+                      controller: _password,
+                      enabled: !_submitting && !_locked,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.password],
+                      onChanged: (_) {
+                        if (_passwordTouched) {
+                          _passwordFieldKey.currentState?.validate();
+                        }
+
+                        if (_error != null && !_locked) {
                           setState(() {
-                            _obscure = !_obscure;
+                            _error = null;
+                            _errorTitle = null;
                           });
-                        },
-                        icon: Icon(
-                          _obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 18,
-                          color: AppColors.primaryDark,
-                        ),
+                        }
+                      },
+                      onFieldSubmitted: (_) {
+                        if (!_submitting && !_locked) {
+                          _submit();
+                        }
+                      },
+                      validator: AuthValidators.loginPassword,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
-                      isDense: true,
+                      decoration: InputDecoration(
+                        hintText: 'Enter your password',
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 18,
+                        ),
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? 'Show password' : 'Hide password',
+                          onPressed: _submitting || _locked
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _obscure = !_obscure;
+                                  });
+                                },
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            size: 18,
+                            color: AppColors.primaryDark,
+                          ),
+                        ),
+                        isDense: true,
+                      ),
                     ),
                   ),
 
@@ -243,14 +454,18 @@ class _LoginPageState extends State<LoginPage> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(5),
                           ),
-                          onChanged: (value) {
-                            setState(() {
-                              _rememberMe = value ?? false;
-                            });
-                          },
+                          onChanged: _submitting || _locked
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _rememberMe = value ?? false;
+                                  });
+                                },
                         ),
                       ),
+
                       const SizedBox(width: 7),
+
                       const Text(
                         'Keep me signed in',
                         style: TextStyle(
@@ -258,13 +473,17 @@ class _LoginPageState extends State<LoginPage> {
                           fontSize: 10.5,
                         ),
                       ),
+
                       const Spacer(),
+
                       const Icon(
                         Icons.lock_rounded,
                         size: 12,
                         color: AppColors.pink,
                       ),
+
                       const SizedBox(width: 4),
+
                       const Text(
                         'Secure session',
                         style: TextStyle(
@@ -278,14 +497,26 @@ class _LoginPageState extends State<LoginPage> {
 
                   if (_error != null) ...[
                     const SizedBox(height: 11),
-                    AuthErrorBox(message: _error!),
+
+                    _LoginFeedback(
+                      title: _errorTitle,
+                      message: _locked
+                          ? _showInitialLockDuration
+                                ? 'Your account has been locked for ${_formatLockDuration(_lockDurationMinutes)}. '
+                                      'Unlocks in ${_formatCountdown(_remainingLockSeconds ?? 0)}.'
+                                : 'Unlocks in ${_formatCountdown(_remainingLockSeconds ?? 0)}.'
+                          : _error!,
+                      type: _errorType,
+                    ),
                   ],
 
                   const SizedBox(height: 16),
 
                   AuthPrimaryButton(
-                    label: 'Sign in to Voxidence',
-                    onPressed: _submit,
+                    label: _locked
+                        ? 'Locked · ${_formatCountdown(_remainingLockSeconds ?? 0)}'
+                        : 'Sign in to Voxidence',
+                    onPressed: _locked ? null : _submit,
                     loading: _submitting,
                   ),
 
@@ -311,6 +542,87 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoginFeedback extends StatelessWidget {
+  const _LoginFeedback({required this.message, required this.type, this.title});
+
+  final String message;
+  final String type;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final warning = type == 'warning';
+
+    final locked = type == 'locked';
+
+    final background = warning
+        ? const Color(0xFFFFF8E8)
+        : locked
+        ? const Color(0xFFFFF2F5)
+        : AppColors.pinkSoft;
+
+    final foreground = warning
+        ? const Color(0xFF8B6822)
+        : const Color(0xFF9F4F61);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: foreground.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            locked
+                ? Icons.lock_clock_outlined
+                : warning
+                ? Icons.warning_amber_rounded
+                : Icons.error_outline_rounded,
+            size: 16,
+            color: foreground,
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title != null && title!.trim().isNotEmpty) ...[
+                  Text(
+                    title!,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 10.2,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+
+                  const SizedBox(height: 3),
+                ],
+
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 9.8,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

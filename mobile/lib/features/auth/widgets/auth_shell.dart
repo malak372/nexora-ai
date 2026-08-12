@@ -3,6 +3,7 @@
 // @author Eman
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../home/widgets/common.dart';
@@ -258,6 +259,17 @@ class AuthField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.onChanged,
+    this.onFieldSubmitted,
+    this.onFocusChanged,
+    this.focusNode,
+    this.enabled = true,
+    this.maxLength,
+    this.inputFormatters,
+    this.autofillHints,
+    this.autovalidateMode,
+    this.formFieldKey,
+    this.validState = false,
+    this.validLabel,
   });
 
   final TextEditingController controller;
@@ -270,40 +282,105 @@ class AuthField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onFieldSubmitted;
+  final ValueChanged<bool>? onFocusChanged;
+  final FocusNode? focusNode;
+  final bool enabled;
+  final int? maxLength;
+  final List<TextInputFormatter>? inputFormatters;
+  final Iterable<String>? autofillHints;
+  final AutovalidateMode? autovalidateMode;
+  final GlobalKey<FormFieldState<String>>? formFieldKey;
+  final bool validState;
+  final String? validLabel;
 
   @override
   Widget build(BuildContext context) {
+    const validColor = Color(0xFF13835B);
+
+    final field = TextFormField(
+      key: formFieldKey,
+      controller: controller,
+      focusNode: focusNode,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      validator: validator,
+      obscureText: obscureText,
+      onChanged: onChanged,
+      onFieldSubmitted: onFieldSubmitted,
+      maxLength: maxLength,
+      inputFormatters: inputFormatters,
+      autofillHints: autofillHints,
+      autovalidateMode: autovalidateMode,
+      style: const TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: Icon(icon, size: 18),
+        suffixIcon:
+            suffixIcon ??
+            (validState
+                ? const Icon(
+                    Icons.check_circle_rounded,
+                    size: 18,
+                    color: validColor,
+                  )
+                : null),
+        counterText: '',
+        isDense: true,
+        enabledBorder: validState
+            ? OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+                borderSide: const BorderSide(color: validColor, width: 1.25),
+              )
+            : null,
+        focusedBorder: validState
+            ? OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+                borderSide: const BorderSide(color: validColor, width: 1.5),
+              )
+            : null,
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.primaryDeep,
-            fontSize: 11.1,
-            fontWeight: FontWeight.w900,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.primaryDeep,
+                  fontSize: 11.1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (validState && validLabel != null) ...[
+              const Icon(Icons.check_rounded, size: 13, color: validColor),
+              const SizedBox(width: 3),
+              Text(
+                validLabel!,
+                style: const TextStyle(
+                  color: validColor,
+                  fontSize: 9.3,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 6),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          textInputAction: textInputAction,
-          validator: validator,
-          obscureText: obscureText,
-          onChanged: onChanged,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: Icon(icon, size: 18),
-            suffixIcon: suffixIcon,
-            isDense: true,
-          ),
-        ),
+        if (onFocusChanged == null)
+          field
+        else
+          Focus(onFocusChange: onFocusChanged, child: field),
       ],
     );
   }

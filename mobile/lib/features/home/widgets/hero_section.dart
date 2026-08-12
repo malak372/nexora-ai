@@ -1,4 +1,7 @@
-// Mobile-first Hero section inspired by the Voxidence web landing page.
+// Reference-based mobile Hero section for the Voxidence public Home.
+//
+// Matches the provided mobile concept using the real Voxidence palette
+// and existing project illustration assets.
 //
 // @author Eman
 
@@ -8,9 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../models/home_models.dart';
 
-class HeroSection extends StatefulWidget {
+class HeroSection extends StatelessWidget {
   const HeroSection({
     super.key,
     required this.onGeneratePressed,
@@ -21,76 +23,40 @@ class HeroSection extends StatefulWidget {
   final VoidCallback onExplorePressed;
 
   @override
-  State<HeroSection> createState() => _HeroSectionState();
-}
-
-class _HeroSectionState extends State<HeroSection> {
-  static const _stageDuration = Duration(milliseconds: 4800);
-
-  Timer? _timer;
-
-  int _activeStage = 0;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _timer = Timer.periodic(_stageDuration, (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _activeStage = (_activeStage + 1) % HomeData.heroStages.length;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    final compact = screenWidth < 355;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 22, 16, 18),
+      padding: EdgeInsets.fromLTRB(16, compact ? 25 : 30, 16, 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _HeroBadge(),
 
-          const SizedBox(height: 14),
+          SizedBox(height: compact ? 20 : 23),
 
           const _HeroHeading(),
 
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 13 : 16),
 
           const _HeroLead(),
 
-          const SizedBox(height: 18),
+          SizedBox(height: compact ? 22 : 28),
 
-          _HeroActions(
-            onGeneratePressed: widget.onGeneratePressed,
-            onExplorePressed: widget.onExplorePressed,
+          _DiscoveryCard(
+            onGeneratePressed: onGeneratePressed,
+            onExplorePressed: onExplorePressed,
           ),
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 17),
 
-          const _TrustPoints(),
+          const _FeatureStrip(),
 
-          const SizedBox(height: 21),
+          const SizedBox(height: 24),
 
-          _StageShowcase(
-            activeStage: _activeStage,
-            onStageChanged: (index) {
-              setState(() {
-                _activeStage = index;
-              });
-            },
-          ),
+          const _VisualShowcase(),
         ],
       ),
     );
@@ -103,30 +69,41 @@ class _HeroBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(99),
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(999),
         border: Border.all(color: AppColors.borderStrong),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: 0.025),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _LiveDot(),
 
-          SizedBox(width: 7),
+          SizedBox(width: 8),
 
           Icon(Icons.auto_awesome_rounded, size: 13, color: AppColors.primary),
 
-          SizedBox(width: 5),
+          SizedBox(width: 6),
 
-          Text(
-            'EVIDENCE-FIRST IDEA DISCOVERY',
-            style: TextStyle(
-              color: AppColors.primaryDark,
-              fontSize: 9.2,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.55,
+          Flexible(
+            child: Text(
+              'EVIDENCE-FIRST IDEA DISCOVERY',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 9.4,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.48,
+              ),
             ),
           ),
         ],
@@ -141,15 +118,15 @@ class _LiveDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 7,
-      height: 7,
+      width: 8,
+      height: 8,
       decoration: BoxDecoration(
         color: AppColors.primary,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.34),
-            blurRadius: 7,
+            color: AppColors.primary.withValues(alpha: 0.27),
+            blurRadius: 8,
             spreadRadius: 2,
           ),
         ],
@@ -163,14 +140,29 @@ class _HeroHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Text(
-      'Real voices reveal\nthe ideas worth building.',
-      style: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 32,
-        height: 1.04,
-        fontWeight: FontWeight.w900,
-        letterSpacing: -1.15,
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
+    final fontSize = screenWidth < 355 ? 31.5 : 34.0;
+
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: fontSize,
+          height: 1.08,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -1.25,
+        ),
+        children: const [
+          TextSpan(text: 'Real voices reveal\nthe '),
+
+          TextSpan(
+            text: 'ideas',
+            style: TextStyle(color: AppColors.primary),
+          ),
+
+          TextSpan(text: ' worth building.'),
+        ],
       ),
     );
   }
@@ -181,12 +173,12 @@ class _HeroLead extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RichText(
-      text: const TextSpan(
+    return const Text.rich(
+      TextSpan(
         style: TextStyle(
           color: AppColors.textSecondary,
-          fontSize: 12.7,
-          height: 1.5,
+          fontSize: 13.2,
+          height: 1.62,
           fontWeight: FontWeight.w500,
         ),
         children: [
@@ -197,6 +189,7 @@ class _HeroLead extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
+
           TextSpan(
             text:
                 'listens to recurring community needs, connects them with evidence, and turns them into focused software opportunities.',
@@ -207,8 +200,8 @@ class _HeroLead extends StatelessWidget {
   }
 }
 
-class _HeroActions extends StatelessWidget {
-  const _HeroActions({
+class _DiscoveryCard extends StatelessWidget {
+  const _DiscoveryCard({
     required this.onGeneratePressed,
     required this.onExplorePressed,
   });
@@ -218,118 +211,220 @@ class _HeroActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 46,
-            child: FilledButton(
-              onPressed: onGeneratePressed,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 11),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return Container(
+      width: double.infinity,
+      height: 235,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.93),
+        borderRadius: BorderRadius.circular(31),
+        border: Border.all(color: Colors.white),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: 0.075),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(31),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Positioned.fill(child: _DiscoveryBackground()),
+
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 30,
+              height: 100,
+              child: CustomPaint(painter: _SignalPathPainter()),
+            ),
+
+            Positioned(top: 26, child: _IdeaOrb(onTap: onGeneratePressed)),
+
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 17,
+              child: Column(
                 children: [
-                  _GenerateIdeaIcon(),
-
-                  SizedBox(width: 8),
-
-                  Flexible(
-                    child: Text(
-                      'Generate free idea',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.7,
-                        fontWeight: FontWeight.w900,
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onGeneratePressed,
+                      borderRadius: BorderRadius.circular(14),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 5,
+                        ),
+                        child: Text(
+                          'Discover your next idea',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 17,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.35,
+                          ),
+                        ),
                       ),
                     ),
                   ),
 
-                  SizedBox(width: 6),
+                  const SizedBox(height: 4),
 
-                  Icon(Icons.arrow_forward_rounded, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ),
+                  const Text(
+                    "We'll handle the rest",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
 
-        const SizedBox(width: 8),
+                  const SizedBox(height: 9),
 
-        SizedBox(
-          height: 46,
-          width: 46,
-          child: OutlinedButton(
-            onPressed: onExplorePressed,
-            style: OutlinedButton.styleFrom(
-              padding: EdgeInsets.zero,
-              backgroundColor: Colors.white.withValues(alpha: 0.88),
-              foregroundColor: AppColors.primaryDark,
-              side: const BorderSide(color: AppColors.borderStrong),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-            ),
-            child: const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _GenerateIdeaIcon extends StatelessWidget {
-  const _GenerateIdeaIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          Icon(
-            Icons.lightbulb_outline_rounded,
-            size: 18,
-            color: Colors.white.withValues(alpha: 0.98),
-          ),
-
-          Positioned(
-            top: 1,
-            right: 0,
-            child: Container(
-              width: 4.5,
-              height: 4.5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFE7A8),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFFE7A8).withValues(alpha: 0.42),
-                    blurRadius: 5,
-                    spreadRadius: 0.8,
+                  Material(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: onExplorePressed,
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 31,
+                        height: 31,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: AppColors.primaryDeep,
+                          size: 19,
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoveryBackground extends StatelessWidget {
+  const _DiscoveryBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0.05, -0.40),
+          radius: 1.15,
+          colors: [Color(0xFFFFFEF9), Color(0xFFFBFDFC), Color(0xFFF6FBF9)],
+          stops: [0, 0.55, 1],
+        ),
+      ),
+      child: SizedBox.expand(),
+    );
+  }
+}
+
+class _IdeaOrb extends StatelessWidget {
+  const _IdeaOrb({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 106,
+      height: 106,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 104,
+            height: 104,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.08),
+              ),
+            ),
           ),
 
-          Positioned(
-            top: -1,
-            left: 1,
-            child: Icon(
-              Icons.auto_awesome_rounded,
-              size: 6,
-              color: Colors.white.withValues(alpha: 0.8),
+          Container(
+            width: 83,
+            height: 83,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFF3DBA8).withValues(alpha: 0.25),
+              ),
+            ),
+          ),
+
+          Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 63,
+                height: 63,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFFFFEF6),
+                  border: Border.all(color: const Color(0xFFF1E7C8)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFF3D78C).withValues(alpha: 0.18),
+                      blurRadius: 26,
+                      spreadRadius: 3,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(
+                      Icons.lightbulb_outline_rounded,
+                      size: 35,
+                      color: AppColors.primaryDark,
+                    ),
+
+                    Positioned(
+                      top: 10,
+                      left: 12,
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 8,
+                        color: AppColors.primary.withValues(alpha: 0.9),
+                      ),
+                    ),
+
+                    const Positioned(
+                      top: 10,
+                      right: 12,
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 7,
+                        color: Color(0xFFE8C96B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -338,277 +433,326 @@ class _GenerateIdeaIcon extends StatelessWidget {
   }
 }
 
-class _TrustPoints extends StatelessWidget {
-  const _TrustPoints();
+class _SignalPathPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(-10, size.height * 0.61)
+      ..cubicTo(
+        size.width * 0.10,
+        size.height * 0.75,
+        size.width * 0.17,
+        size.height * 0.25,
+        size.width * 0.30,
+        size.height * 0.45,
+      )
+      ..cubicTo(
+        size.width * 0.42,
+        size.height * 0.65,
+        size.width * 0.58,
+        size.height * 0.27,
+        size.width * 0.68,
+        size.height * 0.43,
+      )
+      ..cubicTo(
+        size.width * 0.79,
+        size.height * 0.61,
+        size.width * 0.88,
+        size.height * 0.20,
+        size.width + 10,
+        size.height * 0.28,
+      );
+
+    final linePaint = Paint()
+      ..color = AppColors.primary.withValues(alpha: 0.24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.7
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPath(path, linePaint);
+
+    _drawNode(
+      canvas,
+      Offset(size.width * 0.16, size.height * 0.52),
+      AppColors.pink,
+    );
+
+    _drawNode(
+      canvas,
+      Offset(size.width * 0.29, size.height * 0.47),
+      AppColors.primary,
+    );
+
+    _drawNode(
+      canvas,
+      Offset(size.width * 0.71, size.height * 0.43),
+      AppColors.primaryDark,
+    );
+
+    _drawNode(
+      canvas,
+      Offset(size.width * 0.87, size.height * 0.34),
+      AppColors.primary,
+    );
+  }
+
+  void _drawNode(Canvas canvas, Offset center, Color color) {
+    final glowPaint = Paint()
+      ..color = color.withValues(alpha: 0.14)
+      ..style = PaintingStyle.fill;
+
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final ringPaint = Paint()
+      ..color = color.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.7;
+
+    canvas.drawCircle(center, 6, glowPaint);
+
+    canvas.drawCircle(center, 3.8, whitePaint);
+
+    canvas.drawCircle(center, 3.8, ringPaint);
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return const Wrap(
-      spacing: 12,
-      runSpacing: 7,
-      children: [
-        _TrustPoint(text: 'Evidence-backed'),
-        _TrustPoint(text: 'Multi-model AI'),
-        _TrustPoint(text: 'Locally relevant'),
-      ],
-    );
+  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+    return false;
   }
 }
 
-class _TrustPoint extends StatelessWidget {
-  const _TrustPoint({required this.text});
-
-  final String text;
+class _FeatureStrip extends StatelessWidget {
+  const _FeatureStrip();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.check_circle_outline_rounded,
-          size: 14,
-          color: AppColors.primaryDark,
-        ),
-
-        const SizedBox(width: 5),
-
-        Text(
-          text,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 9.8,
-            fontWeight: FontWeight.w700,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: 0.045),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-        ),
-      ],
+        ],
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: _FeatureItem(
+              icon: Icons.verified_user_outlined,
+              label: 'Evidence-\nbacked',
+            ),
+          ),
+
+          _FeatureDivider(),
+
+          Expanded(
+            child: _FeatureItem(
+              icon: Icons.psychology_alt_outlined,
+              label: 'Multi-model\nAI',
+            ),
+          ),
+
+          _FeatureDivider(),
+
+          Expanded(
+            child: _FeatureItem(
+              icon: Icons.location_on_outlined,
+              label: 'Locally\nrelevant',
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _StageShowcase extends StatelessWidget {
-  const _StageShowcase({
-    required this.activeStage,
-    required this.onStageChanged,
-  });
-
-  final int activeStage;
-  final ValueChanged<int> onStageChanged;
+class _FeatureDivider extends StatelessWidget {
+  const _FeatureDivider();
 
   @override
   Widget build(BuildContext context) {
-    final stage = HomeData.heroStages[activeStage];
+    return Container(width: 1, height: 39, color: AppColors.border);
+  }
+}
+
+class _FeatureItem extends StatelessWidget {
+  const _FeatureItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft.withValues(alpha: 0.88),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.primaryDark),
+          ),
+
+          const SizedBox(width: 7),
+
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 9.4,
+                height: 1.18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Automatically rotates between the four evidence pipeline illustrations.
+///
+/// The stage duration matches the web Home implementation.
+class _VisualShowcase extends StatefulWidget {
+  const _VisualShowcase();
+
+  @override
+  State<_VisualShowcase> createState() => _VisualShowcaseState();
+}
+
+class _VisualShowcaseState extends State<_VisualShowcase>
+    with WidgetsBindingObserver {
+  static const Duration _stageDuration = Duration(milliseconds: 4800);
+
+  static const Duration _fadeDuration = Duration(milliseconds: 650);
+
+  static const List<String> _stageAssets = [
+    'assets/images/hero-stages/01-collect-signals.svg',
+    'assets/images/hero-stages/02-evidence-pipeline.svg',
+    'assets/images/hero-stages/03-compare-directions.svg',
+    'assets/images/hero-stages/04-selected-opportunity.svg',
+  ];
+
+  Timer? _stageTimer;
+
+  int _activeStageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+
+    _startStageTimer();
+  }
+
+  void _startStageTimer() {
+    _stageTimer?.cancel();
+
+    _stageTimer = Timer.periodic(_stageDuration, (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _activeStageIndex = (_activeStageIndex + 1) % _stageAssets.length;
+      });
+    });
+  }
+
+  void _stopStageTimer() {
+    _stageTimer?.cancel();
+    _stageTimer = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.resumed) {
+      _startStageTimer();
+      return;
+    }
+
+    _stopStageTimer();
+  }
+
+  @override
+  void dispose() {
+    _stopStageTimer();
+
+    WidgetsBinding.instance.removeObserver(this);
+
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeAsset = _stageAssets[_activeStageIndex];
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      width: double.infinity,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF5F2), Color(0xFFFFF2F5)],
+          colors: [Color(0xFFF9FCFA), Color(0xFFFFF8FA)],
         ),
-        borderRadius: BorderRadius.circular(25),
-        border: Border.all(color: Colors.white),
+        borderRadius: BorderRadius.circular(29),
+        border: Border.all(color: Colors.white, width: 2),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: 0.07),
-            blurRadius: 28,
-            offset: const Offset(0, 13),
+            color: AppColors.primaryDeep.withValues(alpha: 0.065),
+            blurRadius: 30,
+            offset: const Offset(0, 15),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(19),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              children: [
-                const _WindowRail(),
-
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(18),
-                  ),
-                  child: SizedBox(
-                    height: 198,
-                    width: double.infinity,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 380),
-                      child: Container(
-                        key: ValueKey(stage.assetPath),
-                        color: const Color(0xFFFBFDFC),
-                        alignment: Alignment.center,
-                        padding: const EdgeInsets.fromLTRB(5, 3, 5, 2),
-                        child: SvgPicture.asset(
-                          stage.assetPath,
-                          width: double.infinity,
-                          height: 196,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Text(
-                    '0${activeStage + 1}',
-                    style: const TextStyle(
-                      color: AppColors.primaryDark,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 9),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        stage.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 11.4,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-
-                      const SizedBox(height: 2),
-
-                      Text(
-                        stage.description,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 9.1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 9),
-
-          Row(
-            children: List.generate(HomeData.heroStages.length, (index) {
-              final selected = index == activeStage;
-
-              return Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    onStageChanged(index);
-                  },
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: index == HomeData.heroStages.length - 1 ? 0 : 5,
-                    ),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      height: selected ? 5 : 3,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.primary
-                            : AppColors.borderStrong,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                  ),
-                ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(27),
+        child: AspectRatio(
+          aspectRatio: 1.36,
+          child: AnimatedSwitcher(
+            duration: _fadeDuration,
+            reverseDuration: _fadeDuration,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            layoutBuilder: (currentChild, previousChildren) {
+              return Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [...previousChildren, ?currentChild],
               );
-            }),
+            },
+            child: SvgPicture.asset(
+              activeAsset,
+              key: ValueKey<String>(activeAsset),
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
           ),
-
-          const SizedBox(height: 3),
-        ],
-      ),
-    );
-  }
-}
-
-class _WindowRail extends StatelessWidget {
-  const _WindowRail();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 27,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 11),
-        child: Row(
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: AppColors.pink,
-                shape: BoxShape.circle,
-              ),
-            ),
-
-            const SizedBox(width: 5),
-
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.65),
-                shape: BoxShape.circle,
-              ),
-            ),
-
-            const SizedBox(width: 5),
-
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: AppColors.primaryDark.withValues(alpha: 0.45),
-                shape: BoxShape.circle,
-              ),
-            ),
-
-            const Spacer(),
-
-            Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ],
         ),
       ),
     );

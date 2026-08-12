@@ -37,23 +37,16 @@ const PASSWORD_ACTION_TTL_MS = 60_000;
  */
 @Controller('auth/password')
 export class PasswordController {
-  constructor(private readonly authPasswordService: AuthPasswordService) {}
+  constructor(
+    private readonly authPasswordService:
+      AuthPasswordService,
+  ) { }
 
   /**
    * Changes the authenticated user's password.
    *
-   * Requires JWT authentication.
-   *
-   * Rate limit:
-   * - 5 requests per minute.
-   *
    * Endpoint:
    * PATCH /auth/password/change
-   *
-   * @param user - Authenticated user.
-   * @param dto - Current and new password data.
-   * @param request - Current HTTP request containing client metadata.
-   * @returns Password-change confirmation message.
    */
   @Patch('change')
   @UseGuards(JwtAuthGuard)
@@ -64,32 +57,38 @@ export class PasswordController {
     },
   })
   changePassword(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: ChangePasswordDto,
-    @Req() request: Request,
+    @CurrentUser()
+    user: AuthenticatedUser,
+
+    @Body()
+    dto: ChangePasswordDto,
+
+    @Req()
+    request: Request,
   ) {
-    return this.authPasswordService.changePassword(user.id, dto, {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
-    });
+    return this.authPasswordService.changePassword(
+      user.id,
+      dto,
+      {
+        ipAddress:
+          request.ip,
+
+        userAgent:
+          request.headers[
+          'user-agent'
+          ],
+      },
+    );
   }
 
   /**
    * Requests a password-reset email.
    *
-   * The endpoint should always return the same public response,
-   * regardless of whether the email belongs to an account, to
-   * reduce user-enumeration risks.
-   *
-   * Rate limit:
-   * - 3 requests per minute.
+   * Web requests receive the normal web URL.
+   * Mobile requests receive the voxidence:// deep link.
    *
    * Endpoint:
    * POST /auth/password/forgot
-   *
-   * @param dto - Email address requesting a password reset.
-   * @param request - Current HTTP request containing client metadata.
-   * @returns Generic password-reset request confirmation.
    */
   @Post('forgot')
   @HttpCode(HttpStatus.OK)
@@ -99,25 +98,48 @@ export class PasswordController {
       ttl: PASSWORD_ACTION_TTL_MS,
     },
   })
-  forgotPassword(@Body() dto: ForgotPasswordDto, @Req() request: Request) {
-    return this.authPasswordService.forgotPassword(dto, {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
-    });
+  forgotPassword(
+    @Body()
+    dto: ForgotPasswordDto,
+
+    @Req()
+    request: Request,
+  ) {
+    const requestedClient =
+      request.headers[
+      'x-voxidence-client'
+      ];
+
+    const resetClient =
+      typeof requestedClient ===
+        'string' &&
+        requestedClient
+          .trim()
+          .toLowerCase() ===
+        'mobile'
+        ? 'mobile'
+        : 'web';
+
+    return this.authPasswordService.forgotPassword(
+      dto,
+      {
+        ipAddress:
+          request.ip,
+
+        userAgent:
+          request.headers[
+          'user-agent'
+          ],
+      },
+      resetClient,
+    );
   }
 
   /**
-   * Resets a user's password using a valid reset token.
-   *
-   * Rate limit:
-   * - 5 requests per minute.
+   * Resets a user's password.
    *
    * Endpoint:
    * POST /auth/password/reset
-   *
-   * @param dto - Reset token and new password data.
-   * @param request - Current HTTP request containing client metadata.
-   * @returns Password-reset confirmation message.
    */
   @Post('reset')
   @HttpCode(HttpStatus.OK)
@@ -127,10 +149,24 @@ export class PasswordController {
       ttl: PASSWORD_ACTION_TTL_MS,
     },
   })
-  resetPassword(@Body() dto: ResetPasswordDto, @Req() request: Request) {
-    return this.authPasswordService.resetPassword(dto, {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
-    });
+  resetPassword(
+    @Body()
+    dto: ResetPasswordDto,
+
+    @Req()
+    request: Request,
+  ) {
+    return this.authPasswordService.resetPassword(
+      dto,
+      {
+        ipAddress:
+          request.ip,
+
+        userAgent:
+          request.headers[
+          'user-agent'
+          ],
+      },
+    );
   }
 }

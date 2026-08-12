@@ -23,38 +23,40 @@ class HomeBackground extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFFFFFDFC),
-                    Color(0xFFFAF9F6),
+                    Color(0xFFFFFEFC),
+                    Color(0xFFFBFAF7),
                     Color(0xFFFFFDFC),
                   ],
-                  stops: [0, 0.50, 1],
+                  stops: [0, 0.54, 1],
                 ),
               ),
             ),
           ),
-          const Positioned.fill(child: _DotField()),
+
           Positioned(
-            right: -140,
-            top: 120,
-            child: _Glow(
-              size: 330,
-              color: const Color(0xFFB7DDD8).withValues(alpha: 0.38),
-            ),
-          ),
-          Positioned(
-            left: -155,
-            top: 480,
+            right: -120,
+            top: 150,
             child: _Glow(
               size: 300,
-              color: AppColors.pinkLight.withValues(alpha: 0.28),
+              color: const Color(0xFFCDE9E4).withValues(alpha: 0.30),
             ),
           ),
+
+          Positioned(
+            left: -145,
+            top: 590,
+            child: _Glow(
+              size: 285,
+              color: AppColors.pinkLight.withValues(alpha: 0.16),
+            ),
+          ),
+
           Positioned(
             right: -160,
-            top: 1040,
+            top: 980,
             child: _Glow(
-              size: 330,
-              color: const Color(0xFFB7DDD8).withValues(alpha: 0.20),
+              size: 320,
+              color: const Color(0xFFCDE9E4).withValues(alpha: 0.17),
             ),
           ),
         ],
@@ -72,43 +74,12 @@ class _Glow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ImageFiltered(
-      imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+      imageFilter: ImageFilter.blur(sigmaX: 76, sigmaY: 76),
       child: Container(
         width: size,
         height: size,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
     );
-  }
-}
-
-class _DotField extends StatelessWidget {
-  const _DotField();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _DotFieldPainter());
-  }
-}
-
-class _DotFieldPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.primaryDark.withValues(alpha: 0.05)
-      ..style = PaintingStyle.fill;
-
-    const spacing = 26.0;
-
-    for (double y = 28; y < size.height; y += spacing) {
-      for (double x = 18; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), 0.9, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
   }
 }

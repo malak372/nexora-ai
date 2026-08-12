@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../api/auth_api.dart';
+import '../validation/auth_validators.dart';
 import '../widgets/auth_shell.dart';
 import 'verify_email_page.dart';
 
@@ -30,11 +31,18 @@ class _RegisterPageState extends State<RegisterPage> {
   String _userType = 'STUDENT';
 
   bool _obscurePassword = true;
+
   bool _obscureConfirmPassword = true;
+
   bool _acceptedTerms = false;
+
   bool _submitting = false;
 
+  bool _attemptedSubmit = false;
+
   String? _error;
+
+  String? _termsError;
 
   static const _roles = [
     _RoleData(value: 'STUDENT', label: 'Student', icon: Icons.school_outlined),
@@ -55,23 +63,43 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void dispose() {
     _name.dispose();
+
     _email.dispose();
+
     _password.dispose();
+
     _confirmPassword.dispose();
 
     super.dispose();
   }
 
+  bool _accountWasCreatedButVerificationFailed(String message) {
+    final normalized = message.toLowerCase();
+
+    return normalized.contains('account was created') &&
+        normalized.contains('verification email');
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    setState(() {
+      _attemptedSubmit = true;
+    });
 
-    if (!_acceptedTerms) {
+    final formValid = _formKey.currentState!.validate();
+
+    final termsValid = _acceptedTerms;
+
+    setState(() {
+      _termsError = termsValid
+          ? null
+          : 'You must accept the Terms, Privacy Policy, and Security Policy.';
+    });
+
+    if (!formValid || !termsValid) {
       setState(() {
-        _error = 'You must accept the Terms of Service and Privacy Policy.';
+        _error = null;
       });
 
       return;
@@ -79,28 +107,58 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() {
       _submitting = true;
+
       _error = null;
+
+      _termsError = null;
     });
 
+    final normalizedEmail = _email.text.trim().toLowerCase();
+
     try {
-      await AuthApi.instance.register(
+      final result = await AuthApi.instance.register(
         fullName: _name.text.trim(),
         email: _email.text.trim(),
         password: _password.text,
         userType: _userType,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
+      final responseMessage = result['message']?.toString().trim();
 
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              VerifyEmailPage(email: _email.text.trim().toLowerCase()),
+          builder: (_) => VerifyEmailPage(
+            email: normalizedEmail,
+            initialMessage: responseMessage == null || responseMessage.isEmpty
+                ? 'Your account was created. Check your inbox for the six-digit verification code.'
+                : responseMessage,
+          ),
         ),
       );
     } on AuthException catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
+      if (_accountWasCreatedButVerificationFailed(error.message)) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VerifyEmailPage(
+              email: normalizedEmail,
+              emailDeliveryFailed: true,
+              initialMessage: error.message,
+            ),
+          ),
+        );
+
+        return;
+      }
 
       setState(() {
         _error = error.message;
@@ -157,16 +215,14 @@ class _RegisterPageState extends State<RegisterPage> {
                   AuthField(
                     controller: _name,
                     label: 'Full name',
+                    autovalidateMode: _attemptedSubmit
+                        ? AutovalidateMode.onUserInteraction
+                        : AutovalidateMode.disabled,
                     hint: 'Your full name',
                     icon: Icons.person_outline_rounded,
                     textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if ((value?.trim().length ?? 0) < 2) {
-                        return 'Enter your full name.';
-                      }
-
-                      return null;
-                    },
+                    maxLength: 120,
+                    validator: AuthValidators.registerFullName,
                   ),
 
                   const SizedBox(height: 13),
@@ -174,19 +230,14 @@ class _RegisterPageState extends State<RegisterPage> {
                   AuthField(
                     controller: _email,
                     label: 'Email address',
+                    autovalidateMode: _attemptedSubmit
+                        ? AutovalidateMode.onUserInteraction
+                        : AutovalidateMode.disabled,
                     hint: 'name@example.com',
                     icon: Icons.mail_outline_rounded,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      final text = value?.trim() ?? '';
-
-                      final valid = RegExp(
-                        r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
-                      ).hasMatch(text);
-
-                      return valid ? null : 'Enter a valid email address.';
-                    },
+                    validator: AuthValidators.registerEmail,
                   ),
 
                   const SizedBox(height: 15),
@@ -225,6 +276,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   AuthField(
                     controller: _password,
                     label: 'Password',
+                    autovalidateMode: _attemptedSubmit
+                        ? AutovalidateMode.onUserInteraction
+                        : AutovalidateMode.disabled,
                     hint: 'Create a password',
                     icon: Icons.lock_outline_rounded,
                     obscureText: _obscurePassword,
@@ -249,20 +303,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         color: AppColors.primaryDark,
                       ),
                     ),
-                    validator: (value) {
-                      final text = value ?? '';
-
-                      final valid =
-                          text.length >= 6 &&
-                          RegExp(r'[A-Za-z]').hasMatch(text) &&
-                          RegExp(r'\d').hasMatch(text);
-
-                      if (!valid) {
-                        return 'Use at least 6 characters, one letter, and one number.';
-                      }
-
-                      return null;
-                    },
+                    validator: AuthValidators.registerPassword,
                   ),
 
                   const SizedBox(height: 9),
@@ -278,6 +319,9 @@ class _RegisterPageState extends State<RegisterPage> {
                   AuthField(
                     controller: _confirmPassword,
                     label: 'Confirm password',
+                    autovalidateMode: _attemptedSubmit
+                        ? AutovalidateMode.onUserInteraction
+                        : AutovalidateMode.disabled,
                     hint: 'Repeat your password',
                     icon: Icons.verified_user_outlined,
                     obscureText: _obscureConfirmPassword,
@@ -299,13 +343,11 @@ class _RegisterPageState extends State<RegisterPage> {
                         color: AppColors.primaryDark,
                       ),
                     ),
-                    validator: (value) {
-                      if ((value ?? '') != _password.text) {
-                        return 'Passwords do not match.';
-                      }
-
-                      return null;
-                    },
+                    validator: (value) =>
+                        AuthValidators.confirmRegistrationPassword(
+                          value: value,
+                          password: _password.text,
+                        ),
                   ),
 
                   const SizedBox(height: 12),
@@ -315,12 +357,30 @@ class _RegisterPageState extends State<RegisterPage> {
                     onChanged: (value) {
                       setState(() {
                         _acceptedTerms = value;
+
+                        if (value) {
+                          _termsError = null;
+                        }
                       });
                     },
                   ),
 
+                  if (_termsError != null) ...[
+                    const SizedBox(height: 6),
+
+                    Text(
+                      _termsError!,
+                      style: const TextStyle(
+                        color: AppColors.pink,
+                        fontSize: 10.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+
                   if (_error != null) ...[
                     const SizedBox(height: 11),
+
                     AuthErrorBox(message: _error!),
                   ],
 
@@ -370,7 +430,9 @@ class _RoleData {
   });
 
   final String value;
+
   final String label;
+
   final IconData icon;
 }
 
@@ -382,7 +444,9 @@ class _RoleChip extends StatelessWidget {
   });
 
   final _RoleData role;
+
   final bool selected;
+
   final VoidCallback onPressed;
 
   @override
@@ -412,7 +476,9 @@ class _RoleChip extends StatelessWidget {
                     ? AppColors.primaryDark
                     : AppColors.textSecondary,
               ),
+
               const SizedBox(width: 6),
+
               Text(
                 role.label,
                 style: TextStyle(
@@ -439,7 +505,9 @@ class _PasswordRules extends StatelessWidget {
   });
 
   final bool hasLength;
+
   final bool hasLetter;
+
   final bool hasNumber;
 
   @override
@@ -460,6 +528,7 @@ class _RulePill extends StatelessWidget {
   const _RulePill({required this.label, required this.valid});
 
   final String label;
+
   final bool valid;
 
   @override
@@ -482,7 +551,9 @@ class _RulePill extends StatelessWidget {
             size: 11,
             color: color,
           ),
+
           const SizedBox(width: 4),
+
           Text(
             label,
             style: TextStyle(
@@ -501,6 +572,7 @@ class _TermsRow extends StatelessWidget {
   const _TermsRow({required this.accepted, required this.onChanged});
 
   final bool accepted;
+
   final ValueChanged<bool> onChanged;
 
   @override
@@ -526,37 +598,84 @@ class _TermsRow extends StatelessWidget {
 
         const SizedBox(width: 8),
 
-        const Expanded(
-          child: Text.rich(
-            TextSpan(
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 9.7,
-                height: 1.42,
-              ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 3,
+              runSpacing: 2,
               children: [
-                TextSpan(text: 'I agree to the '),
-                TextSpan(
-                  text: 'Terms of Service',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
+                const Text('I agree to the', style: _termsTextStyle),
+
+                _LegalLink(
+                  label: 'Terms of Service',
+                  onTap: () {
+                    Navigator.pushNamed(context, '/terms');
+                  },
                 ),
-                TextSpan(text: ' and '),
-                TextSpan(
-                  text: 'Privacy Policy',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
+
+                const Text(',', style: _termsTextStyle),
+
+                _LegalLink(
+                  label: 'Privacy Policy',
+                  onTap: () {
+                    Navigator.pushNamed(context, '/privacy');
+                  },
                 ),
-                TextSpan(text: '.'),
+
+                const Text('and', style: _termsTextStyle),
+
+                _LegalLink(
+                  label: 'Security Policy',
+                  onTap: () {
+                    Navigator.pushNamed(context, '/security');
+                  },
+                ),
+
+                const Text('.', style: _termsTextStyle),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  static const _termsTextStyle = TextStyle(
+    color: AppColors.textSecondary,
+    fontSize: 9.7,
+    height: 1.42,
+  );
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.onTap});
+
+  final String label;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 9.7,
+              height: 1.42,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

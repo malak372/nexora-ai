@@ -11,7 +11,7 @@ import 'common.dart';
 class MobileHowItWorksSection extends StatelessWidget {
   const MobileHowItWorksSection({super.key});
 
-  static const double _cardHeight = 184;
+  static const double _cardHeight = 162;
 
   @override
   Widget build(BuildContext context) {
@@ -52,16 +52,16 @@ class MobileHowItWorksSection extends StatelessWidget {
           const SizedBox(height: 18),
 
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.86),
-              borderRadius: BorderRadius.circular(27),
+              borderRadius: BorderRadius.circular(25),
               border: Border.all(color: AppColors.border),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primaryDeep.withValues(alpha: 0.055),
-                  blurRadius: 24,
-                  offset: const Offset(0, 12),
+                  color: AppColors.primaryDeep.withValues(alpha: 0.05),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
@@ -77,7 +77,7 @@ class MobileHowItWorksSection extends StatelessWidget {
                       ),
                     ),
 
-                    const SizedBox(width: 9),
+                    const SizedBox(width: 8),
 
                     Expanded(
                       child: SizedBox(
@@ -88,7 +88,7 @@ class MobileHowItWorksSection extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,7 +100,7 @@ class MobileHowItWorksSection extends StatelessWidget {
                       ),
                     ),
 
-                    const SizedBox(width: 9),
+                    const SizedBox(width: 8),
 
                     Expanded(
                       child: SizedBox(
@@ -135,14 +135,14 @@ class _StepCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       height: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Colors.white, soft.withValues(alpha: 0.62)],
+          colors: [Colors.white, soft.withValues(alpha: 0.58)],
         ),
-        borderRadius: BorderRadius.circular(21),
+        borderRadius: BorderRadius.circular(19),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -151,20 +151,20 @@ class _StepCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 39,
-                height: 39,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: soft,
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(step.icon, size: 20, color: accent),
+                child: Icon(step.icon, size: 17, color: accent),
               ),
 
               const Spacer(),
 
               Container(
-                width: 29,
-                height: 29,
+                width: 26,
+                height: 26,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
@@ -175,7 +175,7 @@ class _StepCard extends StatelessWidget {
                   '0${step.number}',
                   style: TextStyle(
                     color: accent,
-                    fontSize: 9.5,
+                    fontSize: 8.6,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -183,10 +183,10 @@ class _StepCard extends StatelessWidget {
             ],
           ),
 
-          const SizedBox(height: 13),
+          const SizedBox(height: 10),
 
           SizedBox(
-            height: 31,
+            height: 29,
             child: Align(
               alignment: Alignment.topLeft,
               child: Text(
@@ -195,25 +195,26 @@ class _StepCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 12.8,
-                  height: 1.18,
+                  fontSize: 12.1,
+                  height: 1.16,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
 
           Expanded(
             child: Text(
               step.description,
-              maxLines: 5,
+              maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textSecondary,
-                fontSize: 9.8,
-                height: 1.36,
+                fontSize: 9.1,
+                height: 1.30,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
