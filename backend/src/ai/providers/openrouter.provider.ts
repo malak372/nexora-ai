@@ -165,6 +165,112 @@ export class OpenRouterProvider implements AiProvider {
 
       const responseFormat = this.buildResponseFormat(input);
 
+      if (
+        input.onTextDelta &&
+        input.responseFormat !== AiResponseFormat.JSON
+      ) {
+        const stream = await this.client.chat.completions.create(
+          {
+            model: apiModelId,
+
+            messages,
+
+            max_tokens: input.maxOutputTokens,
+
+            ...(input.temperature !== undefined
+              ? {
+                  temperature: input.temperature,
+                }
+              : {}),
+
+            stream: true,
+          },
+          {
+            signal: input.signal,
+          },
+        );
+
+        let text = '';
+        let requestId: string | undefined;
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let finishReason = AiFinishReason.UNKNOWN;
+
+        for await (const chunk of stream) {
+          requestId =
+            requestId ??
+            this.normalizeOptionalText(chunk.id);
+
+          const firstChoice = chunk.choices?.[0];
+          const delta = firstChoice?.delta?.content;
+
+          if (typeof delta === 'string' && delta) {
+            text += delta;
+            input.onTextDelta(delta);
+          }
+
+          if (firstChoice?.finish_reason) {
+            finishReason = this.mapFinishReason(
+              firstChoice.finish_reason,
+            );
+          }
+
+          inputTokens = Math.max(
+            inputTokens,
+            this.normalizeTokenCount(
+              chunk.usage?.prompt_tokens,
+            ),
+          );
+
+          outputTokens = Math.max(
+            outputTokens,
+            this.normalizeTokenCount(
+              chunk.usage?.completion_tokens,
+            ),
+          );
+        }
+
+        const normalizedText = text.trim();
+
+        if (
+          finishReason === AiFinishReason.UNKNOWN &&
+          normalizedText
+        ) {
+          finishReason = AiFinishReason.STOP;
+        }
+
+        if (!normalizedText) {
+          if (finishReason === AiFinishReason.CONTENT_FILTER) {
+            throw new AiProviderError(
+              'OpenRouter blocked the generated response because of content-safety policies.',
+              AiProviderErrorCode.CONTENT_FILTERED,
+              false,
+              403,
+              requestId,
+            );
+          }
+
+          throw new AiProviderError(
+            'OpenRouter returned an empty textual response.',
+            AiProviderErrorCode.EMPTY_RESPONSE,
+            true,
+            502,
+            requestId,
+          );
+        }
+
+        return {
+          providerKey: this.providerKey,
+          apiModelId,
+          text: normalizedText,
+          requestId,
+          inputTokens,
+          outputTokens,
+          finishReason,
+          providerLatencyMs: Date.now() - startedAt,
+        };
+      }
+
       const completion = await this.client.chat.completions.create(
         {
           model: apiModelId,
@@ -397,6 +503,15 @@ export class OpenRouterProvider implements AiProvider {
     ) {
       throw new BadRequestException(
         'OpenRouter systemInstruction must be a string when provided.',
+      );
+    }
+
+    if (
+      input.onTextDelta !== undefined &&
+      typeof input.onTextDelta !== 'function'
+    ) {
+      throw new BadRequestException(
+        'OpenRouter onTextDelta must be a function when provided.',
       );
     }
 

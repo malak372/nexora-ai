@@ -97,6 +97,10 @@ export class StripePaymentGateway implements PaymentGateway {
       const session = await this.stripe.checkout.sessions.create({
         mode: 'payment',
 
+        // The user-facing payment method is card, so web and mobile use the
+        // same Stripe-hosted card checkout without wallet/browser handoffs.
+        payment_method_types: ['card'],
+
         client_reference_id: input.paymentId,
 
         success_url: input.successUrl,

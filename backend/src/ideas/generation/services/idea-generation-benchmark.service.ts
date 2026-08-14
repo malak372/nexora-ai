@@ -30,8 +30,10 @@ import {
   IDEA_JUDGE_MIN_CONFIDENCE_FOR_HYBRID_SELECTION,
 } from '../constants/idea-judge.constants';
 import {
+  IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS,
   IDEA_BENCHMARK_ALLOW_LOCAL_FALLBACK,
   IDEA_BENCHMARK_COMPARATIVE_JUDGE_ENABLED,
+  IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE,
   IDEA_BENCHMARK_EXCLUDED_CORE_MODEL_API_IDS,
   IDEA_BENCHMARK_INITIAL_OPPORTUNITY_COUNT,
   IDEA_BENCHMARK_MAX_MODEL_ATTEMPTS,
@@ -57,6 +59,7 @@ import { IdeaAiOutputParserService } from './idea-ai-output-parser.service';
 import { IdeaCandidateJudgeService } from './idea-candidate-judge.service';
 import {
   IdeaDuplicateDetectionService,
+  type DuplicateIdeaCandidate,
   type IdeaDuplicateCheckResult,
 } from './idea-duplicate-detection.service';
 import { IdeaGenerationModelSelectorService } from './idea-generation-model-selector.service';
@@ -141,8 +144,9 @@ type AcceptedModelAttempt = {
  * - The initial benchmark group is interleaved by provider.
  * - Every candidate is evaluated using one provider-independent quality gate.
  * - Candidate requests run in a bounded parallel fast path.
- * - The first structurally valid, quality-approved candidate can complete
- *   selection without waiting for slower providers.
+ * - A strong quality-approved candidate can complete selection immediately.
+ * - A 70-77.99 quality-approved candidate gives only already-running peers a
+ *   short grace window, then the strongest completed candidate wins.
  * - A response that still fails the quality gate is persisted as rejected and
  *   excluded from winner selection.
  * - The comparative judge is used when at least two candidates survive.
@@ -154,6 +158,16 @@ type AcceptedModelAttempt = {
  *
  * @author Malak
  */
+/**
+ * Number of online core models allowed in the first latency-hedged wave.
+ *
+ * This does not lower the quality gate or increase the number of candidates
+ * required for selection. It only starts one extra already-eligible model in
+ * parallel so a slow provider request cannot block a faster quality-approved
+ * model behind a full timeout window.
+ */
+const IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH = 3;
+
 @Injectable()
 export class IdeaGenerationBenchmarkService {
   private readonly logger = new Logger(IdeaGenerationBenchmarkService.name);
@@ -187,22 +201,23 @@ export class IdeaGenerationBenchmarkService {
       );
     }
 
-    const [routableModels] = await Promise.all([
-      this.aiModelsService.getRoutableModels(),
-      // Candidate cleanup is independent from model discovery. Starting both
-      // together removes one remote database latency wave without changing
-      // selection, scoring, or persistence semantics.
-      this.prisma.ideaGenerationCandidate.deleteMany({
-        where: { runId: context.runId },
-      }),
-      // Warm the bounded semantic corpus while model metadata is loading so
-      // duplicate redesign never waits for the same-domain idea query. Exact
-      // title checks remain fresh on every candidate.
-      this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
-        context.runId,
-        context.domainId,
-      ),
-    ]);
+    const [routableModels, , duplicateCorpus] = await Promise.all([
+        this.aiModelsService.getRoutableModels(),
+        // Candidate cleanup is independent from model discovery. Starting both
+        // together removes one remote database latency wave without changing
+        // selection, scoring, or persistence semantics.
+        this.prisma.ideaGenerationCandidate.deleteMany({
+          where: { runId: context.runId },
+        }),
+        // Warm the bounded semantic corpus while model metadata is loading.
+        // The returned rows are reused as a compact novelty guard in the first
+        // provider prompt, so an already-known idea is avoided before paying
+        // for a full duplicate-regeneration call.
+        this.duplicateDetectionService.prepareBenchmarkSemanticCorpus(
+          context.runId,
+          context.domainId,
+        ),
+      ]);
 
     const eligibleModels = routableModels.filter((model) => {
       if (
@@ -250,13 +265,16 @@ export class IdeaGenerationBenchmarkService {
 
     /*
      * Fast-path policy:
-     * - Two provider-diverse candidates are launched in parallel.
-     * - One bounded self-revision is allowed for a structurally valid weak result.
+     * - Up to three ordered online models may be latency-hedged in parallel.
+     * - Bounded self-revision remains available for structurally valid weak results.
      * - One accepted candidate is sufficient.
      * - Comparative judging runs only when two candidates finish inside budget.
      */
     const successfulCandidates: IdeaBenchmarkCandidate[] = [];
-    const conceptDirections = this.buildConceptDirections(context);
+    const conceptDirections = this.buildConceptDirections(
+      context,
+      duplicateCorpus,
+    );
     let attemptedCandidateCount = 0;
     const blockedModelIds = new Set<string>();
     const warnedOpportunityTitles = new Set<string>();
@@ -323,17 +341,38 @@ export class IdeaGenerationBenchmarkService {
             !blockedModelIds.has(model.id) &&
             !attemptedModelIdsForDirection.has(model.id),
         );
-        const selectedModels =
-          attemptedModelIdsForDirection.size === 0
-            ? this.modelSelectorService.getInitialModels(
-                remainingEligibleModels,
-              )
-            : remainingEligibleModels;
+        const isInitialWave = attemptedModelIdsForDirection.size === 0;
+        const selectedModels = remainingEligibleModels;
 
-        const modelsForDirection = selectedModels.slice(
-          0,
-          Math.min(missingCandidateCount, remainingAttemptCount),
-        );
+        /*
+         * Latency hedge:
+         *
+         * The product still needs only the configured target number of
+         * candidates, but the first wave may start one extra eligible model.
+         * The first quality-approved candidate keeps the existing early-stop
+         * semantics and cancels the slower requests.
+         *
+         * This specifically avoids the expensive pattern where:
+         * 1. a fast model returns a structurally valid but blocked fallback;
+         * 2. another provider/model spends its complete timeout window; and
+         * 3. only then is a third model allowed to start.
+         *
+         * Quality, evidence, duplicate detection, and the 70-point gate are
+         * unchanged; only the wait order is changed.
+         */
+        const parallelWidth = isInitialWave
+          ? Math.min(
+              IDEA_BENCHMARK_INITIAL_HEDGE_WIDTH,
+              remainingAttemptCount,
+              selectedModels.length,
+            )
+          : Math.min(
+              missingCandidateCount,
+              remainingAttemptCount,
+              selectedModels.length,
+            );
+
+        const modelsForDirection = selectedModels.slice(0, parallelWidth);
 
         if (modelsForDirection.length === 0) {
           break;
@@ -701,7 +740,7 @@ export class IdeaGenerationBenchmarkService {
    * service-unavailable error describing exhaustion of both execution tiers.
    */
   /**
-   * Starts the provider-diverse batch concurrently and stops as soon as one
+   * Starts the bounded latency-hedged batch concurrently and stops as soon as one
    * complete candidate satisfies the preferred quality threshold.
    *
    * A caller-driven AbortSignal is propagated through AiExecutionService to
@@ -737,7 +776,7 @@ export class IdeaGenerationBenchmarkService {
           candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE
         ) {
           this.logger.log(
-            `Early benchmark stop: model "${candidate.modelSnapshot.displayName ?? candidate.modelSnapshot.modelName}" reached ${candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; no additional provider request is required.`,
+            `Benchmark accepted model "${candidate.modelSnapshot.displayName ?? candidate.modelSnapshot.modelName}" at ${candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; no peer request was available for comparison.`,
           );
         }
 
@@ -769,7 +808,7 @@ export class IdeaGenerationBenchmarkService {
         context,
         model,
         direction,
-        allowQualityRevision && index === 0,
+        allowQualityRevision,
         controllers[index].signal,
       )
         .then((candidate) => ({ index, candidate }))
@@ -778,16 +817,63 @@ export class IdeaGenerationBenchmarkService {
       pending.set(index, promise);
     });
 
+    let acceptedGraceDeadlineAt: number | null = null;
+
     while (pending.size > 0) {
-      const settled = await Promise.race(pending.values());
+      const settlementPromise = Promise.race(pending.values()).then(
+        (settled) =>
+          ({
+            kind: 'settled' as const,
+            settled,
+          }),
+      );
+
+      const next =
+        acceptedGraceDeadlineAt === null
+          ? await settlementPromise
+          : await Promise.race([
+              settlementPromise,
+              this.createBenchmarkGraceTimeout(
+                Math.max(0, acceptedGraceDeadlineAt - Date.now()),
+              ),
+            ]);
+
+      if (next.kind === 'grace-expired') {
+        const bestAccepted = this.findBestQualityApprovedCandidate(results);
+
+        if (bestAccepted) {
+          this.abortPendingBenchmarkRequests(controllers, pending);
+
+          this.logger.log(
+            `Bounded early benchmark stop: best completed model "${bestAccepted.modelSnapshot.displayName ?? bestAccepted.modelSnapshot.modelName}" reached ${bestAccepted.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE} after ${IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS}ms peer grace; slower requests were cancelled.`,
+          );
+
+          void Promise.allSettled(pending.values());
+
+          return results.map((candidate) =>
+            candidate?.candidateId === bestAccepted.candidateId
+              ? bestAccepted
+              : null,
+          );
+        }
+
+        acceptedGraceDeadlineAt = null;
+        continue;
+      }
+
+      const settled = next.settled;
       pending.delete(settled.index);
       results[settled.index] = settled.candidate;
 
       if (settled.error !== undefined) {
         const model = models[settled.index];
-        const cancelledByEarlyWinner = controllers[settled.index].signal.aborted;
+        const cancelledByEarlyWinner =
+          controllers[settled.index].signal.aborted;
 
-        if (!cancelledByEarlyWinner && this.isTransientModelFailure(settled.error)) {
+        if (
+          !cancelledByEarlyWinner &&
+          this.isTransientModelFailure(settled.error)
+        ) {
           blockedModelIds.add(model.id);
           this.logger.warn(
             `Model "${model.displayName ?? model.modelName}" was removed from the remaining benchmark assignments after a transient provider failure.`,
@@ -795,30 +881,111 @@ export class IdeaGenerationBenchmarkService {
         }
       }
 
+      const candidate = settled.candidate;
+      const isQualityApproved =
+        candidate?.quality.accepted === true &&
+        candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE;
+
+      if (!candidate || !isQualityApproved) {
+        continue;
+      }
+
       if (
-        settled.candidate &&
-        settled.candidate.quality.accepted &&
-        settled.candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE
+        candidate.quality.score >=
+        IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE
       ) {
-        controllers.forEach((controller, index) => {
-          if (index !== settled.index && pending.has(index)) {
-            controller.abort();
-          }
-        });
+        const bestAccepted =
+          this.findBestQualityApprovedCandidate(results) ?? candidate;
+
+        this.abortPendingBenchmarkRequests(controllers, pending);
 
         this.logger.log(
-          `Early benchmark stop: model "${settled.candidate.modelSnapshot.displayName ?? settled.candidate.modelSnapshot.modelName}" reached ${settled.candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; remaining parallel provider requests were cancelled.`,
+          `High-confidence early benchmark stop: model "${bestAccepted.modelSnapshot.displayName ?? bestAccepted.modelSnapshot.modelName}" reached ${bestAccepted.quality.score}/${IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE}; remaining parallel provider requests were cancelled.`,
         );
 
-        // Every pending promise already converts rejection into a settled
-        // result. Drain it asynchronously so the user-facing pipeline does not
-        // wait when an adapter is slow to acknowledge AbortSignal.
         void Promise.allSettled(pending.values());
-        break;
+
+        return results.map((result) =>
+          result?.candidateId === bestAccepted.candidateId
+            ? bestAccepted
+            : null,
+        );
+      }
+
+      if (acceptedGraceDeadlineAt === null && pending.size > 0) {
+        acceptedGraceDeadlineAt =
+          Date.now() + IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS;
+
+        this.logger.log(
+          `Quality-approved candidate "${candidate.modelSnapshot.displayName ?? candidate.modelSnapshot.modelName}" reached ${candidate.quality.score}/${IDEA_MIN_ACCEPTED_QUALITY_SCORE}; allowing already-running peers up to ${IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS}ms to beat it before early stop.`,
+        );
       }
     }
 
+    const bestAccepted = this.findBestQualityApprovedCandidate(results);
+
+    if (bestAccepted) {
+      /*
+       * Every hedged request has already finished, so return only the strongest
+       * quality-approved candidate. This avoids paying for an additional
+       * comparative-judge request after the deterministic gate has already
+       * produced a clear bounded winner.
+       */
+      return results.map((candidate) =>
+        candidate?.candidateId === bestAccepted.candidateId
+          ? bestAccepted
+          : null,
+      );
+    }
+
     return results;
+  }
+
+  /**
+   * Returns the strongest completed candidate that passed the complete
+   * deterministic quality gate. Response time is only a tie-breaker.
+   */
+  private findBestQualityApprovedCandidate(
+    candidates: readonly (IdeaBenchmarkCandidate | null)[],
+  ): IdeaBenchmarkCandidate | null {
+    const accepted = candidates
+      .filter(
+        (candidate): candidate is IdeaBenchmarkCandidate =>
+          candidate !== null &&
+          candidate.quality.accepted &&
+          candidate.quality.score >= IDEA_MIN_ACCEPTED_QUALITY_SCORE,
+      )
+      .sort(
+        (first, second) =>
+          second.quality.score - first.quality.score ||
+          first.aiResult.responseTimeMs - second.aiResult.responseTimeMs,
+      );
+
+    return accepted[0] ?? null;
+  }
+
+  /** Cancels only provider requests that are still running. */
+  private abortPendingBenchmarkRequests(
+    controllers: readonly AbortController[],
+    pending: ReadonlyMap<number, Promise<unknown>>,
+  ): void {
+    controllers.forEach((controller, index) => {
+      if (pending.has(index) && !controller.signal.aborted) {
+        controller.abort();
+      }
+    });
+  }
+
+  /** Creates the small quality-preserving peer grace timeout. */
+  private createBenchmarkGraceTimeout(
+    delayMs: number,
+  ): Promise<{ readonly kind: 'grace-expired' }> {
+    return new Promise((resolve) => {
+      setTimeout(
+        () => resolve({ kind: 'grace-expired' as const }),
+        Math.max(0, delayMs),
+      );
+    });
   }
 
   private async executeLocalEmergencyFallback(
@@ -895,8 +1062,9 @@ export class IdeaGenerationBenchmarkService {
         signal,
       );
       /*
-       * Keep two complete first-pass candidates for comparison, but spend the
-       * bounded revision budget only on the first/highest-priority model.
+       * Keep complete first-pass candidates for comparison. When a hedged
+       * model is structurally valid but weak, its bounded revision may run in
+       * parallel too; this avoids making quality recovery a serial latency tax.
        */
       const qualityApprovedAttempt =
         initialAttempt.quality.accepted || !allowQualityRevision
@@ -1838,6 +2006,7 @@ export class IdeaGenerationBenchmarkService {
 
   private buildConceptDirections(
     context: IdeaGenerationContext,
+    duplicateCorpus: readonly DuplicateIdeaCandidate[] = [],
   ): readonly CandidateConceptDirection[] {
     const prompt = context.prompt;
     const ranking = context.opportunityRanking;
@@ -1851,6 +2020,10 @@ export class IdeaGenerationBenchmarkService {
     const opportunity = ranking.selected;
     const effectiveEvidenceSamples =
       this.resolveOpportunityEvidenceSamples(opportunity);
+    const noveltyExclusions = this.buildNoveltyExclusions(
+      opportunity,
+      duplicateCorpus,
+    );
 
     // The ranking service now selects the best eligible candidate whenever
     // one exists. This defensive fallback prevents a complete pipeline failure
@@ -1929,6 +2102,18 @@ export class IdeaGenerationBenchmarkService {
         '- Technical quality: provide a feasible architecture, supported integrations, realistic data flow, privacy boundaries, and implementable objectives.',
         '- Completeness: return every field required by the active response schema with concrete, mutually consistent content.',
         '- Originality: use a distinctive product concept, title, value proposition, and primary workflow that are not generic or interchangeable.',
+        ...(noveltyExclusions.length > 0
+          ? [
+              'NOVELTY GUARD (CHECK BEFORE WRITING THE FIRST JSON RESPONSE):',
+              '- The following recent same-domain concepts already exist. Do not reuse their title, primary workflow, dominant capability combination, or materially equivalent problem-solution framing.',
+              '- A geographic rename, branding change, extra dashboard, or thin feature addition does not make an existing concept distinct.',
+              '- Choose a genuinely different mechanism while still solving the selected evidence-backed opportunity.',
+              ...noveltyExclusions.map(
+                (candidate, index) =>
+                  `  ${index + 1}. Existing concept: "${candidate.title}" | Existing problem framing: ${candidate.problemStatement}`,
+              ),
+            ]
+          : []),
         '- Avoid score penalties: generic title, vague objectives, weak target users, unsupported root causes, invented statistics, unsupported platform access, over-scoped MVP, awkward copy, secondary-domain leakage, and unauthorized tier fields.',
         '- Before returning JSON, privately self-check the five weighted dimensions and revise the candidate until it is likely to meet or exceed the threshold. Do not output the self-check or scores.',
         'FINAL CONCEPT ASSIGNMENT:',
@@ -2046,6 +2231,146 @@ export class IdeaGenerationBenchmarkService {
     return effectiveEvidenceSamples.length === 1
       ? [endUserDirection, developerDirection, operationalDirection]
       : [developerDirection, endUserDirection, operationalDirection];
+  }
+
+  /**
+   * Selects only the most relevant recent same-domain concepts for the prompt.
+   *
+   * The duplicate corpus is already loaded for semantic validation, so this
+   * method adds no database round-trip. Supplying a small targeted exclusion
+   * list prevents the common case where a high-quality model first recreates a
+   * previous winner and then spends another full provider window redesigning
+   * it. The normal duplicate detector still runs after generation.
+   */
+  private buildNoveltyExclusions(
+    opportunity: RankedIdeaOpportunity,
+    duplicateCorpus: readonly DuplicateIdeaCandidate[],
+  ): readonly Pick<DuplicateIdeaCandidate, 'title' | 'problemStatement'>[] {
+    if (duplicateCorpus.length === 0) {
+      return [];
+    }
+
+    const opportunityTokens = this.toNoveltyTokenSet(
+      [
+        opportunity.title,
+        opportunity.problem,
+        opportunity.need,
+        opportunity.solutionArea,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+
+    const scored = duplicateCorpus
+      .map((candidate) => {
+        const candidateTokens = this.toNoveltyTokenSet(
+          `${candidate.title} ${candidate.problemStatement}`,
+        );
+        const overlap = [...candidateTokens].filter((token) =>
+          opportunityTokens.has(token),
+        ).length;
+        const denominator = Math.max(
+          1,
+          Math.min(opportunityTokens.size, candidateTokens.size),
+        );
+
+        return {
+          candidate,
+          relevance: overlap / denominator,
+        };
+      })
+      .sort(
+        (first, second) =>
+          second.relevance - first.relevance ||
+          second.candidate.createdAt.getTime() -
+            first.candidate.createdAt.getTime(),
+      );
+
+    /*
+     * Keep strongly related concepts first, then fill the small remaining
+     * budget with the newest same-domain winners. The recent fallback matters
+     * when two concepts are semantically equivalent but use different words
+     * such as "login", "authentication", "access", or "session recovery".
+     */
+    const selected = [
+      ...scored.filter(({ relevance }) => relevance >= 0.12).slice(0, 5),
+      ...scored
+        .filter(({ relevance }) => relevance < 0.12)
+        .sort(
+          (first, second) =>
+            second.candidate.createdAt.getTime() -
+            first.candidate.createdAt.getTime(),
+        )
+        .slice(0, 3),
+    ]
+      .filter(
+        (entry, index, values) =>
+          values.findIndex(
+            (candidate) => candidate.candidate.id === entry.candidate.id,
+          ) === index,
+      )
+      .slice(0, 6);
+
+    return selected.map(({ candidate }) => ({
+      title: candidate.title.trim().slice(0, 120),
+      problemStatement: candidate.problemStatement
+        .trim()
+        .replace(/\s+/gu, ' ')
+        .slice(0, 240),
+    }));
+  }
+
+  private toNoveltyTokenSet(value: string): Set<string> {
+    const stopWords = new Set([
+      'about',
+      'after',
+      'against',
+      'also',
+      'because',
+      'before',
+      'being',
+      'between',
+      'could',
+      'from',
+      'have',
+      'into',
+      'more',
+      'other',
+      'over',
+      'same',
+      'that',
+      'their',
+      'there',
+      'these',
+      'they',
+      'this',
+      'through',
+      'under',
+      'using',
+      'when',
+      'where',
+      'which',
+      'with',
+      'would',
+      'user',
+      'users',
+      'system',
+      'platform',
+      'software',
+    ]);
+
+    return new Set(
+      value
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .split(/\s+/u)
+        .map((token) => token.trim())
+        .filter(
+          (token) =>
+            token.length >= 4 &&
+            !stopWords.has(token),
+        ),
+    );
   }
 
   /** Builds trusted metrics used by premium-output quality validation. */

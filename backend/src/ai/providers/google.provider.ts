@@ -107,6 +107,102 @@ export class GoogleProvider implements AiProvider {
     try {
       const config = this.buildGenerateConfig(input);
 
+      if (
+        input.onTextDelta &&
+        input.responseFormat !== AiResponseFormat.JSON
+      ) {
+        const responseStream =
+          await this.client.models.generateContentStream({
+            model: apiModelId,
+            contents: userPrompt,
+            config,
+          });
+
+        let text = '';
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let finishReason = AiFinishReason.UNKNOWN;
+
+        for await (const chunk of responseStream) {
+          const promptBlockReason = this.readPromptBlockReason(
+            chunk.promptFeedback,
+          );
+
+          if (promptBlockReason) {
+            throw new AiProviderError(
+              this.buildContentFilterMessage(promptBlockReason),
+              AiProviderErrorCode.CONTENT_FILTERED,
+              false,
+            );
+          }
+
+          const candidate = chunk.candidates?.[0];
+
+          if (candidate?.finishReason) {
+            finishReason = this.mapFinishReason(
+              candidate.finishReason,
+            );
+          }
+
+          const delta = chunk.text;
+
+          if (typeof delta === 'string' && delta) {
+            text += delta;
+            input.onTextDelta(delta);
+          }
+
+          inputTokens = Math.max(
+            inputTokens,
+            this.normalizeTokenCount(
+              chunk.usageMetadata?.promptTokenCount,
+            ),
+          );
+
+          outputTokens = Math.max(
+            outputTokens,
+            this.normalizeTokenCount(
+              chunk.usageMetadata?.candidatesTokenCount,
+            ),
+          );
+        }
+
+        const normalizedText = text.trim();
+
+        if (
+          finishReason === AiFinishReason.UNKNOWN &&
+          normalizedText
+        ) {
+          finishReason = AiFinishReason.STOP;
+        }
+
+        if (!normalizedText) {
+          if (finishReason === AiFinishReason.CONTENT_FILTER) {
+            throw new AiProviderError(
+              'Google AI blocked the generated response because of content-safety policies.',
+              AiProviderErrorCode.CONTENT_FILTERED,
+              false,
+            );
+          }
+
+          throw new AiProviderError(
+            'Google AI returned an empty textual response.',
+            AiProviderErrorCode.EMPTY_RESPONSE,
+            true,
+          );
+        }
+
+        return {
+          providerKey: this.providerKey,
+          apiModelId,
+          text: normalizedText,
+          requestId: undefined,
+          inputTokens,
+          outputTokens,
+          finishReason,
+          providerLatencyMs: Date.now() - startedAt,
+        };
+      }
+
       const response = await this.client.models.generateContent({
         model: apiModelId,
         contents: userPrompt,
@@ -159,13 +255,6 @@ export class GoogleProvider implements AiProvider {
 
         text,
 
-        /**
-         * The current generateContent response does not consistently
-         * expose one provider request identifier.
-         *
-         * Error responses are still inspected for request IDs when
-         * available.
-         */
         requestId: undefined,
 
         inputTokens: this.normalizeTokenCount(
@@ -314,6 +403,15 @@ export class GoogleProvider implements AiProvider {
     ) {
       throw new BadRequestException(
         'Google AI systemInstruction must be a string when provided.',
+      );
+    }
+
+    if (
+      input.onTextDelta !== undefined &&
+      typeof input.onTextDelta !== 'function'
+    ) {
+      throw new BadRequestException(
+        'Google AI onTextDelta must be a function when provided.',
       );
     }
 

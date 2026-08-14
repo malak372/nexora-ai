@@ -5,19 +5,42 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 ///
 /// Resolves backend URLs for Flutter Web, Android, iOS, and desktop.
 ///
-/// Local development hosts are normalized so Flutter Web and the backend
-/// use the same hostname whenever possible. This is especially important
-/// for secure browser-managed cookies.
+/// Development URL rules:
+/// - Flutter Web follows the browser host when a local-only host is configured.
+/// - Android emulator rewrites localhost / 127.0.0.1 / 0.0.0.0 to 10.0.2.2.
+/// - Physical devices should use the development computer LAN IP through the
+///   platform-specific or device-specific environment variable.
+/// - iOS uses the configured iOS/device/shared URL, with localhost as fallback.
 ///
 /// @author Eman
 abstract final class ApiConfig {
+  static const String _androidEmulatorHost = '10.0.2.2';
+
+  static const Set<String> _localOnlyHosts = <String>{
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '10.0.2.2',
+    '10.0.3.2',
+  };
+
   /// Returns true when the application runs natively on Android or iOS.
   static bool get isNativeMobile =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  /// Returns the normalized backend API base URL.
+  /// Returns the resolved and normalized backend API base URL.
+  ///
+  /// Environment variable priority:
+  /// - Web:
+  ///   API_WEB_BASE_URL -> API_BASE_URL
+  /// - Android:
+  ///   API_ANDROID_BASE_URL -> API_DEVICE_BASE_URL -> API_BASE_URL
+  /// - iOS:
+  ///   API_IOS_BASE_URL -> API_DEVICE_BASE_URL -> API_BASE_URL
+  /// - Desktop:
+  ///   API_BASE_URL
   static String get baseUrl {
     if (kIsWeb) {
       return _resolveWeb(
@@ -27,200 +50,220 @@ abstract final class ApiConfig {
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final android = dotenv.env['API_ANDROID_BASE_URL']?.trim();
+      final configured = _firstConfigured(<String?>[
+        dotenv.env['API_ANDROID_BASE_URL'],
+        dotenv.env['API_DEVICE_BASE_URL'],
+        dotenv.env['API_BASE_URL'],
+      ]);
 
-      if (android != null && android.isNotEmpty) {
-        return _normalize(android);
+      if (configured != null) {
+        return _androidSafe(configured);
       }
 
-      final shared = dotenv.env['API_BASE_URL']?.trim();
-
-      if (shared != null && shared.isNotEmpty) {
-        return _androidSafe(shared);
-      }
-
-      return 'http://10.0.2.2:3000';
+      return 'http://$_androidEmulatorHost:3000';
     }
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final ios = dotenv.env['API_IOS_BASE_URL']?.trim();
+      final configured = _firstConfigured(<String?>[
+        dotenv.env['API_IOS_BASE_URL'],
+        dotenv.env['API_DEVICE_BASE_URL'],
+        dotenv.env['API_BASE_URL'],
+      ]);
 
-      if (ios != null && ios.isNotEmpty) {
-        return _normalize(ios);
-      }
-
-      final shared = dotenv.env['API_BASE_URL']?.trim();
-
-      if (shared != null && shared.isNotEmpty) {
-        return _normalize(shared);
-      }
-
-      return 'http://127.0.0.1:3000';
+      return configured == null
+          ? 'http://127.0.0.1:3000'
+          : _normalize(configured);
     }
 
-    final shared = dotenv.env['API_BASE_URL']?.trim();
+    final shared = _firstConfigured(<String?>[
+      dotenv.env['API_BASE_URL'],
+    ]);
 
-    if (shared != null && shared.isNotEmpty) {
-      return _normalize(shared);
-    }
-
-    return 'http://127.0.0.1:3000';
+    return shared == null
+        ? 'http://127.0.0.1:3000'
+        : _normalize(shared);
   }
 
-  /// Returns the normalized Socket.IO backend URL.
+  /// Returns the resolved and normalized Socket.IO backend URL.
+  ///
+  /// Socket-specific variables are preferred first. When they are not
+  /// configured, the matching API URL is used as a fallback.
   static String get socketBaseUrl {
     if (kIsWeb) {
       return _resolveWeb(
         explicit: dotenv.env['SOCKET_WEB_BASE_URL'],
-        shared:
-            dotenv.env['SOCKET_BASE_URL'] ??
-            dotenv.env['API_WEB_BASE_URL'] ??
-            dotenv.env['API_BASE_URL'],
+        shared: _firstConfigured(<String?>[
+          dotenv.env['SOCKET_BASE_URL'],
+          dotenv.env['API_WEB_BASE_URL'],
+          dotenv.env['API_BASE_URL'],
+        ]),
       );
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidSocket = dotenv.env['SOCKET_ANDROID_BASE_URL']?.trim();
+      final configured = _firstConfigured(<String?>[
+        dotenv.env['SOCKET_ANDROID_BASE_URL'],
+        dotenv.env['SOCKET_DEVICE_BASE_URL'],
+        dotenv.env['SOCKET_BASE_URL'],
+        dotenv.env['API_ANDROID_BASE_URL'],
+        dotenv.env['API_DEVICE_BASE_URL'],
+        dotenv.env['API_BASE_URL'],
+      ]);
 
-      if (androidSocket != null && androidSocket.isNotEmpty) {
-        return _normalize(androidSocket);
+      if (configured != null) {
+        return _androidSafe(configured);
       }
 
-      final androidApi = dotenv.env['API_ANDROID_BASE_URL']?.trim();
-
-      if (androidApi != null && androidApi.isNotEmpty) {
-        return _normalize(androidApi);
-      }
-
-      final sharedSocket = dotenv.env['SOCKET_BASE_URL']?.trim();
-
-      if (sharedSocket != null && sharedSocket.isNotEmpty) {
-        return _androidSafe(sharedSocket);
-      }
-
-      final sharedApi = dotenv.env['API_BASE_URL']?.trim();
-
-      if (sharedApi != null && sharedApi.isNotEmpty) {
-        return _androidSafe(sharedApi);
-      }
-
-      return 'http://10.0.2.2:3000';
+      return 'http://$_androidEmulatorHost:3000';
     }
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      final iosSocket = dotenv.env['SOCKET_IOS_BASE_URL']?.trim();
+      final configured = _firstConfigured(<String?>[
+        dotenv.env['SOCKET_IOS_BASE_URL'],
+        dotenv.env['SOCKET_DEVICE_BASE_URL'],
+        dotenv.env['SOCKET_BASE_URL'],
+        dotenv.env['API_IOS_BASE_URL'],
+        dotenv.env['API_DEVICE_BASE_URL'],
+        dotenv.env['API_BASE_URL'],
+      ]);
 
-      if (iosSocket != null && iosSocket.isNotEmpty) {
-        return _normalize(iosSocket);
-      }
-
-      final iosApi = dotenv.env['API_IOS_BASE_URL']?.trim();
-
-      if (iosApi != null && iosApi.isNotEmpty) {
-        return _normalize(iosApi);
-      }
-
-      final sharedSocket = dotenv.env['SOCKET_BASE_URL']?.trim();
-
-      if (sharedSocket != null && sharedSocket.isNotEmpty) {
-        return _normalize(sharedSocket);
-      }
-
-      return baseUrl;
+      return configured == null
+          ? 'http://127.0.0.1:3000'
+          : _normalize(configured);
     }
 
-    final sharedSocket = dotenv.env['SOCKET_BASE_URL']?.trim();
+    final shared = _firstConfigured(<String?>[
+      dotenv.env['SOCKET_BASE_URL'],
+      dotenv.env['API_BASE_URL'],
+    ]);
 
-    if (sharedSocket != null && sharedSocket.isNotEmpty) {
-      return _normalize(sharedSocket);
+    return shared == null ? baseUrl : _normalize(shared);
+  }
+
+  /// Chooses the first non-empty environment value.
+  static String? _firstConfigured(List<String?> values) {
+    for (final raw in values) {
+      final value = raw?.trim();
+
+      if (value != null && value.isNotEmpty) {
+        return value;
+      }
     }
 
-    return baseUrl;
+    return null;
   }
 
   /// Resolves a browser-safe backend URL.
-  static String _resolveWeb({String? explicit, String? shared}) {
-    final explicitValue = explicit?.trim();
+  ///
+  /// If the configured URL points to a local-only address, it is rewritten to
+  /// the hostname currently used to open Flutter Web. This allows the same web
+  /// build to work from localhost and from another device on the local network.
+  static String _resolveWeb({
+    String? explicit,
+    String? shared,
+  }) {
+    final configured = _firstConfigured(<String?>[
+      explicit,
+      shared,
+    ]);
 
-    if (explicitValue != null && explicitValue.isNotEmpty) {
-      return _webSafe(explicitValue);
+    if (configured == null) {
+      return _browserHostDefault();
     }
 
-    final sharedValue = shared?.trim();
-
-    if (sharedValue != null && sharedValue.isNotEmpty) {
-      return _webSafe(sharedValue);
-    }
-
-    return _browserHostDefault();
+    return _webSafe(configured);
   }
 
-  /// Converts local-only backend host aliases to the current browser host.
+  /// Converts local-only backend host aliases to a browser-reachable host.
   ///
-  /// For example:
-  /// - Flutter Web opened on 127.0.0.1 + API localhost
-  /// - Flutter Web opened on localhost + API 10.0.2.2
-  ///
-  /// will both be normalized to the browser's current host.
+  /// Examples:
+  /// - Browser opened on localhost + API localhost -> 127.0.0.1
+  /// - Browser opened through a LAN IP + API localhost -> browser LAN IP
+  /// - API already configured with a remote/LAN host -> preserved as-is
   static String _webSafe(String value) {
     final normalized = _normalize(value);
-
     final uri = Uri.tryParse(normalized);
 
     if (uri == null || uri.host.trim().isEmpty) {
       return normalized;
     }
 
-    const replaceableLocalHosts = <String>{
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      '10.0.2.2',
-      '10.0.3.2',
-    };
-
     final apiHost = uri.host.toLowerCase();
 
-    if (!replaceableLocalHosts.contains(apiHost)) {
+    if (!_localOnlyHosts.contains(apiHost)) {
       return normalized;
     }
 
-    final currentBrowserHost = Uri.base.host.trim();
+    final browserHost = Uri.base.host.trim();
 
-    if (currentBrowserHost.isEmpty) {
+    if (browserHost.isEmpty) {
+      return _normalize(
+        uri.replace(host: '127.0.0.1').toString(),
+      );
+    }
+
+    final browserHostLower = browserHost.toLowerCase();
+
+    if (browserHostLower == 'localhost' ||
+        browserHostLower == '127.0.0.1') {
+      return _normalize(
+        uri.replace(host: '127.0.0.1').toString(),
+      );
+    }
+
+    // If Flutter Web itself is opened through another local alias, preserve
+    // the configured URL rather than producing another emulator-only address.
+    if (browserHostLower == '10.0.2.2' ||
+        browserHostLower == '10.0.3.2' ||
+        browserHostLower == '0.0.0.0') {
       return normalized;
     }
 
-    return _normalize(uri.replace(host: currentBrowserHost).toString());
+    return _normalize(
+      uri.replace(host: browserHost).toString(),
+    );
   }
 
-  /// Converts localhost URLs into the Android emulator host alias.
+  /// Converts local backend aliases into the Android emulator host alias.
+  ///
+  /// For a physical Android phone, configure API_ANDROID_BASE_URL or
+  /// API_DEVICE_BASE_URL with the development computer LAN address, for example:
+  /// http://192.168.1.20:3000
   static String _androidSafe(String value) {
     final normalized = _normalize(value);
-
     final uri = Uri.tryParse(normalized);
 
-    if (uri == null) {
+    if (uri == null || uri.host.trim().isEmpty) {
       return normalized;
     }
 
-    if (uri.host != 'localhost' && uri.host != '127.0.0.1') {
+    final host = uri.host.toLowerCase();
+
+    if (host != 'localhost' &&
+        host != '127.0.0.1' &&
+        host != '0.0.0.0') {
       return normalized;
     }
 
-    return _normalize(uri.replace(host: '10.0.2.2').toString());
+    return _normalize(
+      uri.replace(host: _androidEmulatorHost).toString(),
+    );
   }
 
-  /// Returns a development backend URL using the current browser host.
+  /// Returns a local-development URL using the current Flutter Web host.
   static String _browserHostDefault() {
     final browserHost = Uri.base.host.trim();
 
-    final host = browserHost.isEmpty ? '127.0.0.1' : browserHost;
+    if (browserHost.isEmpty ||
+        browserHost.toLowerCase() == 'localhost' ||
+        browserHost.toLowerCase() == '127.0.0.1') {
+      return 'http://127.0.0.1:3000';
+    }
 
-    return 'http://$host:3000';
+    return 'http://$browserHost:3000';
   }
 
-  /// Removes trailing slashes from URLs.
+  /// Trims whitespace and removes trailing slashes from a base URL.
   static String _normalize(String value) {
     return value.trim().replaceAll(RegExp(r'/+$'), '');
   }

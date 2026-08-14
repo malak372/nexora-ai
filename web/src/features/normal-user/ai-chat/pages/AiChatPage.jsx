@@ -46,6 +46,9 @@ import {
     createAiChatSocket,
     createChatSession,
     deleteChatSession,
+    scheduleAiChatSocketDisconnect,
+    invalidateChatMessages,
+    invalidateChatSessions,
     listChatMessages,
     updateChatSession,
     listChatSessions,
@@ -149,12 +152,15 @@ export default function AiChatPage() {
             ? 'Accepted idea'
             : 'Idea workspace');
 
+    const routeIdeaSeed = location.state?.ideaSeed ?? null;
+
     const {
         isPremium,
         isLoading: accessLoading,
     } = useAccountAccess();
 
     const socketRef = useRef(null);
+    const joinedSessionRef = useRef('');
     const messagesRef = useRef(null);
     const bottomRef = useRef(null);
     const shouldAutoScrollRef = useRef(true);
@@ -163,14 +169,19 @@ export default function AiChatPage() {
     const sessionRequestRef = useRef(0);
     const pendingMessageRef = useRef(null);
     const titleRefreshTimerRef = useRef(null);
+    const sessionMessagesCacheRef = useRef(new Map());
+    const sessionIdRef = useRef('');
 
-    const [idea, setIdea] = useState(null);
+    const [idea, setIdea] = useState(() =>
+        routeIdeaSeed || {
+            id: ideaId,
+            title: location.state?.ideaTitle || 'Idea workspace',
+        });
     const [sessions, setSessions] = useState([]);
     const [sessionId, setSessionId] = useState('');
     const [loadingSessionId, setLoadingSessionId] = useState('');
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
-    const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
     const [creatingSession, setCreatingSession] = useState(false);
     const [deletingSessionId, setDeletingSessionId] = useState('');
@@ -191,9 +202,13 @@ export default function AiChatPage() {
         const requestId = sessionRequestRef.current + 1;
         sessionRequestRef.current = requestId;
 
+        const cachedMessages =
+            sessionMessagesCacheRef.current.get(nextSessionId) || null;
+
+        sessionIdRef.current = nextSessionId;
         setSessionId(nextSessionId);
-        setLoadingSessionId(nextSessionId);
-        setMessages([]);
+        setLoadingSessionId(cachedMessages ? '' : nextSessionId);
+        setMessages(cachedMessages || []);
         setConfirmDeleteId('');
         setError('');
         shouldAutoScrollRef.current = true;
@@ -205,6 +220,10 @@ export default function AiChatPage() {
 
             const loadedMessages = result.items || [];
 
+            sessionMessagesCacheRef.current.set(
+                nextSessionId,
+                loadedMessages,
+            );
             setMessages(loadedMessages);
             setSessions((current) => current.map((session) =>
                 session.id === nextSessionId
@@ -219,10 +238,12 @@ export default function AiChatPage() {
         } catch (requestError) {
             if (sessionRequestRef.current !== requestId) return;
 
-            setError(
-                requestError.message ||
-                'Chat messages could not be loaded.',
-            );
+            if (!cachedMessages) {
+                setError(
+                    requestError.message ||
+                    'Chat messages could not be loaded.',
+                );
+            }
         } finally {
             if (sessionRequestRef.current === requestId) {
                 setLoadingSessionId('');
@@ -231,23 +252,22 @@ export default function AiChatPage() {
     }, []);
 
     useEffect(() => {
-        if (accessLoading || !isPremium) {
-            if (!accessLoading) {
-                setLoading(false);
-            }
-
+        if (!isPremium) {
             return undefined;
         }
 
         let mounted = true;
 
-        const loadAiChatWorkspace = async () => {
+        const loadIdeaContext = async () => {
+            if (routeIdeaSeed) {
+                setIdea(routeIdeaSeed);
+                return;
+            }
+
             try {
-                const ideaPromise =
+                const ideaResult =
                     chatOrigin === 'accepted-publication' && acceptedPublicationId
-                        ? getDiscoveryById(acceptedPublicationId, {
-                            forceRefresh: true,
-                        }).then((payload) => {
+                        ? await getDiscoveryById(acceptedPublicationId).then((payload) => {
                             const publication = payload?.publication ?? payload;
 
                             return {
@@ -264,55 +284,82 @@ export default function AiChatPage() {
                                 acceptedPublicationId,
                             };
                         })
-                        : getIdeaWorkspace(ideaId);
+                        : await getIdeaWorkspace(ideaId);
 
-                const [ideaResult, sessionResult] = await Promise.all([
-                    ideaPromise,
-                    listChatSessions(ideaId),
-                ]);
+                if (mounted && ideaResult) {
+                    setIdea(ideaResult);
+                }
+            } catch {
+                // Idea metadata is an enhancement; sessions can still open.
+            }
+        };
+
+        const loadSessions = async () => {
+            try {
+                const sessionResult = await listChatSessions(ideaId);
 
                 if (!mounted) return;
 
-                setIdea(ideaResult);
-
                 const nextSessions = sessionResult.items || [];
-
                 setSessions(nextSessions);
 
-                if (nextSessions.length) {
-                    await openSession(nextSessions[0].id);
-                } else {
-                    setSessionId('');
-                    setMessages([]);
+                if (!sessionIdRef.current && nextSessions.length) {
+                    void openSession(nextSessions[0].id);
                 }
             } catch (requestError) {
                 if (mounted) {
                     setError(
                         requestError.message ||
-                        'The AI chat workspace could not be loaded.',
+                        'AI chat sessions could not be loaded.',
                     );
-                }
-            } finally {
-                if (mounted) {
-                    setLoading(false);
                 }
             }
         };
 
-        loadAiChatWorkspace();
+        void loadIdeaContext();
+        void loadSessions();
 
         return () => {
             mounted = false;
         };
     }, [
-        accessLoading,
         acceptedPublicationId,
         chatOrigin,
         ideaId,
         isPremium,
         location.state?.ideaTitle,
         openSession,
+        routeIdeaSeed,
     ]);
+
+
+    useEffect(() => {
+        if (accessLoading) {
+            return;
+        }
+
+        if (!isPremium) {
+            scheduleAiChatSocketDisconnect();
+            socketRef.current = null;
+            joinedSessionRef.current = '';
+            return;
+        }
+
+        if (!socketRef.current) {
+            /*
+             * Connect to the AI Chat namespace as soon as the page is usable.
+             * The socket can then join a newly created conversation instantly
+             * instead of paying the WebSocket handshake cost after Send.
+             */
+            socketRef.current = createAiChatSocket();
+        }
+    }, [accessLoading, isPremium]);
+
+    useEffect(() => () => {
+        scheduleAiChatSocketDisconnect();
+        socketRef.current = null;
+        joinedSessionRef.current = '';
+    }, []);
 
     const syncActiveSessionCount = useCallback((nextMessages) => {
         setSessions((current) => current.map((session) =>
@@ -333,17 +380,23 @@ export default function AiChatPage() {
             return undefined;
         }
 
-        const socket = createAiChatSocket();
-
+        const socket = socketRef.current || createAiChatSocket();
         socketRef.current = socket;
 
         const handleAccepted = ({ userMessage, aiMessage }) => {
+            invalidateChatMessages(sessionId);
+            invalidateChatSessions(ideaId);
+
             setMessages((current) => {
+                const stableMessages = current.filter(
+                    (message) => !message.__optimistic,
+                );
                 const next = mergeMessage(
-                    mergeMessage(current, userMessage),
+                    mergeMessage(stableMessages, userMessage),
                     aiMessage,
                 );
 
+                sessionMessagesCacheRef.current.set(sessionId, next);
                 syncActiveSessionCount(next);
                 return next;
             });
@@ -351,21 +404,49 @@ export default function AiChatPage() {
             setSending(true);
         };
 
-        const handleChunk = ({ messageId, content }) => {
+        const handleStreamStarted = ({ message }) => {
+            if (!message?.id) return;
+
             setMessages((current) =>
-                current.map((message) =>
-                    message.id === messageId
+                current.map((item) =>
+                    item.id === message.id
                         ? {
+                            ...item,
                             ...message,
-                            message: `${message.message || ''}${content}`,
+                            message: '',
                             status: 'STREAMING',
                         }
-                        : message));
+                        : item));
+        };
+
+        const handleChunk = ({ messageId, content }) => {
+            setMessages((current) =>
+                current.map((message) => {
+                    if (message.id !== messageId) {
+                        return message;
+                    }
+
+                    const existingText =
+                        message.status === 'PENDING' ||
+                        message.message === 'Generating response…'
+                            ? ''
+                            : message.message || '';
+
+                    return {
+                        ...message,
+                        message: `${existingText}${content}`,
+                        status: 'STREAMING',
+                    };
+                }));
         };
 
         const handleTerminal = ({ message }) => {
+            invalidateChatMessages(sessionId);
+            invalidateChatSessions(ideaId);
+
             setMessages((current) => {
                 const next = mergeMessage(current, message);
+                sessionMessagesCacheRef.current.set(sessionId, next);
                 syncActiveSessionCount(next);
                 return next;
             });
@@ -393,53 +474,99 @@ export default function AiChatPage() {
             setSending(false);
         };
 
-        socket.on('connect', () => {
-            socket.emit('chat:join-session', {
-                sessionId,
-            }, (ack) => {
-                const pending = pendingMessageRef.current;
+        const sendPendingMessage = () => {
+            const pending = pendingMessageRef.current;
 
-                if (
-                    ack?.success &&
-                    pending?.sessionId === sessionId
-                ) {
-                    pendingMessageRef.current = null;
-                    socket.emit(
-                        'chat:send-message',
-                        {
-                            sessionId,
-                            clientRequestId: crypto.randomUUID(),
-                            message: pending.message,
-                        },
-                        (sendAck) => {
-                            if (!sendAck?.success) {
-                                setError(
-                                    sendAck?.error?.message ||
-                                    'Your message could not be sent.',
-                                );
-                                setSending(false);
-                            }
-                        },
-                    );
-                }
-            });
-        });
+            if (pending?.sessionId !== sessionId) {
+                return;
+            }
 
+            pendingMessageRef.current = null;
+
+            socket.emit(
+                'chat:send-message',
+                {
+                    sessionId,
+                    clientRequestId:
+                        pending.clientRequestId ||
+                        crypto.randomUUID(),
+                    message: pending.message,
+                },
+                (sendAck) => {
+                    if (!sendAck?.success) {
+                        setError(
+                            sendAck?.error?.message ||
+                            'Your message could not be sent.',
+                        );
+                        setSending(false);
+                    }
+                },
+            );
+        };
+
+        const joinCurrentSession = () => {
+            joinedSessionRef.current = '';
+
+            socket.emit(
+                'chat:join-session',
+                {
+                    sessionId,
+                },
+                (ack) => {
+                    if (!ack?.success) {
+                        setError(
+                            ack?.error?.message ||
+                            'The conversation could not be opened.',
+                        );
+                        setSending(false);
+                        return;
+                    }
+
+                    joinedSessionRef.current = sessionId;
+                    sendPendingMessage();
+                },
+            );
+        };
+
+        const handleDisconnect = () => {
+            joinedSessionRef.current = '';
+        };
+
+        socket.on('connect', joinCurrentSession);
+        socket.on('disconnect', handleDisconnect);
         socket.on('chat:message-accepted', handleAccepted);
+        socket.on('chat:message-stream-started', handleStreamStarted);
         socket.on('chat:message-chunk', handleChunk);
         socket.on('chat:message-completed', handleTerminal);
         socket.on('chat:message-failed', handleTerminal);
         socket.on('chat:message-cancelled', handleTerminal);
         socket.on('chat:error', handleError);
 
+        if (socket.connected) {
+            joinCurrentSession();
+        }
+
         return () => {
-            socket.emit('chat:leave-session', {
-                sessionId,
-            });
+            if (socket.connected) {
+                socket.emit('chat:leave-session', {
+                    sessionId,
+                });
+            }
 
             window.clearTimeout(titleRefreshTimerRef.current);
-            socket.disconnect();
-            socketRef.current = null;
+            socket.off('connect', joinCurrentSession);
+            socket.off('disconnect', handleDisconnect);
+            socket.off('chat:message-accepted', handleAccepted);
+            socket.off('chat:message-stream-started', handleStreamStarted);
+            socket.off('chat:message-chunk', handleChunk);
+            socket.off('chat:message-completed', handleTerminal);
+            socket.off('chat:message-failed', handleTerminal);
+            socket.off('chat:message-cancelled', handleTerminal);
+            socket.off('chat:error', handleError);
+
+            if (joinedSessionRef.current === sessionId) {
+                joinedSessionRef.current = '';
+            }
         };
     }, [ideaId, isPremium, sessionId, syncActiveSessionCount]);
 
@@ -588,20 +715,61 @@ export default function AiChatPage() {
             : title;
     };
 
+    const appendOptimisticTurn = useCallback((targetSessionId, message) => {
+        const now = new Date().toISOString();
+
+        setMessages((current) => [
+            ...current.filter((item) => !item.__optimistic),
+            {
+                id: `optimistic-user-${crypto.randomUUID()}`,
+                sessionId: targetSessionId,
+                sender: 'USER',
+                status: 'COMPLETED',
+                message,
+                createdAt: now,
+                updatedAt: now,
+                completedAt: now,
+                __optimistic: true,
+            },
+            {
+                id: `optimistic-ai-${crypto.randomUUID()}`,
+                sessionId: targetSessionId,
+                sender: 'AI',
+                status: 'PENDING',
+                message: 'Generating response…',
+                createdAt: now,
+                updatedAt: now,
+                completedAt: null,
+                __optimistic: true,
+            },
+        ]);
+    }, []);
+
     const emitChatMessage = useCallback((targetSessionId, message) => {
-        if (!socketRef.current?.connected || !targetSessionId || !message) {
+        if (!targetSessionId || !message) {
+            return;
+        }
+
+        const clientRequestId = crypto.randomUUID();
+        const socket = socketRef.current;
+        const canSendNow =
+            socket?.connected &&
+            joinedSessionRef.current === targetSessionId;
+
+        if (!canSendNow) {
             pendingMessageRef.current = {
                 sessionId: targetSessionId,
+                clientRequestId,
                 message,
             };
             return;
         }
 
-        socketRef.current.emit(
+        socket.emit(
             'chat:send-message',
             {
                 sessionId: targetSessionId,
-                clientRequestId: crypto.randomUUID(),
+                clientRequestId,
                 message,
             },
             (ack) => {
@@ -614,6 +782,22 @@ export default function AiChatPage() {
                 }
             },
         );
+    }, []);
+
+    const activateEmptySession = useCallback((createdSession) => {
+        if (!createdSession?.id) {
+            throw new Error('The new conversation did not return a valid identifier.');
+        }
+
+        sessionRequestRef.current += 1;
+        sessionMessagesCacheRef.current.set(createdSession.id, []);
+        sessionIdRef.current = createdSession.id;
+        setSessionId(createdSession.id);
+        setLoadingSessionId('');
+        setMessages([]);
+        setConfirmDeleteId('');
+        setError('');
+        shouldAutoScrollRef.current = true;
     }, []);
 
     const addSession = async () => {
@@ -629,7 +813,7 @@ export default function AiChatPage() {
             );
 
             setSessions((current) => [created, ...current]);
-            await openSession(created.id);
+            activateEmptySession(created);
         } catch (requestError) {
             setError(
                 requestError.message ||
@@ -660,6 +844,7 @@ export default function AiChatPage() {
                 if (remainingSessions.length) {
                     await openSession(remainingSessions[0].id);
                 } else {
+                    sessionIdRef.current = '';
                     setSessionId('');
                     setMessages([]);
                 }
@@ -707,10 +892,12 @@ export default function AiChatPage() {
                 targetSessionId = created.id;
                 pendingMessageRef.current = {
                     sessionId: targetSessionId,
+                    clientRequestId: crypto.randomUUID(),
                     message,
                 };
                 setSessions((current) => [created, ...current]);
-                await openSession(targetSessionId);
+                activateEmptySession(created);
+                appendOptimisticTurn(targetSessionId, message);
                 return;
             }
 
@@ -722,16 +909,30 @@ export default function AiChatPage() {
 
             if (isFirstMessage) {
                 const title = buildConversationTitle(message);
-                const updated = await updateChatSession(targetSessionId, {
-                    title,
-                });
 
                 setSessions((current) => current.map((session) =>
                     session.id === targetSessionId
-                        ? { ...session, ...updated, title }
+                        ? { ...session, title }
                         : session));
+
+                void updateChatSession(targetSessionId, {
+                    title,
+                })
+                    .then((updated) => {
+                        setSessions((current) => current.map((session) =>
+                            session.id === targetSessionId
+                                ? { ...session, ...updated, title }
+                                : session));
+                    })
+                    .catch(() => {
+                        /*
+                         * Title persistence is cosmetic and must never delay
+                         * or fail the actual AI message submission.
+                         */
+                    });
             }
 
+            appendOptimisticTurn(targetSessionId, message);
             emitChatMessage(targetSessionId, message);
         } catch (requestError) {
             setDraft(message);
@@ -745,21 +946,7 @@ export default function AiChatPage() {
         }
     };
 
-    if (loading || accessLoading) {
-        return (
-            <section className="ai-chat-state">
-                <div className="ai-chat-state__orb">
-                    <LoaderCircle className="is-spinning" />
-                </div>
-
-                <span>Premium intelligence workspace</span>
-                <h1>Preparing your AI chat</h1>
-                <p>Connecting the conversation to your idea context and evidence.</p>
-            </section>
-        );
-    }
-
-    if (!isPremium) {
+    if (!accessLoading && !isPremium) {
         return (
             <section className="ai-chat-state ai-chat-state--locked">
                 <div className="ai-chat-state__orb">

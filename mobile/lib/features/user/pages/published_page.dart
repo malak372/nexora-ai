@@ -1,7 +1,7 @@
 // Mobile published-ideas workspace with owner moderation controls.
 // Mirrors the main web actions while keeping the layout compact for phones.
 //
-// @author  Malak
+// @author Eman
 
 import 'package:flutter/material.dart';
 
@@ -10,7 +10,6 @@ import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../widgets/user_ui.dart';
 import 'idea_workspace_page.dart';
-import 'publication_page.dart';
 import 'publish_idea_page.dart';
 
 class PublishedPage extends StatefulWidget {
@@ -85,7 +84,7 @@ class _PublishedPageState extends State<PublishedPage> {
       _search = next;
       _page = 1;
     });
-    _load(force: true);
+    _load();
   }
 
   void _changeFilter(String value) {
@@ -94,19 +93,16 @@ class _PublishedPageState extends State<PublishedPage> {
       _filter = value;
       _page = 1;
     });
-    _load(force: true);
+    _load();
   }
 
   void _changePage(int next) {
     if (next < 1 || next > _totalPages || next == _page) return;
     setState(() => _page = next);
-    _load(force: true);
+    _load();
   }
 
-  Future<void> _runOwnerAction(
-    Map<String, dynamic> item,
-    String action,
-  ) async {
+  Future<void> _runOwnerAction(Map<String, dynamic> item, String action) async {
     final ideaId = _ideaId(item);
     if (ideaId.isEmpty || _busyIdeaId != null) return;
     setState(() => _busyIdeaId = ideaId);
@@ -137,142 +133,292 @@ class _PublishedPageState extends State<PublishedPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _FeedbackSheet(publicationId: publicationId, publication: item),
+      builder: (_) =>
+          _FeedbackSheet(publicationId: publicationId, publication: item),
     );
   }
 
-@override
+  void _backToProfile() {
+    returnFromWorkspacePage(context);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: WorkspaceBackground(
-        child: SafeArea(
-          child: RefreshIndicator(
-            color: AppColors.primary,
-            onRefresh: () => _load(force: true),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+      backgroundColor: AppColors.background,
+      body: Column(
+        children: [
+          _PublishedRouteHeader(
+            onBack: _backToProfile,
+          ),
+          Expanded(
+            child: WorkspaceBackground(
+              child: RefreshIndicator(
+                color: AppColors.primary,
+                onRefresh: () => _load(force: true),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(15, 13, 15, 42),
+                  children: [
+                    _PublishedHero(
+                      total: _total,
+                      filter: _filter,
+                    ),
+                    const SizedBox(height: 13),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .76),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: .72),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primaryDeep.withValues(alpha: .035),
+                            blurRadius: 20,
+                            offset: const Offset(0, 7),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(4, 1, 4, 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.tune_rounded,
+                                  size: 13,
+                                  color: AppColors.primaryDark,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'SEARCH & FILTER',
+                                  style: TextStyle(
+                                    color: AppColors.primaryDark,
+                                    fontSize: 7.1,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: .9,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _PublishedSearch(
+                            controller: _searchInput,
+                            onSubmitted: (_) => _submitSearch(),
+                            onSearch: _submitSearch,
+                          ),
+                          const SizedBox(height: 8),
+                          _FilterBar(
+                            value: _filter,
+                            onChanged: _changeFilter,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _PublishedResultsHeading(
+                      filter: _filter,
+                      total: _total,
+                      loading: _loading,
+                    ),
+                    const SizedBox(height: 9),
+                    if (_error != null)
+                      InlineNotice(
+                        icon: Icons.cloud_off_rounded,
+                        title: 'Could not load publications',
+                        message: _error!,
+                        actionLabel: 'Retry',
+                        onAction: () => _load(force: true),
+                      ),
+                    if (_loading && _items.isEmpty) ...[
+                      const LoadingList(count: 4),
+                    ] else if (!_loading && _items.isEmpty) ...[
+                      EmptyState(
+                        icon: Icons.public_off_outlined,
+                        title: _filter == 'ARCHIVED'
+                            ? 'No archived publications'
+                            : _filter == 'PUBLISHED'
+                                ? 'No live publications'
+                                : 'No publications yet',
+                        message: _filter == 'ARCHIVED'
+                            ? 'Stopped publications stay here with their engagement history.'
+                            : 'Publish a completed idea to start receiving community activity.',
+                      ),
+                    ] else
+                      ..._items.asMap().entries.map(
+                        (entry) {
+                          final item = entry.value;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _PublicationCard(
+                              index: entry.key,
+                              item: item,
+                              busy: _busyIdeaId == _ideaId(item),
+                            onOpenWorkspace: () {
+                              final ideaId = _ideaId(item);
+                              if (ideaId.isEmpty) return;
+
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => IdeaWorkspacePage(
+                                    ideaId: ideaId,
+                                    returnTitle: 'Published ideas',
+                                  ),
+                                ),
+                              );
+                            },
+                            onFeedback: () => _showFeedback(item),
+                            onEdit: () {
+                              final ideaId = _ideaId(item);
+                              if (ideaId.isEmpty) return;
+
+                              Navigator.of(context)
+                                  .push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => PublishIdeaPage(
+                                        ideaId: ideaId,
+                                        returnTitle: 'Published ideas',
+                                        initialIdea: _publicationStudioSeed(item),
+                                      ),
+                                    ),
+                                  )
+                                  .then((_) => _load(force: true));
+                            },
+                            onArchive: () =>
+                                _runOwnerAction(item, 'archive'),
+                            onRepost: () =>
+                                _runOwnerAction(item, 'repost'),
+                              onToggleAdoption: () =>
+                                  _runOwnerAction(item, 'adoption'),
+                            ),
+                          );
+                        },
+                      ),
+                    if (!_loading &&
+                        _items.isNotEmpty &&
+                        _totalPages > 1) ...[
+                      const SizedBox(height: 3),
+                      _PublishedPagination(
+                        page: _page,
+                        totalPages: _totalPages,
+                        onPrevious: _page > 1
+                            ? () => _changePage(_page - 1)
+                            : null,
+                        onNext: _page < _totalPages
+                            ? () => _changePage(_page + 1)
+                            : null,
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              padding: const EdgeInsets.fromLTRB(15, 11, 15, 36),
-              children: [
-                _PublishedHero(
-                  total: _total,
-                  filter: _filter,
-                ),
-                const SizedBox(height: 11),
-                _PublishedSearch(
-                  controller: _searchInput,
-                  onSubmitted: (_) => _submitSearch(),
-                  onSearch: _submitSearch,
-                ),
-                const SizedBox(height: 8),
-                _FilterBar(
-                  value: _filter,
-                  onChanged: _changeFilter,
-                ),
-                const SizedBox(height: 13),
-                _PublishedResultsHeading(
-                  filter: _filter,
-                  total: _total,
-                  loading: _loading,
-                ),
-                const SizedBox(height: 8),
-                if (_error != null)
-                  InlineNotice(
-                    icon: Icons.cloud_off_rounded,
-                    title: 'Could not load publications',
-                    message: _error!,
-                    actionLabel: 'Retry',
-                    onAction: () => _load(force: true),
-                  ),
-                if (_loading && _items.isEmpty) ...[
-                  const LoadingList(count: 4),
-                ] else if (!_loading && _items.isEmpty) ...[
-                  EmptyState(
-                    icon: Icons.public_off_outlined,
-                    title: _filter == 'ARCHIVED'
-                        ? 'No archived publications'
-                        : _filter == 'PUBLISHED'
-                            ? 'No live publications'
-                            : 'No publications yet',
-                    message: _filter == 'ARCHIVED'
-                        ? 'Stopped publications stay here with their engagement history.'
-                        : 'Publish a completed idea to start receiving community activity.',
-                  ),
-                ] else
-                  ..._items.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 9),
-                      child: _PublicationCard(
-                        item: item,
-                        busy: _busyIdeaId == _ideaId(item),
-                        onOpen: () {
-                          final publicationId = _publicationId(item);
-                          if (publicationId.isEmpty) return;
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => PublicationPage(
-                                publicationId: publicationId,
-                              ),
-                            ),
-                          );
-                        },
-                        onOpenWorkspace: () {
-                          final ideaId = _ideaId(item);
-                          if (ideaId.isEmpty) return;
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => IdeaWorkspacePage(
-                                ideaId: ideaId,
-                                returnTitle: 'Published',
-                              ),
-                            ),
-                          );
-                        },
-                        onFeedback: () => _showFeedback(item),
-                        onEdit: () {
-                          final ideaId = _ideaId(item);
-                          if (ideaId.isEmpty) return;
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => PublishIdeaPage(
-                                ideaId: ideaId,
-                                returnTitle: 'Published',
-                              ),
-                            ),
-                          ).then((_) => _load(force: true));
-                        },
-                        onArchive: () => _runOwnerAction(item, 'archive'),
-                        onRepost: () => _runOwnerAction(item, 'repost'),
-                        onToggleAdoption: () => _runOwnerAction(item, 'adoption'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublishedRouteHeader extends StatelessWidget {
+  const _PublishedRouteHeader({
+    required this.onBack,
+  });
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final returnTitle = workspaceReturnTarget(context).title;
+
+    return Material(
+      color: AppColors.surface.withValues(alpha: .985),
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(14, 6, 18, 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.border.withValues(alpha: .62),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryDeep.withValues(alpha: .025),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onBack,
+                  borderRadius: BorderRadius.circular(14),
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        size: 26,
+                        color: AppColors.primaryDark,
                       ),
                     ),
                   ),
-                if (!_loading && _items.isNotEmpty && _totalPages > 1) ...[
-                  const SizedBox(height: 3),
-                  _PublishedPagination(
-                    page: _page,
-                    totalPages: _totalPages,
-                    onPrevious: _page > 1
-                        ? () => _changePage(_page - 1)
-                        : null,
-                    onNext: _page < _totalPages
-                        ? () => _changePage(_page + 1)
-                        : null,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: GestureDetector(
+                  onTap: onBack,
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        returnTitle,
+                        style: TextStyle(
+                          color: AppColors.primaryDeep,
+                          fontSize: 18.5,
+                          height: 1.08,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.28,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Published ideas',
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 9.6,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-
-
 }
-
 
 class _PublishedHero extends StatelessWidget {
   const _PublishedHero({
@@ -285,102 +431,277 @@ class _PublishedHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statLabel = switch (filter) {
+      'PUBLISHED' => 'currently live',
+      'ARCHIVED' => 'stopped',
+      _ => 'matching records',
+    };
+
+    final statIcon = filter == 'ARCHIVED'
+        ? Icons.inventory_2_outlined
+        : Icons.bar_chart_rounded;
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 13, 13, 13),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF1F9F7),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(21),
+        borderRadius: BorderRadius.circular(27),
         border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .055),
+          color: AppColors.primaryDeep.withValues(alpha: .075),
         ),
+        color: const Color(0xFFFFFEFD),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .055),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          Container(
-            width: 41,
-            height: 41,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.primarySoft,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.public_rounded,
-              size: 19,
-              color: AppColors.primaryDark,
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    AppColors.primarySoft.withValues(alpha: .28),
+                    AppColors.surfaceRose.withValues(alpha: .42),
+                  ],
+                  stops: const [0, .64, 1],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+          Positioned(
+            right: -58,
+            top: -62,
+            child: Container(
+              width: 168,
+              height: 168,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: .085),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 18,
+            bottom: -40,
+            child: Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.pink.withValues(alpha: .045),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(17, 17, 17, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'PUBLICATION STUDIO',
-                  style: TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 6.2,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .7,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .78),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: .12),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.send_rounded,
+                        size: 12,
+                        color: AppColors.primaryDark,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'CREATOR PUBLISHING DESK',
+                        style: TextStyle(
+                          color: AppColors.primaryDark,
+                          fontSize: 6.8,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .95,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 3),
-                const Text(
-                  'Published ideas',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20.5,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -.3,
-                  ),
+                const SizedBox(height: 13),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Publication history,',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 22.2,
+                              height: 1.02,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -.58,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'community signals.',
+                            style: TextStyle(
+                              color: AppColors.primaryDark,
+                              fontSize: 22.2,
+                              height: 1.02,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -.62,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'Manage live and stopped publications without losing ratings, votes, feedback, accepted-user access, or owner-only insights.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 8.8,
+                              height: 1.45,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Container(
+                      width: 88,
+                      padding: const EdgeInsets.fromLTRB(9, 10, 9, 9),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .84),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: .95),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primaryDeep.withValues(alpha: .06),
+                            blurRadius: 17,
+                            offset: const Offset(0, 7),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 31,
+                            height: 31,
+                            decoration: BoxDecoration(
+                              color: AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: Icon(
+                              statIcon,
+                              size: 16,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            '$total',
+                            style: const TextStyle(
+                              color: AppColors.primaryDeep,
+                              fontSize: 20,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            statLabel,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 6.2,
+                              height: 1.18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 5),
-                const Text(
-                  'Manage live and archived publications while keeping community signals and accepted-user access intact.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 8.1,
-                    height: 1.37,
-                  ),
+                const SizedBox(height: 13),
+                const Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    _PublishedHeroChip(
+                      icon: Icons.trending_up_rounded,
+                      label: 'Persistent engagement history',
+                    ),
+                    _PublishedHeroChip(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'Re-publish anytime',
+                      rose: true,
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 7),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .76),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  '$total',
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text(
-                  filter == 'ALL' ? 'TOTAL' : filter,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 5.3,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PublishedHeroChip extends StatelessWidget {
+  const _PublishedHeroChip({
+    required this.icon,
+    required this.label,
+    this.rose = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool rose;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = rose ? AppColors.pinkDeep : AppColors.primaryDark;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: rose
+            ? AppColors.surfaceRose.withValues(alpha: .72)
+            : AppColors.primarySoft.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: foreground.withValues(alpha: .08),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: foreground),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 6.5,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -407,16 +728,14 @@ class _PublishedSearch extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .70),
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: .10),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .10)),
       ),
       child: TextField(
         controller: controller,
         textInputAction: TextInputAction.search,
         onSubmitted: onSubmitted,
         decoration: InputDecoration(
-          hintText: 'Search published ideas…',
+          hintText: 'Search your publication history…',
           prefixIcon: const Icon(
             Icons.search_rounded,
             size: 18,
@@ -501,84 +820,6 @@ class _PublishedResultsHeading extends StatelessWidget {
   }
 }
 
-class _PublicationTinyBadge extends StatelessWidget {
-  const _PublicationTinyBadge({
-    required this.icon,
-    required this.label,
-  });
-  final IconData icon;
-  final String label;
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF8F2),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 9.5, color: AppColors.success),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.success,
-              fontSize: 5.5,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PublishedIconAction extends StatelessWidget {
-  const _PublishedIconAction({
-    required this.tooltip,
-    required this.icon,
-    required this.onTap,
-    this.busy = false,
-  });
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool busy;
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Ink(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primarySoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: busy
-                ? const Padding(
-                    padding: EdgeInsets.all(11),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.7,
-                      color: AppColors.primaryDark,
-                    ),
-                  )
-                : Icon(icon, size: 16, color: AppColors.primaryDark),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _PublishedPagination extends StatelessWidget {
   const _PublishedPagination({
     required this.page,
@@ -630,10 +871,7 @@ class _PublishedPagination extends StatelessWidget {
 }
 
 class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.value,
-    required this.onChanged,
-  });
+  const _FilterBar({required this.value, required this.onChanged});
 
   final String value;
   final ValueChanged<String> onChanged;
@@ -714,13 +952,11 @@ class _FilterBar extends StatelessWidget {
   }
 }
 
-
-
 class _PublicationCard extends StatelessWidget {
   const _PublicationCard({
+    required this.index,
     required this.item,
     required this.busy,
-    required this.onOpen,
     required this.onOpenWorkspace,
     required this.onFeedback,
     required this.onEdit,
@@ -729,9 +965,9 @@ class _PublicationCard extends StatelessWidget {
     required this.onToggleAdoption,
   });
 
+  final int index;
   final Map<String, dynamic> item;
   final bool busy;
-  final VoidCallback onOpen;
   final VoidCallback onOpenWorkspace;
   final VoidCallback onFeedback;
   final VoidCallback onEdit;
@@ -746,337 +982,703 @@ class _PublicationCard extends StatelessWidget {
     final title = _title(item);
     final abstract = _abstract(item);
 
+    final palette = _publicationPalette(
+      index,
+      archived: archived,
+    );
+
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFFFFEFD),
+            palette.soft,
+            const Color(0xFFFFFBFC),
+          ],
+          stops: const [0, .72, 1],
+        ),
+        borderRadius: BorderRadius.circular(26),
         border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .055),
+          color: palette.a.withValues(alpha: .12),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .035),
-            blurRadius: 15,
-            offset: const Offset(0, 6),
+            color: palette.a.withValues(alpha: .075),
+            blurRadius: 25,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          children: [
-            Container(
-              height: 3,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: archived
-                      ? const [
-                          Color(0xFFD5AAA9),
-                          Color(0xFFBCCAC5),
-                        ]
-                      : const [
-                          Color(0xFF5FB9B3),
-                          Color(0xFFA9D2C7),
-                        ],
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 94,
+                child: _PublicationSignalRail(
+                  archived: archived,
+                  palette: palette,
+                  date: _friendlyActivityDate(
+                    archived ? item['archivedAt'] : item['publishedAt'],
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(13, 11, 11, 11),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 194),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(109, 13, 12, 13),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        height: 28,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        decoration: BoxDecoration(
-                          color: archived
-                              ? AppColors.pinkSoft
-                              : AppColors.primarySoft,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              archived
-                                  ? Icons.inventory_2_outlined
-                                  : Icons.public_rounded,
-                              size: 10.5,
-                              color: archived
-                                  ? AppColors.pinkDeep
-                                  : AppColors.primaryDark,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _prettyStatus(status),
-                              style: TextStyle(
-                                color: archived
-                                    ? AppColors.pinkDeep
-                                    : AppColors.primaryDark,
-                                fontSize: 6.7,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_allowAdoption(item))
-                        const _PublicationTinyBadge(
-                          icon: Icons.handshake_outlined,
-                          label: 'Acceptance on',
-                        ),
-                      PopupMenuButton<String>(
-                        enabled: !busy,
-                        tooltip: 'Publication actions',
-                        icon: const Icon(
-                          Icons.more_horiz_rounded,
-                          color: AppColors.textMuted,
-                        ),
-                        onSelected: (value) {
-                          if (value == 'edit') onEdit();
-                          if (value == 'archive') onArchive();
-                          if (value == 'repost') onRepost();
-                          if (value == 'adoption') onToggleAdoption();
-                        },
-                        itemBuilder: (_) => [
-                          if (!archived)
-                            const PopupMenuItem(
-                              value: 'edit',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.edit_outlined, size: 18),
-                                  SizedBox(width: 9),
-                                  Text('Edit publication'),
-                                ],
-                              ),
-                            ),
-                          PopupMenuItem(
-                            value: 'adoption',
-                            child: Row(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Wrap(
+                              spacing: 5,
+                              runSpacing: 5,
                               children: [
-                                Icon(
-                                  _allowAdoption(item)
-                                      ? Icons.lock_outline_rounded
-                                      : Icons.volunteer_activism_outlined,
-                                  size: 18,
+                                _PublicationSignalChip(
+                                  icon: Icons.visibility_outlined,
+                                  label: _visibility(item),
                                 ),
-                                const SizedBox(width: 9),
-                                Text(
-                                  _allowAdoption(item)
-                                      ? 'Disable acceptance'
-                                      : 'Allow acceptance',
+                                _PublicationSignalChip(
+                                  icon: archived
+                                      ? Icons.inventory_2_outlined
+                                      : Icons.bar_chart_rounded,
+                                  label: archived ? 'Stopped' : 'Published',
+                                  positive: !archived,
                                 ),
                               ],
                             ),
                           ),
-                          PopupMenuItem(
-                            value: archived ? 'repost' : 'archive',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  archived
-                                      ? Icons.restore_rounded
-                                      : Icons.inventory_2_outlined,
-                                  size: 18,
+                          const SizedBox(width: 4),
+                          SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: PopupMenuButton<String>(
+                              enabled: !busy,
+                              tooltip: 'Publication actions',
+                              padding: EdgeInsets.zero,
+                              iconSize: 19,
+                              icon: const Icon(
+                                Icons.more_horiz_rounded,
+                                color: AppColors.textMuted,
+                              ),
+                              onSelected: (value) {
+                                if (value == 'workspace') {
+                                  onOpenWorkspace();
+                                }
+                                if (value == 'adoption') {
+                                  onToggleAdoption();
+                                }
+                              },
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(
+                                  value: 'workspace',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.dashboard_customize_outlined,
+                                        size: 18,
+                                      ),
+                                      SizedBox(width: 9),
+                                      Text('Idea workspace'),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(width: 9),
-                                Text(archived ? 'Republish' : 'Archive'),
+                                PopupMenuItem(
+                                  value: 'adoption',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _allowAdoption(item)
+                                            ? Icons.lock_outline_rounded
+                                            : Icons.volunteer_activism_outlined,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 9),
+                                      Text(
+                                        _allowAdoption(item)
+                                            ? 'Disable acceptance'
+                                            : 'Allow acceptance',
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.auto_awesome_rounded,
-                        size: 11,
-                        color: AppColors.primaryDark,
+                      if (_allowAdoption(item)) ...[
+                        const SizedBox(height: 6),
+                        const _PublicationSignalChip(
+                          icon: Icons.handshake_outlined,
+                          label: 'Acceptance on',
+                          positive: true,
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 9.5,
+                            color: AppColors.primaryDark,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'PUBLIC COMMUNITY IDEA',
+                            style: TextStyle(
+                              color: AppColors.primaryDark,
+                              fontSize: 5.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .64,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(width: 5),
+                      const SizedBox(height: 6),
                       Text(
-                        'PUBLIC COMMUNITY IDEA',
-                        style: TextStyle(
-                          color: AppColors.primaryDark,
-                          fontSize: 5.8,
+                        title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13.4,
+                          height: 1.10,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: .58,
+                          letterSpacing: -.24,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14.7,
-                      height: 1.16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (abstract.isNotEmpty) ...[
-                    const SizedBox(height: 7),
-                    Text(
-                      abstract,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        height: 1.47,
-                        fontSize: 8.8,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 11),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Color(0xFFF4FAF8),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _MiniMetric(
-                            icon: Icons.thumb_up_alt_outlined,
-                            value: '${_number(item, ['upvotesCount', 'upvoteCount', 'upvotes'])}',
-                            label: 'Upvotes',
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 27,
-                          color: AppColors.primaryDark.withValues(alpha: .06),
-                        ),
-                        Expanded(
-                          child: _MiniMetric(
-                            icon: Icons.star_outline_rounded,
-                            value: _rating(item),
-                            label: 'Rating',
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 27,
-                          color: AppColors.primaryDark.withValues(alpha: .06),
-                        ),
-                        Expanded(
-                          child: _MiniMetric(
-                            icon: Icons.handshake_outlined,
-                            value: '${_number(item, ['acceptanceCount', 'acceptedCount'])}',
-                            label: 'Accepted',
+                      if (abstract.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          abstract,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            height: 1.38,
+                            fontSize: 7.8,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: busy ? null : onOpen,
-                          icon: const Icon(Icons.north_east_rounded, size: 13),
-                          label: const Text('View publication'),
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(40),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _PublishedIconAction(
-                        tooltip: 'Community feedback',
-                        icon: Icons.chat_bubble_outline_rounded,
-                        onTap: busy ? null : onFeedback,
-                      ),
-                      const SizedBox(width: 5),
-                      _PublishedIconAction(
-                        tooltip: 'Idea workspace',
-                        icon: Icons.dashboard_customize_outlined,
-                        busy: busy,
-                        onTap: busy ? null : onOpenWorkspace,
-                      ),
                     ],
                   ),
-                ],
+                ),
               ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _PublicationMetricPill(
+                  icon: Icons.star_outline_rounded,
+                  value: _rating(item),
+                  suffix: '${_number(item, const ['ratingsCount'])} ratings',
+                  tone: _MetricTone.rating,
+                ),
+                _PublicationMetricPill(
+                  icon: Icons.thumb_up_alt_outlined,
+                  value:
+                      '${_number(item, const ['upvotesCount', 'upvoteCount', 'upvotes'])}',
+                  suffix: 'up',
+                  tone: _MetricTone.positive,
+                ),
+                _PublicationMetricPill(
+                  icon: Icons.thumb_down_alt_outlined,
+                  value:
+                      '${_number(item, const ['downvotesCount', 'downvoteCount', 'downvotes'])}',
+                  suffix: 'down',
+                  tone: _MetricTone.neutral,
+                ),
+                _PublicationMetricPill(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  value: '${_number(item, const ['feedbackCount'])}',
+                  suffix: 'reviews',
+                  tone: _MetricTone.neutral,
+                ),
+                _PublicationMetricPill(
+                  icon: Icons.group_outlined,
+                  value:
+                      '${_number(item, const ['acceptanceCount', 'acceptedCount'])}',
+                  suffix: 'accepted',
+                  tone: _MetricTone.positive,
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: archived ? 1 : 11,
+                  child: _PublicationActionButton(
+                    label: 'Audience',
+                    icon: Icons.insights_outlined,
+                    onTap: busy ? null : onFeedback,
+                    filled: true,
+                    busy: busy,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  flex: archived ? 1 : 10,
+                  child: _PublicationActionButton(
+                    label: archived ? 'Re-publish' : 'Edit',
+                    icon: archived
+                        ? Icons.refresh_rounded
+                        : Icons.edit_outlined,
+                    onTap: busy
+                        ? null
+                        : archived
+                            ? onRepost
+                            : onEdit,
+                  ),
+                ),
+                if (!archived) ...[
+                  const SizedBox(width: 7),
+                  Expanded(
+                    flex: 10,
+                    child: _PublicationActionButton(
+                      label: 'Stop',
+                      icon: Icons.pause_circle_outline_rounded,
+                      onTap: busy ? null : onArchive,
+                      danger: true,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+class _PublicationPalette {
+  const _PublicationPalette({
+    required this.a,
+    required this.b,
+    required this.soft,
+  });
 
+  final Color a;
+  final Color b;
+  final Color soft;
+}
 
-class _MiniMetric extends StatelessWidget {
-  const _MiniMetric({
+_PublicationPalette _publicationPalette(
+  int index, {
+  required bool archived,
+}) {
+  if (archived) {
+    return const _PublicationPalette(
+      a: Color(0xFF62746E),
+      b: Color(0xFF98AAA3),
+      soft: Color(0xFFF4F7F5),
+    );
+  }
+
+  return switch (index % 4) {
+    1 => const _PublicationPalette(
+        a: Color(0xFF527D70),
+        b: Color(0xFF86B6A2),
+        soft: Color(0xFFF4FAF7),
+      ),
+    2 => const _PublicationPalette(
+        a: Color(0xFF577970),
+        b: Color(0xFF91B2A7),
+        soft: Color(0xFFF3F8F6),
+      ),
+    3 => const _PublicationPalette(
+        a: Color(0xFF617B74),
+        b: Color(0xFFA1B9B0),
+        soft: Color(0xFFF5F9F7),
+      ),
+    _ => const _PublicationPalette(
+        a: Color(0xFF2F7774),
+        b: Color(0xFF62B9B1),
+        soft: Color(0xFFF2FAF8),
+      ),
+  };
+}
+
+class _PublicationSignalRail extends StatelessWidget {
+  const _PublicationSignalRail({
+    required this.archived,
+    required this.palette,
+    required this.date,
+  });
+
+  final bool archived;
+  final _PublicationPalette palette;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [palette.a, palette.b],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: -34,
+            top: 48,
+            child: Transform.rotate(
+              angle: -.21,
+              child: Container(
+                width: 160,
+                height: 38,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withValues(alpha: .02),
+                      Colors.white.withValues(alpha: .13),
+                      Colors.white.withValues(alpha: .02),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -37,
+            top: -35,
+            child: Container(
+              width: 108,
+              height: 108,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: .14),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            top: 16,
+            child: Container(
+              width: 43,
+              height: 43,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: .21),
+                ),
+              ),
+              child: Icon(
+                archived
+                    ? Icons.inventory_2_outlined
+                    : Icons.bar_chart_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 13,
+            right: 9,
+            bottom: 14,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  archived ? 'STOPPED' : 'LIVE',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .98),
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .7,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  archived ? 'PUBLICATION' : 'SIGNAL',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .74),
+                    fontSize: 5.9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .7,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 8.2,
+                      color: Colors.white.withValues(alpha: .72),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        date,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: .76),
+                          fontSize: 5.7,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _MetricTone { neutral, rating, positive, rose }
+
+class _PublicationMetricPill extends StatelessWidget {
+  const _PublicationMetricPill({
     required this.icon,
     required this.value,
-    required this.label,
+    required this.suffix,
+    required this.tone,
   });
 
   final IconData icon;
   final String value;
-  final String label;
+  final String suffix;
+  final _MetricTone tone;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 11.5, color: AppColors.primaryDark),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                value,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 9.4,
-                ),
-              ),
+    final foreground = switch (tone) {
+      _MetricTone.rating => const Color(0xFF64756F),
+      _MetricTone.positive => const Color(0xFF2A7B68),
+      _MetricTone.rose => const Color(0xFF687A74),
+      _MetricTone.neutral => AppColors.primaryDark,
+    };
+
+    final background = switch (tone) {
+      _MetricTone.rating => const Color(0xFFF1F6F4),
+      _MetricTone.positive => const Color(0xFFEAF7F1),
+      _MetricTone.rose => const Color(0xFFF1F5F3),
+      _MetricTone.neutral => const Color(0xFFF2F6F4),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: foreground.withValues(alpha: .08),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10.5, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 7.9,
+              fontWeight: FontWeight.w900,
             ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 6.3,
           ),
-        ),
-      ],
+          const SizedBox(width: 4),
+          Text(
+            suffix,
+            style: TextStyle(
+              color: foreground.withValues(alpha: .76),
+              fontSize: 5.8,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
+class _PublicationActionButton extends StatelessWidget {
+  const _PublicationActionButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.filled = false,
+    this.danger = false,
+    this.busy = false,
+  });
 
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool filled;
+  final bool danger;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = danger
+        ? const Color(0xFF7F7376)
+        : filled
+            ? Colors.white
+            : AppColors.primaryDark;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 42,
+          decoration: BoxDecoration(
+            gradient: filled
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF65C4BD),
+                      Color(0xFF4DA9A4),
+                      Color(0xFF418E8A),
+                    ],
+                  )
+                : null,
+            color: filled
+                ? null
+                : danger
+                    ? const Color(0xFFF7F9F8)
+                    : Colors.white.withValues(alpha: .82),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: danger
+                  ? AppColors.sage.withValues(alpha: .28)
+                  : filled
+                      ? AppColors.primary.withValues(alpha: .12)
+                      : AppColors.primary.withValues(alpha: .14),
+            ),
+            boxShadow: filled
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: .12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (busy && filled)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: foreground,
+                  ),
+                )
+              else
+                Icon(icon, size: 13, color: foreground),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 7.2,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PublicationSignalChip extends StatelessWidget {
+  const _PublicationSignalChip({
+    required this.icon,
+    required this.label,
+    this.positive = false,
+  }) : rose = false;
+
+  final IconData icon;
+  final String label;
+  final bool rose;
+  final bool positive;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = rose
+        ? AppColors.textMuted
+        : positive
+            ? AppColors.success
+            : AppColors.primaryDark;
+
+    final background = rose
+        ? const Color(0xFFF1F5F3)
+        : positive
+            ? const Color(0xFFE9F8F0)
+            : AppColors.primarySoft.withValues(alpha: .68);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: foreground.withValues(alpha: .08),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 9.5, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 6,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _FeedbackSheet extends StatefulWidget {
   const _FeedbackSheet({
@@ -1114,6 +1716,7 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
         _error = null;
       });
     }
+
     try {
       final result = await UserApi.instance.getReceivedFeedbackDetails(
         widget.publicationId,
@@ -1121,10 +1724,13 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
         limit: 8,
         force: force,
       );
+
       if (!mounted) return;
+
       final publication = result['publication'] is Map
           ? Map<String, dynamic>.from(result['publication'] as Map)
           : const <String, dynamic>{};
+
       final rows = result['data'] is List
           ? result['data'] as List
           : result['responses'] is List
@@ -1132,14 +1738,19 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
               : result['items'] is List
                   ? result['items'] as List
                   : const <dynamic>[];
+
       final meta = result['meta'] is Map
           ? Map<String, dynamic>.from(result['meta'] as Map)
           : result['pagination'] is Map
               ? Map<String, dynamic>.from(result['pagination'] as Map)
               : const <String, dynamic>{};
+
       setState(() {
         _summary = {...widget.publication, ...publication};
-        _responses = rows.map((row) => Map<String, dynamic>.from(row as Map)).toList();
+        _responses = rows
+            .whereType<Map>()
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
         _total = _toInt(meta['total'] ?? rows.length);
         _totalPages = _toInt(meta['totalPages'] ?? 1).clamp(1, 999999).toInt();
       });
@@ -1169,80 +1780,317 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
     );
 
     return DraggableScrollableSheet(
-      initialChildSize: .88,
-      minChildSize: .55,
-      maxChildSize: .96,
-      builder: (context, controller) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 32),
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.silver,
-                  borderRadius: BorderRadius.circular(99),
+      initialChildSize: .92,
+      minChildSize: .58,
+      maxChildSize: .97,
+      expand: false,
+      builder: (context, controller) {
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: const BoxDecoration(
+            color: Color(0xFFFFFEFD),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -62,
+                top: -76,
+                child: Container(
+                  width: 190,
+                  height: 190,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primary.withValues(alpha: .05),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 17),
-            WorkspacePageHeader(
-              eyebrow: 'AUDIENCE RESPONSE LEDGER',
-              title: '${_summary['publicTitle'] ?? _title(widget.publication)}',
-              subtitle:
-                  'Every person appears once with their rating, vote, feedback, and latest interaction.',
-              icon: Icons.insights_outlined,
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _InsightMetric(
-                  icon: Icons.star_rounded,
-                  value: _metricRating(_summary),
-                  label: '${_number(_summary, const ['ratingsCount'])} ratings',
+              Positioned(
+                left: -72,
+                top: 215,
+                child: Container(
+                  width: 160,
+                  height: 160,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.pink.withValues(alpha: .035),
+                  ),
                 ),
-                _InsightMetric(
-                  icon: Icons.thumb_up_alt_outlined,
-                  value: '${_number(_summary, const ['upvotesCount', 'upvoteCount'])}',
-                  label: 'upvotes',
-                ),
-                _InsightMetric(
-                  icon: Icons.thumb_down_alt_outlined,
-                  value: '${_number(_summary, const ['downvotesCount', 'downvoteCount'])}',
-                  label: 'downvotes',
-                  rose: true,
-                ),
-                _InsightMetric(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  value: '${_number(_summary, const ['feedbackCount'])}',
-                  label: 'written reviews',
-                ),
-                _InsightMetric(
-                  icon: Icons.handshake_outlined,
-                  value: '$acceptanceCount',
-                  label: 'accepted this idea',
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            VoxCard(
-              tint: AppColors.primarySoft.withValues(alpha: .52),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+              ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 32),
                 children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.silver.withValues(alpha: .78),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF6AC8C0),
+                              Color(0xFF3E918D),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: const Icon(
+                          Icons.insights_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primarySoft.withValues(alpha: .72),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'AUDIENCE RESPONSE LEDGER',
+                                style: TextStyle(
+                                  color: AppColors.primaryDark,
+                                  fontSize: 6.2,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: .72,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              '${_summary['publicTitle'] ?? _title(widget.publication)}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16.4,
+                                height: 1.08,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.28,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            const Text(
+                              'One owner-only view of ratings, votes, feedback, accepted members, and latest activity.',
+                              style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 8.4,
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: AppColors.primarySoft.withValues(alpha: .56),
+                        borderRadius: BorderRadius.circular(11),
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).pop(),
+                          borderRadius: BorderRadius.circular(11),
+                          child: const SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 17,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 94,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      children: [
+                        _InsightMetric(
+                          icon: Icons.star_rounded,
+                          value: _metricRating(_summary),
+                          label: '${_number(_summary, const ['ratingsCount'])} ratings',
+                          tone: _MetricTone.rating,
+                        ),
+                        const SizedBox(width: 8),
+                        _InsightMetric(
+                          icon: Icons.thumb_up_alt_outlined,
+                          value:
+                              '${_number(_summary, const ['upvotesCount', 'upvoteCount'])}',
+                          label: 'upvotes',
+                          tone: _MetricTone.positive,
+                        ),
+                        const SizedBox(width: 8),
+                        _InsightMetric(
+                          icon: Icons.thumb_down_alt_outlined,
+                          value:
+                              '${_number(_summary, const ['downvotesCount', 'downvoteCount'])}',
+                          label: 'downvotes',
+                          tone: _MetricTone.neutral,
+                        ),
+                        const SizedBox(width: 8),
+                        _InsightMetric(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          value: '${_number(_summary, const ['feedbackCount'])}',
+                          label: 'written reviews',
+                          tone: _MetricTone.neutral,
+                        ),
+                        const SizedBox(width: 8),
+                        _InsightMetric(
+                          icon: Icons.group_outlined,
+                          value: '$acceptanceCount',
+                          label: 'accepted',
+                          tone: _MetricTone.positive,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft.withValues(alpha: .42),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: .10),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 37,
+                              height: 37,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: .82),
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                              child: const Icon(
+                                Icons.group_outlined,
+                                size: 18,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'People who accepted this idea',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 11.1,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Visible only to the publication owner.',
+                                    style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 7.8,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              constraints: const BoxConstraints(minWidth: 34),
+                              height: 34,
+                              padding: const EdgeInsets.symmetric(horizontal: 9),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: .82),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '$acceptanceCount',
+                                style: const TextStyle(
+                                  color: AppColors.primaryDeep,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (acceptedBy.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .66),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Text(
+                              'No one has accepted this idea yet.',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 8.8,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        else
+                          ...acceptedBy.take(8).whereType<Map>().map(
+                                (entry) => Padding(
+                                  padding: const EdgeInsets.only(top: 7),
+                                  child: _AcceptedAudiencePerson(
+                                    person: Map<String, dynamic>.from(entry),
+                                  ),
+                                ),
+                              ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 17),
                   Row(
                     children: [
-                      const SoftIconBadge(
-                        icon: Icons.group_outlined,
-                        size: 38,
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceRose.withValues(alpha: .58),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.person_search_outlined,
+                          size: 17,
+                          color: AppColors.primaryDark,
+                        ),
                       ),
                       const SizedBox(width: 9),
                       const Expanded(
@@ -1250,174 +2098,123 @@ class _FeedbackSheetState extends State<_FeedbackSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'People who accepted this idea',
+                              'Individual community signals',
                               style: TextStyle(
                                 color: AppColors.textPrimary,
+                                fontSize: 12.2,
                                 fontWeight: FontWeight.w900,
-                                fontSize: 11.5,
                               ),
                             ),
+                            SizedBox(height: 2),
                             Text(
-                              'Visible only to the publication owner.',
+                              'Each member appears once with their latest signal.',
                               style: TextStyle(
                                 color: AppColors.textMuted,
-                                fontSize: 8.5,
+                                fontSize: 7.8,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      Text(
-                        '$acceptanceCount',
-                        style: const TextStyle(
-                          color: AppColors.primaryDeep,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w900,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primarySoft,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$_total people',
+                          style: const TextStyle(
+                            color: AppColors.primaryDark,
+                            fontSize: 6.9,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 11),
-                  if (acceptedBy.isEmpty)
-                    const Text(
-                      'No one has accepted this idea yet.',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 10.2,
-                      ),
+                  if (_loading && _responses.isEmpty)
+                    const LoadingList(count: 3)
+                  else if (_error != null && _responses.isEmpty)
+                    InlineNotice(
+                      icon: Icons.error_outline_rounded,
+                      title: 'Audience responses unavailable',
+                      message: _error!,
+                      error: true,
+                      actionLabel: 'Try again',
+                      onAction: () => _load(force: true),
+                    )
+                  else if (_responses.isEmpty)
+                    const EmptyState(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      title: 'No audience activity yet',
+                      message:
+                          'Ratings, votes, and written feedback will appear here per person.',
                     )
                   else
-                    ...acceptedBy.take(8).map((entry) {
-                      final person = Map<String, dynamic>.from(entry as Map);
-                      final name = '${person['fullName'] ?? 'Voxidence user'}';
-                      final userType = '${person['userType'] ?? 'MEMBER'}';
-                      final advanced = person['hasAdvancedAccess'] == true;
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 17,
-                              backgroundColor: Colors.white,
-                              child: Text(
-                                _initials(name),
-                                style: const TextStyle(
-                                  color: AppColors.primaryDark,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  Text(
-                                    '$userType · Accepted ${_friendlyActivityDate(person['acceptedAt'])}',
-                                    style: const TextStyle(
-                                      color: AppColors.textMuted,
-                                      fontSize: 8.2,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            StatusChip(
-                              label: advanced ? 'ADVANCED' : 'BASIC',
-                              positive: advanced,
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Expanded(
-                  child: SectionHeading(
-                    title: 'Individual community signals',
-                    subtitle: 'Visible only to the publication owner.',
-                  ),
-                ),
-                const SizedBox(width: 8),
-                StatusChip(
-                  label: '$_total PEOPLE',
-                  icon: Icons.people_outline_rounded,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_loading && _responses.isEmpty)
-              const LoadingList(count: 3)
-            else if (_error != null && _responses.isEmpty)
-              InlineNotice(
-                icon: Icons.error_outline_rounded,
-                title: 'Audience responses unavailable',
-                message: _error!,
-                error: true,
-                actionLabel: 'Try again',
-                onAction: () => _load(force: true),
-              )
-            else if (_responses.isEmpty)
-              const EmptyState(
-                icon: Icons.chat_bubble_outline_rounded,
-                title: 'No audience activity yet',
-                message:
-                    'Ratings, votes, and written feedback will appear here per person.',
-              )
-            else
-              ..._responses.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _AudienceResponseCard(item: item),
-                  )),
-            if (!_loading && _error == null && _totalPages > 1) ...[
-              const SizedBox(height: 4),
-              VoxCard(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                child: Row(
-                  children: [
-                    IconButton.filledTonal(
-                      onPressed: _page <= 1 ? null : () => _changePage(_page - 1),
-                      tooltip: 'Previous response page',
-                      icon: const Icon(Icons.arrow_back_rounded, size: 17),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '$_page / $_totalPages',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    ..._responses.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: _AudienceResponseCard(item: item),
                       ),
                     ),
-                    IconButton.filledTonal(
-                      onPressed: _page >= _totalPages ? null : () => _changePage(_page + 1),
-                      tooltip: 'Next response page',
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+                  if (!_loading && _error == null && _totalPages > 1) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .72),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: .72),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton.filledTonal(
+                            onPressed: _page <= 1
+                                ? null
+                                : () => _changePage(_page - 1),
+                            tooltip: 'Previous response page',
+                            icon: const Icon(Icons.arrow_back_rounded, size: 17),
+                          ),
+                          Expanded(
+                            child: Text(
+                              'Page $_page of $_totalPages',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 8.8,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          IconButton.filledTonal(
+                            onPressed: _page >= _totalPages
+                                ? null
+                                : () => _changePage(_page + 1),
+                            tooltip: 'Next response page',
+                            icon:
+                                const Icon(Icons.arrow_forward_rounded, size: 17),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                ),
+                ],
               ),
             ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1433,46 +2230,157 @@ class _InsightMetric extends StatelessWidget {
     required this.icon,
     required this.value,
     required this.label,
-    this.rose = false,
+    required this.tone,
   });
 
   final IconData icon;
   final String value;
   final String label;
-  final bool rose;
+  final _MetricTone tone;
 
   @override
   Widget build(BuildContext context) {
+    final foreground = switch (tone) {
+      _MetricTone.rating => const Color(0xFF64756F),
+      _MetricTone.positive => AppColors.success,
+      _MetricTone.rose => AppColors.pinkDeep,
+      _MetricTone.neutral => AppColors.primaryDark,
+    };
+
+    final background = switch (tone) {
+      _MetricTone.rating => const Color(0xFFF1F6F4),
+      _MetricTone.positive => const Color(0xFFECF8F3),
+      _MetricTone.rose => const Color(0xFFFFF0F3),
+      _MetricTone.neutral => AppColors.primarySoft.withValues(alpha: .60),
+    };
+
     return Container(
-      width: 104,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+      width: 106,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
       decoration: BoxDecoration(
-        color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+        color: background,
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: foreground.withValues(alpha: .08),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: rose ? AppColors.pinkDeep : AppColors.primaryDark,
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .70),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 14, color: foreground),
           ),
-          const SizedBox(height: 7),
+          const Spacer(),
           Text(
             value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 15.3,
+              height: 1,
               fontWeight: FontWeight.w900,
             ),
           ),
+          const SizedBox(height: 3),
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 7.8),
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 6.6,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AcceptedAudiencePerson extends StatelessWidget {
+  const _AcceptedAudiencePerson({required this.person});
+
+  final Map<String, dynamic> person;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = '${person['fullName'] ?? 'Voxidence user'}';
+    final userType = '${person['userType'] ?? 'MEMBER'}';
+    final advanced = person['hasAdvancedAccess'] == true;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(9, 8, 9, 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppColors.primarySoft,
+            child: Text(
+              _initials(name),
+              style: const TextStyle(
+                color: AppColors.primaryDark,
+                fontSize: 8.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$userType · ${_friendlyActivityDate(person['acceptedAt'])}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 7.2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 7),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+            decoration: BoxDecoration(
+              color: advanced
+                  ? AppColors.primarySoft
+                  : AppColors.surfaceRose.withValues(alpha: .72),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              advanced ? 'ADVANCED' : 'BASIC',
+              style: TextStyle(
+                color: advanced ? AppColors.primaryDark : AppColors.pinkDeep,
+                fontSize: 5.7,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .42,
+              ),
+            ),
           ),
         ],
       ),
@@ -1499,110 +2407,175 @@ class _AudienceResponseCard extends StatelessWidget {
     final vote = '${item['vote'] ?? ''}'.toUpperCase();
     final comment = '${feedback['comment'] ?? ''}'.trim();
 
-    return VoxCard(
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .82),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: .72),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .025),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.primarySoft,
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.primarySoft,
+                child: Text(
+                  _initials(name),
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 10.2,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      userType,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 7.3,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                _friendlyActivityDate(item['lastActivityAt']),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 6.8,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              _AudienceSignalPill(
+                icon: Icons.star_rounded,
+                label: rating == null ? 'No rating' : '$rating / 5',
+                tone: _MetricTone.rating,
+              ),
+              const SizedBox(width: 6),
+              _AudienceSignalPill(
+                icon: vote == 'DOWN'
+                    ? Icons.thumb_down_alt_outlined
+                    : Icons.thumb_up_alt_outlined,
+                label: vote == 'UP'
+                    ? 'Upvoted'
+                    : vote == 'DOWN'
+                        ? 'Downvoted'
+                        : 'No vote',
+                tone: vote == 'UP'
+                    ? _MetricTone.positive
+                    : vote == 'DOWN'
+                        ? _MetricTone.rose
+                        : _MetricTone.neutral,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceMuted.withValues(alpha: .46),
+              borderRadius: BorderRadius.circular(13),
+            ),
             child: Text(
-              _initials(name),
-              style: const TextStyle(
-                color: AppColors.primaryDark,
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
+              comment.isEmpty
+                  ? 'No written feedback from this person.'
+                  : comment,
+              style: TextStyle(
+                color: comment.isEmpty
+                    ? AppColors.textMuted
+                    : AppColors.textSecondary,
+                fontSize: 8.5,
+                height: 1.42,
+                fontStyle: comment.isEmpty ? FontStyle.italic : FontStyle.normal,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11.3,
-                            ),
-                          ),
-                          Text(
-                            userType,
-                            style: const TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 8.3,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      _friendlyActivityDate(item['lastActivityAt']),
-                      style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 7.8,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    StatusChip(
-                      label: rating == null ? 'No rating' : '$rating/5',
-                      icon: Icons.star_outline_rounded,
-                      positive: rating != null,
-                    ),
-                    StatusChip(
-                      label: vote == 'UP'
-                          ? 'Upvoted'
-                          : vote == 'DOWN'
-                              ? 'Downvoted'
-                              : 'No vote',
-                      icon: vote == 'DOWN'
-                          ? Icons.thumb_down_alt_outlined
-                          : Icons.thumb_up_alt_outlined,
-                      rose: vote == 'DOWN',
-                      positive: vote == 'UP',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceMuted.withValues(alpha: .58),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    comment.isEmpty
-                        ? 'No written feedback from this person.'
-                        : comment,
-                    style: TextStyle(
-                      color: comment.isEmpty
-                          ? AppColors.textMuted
-                          : AppColors.textSecondary,
-                      fontSize: 9.7,
-                      height: 1.42,
-                      fontStyle: comment.isEmpty ? FontStyle.italic : FontStyle.normal,
-                    ),
-                  ),
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AudienceSignalPill extends StatelessWidget {
+  const _AudienceSignalPill({
+    required this.icon,
+    required this.label,
+    required this.tone,
+  });
+
+  final IconData icon;
+  final String label;
+  final _MetricTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = switch (tone) {
+      _MetricTone.rating => const Color(0xFF64756F),
+      _MetricTone.positive => AppColors.success,
+      _MetricTone.rose => AppColors.pinkDeep,
+      _MetricTone.neutral => AppColors.primaryDark,
+    };
+
+    final background = switch (tone) {
+      _MetricTone.rating => const Color(0xFFF1F6F4),
+      _MetricTone.positive => const Color(0xFFECF8F3),
+      _MetricTone.rose => const Color(0xFFFFF0F3),
+      _MetricTone.neutral => AppColors.primarySoft.withValues(alpha: .56),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 6.7,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -1613,12 +2586,18 @@ class _AudienceResponseCard extends StatelessWidget {
 
 String _metricRating(Map<String, dynamic> raw) {
   final value = raw['averageRating'];
-  final number = value is num ? value.toDouble() : double.tryParse('${value ?? ''}');
+  final number = value is num
+      ? value.toDouble()
+      : double.tryParse('${value ?? ''}');
   return (number ?? 0).toStringAsFixed(1);
 }
 
 String _initials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
   if (parts.isEmpty) return 'VX';
   if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
   return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
@@ -1628,6 +2607,35 @@ String _friendlyActivityDate(dynamic value) {
   final date = DateTime.tryParse('${value ?? ''}')?.toLocal();
   if (date == null) return 'Recently';
   return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+}
+
+Map<String, dynamic> _publicationStudioSeed(Map<String, dynamic> raw) {
+  final nestedIdea = raw['idea'] is Map
+      ? Map<String, dynamic>.from(raw['idea'] as Map)
+      : <String, dynamic>{};
+
+  final nestedPublication = raw['publication'] is Map
+      ? Map<String, dynamic>.from(raw['publication'] as Map)
+      : <String, dynamic>{};
+
+  final publication = <String, dynamic>{
+    ...raw,
+    ...nestedPublication,
+    'id': _publicationId(raw),
+    'ideaId': _ideaId(raw),
+    'publicTitle': _title(raw),
+    'publicAbstract': _abstract(raw),
+    'visibility': _visibility(raw),
+    'status': _status(raw),
+    'allowAdoption': _allowAdoption(raw),
+  };
+
+  return <String, dynamic>{
+    ...nestedIdea,
+    'id': _ideaId(raw),
+    'title': nestedIdea['title'] ?? raw['ideaTitle'] ?? _title(raw),
+    'publication': publication,
+  };
 }
 
 String _publicationId(Map<String, dynamic> raw) {
@@ -1657,7 +2665,19 @@ String _abstract(Map<String, dynamic> raw) {
   final idea = raw['idea'] is Map
       ? Map<String, dynamic>.from(raw['idea'] as Map)
       : const <String, dynamic>{};
-  return '${raw['publicAbstract'] ?? raw['abstract'] ?? idea['abstract'] ?? idea['problem'] ?? ''}'.trim();
+  return '${raw['publicAbstract'] ?? raw['abstract'] ?? idea['abstract'] ?? idea['problem'] ?? ''}'
+      .trim();
+}
+
+String _visibility(Map<String, dynamic> raw) {
+  final value =
+      '${raw['visibility'] ?? 'PUBLIC'}'.trim().toUpperCase();
+
+  return switch (value) {
+    'REGISTERED_USERS' => 'REGISTERED',
+    'SELECTED_AUDIENCE' => 'SELECTED',
+    _ => value.isEmpty ? 'PUBLIC' : value,
+  };
 }
 
 String _status(Map<String, dynamic> raw) =>
@@ -1677,14 +2697,11 @@ int _number(Map<String, dynamic> raw, List<String> keys) {
 }
 
 String _rating(Map<String, dynamic> raw) {
-  final value = raw['averageRating'] ?? raw['ratingAverage'] ?? raw['avgRating'];
-  final number = value is num ? value.toDouble() : double.tryParse('${value ?? ''}');
+  final value =
+      raw['averageRating'] ?? raw['ratingAverage'] ?? raw['avgRating'];
+  final number = value is num
+      ? value.toDouble()
+      : double.tryParse('${value ?? ''}');
   if (number == null || number <= 0) return '—';
   return number.toStringAsFixed(1);
-}
-
-String _prettyStatus(String status) {
-  final lower = status.replaceAll('_', ' ').toLowerCase();
-  if (lower.isEmpty) return 'Published';
-  return '${lower[0].toUpperCase()}${lower.substring(1)}';
 }

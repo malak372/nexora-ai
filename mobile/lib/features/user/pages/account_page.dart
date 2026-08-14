@@ -21,15 +21,13 @@ import 'compliance_page.dart';
 import 'credits_page.dart';
 import 'notifications_page.dart';
 import 'preferences_page.dart';
-import 'profile_settings_page.dart';
 import 'published_page.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
 
   @override
-  State<AccountPage> createState() =>
-      _AccountPageState();
+  State<AccountPage> createState() => _AccountPageState();
 }
 
 class _AccountPageState extends State<AccountPage>
@@ -38,29 +36,43 @@ class _AccountPageState extends State<AccountPage>
   bool get wantKeepAlive => true;
 
   Future<void> _open(Widget page) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => page,
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => page));
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     // Child settings pages already update the shared session snapshot.
     // A forced profile round-trip here made returning to Profile feel slow.
     // The user can still pull to refresh when a fresh server read is wanted.
   }
 
-  Future<void> _logout() async {
-    final confirmed =
-        await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          const _SignOutSheet(),
+  Future<void> _openProfileSettings() async {
+    await Navigator.of(context).pushNamed(
+      '/normal/settings/profile',
+      arguments: const <String, String>{
+        'returnTitle': 'Profile',
+        'returnRoute': '/normal/profile',
+      },
     );
 
-    if (confirmed != true) return;
+    if (!mounted) {
+      return;
+    }
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _SignOutSheet(),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
 
     try {
       await AuthApi.instance.logout();
@@ -71,43 +83,33 @@ class _AccountPageState extends State<AccountPage>
     ApiClient.instance.clearCache();
     UserSessionController.instance.reset();
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/',
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    final session =
-        UserSessionController.instance;
+    final session = UserSessionController.instance;
 
     return AnimatedBuilder(
       animation: session,
       builder: (context, _) {
         final summary = session.summary;
 
-        final name =
-            (summary?.fullName ?? 'Voxidence User')
-                .trim();
+        final name = (summary?.fullName ?? 'Voxidence User').trim();
 
-        final email =
-            (summary?.email ?? '')
-                .trim();
+        final email = (summary?.email ?? '').trim();
 
-        final premium =
-            summary?.isPremium == true;
+        final premium = summary?.isPremium == true;
 
-        final avatarUrl = _mediaUrl(
-          summary?.avatarUrl ?? '',
-        );
+        final avatarUrl = _mediaUrl(summary?.avatarUrl ?? '');
 
-        final membershipLabel =
-            premium ? 'Premium' : 'Normal';
+        final membershipLabel = premium ? 'Premium' : 'Normal';
 
         return RefreshIndicator(
           color: AppColors.primary,
@@ -115,32 +117,22 @@ class _AccountPageState extends State<AccountPage>
             await session.load(force: true);
           },
           child: ListView(
-            physics:
-                const AlwaysScrollableScrollPhysics(
+            physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              10,
-              16,
-              122,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 122),
             children: [
               const _ProfilePageIntro(),
 
               const SizedBox(height: 11),
 
               _IdentityHero(
-                name: name.isEmpty
-                    ? 'Voxidence User'
-                    : name,
+                name: name.isEmpty ? 'Voxidence User' : name,
                 email: email,
                 avatarUrl: avatarUrl,
                 premium: premium,
                 loading: summary == null,
-                onEdit: () => _open(
-                  const ProfileSettingsPage(),
-                ),
+                onEdit: _openProfileSettings,
               ),
 
               if (summary != null) ...[
@@ -152,9 +144,7 @@ class _AccountPageState extends State<AccountPage>
                   value: premium
                       ? '${summary.creditBalance} credits available'
                       : '${summary.remainingFreeGenerations} free ideas remaining',
-                  onTap: () => _open(
-                    const CreditsPage(),
-                  ),
+                  onTap: () => _open(const CreditsPage()),
                 ),
 
                 const SizedBox(height: 10),
@@ -163,14 +153,10 @@ class _AccountPageState extends State<AccountPage>
                   premium: premium,
                   primaryValue: premium
                       ? summary.creditBalance
-                      : summary
-                          .remainingFreeGenerations,
-                  ideas:
-                      summary.ideasCount,
-                  published:
-                      summary.publishedIdeasCount,
-                  favorites:
-                      summary.favoriteIdeasCount,
+                      : summary.remainingFreeGenerations,
+                  ideas: summary.ideasCount,
+                  published: summary.publishedIdeasCount,
+                  favorites: summary.favoriteIdeasCount,
                 ),
               ],
 
@@ -181,8 +167,7 @@ class _AccountPageState extends State<AccountPage>
                 title: 'Your control center',
                 subtitle:
                     'Identity, security and access — without desktop-style clutter.',
-                icon:
-                    Icons.manage_accounts_outlined,
+                icon: Icons.manage_accounts_outlined,
               ),
 
               const SizedBox(height: 8),
@@ -190,55 +175,36 @@ class _AccountPageState extends State<AccountPage>
               _ActionGrid(
                 children: [
                   _ProfileActionCard(
-                    icon: Icons
-                        .manage_accounts_outlined,
+                    icon: Icons.manage_accounts_outlined,
                     eyebrow: 'IDENTITY',
                     title: 'Profile & security',
-                    subtitle:
-                        'Name, email, password and sessions',
-                    onTap: () => _open(
-                      const ProfileSettingsPage(),
-                    ),
+                    subtitle: 'Name, email, password and sessions',
+                    onTap: _openProfileSettings,
                   ),
                   _ProfileActionCard(
-                    icon:
-                        Icons.bolt_rounded,
-                    eyebrow: premium
-                        ? 'PREMIUM'
-                        : 'ACCESS',
-                    title: premium
-                        ? 'Credits'
-                        : 'Upgrade & credits',
+                    icon: Icons.bolt_rounded,
+                    eyebrow: premium ? 'PREMIUM' : 'ACCESS',
+                    title: premium ? 'Credits' : 'Upgrade & credits',
                     subtitle: premium
                         ? 'Top up and review access'
                         : 'Explore Premium options',
                     rose: true,
-                    onTap: () => _open(
-                      const CreditsPage(),
-                    ),
+                    onTap: () => _open(const CreditsPage()),
                   ),
                   _ProfileActionCard(
-                    icon: Icons
-                        .receipt_long_outlined,
+                    icon: Icons.receipt_long_outlined,
                     eyebrow: 'PAYMENTS',
                     title: 'Billing',
-                    subtitle:
-                        'Invoices and payment history',
-                    onTap: () => _open(
-                      const BillingPage(),
-                    ),
+                    subtitle: 'Invoices and payment history',
+                    onTap: () => _open(const BillingPage()),
                   ),
                   _ProfileActionCard(
-                    icon:
-                        Icons.tune_rounded,
+                    icon: Icons.tune_rounded,
                     eyebrow: 'DISCOVERY',
                     title: 'Preferences',
-                    subtitle:
-                        'Interests, language and region',
+                    subtitle: 'Interests, language and region',
                     rose: true,
-                    onTap: () => _open(
-                      const PreferencesPage(),
-                    ),
+                    onTap: () => _open(const PreferencesPage()),
                   ),
                 ],
               ),
@@ -250,34 +216,22 @@ class _AccountPageState extends State<AccountPage>
                 title: 'Activity & community',
                 subtitle:
                     'Jump into the parts of Voxidence that need your attention.',
-                icon:
-                    Icons.space_dashboard_outlined,
+                icon: Icons.space_dashboard_outlined,
               ),
 
               const SizedBox(height: 8),
 
               _ActivityPanel(
-                unread:
-                    summary?.unreadNotificationsCount ??
-                        0,
-                published:
-                    summary?.publishedIdeasCount ?? 0,
-                onPublished: () => _open(
-                  const PublishedPage(),
-                ),
-                onNotifications: () => _open(
-                  const NotificationsPage(),
-                ),
-                onCompliance: () => _open(
-                  const CompliancePage(),
-                ),
+                unread: summary?.unreadNotificationsCount ?? 0,
+                published: summary?.publishedIdeasCount ?? 0,
+                onPublished: () => _open(const PublishedPage()),
+                onNotifications: () => _open(const NotificationsPage()),
+                onCompliance: () => _open(const CompliancePage()),
               ),
 
               const SizedBox(height: 17),
 
-              _SignOutTile(
-                onTap: _logout,
-              ),
+              _SignOutTile(onTap: _logout),
             ],
           ),
         );
@@ -292,30 +246,24 @@ class _ProfilePageIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: 2,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: 2),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Icon(
                 Icons.auto_awesome_rounded,
                 size: 10,
-                color:
-                    AppColors.primaryDark,
+                color: AppColors.primaryDark,
               ),
               SizedBox(width: 5),
               Text(
                 'YOUR SPACE',
                 style: TextStyle(
-                  color:
-                      AppColors.primaryDark,
+                  color: AppColors.primaryDark,
                   fontSize: 6.3,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: .72,
                 ),
               ),
@@ -325,12 +273,10 @@ class _ProfilePageIntro extends StatelessWidget {
           Text(
             'Profile',
             style: TextStyle(
-              color:
-                  AppColors.textPrimary,
+              color: AppColors.textPrimary,
               fontSize: 24,
               height: 1,
-              fontWeight:
-                  FontWeight.w900,
+              fontWeight: FontWeight.w900,
               letterSpacing: -.55,
             ),
           ),
@@ -338,8 +284,7 @@ class _ProfilePageIntro extends StatelessWidget {
           Text(
             'Your account, membership and workspace — organized for mobile.',
             style: TextStyle(
-              color:
-                  AppColors.textSecondary,
+              color: AppColors.textSecondary,
               fontSize: 8.6,
               height: 1.4,
             ),
@@ -380,15 +325,11 @@ class _IdentityHero extends StatelessWidget {
               AppColors.surfaceRose,
             ],
           ),
-          borderRadius:
-              BorderRadius.circular(23),
-          border: Border.all(
-            color: AppColors.border,
-          ),
+          borderRadius: BorderRadius.circular(23),
+          border: Border.all(color: AppColors.border),
         ),
         child: const Center(
-          child:
-              CircularProgressIndicator(
+          child: CircularProgressIndicator(
             strokeWidth: 2,
             color: AppColors.primary,
           ),
@@ -397,33 +338,21 @@ class _IdentityHero extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        13,
-        12,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 13, 12, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFEAF6F3),
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.surface, Color(0xFFEAF6F3), AppColors.surfaceRose],
           stops: [0, .63, 1],
         ),
-        borderRadius:
-            BorderRadius.circular(23),
+        borderRadius: BorderRadius.circular(23),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .065),
+          color: AppColors.primaryDark.withValues(alpha: .065),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep
-                .withValues(alpha: .04),
+            color: AppColors.primaryDeep.withValues(alpha: .04),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),
@@ -440,8 +369,7 @@ class _IdentityHero extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: AppColors.primary
-                      .withValues(alpha: .07),
+                  color: AppColors.primary.withValues(alpha: .07),
                 ),
               ),
             ),
@@ -455,8 +383,7 @@ class _IdentityHero extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: AppColors.pink
-                      .withValues(alpha: .07),
+                  color: AppColors.pink.withValues(alpha: .07),
                 ),
               ),
             ),
@@ -464,8 +391,7 @@ class _IdentityHero extends StatelessWidget {
           Column(
             children: [
               Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   _ProfileAvatarMark(
                     name: name,
@@ -475,36 +401,27 @@ class _IdentityHero extends StatelessWidget {
                   const SizedBox(width: 11),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           name,
                           maxLines: 1,
-                          overflow:
-                              TextOverflow.ellipsis,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: AppColors
-                                .textPrimary,
+                            color: AppColors.textPrimary,
                             fontSize: 17,
                             height: 1.05,
-                            fontWeight:
-                                FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                         if (email.isNotEmpty) ...[
-                          const SizedBox(
-                            height: 4,
-                          ),
+                          const SizedBox(height: 4),
                           Text(
                             email,
                             maxLines: 1,
-                            overflow:
-                                TextOverflow.ellipsis,
-                            style:
-                                const TextStyle(
-                              color: AppColors
-                                  .textMuted,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
                               fontSize: 8.1,
                             ),
                           ),
@@ -512,58 +429,32 @@ class _IdentityHero extends StatelessWidget {
                         const SizedBox(height: 7),
                         Row(
                           children: [
-                            AccountTierBadge(
-                              isPremium:
-                                  premium,
-                            ),
-                            const SizedBox(
-                              width: 6,
-                            ),
+                            AccountTierBadge(isPremium: premium),
+                            const SizedBox(width: 6),
                             Container(
                               height: 27,
-                              padding:
-                                  const EdgeInsets
-                                      .symmetric(
+                              padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                               ),
-                              decoration:
-                                  BoxDecoration(
-                                color: Colors.white
-                                    .withValues(
-                                  alpha: .64,
-                                ),
-                                borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                  999,
-                                ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: .64),
+                                borderRadius: BorderRadius.circular(999),
                               ),
                               child: const Row(
                                 children: [
                                   Icon(
-                                    Icons
-                                        .verified_user_outlined,
+                                    Icons.verified_user_outlined,
                                     size: 10,
-                                    color: AppColors
-                                        .success,
+                                    color: AppColors.success,
                                   ),
-                                  SizedBox(
-                                    width: 4,
-                                  ),
+                                  SizedBox(width: 4),
                                   Text(
                                     'SECURE',
-                                    style:
-                                        TextStyle(
-                                      color:
-                                          AppColors
-                                              .success,
-                                      fontSize:
-                                          5.6,
-                                      fontWeight:
-                                          FontWeight
-                                              .w900,
-                                      letterSpacing:
-                                          .45,
+                                    style: TextStyle(
+                                      color: AppColors.success,
+                                      fontSize: 5.6,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: .45,
                                     ),
                                   ),
                                 ],
@@ -581,55 +472,39 @@ class _IdentityHero extends StatelessWidget {
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: onEdit,
-                  borderRadius:
-                      BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(13),
                   child: Ink(
                     height: 43,
-                    padding:
-                        const EdgeInsets.symmetric(
-                      horizontal: 10,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white
-                          .withValues(alpha: .62),
-                      borderRadius:
-                          BorderRadius.circular(13),
+                      color: Colors.white.withValues(alpha: .62),
+                      borderRadius: BorderRadius.circular(13),
                       border: Border.all(
-                        color: AppColors
-                            .primaryDark
-                            .withValues(
-                          alpha: .05,
-                        ),
+                        color: AppColors.primaryDark.withValues(alpha: .05),
                       ),
                     ),
                     child: const Row(
                       children: [
                         Icon(
-                          Icons
-                              .edit_outlined,
+                          Icons.edit_outlined,
                           size: 14,
-                          color: AppColors
-                              .primaryDark,
+                          color: AppColors.primaryDark,
                         ),
                         SizedBox(width: 7),
                         Expanded(
                           child: Text(
                             'Edit profile & security',
                             style: TextStyle(
-                              color: AppColors
-                                  .textPrimary,
+                              color: AppColors.textPrimary,
                               fontSize: 8.5,
-                              fontWeight:
-                                  FontWeight.w900,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
                         Icon(
-                          Icons
-                              .arrow_forward_rounded,
+                          Icons.arrow_forward_rounded,
                           size: 13,
-                          color: AppColors
-                              .primaryDark,
+                          color: AppColors.primaryDark,
                         ),
                       ],
                     ),
@@ -672,10 +547,7 @@ class _ProfileAvatarMark extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white.withValues(alpha: .78),
-              border: Border.all(
-                color: Colors.white,
-                width: 2,
-              ),
+              border: Border.all(color: Colors.white, width: 2),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primaryDeep.withValues(alpha: .08),
@@ -696,14 +568,8 @@ class _ProfileAvatarMark extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: premium
-                    ? const [
-                        Color(0xFF69C6C0),
-                        Color(0xFF3F8E8A),
-                      ]
-                    : const [
-                        Color(0xFF78C9C2),
-                        AppColors.primaryDark,
-                      ],
+                    ? const [Color(0xFF69C6C0), Color(0xFF3F8E8A)]
+                    : const [Color(0xFF78C9C2), AppColors.primaryDark],
               ),
             ),
             child: hasPhoto
@@ -713,13 +579,9 @@ class _ProfileAvatarMark extends StatelessWidget {
                     height: 64,
                     fit: BoxFit.cover,
                     filterQuality: FilterQuality.medium,
-                    errorBuilder: (_, _, _) => _AvatarInitials(
-                      name: name,
-                    ),
+                    errorBuilder: (_, _, _) => _AvatarInitials(name: name),
                   )
-                : _AvatarInitials(
-                    name: name,
-                  ),
+                : _AvatarInitials(name: name),
           ),
           Positioned(
             right: 2,
@@ -732,17 +594,13 @@ class _ProfileAvatarMark extends StatelessWidget {
                 color: hasPhoto
                     ? Colors.white
                     : premium
-                        ? AppColors.pink
-                        : AppColors.success,
+                    ? AppColors.pink
+                    : AppColors.success,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white,
-                  width: 2,
-                ),
+                border: Border.all(color: Colors.white, width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        AppColors.primaryDeep.withValues(alpha: .10),
+                    color: AppColors.primaryDeep.withValues(alpha: .10),
                     blurRadius: 5,
                   ),
                 ],
@@ -751,12 +609,10 @@ class _ProfileAvatarMark extends StatelessWidget {
                 hasPhoto
                     ? Icons.photo_camera_outlined
                     : premium
-                        ? Icons.auto_awesome_rounded
-                        : Icons.check_rounded,
+                    ? Icons.auto_awesome_rounded
+                    : Icons.check_rounded,
                 size: 9,
-                color: hasPhoto
-                    ? AppColors.primaryDark
-                    : Colors.white,
+                color: hasPhoto ? AppColors.primaryDark : Colors.white,
               ),
             ),
           ),
@@ -767,9 +623,7 @@ class _ProfileAvatarMark extends StatelessWidget {
 }
 
 class _AvatarInitials extends StatelessWidget {
-  const _AvatarInitials({
-    required this.name,
-  });
+  const _AvatarInitials({required this.name});
 
   final String name;
 
@@ -785,8 +639,6 @@ class _AvatarInitials extends StatelessWidget {
     );
   }
 }
-
-
 
 class _MembershipStrip extends StatelessWidget {
   const _MembershipStrip({
@@ -807,35 +659,19 @@ class _MembershipStrip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(17),
         child: Ink(
-          padding: const EdgeInsets.fromLTRB(
-            10,
-            9,
-            9,
-            9,
-          ),
+          padding: const EdgeInsets.fromLTRB(10, 9, 9, 9),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
               colors: premium
-                  ? const [
-                      Color(0xFFE5F5F1),
-                      AppColors.surfaceRose,
-                    ]
-                  : const [
-                      Color(0xFFF0F8F5),
-                      AppColors.surface,
-                    ],
+                  ? const [Color(0xFFE5F5F1), AppColors.surfaceRose]
+                  : const [Color(0xFFF0F8F5), AppColors.surface],
             ),
-            borderRadius:
-                BorderRadius.circular(17),
-            border: Border.all(
-              color: AppColors.primary
-                  .withValues(alpha: .10),
-            ),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: AppColors.primary.withValues(alpha: .10)),
           ),
           child: Row(
             children: [
@@ -844,39 +680,28 @@ class _MembershipStrip extends StatelessWidget {
                 height: 36,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: premium
-                      ? AppColors.primary
-                      : AppColors.primarySoft,
-                  borderRadius:
-                      BorderRadius.circular(12),
+                  color: premium ? AppColors.primary : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   premium
-                      ? Icons
-                          .workspace_premium_outlined
-                      : Icons
-                          .explore_outlined,
+                      ? Icons.workspace_premium_outlined
+                      : Icons.explore_outlined,
                   size: 16,
-                  color: premium
-                      ? Colors.white
-                      : AppColors.primaryDark,
+                  color: premium ? Colors.white : AppColors.primaryDark,
                 ),
               ),
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$label WORKSPACE'
-                          .toUpperCase(),
+                      '$label WORKSPACE'.toUpperCase(),
                       style: const TextStyle(
-                        color:
-                            AppColors.primaryDark,
+                        color: AppColors.primaryDark,
                         fontSize: 5.8,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                         letterSpacing: .58,
                       ),
                     ),
@@ -884,14 +709,11 @@ class _MembershipStrip extends StatelessWidget {
                     Text(
                       value,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color:
-                            AppColors.textPrimary,
+                        color: AppColors.textPrimary,
                         fontSize: 8.5,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ],
@@ -929,17 +751,12 @@ class _ProfileMetricGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = <_ProfileMetricData>[
       _ProfileMetricData(
-        icon: premium
-            ? Icons.bolt_rounded
-            : Icons.eco_outlined,
+        icon: premium ? Icons.bolt_rounded : Icons.eco_outlined,
         value: '$primaryValue',
-        label: premium
-            ? 'Credits'
-            : 'Free ideas',
+        label: premium ? 'Credits' : 'Free ideas',
       ),
       _ProfileMetricData(
-        icon:
-            Icons.lightbulb_outline_rounded,
+        icon: Icons.lightbulb_outline_rounded,
         value: '$ideas',
         label: 'Ideas',
       ),
@@ -949,8 +766,7 @@ class _ProfileMetricGrid extends StatelessWidget {
         label: 'Published',
       ),
       _ProfileMetricData(
-        icon:
-            Icons.favorite_border_rounded,
+        icon: Icons.favorite_border_rounded,
         value: '$favorites',
         label: 'Favorites',
         rose: true,
@@ -961,8 +777,7 @@ class _ProfileMetricGrid extends StatelessWidget {
       builder: (context, constraints) {
         const gap = 7.0;
 
-        final width =
-            (constraints.maxWidth - gap) / 2;
+        final width = (constraints.maxWidth - gap) / 2;
 
         return Wrap(
           spacing: gap,
@@ -971,9 +786,7 @@ class _ProfileMetricGrid extends StatelessWidget {
             for (final item in items)
               SizedBox(
                 width: width,
-                child: _ProfileMetricCard(
-                  data: item,
-                ),
+                child: _ProfileMetricCard(data: item),
               ),
           ],
         );
@@ -997,31 +810,21 @@ class _ProfileMetricData {
 }
 
 class _ProfileMetricCard extends StatelessWidget {
-  const _ProfileMetricCard({
-    required this.data,
-  });
+  const _ProfileMetricCard({required this.data});
 
   final _ProfileMetricData data;
 
   @override
   Widget build(BuildContext context) {
-    final accent = data.rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = data.rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       height: 72,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color:
-            Colors.white.withValues(alpha: .66),
-        borderRadius:
-            BorderRadius.circular(16),
-        border: Border.all(
-          color: accent.withValues(alpha: .055),
-        ),
+        color: Colors.white.withValues(alpha: .66),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: .055)),
       ),
       child: Row(
         children: [
@@ -1030,45 +833,32 @@ class _ProfileMetricCard extends StatelessWidget {
             height: 34,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: data.rose
-                  ? AppColors.pinkSoft
-                  : AppColors.primarySoft,
-              borderRadius:
-                  BorderRadius.circular(11),
+              color: data.rose ? AppColors.pinkSoft : AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(11),
             ),
-            child: Icon(
-              data.icon,
-              size: 15,
-              color: accent,
-            ),
+            child: Icon(data.icon, size: 15, color: accent),
           ),
           const SizedBox(width: 8),
           Column(
-            mainAxisAlignment:
-                MainAxisAlignment.center,
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 data.value,
                 style: const TextStyle(
-                  color:
-                      AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                   fontSize: 15,
                   height: 1,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 data.label,
                 style: const TextStyle(
-                  color:
-                      AppColors.textMuted,
+                  color: AppColors.textMuted,
                   fontSize: 7,
-                  fontWeight:
-                      FontWeight.w800,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
@@ -1079,8 +869,7 @@ class _ProfileMetricCard extends StatelessWidget {
   }
 }
 
-class _AccountSectionHeading
-    extends StatelessWidget {
+class _AccountSectionHeading extends StatelessWidget {
   const _AccountSectionHeading({
     required this.eyebrow,
     required this.title,
@@ -1096,8 +885,7 @@ class _AccountSectionHeading
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           width: 36,
@@ -1105,29 +893,21 @@ class _AccountSectionHeading
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: AppColors.primarySoft,
-            borderRadius:
-                BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(11),
           ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: AppColors.primaryDark,
-          ),
+          child: Icon(icon, size: 16, color: AppColors.primaryDark),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 eyebrow,
                 style: const TextStyle(
-                  color:
-                      AppColors.primaryDark,
+                  color: AppColors.primaryDark,
                   fontSize: 5.8,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: .62,
                 ),
               ),
@@ -1135,19 +915,16 @@ class _AccountSectionHeading
               Text(
                 title,
                 style: const TextStyle(
-                  color:
-                      AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                   fontSize: 13,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
                 style: const TextStyle(
-                  color:
-                      AppColors.textMuted,
+                  color: AppColors.textMuted,
                   fontSize: 7.3,
                   height: 1.32,
                 ),
@@ -1161,9 +938,7 @@ class _AccountSectionHeading
 }
 
 class _ActionGrid extends StatelessWidget {
-  const _ActionGrid({
-    required this.children,
-  });
+  const _ActionGrid({required this.children});
 
   final List<Widget> children;
 
@@ -1173,18 +948,13 @@ class _ActionGrid extends StatelessWidget {
       builder: (context, constraints) {
         const gap = 7.0;
 
-        final width =
-            (constraints.maxWidth - gap) / 2;
+        final width = (constraints.maxWidth - gap) / 2;
 
         return Wrap(
           spacing: gap,
           runSpacing: 7,
           children: [
-            for (final child in children)
-              SizedBox(
-                width: width,
-                child: child,
-              ),
+            for (final child in children) SizedBox(width: width, child: child),
           ],
         );
       },
@@ -1192,8 +962,7 @@ class _ActionGrid extends StatelessWidget {
   }
 }
 
-class _ProfileActionCard
-    extends StatelessWidget {
+class _ProfileActionCard extends StatelessWidget {
   const _ProfileActionCard({
     required this.icon,
     required this.eyebrow,
@@ -1212,94 +981,60 @@ class _ProfileActionCard
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18),
         child: Ink(
           height: 113,
-          padding: const EdgeInsets.fromLTRB(
-            10,
-            10,
-            9,
-            9,
-          ),
+          padding: const EdgeInsets.fromLTRB(10, 10, 9, 9),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: rose
-                  ? const [
-                      AppColors.surface,
-                      AppColors.surfaceRose,
-                    ]
-                  : const [
-                      AppColors.surface,
-                      Color(0xFFF0F8F5),
-                    ],
+                  ? const [AppColors.surface, AppColors.surfaceRose]
+                  : const [AppColors.surface, Color(0xFFF0F8F5)],
             ),
-            borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color: accent
-                  .withValues(alpha: .065),
-            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withValues(alpha: .065)),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primaryDeep
-                    .withValues(alpha: .025),
+                color: AppColors.primaryDeep.withValues(alpha: .025),
                 blurRadius: 11,
-                offset:
-                    const Offset(0, 4),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
                     width: 32,
                     height: 32,
-                    alignment:
-                        Alignment.center,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: rose
-                          ? AppColors.pinkSoft
-                          : AppColors.primarySoft,
-                      borderRadius:
-                          BorderRadius.circular(10),
+                      color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(
-                      icon,
-                      size: 14.5,
-                      color: accent,
-                    ),
+                    child: Icon(icon, size: 14.5, color: accent),
                   ),
                   const Spacer(),
                   Container(
                     width: 24,
                     height: 24,
-                    alignment:
-                        Alignment.center,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: Colors.white
-                          .withValues(
-                        alpha: .68,
-                      ),
+                      color: Colors.white.withValues(alpha: .68),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons
-                          .arrow_outward_rounded,
+                      Icons.arrow_outward_rounded,
                       size: 11,
                       color: accent,
                     ),
@@ -1312,8 +1047,7 @@ class _ProfileActionCard
                 style: TextStyle(
                   color: accent,
                   fontSize: 5.5,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: .52,
                 ),
               ),
@@ -1321,25 +1055,20 @@ class _ProfileActionCard
               Text(
                 title,
                 maxLines: 1,
-                overflow:
-                    TextOverflow.ellipsis,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color:
-                      AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                   fontSize: 9.5,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 subtitle,
                 maxLines: 2,
-                overflow:
-                    TextOverflow.ellipsis,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color:
-                      AppColors.textMuted,
+                  color: AppColors.textMuted,
                   fontSize: 6.6,
                   height: 1.23,
                 ),
@@ -1372,44 +1101,32 @@ class _ActivityPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(7),
       decoration: BoxDecoration(
-        color:
-            Colors.white.withValues(alpha: .66),
-        borderRadius:
-            BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .05),
-        ),
+        color: Colors.white.withValues(alpha: .66),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .05)),
       ),
       child: Column(
         children: [
           _ActivityRow(
             icon: Icons.public_rounded,
             title: 'Published ideas',
-            subtitle:
-                '$published live or managed publications',
+            subtitle: '$published live or managed publications',
             onTap: onPublished,
           ),
           _ActivityDivider(),
           _ActivityRow(
-            icon: Icons
-                .notifications_none_rounded,
+            icon: Icons.notifications_none_rounded,
             title: 'Notifications',
-            subtitle:
-                '$unread unread workspace messages',
-            badge: unread > 0
-                ? '$unread'
-                : null,
+            subtitle: '$unread unread workspace messages',
+            badge: unread > 0 ? '$unread' : null,
             rose: true,
             onTap: onNotifications,
           ),
           _ActivityDivider(),
           _ActivityRow(
             icon: Icons.shield_outlined,
-            title:
-                'Compliance & complaints',
-            subtitle:
-                'Cases, reports and admin responses',
+            title: 'Compliance & complaints',
+            subtitle: 'Cases, reports and admin responses',
             onTap: onCompliance,
           ),
         ],
@@ -1426,8 +1143,7 @@ class _ActivityDivider extends StatelessWidget {
     return Divider(
       height: 1,
       indent: 48,
-      color: AppColors.border
-          .withValues(alpha: .72),
+      color: AppColors.border.withValues(alpha: .72),
     );
   }
 }
@@ -1451,23 +1167,15 @@ class _ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            7,
-            9,
-            6,
-            9,
-          ),
+          padding: const EdgeInsets.fromLTRB(7, 9, 6, 9),
           child: Row(
             children: [
               Container(
@@ -1475,43 +1183,31 @@ class _ActivityRow extends StatelessWidget {
                 height: 35,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: rose
-                      ? AppColors.pinkSoft
-                      : AppColors.primarySoft,
-                  borderRadius:
-                      BorderRadius.circular(11),
+                  color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(
-                  icon,
-                  size: 15,
-                  color: accent,
-                ),
+                child: Icon(icon, size: 15, color: accent),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
                       style: const TextStyle(
-                        color:
-                            AppColors.textPrimary,
+                        color: AppColors.textPrimary,
                         fontSize: 9.1,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color:
-                            AppColors.textMuted,
+                        color: AppColors.textMuted,
                         fontSize: 6.8,
                       ),
                     ),
@@ -1521,30 +1217,19 @@ class _ActivityRow extends StatelessWidget {
               if (badge != null) ...[
                 Container(
                   height: 23,
-                  constraints:
-                      const BoxConstraints(
-                    minWidth: 23,
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(
-                    horizontal: 6,
-                  ),
+                  constraints: const BoxConstraints(minWidth: 23),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: AppColors.pinkSoft,
-                    borderRadius:
-                        BorderRadius.circular(
-                      999,
-                    ),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     badge!,
                     style: const TextStyle(
-                      color:
-                          AppColors.pinkDeep,
+                      color: AppColors.pinkDeep,
                       fontSize: 6.4,
-                      fontWeight:
-                          FontWeight.w900,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
@@ -1564,9 +1249,7 @@ class _ActivityRow extends StatelessWidget {
 }
 
 class _SignOutTile extends StatelessWidget {
-  const _SignOutTile({
-    required this.onTap,
-  });
+  const _SignOutTile({required this.onTap});
 
   final VoidCallback onTap;
 
@@ -1576,39 +1259,26 @@ class _SignOutTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16),
         child: Ink(
           height: 53,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 10,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
             color: AppColors.surfaceRose,
-            borderRadius:
-                BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.pink
-                  .withValues(alpha: .13),
-            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.pink.withValues(alpha: .13)),
           ),
           child: const Row(
             children: [
-              Icon(
-                Icons.logout_rounded,
-                size: 16,
-                color: AppColors.danger,
-              ),
+              Icon(Icons.logout_rounded, size: 16, color: AppColors.danger),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Sign out',
                   style: TextStyle(
-                    color:
-                        AppColors.textPrimary,
+                    color: AppColors.textPrimary,
                     fontSize: 9,
-                    fontWeight:
-                        FontWeight.w900,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
@@ -1617,8 +1287,7 @@ class _SignOutTile extends StatelessWidget {
                 style: TextStyle(
                   color: AppColors.pinkDeep,
                   fontSize: 5.5,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: .48,
                 ),
               ),
@@ -1638,18 +1307,8 @@ class _SignOutSheet extends StatelessWidget {
     return SafeArea(
       top: false,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(
-          8,
-          0,
-          8,
-          8,
-        ),
-        padding: const EdgeInsets.fromLTRB(
-          15,
-          10,
-          15,
-          15,
-        ),
+        margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        padding: const EdgeInsets.fromLTRB(15, 10, 15, 15),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -1660,18 +1319,13 @@ class _SignOutSheet extends StatelessWidget {
               Color(0xFFF0F8F5),
             ],
           ),
-          borderRadius:
-              BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white,
-          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep
-                  .withValues(alpha: .14),
+              color: AppColors.primaryDeep.withValues(alpha: .14),
               blurRadius: 30,
-              offset:
-                  const Offset(0, 12),
+              offset: const Offset(0, 12),
             ),
           ],
         ),
@@ -1683,8 +1337,7 @@ class _SignOutSheet extends StatelessWidget {
               height: 4,
               decoration: BoxDecoration(
                 color: AppColors.silver,
-                borderRadius:
-                    BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
             const SizedBox(height: 14),
@@ -1706,11 +1359,9 @@ class _SignOutSheet extends StatelessWidget {
             const Text(
               'Sign out of Voxidence?',
               style: TextStyle(
-                color:
-                    AppColors.textPrimary,
+                color: AppColors.textPrimary,
                 fontSize: 14,
-                fontWeight:
-                    FontWeight.w900,
+                fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 4),
@@ -1718,8 +1369,7 @@ class _SignOutSheet extends StatelessWidget {
               'Your local session will be removed from this device.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color:
-                    AppColors.textMuted,
+                color: AppColors.textMuted,
                 fontSize: 8,
                 height: 1.4,
               ),
@@ -1729,29 +1379,18 @@ class _SignOutSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () =>
-                        Navigator.of(context)
-                            .pop(false),
-                    child:
-                        const Text('Cancel'),
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
                   ),
                 ),
                 const SizedBox(width: 7),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context)
-                            .pop(true),
-                    icon: const Icon(
-                      Icons.logout_rounded,
-                      size: 14,
-                    ),
-                    label:
-                        const Text('Sign out'),
-                    style:
-                        FilledButton.styleFrom(
-                      backgroundColor:
-                          AppColors.danger,
+                    onPressed: () => Navigator.of(context).pop(true),
+                    icon: const Icon(Icons.logout_rounded, size: 14),
+                    label: const Text('Sign out'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
                     ),
                   ),
                 ),
@@ -1763,7 +1402,6 @@ class _SignOutSheet extends StatelessWidget {
     );
   }
 }
-
 
 String _mediaUrl(String value) {
   final trimmed = value.trim();
@@ -1787,19 +1425,16 @@ String _initials(String name) {
   final parts = name
       .trim()
       .split(RegExp(r'\s+'))
-      .where(
-        (part) => part.isNotEmpty,
-      )
+      .where((part) => part.isNotEmpty)
       .toList();
 
-  if (parts.isEmpty) return 'V';
-
-  if (parts.length == 1) {
-    return parts.first
-        .substring(0, 1)
-        .toUpperCase();
+  if (parts.isEmpty) {
+    return 'V';
   }
 
-  return '${parts.first[0]}${parts.last[0]}'
-      .toUpperCase();
+  if (parts.length == 1) {
+    return parts.first.substring(0, 1).toUpperCase();
+  }
+
+  return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
 }

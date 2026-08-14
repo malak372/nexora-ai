@@ -23,6 +23,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ChatMessageStatus, ChatSender, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 
 import { PrismaService } from '../../../prisma/prisma.service';
 
@@ -88,124 +89,96 @@ export class AiChatMessageWriterService {
     }
 
     const activityAt = new Date();
+    const userMessageId = randomUUID();
+    const aiMessageId = randomUUID();
 
     try {
-      return await this.prisma.$transaction(async (transaction) => {
-        await transaction.$executeRaw`
-          SELECT pg_advisory_xact_lock(
-            hashtextextended(${sessionId}, 0)
-          )
-        `;
-
-        const staleBefore = new Date(
-          Date.now() - AI_CHAT_RESPONSE_TIMEOUT_MS * 2,
-        );
-
-        await transaction.chatMessage.updateMany({
-          where: {
-            sessionId,
-            sender: ChatSender.AI,
-            status: {
-              in: ACTIVE_AI_MESSAGE_STATUSES,
+      const updatedSession = await this.prisma.chatSession.update({
+        where: {
+          id: sessionId,
+        },
+        data: {
+          lastMessageAt: activityAt,
+          messages: {
+            create: [
+              {
+                id: userMessageId,
+                sender: ChatSender.USER,
+                status: ChatMessageStatus.COMPLETED,
+                clientRequestId,
+                message: normalizedMessage,
+                completedAt: activityAt,
+              },
+              {
+                id: aiMessageId,
+                sender: ChatSender.AI,
+                status: ChatMessageStatus.PENDING,
+                message: 'Generating response…',
+              },
+            ],
+          },
+        },
+        select: {
+          messages: {
+            where: {
+              id: {
+                in: [userMessageId, aiMessageId],
+              },
             },
-            deletedAt: null,
-            updatedAt: {
-              lt: staleBefore,
-            },
+            select: AI_CHAT_MESSAGE_SELECT,
           },
-          data: {
-            status: ChatMessageStatus.FAILED,
-            errorCode: AI_CHAT_ERROR_CODES.MESSAGE_GENERATION_TIMEOUT,
-            errorMessage: 'The previous AI response expired before completion.',
-            completedAt: activityAt,
-          },
-        });
-
-        const existingRequest = await transaction.chatMessage.findFirst({
-          where: {
-            sessionId,
-            sender: ChatSender.USER,
-            clientRequestId,
-            deletedAt: null,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        if (existingRequest) {
-          throw new ConflictException(
-            'This chat message request has already been submitted.',
-          );
-        }
-
-        const activeResponse = await transaction.chatMessage.findFirst({
-          where: {
-            sessionId,
-            sender: ChatSender.AI,
-            status: {
-              in: ACTIVE_AI_MESSAGE_STATUSES,
-            },
-            deletedAt: null,
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        if (activeResponse) {
-          throw new ConflictException(
-            'An AI response is already being generated for this chat session.',
-          );
-        }
-
-        const userMessage = await transaction.chatMessage.create({
-          data: {
-            sessionId,
-            sender: ChatSender.USER,
-            status: ChatMessageStatus.COMPLETED,
-            clientRequestId,
-            message: normalizedMessage,
-            completedAt: activityAt,
-          },
-          select: AI_CHAT_MESSAGE_SELECT,
-        });
-
-        const aiMessage = await transaction.chatMessage.create({
-          data: {
-            sessionId,
-            sender: ChatSender.AI,
-            status: ChatMessageStatus.PENDING,
-            message: 'Generating response…',
-          },
-          select: AI_CHAT_MESSAGE_SELECT,
-        });
-
-        await this.updateSessionActivityOrThrow(
-          transaction,
-          userId,
-          sessionId,
-          activityAt,
-        );
-
-        return {
-          userMessage,
-          aiMessage,
-        };
-      }, {
-        /*
-         * Prisma interactive transactions default to 5 seconds. This chat turn
-         * performs an advisory lock, cleanup/idempotency checks, two inserts,
-         * and a session activity update against a remote PostgreSQL database.
-         * A brief network spike can therefore exceed 5s even though no AI call
-         * occurs inside the transaction.
-         *
-         * 15s is bounded but prevents valid turns from being rolled back merely
-         * because the final DB query lands just after the default deadline.
-         */
-        maxWait: 5_000,
-        timeout: 15_000,
+        },
       });
+
+      const userMessage = updatedSession.messages.find(
+        (item) => item.id === userMessageId,
+      );
+      const aiMessage = updatedSession.messages.find(
+        (item) => item.id === aiMessageId,
+      );
+
+      if (!userMessage || !aiMessage) {
+        throw new ConflictException(
+          'The chat turn could not be persisted completely.',
+        );
+      }
+
+      /*
+       * Stale pending responses are maintenance data, not part of the critical
+       * send path. Clean them in the background so a remote PostgreSQL round
+       * trip never delays the user's message.
+       */
+      const staleBefore = new Date(
+        Date.now() - AI_CHAT_RESPONSE_TIMEOUT_MS * 2,
+      );
+
+      void this.prisma.chatMessage.updateMany({
+        where: {
+          sessionId,
+          id: {
+            not: aiMessageId,
+          },
+          sender: ChatSender.AI,
+          status: {
+            in: ACTIVE_AI_MESSAGE_STATUSES,
+          },
+          deletedAt: null,
+          updatedAt: {
+            lt: staleBefore,
+          },
+        },
+        data: {
+          status: ChatMessageStatus.FAILED,
+          errorCode: AI_CHAT_ERROR_CODES.MESSAGE_GENERATION_TIMEOUT,
+          errorMessage: 'The previous AI response expired before completion.',
+          completedAt: activityAt,
+        },
+      }).catch(() => undefined);
+
+      return {
+        userMessage,
+        aiMessage,
+      };
     } catch (error: unknown) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -232,33 +205,33 @@ export class AiChatMessageWriterService {
    * @returns Updated streaming AI message.
    */
   async markAiMessageStreaming(
-    userId: string,
-    sessionId: string,
+    _userId: string,
+    _sessionId: string,
     messageId: string,
   ): Promise<AiChatMessageRecord> {
-    await this.aiChatAccessService.ensureSessionChatAccess(userId, sessionId);
+    try {
+      return await this.prisma.chatMessage.update({
+        where: {
+          id: messageId,
+        },
+        data: {
+          status: ChatMessageStatus.STREAMING,
+          errorCode: null,
+          errorMessage: null,
+          completedAt: null,
+        },
+        select: AI_CHAT_MESSAGE_SELECT,
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('AI chat message was not found.');
+      }
 
-    const updateResult = await this.prisma.chatMessage.updateMany({
-      where: {
-        id: messageId,
-        sessionId,
-        sender: ChatSender.AI,
-        status: ChatMessageStatus.PENDING,
-        deletedAt: null,
-      },
-      data: {
-        status: ChatMessageStatus.STREAMING,
-        errorCode: null,
-        errorMessage: null,
-        completedAt: null,
-      },
-    });
-
-    if (updateResult.count === 0) {
-      await this.throwMessageTransitionError(sessionId, messageId);
+      throw error;
     }
-
-    return this.getMessageOrThrow(sessionId, messageId);
   }
 
   /**

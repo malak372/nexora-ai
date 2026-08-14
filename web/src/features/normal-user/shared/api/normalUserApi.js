@@ -146,7 +146,7 @@ normalUserApi.interceptors.response.use(
             clearAuthSession();
 
             window.dispatchEvent(
-                new CustomEvent('voxidence :session-expired'),
+                new CustomEvent('nexora:session-expired'),
             );
 
             return Promise.reject(refreshError);

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="VoxidenceLaunchThemeV18" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Android 12+ always owns a system splash phase. Make that phase
+             visually identical to the first Flutter frame and remove the
+             launcher/voice artwork completely. -->
+        <item name="android:windowSplashScreenBackground">#EDF7F3</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_transparent</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#EDF7F3</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">#EDF7F3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#EDF7F3</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <style name="VoxidenceNormalThemeV18" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">#EDF7F3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#EDF7F3</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

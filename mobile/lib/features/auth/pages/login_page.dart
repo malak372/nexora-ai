@@ -84,7 +84,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void dispose() {
     _lockTimer?.cancel();
-
     _lockDurationMessageTimer?.cancel();
 
     _email.dispose();
@@ -190,9 +189,7 @@ class _LoginPageState extends State<LoginPage> {
       setState(() {
         _error =
             'Sign in succeeded partially, but the app could not open your workspace. Please try again.';
-
         _errorTitle = 'Unable to continue';
-
         _errorType = 'error';
       });
     } finally {
@@ -202,6 +199,21 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     }
+  }
+
+  void _clearLocalAccountLock() {
+    _lockTimer?.cancel();
+    _lockDurationMessageTimer?.cancel();
+
+    _remainingLockSeconds = 0;
+    _lockDeadline = null;
+
+    _showInitialLockDuration = false;
+    _lockDurationMinutes = null;
+
+    _error = null;
+    _errorTitle = null;
+    _errorType = 'error';
   }
 
   void _startLockCountdown(AuthException error) {
@@ -242,7 +254,6 @@ class _LoginPageState extends State<LoginPage> {
           _lockDeadline = null;
 
           _showInitialLockDuration = false;
-
           _lockDurationMinutes = null;
         });
 
@@ -263,9 +274,7 @@ class _LoginPageState extends State<LoginPage> {
     final safe = totalSeconds < 0 ? 0 : totalSeconds;
 
     final hours = safe ~/ 3600;
-
     final minutes = (safe % 3600) ~/ 60;
-
     final seconds = safe % 60;
 
     String two(int value) => value.toString().padLeft(2, '0');
@@ -287,9 +296,7 @@ class _LoginPageState extends State<LoginPage> {
 
     final remainingMinutes = safeMinutes % 60;
 
-    final hoursText =
-        '$hours '
-        '${hours == 1 ? 'hour' : 'hours'}';
+    final hoursText = '$hours ${hours == 1 ? 'hour' : 'hours'}';
 
     if (remainingMinutes == 0) {
       return hoursText;
@@ -355,7 +362,11 @@ class _LoginPageState extends State<LoginPage> {
                       AutofillHints.username,
                       AutofillHints.email,
                     ],
-                    enabled: !_submitting && !_locked,
+
+                    // Keep the email field active even when the
+                    // previous account is temporarily locked.
+                    enabled: !_submitting,
+
                     validState: _emailFormatValid,
                     validLabel: 'Valid format',
                     onFocusChanged: (hasFocus) {
@@ -368,11 +379,18 @@ class _LoginPageState extends State<LoginPage> {
                       }
                     },
                     onChanged: (_) {
+                      // Account lock belongs to the previous email.
+                      // As soon as the user changes the email,
+                      // allow signing in with another account.
+                      if (_locked) {
+                        setState(_clearLocalAccountLock);
+                      }
+
                       if (_emailTouched) {
                         _emailFieldKey.currentState?.validate();
                       }
 
-                      if (_error != null && !_locked) {
+                      if (_error != null) {
                         setState(() {
                           _error = null;
                           _errorTitle = null;
@@ -549,14 +567,16 @@ class _LoginPageState extends State<LoginPage> {
 
                   if (_error != null) ...[
                     const SizedBox(height: 11),
-
                     _LoginFeedback(
                       title: _errorTitle,
                       message: _locked
                           ? _showInitialLockDuration
-                                ? 'Your account has been locked for ${_formatLockDuration(_lockDurationMinutes)}. '
-                                      'Unlocks in ${_formatCountdown(_remainingLockSeconds ?? 0)}.'
-                                : 'Unlocks in ${_formatCountdown(_remainingLockSeconds ?? 0)}.'
+                                ? 'Your account has been locked for '
+                                      '${_formatLockDuration(_lockDurationMinutes)}. '
+                                      'Unlocks in '
+                                      '${_formatCountdown(_remainingLockSeconds ?? 0)}.'
+                                : 'Unlocks in '
+                                      '${_formatCountdown(_remainingLockSeconds ?? 0)}.'
                           : _error!,
                       type: _errorType,
                     ),
@@ -649,7 +669,6 @@ class _LoginFeedback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final warning = type == 'warning';
-
     final locked = type == 'locked';
 
     final background = warning

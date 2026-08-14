@@ -18,6 +18,14 @@ type RecentModelUsage = {
   readonly successCounts: ReadonlyMap<string, number>;
   readonly timeoutFailureCounts: ReadonlyMap<string, number>;
   readonly providerCounts: ReadonlyMap<string, number>;
+
+  /**
+   * Observed latency and deterministic quality from recently selected
+   * candidates. These are used only as a tie-break between models that already
+   * have comparable accepted quality; the quality threshold is never lowered.
+   */
+  readonly averageSuccessfulResponseTimeMs: ReadonlyMap<string, number>;
+  readonly averageSelectedQualityScore: ReadonlyMap<string, number>;
 };
 
 /**
@@ -45,10 +53,19 @@ export class IdeaGenerationModelSelectorService {
     context: IdeaGenerationContext,
     eligibleModels: readonly AiModel[],
   ): Promise<AiModel[]> {
-    const availableModels =
-      await this.modelRoutingService.filterTemporarilyUnavailableProviders(
+    /*
+     * Provider availability and recent benchmark history are independent.
+     * Start both remote reads together so model selection does not pay two
+     * sequential PostgreSQL/provider-routing latency waves before the actual AI
+     * request can begin.
+     */
+    const availableModelsPromise =
+      this.modelRoutingService.filterTemporarilyUnavailableProviders(
         eligibleModels,
       );
+    const recentUsagePromise = this.findRecentUsage(context);
+
+    const availableModels = await availableModelsPromise;
 
     const availableModelIds = new Set(availableModels.map((model) => model.id));
     const temporarilyCooledModels = eligibleModels.filter(
@@ -60,10 +77,11 @@ export class IdeaGenerationModelSelectorService {
     );
 
     if (recoveryPool.length <= 1) {
+      void recentUsagePromise.catch(() => undefined);
       return recoveryPool;
     }
 
-    const recentUsage = await this.findRecentUsage(context);
+    const recentUsage = await recentUsagePromise;
     const seed = this.hash(context.runId);
     const cooledModelIds = new Set(
       recoveryPool
@@ -101,6 +119,8 @@ export class IdeaGenerationModelSelectorService {
           recentUsage.failedModelIds,
           recentUsage.successCounts,
           recentUsage.timeoutFailureCounts,
+          recentUsage.averageSuccessfulResponseTimeMs,
+          recentUsage.averageSelectedQualityScore,
           seed,
         ),
       );
@@ -187,6 +207,8 @@ export class IdeaGenerationModelSelectorService {
     recentFailedModelIds: ReadonlySet<string>,
     successCounts: ReadonlyMap<string, number>,
     timeoutFailureCounts: ReadonlyMap<string, number>,
+    averageSuccessfulResponseTimeMs: ReadonlyMap<string, number>,
+    averageSelectedQualityScore: ReadonlyMap<string, number>,
     seed: number,
   ): number {
     const timeoutFailureDifference =
@@ -211,6 +233,30 @@ export class IdeaGenerationModelSelectorService {
 
     if (successDifference !== 0) {
       return successDifference;
+    }
+
+    /*
+     * Prefer the faster model only when both models have demonstrated accepted
+     * quality in essentially the same quality band. This can reduce the
+     * 20-30-second provider wait seen in the generation logs without replacing
+     * quality gating with a speed-only policy.
+     */
+    const firstQuality = averageSelectedQualityScore.get(first.id);
+    const secondQuality = averageSelectedQualityScore.get(second.id);
+    const firstLatency = averageSuccessfulResponseTimeMs.get(first.id);
+    const secondLatency = averageSuccessfulResponseTimeMs.get(second.id);
+
+    if (
+      firstQuality !== undefined &&
+      secondQuality !== undefined &&
+      firstQuality >= 70 &&
+      secondQuality >= 70 &&
+      Math.abs(firstQuality - secondQuality) <= 3 &&
+      firstLatency !== undefined &&
+      secondLatency !== undefined &&
+      Math.abs(firstLatency - secondLatency) >= 750
+    ) {
+      return firstLatency - secondLatency;
     }
 
     const recentDifference =
@@ -266,6 +312,8 @@ export class IdeaGenerationModelSelectorService {
             selected: true,
             errorCode: true,
             errorMessage: true,
+            responseTimeMs: true,
+            overallScore: true,
           },
         },
       },
@@ -279,6 +327,10 @@ export class IdeaGenerationModelSelectorService {
     const successCounts = new Map<string, number>();
     const timeoutFailureCounts = new Map<string, number>();
     const providerCounts = new Map<string, number>();
+    const successfulLatencyTotals = new Map<string, number>();
+    const successfulLatencyCounts = new Map<string, number>();
+    const selectedQualityTotals = new Map<string, number>();
+    const selectedQualityCounts = new Map<string, number>();
 
     for (const candidate of recentRuns.flatMap(
       (run) => run.benchmarkCandidates,
@@ -289,6 +341,35 @@ export class IdeaGenerationModelSelectorService {
           candidate.aiModelId,
           (successCounts.get(candidate.aiModelId) ?? 0) + 1,
         );
+
+        if (
+          candidate.responseTimeMs !== null &&
+          candidate.responseTimeMs > 0
+        ) {
+          successfulLatencyTotals.set(
+            candidate.aiModelId,
+            (successfulLatencyTotals.get(candidate.aiModelId) ?? 0) +
+              candidate.responseTimeMs,
+          );
+          successfulLatencyCounts.set(
+            candidate.aiModelId,
+            (successfulLatencyCounts.get(candidate.aiModelId) ?? 0) + 1,
+          );
+        }
+
+        if (candidate.overallScore !== null) {
+          const score = Number(candidate.overallScore);
+          if (Number.isFinite(score)) {
+            selectedQualityTotals.set(
+              candidate.aiModelId,
+              (selectedQualityTotals.get(candidate.aiModelId) ?? 0) + score,
+            );
+            selectedQualityCounts.set(
+              candidate.aiModelId,
+              (selectedQualityCounts.get(candidate.aiModelId) ?? 0) + 1,
+            );
+          }
+        }
       }
 
       if (candidate.errorCode && candidate.aiModelId) {
@@ -314,6 +395,23 @@ export class IdeaGenerationModelSelectorService {
       }
     }
 
+    const averageSuccessfulResponseTimeMs = new Map<string, number>();
+    const averageSelectedQualityScore = new Map<string, number>();
+
+    for (const [modelId, total] of successfulLatencyTotals) {
+      const count = successfulLatencyCounts.get(modelId) ?? 0;
+      if (count > 0) {
+        averageSuccessfulResponseTimeMs.set(modelId, total / count);
+      }
+    }
+
+    for (const [modelId, total] of selectedQualityTotals) {
+      const count = selectedQualityCounts.get(modelId) ?? 0;
+      if (count > 0) {
+        averageSelectedQualityScore.set(modelId, total / count);
+      }
+    }
+
     return {
       modelIds,
       failedModelIds,
@@ -321,6 +419,8 @@ export class IdeaGenerationModelSelectorService {
       successCounts,
       timeoutFailureCounts,
       providerCounts,
+      averageSuccessfulResponseTimeMs,
+      averageSelectedQualityScore,
     };
   }
 

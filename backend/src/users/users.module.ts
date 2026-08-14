@@ -19,6 +19,7 @@ import { UserPermissionsService } from './permissions/permissions.service';
 import { UserFavoritesService } from './favorites/favorites.service';
 import { UserSavedSearchesService } from './saved-searches/saved-searches.service';
 import { UserPreferencesService } from './preferences/user-preferences.service';
+import { AvatarStorageService } from './storage/avatar-storage.service';
 
 /**
  * User management module.
@@ -67,6 +68,7 @@ import { UserPreferencesService } from './preferences/user-preferences.service';
     UserFavoritesService,
     UserSavedSearchesService,
     UserPreferencesService,
+    AvatarStorageService,
   ],
   exports: [
     UserValidationService,
@@ -77,6 +79,7 @@ import { UserPreferencesService } from './preferences/user-preferences.service';
     UserFavoritesService,
     UserSavedSearchesService,
     UserPreferencesService,
+    AvatarStorageService,
   ],
 })
 export class UsersModule {}

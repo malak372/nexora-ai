@@ -156,10 +156,12 @@ export default function AcceptedIdeaWorkspacePage() {
   const shouldReduceMotion = useReducedMotion();
   const { isPremium } = useAccountAccess();
 
-  const [publication, setPublication] = useState(null);
-  const [acceptance, setAcceptance] = useState(null);
+  const publicationSeed = location.state?.publicationSeed ?? null;
+  const acceptanceSeed = location.state?.acceptanceSeed ?? null;
+  const [publication, setPublication] = useState(() => publicationSeed);
+  const [acceptance, setAcceptance] = useState(() => acceptanceSeed);
   const [activeKey, setActiveKey] = useState('overview');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !(publicationSeed && acceptanceSeed));
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -191,7 +193,7 @@ export default function AcceptedIdeaWorkspacePage() {
         setPublication(nextPublication);
         setAcceptance(nextAcceptance);
       } catch (requestError) {
-        if (mounted) {
+        if (mounted && !(publicationSeed && acceptanceSeed)) {
           setError(requestError?.message || 'The accepted idea could not be loaded.');
         }
       } finally {
@@ -202,7 +204,7 @@ export default function AcceptedIdeaWorkspacePage() {
     return () => {
       mounted = false;
     };
-  }, [location.state?.forceRefresh, publicationId]);
+  }, [acceptanceSeed, location.state?.forceRefresh, publicationId, publicationSeed]);
 
   const sections = useMemo(() => {
     if (!publication) return [];
@@ -407,6 +409,15 @@ export default function AcceptedIdeaWorkspacePage() {
                     returnTo: `/normal/accepted/${publicationId}/workspace`,
                     returnLabel: 'Accepted idea',
                     ideaTitle: publication.publicTitle,
+                    ideaSeed: {
+                      id: sourceIdeaId,
+                      title: publication.publicTitle,
+                      domain: publication.domain ||
+                        (publication.domainName
+                          ? { name: publication.domainName }
+                          : null),
+                      acceptedPublicationId: publicationId,
+                    },
                   },
                 })
               }

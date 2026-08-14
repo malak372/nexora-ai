@@ -132,10 +132,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 if (summary == null && _session.loading)
                   const LoadingList(count: 5)
                 else if (summary == null)
-                  _ConnectionState(
-                    error: _session.error,
-                    onRetry: _refresh,
-                  )
+                  _ConnectionState(error: _session.error, onRetry: _refresh)
                 else ...[
                   if (_session.error != null) ...[
                     InlineNotice(
@@ -169,10 +166,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
                   const SizedBox(height: 19),
 
-                  _Reveal(
-                    delay: 120,
-                    child: _MetricsSection(summary: summary),
-                  ),
+                  _Reveal(delay: 120, child: _MetricsSection(summary: summary)),
 
                   if (_activeRun != null) ...[
                     const SizedBox(height: 8),
@@ -195,17 +189,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
                   const SizedBox(height: 20),
 
-                  _Reveal(
-                    delay: 260,
-                    child: const _AboutSection(),
-                  ),
+                  _Reveal(delay: 260, child: const _AboutSection()),
 
                   const SizedBox(height: 12),
 
-                  _Reveal(
-                    delay: 310,
-                    child: _ContactSection(summary: summary),
-                  ),
+                  _Reveal(delay: 310, child: _ContactSection(summary: summary)),
                 ],
               ],
             ),
@@ -293,10 +281,7 @@ class _DashboardBackdropState extends State<_DashboardBackdrop>
 }
 
 class _Glow extends StatelessWidget {
-  const _Glow({
-    required this.size,
-    required this.color,
-  });
+  const _Glow({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -309,12 +294,7 @@ class _Glow extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0),
-            ],
-          ),
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
         ),
       ),
     );
@@ -376,7 +356,6 @@ class _DashboardMeshPainter extends CustomPainter {
   }
 }
 
-
 class _WebStyleHero extends StatelessWidget {
   const _WebStyleHero({
     required this.summary,
@@ -394,8 +373,8 @@ class _WebStyleHero extends StatelessWidget {
     final accessTitle = premium
         ? '${summary.creditBalance} premium credit${summary.creditBalance == 1 ? '' : 's'} ready'
         : summary.remainingFreeGenerations > 0
-            ? '${summary.remainingFreeGenerations} free discover${summary.remainingFreeGenerations == 1 ? 'y' : 'ies'} ready'
-            : 'Explore first. Unlock only when you choose.';
+        ? '${summary.remainingFreeGenerations} free discover${summary.remainingFreeGenerations == 1 ? 'y' : 'ies'} ready'
+        : 'Explore first. Unlock only when you choose.';
 
     return Container(
       decoration: BoxDecoration(
@@ -403,16 +382,10 @@ class _WebStyleHero extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFFFFAFB),
-            Color(0xFFF3FAF8),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFFFFAFB), Color(0xFFF3FAF8)],
           stops: [0, .56, 1],
         ),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .075),
@@ -463,7 +436,8 @@ class _WebStyleHero extends StatelessWidget {
                   const SizedBox(height: 14),
                   RichText(
                     text: TextSpan(
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
                             color: AppColors.textPrimary,
                             fontSize: 28,
                             height: 1.04,
@@ -525,8 +499,9 @@ class _WebStyleHero extends StatelessWidget {
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(49),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
-                            backgroundColor:
-                                Colors.white.withValues(alpha: .72),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: .72,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -604,8 +579,6 @@ class _WebStyleHero extends StatelessWidget {
   }
 }
 
-
-
 class _HeroDotsPainter extends CustomPainter {
   const _HeroDotsPainter();
 
@@ -647,9 +620,7 @@ class _EyebrowPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .10),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .10)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .045),
@@ -685,10 +656,7 @@ class _EyebrowPill extends StatelessWidget {
 /// Mobile translation of the rotating multi-model intelligence core from web.
 
 class _SignalCore extends StatefulWidget {
-  const _SignalCore({
-    required this.premium,
-    required this.count,
-  });
+  const _SignalCore({required this.premium, required this.count});
 
   final bool premium;
   final int count;
@@ -717,9 +685,7 @@ class _SignalCoreState extends State<_SignalCore>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
         color: Colors.white.withValues(alpha: .58),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .07),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .07)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
@@ -762,10 +728,7 @@ class _SignalCoreState extends State<_SignalCore>
                         gradient: const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFF6CC7C1),
-                            Color(0xFF4AA9A3),
-                          ],
+                          colors: [Color(0xFF6CC7C1), Color(0xFF4AA9A3)],
                         ),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: .92),
@@ -773,32 +736,13 @@ class _SignalCoreState extends State<_SignalCore>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                AppColors.primaryDark.withValues(alpha: .18),
+                            color: AppColors.primaryDark.withValues(alpha: .18),
                             blurRadius: 22,
                             offset: const Offset(0, 9),
                           ),
                         ],
                       ),
-                      child: const Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Icon(
-                            Icons.psychology_alt_rounded,
-                            color: Colors.white,
-                            size: 31,
-                          ),
-                          Positioned(
-                            top: 10,
-                            right: 10,
-                            child: Icon(
-                              Icons.auto_awesome_rounded,
-                              color: Color(0xFFFFF1B1),
-                              size: 10,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _DiscoveryCoreGlyph(phase: phase),
                     ),
                   ),
                 ),
@@ -823,8 +767,7 @@ class _SignalCoreState extends State<_SignalCore>
                           color: Colors.white.withValues(alpha: .88),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color:
-                                AppColors.primaryDark.withValues(alpha: .07),
+                            color: AppColors.primaryDark.withValues(alpha: .07),
                           ),
                         ),
                         child: Text(
@@ -855,11 +798,93 @@ class _SignalCoreState extends State<_SignalCore>
   }
 }
 
+class _DiscoveryCoreGlyph extends StatelessWidget {
+  const _DiscoveryCoreGlyph({required this.phase});
+
+  final double phase;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 43,
+          height: 43,
+          child: CustomPaint(painter: _DiscoveryCoreGlyphPainter(phase: phase)),
+        ),
+        Positioned(
+          top: 9,
+          right: 9,
+          child: Transform.rotate(
+            angle: phase * .18,
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFFFFF1B1),
+              size: 9,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiscoveryCoreGlyphPainter extends CustomPainter {
+  const _DiscoveryCoreGlyphPainter({required this.phase});
+
+  final double phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: .72)
+      ..strokeWidth = 1.35
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final nodePaint = Paint()..color = Colors.white;
+    final softNodePaint = Paint()
+      ..color = const Color(0xFFDDF6F1).withValues(alpha: .92);
+
+    final radius = size.width * .31;
+    final points = List<Offset>.generate(4, (index) {
+      final angle = phase * .16 + index * math.pi / 2 + math.pi / 4;
+      return center + Offset(math.cos(angle), math.sin(angle)) * radius;
+    });
+
+    for (final point in points) {
+      canvas.drawLine(center, point, linePaint);
+      canvas.drawCircle(point, 2.25, softNodePaint);
+      canvas.drawCircle(point, .95, nodePaint);
+    }
+
+    final diamond = Path()
+      ..moveTo(center.dx, center.dy - 7)
+      ..lineTo(center.dx + 7, center.dy)
+      ..lineTo(center.dx, center.dy + 7)
+      ..lineTo(center.dx - 7, center.dy)
+      ..close();
+
+    canvas.drawPath(
+      diamond,
+      Paint()..color = Colors.white.withValues(alpha: .96),
+    );
+    canvas.drawCircle(
+      center,
+      2.4,
+      Paint()..color = AppColors.primaryDark.withValues(alpha: .80),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiscoveryCoreGlyphPainter oldDelegate) {
+    return oldDelegate.phase != phase;
+  }
+}
+
 class _SignalNode extends StatelessWidget {
-  const _SignalNode({
-    required this.icon,
-    required this.label,
-  });
+  const _SignalNode({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -898,10 +923,7 @@ class _SignalNode extends StatelessWidget {
 }
 
 class _MiniProof extends StatelessWidget {
-  const _MiniProof({
-    required this.icon,
-    required this.text,
-  });
+  const _MiniProof({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -1034,11 +1056,7 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFFFFAFB),
-            Color(0xFFF4FBF9),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFFFFAFB), Color(0xFFF4FBF9)],
         ),
         border: Border.all(
           color: AppColors.primaryDark.withValues(alpha: .085),
@@ -1064,10 +1082,10 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
             Text(
               'What should Voxidence investigate?',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontSize: 23,
-                    height: 1.05,
-                    letterSpacing: -.6,
-                  ),
+                fontSize: 23,
+                height: 1.05,
+                letterSpacing: -.6,
+              ),
             ),
             const SizedBox(height: 7),
             const Text(
@@ -1084,10 +1102,7 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFFFFFBFC),
-                    Color(0xFFF5FBF9),
-                  ],
+                  colors: [Color(0xFFFFFBFC), Color(0xFFF5FBF9)],
                 ),
                 borderRadius: BorderRadius.circular(21),
                 border: Border.all(
@@ -1135,16 +1150,14 @@ class _IdeaLauncherState extends State<_IdeaLauncher> {
                                 widget.onStart(_controller.text.trim()),
                             style: OutlinedButton.styleFrom(
                               padding: EdgeInsets.zero,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: .78),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: .78,
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            child: const Icon(
-                              Icons.mic_none_rounded,
-                              size: 18,
-                            ),
+                            child: const Icon(Icons.mic_none_rounded, size: 18),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1290,19 +1303,16 @@ class _MetricsSection extends StatelessWidget {
         Text(
           'Your momentum',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontSize: 20,
-                letterSpacing: -.45,
-              ),
+            fontSize: 20,
+            letterSpacing: -.45,
+          ),
         ),
         const SizedBox(height: 3),
         Text(
           summary.isPremium
               ? 'Premium activity and capacity at a glance.'
               : 'A live snapshot of your Voxidence workspace.',
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 9.2,
-          ),
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 9.2),
         ),
         const SizedBox(height: 9),
         GridView.builder(
@@ -1322,8 +1332,6 @@ class _MetricsSection extends StatelessWidget {
     );
   }
 }
-
-
 
 class _MetricData {
   const _MetricData({
@@ -1358,7 +1366,14 @@ class _MetricCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () => Navigator.pushNamed(context, data.route),
+        onTap: () => Navigator.pushNamed(
+          context,
+          data.route,
+          arguments: const <String, String>{
+            'returnTitle': 'Home',
+            'returnRoute': '/normal/dashboard',
+          },
+        ),
         child: Ink(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -1370,9 +1385,7 @@ class _MetricCard extends StatelessWidget {
               ],
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: data.accent.withValues(alpha: .09),
-            ),
+            border: Border.all(color: data.accent.withValues(alpha: .09)),
             boxShadow: [
               BoxShadow(
                 color: AppColors.primaryDeep.withValues(alpha: .045),
@@ -1417,11 +1430,7 @@ class _MetricCard extends StatelessWidget {
                         color: Colors.white.withValues(alpha: .88),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(
-                        data.icon,
-                        color: data.accent,
-                        size: 17,
-                      ),
+                      child: Icon(data.icon, color: data.accent, size: 17),
                     ),
                     const Spacer(),
                     Text(
@@ -1484,8 +1493,6 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-
-
 class _ActiveRunCard extends StatelessWidget {
   const _ActiveRunCard({required this.run});
 
@@ -1498,8 +1505,7 @@ class _ActiveRunCard extends StatelessWidget {
     final stage =
         '${run['currentStageLabel'] ?? run['currentStageKey'] ?? 'Preparing your idea'}';
 
-    final progress =
-        _asDouble(run['progressPercent']).clamp(0, 100).toDouble();
+    final progress = _asDouble(run['progressPercent']).clamp(0, 100).toDouble();
 
     return Material(
       color: Colors.transparent,
@@ -1508,25 +1514,20 @@ class _ActiveRunCard extends StatelessWidget {
         onTap: id.isEmpty
             ? null
             : () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => GenerationProgressPage(runId: id),
-                  ),
+                MaterialPageRoute<void>(
+                  builder: (_) => GenerationProgressPage(runId: id),
                 ),
+              ),
         child: Ink(
           padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFFFFDFC),
-                Color(0xFFF2FAF9),
-              ],
+              colors: [Color(0xFFFFFDFC), Color(0xFFF2FAF9)],
             ),
             borderRadius: BorderRadius.circular(23),
-            border: Border.all(
-              color: AppColors.primary.withValues(alpha: .18),
-            ),
+            border: Border.all(color: AppColors.primary.withValues(alpha: .18)),
             boxShadow: [
               BoxShadow(
                 color: AppColors.primaryDeep.withValues(alpha: .07),
@@ -1545,10 +1546,7 @@ class _ActiveRunCard extends StatelessWidget {
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF67C5BF),
-                      Color(0xFF4DAEA9),
-                    ],
+                    colors: [Color(0xFF67C5BF), Color(0xFF4DAEA9)],
                   ),
                   borderRadius: BorderRadius.circular(15),
                 ),
@@ -1590,8 +1588,9 @@ class _ActiveRunCard extends StatelessWidget {
                         value: progress / 100,
                         minHeight: 5,
                         color: AppColors.primary,
-                        backgroundColor:
-                            AppColors.primary.withValues(alpha: .10),
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: .10,
+                        ),
                       ),
                     ),
                   ],
@@ -1657,9 +1656,9 @@ class _LatestWorkspaceSection extends StatelessWidget {
                   Text(
                     'Latest workspace',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontSize: 20,
-                          letterSpacing: -.45,
-                        ),
+                      fontSize: 20,
+                      letterSpacing: -.45,
+                    ),
                   ),
                 ],
               ),
@@ -1688,8 +1687,6 @@ class _LatestWorkspaceSection extends StatelessWidget {
   }
 }
 
-
-
 class _EmptyLatest extends StatelessWidget {
   const _EmptyLatest({required this.onGenerate});
 
@@ -1704,15 +1701,9 @@ class _EmptyLatest extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFF4FBF9),
-            Color(0xFFFFF6F8),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFF4FBF9), Color(0xFFFFF6F8)],
         ),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
       ),
       child: Column(
         children: [
@@ -1745,12 +1736,8 @@ class _EmptyLatest extends StatelessWidget {
   }
 }
 
-
 class _LatestIdeaCard extends StatelessWidget {
-  const _LatestIdeaCard({
-    required this.idea,
-    required this.premium,
-  });
+  const _LatestIdeaCard({required this.idea, required this.premium});
 
   final Map<String, dynamic> idea;
   final bool premium;
@@ -1774,21 +1761,17 @@ class _LatestIdeaCard extends StatelessWidget {
         onTap: id.isEmpty
             ? null
             : () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => IdeaWorkspacePage(ideaId: id),
-                  ),
+                MaterialPageRoute<void>(
+                  builder: (_) => IdeaWorkspacePage(ideaId: id),
                 ),
+              ),
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFFFFDFC),
-                Color(0xFFFFF9FA),
-                Color(0xFFF2FAF8),
-              ],
+              colors: [Color(0xFFFFFDFC), Color(0xFFFFF9FA), Color(0xFFF2FAF8)],
             ),
             border: Border.all(
               color: AppColors.primaryDark.withValues(alpha: .08),
@@ -1811,9 +1794,7 @@ class _LatestIdeaCard extends StatelessWidget {
                   child: SizedBox(
                     width: 155,
                     height: 155,
-                    child: CustomPaint(
-                      painter: _EditorialIdeaOrbPainter(),
-                    ),
+                    child: CustomPaint(painter: _EditorialIdeaOrbPainter()),
                   ),
                 ),
                 Padding(
@@ -1849,12 +1830,12 @@ class _LatestIdeaCard extends StatelessWidget {
                           title,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontSize: 17,
-                                    height: 1.12,
-                                    letterSpacing: -.25,
-                                  ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontSize: 17,
+                                height: 1.12,
+                                letterSpacing: -.25,
+                              ),
                         ),
                       ),
                       if (createdAt != null) ...[
@@ -1903,8 +1884,7 @@ class _LatestIdeaCard extends StatelessWidget {
                               : Colors.white.withValues(alpha: .68),
                           borderRadius: BorderRadius.circular(15),
                           border: Border.all(
-                            color:
-                                AppColors.primaryDark.withValues(alpha: .07),
+                            color: AppColors.primaryDark.withValues(alpha: .07),
                           ),
                         ),
                         child: Row(
@@ -1944,8 +1924,8 @@ class _LatestIdeaCard extends StatelessWidget {
                                   Text(
                                     unlocked
                                         ? premium
-                                            ? 'Advanced outputs and eligible AI Chat remain available.'
-                                            : 'Your unlocked outputs remain available.'
+                                              ? 'Advanced outputs and eligible AI Chat remain available.'
+                                              : 'Your unlocked outputs remain available.'
                                         : 'Open the workspace whenever you are ready.',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -2108,15 +2088,9 @@ class _AboutSection extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFFFF9FA),
-            Color(0xFFF3FAF8),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFFFF9FA), Color(0xFFF3FAF8)],
         ),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .08)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .055),
@@ -2145,10 +2119,7 @@ class _AboutSection extends StatelessWidget {
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF72CAC4),
-                      Color(0xFF4DAFA9),
-                    ],
+                    colors: [Color(0xFF72CAC4), Color(0xFF4DAFA9)],
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -2168,10 +2139,9 @@ class _AboutSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   'AI that starts with real community needs.',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontSize: 18,
-                        height: 1.12,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontSize: 18, height: 1.12),
                 ),
               ),
             ],
@@ -2205,10 +2175,7 @@ class _AboutSection extends StatelessWidget {
 }
 
 class _AboutPoint extends StatelessWidget {
-  const _AboutPoint({
-    required this.icon,
-    required this.text,
-  });
+  const _AboutPoint({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
@@ -2219,11 +2186,7 @@ class _AboutPoint extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: AppColors.primary,
-            size: 16,
-          ),
+          Icon(icon, color: AppColors.primary, size: 16),
           const SizedBox(width: 8),
           Text(
             text,
@@ -2239,7 +2202,6 @@ class _AboutPoint extends StatelessWidget {
   }
 }
 
-
 class _ContactSection extends StatefulWidget {
   const _ContactSection({required this.summary});
 
@@ -2248,7 +2210,6 @@ class _ContactSection extends StatefulWidget {
   @override
   State<_ContactSection> createState() => _ContactSectionState();
 }
-
 
 class _ContactSectionState extends State<_ContactSection> {
   final TextEditingController _subject = TextEditingController();
@@ -2325,14 +2286,9 @@ class _ContactSectionState extends State<_ContactSection> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFFDFC),
-            Color(0xFFFFF9FA),
-          ],
+          colors: [Color(0xFFFFFDFC), Color(0xFFFFF9FA)],
         ),
-        border: Border.all(
-          color: AppColors.pinkDeep.withValues(alpha: .08),
-        ),
+        border: Border.all(color: AppColors.pinkDeep.withValues(alpha: .08)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryDeep.withValues(alpha: .045),
@@ -2353,9 +2309,9 @@ class _ContactSectionState extends State<_ContactSection> {
           Text(
             'Need help or have feedback?',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontSize: 20,
-                  letterSpacing: -.4,
-                ),
+              fontSize: 20,
+              letterSpacing: -.4,
+            ),
           ),
           const SizedBox(height: 5),
           const Text(
@@ -2389,10 +2345,7 @@ class _ContactSectionState extends State<_ContactSection> {
             alignment: Alignment.centerRight,
             child: Text(
               '${_subject.text.length}/150',
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 8,
-              ),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 8),
             ),
           ),
           const SizedBox(height: 10),
@@ -2417,10 +2370,7 @@ class _ContactSectionState extends State<_ContactSection> {
             alignment: Alignment.centerRight,
             child: Text(
               '${_message.text.length}/2000',
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 8,
-              ),
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 8),
             ),
           ),
           if (widget.summary.email.isNotEmpty) ...[
@@ -2485,8 +2435,6 @@ class _ContactSectionState extends State<_ContactSection> {
   }
 }
 
-
-
 class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.text);
 
@@ -2504,8 +2452,6 @@ class _FieldLabel extends StatelessWidget {
     );
   }
 }
-
-
 
 class _SectionEyebrow extends StatelessWidget {
   const _SectionEyebrow({
@@ -2541,10 +2487,7 @@ class _SectionEyebrow extends StatelessWidget {
 }
 
 class _Reveal extends StatelessWidget {
-  const _Reveal({
-    required this.child,
-    required this.delay,
-  });
+  const _Reveal({required this.child, required this.delay});
 
   final Widget child;
   final int delay;
@@ -2556,10 +2499,9 @@ class _Reveal extends StatelessWidget {
       duration: Duration(milliseconds: 620 + delay),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
-        final normalized =
-            ((value * (620 + delay) - delay) / 620)
-                .clamp(0.0, 1.0)
-                .toDouble();
+        final normalized = ((value * (620 + delay) - delay) / 620)
+            .clamp(0.0, 1.0)
+            .toDouble();
 
         return Opacity(
           opacity: normalized,
@@ -2575,10 +2517,7 @@ class _Reveal extends StatelessWidget {
 }
 
 class _ConnectionState extends StatelessWidget {
-  const _ConnectionState({
-    required this.error,
-    required this.onRetry,
-  });
+  const _ConnectionState({required this.error, required this.onRetry});
 
   final Object? error;
   final Future<void> Function() onRetry;

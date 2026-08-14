@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../../prisma/prisma.service';
+import { IDEA_GENERATION_STAGE_KEYS } from '../constants/idea-generation-stages.constants';
 
 /**
  * Database client accepted by transaction-aware generation-run
@@ -422,6 +423,23 @@ export class IdeaGenerationRunService {
         id: normalizedRunId,
         status: IdeaGenerationRunStatus.RUNNING,
         cancelRequestedAt: null,
+
+        /*
+         * Do not touch IdeaGenerationRun while the serializable persistence
+         * transaction is validating and attaching the new idea. The pipeline
+         * synchronously sets currentStageKey before entering persistence, so
+         * skipping this one heartbeat window removes a write/write conflict
+         * without weakening stale-run detection: persistence is bounded and
+         * the owner lock continues to refresh independently.
+         */
+        OR: [
+          { currentStageKey: null },
+          {
+            currentStageKey: {
+              not: IDEA_GENERATION_STAGE_KEYS.IDEA_PERSISTENCE,
+            },
+          },
+        ],
       },
       data: {
         lastHeartbeatAt: new Date(),

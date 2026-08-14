@@ -74,8 +74,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 
     if (!_codeIsComplete) {
       setState(() {
-        _verificationError =
-            'Enter the complete six-digit verification code.';
+        _verificationError = 'Enter the complete six-digit verification code.';
       });
 
       return;
@@ -99,30 +98,19 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         return;
       }
 
-      final serverMessage =
-          result['message']?.toString().trim();
+      final serverMessage = result['message']?.toString().trim();
 
-      final successMessage =
-          serverMessage == null || serverMessage.isEmpty
-              ? 'Your email was verified successfully. You can now sign in.'
-              : serverMessage;
+      final successMessage = serverMessage == null || serverMessage.isEmpty
+          ? 'Your email was verified successfully. You can now sign in.'
+          : serverMessage;
 
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(successMessage),
-          ),
-        );
+        ..showSnackBar(SnackBar(content: Text(successMessage)));
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pushAndRemoveUntil(
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
         MaterialPageRoute<void>(
-          builder: (_) => LoginPage(
-            initialEmail: widget.email,
-          ),
+          builder: (_) => LoginPage(initialEmail: widget.email),
         ),
         (route) => false,
       );
@@ -132,10 +120,9 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
       }
 
       setState(() {
-        _verificationError =
-            error.message.trim().isEmpty
-                ? 'The verification code is invalid or has expired.'
-                : error.message;
+        _verificationError = error.message.trim().isEmpty
+            ? 'The verification code is invalid or has expired.'
+            : error.message;
       });
     } catch (_) {
       if (!mounted) {
@@ -156,9 +143,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
   }
 
   Future<void> _resend() async {
-    if (_resending ||
-        _verifying ||
-        widget.email.trim().isEmpty) {
+    if (_resending || _verifying || widget.email.trim().isEmpty) {
       return;
     }
 
@@ -173,22 +158,17 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     });
 
     try {
-      final result =
-          await AuthApi.instance.resendVerification(
-        widget.email,
-      );
+      final result = await AuthApi.instance.resendVerification(widget.email);
 
       if (!mounted) {
         return;
       }
 
-      final serverMessage =
-          result['message']?.toString().trim();
+      final serverMessage = result['message']?.toString().trim();
 
-      final successMessage =
-          serverMessage == null || serverMessage.isEmpty
-              ? 'A new verification code was sent successfully.'
-              : serverMessage;
+      final successMessage = serverMessage == null || serverMessage.isEmpty
+          ? 'A new verification code was sent successfully.'
+          : serverMessage;
 
       _code.clear();
 
@@ -203,10 +183,9 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
       }
 
       setState(() {
-        _resendError =
-            error.message.trim().isEmpty
-                ? 'The verification code could not be sent. Please try again.'
-                : error.message;
+        _resendError = error.message.trim().isEmpty
+            ? 'The verification code could not be sent. Please try again.'
+            : error.message;
       });
     } catch (_) {
       if (!mounted) {
@@ -231,14 +210,9 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
       return;
     }
 
-    Navigator.of(
-      context,
-      rootNavigator: true,
-    ).pushAndRemoveUntil(
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => LoginPage(
-          initialEmail: widget.email,
-        ),
+        builder: (_) => LoginPage(initialEmail: widget.email),
       ),
       (route) => false,
     );
@@ -280,9 +254,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                   decoration: BoxDecoration(
                     color: AppColors.primarySoft,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: AppColors.borderStrong,
-                    ),
+                    border: Border.all(color: AppColors.borderStrong),
                   ),
                   child: Row(
                     children: [
@@ -296,9 +268,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 
                       Expanded(
                         child: Text(
-                          widget.email
-                              .trim()
-                              .toLowerCase(),
+                          widget.email.trim().toLowerCase(),
                           style: const TextStyle(
                             color: AppColors.primaryDeep,
                             fontSize: 11.2,
@@ -310,8 +280,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                   ),
                 ),
 
-                if (_message != null &&
-                    _message!.trim().isNotEmpty) ...[
+                if (_message != null && _message!.trim().isNotEmpty) ...[
                   const SizedBox(height: 11),
 
                   _VerificationNotice(
@@ -339,9 +308,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                   textAlign: TextAlign.center,
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
-                  autofillHints: const [
-                    AutofillHints.oneTimeCode,
-                  ],
+                  autofillHints: const [AutofillHints.oneTimeCode],
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(6),
@@ -354,9 +321,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                     });
                   },
                   onSubmitted: (_) {
-                    if (_codeIsComplete &&
-                        !_verifying &&
-                        !_resending) {
+                    if (_codeIsComplete && !_verifying && !_resending) {
                       _verify();
                     }
                   },
@@ -370,10 +335,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                     hintText: '000000',
                     counterText: '',
                     errorText: _verificationError,
-                    prefixIcon: const Icon(
-                      Icons.pin_outlined,
-                      size: 18,
-                    ),
+                    prefixIcon: const Icon(Icons.pin_outlined, size: 18),
                     suffixIcon: _codeIsComplete
                         ? const Icon(
                             Icons.check_circle_rounded,
@@ -416,12 +378,9 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 
                 AuthPrimaryButton(
                   label: 'Verify email',
-                  onPressed:
-                      _codeIsComplete &&
-                              !_verifying &&
-                              !_resending
-                          ? _verify
-                          : null,
+                  onPressed: _codeIsComplete && !_verifying && !_resending
+                      ? _verify
+                      : null,
                   loading: _verifying,
                 ),
 
@@ -431,29 +390,19 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                   width: double.infinity,
                   height: 44,
                   child: OutlinedButton.icon(
-                    onPressed:
-                        _resending || _verifying
-                            ? null
-                            : _resend,
+                    onPressed: _resending || _verifying ? null : _resend,
                     icon: _resending
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(
-                            Icons.refresh_rounded,
-                            size: 17,
-                          ),
+                        : const Icon(Icons.refresh_rounded, size: 17),
                     label: Text(
                       _resending
                           ? 'Requesting code...'
                           : 'Resend verification code',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
                 ),
@@ -475,25 +424,16 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 }
 
 class _VerificationNotice extends StatelessWidget {
-  const _VerificationNotice({
-    required this.message,
-    required this.warning,
-  });
+  const _VerificationNotice({required this.message, required this.warning});
 
   final String message;
   final bool warning;
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        warning
-            ? AppColors.pink
-            : const Color(0xFF13835B);
+    final color = warning ? AppColors.pink : const Color(0xFF13835B);
 
-    final background =
-        warning
-            ? AppColors.pinkSoft
-            : const Color(0xFFEAF7F1);
+    final background = warning ? AppColors.pinkSoft : const Color(0xFFEAF7F1);
 
     return Container(
       width: double.infinity,
@@ -501,17 +441,13 @@ class _VerificationNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: color.withValues(alpha: 0.24),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            warning
-                ? Icons.warning_amber_rounded
-                : Icons.info_outline_rounded,
+            warning ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
             size: 17,
             color: color,
           ),

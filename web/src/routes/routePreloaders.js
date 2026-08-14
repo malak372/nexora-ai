@@ -3,8 +3,8 @@
  *
  * Important performance rule:
  * - Hover/focus preloads BOTH the lazy React chunk and the first API request.
- * - Idle warm-up is intentionally limited to My Ideas and Discover because
- *   they are the two most frequently opened, data-heavy library pages.
+ * - Idle warm-up prepares normal-user route chunks, while only Discover's
+ *   first data page is fetched in the background to avoid an API burst.
  * - Existing requestCache deduplicates the request if navigation happens while
  *   a prefetch is still in flight, so this never creates a second GET.
  */
@@ -132,16 +132,56 @@ export function preloadDiscoveryDetail(publicationId) {
     .catch(() => undefined);
 }
 
+
 /**
- * Warms route CHUNKS only after the browser becomes idle.
+ * Warms one private idea workspace route and its first data request.
+ */
+export function preloadIdeaWorkspace(ideaId) {
+  if (!ideaId) return;
+
+  void import('../features/normal-user/idea-workspace/pages/IdeaWorkspacePage')
+    .catch(() => undefined);
+
+  void import('../features/normal-user/idea-workspace/api/ideaWorkspaceApi')
+    .then(({ warmIdeaWorkspace }) => warmIdeaWorkspace(ideaId))
+    .catch(() => undefined);
+}
+
+/**
+ * Warms the Premium AI chat chunk, workspace context, and chat API module.
+ */
+export function preloadAiChatWorkspace(ideaId) {
+  if (!ideaId) return;
+
+  void Promise.allSettled([
+    import('../features/normal-user/ai-chat/pages/AiChatPage'),
+    import('../features/normal-user/ai-chat/api/aiChatApi')
+      .then(({ warmAiChatSocket }) => warmAiChatSocket()),
+    import('../features/normal-user/idea-workspace/api/ideaWorkspaceApi')
+      .then(({ warmIdeaWorkspace }) => warmIdeaWorkspace(ideaId)),
+  ]);
+}
+
+/**
+ * Warms Publication Studio and the shared idea workspace request.
+ */
+export function preloadPublicationStudio(ideaId) {
+  if (!ideaId) return;
+
+  void Promise.allSettled([
+    import('../features/normal-user/publication/pages/PublishIdeaPage'),
+    import('../features/normal-user/publication/api/publicationApi')
+      .then(({ getIdeaForPublication }) => getIdeaForPublication(ideaId)),
+  ]);
+}
+
+/**
+ * Warms the normal-user route chunks after the browser becomes idle.
  *
- * Important: this deliberately does NOT fire all page API requests in the
- * background. The previous version warmed eight data-heavy routes immediately
- * after sign-in, which could saturate the backend/Prisma connection pool and
- * make the dashboard and authentication transition feel slower.
- *
- * Data prefetching still happens on hover/focus through preloadRoute(), where
- * it is strongly correlated with the user's next action.
+ * Discover receives one additional low-priority first-page data warm-up.
+ * That page is commonly opened directly after sign-in and its first request
+ * is the expensive cache-miss path. Warming only Discover avoids the previous
+ * burst of unrelated API calls while making its first navigation feel instant.
  */
 export function preloadPrimaryRoutes() {
   if (!canWarmInBackground()) return () => {};
@@ -149,8 +189,8 @@ export function preloadPrimaryRoutes() {
   let cancelled = false;
   const timers = [];
   const routesToWarm = [
-    '/normal/ideas',
     '/normal/discover',
+    '/normal/ideas',
     '/normal/published',
     '/normal/notifications',
     '/normal/billing',
@@ -159,21 +199,79 @@ export function preloadPrimaryRoutes() {
     '/normal/generate',
   ];
 
+  const warmDiscoverData = () => {
+    if (cancelled) return;
+
+    const dataPreloader = routeDataPreloaders['/normal/discover'];
+
+    if (dataPreloader) {
+      void dataPreloader().catch(() => undefined);
+    }
+  };
+
+  /*
+   * Discover is a top-level destination and its first uncached request is one
+   * of the most visible waits in the app. Start only this chunk + first page
+   * shortly after the authenticated shell mounts instead of waiting for the
+   * browser idle callback. Request caching prevents duplicate GETs if the user
+   * clicks Discover while the warm-up is still in flight.
+   */
+  const immediateDiscoverTimer = window.setTimeout(() => {
+    if (cancelled) return;
+
+    const chunkPreloader = routeChunkPreloaders['/normal/discover'];
+
+    if (chunkPreloader) {
+      void chunkPreloader().catch(() => undefined);
+    }
+
+    warmDiscoverData();
+  }, 80);
+
+  timers.push(immediateDiscoverTimer);
+
   const warmChunks = () => {
     if (cancelled) return;
 
     routesToWarm.forEach((route, index) => {
       const timer = window.setTimeout(() => {
         if (cancelled) return;
+
         const chunkPreloader = routeChunkPreloaders[route];
-        if (chunkPreloader) void chunkPreloader().catch(() => undefined);
-      }, index * 350);
+
+        if (chunkPreloader) {
+          void chunkPreloader().catch(() => undefined);
+        }
+      }, index * 140);
+
       timers.push(timer);
     });
+
+    /*
+     * These detail pages are frequent follow-up destinations and contain no
+     * user-specific data by themselves. Preload their JS chunks in the
+     * background so opening a card does not pause on a lazy-import download.
+     */
+    const detailChunkTimer = window.setTimeout(() => {
+      if (cancelled) return;
+
+      void Promise.allSettled([
+        import('../features/normal-user/idea-workspace/pages/IdeaWorkspacePage'),
+        import('../features/normal-user/discoveries/pages/PublicationDetailPage'),
+        import('../features/normal-user/publication/pages/PublishIdeaPage'),
+        import('../features/normal-user/ai-chat/pages/AiChatPage'),
+      ]);
+    }, 320);
+
+    timers.push(detailChunkTimer);
   };
 
   if ('requestIdleCallback' in window) {
-    const idleId = window.requestIdleCallback(warmChunks, { timeout: 3000 });
+    const idleId = window.requestIdleCallback(
+      warmChunks,
+      { timeout: 2200 },
+    );
+
     return () => {
       cancelled = true;
       window.cancelIdleCallback?.(idleId);
@@ -181,7 +279,8 @@ export function preloadPrimaryRoutes() {
     };
   }
 
-  const timer = window.setTimeout(warmChunks, 1800);
+  const timer = window.setTimeout(warmChunks, 1200);
+
   return () => {
     cancelled = true;
     window.clearTimeout(timer);

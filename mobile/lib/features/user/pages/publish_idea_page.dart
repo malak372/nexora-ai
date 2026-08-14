@@ -28,7 +28,7 @@ class PublishIdeaPage extends StatefulWidget {
 
   final String ideaId;
 
-  /// Optional already-loaded idea snapshot supplied by Idea Workspace.
+  /// Optional already-loaded idea/publication snapshot supplied by the source page.
   ///
   /// It lets the publication studio paint immediately while a silent
   /// lightweight refresh confirms the newest publication settings.
@@ -41,12 +41,10 @@ class PublishIdeaPage extends StatefulWidget {
   final String returnTitle;
 
   @override
-  State<PublishIdeaPage> createState() =>
-      _PublishIdeaPageState();
+  State<PublishIdeaPage> createState() => _PublishIdeaPageState();
 }
 
-class _PublishIdeaPageState
-    extends State<PublishIdeaPage> {
+class _PublishIdeaPageState extends State<PublishIdeaPage> {
   final _title = TextEditingController();
   final _abstract = TextEditingController();
   final _problem = TextEditingController();
@@ -81,12 +79,7 @@ class _PublishIdeaPageState
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          unawaited(
-            _load(
-              force: false,
-              showLoading: false,
-            ),
-          );
+          unawaited(_load(force: false, showLoading: false));
         }
       });
     } else {
@@ -104,10 +97,7 @@ class _PublishIdeaPageState
     super.dispose();
   }
 
-  Future<void> _load({
-    bool force = false,
-    bool showLoading = true,
-  }) async {
+  Future<void> _load({bool force = false, bool showLoading = true}) async {
     if (mounted && showLoading) {
       setState(() {
         _loading = true;
@@ -121,8 +111,7 @@ class _PublishIdeaPageState
       // The backend workspace endpoint now includes the publication snapshot,
       // so opening Publication Studio no longer needs the expensive complete
       // idea query containing generation runs, candidates, NLP and audit data.
-      final bundle =
-          await UserApi.instance.getWorkspace(
+      final bundle = await UserApi.instance.getWorkspace(
         widget.ideaId,
         force: force,
       );
@@ -135,8 +124,7 @@ class _PublishIdeaPageState
         );
       }
 
-      final idea =
-          Map<String, dynamic>.from(rawIdea);
+      final idea = Map<String, dynamic>.from(rawIdea);
 
       if (!mounted) return;
 
@@ -156,18 +144,12 @@ class _PublishIdeaPageState
     }
   }
 
-  void _hydrateIdea(
-    Map<String, dynamic> idea,
-  ) {
-    final publication =
-        idea['publication'] is Map
-            ? Map<String, dynamic>.from(
-                idea['publication'] as Map,
-              )
-            : const <String, dynamic>{};
+  void _hydrateIdea(Map<String, dynamic> idea) {
+    final publication = idea['publication'] is Map
+        ? Map<String, dynamic>.from(idea['publication'] as Map)
+        : const <String, dynamic>{};
 
-    _title.text =
-        '${publication['publicTitle'] ?? idea['title'] ?? ''}';
+    _title.text = '${publication['publicTitle'] ?? idea['title'] ?? ''}';
 
     _abstract.text =
         '${publication['publicAbstract'] ?? idea['fullAbstract'] ?? idea['partialAbstract'] ?? idea['limitedAbstract'] ?? ''}';
@@ -177,57 +159,43 @@ class _PublishIdeaPageState
 
     _objectives.text =
         publication['publicObjectives']?.toString() ??
-            _plainText(
-              idea['objectives'],
-            );
+        _plainText(idea['objectives']);
 
     _targetUsers.text =
         publication['publicTargetUsers']?.toString() ??
-            _plainText(
-              idea['targetUsers'],
-            );
+        _plainText(idea['targetUsers']);
 
     final audienceValues = <String>{};
     final audiences = publication['audiences'];
 
     if (audiences is List) {
       for (final raw in audiences) {
-        if (raw is Map &&
-            raw['audienceType'] == 'user-type') {
-          final value =
-              raw['audienceValue']?.toString();
+        if (raw is Map && raw['audienceType'] == 'user-type') {
+          final value = raw['audienceValue']?.toString();
 
-          if (value != null &&
-              value.isNotEmpty) {
+          if (value != null && value.isNotEmpty) {
             audienceValues.add(value);
           }
         }
       }
     }
 
-    _visibility =
-        '${publication['visibility'] ?? 'PUBLIC'}';
+    _visibility = '${publication['visibility'] ?? 'PUBLIC'}';
 
-    _allowRatings =
-        publication['allowRatings'] ?? true;
+    _allowRatings = publication['allowRatings'] ?? true;
 
-    _allowFeedback =
-        publication['allowFeedback'] ?? true;
+    _allowFeedback = publication['allowFeedback'] ?? true;
 
-    _allowVoting =
-        publication['allowVoting'] ?? true;
+    _allowVoting = publication['allowVoting'] ?? true;
 
-    _allowAdoption =
-        publication['allowAdoption'] ?? true;
+    _allowAdoption = publication['allowAdoption'] ?? true;
 
     _selectedUserTypes
       ..clear()
       ..addAll(audienceValues);
 
-    _status =
-        publication['status']?.toString();
+    _status = publication['status']?.toString();
   }
-
 
   Future<void> _generateDescription() async {
     if (_generating) return;
@@ -235,19 +203,17 @@ class _PublishIdeaPageState
     setState(() => _generating = true);
 
     try {
-      final result = await UserApi.instance
-          .generatePublicationDescription(
+      final result = await UserApi.instance.generatePublicationDescription(
         widget.ideaId,
       );
 
       final description =
           result['description']?.toString() ??
-              result['publicAbstract']?.toString() ??
-              result['abstract']?.toString() ??
-              result['text']?.toString();
+          result['publicAbstract']?.toString() ??
+          result['abstract']?.toString() ??
+          result['text']?.toString();
 
-      if (description == null ||
-          description.trim().isEmpty) {
+      if (description == null || description.trim().isEmpty) {
         throw const ApiException(
           'The generator returned no public description.',
         );
@@ -265,11 +231,7 @@ class _PublishIdeaPageState
       );
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
       if (mounted) {
@@ -279,33 +241,24 @@ class _PublishIdeaPageState
   }
 
   Map<String, dynamic> _payload() => {
-        'visibility': _visibility,
-        'publicTitle': _title.text.trim(),
-        'publicAbstract': _abstract.text.trim(),
-        'publicProblem': _problem.text.trim(),
-        'publicObjectives':
-            _objectives.text.trim(),
-        'publicTargetUsers':
-            _targetUsers.text.trim(),
-        'allowRatings': _allowRatings,
-        'allowFeedback': _allowFeedback,
-        'allowVoting': _allowVoting,
-        'allowAdoption': _allowAdoption,
-        if (_visibility ==
-            'SELECTED_AUDIENCE')
-          'audiences': _selectedUserTypes
-              .map(
-                (value) => {
-                  'audienceType': 'user-type',
-                  'audienceValue': value,
-                },
-              )
-              .toList(),
-      };
+    'visibility': _visibility,
+    'publicTitle': _title.text.trim(),
+    'publicAbstract': _abstract.text.trim(),
+    'publicProblem': _problem.text.trim(),
+    'publicObjectives': _objectives.text.trim(),
+    'publicTargetUsers': _targetUsers.text.trim(),
+    'allowRatings': _allowRatings,
+    'allowFeedback': _allowFeedback,
+    'allowVoting': _allowVoting,
+    'allowAdoption': _allowAdoption,
+    if (_visibility == 'SELECTED_AUDIENCE')
+      'audiences': _selectedUserTypes
+          .map((value) => {'audienceType': 'user-type', 'audienceValue': value})
+          .toList(),
+  };
 
   bool _validate() {
-    if (_title.text.trim().isEmpty ||
-        _abstract.text.trim().isEmpty) {
+    if (_title.text.trim().isEmpty || _abstract.text.trim().isEmpty) {
       showAppSnackBar(
         context,
         'Add a public title and abstract first.',
@@ -315,9 +268,7 @@ class _PublishIdeaPageState
       return false;
     }
 
-    if (_visibility ==
-            'SELECTED_AUDIENCE' &&
-        _selectedUserTypes.isEmpty) {
+    if (_visibility == 'SELECTED_AUDIENCE' && _selectedUserTypes.isEmpty) {
       showAppSnackBar(
         context,
         'Choose at least one audience type.',
@@ -330,46 +281,31 @@ class _PublishIdeaPageState
     return true;
   }
 
-  Future<void> _saveDraft({
-    bool publish = false,
-  }) async {
+  Future<void> _saveDraft({bool publish = false}) async {
     if (!_validate() || _saving) return;
 
     setState(() => _saving = true);
 
     try {
-      await UserApi.instance.savePublicationDraft(
-        widget.ideaId,
-        _payload(),
-      );
+      await UserApi.instance.savePublicationDraft(widget.ideaId, _payload());
 
       if (publish) {
-        await UserApi.instance.publishIdea(
-          widget.ideaId,
-        );
+        await UserApi.instance.publishIdea(widget.ideaId);
 
-        await UserSessionController.instance.load(
-          force: true,
-        );
+        await UserSessionController.instance.load(force: true);
       }
 
       if (!mounted) return;
 
       showAppSnackBar(
         context,
-        publish
-            ? 'Idea published.'
-            : 'Publication draft saved.',
+        publish ? 'Idea published.' : 'Publication draft saved.',
       );
 
       await _load(force: true);
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
       if (mounted) {
@@ -404,623 +340,368 @@ class _PublishIdeaPageState
     return completed;
   }
 
-  bool get _published =>
-      _status?.toUpperCase() == 'PUBLISHED';
+  bool get _published => _status?.toUpperCase() == 'PUBLISHED';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        leadingWidth: 50,
-        leading: IconButton(
-          tooltip: 'Back to ${widget.returnTitle}',
-          onPressed: () =>
-              Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(68),
+        child: _PublicationStudioRouteHeader(
+          returnTitle: widget.returnTitle,
+          subtitle: _published ? 'Edit publication' : 'Publication studio',
+          statusLabel: _status != null && !_loading
+              ? (_published ? 'LIVE' : _humanizeStatus(_status!))
+              : null,
+          statusPositive: _published,
+          onBack: () => Navigator.of(context).maybePop(),
         ),
-        titleSpacing: 0,
-        title: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.returnTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const Text(
-              'Publication studio',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 7.4,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (_status != null &&
-              !_loading)
-            Padding(
-              padding:
-                  const EdgeInsets.only(
-                right: 10,
-              ),
-              child: Center(
-                child: _StatusPill(
-                  label: _published
-                      ? 'LIVE'
-                      : _humanizeStatus(
-                          _status!,
-                        ),
-                  positive: _published,
-                ),
-              ),
-            ),
-        ],
       ),
       body: WorkspaceBackground(
         child: _loading
             ? const _PublicationLoadingView()
             : _error != null
-                ? _PublicationErrorView(
-                    error: _error!,
-                    onRetry: () =>
-                        _load(force: true),
-                  )
-                : RefreshIndicator(
-                    color: AppColors.primary,
-                    onRefresh: () =>
-                        _load(force: true),
-                    child: ListView(
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior
-                              .onDrag,
-                      physics:
-                          const AlwaysScrollableScrollPhysics(
-                        parent:
-                            BouncingScrollPhysics(),
+            ? _PublicationErrorView(
+                error: _error!,
+                onRetry: () => _load(force: true),
+              )
+            : RefreshIndicator(
+                color: AppColors.primary,
+                onRefresh: () => _load(force: true),
+                child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 130),
+                  children: [
+                    _PublicationHero(
+                      completed: _storyProgress,
+                      published: _published,
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    _StudioSection(
+                      number: '01',
+                      eyebrow: 'PUBLIC STORY',
+                      title: 'Shape the story people will discover',
+                      subtitle:
+                          'Keep the public version clear, focused and safe to share.',
+                      icon: Icons.edit_note_rounded,
+                      trailing: _GenerateCopyButton(
+                        loading: _generating,
+                        onTap: _generateDescription,
                       ),
-                      padding:
-                          const EdgeInsets.fromLTRB(
-                        18,
-                        12,
-                        18,
-                        130,
+                      child: Column(
+                        children: [
+                          _StudioTextField(
+                            controller: _title,
+                            label: 'Public title',
+                            hint: 'Give the opportunity a clear public name',
+                            icon: Icons.title_rounded,
+                            maxLength: 200,
+                            minLines: 1,
+                            maxLines: 2,
+                            onChanged: (_) => setState(() {}),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          _StudioTextField(
+                            controller: _abstract,
+                            label: 'Public abstract',
+                            hint:
+                                'Explain the opportunity in a concise public-safe way',
+                            icon: Icons.subject_rounded,
+                            maxLength: 5000,
+                            minLines: 5,
+                            maxLines: 8,
+                            onChanged: (_) => setState(() {}),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          _StudioTextField(
+                            controller: _problem,
+                            label: 'Public problem',
+                            hint:
+                                'What real problem does this opportunity address?',
+                            icon: Icons.report_problem_outlined,
+                            maxLength: 3000,
+                            minLines: 3,
+                            maxLines: 5,
+                            rose: true,
+                            onChanged: (_) => setState(() {}),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          _StudioTextField(
+                            controller: _objectives,
+                            label: 'Public objectives',
+                            hint: 'What should the solution accomplish?',
+                            icon: Icons.flag_outlined,
+                            maxLength: 5000,
+                            minLines: 3,
+                            maxLines: 5,
+                            onChanged: (_) => setState(() {}),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          _StudioTextField(
+                            controller: _targetUsers,
+                            label: 'Target users',
+                            hint: 'Who benefits from this idea?',
+                            icon: Icons.groups_outlined,
+                            maxLength: 3000,
+                            minLines: 3,
+                            maxLines: 4,
+                            rose: true,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ],
                       ),
-                      children: [
-                        _PublicationHero(
-                          completed:
-                              _storyProgress,
-                          published: _published,
-                        ),
+                    ),
 
-                        const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
-                        _StudioSection(
-                          number: '01',
-                          eyebrow: 'PUBLIC STORY',
-                          title:
-                              'Shape the story people will discover',
-                          subtitle:
-                              'Keep the public version clear, focused and safe to share.',
-                          icon:
-                              Icons.edit_note_rounded,
-                          trailing:
-                              _GenerateCopyButton(
-                            loading:
-                                _generating,
-                            onTap:
-                                _generateDescription,
+                    _StudioSection(
+                      number: '02',
+                      eyebrow: 'PUBLIC ACCESS',
+                      title: 'Choose who can see it',
+                      subtitle:
+                          'Visibility controls discovery without changing the private workspace.',
+                      icon: Icons.visibility_outlined,
+                      child: Column(
+                        children: [
+                          _VisibilityOption(
+                            icon: Icons.public_rounded,
+                            title: 'Public',
+                            subtitle:
+                                'Visible to everyone and included in Discover.',
+                            value: 'PUBLIC',
+                            selected: _visibility == 'PUBLIC',
+                            onTap: () => setState(() => _visibility = 'PUBLIC'),
                           ),
-                          child: Column(
-                            children: [
-                              _StudioTextField(
-                                controller: _title,
-                                label:
-                                    'Public title',
-                                hint:
-                                    'Give the opportunity a clear public name',
-                                icon: Icons
-                                    .title_rounded,
-                                maxLength: 200,
-                                minLines: 1,
-                                maxLines: 2,
-                                onChanged:
-                                    (_) =>
-                                        setState(
-                                          () {},
-                                        ),
-                              ),
 
-                              const SizedBox(
-                                height: 10,
-                              ),
+                          const SizedBox(height: 7),
 
-                              _StudioTextField(
-                                controller:
-                                    _abstract,
-                                label:
-                                    'Public abstract',
-                                hint:
-                                    'Explain the opportunity in a concise public-safe way',
-                                icon: Icons
-                                    .subject_rounded,
-                                maxLength: 5000,
-                                minLines: 5,
-                                maxLines: 8,
-                                onChanged:
-                                    (_) =>
-                                        setState(
-                                          () {},
-                                        ),
-                              ),
-
-                              const SizedBox(
-                                height: 10,
-                              ),
-
-                              _StudioTextField(
-                                controller:
-                                    _problem,
-                                label:
-                                    'Public problem',
-                                hint:
-                                    'What real problem does this opportunity address?',
-                                icon: Icons
-                                    .report_problem_outlined,
-                                maxLength: 3000,
-                                minLines: 3,
-                                maxLines: 5,
-                                rose: true,
-                                onChanged:
-                                    (_) =>
-                                        setState(
-                                          () {},
-                                        ),
-                              ),
-
-                              const SizedBox(
-                                height: 10,
-                              ),
-
-                              _StudioTextField(
-                                controller:
-                                    _objectives,
-                                label:
-                                    'Public objectives',
-                                hint:
-                                    'What should the solution accomplish?',
-                                icon:
-                                    Icons.flag_outlined,
-                                maxLength: 5000,
-                                minLines: 3,
-                                maxLines: 5,
-                                onChanged:
-                                    (_) =>
-                                        setState(
-                                          () {},
-                                        ),
-                              ),
-
-                              const SizedBox(
-                                height: 10,
-                              ),
-
-                              _StudioTextField(
-                                controller:
-                                    _targetUsers,
-                                label:
-                                    'Target users',
-                                hint:
-                                    'Who benefits from this idea?',
-                                icon:
-                                    Icons.groups_outlined,
-                                maxLength: 3000,
-                                minLines: 3,
-                                maxLines: 4,
-                                rose: true,
-                                onChanged:
-                                    (_) =>
-                                        setState(
-                                          () {},
-                                        ),
-                              ),
-                            ],
+                          _VisibilityOption(
+                            icon: Icons.verified_user_outlined,
+                            title: 'Voxidence members',
+                            subtitle:
+                                'Visible only to authenticated Voxidence users.',
+                            value: 'REGISTERED_USERS',
+                            selected: _visibility == 'REGISTERED_USERS',
+                            onTap: () => setState(
+                              () => _visibility = 'REGISTERED_USERS',
+                            ),
                           ),
-                        ),
 
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 7),
 
-                        _StudioSection(
-                          number: '02',
-                          eyebrow:
-                              'PUBLIC ACCESS',
-                          title:
-                              'Choose who can see it',
-                          subtitle:
-                              'Visibility controls discovery without changing the private workspace.',
-                          icon: Icons
-                              .visibility_outlined,
-                          child: Column(
-                            children: [
-                              _VisibilityOption(
-                                icon:
-                                    Icons.public_rounded,
-                                title: 'Public',
-                                subtitle:
-                                    'Visible to everyone and included in Discover.',
-                                value: 'PUBLIC',
-                                selected:
-                                    _visibility ==
-                                        'PUBLIC',
-                                onTap: () =>
-                                    setState(
-                                  () =>
-                                      _visibility =
-                                          'PUBLIC',
+                          _VisibilityOption(
+                            icon: Icons.group_work_outlined,
+                            title: 'Selected audience',
+                            subtitle:
+                                'Choose the member categories that may discover it.',
+                            value: 'SELECTED_AUDIENCE',
+                            selected: _visibility == 'SELECTED_AUDIENCE',
+                            rose: true,
+                            onTap: () => setState(
+                              () => _visibility = 'SELECTED_AUDIENCE',
+                            ),
+                          ),
+
+                          if (_visibility == 'SELECTED_AUDIENCE') ...[
+                            const SizedBox(height: 12),
+
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'WHO CAN SEE IT?',
+                                style: TextStyle(
+                                  color: AppColors.primaryDark,
+                                  fontSize: 6,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: .62,
                                 ),
                               ),
+                            ),
 
-                              const SizedBox(
-                                height: 7,
-                              ),
+                            const SizedBox(height: 7),
 
-                              _VisibilityOption(
-                                icon: Icons
-                                    .verified_user_outlined,
-                                title:
-                                    'Voxidence members',
-                                subtitle:
-                                    'Visible only to authenticated Voxidence users.',
-                                value:
-                                    'REGISTERED_USERS',
-                                selected:
-                                    _visibility ==
-                                        'REGISTERED_USERS',
-                                onTap: () =>
-                                    setState(
-                                  () =>
-                                      _visibility =
-                                          'REGISTERED_USERS',
-                                ),
-                              ),
-
-                              const SizedBox(
-                                height: 7,
-                              ),
-
-                              _VisibilityOption(
-                                icon: Icons
-                                    .group_work_outlined,
-                                title:
-                                    'Selected audience',
-                                subtitle:
-                                    'Choose the member categories that may discover it.',
-                                value:
-                                    'SELECTED_AUDIENCE',
-                                selected:
-                                    _visibility ==
-                                        'SELECTED_AUDIENCE',
-                                rose: true,
-                                onTap: () =>
-                                    setState(
-                                  () =>
-                                      _visibility =
-                                          'SELECTED_AUDIENCE',
-                                ),
-                              ),
-
-                              if (_visibility ==
-                                  'SELECTED_AUDIENCE') ...[
-                                const SizedBox(
-                                  height: 12,
-                                ),
-
-                                const Align(
-                                  alignment:
-                                      Alignment
-                                          .centerLeft,
-                                  child: Text(
-                                    'WHO CAN SEE IT?',
-                                    style: TextStyle(
-                                      color: AppColors
-                                          .primaryDark,
-                                      fontSize: 6,
-                                      fontWeight:
-                                          FontWeight
-                                              .w900,
-                                      letterSpacing:
-                                          .62,
-                                    ),
-                                  ),
-                                ),
-
-                                const SizedBox(
-                                  height: 7,
-                                ),
-
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: const [
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children:
+                                  const [
                                     (
                                       'STUDENT',
                                       'Students',
-                                      Icons
-                                          .school_outlined,
+                                      Icons.school_outlined,
                                     ),
                                     (
                                       'DEVELOPER',
                                       'Developers',
-                                      Icons
-                                          .code_rounded,
+                                      Icons.code_rounded,
                                     ),
                                     (
                                       'RESEARCHER',
                                       'Researchers',
-                                      Icons
-                                          .science_outlined,
+                                      Icons.science_outlined,
                                     ),
                                     (
                                       'COMPANY',
                                       'Companies',
-                                      Icons
-                                          .business_outlined,
+                                      Icons.business_outlined,
                                     ),
                                     (
                                       'OTHER',
                                       'Other',
-                                      Icons
-                                          .interests_outlined,
+                                      Icons.interests_outlined,
                                     ),
-                                  ].map(
-                                    (entry) {
-                                      final selected =
-                                          _selectedUserTypes
-                                              .contains(
-                                        entry.$1,
-                                      );
+                                  ].map((entry) {
+                                    final selected = _selectedUserTypes
+                                        .contains(entry.$1);
 
-                                      return _AudienceChip(
-                                        label:
-                                            entry.$2,
-                                        icon:
-                                            entry.$3,
-                                        selected:
-                                            selected,
-                                        onTap: () {
-                                          setState(
-                                            () {
-                                              if (selected) {
-                                                _selectedUserTypes
-                                                    .remove(
-                                                  entry.$1,
-                                                );
-                                              } else {
-                                                _selectedUserTypes
-                                                    .add(
-                                                  entry.$1,
-                                                );
-                                              }
-                                            },
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ).toList(),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        _StudioSection(
-                          number: '03',
-                          eyebrow:
-                              'COMMUNITY SETTINGS',
-                          title:
-                              'Decide how people can interact',
-                          subtitle:
-                              'Keep only the community signals that are useful for this publication.',
-                          icon:
-                              Icons.tune_rounded,
-                          child: LayoutBuilder(
-                            builder:
-                                (
-                              context,
-                              constraints,
-                            ) {
-                              const gap = 7.0;
-
-                              final cardWidth =
-                                  (constraints
-                                              .maxWidth -
-                                          gap) /
-                                      2;
-
-                              return Wrap(
-                                spacing: gap,
-                                runSpacing: 7,
-                                children: [
-                                  SizedBox(
-                                    width:
-                                        cardWidth,
-                                    child:
-                                        _CommunityToggle(
-                                      icon: Icons
-                                          .star_outline_rounded,
-                                      title:
-                                          'Ratings',
-                                      subtitle:
-                                          'Community score',
-                                      value:
-                                          _allowRatings,
-                                      onChanged:
-                                          (value) =>
-                                              setState(
-                                        () =>
-                                            _allowRatings =
-                                                value,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width:
-                                        cardWidth,
-                                    child:
-                                        _CommunityToggle(
-                                      icon: Icons
-                                          .chat_bubble_outline_rounded,
-                                      title:
-                                          'Feedback',
-                                      subtitle:
-                                          'Written comments',
-                                      value:
-                                          _allowFeedback,
-                                      rose: true,
-                                      onChanged:
-                                          (value) =>
-                                              setState(
-                                        () =>
-                                            _allowFeedback =
-                                                value,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width:
-                                        cardWidth,
-                                    child:
-                                        _CommunityToggle(
-                                      icon: Icons
-                                          .thumbs_up_down_outlined,
-                                      title:
-                                          'Voting',
-                                      subtitle:
-                                          'Support / oppose',
-                                      value:
-                                          _allowVoting,
-                                      onChanged:
-                                          (value) =>
-                                              setState(
-                                        () =>
-                                            _allowVoting =
-                                                value,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width:
-                                        cardWidth,
-                                    child:
-                                        _CommunityToggle(
-                                      icon: Icons
-                                          .handshake_outlined,
-                                      title:
-                                          'Acceptance',
-                                      subtitle:
-                                          'Adopt to workspace',
-                                      value:
-                                          _allowAdoption,
-                                      rose: true,
-                                      onChanged:
-                                          (value) =>
-                                              setState(
-                                        () =>
-                                            _allowAdoption =
-                                                value,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        _StudioSection(
-                          number: '04',
-                          eyebrow:
-                              'LIVE PREVIEW',
-                          title:
-                              'See what the community will see',
-                          subtitle:
-                              'This is a compact preview of the public discovery card.',
-                          icon: Icons
-                              .preview_outlined,
-                          child:
-                              _PublicationPreview(
-                            title:
-                                _title.text
-                                        .trim()
-                                        .isEmpty
-                                    ? 'Your public title'
-                                    : _title.text
-                                        .trim(),
-                            abstract:
-                                _abstract.text
-                                        .trim()
-                                        .isEmpty
-                                    ? 'Your public abstract will appear here.'
-                                    : _abstract.text
-                                        .trim(),
-                            problem:
-                                _problem.text
-                                        .trim()
-                                        .isEmpty
-                                    ? 'Problem statement'
-                                    : _problem.text
-                                        .trim(),
-                            audience:
-                                _targetUsers.text
-                                        .trim()
-                                        .isEmpty
-                                    ? 'Target audience'
-                                    : _targetUsers.text
-                                        .trim(),
-                            visibility:
-                                _visibility,
-                            ratings:
-                                _allowRatings,
-                            feedback:
-                                _allowFeedback,
-                            voting:
-                                _allowVoting,
-                            adoption:
-                                _allowAdoption,
-                          ),
-                        ),
-                      ],
+                                    return _AudienceChip(
+                                      label: entry.$2,
+                                      icon: entry.$3,
+                                      selected: selected,
+                                      onTap: () {
+                                        setState(() {
+                                          if (selected) {
+                                            _selectedUserTypes.remove(entry.$1);
+                                          } else {
+                                            _selectedUserTypes.add(entry.$1);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  }).toList(),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-      ),
-      bottomNavigationBar:
-          _loading || _error != null
-              ? null
-              : _PublicationActionBar(
-                  saving: _saving,
-                  published: _published,
-                  onSave: () =>
-                      _saveDraft(),
-                  onPublish: () =>
-                      _saveDraft(
-                    publish: true,
-                  ),
+
+                    const SizedBox(height: 12),
+
+                    _StudioSection(
+                      number: '03',
+                      eyebrow: 'COMMUNITY SETTINGS',
+                      title: 'Decide how people can interact',
+                      subtitle:
+                          'Keep only the community signals that are useful for this publication.',
+                      icon: Icons.tune_rounded,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          const gap = 7.0;
+
+                          final cardWidth = (constraints.maxWidth - gap) / 2;
+
+                          return Wrap(
+                            spacing: gap,
+                            runSpacing: 7,
+                            children: [
+                              SizedBox(
+                                width: cardWidth,
+                                child: _CommunityToggle(
+                                  icon: Icons.star_outline_rounded,
+                                  title: 'Ratings',
+                                  subtitle: 'Community score',
+                                  value: _allowRatings,
+                                  onChanged: (value) =>
+                                      setState(() => _allowRatings = value),
+                                ),
+                              ),
+                              SizedBox(
+                                width: cardWidth,
+                                child: _CommunityToggle(
+                                  icon: Icons.chat_bubble_outline_rounded,
+                                  title: 'Feedback',
+                                  subtitle: 'Written comments',
+                                  value: _allowFeedback,
+                                  rose: true,
+                                  onChanged: (value) =>
+                                      setState(() => _allowFeedback = value),
+                                ),
+                              ),
+                              SizedBox(
+                                width: cardWidth,
+                                child: _CommunityToggle(
+                                  icon: Icons.thumbs_up_down_outlined,
+                                  title: 'Voting',
+                                  subtitle: 'Support / oppose',
+                                  value: _allowVoting,
+                                  onChanged: (value) =>
+                                      setState(() => _allowVoting = value),
+                                ),
+                              ),
+                              SizedBox(
+                                width: cardWidth,
+                                child: _CommunityToggle(
+                                  icon: Icons.handshake_outlined,
+                                  title: 'Acceptance',
+                                  subtitle: 'Adopt to workspace',
+                                  value: _allowAdoption,
+                                  rose: true,
+                                  onChanged: (value) =>
+                                      setState(() => _allowAdoption = value),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    _StudioSection(
+                      number: '04',
+                      eyebrow: 'LIVE PREVIEW',
+                      title: 'See what the community will see',
+                      subtitle:
+                          'This is a compact preview of the public discovery card.',
+                      icon: Icons.preview_outlined,
+                      child: _PublicationPreview(
+                        title: _title.text.trim().isEmpty
+                            ? 'Your public title'
+                            : _title.text.trim(),
+                        abstract: _abstract.text.trim().isEmpty
+                            ? 'Your public abstract will appear here.'
+                            : _abstract.text.trim(),
+                        problem: _problem.text.trim().isEmpty
+                            ? 'Problem statement'
+                            : _problem.text.trim(),
+                        audience: _targetUsers.text.trim().isEmpty
+                            ? 'Target audience'
+                            : _targetUsers.text.trim(),
+                        visibility: _visibility,
+                        ratings: _allowRatings,
+                        feedback: _allowFeedback,
+                        voting: _allowVoting,
+                        adoption: _allowAdoption,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+      ),
+      bottomNavigationBar: _loading || _error != null
+          ? null
+          : _PublicationActionBar(
+              saving: _saving,
+              published: _published,
+              onSave: () => _saveDraft(),
+              onPublish: () => _saveDraft(publish: true),
+            ),
     );
   }
 
@@ -1030,19 +711,12 @@ class _PublishIdeaPageState
     if (value is String) return value;
 
     if (value is List) {
-      return value
-          .map(
-            (item) => '$item',
-          )
-          .join('\n');
+      return value.map((item) => '$item').join('\n');
     }
 
     if (value is Map) {
       return value.entries
-          .map(
-            (entry) =>
-                '${entry.key}: ${entry.value}',
-          )
+          .map((entry) => '${entry.key}: ${entry.value}')
           .join('\n');
     }
 
@@ -1050,11 +724,116 @@ class _PublishIdeaPageState
   }
 }
 
-class _PublicationHero extends StatelessWidget {
-  const _PublicationHero({
-    required this.completed,
-    required this.published,
+class _PublicationStudioRouteHeader extends StatelessWidget {
+  const _PublicationStudioRouteHeader({
+    required this.returnTitle,
+    required this.subtitle,
+    required this.onBack,
+    required this.statusLabel,
+    required this.statusPositive,
   });
+
+  final String returnTitle;
+  final String subtitle;
+  final VoidCallback onBack;
+  final String? statusLabel;
+  final bool statusPositive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface.withValues(alpha: .985),
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          height: 68,
+          padding: const EdgeInsets.fromLTRB(14, 7, 12, 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.border.withValues(alpha: .62),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryDeep.withValues(alpha: .025),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onBack,
+                  borderRadius: BorderRadius.circular(14),
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: Icon(
+                        Icons.arrow_back_rounded,
+                        size: 26,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: GestureDetector(
+                  onTap: onBack,
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        returnTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.primaryDeep,
+                          fontSize: 18.2,
+                          height: 1.06,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.28,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 9.2,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (statusLabel != null) ...[
+                const SizedBox(width: 8),
+                _StatusPill(
+                  label: statusLabel!,
+                  positive: statusPositive,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PublicationHero extends StatelessWidget {
+  const _PublicationHero({required this.completed, required this.published});
 
   final int completed;
   final bool published;
@@ -1064,32 +843,21 @@ class _PublicationHero extends StatelessWidget {
     final progress = completed / 5;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        14,
-        13,
-        14,
-        14,
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF0F8F5),
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.surface, Color(0xFFF0F8F5), AppColors.surfaceRose],
           stops: [0, .62, 1],
         ),
         borderRadius: BorderRadius.circular(23),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .065),
+          color: AppColors.primaryDark.withValues(alpha: .065),
         ),
         boxShadow: [
           BoxShadow(
-            color:
-                AppColors.primaryDeep.withValues(alpha: .04),
+            color: AppColors.primaryDeep.withValues(alpha: .04),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),
@@ -1103,41 +871,25 @@ class _PublicationHero extends StatelessWidget {
             child: Icon(
               Icons.public_rounded,
               size: 84,
-              color: AppColors.primaryDark
-                  .withValues(alpha: .025),
+              color: AppColors.primaryDark.withValues(alpha: .025),
             ),
           ),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
                     width: 39,
                     height: 39,
-                    alignment:
-                        Alignment.center,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      gradient:
-                          const LinearGradient(
-                        begin:
-                            Alignment.topLeft,
-                        end: Alignment
-                            .bottomRight,
-                        colors: [
-                          Color(
-                            0xFF68C5BF,
-                          ),
-                          Color(
-                            0xFF50AAA5,
-                          ),
-                        ],
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF68C5BF), Color(0xFF50AAA5)],
                       ),
-                      borderRadius:
-                          BorderRadius.circular(
-                        13,
-                      ),
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: const Icon(
                       Icons.public_rounded,
@@ -1148,40 +900,29 @@ class _PublicationHero extends StatelessWidget {
                   const SizedBox(width: 9),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           published
                               ? 'PUBLICATION IS LIVE'
                               : 'PUBLICATION STUDIO',
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .primaryDark,
+                          style: const TextStyle(
+                            color: AppColors.primaryDark,
                             fontSize: 6.1,
-                            fontWeight:
-                                FontWeight.w900,
-                            letterSpacing:
-                                .68,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .68,
                           ),
                         ),
-                        const SizedBox(
-                          height: 3,
-                        ),
+                        const SizedBox(height: 3),
                         Text(
                           published
                               ? 'Refine the public story anytime.'
                               : 'Turn the private idea into a polished public story.',
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .textPrimary,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 14.4,
                             height: 1.14,
-                            fontWeight:
-                                FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
@@ -1193,8 +934,7 @@ class _PublicationHero extends StatelessWidget {
               const Text(
                 'Control what is shared, who can discover it, and which community interactions are enabled.',
                 style: TextStyle(
-                  color:
-                      AppColors.textSecondary,
+                  color: AppColors.textSecondary,
                   fontSize: 8.2,
                   height: 1.4,
                 ),
@@ -1204,19 +944,12 @@ class _PublicationHero extends StatelessWidget {
                 children: [
                   Expanded(
                     child: ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(
-                        999,
-                      ),
-                      child:
-                          LinearProgressIndicator(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 5,
-                        color:
-                            AppColors.primary,
-                        backgroundColor:
-                            AppColors
-                                .primarySoft,
+                        color: AppColors.primary,
+                        backgroundColor: AppColors.primarySoft,
                       ),
                     ),
                   ),
@@ -1224,11 +957,9 @@ class _PublicationHero extends StatelessWidget {
                   Text(
                     '$completed / 5 ready',
                     style: const TextStyle(
-                      color:
-                          AppColors.primaryDark,
+                      color: AppColors.primaryDark,
                       fontSize: 7,
-                      fontWeight:
-                          FontWeight.w900,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ],
@@ -1263,32 +994,21 @@ class _StudioSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        12,
-        12,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF8FCFB),
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.surface, Color(0xFFF8FCFB), AppColors.surfaceRose],
           stops: [0, .72, 1],
         ),
         borderRadius: BorderRadius.circular(21),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .055),
+          color: AppColors.primaryDark.withValues(alpha: .055),
         ),
         boxShadow: [
           BoxShadow(
-            color:
-                AppColors.primaryDeep.withValues(alpha: .03),
+            color: AppColors.primaryDeep.withValues(alpha: .03),
             blurRadius: 15,
             offset: const Offset(0, 6),
           ),
@@ -1302,8 +1022,7 @@ class _StudioSection extends StatelessWidget {
             child: Text(
               number,
               style: TextStyle(
-                color: AppColors.primaryDark
-                    .withValues(alpha: .04),
+                color: AppColors.primaryDark.withValues(alpha: .04),
                 fontSize: 39,
                 height: 1,
                 fontWeight: FontWeight.w900,
@@ -1311,77 +1030,50 @@ class _StudioSection extends StatelessWidget {
             ),
           ),
           Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     width: 36,
                     height: 36,
-                    alignment:
-                        Alignment.center,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color:
-                          AppColors.primarySoft,
-                      borderRadius:
-                          BorderRadius.circular(
-                        11,
-                      ),
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(
-                      icon,
-                      size: 16,
-                      color:
-                          AppColors.primaryDark,
-                    ),
+                    child: Icon(icon, size: 16, color: AppColors.primaryDark),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           eyebrow,
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .primaryDark,
+                          style: const TextStyle(
+                            color: AppColors.primaryDark,
                             fontSize: 5.8,
-                            fontWeight:
-                                FontWeight.w900,
-                            letterSpacing:
-                                .62,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .62,
                           ),
                         ),
-                        const SizedBox(
-                          height: 3,
-                        ),
+                        const SizedBox(height: 3),
                         Text(
                           title,
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .textPrimary,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 12.2,
                             height: 1.16,
-                            fontWeight:
-                                FontWeight.w900,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(
-                          height: 3,
-                        ),
+                        const SizedBox(height: 3),
                         Text(
                           subtitle,
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .textMuted,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
                             fontSize: 7.3,
                             height: 1.34,
                           ),
@@ -1405,12 +1097,8 @@ class _StudioSection extends StatelessWidget {
   }
 }
 
-class _GenerateCopyButton
-    extends StatelessWidget {
-  const _GenerateCopyButton({
-    required this.loading,
-    required this.onTap,
-  });
+class _GenerateCopyButton extends StatelessWidget {
+  const _GenerateCopyButton({required this.loading, required this.onTap});
 
   final bool loading;
   final VoidCallback onTap;
@@ -1421,27 +1109,16 @@ class _GenerateCopyButton
       color: Colors.transparent,
       child: InkWell(
         onTap: loading ? null : onTap,
-        borderRadius:
-            BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12),
         child: Ink(
           height: 35,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
-            gradient:
-                const LinearGradient(
-              colors: [
-                Color(0xFFE5F5F1),
-                AppColors.surfaceRose,
-              ],
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE5F5F1), AppColors.surfaceRose],
             ),
-            borderRadius:
-                BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.primary
-                  .withValues(alpha: .10),
-            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.primary.withValues(alpha: .10)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1450,29 +1127,24 @@ class _GenerateCopyButton
                 const SizedBox(
                   width: 13,
                   height: 13,
-                  child:
-                      CircularProgressIndicator(
+                  child: CircularProgressIndicator(
                     strokeWidth: 1.6,
-                    color:
-                        AppColors.primary,
+                    color: AppColors.primary,
                   ),
                 )
               else
                 const Icon(
                   Icons.auto_awesome_rounded,
                   size: 13,
-                  color:
-                      AppColors.primaryDark,
+                  color: AppColors.primaryDark,
                 ),
               const SizedBox(width: 5),
               Text(
                 loading ? 'Writing…' : 'AI copy',
                 style: const TextStyle(
-                  color:
-                      AppColors.primaryDark,
+                  color: AppColors.primaryDark,
                   fontSize: 6.8,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -1483,8 +1155,7 @@ class _GenerateCopyButton
   }
 }
 
-class _StudioTextField
-    extends StatelessWidget {
+class _StudioTextField extends StatelessWidget {
   const _StudioTextField({
     required this.controller,
     required this.label,
@@ -1509,28 +1180,17 @@ class _StudioTextField
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        10,
-        9,
-        10,
-        8,
-      ),
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
       decoration: BoxDecoration(
-        color:
-            Colors.white.withValues(alpha: .70),
+        color: Colors.white.withValues(alpha: .70),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: accent.withValues(alpha: .08),
-        ),
+        border: Border.all(color: accent.withValues(alpha: .08)),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -1539,28 +1199,19 @@ class _StudioTextField
                 height: 29,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: rose
-                      ? AppColors.pinkSoft
-                      : AppColors.primarySoft,
-                  borderRadius:
-                      BorderRadius.circular(9),
+                  color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(
-                  icon,
-                  size: 13.5,
-                  color: accent,
-                ),
+                child: Icon(icon, size: 13.5, color: accent),
               ),
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
                   label,
                   style: const TextStyle(
-                    color:
-                        AppColors.textPrimary,
+                    color: AppColors.textPrimary,
                     fontSize: 8.8,
-                    fontWeight:
-                        FontWeight.w900,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
@@ -1569,8 +1220,7 @@ class _StudioTextField
                 style: const TextStyle(
                   color: AppColors.textMuted,
                   fontSize: 6.2,
-                  fontWeight:
-                      FontWeight.w700,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -1597,17 +1247,9 @@ class _StudioTextField
               counterText: '',
               filled: false,
               border: InputBorder.none,
-              enabledBorder:
-                  InputBorder.none,
-              focusedBorder:
-                  InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.fromLTRB(
-                1,
-                3,
-                1,
-                3,
-              ),
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.fromLTRB(1, 3, 1, 3),
             ),
           ),
         ],
@@ -1616,8 +1258,7 @@ class _StudioTextField
   }
 }
 
-class _VisibilityOption
-    extends StatelessWidget {
+class _VisibilityOption extends StatelessWidget {
   const _VisibilityOption({
     required this.icon,
     required this.title,
@@ -1638,62 +1279,32 @@ class _VisibilityOption
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(15),
         child: AnimatedContainer(
-          duration:
-              const Duration(milliseconds: 180),
-          padding: const EdgeInsets.fromLTRB(
-            9,
-            9,
-            9,
-            9,
-          ),
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.fromLTRB(9, 9, 9, 9),
           decoration: BoxDecoration(
             gradient: selected
                 ? LinearGradient(
                     begin: Alignment.topLeft,
-                    end:
-                        Alignment.bottomRight,
+                    end: Alignment.bottomRight,
                     colors: rose
-                        ? const [
-                            AppColors
-                                .surfaceRose,
-                            Color(
-                              0xFFF3F9F7,
-                            ),
-                          ]
-                        : const [
-                            Color(
-                              0xFFE6F5F1,
-                            ),
-                            Color(
-                              0xFFF8FCFB,
-                            ),
-                          ],
+                        ? const [AppColors.surfaceRose, Color(0xFFF3F9F7)]
+                        : const [Color(0xFFE6F5F1), Color(0xFFF8FCFB)],
                   )
                 : null,
-            color: selected
-                ? null
-                : Colors.white
-                    .withValues(alpha: .60),
-            borderRadius:
-                BorderRadius.circular(15),
+            color: selected ? null : Colors.white.withValues(alpha: .60),
+            borderRadius: BorderRadius.circular(15),
             border: Border.all(
               color: selected
-                  ? accent.withValues(
-                      alpha: .20,
-                    )
-                  : AppColors.primaryDark
-                      .withValues(alpha: .04),
+                  ? accent.withValues(alpha: .20)
+                  : AppColors.primaryDark.withValues(alpha: .04),
               width: selected ? 1.15 : 1,
             ),
           ),
@@ -1705,48 +1316,36 @@ class _VisibilityOption
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected
-                      ? (rose
-                          ? AppColors
-                              .pinkSoft
-                          : AppColors
-                              .primarySoft)
+                      ? (rose ? AppColors.pinkSoft : AppColors.primarySoft)
                       : AppColors.surface,
-                  borderRadius:
-                      BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(
                   icon,
                   size: 15,
-                  color: selected
-                      ? accent
-                      : AppColors.textMuted,
+                  color: selected ? accent : AppColors.textMuted,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
                       style: TextStyle(
                         color: selected
-                            ? AppColors
-                                .textPrimary
-                            : AppColors
-                                .textSecondary,
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
                         fontSize: 9.2,
-                        fontWeight:
-                            FontWeight.w900,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color:
-                            AppColors.textMuted,
+                        color: AppColors.textMuted,
                         fontSize: 6.9,
                         height: 1.3,
                       ),
@@ -1756,22 +1355,15 @@ class _VisibilityOption
               ),
               const SizedBox(width: 7),
               AnimatedContainer(
-                duration:
-                    const Duration(
-                  milliseconds: 180,
-                ),
+                duration: const Duration(milliseconds: 180),
                 width: 25,
                 height: 25,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: selected
-                      ? accent
-                      : Colors.transparent,
+                  color: selected ? accent : Colors.transparent,
                   border: Border.all(
-                    color: selected
-                        ? accent
-                        : AppColors.silver,
+                    color: selected ? accent : AppColors.silver,
                   ),
                 ),
                 child: selected
@@ -1809,41 +1401,29 @@ class _AudienceChip extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius:
-            BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(999),
         child: AnimatedContainer(
-          duration:
-              const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 180),
           height: 34,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
             color: selected
                 ? AppColors.primarySoft
-                : Colors.white
-                    .withValues(alpha: .66),
-            borderRadius:
-                BorderRadius.circular(999),
+                : Colors.white.withValues(alpha: .66),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected
-                  ? AppColors.primary
-                      .withValues(alpha: .25)
-                  : AppColors.primaryDark
-                      .withValues(alpha: .05),
+                  ? AppColors.primary.withValues(alpha: .25)
+                  : AppColors.primaryDark.withValues(alpha: .05),
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                selected
-                    ? Icons.check_rounded
-                    : icon,
+                selected ? Icons.check_rounded : icon,
                 size: 12,
-                color: selected
-                    ? AppColors.primaryDark
-                    : AppColors.textMuted,
+                color: selected ? AppColors.primaryDark : AppColors.textMuted,
               ),
               const SizedBox(width: 5),
               Text(
@@ -1851,11 +1431,9 @@ class _AudienceChip extends StatelessWidget {
                 style: TextStyle(
                   color: selected
                       ? AppColors.primaryDark
-                      : AppColors
-                          .textSecondary,
+                      : AppColors.textSecondary,
                   fontSize: 6.9,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -1866,8 +1444,7 @@ class _AudienceChip extends StatelessWidget {
   }
 }
 
-class _CommunityToggle
-    extends StatelessWidget {
+class _CommunityToggle extends StatelessWidget {
   const _CommunityToggle({
     required this.icon,
     required this.title,
@@ -1886,51 +1463,31 @@ class _CommunityToggle
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
-      constraints: const BoxConstraints(
-        minHeight: 101,
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        9,
-        9,
-        7,
-        8,
-      ),
+      constraints: const BoxConstraints(minHeight: 101),
+      padding: const EdgeInsets.fromLTRB(9, 9, 7, 8),
       decoration: BoxDecoration(
         gradient: value
             ? LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: rose
-                    ? const [
-                        AppColors.surfaceRose,
-                        AppColors.surface,
-                      ]
-                    : const [
-                        Color(0xFFEAF6F3),
-                        AppColors.surface,
-                      ],
+                    ? const [AppColors.surfaceRose, AppColors.surface]
+                    : const [Color(0xFFEAF6F3), AppColors.surface],
               )
             : null,
-        color: value
-            ? null
-            : Colors.white
-                .withValues(alpha: .58),
+        color: value ? null : Colors.white.withValues(alpha: .58),
         borderRadius: BorderRadius.circular(15),
         border: Border.all(
           color: value
               ? accent.withValues(alpha: .12)
-              : AppColors.primaryDark
-                  .withValues(alpha: .04),
+              : AppColors.primaryDark.withValues(alpha: .04),
         ),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -1939,17 +1496,10 @@ class _CommunityToggle
                 height: 30,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: rose
-                      ? AppColors.pinkSoft
-                      : AppColors.primarySoft,
-                  borderRadius:
-                      BorderRadius.circular(9),
+                  color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(
-                  icon,
-                  size: 13.5,
-                  color: accent,
-                ),
+                child: Icon(icon, size: 13.5, color: accent),
               ),
               const Spacer(),
               Transform.scale(
@@ -1957,10 +1507,8 @@ class _CommunityToggle
                 child: Switch.adaptive(
                   value: value,
                   onChanged: onChanged,
-                  activeThumbColor:
-                      AppColors.primary,
-                  activeTrackColor:
-                      AppColors.primarySoft,
+                  activeThumbColor: AppColors.primary,
+                  activeTrackColor: AppColors.primarySoft,
                 ),
               ),
             ],
@@ -1969,8 +1517,7 @@ class _CommunityToggle
           Text(
             title,
             style: const TextStyle(
-              color:
-                  AppColors.textPrimary,
+              color: AppColors.textPrimary,
               fontSize: 8.7,
               fontWeight: FontWeight.w900,
             ),
@@ -1990,8 +1537,7 @@ class _CommunityToggle
   }
 }
 
-class _PublicationPreview
-    extends StatelessWidget {
+class _PublicationPreview extends StatelessWidget {
   const _PublicationPreview({
     required this.title,
     required this.abstract,
@@ -2017,34 +1563,28 @@ class _PublicationPreview
 
   @override
   Widget build(BuildContext context) {
-    final visibilityLabel =
-        switch (visibility) {
+    final visibilityLabel = switch (visibility) {
       'REGISTERED_USERS' => 'Members',
-      'SELECTED_AUDIENCE' =>
-        'Selected audience',
+      'SELECTED_AUDIENCE' => 'Selected audience',
       _ => 'Public',
     };
 
     return Container(
       decoration: BoxDecoration(
-        color:
-            Colors.white.withValues(alpha: .72),
+        color: Colors.white.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: AppColors.primaryDark
-              .withValues(alpha: .055),
+          color: AppColors.primaryDark.withValues(alpha: .055),
         ),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               height: 5,
-              decoration:
-                  const BoxDecoration(
+              decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
                     AppColors.primary,
@@ -2055,32 +1595,20 @@ class _PublicationPreview
               ),
             ),
             Padding(
-              padding:
-                  const EdgeInsets.fromLTRB(
-                11,
-                10,
-                11,
-                11,
-              ),
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       _PreviewBadge(
-                        icon: Icons
-                            .auto_awesome_rounded,
-                        label:
-                            'COMMUNITY IDEA',
+                        icon: Icons.auto_awesome_rounded,
+                        label: 'COMMUNITY IDEA',
                       ),
                       const Spacer(),
                       _PreviewBadge(
-                        icon: Icons
-                            .visibility_outlined,
-                        label:
-                            visibilityLabel
-                                .toUpperCase(),
+                        icon: Icons.visibility_outlined,
+                        label: visibilityLabel.toUpperCase(),
                         rose: true,
                       ),
                     ],
@@ -2089,26 +1617,21 @@ class _PublicationPreview
                   Text(
                     title,
                     maxLines: 3,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color:
-                          AppColors.textPrimary,
+                      color: AppColors.textPrimary,
                       fontSize: 14.4,
                       height: 1.14,
-                      fontWeight:
-                          FontWeight.w900,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 7),
                   Text(
                     abstract,
                     maxLines: 5,
-                    overflow:
-                        TextOverflow.ellipsis,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: AppColors
-                          .textSecondary,
+                      color: AppColors.textSecondary,
                       fontSize: 8.7,
                       height: 1.45,
                     ),
@@ -2117,10 +1640,7 @@ class _PublicationPreview
                   Row(
                     children: [
                       Expanded(
-                        child: _PreviewFact(
-                          label: 'Problem',
-                          value: problem,
-                        ),
+                        child: _PreviewFact(label: 'Problem', value: problem),
                       ),
                       const SizedBox(width: 7),
                       Expanded(
@@ -2139,26 +1659,22 @@ class _PublicationPreview
                     children: [
                       if (ratings)
                         const _PreviewSignal(
-                          icon: Icons
-                              .star_outline_rounded,
+                          icon: Icons.star_outline_rounded,
                           label: 'Ratings',
                         ),
                       if (feedback)
                         const _PreviewSignal(
-                          icon: Icons
-                              .chat_bubble_outline_rounded,
+                          icon: Icons.chat_bubble_outline_rounded,
                           label: 'Feedback',
                         ),
                       if (voting)
                         const _PreviewSignal(
-                          icon: Icons
-                              .thumb_up_alt_outlined,
+                          icon: Icons.thumb_up_alt_outlined,
                           label: 'Voting',
                         ),
                       if (adoption)
                         const _PreviewSignal(
-                          icon: Icons
-                              .handshake_outlined,
+                          icon: Icons.handshake_outlined,
                           label: 'Acceptance',
                         ),
                     ],
@@ -2186,23 +1702,18 @@ class _PreviewFact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
         color: rose
-            ? AppColors.pinkSoft
-                .withValues(alpha: .55)
-            : AppColors.primarySoft
-                .withValues(alpha: .55),
+            ? AppColors.pinkSoft.withValues(alpha: .55)
+            : AppColors.primarySoft.withValues(alpha: .55),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label.toUpperCase(),
@@ -2219,8 +1730,7 @@ class _PreviewFact extends StatelessWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color:
-                  AppColors.textSecondary,
+              color: AppColors.textSecondary,
               fontSize: 7.2,
               height: 1.35,
               fontWeight: FontWeight.w700,
@@ -2245,29 +1755,19 @@ class _PreviewBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = rose
-        ? AppColors.pinkDeep
-        : AppColors.primaryDark;
+    final accent = rose ? AppColors.pinkDeep : AppColors.primaryDark;
 
     return Container(
       height: 27,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: rose
-            ? AppColors.pinkSoft
-            : AppColors.primarySoft,
+        color: rose ? AppColors.pinkSoft : AppColors.primarySoft,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10,
-            color: accent,
-          ),
+          Icon(icon, size: 10, color: accent),
           const SizedBox(width: 4),
           Text(
             label,
@@ -2285,10 +1785,7 @@ class _PreviewBadge extends StatelessWidget {
 }
 
 class _PreviewSignal extends StatelessWidget {
-  const _PreviewSignal({
-    required this.icon,
-    required this.label,
-  });
+  const _PreviewSignal({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -2297,22 +1794,15 @@ class _PreviewSignal extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 27,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: AppColors.primarySoft
-            .withValues(alpha: .68),
+        color: AppColors.primarySoft.withValues(alpha: .68),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 10,
-            color: AppColors.primaryDark,
-          ),
+          Icon(icon, size: 10, color: AppColors.primaryDark),
           const SizedBox(width: 4),
           Text(
             label,
@@ -2328,8 +1818,7 @@ class _PreviewSignal extends StatelessWidget {
   }
 }
 
-class _PublicationActionBar
-    extends StatelessWidget {
+class _PublicationActionBar extends StatelessWidget {
   const _PublicationActionBar({
     required this.saving,
     required this.published,
@@ -2347,25 +1836,17 @@ class _PublicationActionBar
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          12,
-          9,
-          12,
-          10,
-        ),
+        padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
         decoration: BoxDecoration(
-          color:
-              AppColors.surface.withValues(alpha: .97),
+          color: AppColors.surface.withValues(alpha: .97),
           border: Border(
             top: BorderSide(
-              color: AppColors.primaryDark
-                  .withValues(alpha: .05),
+              color: AppColors.primaryDark.withValues(alpha: .05),
             ),
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep
-                  .withValues(alpha: .08),
+              color: AppColors.primaryDeep.withValues(alpha: .08),
               blurRadius: 20,
               offset: const Offset(0, -6),
             ),
@@ -2375,26 +1856,13 @@ class _PublicationActionBar
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed:
-                    saving ? null : onSave,
-                icon: const Icon(
-                  Icons.save_outlined,
-                  size: 14,
-                ),
-                label:
-                    const Text('Save draft'),
-                style:
-                    OutlinedButton.styleFrom(
-                  minimumSize:
-                      const Size.fromHeight(
-                    45,
-                  ),
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      13,
-                    ),
+                onPressed: saving ? null : onSave,
+                icon: const Icon(Icons.save_outlined, size: 14),
+                label: const Text('Save draft'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(45),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
                   ),
                 ),
               ),
@@ -2403,44 +1871,33 @@ class _PublicationActionBar
             Expanded(
               flex: 2,
               child: FilledButton.icon(
-                onPressed:
-                    saving ? null : onPublish,
+                onPressed: saving ? null : onPublish,
                 icon: saving
                     ? const SizedBox(
                         width: 14,
                         height: 14,
-                        child:
-                            CircularProgressIndicator(
+                        child: CircularProgressIndicator(
                           strokeWidth: 1.7,
                           color: Colors.white,
                         ),
                       )
                     : Icon(
                         published
-                            ? Icons
-                                .refresh_rounded
-                            : Icons
-                                .public_rounded,
+                            ? Icons.refresh_rounded
+                            : Icons.public_rounded,
                         size: 15,
                       ),
                 label: Text(
                   saving
                       ? 'Saving…'
                       : published
-                          ? 'Republish'
-                          : 'Publish idea',
+                      ? 'Republish'
+                      : 'Publish idea',
                 ),
                 style: FilledButton.styleFrom(
-                  minimumSize:
-                      const Size.fromHeight(
-                    45,
-                  ),
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      13,
-                    ),
+                  minimumSize: const Size.fromHeight(45),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
                   ),
                 ),
               ),
@@ -2453,33 +1910,22 @@ class _PublicationActionBar
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({
-    required this.label,
-    required this.positive,
-  });
+  const _StatusPill({required this.label, required this.positive});
 
   final String label;
   final bool positive;
 
   @override
   Widget build(BuildContext context) {
-    final accent = positive
-        ? AppColors.success
-        : AppColors.primaryDark;
+    final accent = positive ? AppColors.success : AppColors.primaryDark;
 
     return Container(
       height: 28,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: positive
-            ? const Color(0xFFEAF8F2)
-            : AppColors.primarySoft,
+        color: positive ? const Color(0xFFEAF8F2) : AppColors.primarySoft,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: accent.withValues(alpha: .10),
-        ),
+        border: Border.all(color: accent.withValues(alpha: .10)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -2487,10 +1933,7 @@ class _StatusPill extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: accent,
-            ),
+            decoration: BoxDecoration(shape: BoxShape.circle, color: accent),
           ),
           const SizedBox(width: 4),
           Text(
@@ -2508,32 +1951,19 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _PublicationLoadingView
-    extends StatelessWidget {
+class _PublicationLoadingView extends StatelessWidget {
   const _PublicationLoadingView();
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      physics:
-          const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        18,
-        28,
-        18,
-        40,
-      ),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 40),
       children: [
         Container(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            18,
-            16,
-            18,
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
           decoration: BoxDecoration(
-            gradient:
-                const LinearGradient(
+            gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
@@ -2542,11 +1972,9 @@ class _PublicationLoadingView
                 AppColors.surfaceRose,
               ],
             ),
-            borderRadius:
-                BorderRadius.circular(23),
+            borderRadius: BorderRadius.circular(23),
             border: Border.all(
-              color: AppColors.primaryDark
-                  .withValues(alpha: .06),
+              color: AppColors.primaryDark.withValues(alpha: .06),
             ),
           ),
           child: Column(
@@ -2557,21 +1985,17 @@ class _PublicationLoadingView
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color:
-                      AppColors.primarySoft,
+                  color: AppColors.primarySoft,
                   border: Border.all(
-                    color: AppColors.primary
-                        .withValues(alpha: .10),
+                    color: AppColors.primary.withValues(alpha: .10),
                   ),
                 ),
                 child: const SizedBox(
                   width: 22,
                   height: 22,
-                  child:
-                      CircularProgressIndicator(
+                  child: CircularProgressIndicator(
                     strokeWidth: 2.4,
-                    color:
-                        AppColors.primary,
+                    color: AppColors.primary,
                   ),
                 ),
               ),
@@ -2579,11 +2003,9 @@ class _PublicationLoadingView
               const Text(
                 'Preparing publication studio',
                 style: TextStyle(
-                  color:
-                      AppColors.textPrimary,
+                  color: AppColors.textPrimary,
                   fontSize: 14,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 5),
@@ -2604,12 +2026,8 @@ class _PublicationLoadingView
   }
 }
 
-class _PublicationErrorView
-    extends StatelessWidget {
-  const _PublicationErrorView({
-    required this.error,
-    required this.onRetry,
-  });
+class _PublicationErrorView extends StatelessWidget {
+  const _PublicationErrorView({required this.error, required this.onRetry});
 
   final Object error;
   final VoidCallback onRetry;
@@ -2617,21 +2035,16 @@ class _PublicationErrorView
   @override
   Widget build(BuildContext context) {
     return ListView(
-      physics:
-          const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(18),
       children: [
         EmptyState(
           icon: Icons.cloud_off_rounded,
-          title:
-              'Publication studio unavailable',
+          title: 'Publication studio unavailable',
           message: error.toString(),
           action: FilledButton.icon(
             onPressed: onRetry,
-            icon: const Icon(
-              Icons.refresh_rounded,
-              size: 15,
-            ),
+            icon: const Icon(Icons.refresh_rounded, size: 15),
             label: const Text('Retry'),
           ),
         ),
@@ -2641,10 +2054,7 @@ class _PublicationErrorView
 }
 
 String _humanizeStatus(String value) {
-  final normalized = value
-      .replaceAll('_', ' ')
-      .replaceAll('-', ' ')
-      .trim();
+  final normalized = value.replaceAll('_', ' ').replaceAll('-', ' ').trim();
 
   if (normalized.isEmpty) {
     return 'DRAFT';

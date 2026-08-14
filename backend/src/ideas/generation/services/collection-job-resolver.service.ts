@@ -326,15 +326,19 @@ export class CollectionJobResolverService {
       TextInputBuilderService.peekFastContext(startedJob.id)?.inputs ?? [];
 
     /*
-     * Loading the relation-rich job and starting deterministic NLP used to be
-     * serialized. NLP reads the completed job by id internally, so both remote
-     * database operations can safely overlap after collection is committed.
-     * This keeps the complete corpus while removing one full Supabase wait.
+     * DataCollectionService.completeJobWithTotals() already returns the
+     * completed job with the domain, selected sources, and NLP relation shape
+     * required by the generation pipeline. Re-querying the same collection job
+     * here used to add one full remote PostgreSQL round-trip after every fresh
+     * collection.
+     *
+     * Reuse the authoritative object returned by the completed collection
+     * update and run deterministic NLP directly from the in-memory fast
+     * context. No evidence, source, or validation rule is removed.
      */
-    const [completedJob, nlpOutput] = await Promise.all([
-      this.loadResolvedJob(startedJob.id),
-      this.intelligentAnalysisService.analyze(startedJob.id),
-    ]);
+    const completedJob = startedJob as ResolvedCollectionJob;
+    const nlpOutput =
+      await this.intelligentAnalysisService.analyze(startedJob.id);
 
     const result: ResolveCollectionJobResult = {
       job: completedJob,
@@ -571,45 +575,6 @@ export class CollectionJobResolverService {
     );
   }
 
-  /**
-   * Loads a completed collection job with every relation required
-   * by the generation pipeline.
-   *
-   * @param collectionJobId Collection-job identifier.
-   * @returns Fully loaded collection job.
-   */
-  private async loadResolvedJob(
-    collectionJobId: string,
-  ): Promise<ResolvedCollectionJob> {
-    return this.prisma.collectionJob.findUniqueOrThrow({
-      where: {
-        id: collectionJobId,
-      },
-
-      include: {
-        domain: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-
-        sources: {
-          include: {
-            dataSource: {
-              select: {
-                id: true,
-                key: true,
-                displayName: true,
-              },
-            },
-          },
-        },
-
-        nlpAnalysis: true,
-      },
-    });
-  }
 
   /**
    * Restores the IntelligentAnalysisOutput contract from a

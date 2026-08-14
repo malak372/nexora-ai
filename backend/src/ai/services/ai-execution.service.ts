@@ -158,6 +158,9 @@ type ExecuteProviderRequestInput = {
 
   /** Optional caller-driven cancellation signal. */
   readonly signal?: AbortSignal;
+
+  /** Optional realtime text callback for plain-text provider streaming. */
+  readonly onTextDelta?: (delta: string) => void;
 };
 
 /**
@@ -438,10 +441,18 @@ export class AiExecutionService {
       (model) => !excludedModelIds.has(model.id),
     );
 
+    const providerEligibleModels = input.excludeLocalFallback
+      ? nonExcludedModels.filter(
+          (model) =>
+            normalizeAiProviderKey(model.providerKey) !==
+            AI_PROVIDER_KEYS.OLLAMA,
+        )
+      : nonExcludedModels;
+
     const eligibleModels =
       input.responseFormat === AiResponseFormat.JSON
-        ? nonExcludedModels.filter((model) => model.supportsJsonOutput)
-        : nonExcludedModels;
+        ? providerEligibleModels.filter((model) => model.supportsJsonOutput)
+        : providerEligibleModels;
 
     if (eligibleModels.length === 0) {
       throw new ServiceUnavailableException(
@@ -456,7 +467,16 @@ export class AiExecutionService {
      * enrichment operation. The option is ignored for exact-model execution
      * because that path already returns one model.
      */
-    const orderedModels = this.placeLocalFallbackLast(eligibleModels);
+    const preferenceOrderedModels =
+      this.placePreferredApiModelsFirst(
+        eligibleModels,
+        input.preferredApiModelIds,
+      );
+
+    const orderedModels =
+      this.placeLocalFallbackLast(
+        preferenceOrderedModels,
+      );
 
     return input.maxModelsPerOperation === undefined
       ? orderedModels
@@ -464,6 +484,69 @@ export class AiExecutionService {
           orderedModels,
           input.maxModelsPerOperation,
         );
+  }
+
+  /**
+   * Moves caller-preferred provider API model identifiers to the front while
+   * preserving every other routed model as fallback.
+   *
+   * Preference is applied only after normal active/health/cooldown filtering,
+   * so this never revives an unavailable model or bypasses routing safety.
+   */
+  private placePreferredApiModelsFirst(
+    models: readonly AiModel[],
+    preferredApiModelIds:
+      ReadonlyArray<string> | undefined,
+  ): AiModel[] {
+    if (
+      !preferredApiModelIds ||
+      preferredApiModelIds.length === 0
+    ) {
+      return [...models];
+    }
+
+    const normalizedPreferences =
+      preferredApiModelIds
+        .map((apiModelId) =>
+          apiModelId
+            .trim()
+            .toLocaleLowerCase(),
+        )
+        .filter(Boolean);
+
+    if (normalizedPreferences.length === 0) {
+      return [...models];
+    }
+
+    const selectedModelIds = new Set<string>();
+    const preferredModels: AiModel[] = [];
+
+    for (const preferredApiModelId of normalizedPreferences) {
+      for (const model of models) {
+        if (selectedModelIds.has(model.id)) {
+          continue;
+        }
+
+        if (
+          model.apiModelId
+            .trim()
+            .toLocaleLowerCase() !==
+          preferredApiModelId
+        ) {
+          continue;
+        }
+
+        preferredModels.push(model);
+        selectedModelIds.add(model.id);
+      }
+    }
+
+    return [
+      ...preferredModels,
+      ...models.filter(
+        (model) => !selectedModelIds.has(model.id),
+      ),
+    ];
   }
 
   /**
@@ -645,7 +728,7 @@ export class AiExecutionService {
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
-      this.validateFinishReason(providerResult);
+      this.validateFinishReason(providerResult, input);
 
       const validation = this.validateProviderResult(providerResult, input);
 
@@ -856,6 +939,8 @@ export class AiExecutionService {
         : undefined,
 
       signal: input.signal,
+
+      onTextDelta: input.onTextDelta,
     };
   }
 
@@ -891,6 +976,8 @@ export class AiExecutionService {
           responseSchemaName: request.responseSchemaName,
 
           signal,
+
+          onTextDelta: request.onTextDelta,
         }),
       timeoutMs,
       request.signal,
@@ -943,12 +1030,23 @@ export class AiExecutionService {
    * @param result Normalized provider result.
    * @throws AiProviderError When generation did not complete normally.
    */
-  private validateFinishReason(result: AiProviderGenerateResult): void {
+  private validateFinishReason(
+    result: AiProviderGenerateResult,
+    input: AiExecutionInput,
+  ): void {
     switch (result.finishReason) {
       case AiFinishReason.STOP:
         return;
 
       case AiFinishReason.MAX_TOKENS:
+        if (
+          input.responseFormat !== AiResponseFormat.JSON &&
+          input.allowPartialTextOnMaxTokens === true &&
+          result.text.trim()
+        ) {
+          return;
+        }
+
         throw new AiProviderError(
           'The AI response was truncated after reaching the configured output-token limit.',
           AiProviderErrorCode.INVALID_STRUCTURED_OUTPUT,
@@ -1034,6 +1132,15 @@ export class AiExecutionService {
         readonly success: false;
         readonly failure: StructuredOutputValidationFailure;
       } {
+    if (
+      input.responseFormat === AiResponseFormat.JSON &&
+      input.onTextDelta !== undefined
+    ) {
+      throw new BadRequestException(
+        'onTextDelta is supported only for plain-text AI operations.',
+      );
+    }
+
     if (input.responseFormat !== AiResponseFormat.JSON) {
       return {
         success: true,
@@ -1162,7 +1269,7 @@ export class AiExecutionService {
       );
 
       this.validateProviderMetadata(provider, model, providerResult);
-      this.validateFinishReason(providerResult);
+      this.validateFinishReason(providerResult, input);
 
       const validation = this.validateProviderResult(providerResult, input);
 
@@ -1646,6 +1753,32 @@ export class AiExecutionService {
       throw new BadRequestException(
         'maxModelsPerOperation must be an integer between 1 and 10.',
       );
+    }
+
+    if (
+      input.onTextDelta !== undefined &&
+      typeof input.onTextDelta !== 'function'
+    ) {
+      throw new BadRequestException(
+        'onTextDelta must be a function when provided.',
+      );
+    }
+
+    if (input.preferredApiModelIds !== undefined) {
+      if (
+        !Array.isArray(input.preferredApiModelIds) ||
+        input.preferredApiModelIds.length === 0 ||
+        input.preferredApiModelIds.length > 10 ||
+        input.preferredApiModelIds.some(
+          (apiModelId) =>
+            typeof apiModelId !== 'string' ||
+            !apiModelId.trim(),
+        )
+      ) {
+        throw new BadRequestException(
+          'preferredApiModelIds must contain between 1 and 10 non-blank model identifiers when provided.',
+        );
+      }
     }
 
     if (

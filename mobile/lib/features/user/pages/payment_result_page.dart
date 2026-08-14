@@ -11,9 +11,6 @@ import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
-import 'accepted_idea_workspace_page.dart';
-import 'idea_workspace_page.dart';
-import 'publication_page.dart';
 
 class PaymentResultPage extends StatefulWidget {
   const PaymentResultPage({
@@ -32,7 +29,7 @@ class PaymentResultPage extends StatefulWidget {
 }
 
 class _PaymentResultPageState extends State<PaymentResultPage> {
-  static const _maxAttempts = 10;
+  static const _maxAttempts = 40;
 
   bool _loading = true;
   String? _error;
@@ -50,7 +47,8 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
     if (paymentId == null || paymentId.isEmpty) {
       setState(() {
         _loading = false;
-        _error = 'No payment reference was provided. Open this screen from the checkout return link or your billing history.';
+        _error =
+            'No payment reference was provided. Open this screen from the checkout return link or your billing history.';
       });
       return;
     }
@@ -65,8 +63,12 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
     Map<String, dynamic>? latest;
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
       try {
-        var payment = await UserApi.instance.getPaymentState(paymentId, force: true);
-        if ('${payment['status']}'.toUpperCase() == 'PENDING' && attempt == 0) {
+        var payment = await UserApi.instance.getPaymentState(
+          paymentId,
+          force: true,
+        );
+        if ('${payment['status']}'.toUpperCase() == 'PENDING' &&
+            attempt % 5 == 0) {
           try {
             payment = await UserApi.instance.reconcilePayment(paymentId);
           } catch (error) {
@@ -107,7 +109,7 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
       }
 
       if (attempt < _maxAttempts - 1) {
-        await Future<void>.delayed(const Duration(milliseconds: 350));
+        await Future<void>.delayed(const Duration(milliseconds: 600));
       }
     }
 
@@ -124,8 +126,13 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
   bool _fulfillmentComplete(Map<String, dynamic> payment) {
     if ('${payment['status']}'.toUpperCase() != 'SUCCEEDED') return false;
     final purpose = '${payment['paymentPurpose'] ?? ''}'.toUpperCase();
-    if (purpose == 'DIRECT_UNLOCK') return true;
-    if (purpose == 'ACCEPT_PUBLICATION') return payment['publicationAccepted'] == true;
+    if (purpose == 'DIRECT_UNLOCK') {
+      return payment['ideaUnlocked'] == true ||
+          payment['unlockInProgress'] == true;
+    }
+    if (purpose == 'ACCEPT_PUBLICATION') {
+      return payment['publicationAccepted'] == true;
+    }
     if (purpose == 'UNLOCK_PUBLICATION_ADVANCED') {
       return payment['advancedPublicationAccess'] == true;
     }
@@ -160,48 +167,57 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
         '${payment['publicationId'] ?? widget.publicationId ?? ''}'.trim();
 
     if (purpose == 'DIRECT_UNLOCK' && ideaId.isNotEmpty) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => IdeaWorkspacePage(ideaId: ideaId)),
-        (route) => route.isFirst,
-      );
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/normal/ideas/$ideaId', (route) => false);
       return;
     }
 
     if (purpose == 'UNLOCK_PUBLICATION_ADVANCED' && publicationId.isNotEmpty) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => AcceptedIdeaWorkspacePage(publicationId: publicationId),
-        ),
-        (route) => route.isFirst,
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/normal/accepted/$publicationId/workspace',
+        (route) => false,
       );
       return;
     }
 
     if (purpose == 'ACCEPT_PUBLICATION' && publicationId.isNotEmpty) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (_) => PublicationPage(publicationId: publicationId),
-        ),
-        (route) => route.isFirst,
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/normal/discover/$publicationId',
+        (route) => false,
       );
       return;
     }
 
-    Navigator.of(context).pushNamedAndRemoveUntil('/normal/dashboard', (route) => false);
+    if (purpose == 'BUY_CREDITS') {
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/normal/credits', (route) => false);
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/normal/dashboard', (route) => false);
   }
 
   void _returnSafely() {
     final ideaId = widget.ideaId?.trim() ?? '';
     final publicationId = widget.publicationId?.trim() ?? '';
+
     if (ideaId.isNotEmpty) {
-      Navigator.of(context).pushReplacementNamed('/normal/ideas/$ideaId/unlock');
+      Navigator.of(context).pushReplacementNamed('/normal/ideas/$ideaId');
       return;
     }
+
     if (publicationId.isNotEmpty) {
-      Navigator.of(context).pushReplacementNamed('/normal/discover/$publicationId');
+      Navigator.of(
+        context,
+      ).pushReplacementNamed('/normal/discover/$publicationId');
       return;
     }
-    Navigator.of(context).pushNamedAndRemoveUntil('/normal/dashboard', (route) => false);
+
+    Navigator.of(context).pushReplacementNamed('/normal/credits');
   }
 
   String _successTitle(Map<String, dynamic> payment) {
@@ -215,10 +231,13 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
   }
 
   String _continueLabel(Map<String, dynamic> payment) {
-    return '${payment['paymentPurpose'] ?? ''}'.toUpperCase() ==
-            'UNLOCK_PUBLICATION_ADVANCED'
-        ? 'Go to idea workspace'
-        : 'Continue to your workspace';
+    return switch ('${payment['paymentPurpose'] ?? ''}'.toUpperCase()) {
+      'BUY_CREDITS' => 'View credits & Premium',
+      'DIRECT_UNLOCK' => 'Open idea workspace',
+      'UNLOCK_PUBLICATION_ADVANCED' => 'Go to idea workspace',
+      'ACCEPT_PUBLICATION' => 'Open protected brief',
+      _ => 'Continue to your workspace',
+    };
   }
 
   @override
@@ -246,8 +265,8 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                           color: _loading
                               ? AppColors.primarySoft
                               : success
-                                  ? AppColors.primarySoft
-                                  : AppColors.pinkSoft,
+                              ? AppColors.primarySoft
+                              : AppColors.pinkSoft,
                           shape: BoxShape.circle,
                         ),
                         alignment: Alignment.center,
@@ -255,13 +274,17 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                             ? const SizedBox(
                                 width: 27,
                                 height: 27,
-                                child: CircularProgressIndicator(strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                ),
                               )
                             : Icon(
                                 success
                                     ? Icons.check_circle_outline_rounded
                                     : Icons.error_outline_rounded,
-                                color: success ? AppColors.primaryDark : AppColors.pinkDeep,
+                                color: success
+                                    ? AppColors.primaryDark
+                                    : AppColors.pinkDeep,
                                 size: 34,
                               ),
                       ),
@@ -270,8 +293,8 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                         _loading
                             ? 'Completing your access…'
                             : success
-                                ? _successTitle(payment)
-                                : 'Confirmation needs attention',
+                            ? _successTitle(payment)
+                            : 'Confirmation needs attention',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
@@ -280,7 +303,7 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                         _loading
                             ? _message
                             : (_error ??
-                                'Your payment was verified and the related Voxidence access is ready.'),
+                                  'Your payment was verified and the related Voxidence access is ready.'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: AppColors.textSecondary,
@@ -299,11 +322,20 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                           ),
                           child: Column(
                             children: [
-                              _DetailRow(label: 'Status', value: '${payment['status'] ?? '—'}'),
-                              _DetailRow(label: 'Purpose', value: _pretty('${payment['paymentPurpose'] ?? 'Payment'}')),
+                              _DetailRow(
+                                label: 'Status',
+                                value: '${payment['status'] ?? '—'}',
+                              ),
+                              _DetailRow(
+                                label: 'Purpose',
+                                value: _pretty(
+                                  '${payment['paymentPurpose'] ?? 'Payment'}',
+                                ),
+                              ),
                               _DetailRow(
                                 label: 'Amount',
-                                value: '${payment['amount'] ?? '—'} ${payment['currency'] ?? 'USD'}',
+                                value:
+                                    '${payment['amount'] ?? '—'} ${payment['currency'] ?? 'USD'}',
                                 last: true,
                               ),
                             ],
@@ -317,17 +349,22 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                           onPressed: _loading
                               ? null
                               : success
-                                  ? _goToDestination
-                                  : ((widget.paymentId?.trim().isNotEmpty ?? false)
-                                      ? _confirm
-                                      : _returnSafely),
-                          icon: Icon(success ? Icons.arrow_forward_rounded : Icons.refresh_rounded),
+                              ? _goToDestination
+                              : ((widget.paymentId?.trim().isNotEmpty ?? false)
+                                    ? _confirm
+                                    : _returnSafely),
+                          icon: Icon(
+                            success
+                                ? Icons.arrow_forward_rounded
+                                : Icons.refresh_rounded,
+                          ),
                           label: Text(
                             success
                                 ? _continueLabel(payment)
-                                : ((widget.paymentId?.trim().isNotEmpty ?? false)
-                                    ? 'Check again'
-                                    : 'Return safely'),
+                                : ((widget.paymentId?.trim().isNotEmpty ??
+                                          false)
+                                      ? 'Check again'
+                                      : 'Return safely'),
                           ),
                         ),
                       ),
@@ -335,10 +372,11 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                       TextButton(
                         onPressed: _loading
                             ? null
-                            : () => Navigator.of(context).pushNamedAndRemoveUntil(
-                                  '/normal/dashboard',
-                                  (route) => false,
-                                ),
+                            : () =>
+                                  Navigator.of(context).pushNamedAndRemoveUntil(
+                                    '/normal/dashboard',
+                                    (route) => false,
+                                  ),
                         child: const Text('Back to workspace'),
                       ),
                     ],
@@ -354,7 +392,11 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value, this.last = false});
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.last = false,
+  });
 
   final String label;
   final String value;
@@ -367,11 +409,18 @@ class _DetailRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: last
             ? null
-            : Border(bottom: BorderSide(color: AppColors.border.withValues(alpha: .7))),
+            : Border(
+                bottom: BorderSide(
+                  color: AppColors.border.withValues(alpha: .7),
+                ),
+              ),
       ),
       child: Row(
         children: [
-          Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5)),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 10.5),
+          ),
           const Spacer(),
           Flexible(
             child: Text(

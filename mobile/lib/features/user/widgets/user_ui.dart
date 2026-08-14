@@ -4,7 +4,7 @@
 // shared across the authenticated workspace so Dashboard, Discover, Generate,
 // My Ideas and Profile feel like one coherent Voxidence product.
 //
-// @author  Malak
+// @author Eman
 
 import 'dart:math' as math;
 
@@ -12,12 +12,68 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../models/user_models.dart';
+import '../state/user_session_controller.dart';
+
+
+class WorkspaceReturnTarget {
+  const WorkspaceReturnTarget({
+    required this.title,
+    required this.route,
+  });
+
+  final String title;
+  final String route;
+}
+
+WorkspaceReturnTarget workspaceReturnTarget(
+  BuildContext context, {
+  String fallbackTitle = 'Profile',
+  String fallbackRoute = '/normal/profile',
+}) {
+  final arguments = ModalRoute.of(context)?.settings.arguments;
+
+  if (arguments is Map) {
+    final rawTitle = arguments['returnTitle']?.toString().trim() ?? '';
+    final rawRoute = arguments['returnRoute']?.toString().trim() ?? '';
+
+    return WorkspaceReturnTarget(
+      title: rawTitle.isEmpty ? fallbackTitle : rawTitle,
+      route: rawRoute.isEmpty ? fallbackRoute : rawRoute,
+    );
+  }
+
+  return WorkspaceReturnTarget(
+    title: fallbackTitle,
+    route: fallbackRoute,
+  );
+}
+
+void returnFromWorkspacePage(
+  BuildContext context, {
+  String fallbackTitle = 'Profile',
+  String fallbackRoute = '/normal/profile',
+}) {
+  final navigator = Navigator.of(context);
+
+  if (navigator.canPop()) {
+    navigator.pop();
+    return;
+  }
+
+  final target = workspaceReturnTarget(
+    context,
+    fallbackTitle: fallbackTitle,
+    fallbackRoute: fallbackRoute,
+  );
+
+  navigator.pushNamedAndRemoveUntil(
+    target.route,
+    (route) => route.isFirst,
+  );
+}
 
 class WorkspaceBackground extends StatefulWidget {
-  const WorkspaceBackground({
-    super.key,
-    required this.child,
-  });
+  const WorkspaceBackground({super.key, required this.child});
 
   final Widget child;
 
@@ -69,33 +125,22 @@ class _WorkspaceBackgroundState extends State<WorkspaceBackground>
               Positioned(
                 top: -112 + (math.sin(t) * 13),
                 right: -78 + (math.cos(t * .7) * 11),
-                child: const _AmbientGlow(
-                  size: 236,
-                  color: Color(0x35A9DDD6),
-                ),
+                child: const _AmbientGlow(size: 236, color: Color(0x35A9DDD6)),
               ),
               Positioned(
                 top: 215 + (math.cos(t * .8) * 17),
                 left: -118 + (math.sin(t * .65) * 12),
-                child: const _AmbientGlow(
-                  size: 244,
-                  color: Color(0x2CF3C9D3),
-                ),
+                child: const _AmbientGlow(size: 244, color: Color(0x2CF3C9D3)),
               ),
               Positioned(
                 bottom: 55 + (math.sin(t * .55) * 20),
                 right: -126 + (math.cos(t * .62) * 12),
-                child: const _AmbientGlow(
-                  size: 230,
-                  color: Color(0x24DCE8E2),
-                ),
+                child: const _AmbientGlow(size: 230, color: Color(0x24DCE8E2)),
               ),
               Positioned.fill(
                 child: IgnorePointer(
                   child: CustomPaint(
-                    painter: _WorkspaceAmbientPainter(
-                      progress: _ambient.value,
-                    ),
+                    painter: _WorkspaceAmbientPainter(progress: _ambient.value),
                   ),
                 ),
               ),
@@ -109,10 +154,7 @@ class _WorkspaceBackgroundState extends State<WorkspaceBackground>
 }
 
 class _AmbientGlow extends StatelessWidget {
-  const _AmbientGlow({
-    required this.size,
-    required this.color,
-  });
+  const _AmbientGlow({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -125,12 +167,7 @@ class _AmbientGlow extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color,
-              color.withValues(alpha: 0),
-            ],
-          ),
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
         ),
       ),
     );
@@ -138,9 +175,7 @@ class _AmbientGlow extends StatelessWidget {
 }
 
 class _WorkspaceAmbientPainter extends CustomPainter {
-  const _WorkspaceAmbientPainter({
-    required this.progress,
-  });
+  const _WorkspaceAmbientPainter({required this.progress});
 
   final double progress;
 
@@ -186,8 +221,9 @@ class _WorkspaceAmbientPainter extends CustomPainter {
         dots[i],
         5.5,
         Paint()
-          ..color = (i == 1 ? AppColors.pink : AppColors.primary)
-              .withValues(alpha: alpha),
+          ..color = (i == 1 ? AppColors.pink : AppColors.primary).withValues(
+            alpha: alpha,
+          ),
       );
       canvas.drawCircle(
         dots[i],
@@ -237,11 +273,7 @@ class VoxCard extends StatelessWidget {
     );
 
     if (onTap == null) {
-      return Container(
-        padding: padding,
-        decoration: decoration,
-        child: child,
-      );
+      return Container(padding: padding, decoration: decoration, child: child);
     }
 
     return Material(
@@ -249,11 +281,7 @@ class VoxCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(radius),
         onTap: onTap,
-        child: Ink(
-          padding: padding,
-          decoration: decoration,
-          child: child,
-        ),
+        child: Ink(padding: padding, decoration: decoration, child: child),
       ),
     );
   }
@@ -334,10 +362,7 @@ class WorkspacePageHeader extends StatelessWidget {
             ],
           ),
         ),
-        if (trailing != null) ...[
-          const SizedBox(width: 12),
-          trailing!,
-        ],
+        if (trailing != null) ...[const SizedBox(width: 12), trailing!],
       ],
     );
   }
@@ -487,90 +512,119 @@ class AccountTierBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isPremium) {
-      return PremiumBadge(compact: compact);
-    }
+    final session = UserSessionController.instance;
 
-    return _AccessBadge(
-      compact: compact,
-      icon: Icons.explore_outlined,
-      title: 'Normal',
-      subtitle: 'standard workspace',
-      roseAccent: false,
+    return AnimatedBuilder(
+      animation: session,
+      builder: (context, _) {
+        final summary = session.summary;
+
+        if (isPremium) {
+          return PremiumBadge(
+            compact: compact,
+            credits: summary?.creditBalance,
+          );
+        }
+
+        final remaining = summary?.remainingFreeGenerations;
+
+        return _MembershipBadge(
+          compact: compact,
+          premium: false,
+          title: 'Normal',
+          subtitle: remaining == null
+              ? 'free workspace'
+              : compact
+                  ? '$remaining free left'
+                  : '$remaining free ${remaining == 1 ? 'idea' : 'ideas'} remaining',
+        );
+      },
     );
   }
 }
 
-
-
+/// Refined Premium membership seal.
+///
+/// The badge intentionally avoids the old diamond-heavy treatment. It uses a
+/// quiet mint membership seal and surfaces the remaining credit balance so the
+/// user can understand account access without opening the Credits page.
+///
+/// @author Eman
 class PremiumBadge extends StatelessWidget {
   const PremiumBadge({
     super.key,
     this.compact = false,
+    this.credits,
   });
 
   final bool compact;
+  final int? credits;
 
   @override
   Widget build(BuildContext context) {
-    return _AccessBadge(
+    final value = credits;
+
+    return _MembershipBadge(
       compact: compact,
-      icon: Icons.workspace_premium_outlined,
+      premium: true,
       title: 'Premium',
-      subtitle: 'full workspace',
-      roseAccent: true,
+      subtitle: value == null
+          ? 'member access'
+          : compact
+              ? '$value credits'
+              : '$value ${value == 1 ? 'credit' : 'credits'} remaining',
     );
   }
 }
 
-class _AccessBadge extends StatelessWidget {
-  const _AccessBadge({
+class _MembershipBadge extends StatelessWidget {
+  const _MembershipBadge({
     required this.compact,
-    required this.icon,
+    required this.premium,
     required this.title,
     required this.subtitle,
-    required this.roseAccent,
   });
 
   final bool compact;
-  final IconData icon;
+  final bool premium;
   final String title;
   final String subtitle;
-  final bool roseAccent;
 
   @override
   Widget build(BuildContext context) {
+    final accent = premium
+        ? const Color(0xFF3D8985)
+        : const Color(0xFF657B73);
+
     return Container(
       padding: EdgeInsets.fromLTRB(
         compact ? 5 : 6,
         compact ? 4 : 5,
-        compact ? 8 : 9,
+        compact ? 9 : 11,
         compact ? 4 : 5,
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: roseAccent
+          colors: premium
               ? const [
-                  Color(0xFFFFFEFD),
-                  Color(0xFFEAF7F4),
-                  Color(0xFFFFF4F7),
+                  Color(0xFFFFFFFF),
+                  Color(0xFFF0F8F5),
+                  Color(0xFFFFFAFB),
                 ]
               : const [
-                  Color(0xFFFFFEFD),
-                  Color(0xFFF1F8F5),
+                  Color(0xFFFFFFFF),
+                  Color(0xFFF4F8F6),
                 ],
         ),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: AppColors.primary.withValues(
-            alpha: roseAccent ? .24 : .16,
-          ),
+          color: accent.withValues(alpha: premium ? .16 : .12),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .055),
+            color: AppColors.primaryDeep.withValues(alpha: .045),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -579,71 +633,38 @@ class _AccessBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: compact ? 25 : 28,
-            height: compact ? 25 : 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: roseAccent
-                    ? const [
-                        Color(0xFF72CAC4),
-                        Color(0xFF50ACA7),
-                      ]
-                    : const [
-                        Color(0xFFE8F5F1),
-                        Color(0xFFDCEDE7),
-                      ],
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: compact ? 12.5 : 14,
-              color: roseAccent
-                  ? Colors.white
-                  : AppColors.primaryDark,
-            ),
+          _MembershipSeal(
+            premium: premium,
+            size: compact ? 26 : 30,
           ),
-          SizedBox(width: compact ? 6 : 7),
+          SizedBox(width: compact ? 7 : 8),
           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: AppColors.primaryDark,
-                      fontSize: compact ? 8.7 : 9.5,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -.08,
-                    ),
-                  ),
-                  if (roseAccent) ...[
-                    const SizedBox(width: 3),
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      size: compact ? 7.5 : 8.5,
-                      color: AppColors.pinkDeep,
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 2),
               Text(
-                subtitle.toUpperCase(),
+                title,
                 style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: compact ? 5.4 : 5.9,
+                  color: AppColors.primaryDeep,
+                  fontSize: compact ? 9.2 : 10.3,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.10,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: premium
+                      ? const Color(0xFF6C837C)
+                      : AppColors.textMuted,
+                  fontSize: compact ? 5.8 : 6.3,
                   height: 1,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: .55,
+                  letterSpacing: .18,
                 ),
               ),
             ],
@@ -654,9 +675,65 @@ class _AccessBadge extends StatelessWidget {
   }
 }
 
+class _MembershipSeal extends StatelessWidget {
+  const _MembershipSeal({
+    required this.premium,
+    required this.size,
+  });
 
+  final bool premium;
+  final double size;
 
-
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: premium
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF73C7C0),
+                  Color(0xFF4FA7A2),
+                  Color(0xFF3E8581),
+                ],
+              )
+            : const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFE9F3EF),
+                  Color(0xFFDCEAE4),
+                ],
+              ),
+        borderRadius: BorderRadius.circular(size * .40),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: .88),
+          width: 1,
+        ),
+        boxShadow: premium
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: .12),
+                  blurRadius: 7,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        premium
+            ? Icons.auto_awesome_rounded
+            : Icons.explore_outlined,
+        size: size * .47,
+        color: premium ? Colors.white : AppColors.primaryDark,
+      ),
+    );
+  }
+}
 
 class StatusChip extends StatelessWidget {
   const StatusChip({
@@ -677,13 +754,13 @@ class StatusChip extends StatelessWidget {
     final foreground = positive
         ? AppColors.success
         : rose
-            ? AppColors.pinkDeep
-            : AppColors.primaryDark;
+        ? AppColors.pinkDeep
+        : AppColors.primaryDark;
     final background = positive
         ? AppColors.success.withValues(alpha: .11)
         : rose
-            ? AppColors.pinkSoft
-            : AppColors.primarySoft;
+        ? AppColors.pinkSoft
+        : AppColors.primarySoft;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -810,13 +887,17 @@ class InlineNotice extends StatelessWidget {
     final background = error
         ? AppColors.pinkSoft.withValues(alpha: .88)
         : AppColors.primarySoft.withValues(alpha: .85);
-    final effectiveAction = action ??
+    final effectiveAction =
+        action ??
         (actionLabel != null && onAction != null
             ? TextButton(
                 onPressed: onAction,
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 4,
+                  ),
                   minimumSize: const Size(0, 30),
                 ),
                 child: Text(actionLabel!),
@@ -913,16 +994,15 @@ class IdeaMobileCard extends StatelessWidget {
               if (onFavoriteTap != null)
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: idea.isFavorite
-                      ? 'Remove favorite'
-                      : 'Add favorite',
+                  tooltip: idea.isFavorite ? 'Remove favorite' : 'Add favorite',
                   onPressed: onFavoriteTap,
                   icon: Icon(
                     idea.isFavorite
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
-                    color:
-                        idea.isFavorite ? AppColors.pink : AppColors.textMuted,
+                    color: idea.isFavorite
+                        ? AppColors.pink
+                        : AppColors.textMuted,
                     size: 18.5,
                   ),
                 )
@@ -1052,10 +1132,7 @@ class EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            if (action != null) ...[
-              const SizedBox(height: 13),
-              action!,
-            ],
+            if (action != null) ...[const SizedBox(height: 13), action!],
           ],
         ),
       ),

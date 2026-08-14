@@ -12,7 +12,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getStoredUser } from '../../../auth/shared/auth.storage';
-import useAccountAccess from '../hooks/useAccountAccess';
 import './premium-welcome-celebration.css';
 
 const PREMIUM_WELCOME_KEY = 'voxidence:premium-welcome-pending';
@@ -59,7 +58,6 @@ export function markPremiumWelcomePending(user) {
 }
 
 export default function PremiumWelcomeCelebration() {
-    const { isPremium, isLoading } = useAccountAccess();
     const shouldReduceMotion = useReducedMotion();
     const [isVisible, setIsVisible] = useState(false);
     const user = useMemo(() => getStoredUser() || {}, []);
@@ -88,19 +86,28 @@ export default function PremiumWelcomeCelebration() {
     );
 
     useEffect(() => {
-        if (isLoading || !isPremium) {
-            return;
-        }
-
-        const isPending = sessionStorage.getItem(PREMIUM_WELCOME_KEY) === 'true';
+        /*
+         * The welcome must not wait for /users/credits or dashboard data.
+         * Login has already returned the authoritative account snapshot and
+         * saveAuthSession persisted it before navigation. Reading that local
+         * snapshot lets the celebration mount on the very first workspace
+         * frame while the dashboard route/data continue loading underneath.
+         */
+        const isPending =
+            sessionStorage.getItem(PREMIUM_WELCOME_KEY) === 'true';
 
         if (!isPending) {
             return;
         }
 
         sessionStorage.removeItem(PREMIUM_WELCOME_KEY);
-        setIsVisible(true);
-    }, [isLoading, isPremium]);
+
+        const accountStatus = String(user?.accountStatus || '').toUpperCase();
+
+        if (accountStatus === 'PREMIUM') {
+            setIsVisible(true);
+        }
+    }, [user]);
 
     useEffect(() => {
         if (!isVisible) {

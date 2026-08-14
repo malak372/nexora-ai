@@ -183,7 +183,11 @@ export default function DiscoveriesPage() {
       return;
     }
 
-    navigate(`/normal/discover/${publicationId}`);
+    navigate(`/normal/discover/${publicationId}`, {
+      state: {
+        publicationSeed: publication,
+      },
+    });
   };
 
   const warmPublication = (publication) => {

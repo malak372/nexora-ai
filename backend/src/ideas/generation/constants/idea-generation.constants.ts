@@ -554,6 +554,27 @@ export const MIN_SELECTED_INDEPENDENT_SOURCES_BEFORE_RECOVERY = 1;
 export const IDEA_MIN_ACCEPTED_QUALITY_SCORE = 70;
 
 /**
+ * Quality score that is strong enough to stop a latency-hedged benchmark
+ * immediately once the deterministic gate has also accepted the candidate.
+ *
+ * Candidates between IDEA_MIN_ACCEPTED_QUALITY_SCORE and this score remain
+ * valid, but already-running peer models receive a very small grace window so
+ * the pipeline can keep the stronger result without returning to long provider
+ * timeout chains.
+ */
+export const IDEA_BENCHMARK_IMMEDIATE_EARLY_STOP_SCORE = 78;
+
+/**
+ * Maximum time granted to already-running hedged peer requests after the first
+ * quality-approved candidate scores between 70 and 77.99.
+ *
+ * No new provider request is started for this window. It only allows requests
+ * that are already in flight to finish, then the strongest deterministic
+ * quality-approved candidate is selected.
+ */
+export const IDEA_BENCHMARK_ACCEPTED_CANDIDATE_GRACE_MS = 2_500;
+
+/**
  * Maximum number of bounded quality-improvement attempts sent to the same
  * model after its initial candidate scores below the accepted threshold.
  */

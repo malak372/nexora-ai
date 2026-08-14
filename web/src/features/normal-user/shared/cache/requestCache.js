@@ -151,7 +151,11 @@ export async function cachedRequest(
   const existing = getEntry(key);
 
   if (!force && isFresh(existing)) return existing.value;
-  if (!force && pendingRequests.has(key)) return pendingRequests.get(key);
+
+  // `force` bypasses a stored value, not an identical request that is already
+  // in flight. Reusing the same promise prevents React StrictMode, route
+  // prefetch and the mounted page from issuing duplicate GETs at the same time.
+  if (pendingRequests.has(key)) return pendingRequests.get(key);
 
   const requestVersion = getCacheVersion(key);
 

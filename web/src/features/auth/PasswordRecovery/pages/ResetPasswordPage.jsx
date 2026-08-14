@@ -11,9 +11,6 @@
  * - Submit the new password to the password-recovery API.
  * - Display a success state after the password is updated.
  *
- * This component is part of the Voxidence password-recovery flow and
- * follows the existing authentication design and visual identity.
- *
  * @author Eman
  */
 
@@ -25,7 +22,9 @@ import {
     Eye,
     EyeOff,
     KeyRound,
+    Lightbulb,
     LockKeyhole,
+    LogIn,
     ShieldCheck,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -41,20 +40,11 @@ import '../styles/password-recovery.css';
 /**
  * Validates whether a password satisfies the minimum security requirements.
  *
- * A valid password must:
- * - Contain at least eight characters.
- * - Contain at least one alphabetical character.
- * - Contain at least one numeric character.
+ * @param {string} password Password value to validate.
+ * @returns {{length: boolean, letter: boolean, number: boolean}}
+ * Password rule results.
  *
- * @param {string} password
- * The password value that should be validated.
- *
- * @returns {{
- *     length: boolean,
- *     letter: boolean,
- *     number: boolean
- * }}
- * An object containing the validation result for every password rule.
+ * @author Eman
  */
 function validatePassword(password) {
     return {
@@ -67,122 +57,35 @@ function validatePassword(password) {
 /**
  * Displays the final password-recovery step.
  *
- * The component extracts the reset token from the current URL, validates
- * the new password, confirms that both password fields match, and sends
- * the reset request to the backend.
- *
- * After a successful reset, the user is shown a confirmation message and
- * a link that returns them to the sign-in page.
- *
  * @component
  * @returns {JSX.Element} The rendered reset-password page.
  *
  * @author Eman
  */
 export default function ResetPasswordPage() {
-    /**
-     * Provides access to the current URL query parameters.
-     *
-     * @type {URLSearchParams}
-     */
     const [searchParams] = useSearchParams();
-
-    /**
-     * Password-reset token extracted from the URL.
-     *
-     * Expected URL format:
-     * /reset-password?token=RESET_TOKEN
-     *
-     * @type {string}
-     */
     const token = searchParams.get('token') || '';
 
-    /**
-     * Stores the new password entered by the user.
-     *
-     * @type {[string, Function]}
-     */
     const [password, setPassword] = useState('');
-
-    /**
-     * Stores the password-confirmation value.
-     *
-     * @type {[string, Function]}
-     */
     const [confirmPassword, setConfirmPassword] = useState('');
-
-    /**
-     * Controls the visibility of the new-password field.
-     *
-     * @type {[boolean, Function]}
-     */
     const [showPassword, setShowPassword] = useState(false);
-
-    /**
-     * Controls the visibility of the confirmation-password field.
-     *
-     * @type {[boolean, Function]}
-     */
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-    /**
-     * Stores the current validation or backend error message.
-     *
-     * @type {[string, Function]}
-     */
     const [error, setError] = useState('');
-
-    /**
-     * Indicates whether the reset request is currently being processed.
-     *
-     * @type {[boolean, Function]}
-     */
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    /**
-     * Indicates whether the password reset completed successfully.
-     *
-     * @type {[boolean, Function]}
-     */
     const [isComplete, setIsComplete] = useState(false);
 
-    /**
-     * Calculates the current password validation state.
-     *
-     * The result is recalculated only when the password value changes.
-     *
-     * @type {{
-     *     length: boolean,
-     *     letter: boolean,
-     *     number: boolean
-     * }}
-     */
     const passwordRules = useMemo(
         () => validatePassword(password),
         [password],
     );
 
-    /**
-     * Indicates whether every required password rule is satisfied.
-     *
-     * @type {boolean}
-     */
     const isPasswordValid = Object.values(passwordRules).every(Boolean);
 
     /**
-     * Validates the reset form and submits the new password to the backend.
+     * Validates and submits the new password.
      *
-     * The submission is prevented when:
-     * - The reset token is missing.
-     * - The password does not meet the required rules.
-     * - The password and confirmation values do not match.
-     *
-     * @async
-     * @param {React.FormEvent<HTMLFormElement>} event
-     * The form submission event.
-     *
+     * @param {React.FormEvent<HTMLFormElement>} event Form submit event.
      * @returns {Promise<void>}
-     * Resolves after the password-reset request finishes.
      */
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -221,7 +124,7 @@ export default function ResetPasswordPage() {
     };
 
     return (
-        <main className="vx-recovery">
+        <main className="vx-recovery vx-recovery--reset">
             <div
                 className="vx-recovery__mesh"
                 aria-hidden="true"
@@ -241,8 +144,8 @@ export default function ResetPasswordPage() {
                 className="vx-recovery__brand"
                 to={ROUTES.HOME}
             >
-                <span className="vx-recovery__brand-mark">
-                    <VoxidenceMark size={24} />
+                <span className="vx-recovery__brand-mark vx-recovery__brand-mark--reset">
+                    <VoxidenceMark size={46} />
                 </span>
 
                 <span>
@@ -253,64 +156,98 @@ export default function ResetPasswordPage() {
 
             <section className="vx-recovery__layout">
                 <motion.aside
-                    className="vx-recovery__story"
-                    initial={{ opacity: 0, x: -28 }}
+                    className="vx-recovery__story vx-recovery__story--reset"
+                    initial={{ opacity: 0, x: -24 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.65 }}
+                    transition={{ duration: 0.55 }}
                 >
                     <span className="vx-recovery__eyebrow">
                         <ShieldCheck size={15} />
-                        Secure password update
+                        Secure password reset
                     </span>
 
                     <h1>
-                        Create a stronger key for
+                        A fresh key for
                         <span>your workspace.</span>
                     </h1>
 
                     <p>
-                        Choose a fresh password for your Voxidence account. Once
-                        it is changed, all active refresh sessions are revoked to
-                        keep your workspace protected.
+                        Set a new password and return to your ideas with a fresh,
+                        protected sign-in. Your saved work and account data stay
+                        exactly where they are.
                     </p>
 
-                    <div className="vx-recovery__security-panel">
-                        <KeyRound size={25} />
-
-                        <div>
-                            <strong>
-                                Your new password should be unique
-                            </strong>
-
-                            <span>
-                                Avoid reusing a password from another website or
-                                application.
+                    <div className="vx-recovery__reset-details">
+                        <article>
+                            <span className="vx-recovery__reset-detail-icon">
+                                <KeyRound size={18} />
                             </span>
-                        </div>
+
+                            <div>
+                                <strong>One secure update</strong>
+                                <span>
+                                    Your new password replaces the old one immediately.
+                                </span>
+                            </div>
+                        </article>
+
+                        <article>
+                            <span className="vx-recovery__reset-detail-icon">
+                                <LogIn size={18} />
+                            </span>
+
+                            <div>
+                                <strong>Fresh sign-in</strong>
+                                <span>
+                                    Existing sessions are closed after the reset.
+                                </span>
+                            </div>
+                        </article>
+
+                        <article>
+                            <span className="vx-recovery__reset-detail-icon">
+                                <Lightbulb size={18} />
+                            </span>
+
+                            <div>
+                                <strong>Your ideas stay safe</strong>
+                                <span>
+                                    Projects, saved ideas, and workspace data are unchanged.
+                                </span>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div className="vx-recovery__reset-note">
+                        <ShieldCheck size={18} />
+                        <span>
+                            For better security, use a password you do not use on another account.
+                        </span>
                     </div>
                 </motion.aside>
 
                 <motion.section
-                    className="vx-recovery__card"
-                    initial={{ opacity: 0, y: 24 }}
+                    className="vx-recovery__card vx-recovery__card--reset"
+                    initial={{ opacity: 0, y: 18 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.08 }}
+                    transition={{ duration: 0.5, delay: 0.06 }}
                 >
                     {!isComplete ? (
                         <>
-                            <div className="vx-recovery__icon">
-                                <LockKeyhole size={25} />
+                            <div className="vx-recovery__reset-card-head">
+                                <div className="vx-recovery__reset-mark">
+                                    <VoxidenceMark size={44} />
+                                </div>
+
+                                <span className="vx-recovery__step">
+                                    Final recovery step
+                                </span>
                             </div>
 
-                            <span className="vx-recovery__step">
-                                Final recovery step
-                            </span>
-
-                            <h2>Set a new password</h2>
+                            <h2>Choose a new password</h2>
 
                             <p className="vx-recovery__card-copy">
-                                Make it secure, memorable, and different from
-                                your current password.
+                                Make it memorable for you and difficult for anyone else to guess.
                             </p>
 
                             <form
@@ -322,15 +259,11 @@ export default function ResetPasswordPage() {
                                 </label>
 
                                 <div className="vx-recovery__field">
-                                    <LockKeyhole size={19} />
+                                    <LockKeyhole size={18} />
 
                                     <input
                                         id="reset-password"
-                                        type={
-                                            showPassword
-                                                ? 'text'
-                                                : 'password'
-                                        }
+                                        type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(event) => {
                                             setPassword(event.target.value);
@@ -362,7 +295,7 @@ export default function ResetPasswordPage() {
                                     </button>
                                 </div>
 
-                                <div className="vx-recovery__rules">
+                                <div className="vx-recovery__rules vx-recovery__rules--reset">
                                     <span
                                         className={
                                             passwordRules.length
@@ -370,7 +303,7 @@ export default function ResetPasswordPage() {
                                                 : ''
                                         }
                                     >
-                                        <Check size={13} />
+                                        <Check size={12} />
                                         At least 8 characters
                                     </span>
 
@@ -381,7 +314,7 @@ export default function ResetPasswordPage() {
                                                 : ''
                                         }
                                     >
-                                        <Check size={13} />
+                                        <Check size={12} />
                                         Contains a letter
                                     </span>
 
@@ -392,7 +325,7 @@ export default function ResetPasswordPage() {
                                                 : ''
                                         }
                                     >
-                                        <Check size={13} />
+                                        <Check size={12} />
                                         Contains a number
                                     </span>
                                 </div>
@@ -402,7 +335,7 @@ export default function ResetPasswordPage() {
                                 </label>
 
                                 <div className="vx-recovery__field">
-                                    <LockKeyhole size={19} />
+                                    <LockKeyhole size={18} />
 
                                     <input
                                         id="confirm-password"
@@ -468,19 +401,19 @@ export default function ResetPasswordPage() {
                         </>
                     ) : (
                         <div className="vx-recovery__success">
-                            <div className="vx-recovery__icon vx-recovery__icon--success">
-                                <CheckCircle2 size={27} />
+                            <div className="vx-recovery__success-mark">
+                                <CheckCircle2 size={32} />
                             </div>
 
                             <span className="vx-recovery__step">
                                 Password updated
                             </span>
 
-                            <h2>You are ready to return</h2>
+                            <h2>You are all set</h2>
 
                             <p>
-                                Your password has been reset successfully. Sign
-                                in again using your new password.
+                                Your password has been updated. Sign in again
+                                to continue to your Voxidence workspace.
                             </p>
 
                             <Link

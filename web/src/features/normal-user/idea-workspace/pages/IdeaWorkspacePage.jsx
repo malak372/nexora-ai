@@ -27,6 +27,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { getIdeaWorkspaceBundle } from '../api/ideaWorkspaceApi';
 import useAccountAccess from '../../shared/hooks/useAccountAccess';
+import { preloadAiChatWorkspace } from '../../../../routes/routePreloaders';
 
 import '../styles/idea-workspace.css';
 
@@ -144,10 +145,11 @@ export default function IdeaWorkspacePage() {
   const location = useLocation();
   const { isPremium } = useAccountAccess();
 
-  const [idea, setIdea] = useState(null);
+  const routeIdeaSeed = location.state?.ideaSeed ?? null;
+  const [idea, setIdea] = useState(() => routeIdeaSeed);
   const [outputs, setOutputs] = useState([]);
   const [activeKey, setActiveKey] = useState('overview');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !routeIdeaSeed);
   const [error, setError] = useState('');
   const [unlockProcessing, setUnlockProcessing] = useState(
     Boolean(location.state?.unlockProcessing),
@@ -172,7 +174,7 @@ export default function IdeaWorkspacePage() {
           setUnlockProcessing(false);
         }
       } catch (requestError) {
-        if (mounted) setError(requestError.message);
+        if (mounted && !routeIdeaSeed) setError(requestError.message);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -181,7 +183,17 @@ export default function IdeaWorkspacePage() {
     return () => {
       mounted = false;
     };
-  }, [ideaId, location.state?.forceRefresh]);
+  }, [ideaId, location.state?.forceRefresh, routeIdeaSeed]);
+
+  useEffect(() => {
+    if (!isPremium || !ideaId || !idea?.isUnlocked) return undefined;
+
+    const timerId = window.setTimeout(() => {
+      preloadAiChatWorkspace(ideaId);
+    }, 120);
+
+    return () => window.clearTimeout(timerId);
+  }, [idea?.isUnlocked, ideaId, isPremium]);
 
   useEffect(() => {
     if (!unlockProcessing || !ideaId || idea?.isUnlocked) return undefined;
@@ -429,6 +441,9 @@ export default function IdeaWorkspacePage() {
             <button
               className="workspace-premium-chat"
               type="button"
+              onMouseEnter={() => preloadAiChatWorkspace(ideaId)}
+              onFocus={() => preloadAiChatWorkspace(ideaId)}
+              onPointerDown={() => preloadAiChatWorkspace(ideaId)}
               onClick={() =>
                 navigate(`/normal/ideas/${ideaId}/chat`, {
                   state: {
@@ -436,6 +451,7 @@ export default function IdeaWorkspacePage() {
                     returnTo: `/normal/ideas/${ideaId}`,
                     returnLabel: 'Idea workspace',
                     ideaTitle: idea?.title,
+                    ideaSeed: idea,
                   },
                 })
               }
@@ -454,8 +470,15 @@ export default function IdeaWorkspacePage() {
             onClick={() =>
               navigate(`/normal/ideas/${ideaId}/publish`, {
                 state: {
-                  returnTo: location.state?.returnTo || '/normal/ideas',
-                  returnLabel: location.state?.returnLabel || 'My ideas',
+                  returnTo: `/normal/ideas/${ideaId}`,
+                  returnLabel: 'Idea workspace',
+                  workspaceReturnTo: location.state?.returnTo || '/normal/ideas',
+                  workspaceReturnLabel:
+                    location.state?.returnLabel || 'My ideas',
+                  publicationOrigin: 'idea-workspace',
+                  // Publication Studio paints immediately from the workspace
+                  // data already on screen and refreshes quietly in background.
+                  ideaSeed: idea,
                 },
               })
             }

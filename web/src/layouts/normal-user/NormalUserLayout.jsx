@@ -4,11 +4,12 @@
  *
  * @author Eman
  */
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 
 import { getAccessToken } from '../../features/auth/shared/auth.storage';
 import PremiumWelcomeCelebration from '../../features/normal-user/shared/components/PremiumWelcomeCelebration';
+import RouteLoadingFallback from '../../components/RouteLoadingFallback';
 import { preloadPrimaryRoutes } from '../../routes/routePreloaders';
 import NormalHeader from './NormalHeader';
 import NormalSidebar from './NormalSidebar';
@@ -76,7 +77,9 @@ export default function NormalUserLayout() {
       />
 
       <main className="normal-app-shell__main">
-        <Outlet />
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

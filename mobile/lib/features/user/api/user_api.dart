@@ -32,16 +32,18 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> getCredits({bool force = false}) async {
-    return _map(await _api.get(
-      '/users/credits',
-      cacheFor: const Duration(minutes: 1),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/credits',
+        cacheFor: const Duration(minutes: 1),
+        force: force,
+      ),
+    );
   }
 
   Future<PagedResult<IdeaSummary>> getMyIdeas({
     int page = 1,
-    int limit = 9,
+    int limit = 18,
     String? search,
     bool? isUnlocked,
     DateTime? fromDate,
@@ -111,7 +113,6 @@ class UserApi {
     return _paged(raw, IdeaSummary.fromJson);
   }
 
-
   Future<PagedResult<Map<String, dynamic>>> getPublishedRaw({
     int page = 1,
     int limit = 9,
@@ -153,7 +154,7 @@ class UserApi {
         'limit': limit,
         if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
       },
-      cacheFor: const Duration(seconds: 30),
+      cacheFor: const Duration(seconds: 12),
       force: force,
     );
     return _map(raw);
@@ -177,15 +178,15 @@ class UserApi {
     final responses = body['responses'] is List
         ? body['responses'] as List
         : body['data'] is List
-            ? body['data'] as List
-            : body['items'] is List
-                ? body['items'] as List
-                : const <dynamic>[];
+        ? body['data'] as List
+        : body['items'] is List
+        ? body['items'] as List
+        : const <dynamic>[];
     final meta = body['meta'] is Map
         ? _map(body['meta'])
         : body['pagination'] is Map
-            ? _map(body['pagination'])
-            : const <String, dynamic>{};
+        ? _map(body['pagination'])
+        : const <String, dynamic>{};
 
     return PagedResult<Map<String, dynamic>>(
       items: responses.map(_map).toList(),
@@ -195,13 +196,17 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> archivePublication(String ideaId) async {
-    final result = _map(await _api.post('/users/ideas/$ideaId/publication/archive'));
+    final result = _map(
+      await _api.post('/users/ideas/$ideaId/publication/archive'),
+    );
     _invalidateLibraries();
     return result;
   }
 
   Future<Map<String, dynamic>> repostPublication(String ideaId) async {
-    final result = _map(await _api.post('/users/ideas/$ideaId/publication/repost'));
+    final result = _map(
+      await _api.post('/users/ideas/$ideaId/publication/repost'),
+    );
     _invalidateLibraries();
     return result;
   }
@@ -210,10 +215,12 @@ class UserApi {
     String ideaId,
     bool allowAdoption,
   ) async {
-    final result = _map(await _api.patch(
-      '/users/ideas/$ideaId/publication/acceptance-setting',
-      data: {'allowAdoption': allowAdoption},
-    ));
+    final result = _map(
+      await _api.patch(
+        '/users/ideas/$ideaId/publication/acceptance-setting',
+        data: {'allowAdoption': allowAdoption},
+      ),
+    );
     _api.invalidate('/users/publications');
     _api.invalidate('/users/ideas/$ideaId');
     return result;
@@ -221,7 +228,7 @@ class UserApi {
 
   Future<PagedResult<IdeaSummary>> getAccepted({
     int page = 1,
-    int limit = 9,
+    int limit = 18,
     String? search,
     DateTime? fromDate,
     DateTime? toDate,
@@ -248,7 +255,9 @@ class UserApi {
       return IdeaSummary.fromJson({
         ...publication,
         'publicationId': publication['id'],
-        'isUnlocked': json['advancedUnlockedAt'] != null || json['hasAdvancedAccess'] == true,
+        'isUnlocked':
+            json['advancedUnlockedAt'] != null ||
+            json['hasAdvancedAccess'] == true,
       });
     });
   }
@@ -280,23 +289,29 @@ class UserApi {
     String publicationId, {
     bool force = false,
   }) async {
-    return _map(await _api.get(
-      '/users/publications/$publicationId',
-      cacheFor: const Duration(minutes: 2),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/publications/$publicationId',
+        cacheFor: const Duration(minutes: 2),
+        force: force,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> acceptDiscovery(String publicationId) async {
-    final result = _map(await _api.post(
-      '/users/publications/$publicationId/accept',
-      data: {
-        'clientRequestId': _clientRequestId(),
-        'paymentMethodKey': 'card',
-        'successUrl': '$_paymentReturnBase/normal/payments/success',
-        'cancelUrl': '$_paymentReturnBase/normal/discover/$publicationId?cancelled=1',
-      },
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/publications/$publicationId/accept',
+        data: {
+          'clientRequestId': _clientRequestId(),
+          'paymentMethodKey': 'card',
+          'successUrl': _paymentSuccessUrl,
+          'cancelUrl': _paymentCancelUrl(
+            '/normal/discover/$publicationId?cancelled=1',
+          ),
+        },
+      ),
+    );
     _invalidateLibraries();
     return result;
   }
@@ -319,8 +334,12 @@ class UserApi {
     }
   }
 
-  Future<Map<String, dynamic>> unlockAcceptedAdvancedWithCredits(String publicationId) async {
-    final result = _map(await _api.post('/users/publications/$publicationId/unlock-advanced'));
+  Future<Map<String, dynamic>> unlockAcceptedAdvancedWithCredits(
+    String publicationId,
+  ) async {
+    final result = _map(
+      await _api.post('/users/publications/$publicationId/unlock-advanced'),
+    );
     _api.invalidate('/users/publications/$publicationId');
     _api.invalidate('/users/publications/accepted');
     _api.invalidate('/users/summary');
@@ -328,16 +347,22 @@ class UserApi {
     return result;
   }
 
-  Future<Map<String, dynamic>> createAcceptedAdvancedCheckout(String publicationId) async {
-    return _map(await _api.post(
-      '/users/publications/$publicationId/unlock-advanced/checkout',
-      data: {
-        'clientRequestId': _clientRequestId(),
-        'paymentMethodKey': 'card',
-        'successUrl': '$_paymentReturnBase/normal/payments/success',
-        'cancelUrl': '$_paymentReturnBase/normal/discover/$publicationId?advancedCancelled=1',
-      },
-    ));
+  Future<Map<String, dynamic>> createAcceptedAdvancedCheckout(
+    String publicationId,
+  ) async {
+    return _map(
+      await _api.post(
+        '/users/publications/$publicationId/unlock-advanced/checkout',
+        data: {
+          'clientRequestId': _clientRequestId(),
+          'paymentMethodKey': 'card',
+          'successUrl': _paymentSuccessUrl,
+          'cancelUrl': _paymentCancelUrl(
+            '/normal/discover/$publicationId?advancedCancelled=1',
+          ),
+        },
+      ),
+    );
   }
 
   Future<Map<String, dynamic>?> getMyRating(
@@ -357,11 +382,16 @@ class UserApi {
     }
   }
 
-  Future<Map<String, dynamic>> setRating(String publicationId, int value) async {
-    final result = _map(await _api.put(
-      '/users/publications/$publicationId/rating',
-      data: {'value': value},
-    ));
+  Future<Map<String, dynamic>> setRating(
+    String publicationId,
+    int value,
+  ) async {
+    final result = _map(
+      await _api.put(
+        '/users/publications/$publicationId/rating',
+        data: {'value': value},
+      ),
+    );
     _api.invalidate('/users/publications/$publicationId');
     _api.invalidate('/users/publications/$publicationId/rating');
     _api.invalidate('/users/publications/discover');
@@ -376,9 +406,7 @@ class UserApi {
     String publicationId,
   ) async {
     final result = _map(
-      await _api.delete(
-        '/users/publications/$publicationId/rating',
-      ),
+      await _api.delete('/users/publications/$publicationId/rating'),
     );
 
     _api.invalidate('/users/publications/$publicationId');
@@ -405,11 +433,16 @@ class UserApi {
     }
   }
 
-  Future<Map<String, dynamic>> setVote(String publicationId, String value) async {
-    final result = _map(await _api.put(
-      '/users/publications/$publicationId/vote',
-      data: {'value': value},
-    ));
+  Future<Map<String, dynamic>> setVote(
+    String publicationId,
+    String value,
+  ) async {
+    final result = _map(
+      await _api.put(
+        '/users/publications/$publicationId/vote',
+        data: {'value': value},
+      ),
+    );
     _api.invalidate('/users/publications/$publicationId');
     _api.invalidate('/users/publications/$publicationId/vote');
     _api.invalidate('/users/publications/discover');
@@ -424,9 +457,7 @@ class UserApi {
     String publicationId,
   ) async {
     final result = _map(
-      await _api.delete(
-        '/users/publications/$publicationId/vote',
-      ),
+      await _api.delete('/users/publications/$publicationId/vote'),
     );
 
     _api.invalidate('/users/publications/$publicationId');
@@ -453,11 +484,16 @@ class UserApi {
     }
   }
 
-  Future<Map<String, dynamic>> setFeedback(String publicationId, String comment) async {
-    final result = _map(await _api.put(
-      '/users/publications/$publicationId/feedback',
-      data: {'comment': comment.trim()},
-    ));
+  Future<Map<String, dynamic>> setFeedback(
+    String publicationId,
+    String comment,
+  ) async {
+    final result = _map(
+      await _api.put(
+        '/users/publications/$publicationId/feedback',
+        data: {'comment': comment.trim()},
+      ),
+    );
     _api.invalidate('/users/publications/$publicationId');
     _api.invalidate('/users/publications/$publicationId/feedback');
     _api.invalidate('/users/publications/discover');
@@ -472,9 +508,7 @@ class UserApi {
     String publicationId,
   ) async {
     final result = _map(
-      await _api.delete(
-        '/users/publications/$publicationId/feedback',
-      ),
+      await _api.delete('/users/publications/$publicationId/feedback'),
     );
 
     _api.invalidate('/users/publications/$publicationId');
@@ -489,13 +523,16 @@ class UserApi {
     required String reason,
     String? details,
   }) async {
-    return _map(await _api.post(
-      '/users/publications/$publicationId/reports',
-      data: {
-        'reason': reason,
-        if (details != null && details.trim().isNotEmpty) 'details': details.trim(),
-      },
-    ));
+    return _map(
+      await _api.post(
+        '/users/publications/$publicationId/reports',
+        data: {
+          'reason': reason,
+          if (details != null && details.trim().isNotEmpty)
+            'details': details.trim(),
+        },
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> sendContactMessage({
@@ -504,15 +541,17 @@ class UserApi {
     required String subject,
     required String message,
   }) async {
-    return _map(await _api.post(
-      '/users/contact-messages',
-      data: {
-        'fullName': fullName.trim(),
-        'email': email.trim().toLowerCase(),
-        'subject': subject.trim(),
-        'message': message.trim(),
-      },
-    ));
+    return _map(
+      await _api.post(
+        '/users/contact-messages',
+        data: {
+          'fullName': fullName.trim(),
+          'email': email.trim().toLowerCase(),
+          'subject': subject.trim(),
+          'message': message.trim(),
+        },
+      ),
+    );
   }
 
   Future<List<AppNotification>> getNotifications({bool force = false}) async {
@@ -538,59 +577,69 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> getProfile({bool force = false}) async {
-    return _map(await _api.get(
-      '/users/profile',
-      cacheFor: const Duration(minutes: 3),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/profile',
+        cacheFor: const Duration(minutes: 3),
+        force: force,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> updateProfile({
     required String fullName,
     String? userType,
   }) async {
-    final result = _map(await _api.patch(
-      '/users/profile',
-      data: {
-        'fullName': fullName.trim(),
-        if (userType != null && userType.trim().isNotEmpty) 'userType': userType.trim(),
-      },
-    ));
+    final result = _map(
+      await _api.patch(
+        '/users/profile',
+        data: {
+          'fullName': fullName.trim(),
+          if (userType != null && userType.trim().isNotEmpty)
+            'userType': userType.trim(),
+        },
+      ),
+    );
     _api.invalidate('/users/profile');
     _api.invalidate('/users/summary');
     return result;
   }
 
-
   Future<Map<String, dynamic>> requestEmailChange({
     required String newEmail,
     required String currentPassword,
   }) async {
-    final result = _map(await _api.post(
-      '/users/profile/email-change/request',
-      data: {
-        'newEmail': newEmail.trim().toLowerCase(),
-        'currentPassword': currentPassword,
-      },
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/profile/email-change/request',
+        data: {
+          'newEmail': newEmail.trim().toLowerCase(),
+          'currentPassword': currentPassword,
+        },
+      ),
+    );
     _api.invalidate('/users/profile');
     return result;
   }
 
   Future<Map<String, dynamic>> verifyCurrentEmailChange(String code) async {
-    final result = _map(await _api.post(
-      '/users/profile/email-change/verify-current',
-      data: {'code': code.trim()},
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/profile/email-change/verify-current',
+        data: {'code': code.trim()},
+      ),
+    );
     _api.invalidate('/users/profile');
     return result;
   }
 
   Future<Map<String, dynamic>> verifyNewEmailChange(String code) async {
-    final result = _map(await _api.post(
-      '/users/profile/email-change/verify-new',
-      data: {'code': code.trim()},
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/profile/email-change/verify-new',
+        data: {'code': code.trim()},
+      ),
+    );
     _api.invalidate('/users/profile');
     _api.invalidate('/users/summary');
     return result;
@@ -606,13 +655,12 @@ class UserApi {
     required String currentPassword,
     required String newPassword,
   }) async {
-    return _map(await _api.patch(
-      '/auth/password/change',
-      data: {
-        'currentPassword': currentPassword,
-        'newPassword': newPassword,
-      },
-    ));
+    return _map(
+      await _api.patch(
+        '/auth/password/change',
+        data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+      ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> getSessions({bool force = false}) async {
@@ -625,10 +673,10 @@ class UserApi {
     final sessions = body['sessions'] is List
         ? body['sessions'] as List
         : body['items'] is List
-            ? body['items'] as List
-            : raw is List
-                ? raw
-                : const <dynamic>[];
+        ? body['items'] as List
+        : raw is List
+        ? raw
+        : const <dynamic>[];
     return sessions.map(_map).toList();
   }
 
@@ -646,12 +694,14 @@ class UserApi {
     required List<int> bytes,
     required String fileName,
   }) async {
-    final result = _map(await _api.patchMultipart(
-      '/users/profile/avatar',
-      fieldName: 'avatar',
-      bytes: bytes,
-      fileName: fileName,
-    ));
+    final result = _map(
+      await _api.patchMultipart(
+        '/users/profile/avatar',
+        fieldName: 'avatar',
+        bytes: bytes,
+        fileName: fileName,
+      ),
+    );
     _api.invalidate('/users/profile');
     _api.invalidate('/users/summary');
     return result;
@@ -672,11 +722,13 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> getPreferences({bool force = false}) async {
-    return _map(await _api.get(
-      '/users/preferences',
-      cacheFor: const Duration(minutes: 5),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/preferences',
+        cacheFor: const Duration(minutes: 5),
+        force: force,
+      ),
+    );
   }
 
   Future<dynamic> getPreferenceOptions({bool force = false}) {
@@ -687,7 +739,9 @@ class UserApi {
     );
   }
 
-  Future<Map<String, dynamic>> updatePreferences(Map<String, dynamic> data) async {
+  Future<Map<String, dynamic>> updatePreferences(
+    Map<String, dynamic> data,
+  ) async {
     final result = _map(await _api.put('/users/preferences', data: data));
     _api.invalidate('/users/preferences');
     _api.invalidate('/preferences/options');
@@ -708,9 +762,10 @@ class UserApi {
     return _paged(raw, (json) => json);
   }
 
-
   Future<Map<String, dynamic>> synchronizeInvoices() async {
-    final result = _map(await _api.post('/users/invoices/synchronize', data: const {}));
+    final result = _map(
+      await _api.post('/users/invoices/synchronize', data: const {}),
+    );
     _api.invalidate('/users/invoices');
     return result;
   }
@@ -719,18 +774,22 @@ class UserApi {
     String invoiceId, {
     bool force = false,
   }) async {
-    return _map(await _api.get(
-      '/users/invoices/$invoiceId',
-      cacheFor: const Duration(minutes: 10),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/invoices/$invoiceId',
+        cacheFor: const Duration(minutes: 10),
+        force: force,
+      ),
+    );
   }
 
   Future<List<int>> downloadInvoicePdf(String invoiceId) {
     return _api.getBytes('/users/invoices/$invoiceId/download');
   }
 
-  Future<PagedResult<Map<String, dynamic>>> getComplaints({bool force = false}) async {
+  Future<PagedResult<Map<String, dynamic>>> getComplaints({
+    bool force = false,
+  }) async {
     final raw = await _api.get(
       '/users/complaints',
       query: const {
@@ -745,16 +804,17 @@ class UserApi {
     return _paged(raw, (json) => json);
   }
 
-
   Future<Map<String, dynamic>> getComplaintById(
     String complaintId, {
     bool force = false,
   }) async {
-    return _map(await _api.get(
-      '/users/complaints/$complaintId',
-      cacheFor: const Duration(minutes: 1),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/complaints/$complaintId',
+        cacheFor: const Duration(minutes: 1),
+        force: force,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> createComplaint({
@@ -762,36 +822,51 @@ class UserApi {
     required String message,
     String? ideaId,
   }) async {
-    final result = _map(await _api.post(
-      '/users/complaints',
-      data: {
-        'subject': subject.trim(),
-        'message': message.trim(),
-        if (ideaId != null && ideaId.trim().isNotEmpty) 'ideaId': ideaId.trim(),
-      },
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/complaints',
+        data: {
+          'subject': subject.trim(),
+          'message': message.trim(),
+          if (ideaId != null && ideaId.trim().isNotEmpty)
+            'ideaId': ideaId.trim(),
+        },
+      ),
+    );
     _api.invalidate('/users/complaints');
     _api.invalidate('/users/summary');
     return result;
   }
 
   Future<Map<String, dynamic>> unlockIdeaWithCredits(String ideaId) async {
-    final result = _map(await _api.post('/users/ideas/$ideaId/outputs/unlock-with-credit'));
+    final result = _map(
+      await _api.post(
+        '/users/ideas/$ideaId/outputs/unlock-with-credit',
+        receiveTimeout: const Duration(minutes: 3),
+      ),
+    );
     _api.invalidate('/users/ideas/$ideaId/workspace');
     _api.invalidate('/users/summary');
     _api.invalidate('/users/credits');
     return result;
   }
 
-  Future<Map<String, dynamic>> getIdeaDetails(String ideaId, {bool force = false}) async {
-    return _map(await _api.get(
-      '/users/ideas/$ideaId',
-      cacheFor: const Duration(minutes: 3),
-      force: force,
-    ));
+  Future<Map<String, dynamic>> getIdeaDetails(
+    String ideaId, {
+    bool force = false,
+  }) async {
+    return _map(
+      await _api.get(
+        '/users/ideas/$ideaId',
+        cacheFor: const Duration(minutes: 3),
+        force: force,
+      ),
+    );
   }
 
-  Future<List<Map<String, dynamic>>> getBusinessModelTemplates({bool force = false}) async {
+  Future<List<Map<String, dynamic>>> getBusinessModelTemplates({
+    bool force = false,
+  }) async {
     final raw = await _api.get(
       '/business-model-templates',
       cacheFor: const Duration(minutes: 30),
@@ -805,11 +880,13 @@ class UserApi {
     bool force = false,
   }) async {
     try {
-      return _map(await _api.get(
-        '/users/ideas/$ideaId/business-models/current',
-        cacheFor: const Duration(minutes: 5),
-        force: force,
-      ));
+      return _map(
+        await _api.get(
+          '/users/ideas/$ideaId/business-models/current',
+          cacheFor: const Duration(minutes: 5),
+          force: force,
+        ),
+      );
     } on ApiException catch (error) {
       if (error.statusCode == 404) return null;
       rethrow;
@@ -823,13 +900,13 @@ class UserApi {
     // Business-model generation executes an AI request on the backend.
     // It can legitimately take longer than the normal mobile API timeout,
     // so only this endpoint receives an extended response window.
-    final result = _map(await _api.post(
-      '/users/ideas/$ideaId/business-models',
-      data: {
-        'businessModelTemplateId': businessModelTemplateId,
-      },
-      receiveTimeout: const Duration(seconds: 90),
-    ));
+    final result = _map(
+      await _api.post(
+        '/users/ideas/$ideaId/business-models',
+        data: {'businessModelTemplateId': businessModelTemplateId},
+        receiveTimeout: const Duration(seconds: 90),
+      ),
+    );
 
     _api.invalidate('/users/ideas/$ideaId/business-models');
     _api.invalidate('/users/ideas/$ideaId/workspace');
@@ -842,7 +919,9 @@ class UserApi {
   }
 
   Future<List<int>> downloadBusinessModel(String ideaId) {
-    return _api.getBytes('/users/ideas/$ideaId/business-models/current/download');
+    return _api.getBytes(
+      '/users/ideas/$ideaId/business-models/current/download',
+    );
   }
 
   Future<List<Map<String, dynamic>>> getBusinessModelHistory(
@@ -861,10 +940,9 @@ class UserApi {
     String ideaId,
     Map<String, dynamic> payload,
   ) async {
-    final result = _map(await _api.put(
-      '/users/ideas/$ideaId/publication',
-      data: payload,
-    ));
+    final result = _map(
+      await _api.put('/users/ideas/$ideaId/publication', data: payload),
+    );
     _api.invalidate('/users/ideas/$ideaId');
     _api.invalidate('/users/ideas/$ideaId/workspace');
     _api.invalidate('/users/publications');
@@ -875,20 +953,21 @@ class UserApi {
     String ideaId, {
     String language = 'EN',
   }) async {
-    return _map(await _api.post(
-      '/users/ideas/$ideaId/publication/generate-description',
-      data: {
-        'language': language,
-        'maxWords': 180,
-      },
-      // Publication copy generation invokes AI on the backend and may
-      // legitimately outlive the normal mobile request window.
-      receiveTimeout: const Duration(seconds: 60),
-    ));
+    return _map(
+      await _api.post(
+        '/users/ideas/$ideaId/publication/generate-description',
+        data: {'language': language, 'maxWords': 180},
+        // Publication copy generation invokes AI on the backend and may
+        // legitimately outlive the normal mobile request window.
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> publishIdea(String ideaId) async {
-    final result = _map(await _api.post('/users/ideas/$ideaId/publication/publish'));
+    final result = _map(
+      await _api.post('/users/ideas/$ideaId/publication/publish'),
+    );
     _api.invalidate('/users/ideas/$ideaId');
     _api.invalidate('/users/ideas/$ideaId/workspace');
     _api.invalidate('/users/publications');
@@ -896,12 +975,17 @@ class UserApi {
     return result;
   }
 
-  Future<Map<String, dynamic>> getWorkspace(String ideaId, {bool force = false}) async {
-    return _map(await _api.get(
-      '/users/ideas/$ideaId/workspace',
-      cacheFor: const Duration(minutes: 5),
-      force: force,
-    ));
+  Future<Map<String, dynamic>> getWorkspace(
+    String ideaId, {
+    bool force = false,
+  }) async {
+    return _map(
+      await _api.get(
+        '/users/ideas/$ideaId/workspace',
+        cacheFor: const Duration(minutes: 5),
+        force: force,
+      ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> getDomains({bool force = false}) async {
@@ -913,22 +997,32 @@ class UserApi {
     return _list(raw).map(_map).toList();
   }
 
-  Future<Map<String, dynamic>> previewCollection(Map<String, dynamic> payload) async {
-    return _map(await _api.post(
-      '/users/ideas/generate/collection-preview',
-      data: payload,
-    ));
+  Future<Map<String, dynamic>> previewCollection(
+    Map<String, dynamic> payload,
+  ) async {
+    return _map(
+      await _api.post(
+        '/users/ideas/generate/collection-preview',
+        data: payload,
+      ),
+    );
   }
 
-  Future<Map<String, dynamic>> startGeneration(Map<String, dynamic> payload) async {
-    final result = _map(await _api.post('/users/ideas/generate', data: payload));
+  Future<Map<String, dynamic>> startGeneration(
+    Map<String, dynamic> payload,
+  ) async {
+    final result = _map(
+      await _api.post('/users/ideas/generate', data: payload),
+    );
     _api.invalidate('/users/summary');
     _api.invalidate('/users/ideas');
     _api.invalidate('/users/credits');
     return result;
   }
 
-  Future<Map<String, dynamic>?> getActiveGenerationRun({bool force = false}) async {
+  Future<Map<String, dynamic>?> getActiveGenerationRun({
+    bool force = false,
+  }) async {
     try {
       final raw = await _api.get(
         '/users/idea-generation-runs/active',
@@ -951,7 +1045,9 @@ class UserApi {
   }
 
   Future<Map<String, dynamic>> getGenerationRun(String runId) async {
-    return _map(await _api.get('/users/idea-generation-runs/$runId', force: true));
+    return _map(
+      await _api.get('/users/idea-generation-runs/$runId', force: true),
+    );
   }
 
   Future<void> cancelGeneration(String runId) async {
@@ -961,14 +1057,21 @@ class UserApi {
   Future<List<Map<String, dynamic>>> getChatSessions(String ideaId) async {
     final raw = await _api.get(
       '/ideas/$ideaId/chat/sessions',
-      query: const {'page': 1, 'limit': 50, 'sortBy': 'updatedAt', 'sortOrder': 'desc'},
+      query: const {
+        'page': 1,
+        'limit': 50,
+        'sortBy': 'updatedAt',
+        'sortOrder': 'desc',
+      },
       cacheFor: const Duration(seconds: 30),
     );
     return _list(raw).map(_map).toList();
   }
 
   Future<Map<String, dynamic>> createChatSession(String ideaId) async {
-    final result = _map(await _api.post('/ideas/$ideaId/chat/sessions', data: const {}));
+    final result = _map(
+      await _api.post('/ideas/$ideaId/chat/sessions', data: const {}),
+    );
     _api.invalidate('/ideas/$ideaId/chat/sessions');
     return result;
   }
@@ -977,10 +1080,12 @@ class UserApi {
     String sessionId, {
     required String title,
   }) async {
-    final result = _map(await _api.patch(
-      '/chat/sessions/$sessionId',
-      data: {'title': title.trim()},
-    ));
+    final result = _map(
+      await _api.patch(
+        '/chat/sessions/$sessionId',
+        data: {'title': title.trim()},
+      ),
+    );
     _api.invalidate('/ideas/');
     return result;
   }
@@ -990,37 +1095,51 @@ class UserApi {
     _api.invalidate('/ideas/');
   }
 
-  Future<List<Map<String, dynamic>>> getChatMessages(String sessionId) async {
+  Future<List<Map<String, dynamic>>> getChatMessages(
+    String sessionId, {
+    bool force = false,
+  }) async {
     final raw = await _api.get(
       '/chat/sessions/$sessionId/messages',
-      query: const {'page': 1, 'limit': 100, 'sortBy': 'createdAt', 'sortOrder': 'asc'},
-      force: true,
+      query: const {
+        'page': 1,
+        'limit': 100,
+        'sortBy': 'createdAt',
+        'sortOrder': 'asc',
+      },
+      cacheFor: const Duration(minutes: 2),
+      force: force,
     );
     return _list(raw).map(_map).toList();
   }
 
   Future<Map<String, dynamic>> getPricing({int creditsQuantity = 15}) async {
-    return _map(await _api.get(
-      '/users/payments/pricing',
-      query: {'creditsQuantity': creditsQuantity},
-      cacheFor: const Duration(minutes: 10),
-    ));
+    return _map(
+      await _api.get(
+        '/users/payments/pricing',
+        query: {'creditsQuantity': creditsQuantity},
+        cacheFor: const Duration(minutes: 10),
+      ),
+    );
   }
-
 
   Future<Map<String, dynamic>> getPaymentState(
     String paymentId, {
     bool force = true,
   }) async {
-    return _map(await _api.get(
-      '/users/payments/$paymentId/status',
-      cacheFor: const Duration(milliseconds: 100),
-      force: force,
-    ));
+    return _map(
+      await _api.get(
+        '/users/payments/$paymentId/status',
+        cacheFor: const Duration(milliseconds: 100),
+        force: force,
+      ),
+    );
   }
 
   Future<Map<String, dynamic>> reconcilePayment(String paymentId) async {
-    final result = _map(await _api.post('/users/payments/$paymentId/reconcile'));
+    final result = _map(
+      await _api.post('/users/payments/$paymentId/reconcile'),
+    );
     _api.invalidate('/users/payments/pricing');
     _api.invalidate('/users/invoices');
     _api.invalidate('/users/summary');
@@ -1028,42 +1147,89 @@ class UserApi {
     return result;
   }
 
-
   Future<Map<String, dynamic>> createDirectUnlockCheckout(String ideaId) async {
-    return _map(await _api.post(
-      '/users/payments/direct-unlock/checkout',
-      data: {
-        'ideaId': ideaId,
-        'paymentMethodKey': 'card',
-        'successUrl': '$_paymentReturnBase/normal/payments/success',
-        'cancelUrl': '$_paymentReturnBase/normal/ideas/$ideaId/unlock',
-      },
-    ));
+    return _map(
+      await _api.post(
+        '/users/payments/direct-unlock/checkout',
+        data: {
+          'ideaId': ideaId,
+          'paymentMethodKey': 'card',
+          'successUrl': _paymentSuccessUrl,
+          'cancelUrl': _paymentCancelUrl(
+            '/normal/ideas/$ideaId?payment=cancelled',
+          ),
+        },
+      ),
+    );
   }
 
-  Future<Map<String, dynamic>> createCreditsCheckout({int quantity = 15}) async {
-    return _map(await _api.post(
-      '/users/payments/credits/checkout',
-      data: {
-        'creditsQuantity': quantity,
-        'paymentMethodKey': 'card',
-        'successUrl': '$_paymentReturnBase/normal/payments/success',
-        'cancelUrl': '$_paymentReturnBase/normal/credits?payment=cancelled',
-      },
-    ));
+  Future<Map<String, dynamic>> createCreditsCheckout({
+    int quantity = 15,
+  }) async {
+    return _map(
+      await _api.post(
+        '/users/payments/credits/checkout',
+        data: {
+          'creditsQuantity': quantity,
+          'paymentMethodKey': 'card',
+          'successUrl': _paymentSuccessUrl,
+          'cancelUrl': _paymentCancelUrl('/normal/credits?payment=cancelled'),
+        },
+      ),
+    );
   }
 
+  /// Success URL supplied to the provider checkout session.
+  ///
+  /// Flutter Web returns to its own origin. Native mobile uses a dedicated
+  /// HTTPS path that MobileCheckoutPage intercepts before a website page is
+  /// required, keeping payment confirmation inside the app.
+  String get _paymentSuccessUrl {
+    if (kIsWeb) {
+      return '$_paymentReturnBase/normal/payments/success';
+    }
+
+    return '$_mobilePaymentReturnBase/mobile/payments/success';
+  }
+
+  /// Builds the provider cancel URL while preserving existing web behavior.
+  String _paymentCancelUrl(String webPath) {
+    if (kIsWeb) {
+      return '$_paymentReturnBase$webPath';
+    }
+
+    return '$_mobilePaymentReturnBase/mobile/payments/cancel';
+  }
+
+  /// Browser return origin used by Flutter Web checkout.
   String get _paymentReturnBase {
     final configured = dotenv.env['PAYMENT_RETURN_BASE_URL']?.trim();
     if (configured != null && configured.isNotEmpty) {
-      return configured.replaceAll(RegExp(r'/$'), '');
+      return configured.replaceAll(RegExp(r'/+$'), '');
     }
 
-    // During Flutter Web development, return from Stripe to the same Flutter
-    // origin instead of sending the user to the React site. The dynamic route
-    // in main.dart handles /normal/payments/success and reads its query values.
     if (kIsWeb) {
-      return Uri.base.origin.replaceAll(RegExp(r'/$'), '');
+      return Uri.base.origin.replaceAll(RegExp(r'/+$'), '');
+    }
+
+    return _mobilePaymentReturnBase;
+  }
+
+  /// HTTPS return origin used by provider-hosted checkout on native mobile.
+  ///
+  /// The embedded checkout intercepts /mobile/payments/success and
+  /// /mobile/payments/cancel, so the fallback domain does not need to render a
+  /// Flutter page for the normal in-app flow.
+  String get _mobilePaymentReturnBase {
+    final configured = dotenv.env['MOBILE_PAYMENT_RETURN_BASE_URL']?.trim();
+
+    if (configured != null && configured.isNotEmpty) {
+      final normalized = configured.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.tryParse(normalized);
+
+      if (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty) {
+        return normalized;
+      }
     }
 
     return 'https://voxidence.app';
@@ -1077,32 +1243,63 @@ class UserApi {
     _api.invalidate('/users/summary');
   }
 
-  PagedResult<T> _paged<T>(dynamic raw, T Function(Map<String, dynamic>) builder) {
+  PagedResult<T> _paged<T>(
+    dynamic raw,
+    T Function(Map<String, dynamic>) builder,
+  ) {
     final body = _mapOrList(raw);
-    List<dynamic> items;
+    List<dynamic> items = const [];
     Map<String, dynamic> meta = const {};
+    Map<String, dynamic> container = const {};
 
     if (body is List) {
       items = body;
     } else {
-      final map = _map(body);
-      final nested = map['data'];
-      items = nested is List
-          ? nested
-          : map['items'] is List
-              ? map['items'] as List
-              : const [];
-      meta = map['meta'] is Map
-          ? _map(map['meta'])
-          : map['pagination'] is Map
-              ? _map(map['pagination'])
-              : const {};
+      container = _map(body);
+
+      final nested = container['data'];
+      if (nested is List) {
+        items = nested;
+      } else if (container['items'] is List) {
+        items = container['items'] as List;
+      } else if (nested is Map) {
+        final nestedMap = _map(nested);
+        container = nestedMap;
+        if (nestedMap['items'] is List) {
+          items = nestedMap['items'] as List;
+        } else if (nestedMap['data'] is List) {
+          items = nestedMap['data'] as List;
+        }
+      }
+
+      meta = container['meta'] is Map
+          ? _map(container['meta'])
+          : container['pagination'] is Map
+          ? _map(container['pagination'])
+          : container;
     }
+
+    final total = _int(
+      meta['total'] ??
+          meta['totalItems'] ??
+          meta['count'] ??
+          container['total'] ??
+          container['totalItems'] ??
+          items.length,
+    );
+
+    final rawTotalPages = _int(
+      meta['totalPages'] ??
+          meta['pages'] ??
+          container['totalPages'] ??
+          container['pages'] ??
+          1,
+    );
 
     return PagedResult<T>(
       items: items.map((e) => builder(_map(e))).toList(),
-      total: _int(meta['total'] ?? meta['totalItems'] ?? items.length),
-      totalPages: _int(meta['totalPages'] ?? 1).clamp(1, 999999).toInt(),
+      total: total,
+      totalPages: rawTotalPages.clamp(1, 999999).toInt(),
     );
   }
 

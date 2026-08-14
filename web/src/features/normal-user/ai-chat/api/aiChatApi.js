@@ -22,6 +22,11 @@ import {
     getApiErrorMessage,
     normalUserApi,
 } from '../../shared/api/normalUserApi';
+import {
+    cachedRequest,
+    createRequestCacheKey,
+    invalidateRequestCache,
+} from '../../shared/cache/requestCache';
 
 /**
  * Backend base URL used by the AI Chat Socket.IO connection.
@@ -32,6 +37,9 @@ const API_URL =
     process.env.REACT_APP_API_BASE_URL?.replace(/\/$/, '') ||
     process.env.REACT_APP_API_URL?.replace(/\/$/, '') ||
     'http://localhost:3000';
+
+const AI_CHAT_SESSIONS_CACHE_TTL_MS = 30 * 1000;
+const AI_CHAT_MESSAGES_CACHE_TTL_MS = 20 * 1000;
 
 /**
  * Converts supported backend collection envelopes into one stable shape.
@@ -72,20 +80,32 @@ const normalizeCollection = (payload) => ({
  */
 export async function listChatSessions(ideaId) {
     try {
-        const response = await normalUserApi.get(
-            `/ideas/${ideaId}/chat/sessions`,
-            {
-                params: {
-                    page: 1,
-                    limit: 50,
-                    sortBy: 'updatedAt',
-                    sortOrder: 'desc',
-                },
-            },
-        );
+        const cacheKey = createRequestCacheKey('ai-chat-sessions', { ideaId });
 
-        return normalizeCollection(
-            extractApiData(response),
+        return await cachedRequest(
+            cacheKey,
+            async () => {
+                const response = await normalUserApi.get(
+                    `/ideas/${ideaId}/chat/sessions`,
+                    {
+                        params: {
+                            page: 1,
+                            limit: 12,
+                            sortBy: 'updatedAt',
+                            sortOrder: 'desc',
+                        },
+                    },
+                );
+
+                return normalizeCollection(
+                    extractApiData(response),
+                );
+            },
+            {
+                ttlMs: AI_CHAT_SESSIONS_CACHE_TTL_MS,
+                persist: false,
+                allowStaleOnError: true,
+            },
         );
     } catch (error) {
         throw new Error(
@@ -119,6 +139,10 @@ export async function createChatSession(
             requestBody,
         );
 
+        invalidateRequestCache(
+            createRequestCacheKey('ai-chat-sessions', { ideaId }),
+        );
+
         return extractApiData(response);
     } catch (error) {
         throw new Error(
@@ -148,6 +172,8 @@ export async function updateChatSession(
             updates,
         );
 
+        invalidateRequestCache('ai-chat-sessions:');
+
         return extractApiData(response);
     } catch (error) {
         throw new Error(
@@ -171,6 +197,11 @@ export async function deleteChatSession(sessionId) {
         await normalUserApi.delete(
             `/chat/sessions/${sessionId}`,
         );
+
+        invalidateRequestCache(
+            createRequestCacheKey('ai-chat-messages', { sessionId }),
+        );
+        invalidateRequestCache('ai-chat-sessions:');
     } catch (error) {
         throw new Error(
             getApiErrorMessage(
@@ -199,20 +230,32 @@ export async function deleteChatSession(sessionId) {
  */
 export async function listChatMessages(sessionId) {
     try {
-        const response = await normalUserApi.get(
-            `/chat/sessions/${sessionId}/messages`,
-            {
-                params: {
-                    page: 1,
-                    limit: 100,
-                    sortBy: 'createdAt',
-                    sortOrder: 'asc',
-                },
-            },
-        );
+        const cacheKey = createRequestCacheKey('ai-chat-messages', { sessionId });
 
-        return normalizeCollection(
-            extractApiData(response),
+        return await cachedRequest(
+            cacheKey,
+            async () => {
+                const response = await normalUserApi.get(
+                    `/chat/sessions/${sessionId}/messages`,
+                    {
+                        params: {
+                            page: 1,
+                            limit: 30,
+                            sortBy: 'createdAt',
+                            sortOrder: 'asc',
+                        },
+                    },
+                );
+
+                return normalizeCollection(
+                    extractApiData(response),
+                );
+            },
+            {
+                ttlMs: AI_CHAT_MESSAGES_CACHE_TTL_MS,
+                persist: false,
+                allowStaleOnError: true,
+            },
         );
     } catch (error) {
         throw new Error(
@@ -225,19 +268,119 @@ export async function listChatMessages(sessionId) {
 }
 
 /**
- * Creates an authenticated Socket.IO connection to the AI Chat namespace.
+ * Invalidates one session's short-lived message-history cache after a live
+ * socket update so reopening the conversation never shows an older snapshot.
+ */
+export function invalidateChatMessages(sessionId) {
+    if (!sessionId) return;
+
+    invalidateRequestCache(
+        createRequestCacheKey('ai-chat-messages', { sessionId }),
+    );
+}
+
+/** Invalidates cached session lists after title/activity changes. */
+export function invalidateChatSessions(ideaId) {
+    if (ideaId) {
+        invalidateRequestCache(
+            createRequestCacheKey('ai-chat-sessions', { ideaId }),
+        );
+        return;
+    }
+
+    invalidateRequestCache('ai-chat-sessions:');
+}
+
+const AI_CHAT_SOCKET_IDLE_DISCONNECT_MS = 45 * 1000;
+
+let sharedAiChatSocket = null;
+let sharedAiChatSocketDisconnectTimer = null;
+
+/**
+ * Returns the shared authenticated AI Chat socket.
+ *
+ * Reusing one connection avoids paying a new WebSocket handshake every time
+ * the user reopens AI Chat from the same authenticated workspace.
  *
  * @returns {import('socket.io-client').Socket}
  */
 export function createAiChatSocket() {
-    return io(`${API_URL}/ai-chat`, {
+    if (sharedAiChatSocket) {
+        window.clearTimeout(sharedAiChatSocketDisconnectTimer);
+        sharedAiChatSocketDisconnectTimer = null;
+
+        const latestToken = getAccessToken();
+
+        if (
+            latestToken &&
+            sharedAiChatSocket.auth?.token !== latestToken
+        ) {
+            sharedAiChatSocket.auth = {
+                ...(sharedAiChatSocket.auth || {}),
+                token: latestToken,
+            };
+        }
+
+        if (!sharedAiChatSocket.connected) {
+            sharedAiChatSocket.connect();
+        }
+
+        return sharedAiChatSocket;
+    }
+
+    sharedAiChatSocket = io(`${API_URL}/ai-chat`, {
         auth: {
             token: getAccessToken(),
         },
-        transports: [
-            'websocket',
-            'polling',
-        ],
+        transports: ['websocket'],
+        upgrade: false,
         reconnection: true,
+        reconnectionAttempts: 4,
+        reconnectionDelay: 120,
+        reconnectionDelayMax: 500,
+        timeout: 2500,
     });
+
+    return sharedAiChatSocket;
+}
+
+/**
+ * Starts the socket connection before navigation to AI Chat.
+ *
+ * This is intentionally safe to call from hover/focus/pointer preloading.
+ */
+export function warmAiChatSocket() {
+    try {
+        return createAiChatSocket();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Keeps the shared socket alive briefly after leaving AI Chat.
+ *
+ * Reopening the page during this interval is nearly instant, while a truly
+ * idle connection is still released automatically.
+ */
+export function scheduleAiChatSocketDisconnect() {
+    window.clearTimeout(sharedAiChatSocketDisconnectTimer);
+
+    sharedAiChatSocketDisconnectTimer = window.setTimeout(() => {
+        sharedAiChatSocket?.disconnect();
+        sharedAiChatSocket = null;
+        sharedAiChatSocketDisconnectTimer = null;
+    }, AI_CHAT_SOCKET_IDLE_DISCONNECT_MS);
+}
+
+/**
+ * Immediately closes the shared socket.
+ *
+ * Useful for explicit authentication teardown flows.
+ */
+export function disconnectAiChatSocket() {
+    window.clearTimeout(sharedAiChatSocketDisconnectTimer);
+    sharedAiChatSocketDisconnectTimer = null;
+    sharedAiChatSocket?.disconnect();
+    sharedAiChatSocket = null;
 }

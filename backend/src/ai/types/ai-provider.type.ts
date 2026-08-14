@@ -171,6 +171,14 @@ export type AiProviderGenerateInput = {
    * whenever cancellation is supported.
    */
   readonly signal?: AbortSignal;
+
+  /**
+   * Optional callback invoked as soon as the provider yields new text.
+   *
+   * Plain-text callers such as interactive AI chat use this callback for
+   * true provider streaming. Structured JSON operations should omit it.
+   */
+  readonly onTextDelta?: (delta: string) => void;
 };
 
 /**

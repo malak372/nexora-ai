@@ -28,20 +28,18 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
+import '../widgets/workspace_navigation.dart';
 import 'accepted_idea_workspace_page.dart';
+import 'mobile_checkout_page.dart';
 
 class PublicationPage extends StatefulWidget {
-  const PublicationPage({
-    super.key,
-    required this.publicationId,
-  });
+  const PublicationPage({super.key, required this.publicationId});
 
   final String publicationId;
 
@@ -95,39 +93,28 @@ class _PublicationPageState extends State<PublicationPage> {
     super.dispose();
   }
 
-  Future<void> _load({
-    bool force = false,
-  }) async {
+  Future<void> _load({bool force = false}) async {
     if (mounted) {
       setState(() {
-        _loading = true;
+        _loading = _data == null;
         _error = null;
       });
     }
 
     try {
-      // Match web: publication + acceptance are the only blocking requests.
-      final primary = await Future.wait<dynamic>([
-        UserApi.instance.getDiscovery(
+      // Paint the publication as soon as the main detail request returns.
+      // Acceptance, engagement and pricing are secondary state and must not
+      // hold the whole Community Opportunity page behind a blank skeleton.
+      final detail = _map(
+        await UserApi.instance.getDiscovery(
           widget.publicationId,
           force: force,
         ),
-        UserApi.instance.getMyAcceptance(
-          widget.publicationId,
-          force: force,
-        ),
-      ]);
-
-      final detail = _map(primary[0]);
-      final directAcceptance = primary[1] == null
-          ? null
-          : _extractAcceptance(_map(primary[1]));
+      );
 
       final embeddedAcceptance = detail['acceptance'] is Map
           ? _extractAcceptance(
-              Map<String, dynamic>.from(
-                detail['acceptance'] as Map,
-              ),
+              Map<String, dynamic>.from(detail['acceptance'] as Map),
             )
           : null;
 
@@ -135,15 +122,14 @@ class _PublicationPageState extends State<PublicationPage> {
 
       setState(() {
         _data = detail;
-        _acceptance = directAcceptance ?? embeddedAcceptance;
+        if (embeddedAcceptance != null && embeddedAcceptance.isNotEmpty) {
+          _acceptance = embeddedAcceptance;
+        }
         _loading = false;
       });
 
-      // Optional engagement state loads after the first useful paint.
+      unawaited(_loadAcceptance(force: force));
       unawaited(_loadEngagement(force: force));
-
-      // Premium basic acceptance mirrors the web behavior and does not block
-      // rendering of the public publication content.
       unawaited(_maybeAutoAcceptPremium(detail));
     } catch (error) {
       if (!mounted) return;
@@ -155,9 +141,31 @@ class _PublicationPageState extends State<PublicationPage> {
     }
   }
 
-  Future<void> _loadEngagement({
-    bool force = false,
-  }) async {
+  Future<void> _loadAcceptance({bool force = false}) async {
+    try {
+      final raw = await UserApi.instance.getMyAcceptance(
+        widget.publicationId,
+        force: force,
+      );
+
+      if (!mounted) return;
+
+      final acceptance = raw == null ? null : _extractAcceptance(_map(raw));
+      setState(() {
+        if (acceptance == null || acceptance.isEmpty) {
+          if (_acceptance == null || force) {
+            _acceptance = null;
+          }
+        } else {
+          _acceptance = acceptance;
+        }
+      });
+    } catch (_) {
+      // Public detail stays usable even if optional acceptance state is slow.
+    }
+  }
+
+  Future<void> _loadEngagement({bool force = false}) async {
     final data = _data;
     if (data == null || _engagementLoading) return;
 
@@ -174,10 +182,7 @@ class _PublicationPageState extends State<PublicationPage> {
       if (_enabled(data['allowRatings'])) {
         requests.add(
           _safeEngagement(
-            UserApi.instance.getMyRating(
-              widget.publicationId,
-              force: force,
-            ),
+            UserApi.instance.getMyRating(widget.publicationId, force: force),
           ),
         );
         keys.add('rating');
@@ -186,10 +191,7 @@ class _PublicationPageState extends State<PublicationPage> {
       if (_enabled(data['allowVoting'])) {
         requests.add(
           _safeEngagement(
-            UserApi.instance.getMyVote(
-              widget.publicationId,
-              force: force,
-            ),
+            UserApi.instance.getMyVote(widget.publicationId, force: force),
           ),
         );
         keys.add('vote');
@@ -198,10 +200,7 @@ class _PublicationPageState extends State<PublicationPage> {
       if (_enabled(data['allowFeedback'])) {
         requests.add(
           _safeEngagement(
-            UserApi.instance.getMyFeedback(
-              widget.publicationId,
-              force: force,
-            ),
+            UserApi.instance.getMyFeedback(widget.publicationId, force: force),
           ),
         );
         keys.add('feedback');
@@ -231,8 +230,7 @@ class _PublicationPageState extends State<PublicationPage> {
             case 'feedback':
               if (feedbackRevision == _feedbackRevision) {
                 _myFeedback = result;
-                _feedbackController.text =
-                    _feedbackComment(result);
+                _feedbackController.text = _feedbackComment(result);
               }
               break;
           }
@@ -267,9 +265,7 @@ class _PublicationPageState extends State<PublicationPage> {
     }
   }
 
-  Future<void> _maybeAutoAcceptPremium(
-    Map<String, dynamic> detail,
-  ) async {
+  Future<void> _maybeAutoAcceptPremium(Map<String, dynamic> detail) async {
     if (_autoAcceptAttempted ||
         !_session.isPremium ||
         !_enabled(detail['allowAdoption']) ||
@@ -300,9 +296,7 @@ class _PublicationPageState extends State<PublicationPage> {
           setState(() => _acceptance = acceptance);
         }
 
-        await _load(
-          force: true,
-        );
+        await _load(force: true);
       }
     } catch (_) {
       // Same as web: failure of automatic Premium acceptance must not prevent
@@ -321,9 +315,7 @@ class _PublicationPageState extends State<PublicationPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _ProtectedBriefSheet(
-        priceLabel: _acceptancePriceLabel,
-      ),
+      builder: (_) => _ProtectedBriefSheet(priceLabel: _acceptancePriceLabel),
     );
 
     if (approved != true || !mounted) return;
@@ -338,7 +330,7 @@ class _PublicationPageState extends State<PublicationPage> {
       final checkoutUrl = _checkoutUrl(result);
 
       if (checkoutUrl != null && checkoutUrl.isNotEmpty) {
-        await _openCheckout(checkoutUrl);
+        await _openCheckout(result);
         return;
       }
 
@@ -359,11 +351,7 @@ class _PublicationPageState extends State<PublicationPage> {
       }
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
       if (mounted) {
@@ -395,24 +383,14 @@ class _PublicationPageState extends State<PublicationPage> {
           widget.publicationId,
         );
 
-        await Future.wait([
-          _session.load(force: true),
-          _load(force: true),
-        ]);
+        await Future.wait([_session.load(force: true), _load(force: true)]);
 
         if (mounted) {
-          showAppSnackBar(
-            context,
-            'Advanced workspace unlocked.',
-          );
+          showAppSnackBar(context, 'Advanced workspace unlocked.');
         }
       } on ApiException catch (error) {
         if (mounted) {
-          showAppSnackBar(
-            context,
-            error.message,
-            error: true,
-          );
+          showAppSnackBar(context, error.message, error: true);
         }
       } finally {
         if (mounted) {
@@ -427,10 +405,8 @@ class _PublicationPageState extends State<PublicationPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _AdvancedAccessSheet(
-        premium: false,
-        priceLabel: _advancedPriceLabel,
-      ),
+      builder: (_) =>
+          _AdvancedAccessSheet(premium: false, priceLabel: _advancedPriceLabel),
     );
 
     if (approved != true || !mounted) return;
@@ -448,22 +424,15 @@ class _PublicationPageState extends State<PublicationPage> {
         await _load(force: true);
 
         if (mounted) {
-          showAppSnackBar(
-            context,
-            'Advanced access is already available.',
-          );
+          showAppSnackBar(context, 'Advanced access is already available.');
         }
         return;
       }
 
-      await _openCheckout(checkoutUrl);
+      await _openCheckout(result);
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
       if (mounted) {
@@ -472,81 +441,21 @@ class _PublicationPageState extends State<PublicationPage> {
     }
   }
 
-  Future<void> _openCheckout(
-    String checkoutUrl,
-  ) async {
-    final uri = Uri.tryParse(checkoutUrl);
-
-    if (uri == null ||
-        (uri.scheme != 'https' && uri.scheme != 'http')) {
-      await Clipboard.setData(
-        ClipboardData(text: checkoutUrl),
-      );
-
-      if (mounted) {
-        showAppSnackBar(
-          context,
-          'The checkout link was copied because it could not be opened safely.',
-          error: true,
-        );
-      }
-      return;
-    }
-
-    var opened = false;
-
-    // Keep Stripe visually inside the mobile experience when the platform
-    // supports a native in-app browser surface (Custom Tabs / Safari view).
-    // url_launcher automatically falls back when this launch mode is not
-    // available on the current platform.
-    try {
-      opened = await launchUrl(
-        uri,
-        mode: LaunchMode.inAppBrowserView,
-      );
-    } catch (_) {
-      opened = false;
-    }
-
-    // Last-resort fallback for platforms/builds where the in-app browser
-    // surface is unavailable.
-    if (!opened) {
-      try {
-        opened = await launchUrl(
-          uri,
-          mode: LaunchMode.externalApplication,
-        );
-      } catch (_) {
-        opened = false;
-      }
-    }
-
-    if (opened) {
-      if (mounted) {
-        showAppSnackBar(
-          context,
-          'Secure checkout opened. Return here after payment is complete.',
-        );
-      }
-      return;
-    }
-
-    await Clipboard.setData(
-      ClipboardData(text: checkoutUrl),
+  Future<void> _openCheckout(Map<String, dynamic> checkoutResult) async {
+    final flow = await openVoxidenceCheckout(
+      context,
+      checkoutResult: checkoutResult,
+      selectedSection: WorkspaceSection.ideas,
+      publicationId: widget.publicationId,
+      title: 'Secure publication checkout',
     );
 
-    if (mounted) {
-      showAppSnackBar(
-        context,
-        'Checkout could not open automatically, so the secure link was copied.',
-        error: true,
-      );
+    if (flow.status == CheckoutFlowStatus.completed && mounted) {
+      await Future.wait([_session.load(force: true), _load(force: true)]);
     }
   }
 
-  Future<void> _setRating(
-    int value,
-  ) async {
+  Future<void> _setRating(int value) async {
     if (_ratingBusy) return;
 
     final previousRating = _ratingValue;
@@ -564,73 +473,47 @@ class _PublicationPageState extends State<PublicationPage> {
     // The visible rating changes before the network request starts.
     setState(() {
       _ratingBusy = true;
-      _myRating = removing
-          ? null
-          : <String, dynamic>{
-              'value': value,
-            };
+      _myRating = removing ? null : <String, dynamic>{'value': value};
     });
 
     try {
       final result = removing
-          ? await UserApi.instance
-              .deleteRatingReturningResult(
+          ? await UserApi.instance.deleteRatingReturningResult(
               widget.publicationId,
             )
-          : await UserApi.instance.setRating(
-              widget.publicationId,
-              value,
-            );
+          : await UserApi.instance.setRating(widget.publicationId, value);
 
-      if (!mounted ||
-          revision != _ratingRevision) {
+      if (!mounted || revision != _ratingRevision) {
         return;
       }
 
-      final stats =
-          _map(result['publicationRating']);
+      final stats = _map(result['publicationRating']);
 
       setState(() {
         if (!removing) {
-          _myRating = {
-            'value': value,
-            ..._map(result['rating']),
-          };
+          _myRating = {'value': value, ..._map(result['rating'])};
         }
 
         if (stats.isNotEmpty) {
           _patchPublicationData({
-            'averageRating':
-                stats['averageRating'],
-            'ratingsCount':
-                stats['ratingsCount'],
+            'averageRating': stats['averageRating'],
+            'ratingsCount': stats['ratingsCount'],
           });
         }
       });
 
-      showAppSnackBar(
-        context,
-        removing
-            ? 'Rating removed.'
-            : 'Rating saved.',
-      );
+      showAppSnackBar(context, removing ? 'Rating removed.' : 'Rating saved.');
     } on ApiException catch (error) {
-      if (mounted &&
-          revision == _ratingRevision) {
+      if (mounted && revision == _ratingRevision) {
         setState(() {
           _myRating = previousMyRating;
           _data = previousData;
         });
 
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
-      if (mounted &&
-          revision == _ratingRevision) {
+      if (mounted && revision == _ratingRevision) {
         setState(() => _ratingBusy = false);
       }
     }
@@ -642,9 +525,7 @@ class _PublicationPageState extends State<PublicationPage> {
     await _setRating(current);
   }
 
-  Future<void> _setVote(
-    String value,
-  ) async {
+  Future<void> _setVote(String value) async {
     if (_voteBusy) return;
 
     final previousVote = _voteValue;
@@ -661,11 +542,7 @@ class _PublicationPageState extends State<PublicationPage> {
 
     setState(() {
       _voteBusy = true;
-      _myVote = removing
-          ? null
-          : <String, dynamic>{
-              'value': value,
-            };
+      _myVote = removing ? null : <String, dynamic>{'value': value};
 
       _applyOptimisticVoteCounts(
         previousVote: previousVote,
@@ -675,72 +552,49 @@ class _PublicationPageState extends State<PublicationPage> {
 
     try {
       final result = removing
-          ? await UserApi.instance
-              .deleteVoteReturningResult(
+          ? await UserApi.instance.deleteVoteReturningResult(
               widget.publicationId,
             )
-          : await UserApi.instance.setVote(
-              widget.publicationId,
-              value,
-            );
+          : await UserApi.instance.setVote(widget.publicationId, value);
 
-      if (!mounted ||
-          revision != _voteRevision) {
+      if (!mounted || revision != _voteRevision) {
         return;
       }
 
-      final stats =
-          _map(result['publicationVotes']);
+      final stats = _map(result['publicationVotes']);
 
       setState(() {
         if (!removing) {
-          _myVote = {
-            'value': value,
-            ..._map(result['vote']),
-          };
+          _myVote = {'value': value, ..._map(result['vote'])};
         }
 
         if (stats.isNotEmpty) {
           _patchPublicationData({
-            'upvotesCount':
-                stats['upvotesCount'],
-            'downvotesCount':
-                stats['downvotesCount'],
+            'upvotesCount': stats['upvotesCount'],
+            'downvotesCount': stats['downvotesCount'],
           });
         }
       });
 
-      showAppSnackBar(
-        context,
-        removing
-            ? 'Vote removed.'
-            : 'Vote saved.',
-      );
+      showAppSnackBar(context, removing ? 'Vote removed.' : 'Vote saved.');
     } on ApiException catch (error) {
-      if (mounted &&
-          revision == _voteRevision) {
+      if (mounted && revision == _voteRevision) {
         setState(() {
           _myVote = previousMyVote;
           _data = previousData;
         });
 
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
-      if (mounted &&
-          revision == _voteRevision) {
+      if (mounted && revision == _voteRevision) {
         setState(() => _voteBusy = false);
       }
     }
   }
 
   Future<void> _saveFeedback() async {
-    final comment =
-        _feedbackController.text.trim();
+    final comment = _feedbackController.text.trim();
 
     if (_feedbackBusy || comment.isEmpty) {
       return;
@@ -748,12 +602,9 @@ class _PublicationPageState extends State<PublicationPage> {
 
     final wasSaved = _feedbackSaved;
 
-    final previousFeedback =
-        _myFeedback == null
-            ? null
-            : Map<String, dynamic>.from(
-                _myFeedback!,
-              );
+    final previousFeedback = _myFeedback == null
+        ? null
+        : Map<String, dynamic>.from(_myFeedback!);
 
     final previousData = _data == null
         ? null
@@ -763,70 +614,48 @@ class _PublicationPageState extends State<PublicationPage> {
 
     setState(() {
       _feedbackBusy = true;
-      _myFeedback = {
-        'comment': comment,
-      };
+      _myFeedback = {'comment': comment};
 
       if (!wasSaved) {
         _patchPublicationData({
-          'feedbackCount':
-              _int(
-                _data?['feedbackCount'],
-              ) +
-              1,
+          'feedbackCount': _int(_data?['feedbackCount']) + 1,
         });
       }
     });
 
     try {
-      final result =
-          await UserApi.instance.setFeedback(
+      final result = await UserApi.instance.setFeedback(
         widget.publicationId,
         comment,
       );
 
-      if (!mounted ||
-          revision != _feedbackRevision) {
+      if (!mounted || revision != _feedbackRevision) {
         return;
       }
 
       setState(() {
-        _myFeedback = {
-          'comment': comment,
-          ..._map(result['feedback']),
-        };
+        _myFeedback = {'comment': comment, ..._map(result['feedback'])};
 
         if (result['feedbackCount'] != null) {
-          _patchPublicationData({
-            'feedbackCount':
-                result['feedbackCount'],
-          });
+          _patchPublicationData({'feedbackCount': result['feedbackCount']});
         }
       });
 
       showAppSnackBar(
         context,
-        wasSaved
-            ? 'Feedback updated.'
-            : 'Feedback shared.',
+        wasSaved ? 'Feedback updated.' : 'Feedback shared.',
       );
     } on ApiException catch (error) {
-      if (mounted &&
-          revision == _feedbackRevision) {
+      if (mounted && revision == _feedbackRevision) {
         setState(() {
           _myFeedback = previousFeedback;
           _data = previousData;
         });
 
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
-      if (mounted &&
-          revision == _feedbackRevision) {
+      if (mounted && revision == _feedbackRevision) {
         setState(() => _feedbackBusy = false);
       }
     }
@@ -837,15 +666,11 @@ class _PublicationPageState extends State<PublicationPage> {
       return;
     }
 
-    final previousFeedback =
-        _myFeedback == null
-            ? null
-            : Map<String, dynamic>.from(
-                _myFeedback!,
-              );
+    final previousFeedback = _myFeedback == null
+        ? null
+        : Map<String, dynamic>.from(_myFeedback!);
 
-    final previousText =
-        _feedbackController.text;
+    final previousText = _feedbackController.text;
 
     final previousData = _data == null
         ? null
@@ -859,94 +684,63 @@ class _PublicationPageState extends State<PublicationPage> {
       _myFeedback = null;
 
       _patchPublicationData({
-        'feedbackCount': math.max(
-          0,
-          _int(
-                _data?['feedbackCount'],
-              ) -
-              1,
-        ),
+        'feedbackCount': math.max(0, _int(_data?['feedbackCount']) - 1),
       });
     });
 
     try {
-      final result =
-          await UserApi.instance
-              .deleteFeedbackReturningResult(
+      final result = await UserApi.instance.deleteFeedbackReturningResult(
         widget.publicationId,
       );
 
-      if (!mounted ||
-          revision != _feedbackRevision) {
+      if (!mounted || revision != _feedbackRevision) {
         return;
       }
 
       if (result['feedbackCount'] != null) {
         setState(() {
-          _patchPublicationData({
-            'feedbackCount':
-                result['feedbackCount'],
-          });
+          _patchPublicationData({'feedbackCount': result['feedbackCount']});
         });
       }
 
-      showAppSnackBar(
-        context,
-        'Feedback removed.',
-      );
+      showAppSnackBar(context, 'Feedback removed.');
     } on ApiException catch (error) {
-      if (mounted &&
-          revision == _feedbackRevision) {
+      if (mounted && revision == _feedbackRevision) {
         setState(() {
-          _feedbackController.text =
-              previousText;
-          _myFeedback =
-              previousFeedback;
+          _feedbackController.text = previousText;
+          _myFeedback = previousFeedback;
           _data = previousData;
         });
 
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
-      if (mounted &&
-          revision == _feedbackRevision) {
+      if (mounted && revision == _feedbackRevision) {
         setState(() => _feedbackBusy = false);
       }
     }
   }
 
-  void _patchPublicationData(
-    Map<String, dynamic> patch,
-  ) {
+  void _patchPublicationData(Map<String, dynamic> patch) {
     final current = _data;
 
     if (current == null) return;
 
-    _data = {
-      ...current,
-      ...patch,
-    };
+    _data = {...current, ...patch};
   }
 
   void _applyOptimisticVoteCounts({
     required String previousVote,
     required String nextVote,
   }) {
-    var upvotes =
-        _int(_data?['upvotesCount']);
+    var upvotes = _int(_data?['upvotesCount']);
 
-    var downvotes =
-        _int(_data?['downvotesCount']);
+    var downvotes = _int(_data?['downvotesCount']);
 
     if (previousVote == 'UP') {
       upvotes = math.max(0, upvotes - 1).toInt();
     } else if (previousVote == 'DOWN') {
-      downvotes =
-          math.max(0, downvotes - 1).toInt();
+      downvotes = math.max(0, downvotes - 1).toInt();
     }
 
     if (nextVote == 'UP') {
@@ -964,13 +758,13 @@ class _PublicationPageState extends State<PublicationPage> {
   Future<void> _openReport() async {
     if (_busy) return;
 
-    final payload = await showModalBottomSheet<
-        ({String reason, String? details})>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => const _ReportPublicationSheet(),
-    );
+    final payload =
+        await showModalBottomSheet<({String reason, String? details})>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (_) => const _ReportPublicationSheet(),
+        );
 
     if (payload == null || !mounted) return;
 
@@ -991,11 +785,7 @@ class _PublicationPageState extends State<PublicationPage> {
       }
     } on ApiException catch (error) {
       if (mounted) {
-        showAppSnackBar(
-          context,
-          error.message,
-          error: true,
-        );
+        showAppSnackBar(context, error.message, error: true);
       }
     } finally {
       if (mounted) {
@@ -1014,8 +804,7 @@ class _PublicationPageState extends State<PublicationPage> {
     );
 
     final abstractText = _text(
-      data['publicAbstract'] ??
-          data['publicDescription'],
+      data['publicAbstract'] ?? data['publicDescription'],
     );
 
     final problem = data['publicProblem'];
@@ -1023,9 +812,7 @@ class _PublicationPageState extends State<PublicationPage> {
     final targetUsers = data['publicTargetUsers'];
 
     final publisher = data['publisher'] is Map
-        ? Map<String, dynamic>.from(
-            data['publisher'] as Map,
-          )
+        ? Map<String, dynamic>.from(data['publisher'] as Map)
         : const <String, dynamic>{};
 
     final publisherName = _text(
@@ -1033,27 +820,19 @@ class _PublicationPageState extends State<PublicationPage> {
       fallback: 'Voxidence creator',
     );
 
-    final ratingsEnabled = _enabled(
-      data['allowRatings'],
-    );
+    final ratingsEnabled = _enabled(data['allowRatings']);
 
-    final votingEnabled = _enabled(
-      data['allowVoting'],
-    );
+    final votingEnabled = _enabled(data['allowVoting']);
 
-    final feedbackEnabled = _enabled(
-      data['allowFeedback'],
-    );
+    final feedbackEnabled = _enabled(data['allowFeedback']);
 
-    final adoptionEnabled = _enabled(
-      data['allowAdoption'],
-    );
+    final adoptionEnabled = _enabled(data['allowAdoption']);
 
     final advancedAvailable =
         data['advancedOutputsAvailable'] == true ||
-            _int(data['advancedOutputsCount']) > 0 ||
-            (data['advancedOutputs'] is List &&
-                (data['advancedOutputs'] as List).isNotEmpty);
+        _int(data['advancedOutputsCount']) > 0 ||
+        (data['advancedOutputs'] is List &&
+            (data['advancedOutputs'] as List).isNotEmpty);
 
     final hasPublicEngagement =
         ratingsEnabled || votingEnabled || feedbackEnabled;
@@ -1061,16 +840,24 @@ class _PublicationPageState extends State<PublicationPage> {
     final owner = _isOwner(data);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: AppColors.background,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: AppColors.background,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
         leadingWidth: 50,
         leading: IconButton(
           tooltip: 'Back to Discover',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(
-            Icons.arrow_back_rounded,
-            size: 22,
-          ),
+          icon: const Icon(Icons.arrow_back_rounded, size: 22),
         ),
         titleSpacing: 0,
         title: const Column(
@@ -1103,15 +890,10 @@ class _PublicationPageState extends State<PublicationPage> {
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              8,
-              16,
-              44,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 44),
             children: [
               if (_loading)
-                const LoadingList(count: 5)
+                const _PublicationLoadingState()
               else if (_error != null)
                 EmptyState(
                   icon: Icons.cloud_off_rounded,
@@ -1119,10 +901,7 @@ class _PublicationPageState extends State<PublicationPage> {
                   message: _error.toString(),
                   action: FilledButton.icon(
                     onPressed: () => _load(force: true),
-                    icon: const Icon(
-                      Icons.refresh_rounded,
-                      size: 16,
-                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
                     label: const Text('Retry'),
                   ),
                 )
@@ -1137,15 +916,9 @@ class _PublicationPageState extends State<PublicationPage> {
                     ratingsEnabled: ratingsEnabled,
                     votingEnabled: votingEnabled,
                     feedbackEnabled: feedbackEnabled,
-                    averageRating: _double(
-                      data['averageRating'],
-                    ),
-                    upvotes: _int(
-                      data['upvotesCount'],
-                    ),
-                    feedbackCount: _int(
-                      data['feedbackCount'],
-                    ),
+                    averageRating: _double(data['averageRating']),
+                    upvotes: _int(data['upvotesCount']),
+                    feedbackCount: _int(data['feedbackCount']),
                     onReport: _busy ? null : _openReport,
                   ),
                 ),
@@ -1178,18 +951,12 @@ class _PublicationPageState extends State<PublicationPage> {
                 const SizedBox(height: 14),
 
                 if (owner)
-                  _Reveal(
-                    delay: 105,
-                    child: const _OwnerPublicationCard(),
-                  )
+                  _Reveal(delay: 105, child: const _OwnerPublicationCard())
                 else if (!_accepted &&
                     _session.isPremium &&
                     adoptionEnabled &&
                     _autoAccepting)
-                  _Reveal(
-                    delay: 105,
-                    child: const _PremiumOpeningCard(),
-                  )
+                  _Reveal(delay: 105, child: const _PremiumOpeningCard())
                 else if (!_accepted && adoptionEnabled)
                   _Reveal(
                     delay: 105,
@@ -1201,15 +968,9 @@ class _PublicationPageState extends State<PublicationPage> {
                     ),
                   )
                 else if (!_accepted)
-                  _Reveal(
-                    delay: 105,
-                    child: const _AcceptancePausedCard(),
-                  )
+                  _Reveal(delay: 105, child: const _AcceptancePausedCard())
                 else ...[
-                  _Reveal(
-                    delay: 105,
-                    child: const _AcceptedBanner(),
-                  ),
+                  _Reveal(delay: 105, child: const _AcceptedBanner()),
 
                   const SizedBox(height: 12),
 
@@ -1232,14 +993,11 @@ class _PublicationPageState extends State<PublicationPage> {
                         priceLabel: _session.isPremium
                             ? _advancedCreditsLabel
                             : _advancedPriceLabel,
-                        outputCount: _int(
-                          data['advancedOutputsCount'],
-                        ),
+                        outputCount: _int(data['advancedOutputsCount']),
                         busy: _busy,
                         onOpen: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) =>
-                                AcceptedIdeaWorkspacePage(
+                            builder: (_) => AcceptedIdeaWorkspacePage(
                               publicationId: widget.publicationId,
                             ),
                           ),
@@ -1270,11 +1028,10 @@ class _PublicationPageState extends State<PublicationPage> {
   }
 
   bool get _advancedGranted {
-    final acceptance = _acceptance ??
+    final acceptance =
+        _acceptance ??
         (_data?['acceptance'] is Map
-            ? Map<String, dynamic>.from(
-                _data!['acceptance'] as Map,
-              )
+            ? Map<String, dynamic>.from(_data!['acceptance'] as Map)
             : const <String, dynamic>{});
 
     return _data?['advancedAccessGranted'] == true ||
@@ -1313,46 +1070,36 @@ class _PublicationPageState extends State<PublicationPage> {
     return '';
   }
 
-  bool get _feedbackSaved =>
-      _feedbackComment(_myFeedback).trim().isNotEmpty;
+  bool get _feedbackSaved => _feedbackComment(_myFeedback).trim().isNotEmpty;
 
-  bool _isOwner(
-    Map<String, dynamic> detail,
-  ) {
+  bool _isOwner(Map<String, dynamic> detail) {
     final publisher = detail['publisher'];
 
     if (publisher is! Map) return false;
 
     final currentId = _session.summary?.id;
 
-    return currentId != null &&
-        publisher['id']?.toString() == currentId;
+    return currentId != null && publisher['id']?.toString() == currentId;
   }
 
   String get _acceptancePriceLabel {
-    final value = _pricingValue(
-      const [
-        'publicationAcceptancePrice',
-        'normalAcceptancePrice',
-        'publication_acceptance_price',
-      ],
-    );
+    final value = _pricingValue(const [
+      'publicationAcceptancePrice',
+      'normalAcceptancePrice',
+      'publication_acceptance_price',
+    ]);
 
     final currency = _pricingCurrency;
 
-    return value == null
-        ? 'Secure checkout'
-        : '${_money(value)} $currency';
+    return value == null ? 'Secure checkout' : '${_money(value)} $currency';
   }
 
   String get _advancedPriceLabel {
-    final value = _pricingValue(
-      const [
-        'normalPublicationAdvancedPrice',
-        'publicationAdvancedPrice',
-        'normal_publication_advanced_price',
-      ],
-    );
+    final value = _pricingValue(const [
+      'normalPublicationAdvancedPrice',
+      'publicationAdvancedPrice',
+      'normal_publication_advanced_price',
+    ]);
 
     final currency = _pricingCurrency;
 
@@ -1362,16 +1109,12 @@ class _PublicationPageState extends State<PublicationPage> {
   }
 
   String get _advancedCreditsLabel {
-    final value = _pricingValue(
-      const [
-        'publicationAdvancedCreditCost',
-        'publication_advanced_credit_cost',
-      ],
-    );
+    final value = _pricingValue(const [
+      'publicationAdvancedCreditCost',
+      'publication_advanced_credit_cost',
+    ]);
 
-    return value == null
-        ? 'Premium credits'
-        : '${_money(value)} credits';
+    return value == null ? 'Premium credits' : '${_money(value)} credits';
   }
 
   String get _pricingCurrency {
@@ -1388,18 +1131,14 @@ class _PublicationPageState extends State<PublicationPage> {
     );
   }
 
-  num? _pricingValue(
-    List<String> keys,
-  ) {
+  num? _pricingValue(List<String> keys) {
     final pricing = _pricing;
     if (pricing == null) return null;
 
     final containers = <Map>[
       pricing,
-      if (pricing['pricing'] is Map)
-        pricing['pricing'] as Map,
-      if (pricing['settings'] is Map)
-        pricing['settings'] as Map,
+      if (pricing['pricing'] is Map) pricing['pricing'] as Map,
+      if (pricing['settings'] is Map) pricing['settings'] as Map,
     ];
 
     for (final container in containers) {
@@ -1408,9 +1147,7 @@ class _PublicationPageState extends State<PublicationPage> {
 
         if (raw is num) return raw;
 
-        final parsed = num.tryParse(
-          raw?.toString() ?? '',
-        );
+        final parsed = num.tryParse(raw?.toString() ?? '');
 
         if (parsed != null) return parsed;
       }
@@ -1419,41 +1156,28 @@ class _PublicationPageState extends State<PublicationPage> {
     return null;
   }
 
-  static String? _checkoutUrl(
-    Map<String, dynamic> result,
-  ) {
+  static String? _checkoutUrl(Map<String, dynamic> result) {
     final payment = result['payment'] is Map
-        ? Map<String, dynamic>.from(
-            result['payment'] as Map,
-          )
+        ? Map<String, dynamic>.from(result['payment'] as Map)
         : const <String, dynamic>{};
 
-    final value = result['checkoutUrl'] ??
-        payment['checkoutUrl'] ??
-        result['url'];
+    final value =
+        result['checkoutUrl'] ?? payment['checkoutUrl'] ?? result['url'];
 
     final url = value?.toString().trim();
 
-    return url == null || url.isEmpty
-        ? null
-        : url;
+    return url == null || url.isEmpty ? null : url;
   }
 
-  static Map<String, dynamic> _extractAcceptance(
-    Map<String, dynamic> payload,
-  ) {
+  static Map<String, dynamic> _extractAcceptance(Map<String, dynamic> payload) {
     if (payload['acceptance'] is Map) {
-      return Map<String, dynamic>.from(
-        payload['acceptance'] as Map,
-      );
+      return Map<String, dynamic>.from(payload['acceptance'] as Map);
     }
 
     return Map<String, dynamic>.from(payload);
   }
 
-  static Map<String, dynamic> _map(
-    dynamic value,
-  ) {
+  static Map<String, dynamic> _map(dynamic value) {
     if (value is Map<String, dynamic>) {
       return value;
     }
@@ -1465,47 +1189,29 @@ class _PublicationPageState extends State<PublicationPage> {
     return const <String, dynamic>{};
   }
 
-  static bool _enabled(
-    dynamic value,
-  ) =>
-      value != false;
+  static bool _enabled(dynamic value) => value != false;
 
-  static int _int(
-    dynamic value,
-  ) {
+  static int _int(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.round();
 
-    return int.tryParse(
-          value?.toString() ?? '',
-        ) ??
-        0;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  static double _double(
-    dynamic value,
-  ) {
+  static double _double(dynamic value) {
     if (value is double) return value;
     if (value is num) return value.toDouble();
 
-    return double.tryParse(
-          value?.toString() ?? '',
-        ) ??
-        0;
+    return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  static String _text(
-    dynamic value, {
-    String fallback = '',
-  }) {
+  static String _text(dynamic value, {String fallback = ''}) {
     final text = value?.toString().trim() ?? '';
 
     return text.isEmpty ? fallback : text;
   }
 
-  static String _feedbackComment(
-    Map<String, dynamic>? payload,
-  ) {
+  static String _feedbackComment(Map<String, dynamic>? payload) {
     if (payload == null) return '';
 
     final direct = payload['comment']?.toString();
@@ -1520,9 +1226,7 @@ class _PublicationPageState extends State<PublicationPage> {
     return '';
   }
 
-  static String _money(
-    num value,
-  ) {
+  static String _money(num value) {
     final asDouble = value.toDouble();
 
     if (asDouble == asDouble.roundToDouble()) {
@@ -1564,8 +1268,7 @@ class _PublicationHero extends StatefulWidget {
   final VoidCallback? onReport;
 
   @override
-  State<_PublicationHero> createState() =>
-      _PublicationHeroState();
+  State<_PublicationHero> createState() => _PublicationHeroState();
 }
 
 class _PublicationHeroState extends State<_PublicationHero>
@@ -1616,11 +1319,7 @@ class _PublicationHeroState extends State<_PublicationHero>
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            AppColors.surfaceRose,
-            Color(0xFFF1F9F7),
-          ],
+          colors: [AppColors.surface, AppColors.surfaceRose, Color(0xFFF1F9F7)],
           stops: [0, .56, 1],
         ),
         border: Border.all(
@@ -1662,9 +1361,7 @@ class _PublicationHeroState extends State<_PublicationHero>
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: .76),
                               borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: Colors.white,
-                              ),
+                              border: Border.all(color: Colors.white),
                             ),
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1691,10 +1388,7 @@ class _PublicationHeroState extends State<_PublicationHero>
                           Transform.translate(
                             offset: Offset(
                               0,
-                              math.sin(
-                                    _controller.value * math.pi * 2,
-                                  ) *
-                                  1.5,
+                              math.sin(_controller.value * math.pi * 2) * 1.5,
                             ),
                             child: Container(
                               width: 38,
@@ -1706,8 +1400,9 @@ class _PublicationHeroState extends State<_PublicationHero>
                                 border: Border.all(color: Colors.white),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.primaryDark
-                                        .withValues(alpha: .055),
+                                    color: AppColors.primaryDark.withValues(
+                                      alpha: .055,
+                                    ),
                                     blurRadius: 10,
                                     offset: const Offset(0, 4),
                                   ),
@@ -1735,14 +1430,11 @@ class _PublicationHeroState extends State<_PublicationHero>
                 children: [
                   Text(
                     widget.title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(
-                          fontSize: 20.5,
-                          height: 1.08,
-                          letterSpacing: -.42,
-                        ),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontSize: 20.5,
+                      height: 1.08,
+                      letterSpacing: -.42,
+                    ),
                   ),
 
                   if (widget.abstractText.trim().isNotEmpty) ...[
@@ -1764,15 +1456,11 @@ class _PublicationHeroState extends State<_PublicationHero>
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [
-                              AppColors.primarySoft,
-                              AppColors.pinkSoft,
-                            ],
+                            colors: [AppColors.primarySoft, AppColors.pinkSoft],
                           ),
                           borderRadius: BorderRadius.circular(11),
                           border: Border.all(
-                            color: AppColors.primaryDark
-                                .withValues(alpha: .05),
+                            color: AppColors.primaryDark.withValues(alpha: .05),
                           ),
                         ),
                         child: Text(
@@ -1824,12 +1512,12 @@ class _PublicationHeroState extends State<_PublicationHero>
                                 horizontal: 10,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.pinkSoft
-                                    .withValues(alpha: .72),
+                                color: AppColors.pinkSoft.withValues(
+                                  alpha: .72,
+                                ),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: AppColors.pink
-                                      .withValues(alpha: .13),
+                                  color: AppColors.pink.withValues(alpha: .13),
                                 ),
                               ),
                               child: const Row(
@@ -1869,8 +1557,7 @@ class _PublicationHeroState extends State<_PublicationHero>
                         color: Colors.white.withValues(alpha: .66),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: AppColors.primaryDark
-                              .withValues(alpha: .055),
+                          color: AppColors.primaryDark.withValues(alpha: .055),
                         ),
                       ),
                       child: Row(
@@ -1881,8 +1568,9 @@ class _PublicationHeroState extends State<_PublicationHero>
                               Container(
                                 width: 1,
                                 height: 28,
-                                color: AppColors.primaryDark
-                                    .withValues(alpha: .065),
+                                color: AppColors.primaryDark.withValues(
+                                  alpha: .065,
+                                ),
                               ),
                           ],
                         ],
@@ -1899,14 +1587,8 @@ class _PublicationHeroState extends State<_PublicationHero>
   }
 }
 
-
-
-
-
 class _PublicationVisualPainter extends CustomPainter {
-  const _PublicationVisualPainter({
-    required this.progress,
-  });
+  const _PublicationVisualPainter({required this.progress});
 
   final double progress;
 
@@ -1920,11 +1602,7 @@ class _PublicationVisualPainter extends CustomPainter {
         ..shader = const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFF0F8F5),
-            Color(0xFFE4F2EE),
-            Color(0xFFFFF3F6),
-          ],
+          colors: [Color(0xFFF0F8F5), Color(0xFFE4F2EE), Color(0xFFFFF3F6)],
           stops: [0, .62, 1],
         ).createShader(rect),
     );
@@ -1934,17 +1612,10 @@ class _PublicationVisualPainter extends CustomPainter {
       ..strokeWidth = .65;
 
     for (double x = 12; x < size.width; x += 24) {
-      canvas.drawLine(
-        Offset(x, 0),
-        Offset(x, size.height),
-        linePaint,
-      );
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint);
     }
 
-    final center = Offset(
-      size.width * .66,
-      size.height * .52,
-    );
+    final center = Offset(size.width * .66, size.height * .52);
 
     for (final radius in [22.0, 35.0, 50.0]) {
       canvas.drawCircle(
@@ -2005,8 +1676,7 @@ class _PublicationVisualPainter extends CustomPainter {
         ..strokeWidth = 1.15,
     );
 
-    final shimmerX =
-        -40 + ((size.width + 80) * progress);
+    final shimmerX = -40 + ((size.width + 80) * progress);
 
     final shimmer = Path()
       ..moveTo(shimmerX - 18, size.height)
@@ -2022,13 +1692,9 @@ class _PublicationVisualPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(
-    covariant _PublicationVisualPainter oldDelegate,
-  ) =>
+  bool shouldRepaint(covariant _PublicationVisualPainter oldDelegate) =>
       oldDelegate.progress != progress;
 }
-
-
 
 class _HeroMetric extends StatelessWidget {
   const _HeroMetric({
@@ -2048,10 +1714,7 @@ class _HeroMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 6,
-        vertical: 3,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -2063,11 +1726,7 @@ class _HeroMetric extends StatelessWidget {
               color: tint,
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(
-              icon,
-              size: 12,
-              color: accent,
-            ),
+            child: Icon(icon, size: 12, color: accent),
           ),
           const SizedBox(width: 6),
           Flexible(
@@ -2106,8 +1765,6 @@ class _HeroMetric extends StatelessWidget {
     );
   }
 }
-
-
 
 class _CommunitySignalPanel extends StatelessWidget {
   const _CommunitySignalPanel({
@@ -2152,20 +1809,12 @@ class _CommunitySignalPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        12,
-        12,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 13),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            Color(0xFFF3FAF8),
-          ],
+          colors: [AppColors.surface, Color(0xFFF3FAF8)],
         ),
         borderRadius: BorderRadius.circular(23),
         border: Border.all(
@@ -2192,10 +1841,7 @@ class _CommunitySignalPanel extends StatelessWidget {
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF6BC5BF),
-                      Color(0xFF4FA8A3),
-                    ],
+                    colors: [Color(0xFF6BC5BF), Color(0xFF4FA8A3)],
                   ),
                   borderRadius: BorderRadius.circular(13),
                 ),
@@ -2262,18 +1908,12 @@ class _CommunitySignalPanel extends StatelessWidget {
           ],
 
           if (votingEnabled) ...[
-            if (ratingsEnabled)
-              const SizedBox(height: 8),
-            _VotingSignal(
-              value: vote,
-              busy: voteBusy,
-              onVote: onVote,
-            ),
+            if (ratingsEnabled) const SizedBox(height: 8),
+            _VotingSignal(value: vote, busy: voteBusy, onVote: onVote),
           ],
 
           if (feedbackEnabled) ...[
-            if (ratingsEnabled || votingEnabled)
-              const SizedBox(height: 8),
+            if (ratingsEnabled || votingEnabled) const SizedBox(height: 8),
             _FeedbackSignal(
               controller: feedbackController,
               saved: feedbackSaved,
@@ -2287,8 +1927,6 @@ class _CommunitySignalPanel extends StatelessWidget {
     );
   }
 }
-
-
 
 class _RatingSignal extends StatelessWidget {
   const _RatingSignal({
@@ -2334,9 +1972,7 @@ class _RatingSignal extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
                   height: 29,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: .72),
                     borderRadius: BorderRadius.circular(999),
@@ -2368,98 +2004,82 @@ class _RatingSignal extends StatelessWidget {
         ],
       ),
       child: Row(
-        children: List.generate(
-          5,
-          (index) {
-            final ratingValue = index + 1;
-            final active = ratingValue <= value;
+        children: List.generate(5, (index) {
+          final ratingValue = index + 1;
+          final active = ratingValue <= value;
 
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: index == 4 ? 0 : 5,
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: busy
-                        ? null
-                        : () => onSelect(ratingValue),
-                    borderRadius: BorderRadius.circular(12),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      height: 43,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        gradient: active
-                            ? const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  Color(0xFF65C3BD),
-                                  Color(0xFF4A9F9B),
-                                ],
-                              )
-                            : null,
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: index == 4 ? 0 : 5),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: busy ? null : () => onSelect(ratingValue),
+                  borderRadius: BorderRadius.circular(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    height: 43,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: active
+                          ? const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFF65C3BD), Color(0xFF4A9F9B)],
+                            )
+                          : null,
+                      color: active
+                          ? null
+                          : Colors.white.withValues(alpha: .74),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
                         color: active
-                            ? null
-                            : Colors.white.withValues(alpha: .74),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: active
-                              ? AppColors.primary.withValues(alpha: .10)
-                              : AppColors.primaryDark.withValues(alpha: .055),
+                            ? AppColors.primary.withValues(alpha: .10)
+                            : AppColors.primaryDark.withValues(alpha: .055),
+                      ),
+                      boxShadow: active
+                          ? [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: .12),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          active
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          size: 17,
+                          color: active ? Colors.white : AppColors.primaryDark,
                         ),
-                        boxShadow: active
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: .12),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            active
-                                ? Icons.star_rounded
-                                : Icons.star_border_rounded,
-                            size: 17,
+                        const SizedBox(height: 1),
+                        Text(
+                          '$ratingValue',
+                          style: TextStyle(
                             color: active
-                                ? Colors.white
-                                : AppColors.primaryDark,
+                                ? Colors.white.withValues(alpha: .92)
+                                : AppColors.textMuted,
+                            fontSize: 5.8,
+                            fontWeight: FontWeight.w900,
                           ),
-                          const SizedBox(height: 1),
-                          Text(
-                            '$ratingValue',
-                            style: TextStyle(
-                              color: active
-                                  ? Colors.white.withValues(alpha: .92)
-                                  : AppColors.textMuted,
-                              fontSize: 5.8,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        }),
       ),
     );
   }
 }
-
-
-
-
 
 class _VotingSignal extends StatelessWidget {
   const _VotingSignal({
@@ -2480,8 +2100,8 @@ class _VotingSignal extends StatelessWidget {
       title: value.isEmpty
           ? 'Would you support this direction?'
           : value == 'UP'
-              ? 'You support this direction'
-              : 'You marked this as needing work',
+          ? 'You support this direction'
+          : 'You marked this as needing work',
       trailing: busy
           ? const SizedBox(
               width: 13,
@@ -2523,10 +2143,6 @@ class _VotingSignal extends StatelessWidget {
   }
 }
 
-
-
-
-
 class _FeedbackSignal extends StatefulWidget {
   const _FeedbackSignal({
     required this.controller,
@@ -2543,22 +2159,18 @@ class _FeedbackSignal extends StatefulWidget {
   final VoidCallback onDelete;
 
   @override
-  State<_FeedbackSignal> createState() =>
-      _FeedbackSignalState();
+  State<_FeedbackSignal> createState() => _FeedbackSignalState();
 }
 
 class _FeedbackSignalState extends State<_FeedbackSignal> {
   @override
   Widget build(BuildContext context) {
-    final hasText =
-        widget.controller.text.trim().isNotEmpty;
+    final hasText = widget.controller.text.trim().isNotEmpty;
 
     return _SignalSurface(
       icon: Icons.chat_bubble_outline_rounded,
       eyebrow: 'WRITTEN FEEDBACK',
-      title: widget.saved
-          ? 'Your feedback is saved'
-          : 'Leave a useful note',
+      title: widget.saved ? 'Your feedback is saved' : 'Leave a useful note',
       trailing: widget.busy
           ? const SizedBox(
               width: 13,
@@ -2569,45 +2181,34 @@ class _FeedbackSignalState extends State<_FeedbackSignal> {
               ),
             )
           : widget.saved
-              ? Container(
-                  height: 27,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
+          ? Container(
+              height: 27,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF8F2),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_rounded, size: 10, color: AppColors.success),
+                  SizedBox(width: 4),
+                  Text(
+                    'SAVED',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 5.7,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .45,
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF8F2),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.check_rounded,
-                        size: 10,
-                        color: AppColors.success,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'SAVED',
-                        style: TextStyle(
-                          color: AppColors.success,
-                          fontSize: 5.7,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .45,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : null,
+                ],
+              ),
+            )
+          : null,
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(
-              10,
-              8,
-              10,
-              6,
-            ),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: .76),
               borderRadius: BorderRadius.circular(14),
@@ -2657,12 +2258,8 @@ class _FeedbackSignalState extends State<_FeedbackSignal> {
               const Spacer(),
               if (widget.saved) ...[
                 OutlinedButton.icon(
-                  onPressed:
-                      widget.busy ? null : widget.onDelete,
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 12,
-                  ),
+                  onPressed: widget.busy ? null : widget.onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 12),
                   label: const Text('Remove'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.danger,
@@ -2670,9 +2267,7 @@ class _FeedbackSignalState extends State<_FeedbackSignal> {
                       color: AppColors.danger.withValues(alpha: .18),
                     ),
                     minimumSize: const Size(0, 37),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
                     textStyle: const TextStyle(
                       fontSize: 7.2,
                       fontWeight: FontWeight.w900,
@@ -2682,25 +2277,15 @@ class _FeedbackSignalState extends State<_FeedbackSignal> {
                 const SizedBox(width: 6),
               ],
               FilledButton.icon(
-                onPressed: widget.busy || !hasText
-                    ? null
-                    : widget.onSave,
+                onPressed: widget.busy || !hasText ? null : widget.onSave,
                 icon: Icon(
-                  widget.saved
-                      ? Icons.refresh_rounded
-                      : Icons.send_rounded,
+                  widget.saved ? Icons.refresh_rounded : Icons.send_rounded,
                   size: 12,
                 ),
-                label: Text(
-                  widget.saved
-                      ? 'Update'
-                      : 'Share feedback',
-                ),
+                label: Text(widget.saved ? 'Update' : 'Share feedback'),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 37),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(11),
                   ),
@@ -2717,8 +2302,6 @@ class _FeedbackSignalState extends State<_FeedbackSignal> {
     );
   }
 }
-
-
 
 class _SignalSurface extends StatelessWidget {
   const _SignalSurface({
@@ -2739,18 +2322,11 @@ class _SignalSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        10,
-        10,
-        10,
-        10,
-      ),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: .68),
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .05),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .05)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2765,11 +2341,7 @@ class _SignalSurface extends StatelessWidget {
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
-                  icon,
-                  size: 14,
-                  color: AppColors.primaryDark,
-                ),
+                child: Icon(icon, size: 14, color: AppColors.primaryDark),
               ),
               const SizedBox(width: 7),
               Expanded(
@@ -2797,10 +2369,7 @@ class _SignalSurface extends StatelessWidget {
                   ],
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 6),
-                trailing!,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 6), trailing!],
             ],
           ),
           const SizedBox(height: 9),
@@ -2810,8 +2379,6 @@ class _SignalSurface extends StatelessWidget {
     );
   }
 }
-
-
 
 class _VoteAction extends StatelessWidget {
   const _VoteAction({
@@ -2834,9 +2401,7 @@ class _VoteAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = positive
-        ? AppColors.primaryDark
-        : AppColors.graphite;
+    final accent = positive ? AppColors.primaryDark : AppColors.graphite;
 
     return Material(
       color: Colors.transparent,
@@ -2845,29 +2410,18 @@ class _VoteAction extends StatelessWidget {
         borderRadius: BorderRadius.circular(13),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(
-            horizontal: 9,
-            vertical: 9,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
           decoration: BoxDecoration(
             gradient: selected
                 ? LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: positive
-                        ? const [
-                            Color(0xFFE1F4F0),
-                            Color(0xFFF6FBFA),
-                          ]
-                        : const [
-                            Color(0xFFF0F3F2),
-                            Color(0xFFFAFBFA),
-                          ],
+                        ? const [Color(0xFFE1F4F0), Color(0xFFF6FBFA)]
+                        : const [Color(0xFFF0F3F2), Color(0xFFFAFBFA)],
                   )
                 : null,
-            color: selected
-                ? null
-                : Colors.white.withValues(alpha: .68),
+            color: selected ? null : Colors.white.withValues(alpha: .68),
             borderRadius: BorderRadius.circular(13),
             border: Border.all(
               color: selected
@@ -2884,18 +2438,14 @@ class _VoteAction extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected
-                      ? (positive
-                          ? AppColors.primary
-                          : AppColors.graphite)
+                      ? (positive ? AppColors.primary : AppColors.graphite)
                       : AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   selected ? selectedIcon : icon,
                   size: 14,
-                  color: selected
-                      ? Colors.white
-                      : accent,
+                  color: selected ? Colors.white : accent,
                 ),
               ),
               const SizedBox(width: 7),
@@ -2934,11 +2484,7 @@ class _VoteAction extends StatelessWidget {
   }
 }
 
-
-
-
-
-class _ProtectedAccessCard extends StatefulWidget {
+class _ProtectedAccessCard extends StatelessWidget {
   const _ProtectedAccessCard({
     required this.priceLabel,
     required this.premium,
@@ -2952,268 +2498,185 @@ class _ProtectedAccessCard extends StatefulWidget {
   final VoidCallback onAccept;
 
   @override
-  State<_ProtectedAccessCard> createState() =>
-      _ProtectedAccessCardState();
-}
-
-class _ProtectedAccessCardState
-    extends State<_ProtectedAccessCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller =
-      AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 8),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(25),
+        borderRadius: BorderRadius.circular(23),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primaryDeep,
-            AppColors.primaryDark,
-            Color(0xFF4FA9A4),
+            AppColors.surface,
+            AppColors.surfaceRose,
+            Color(0xFFEAF6F3),
           ],
+        ),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: .12),
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryDeep.withValues(alpha: .20),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
+            color: AppColors.primaryDeep.withValues(alpha: .05),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(25),
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final phase =
-                _controller.value * math.pi * 2;
-
-            return Stack(
-              children: [
-                Positioned(
-                  right: -50 +
-                      math.cos(phase) * 8,
-                  top: -65 +
-                      math.sin(phase) * 7,
-                  child: Container(
-                    width: 155,
-                    height: 155,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(
-                        alpha: .07,
-                      ),
-                    ),
-                  ),
-                ),
-                child!,
-              ],
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              15,
-              15,
-              15,
-              15,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _DarkEyebrow(
-                  icon: Icons.lock_outline_rounded,
-                  label: 'Protected opportunity brief',
-                ),
-
-                const SizedBox(height: 9),
-
-                const Text(
-                  'Open the complete public brief.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    height: 1.08,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -.3,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  widget.premium
-                      ? 'Premium basic acceptance opens automatically. If it is still pending, use the button below to retry safely.'
-                      : 'Accepting opens the protected problem, objectives and target users through secure provider-hosted checkout.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: .74),
-                    fontSize: 8.9,
-                    height: 1.45,
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                const Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _DarkBenefit(
-                      icon: Icons.layers_outlined,
-                      text: 'Problem',
-                    ),
-                    _DarkBenefit(
-                      icon: Icons.flag_outlined,
-                      text: 'Objectives',
-                    ),
-                    _DarkBenefit(
-                      icon: Icons.groups_outlined,
-                      text: 'Target users',
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 11,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .10),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: .13),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.shield_outlined,
-                        size: 15,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 7),
-                      const Expanded(
-                        child: Text(
-                          'One-time protected access',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 8.2,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        widget.premium
-                            ? 'Premium'
-                            : widget.priceLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9.2,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 43,
+                height: 43,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      AppColors.primary,
+                      Color(0xFF4FA9A4),
                     ],
                   ),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-
-                const SizedBox(height: 10),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed:
-                        widget.busy ? null : widget.onAccept,
-                    icon: const Icon(
-                      Icons.lock_open_rounded,
-                      size: 15,
-                    ),
-                    label: Text(
-                      widget.busy
-                          ? 'Checking access...'
-                          : widget.premium
-                              ? 'Open protected brief'
-                              : 'Unlock protected brief',
-                    ),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(44),
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.primaryDark,
-                      disabledBackgroundColor:
-                          Colors.white.withValues(alpha: .56),
-                      disabledForegroundColor:
-                          AppColors.primaryDark.withValues(
-                        alpha: .55,
+                child: const Icon(
+                  Icons.lock_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PROTECTED OPPORTUNITY BRIEF',
+                      style: TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 6.7,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .72,
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 9.2,
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Unlock the complete public brief.',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 12.7,
+                        height: 1.15,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            premium
+                ? 'Premium basic acceptance opens automatically. This button safely retries access if it is still pending.'
+                : 'Open the protected problem, objectives and target users with one verified checkout.',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 8.8,
+              height: 1.42,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _LightBenefit(icon: Icons.layers_outlined, text: 'Problem'),
+              _LightBenefit(icon: Icons.flag_outlined, text: 'Objectives'),
+              _LightBenefit(icon: Icons.groups_outlined, text: 'Target users'),
+            ],
+          ),
+          const SizedBox(height: 11),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 9,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft.withValues(alpha: .58),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  premium ? Icons.verified_user_outlined : Icons.credit_card_outlined,
+                  size: 14,
+                  color: AppColors.primaryDark,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    premium
+                        ? 'Premium protected access'
+                        : 'One-time protected access',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  premium ? 'Included' : priceLabel,
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 8.8,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
           ),
-        ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: busy ? null : onAccept,
+              icon: Icon(
+                premium
+                    ? Icons.arrow_outward_rounded
+                    : Icons.lock_open_rounded,
+                size: 15,
+              ),
+              label: Text(
+                busy
+                    ? 'Checking access...'
+                    : premium
+                    ? 'Open protected brief'
+                    : 'Unlock protected brief',
+              ),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(43),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _DarkEyebrow extends StatelessWidget {
-  const _DarkEyebrow({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: 12,
-          color: const Color(0xFFFFDCE5),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: .82),
-            fontSize: 6.6,
-            fontWeight: FontWeight.w900,
-            letterSpacing: .68,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DarkBenefit extends StatelessWidget {
-  const _DarkBenefit({
+class _LightBenefit extends StatelessWidget {
+  const _LightBenefit({
     required this.icon,
     required this.text,
   });
@@ -3224,13 +2687,13 @@ class _DarkBenefit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 29,
+      height: 27,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .09),
-        borderRadius: BorderRadius.circular(9),
+        color: Colors.white.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: Colors.white.withValues(alpha: .11),
+          color: AppColors.border.withValues(alpha: .85),
         ),
       ),
       child: Row(
@@ -3238,15 +2701,15 @@ class _DarkBenefit extends StatelessWidget {
         children: [
           Icon(
             icon,
-            size: 11,
-            color: Colors.white,
+            size: 12,
+            color: AppColors.primaryDark,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(
             text,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: .86),
-              fontSize: 7.3,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 7.4,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -3262,31 +2725,17 @@ class _AcceptedBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        12,
-        11,
-        12,
-        11,
-      ),
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFFECFAF5),
-            Color(0xFFF3FAF8),
-            AppColors.surfaceRose,
-          ],
+          colors: [Color(0xFFECFAF5), Color(0xFFF3FAF8), AppColors.surfaceRose],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.success.withValues(alpha: .10),
-        ),
+        border: Border.all(color: AppColors.success.withValues(alpha: .10)),
       ),
       child: const Row(
         children: [
-          SoftIconBadge(
-            icon: Icons.check_circle_outline_rounded,
-            size: 37,
-          ),
+          SoftIconBadge(icon: Icons.check_circle_outline_rounded, size: 37),
           SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -3303,10 +2752,7 @@ class _AcceptedBanner extends StatelessWidget {
                 SizedBox(height: 2),
                 Text(
                   'The protected basic brief is available below.',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 7.8,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 7.8),
                 ),
               ],
             ),
@@ -3377,25 +2823,14 @@ class _BriefCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        13,
-        12,
-        13,
-        13,
-      ),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: rose
-              ? const [
-                  AppColors.surface,
-                  AppColors.surfaceRose,
-                ]
-              : const [
-                  AppColors.surface,
-                  Color(0xFFF2F9F7),
-                ],
+              ? const [AppColors.surface, AppColors.surfaceRose]
+              : const [AppColors.surface, Color(0xFFF2F9F7)],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
@@ -3419,9 +2854,7 @@ class _BriefCard extends StatelessWidget {
             child: Text(
               number,
               style: TextStyle(
-                color: (rose
-                        ? AppColors.pinkDeep
-                        : AppColors.primaryDark)
+                color: (rose ? AppColors.pinkDeep : AppColors.primaryDark)
                     .withValues(alpha: .07),
                 fontSize: 36,
                 height: 1,
@@ -3434,11 +2867,7 @@ class _BriefCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  SoftIconBadge(
-                    icon: icon,
-                    rose: rose,
-                    size: 34,
-                  ),
+                  SoftIconBadge(icon: icon, rose: rose, size: 34),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -3488,22 +2917,13 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        14,
-        14,
-        14,
-        14,
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(23),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.surface,
-            AppColors.surfaceRose,
-            Color(0xFFEAF6F3),
-          ],
+          colors: [AppColors.surface, AppColors.surfaceRose, Color(0xFFEAF6F3)],
         ),
         border: Border.all(
           color: granted
@@ -3530,16 +2950,10 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: granted
                       ? const LinearGradient(
-                          colors: [
-                            Color(0xFFE8F8F2),
-                            Color(0xFFF4FBF8),
-                          ],
+                          colors: [Color(0xFFE8F8F2), Color(0xFFF4FBF8)],
                         )
                       : const LinearGradient(
-                          colors: [
-                            AppColors.primary,
-                            Color(0xFF4FA9A4),
-                          ],
+                          colors: [AppColors.primary, Color(0xFF4FA9A4)],
                         ),
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -3547,9 +2961,7 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
                   granted
                       ? Icons.check_circle_outline_rounded
                       : Icons.auto_awesome_rounded,
-                  color: granted
-                      ? AppColors.success
-                      : Colors.white,
+                  color: granted ? AppColors.success : Colors.white,
                   size: 21,
                 ),
               ),
@@ -3607,10 +3019,7 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
           if (!granted)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 9,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
               decoration: BoxDecoration(
                 color: AppColors.primarySoft.withValues(alpha: .58),
                 borderRadius: BorderRadius.circular(13),
@@ -3618,9 +3027,7 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    premium
-                        ? Icons.toll_rounded
-                        : Icons.credit_card_outlined,
+                    premium ? Icons.toll_rounded : Icons.credit_card_outlined,
                     size: 14,
                     color: AppColors.primaryDark,
                   ),
@@ -3657,24 +3064,24 @@ class _AdvancedWorkspaceCard extends StatelessWidget {
               onPressed: busy
                   ? null
                   : granted
-                      ? onOpen
-                      : onUnlock,
+                  ? onOpen
+                  : onUnlock,
               icon: Icon(
                 granted
                     ? Icons.arrow_outward_rounded
                     : premium
-                        ? Icons.bolt_rounded
-                        : Icons.lock_open_rounded,
+                    ? Icons.bolt_rounded
+                    : Icons.lock_open_rounded,
                 size: 15,
               ),
               label: Text(
                 busy
                     ? 'Opening...'
                     : granted
-                        ? 'Open accepted workspace'
-                        : premium
-                            ? 'Unlock with credits'
-                            : 'Unlock advanced outputs',
+                    ? 'Open accepted workspace'
+                    : premium
+                    ? 'Unlock with credits'
+                    : 'Unlock advanced outputs',
               ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(43),
@@ -3704,16 +3111,11 @@ class _OwnerPublicationCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primarySoft.withValues(alpha: .60),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.primaryDark.withValues(alpha: .06),
-        ),
+        border: Border.all(color: AppColors.primaryDark.withValues(alpha: .06)),
       ),
       child: const Row(
         children: [
-          SoftIconBadge(
-            icon: Icons.person_outline_rounded,
-            size: 36,
-          ),
+          SoftIconBadge(icon: Icons.person_outline_rounded, size: 36),
           SizedBox(width: 9),
           Expanded(
             child: Text(
@@ -3740,15 +3142,10 @@ class _PremiumOpeningCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            AppColors.primarySoft,
-            AppColors.surfaceRose,
-          ],
+          colors: [AppColors.primarySoft, AppColors.surfaceRose],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: .09),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .09)),
       ),
       child: const Row(
         children: [
@@ -3776,10 +3173,7 @@ class _PremiumOpeningCard extends StatelessWidget {
                 SizedBox(height: 2),
                 Text(
                   'Premium acceptance is being verified in the background.',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 7.8,
-                  ),
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 7.8),
                 ),
               ],
             ),
@@ -3800,17 +3194,11 @@ class _AcceptancePausedCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceRose,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(
-          color: AppColors.pink.withValues(alpha: .10),
-        ),
+        border: Border.all(color: AppColors.pink.withValues(alpha: .10)),
       ),
       child: const Row(
         children: [
-          SoftIconBadge(
-            icon: Icons.shield_outlined,
-            rose: true,
-            size: 38,
-          ),
+          SoftIconBadge(icon: Icons.shield_outlined, rose: true, size: 38),
           SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -3843,9 +3231,7 @@ class _AcceptancePausedCard extends StatelessWidget {
 }
 
 class _ProtectedBriefSheet extends StatelessWidget {
-  const _ProtectedBriefSheet({
-    required this.priceLabel,
-  });
+  const _ProtectedBriefSheet({required this.priceLabel});
 
   final String priceLabel;
 
@@ -3887,12 +3273,8 @@ class _ProtectedBriefSheet extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pop(true),
-              icon: const Icon(
-                Icons.lock_open_rounded,
-                size: 15,
-              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.lock_open_rounded, size: 15),
               label: const Text('Continue securely'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(45),
@@ -3906,10 +3288,7 @@ class _ProtectedBriefSheet extends StatelessWidget {
 }
 
 class _AdvancedAccessSheet extends StatelessWidget {
-  const _AdvancedAccessSheet({
-    required this.premium,
-    required this.priceLabel,
-  });
+  const _AdvancedAccessSheet({required this.premium, required this.priceLabel});
 
   final bool premium;
   final String priceLabel;
@@ -3921,9 +3300,7 @@ class _AdvancedAccessSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _ModalHeader(
-            icon: premium
-                ? Icons.bolt_rounded
-                : Icons.lock_outline_rounded,
+            icon: premium ? Icons.bolt_rounded : Icons.lock_outline_rounded,
             eyebrow: 'ADVANCED OPPORTUNITY ACCESS',
             title: premium
                 ? 'Unlock with Premium credits'
@@ -3940,19 +3317,14 @@ class _AdvancedAccessSheet extends StatelessWidget {
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [
-                  AppColors.primarySoft,
-                  AppColors.surfaceRose,
-                ],
+                colors: [AppColors.primarySoft, AppColors.surfaceRose],
               ),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Row(
               children: [
                 Icon(
-                  premium
-                      ? Icons.toll_rounded
-                      : Icons.credit_card_outlined,
+                  premium ? Icons.toll_rounded : Icons.credit_card_outlined,
                   size: 18,
                   color: AppColors.primaryDark,
                 ),
@@ -3995,18 +3367,13 @@ class _AdvancedAccessSheet extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pop(true),
+              onPressed: () => Navigator.of(context).pop(true),
               icon: Icon(
-                premium
-                    ? Icons.bolt_rounded
-                    : Icons.lock_open_rounded,
+                premium ? Icons.bolt_rounded : Icons.lock_open_rounded,
                 size: 15,
               ),
               label: Text(
-                premium
-                    ? 'Use Premium credits'
-                    : 'Continue to payment',
+                premium ? 'Use Premium credits' : 'Continue to payment',
               ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(45),
@@ -4020,9 +3387,7 @@ class _AdvancedAccessSheet extends StatelessWidget {
 }
 
 class _ModalShell extends StatelessWidget {
-  const _ModalShell({
-    required this.child,
-  });
+  const _ModalShell({required this.child});
 
   final Widget child;
 
@@ -4089,10 +3454,7 @@ class _ModalHeader extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SoftIconBadge(
-          icon: icon,
-          size: 42,
-        ),
+        SoftIconBadge(icon: icon, size: 42),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -4135,9 +3497,7 @@ class _ModalHeader extends StatelessWidget {
 }
 
 class _ModalBenefitGrid extends StatelessWidget {
-  const _ModalBenefitGrid({
-    required this.items,
-  });
+  const _ModalBenefitGrid({required this.items});
 
   final List<String> items;
 
@@ -4149,10 +3509,7 @@ class _ModalBenefitGrid extends StatelessWidget {
       children: items
           .map(
             (item) => Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 9,
-                vertical: 7,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
               decoration: BoxDecoration(
                 color: AppColors.primarySoft.withValues(alpha: .55),
                 borderRadius: BorderRadius.circular(10),
@@ -4201,16 +3558,11 @@ class _PaymentMethodCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: .18),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .18)),
       ),
       child: Row(
         children: [
-          const SoftIconBadge(
-            icon: Icons.credit_card_outlined,
-            size: 38,
-          ),
+          const SoftIconBadge(icon: Icons.credit_card_outlined, size: 38),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -4257,10 +3609,7 @@ class _ReportPublicationSheet extends StatefulWidget {
       _ReportPublicationSheetState();
 }
 
-
-
-class _ReportPublicationSheetState
-    extends State<_ReportPublicationSheet> {
+class _ReportPublicationSheetState extends State<_ReportPublicationSheet> {
   static const _reasons = <_ReportReasonOption>[
     _ReportReasonOption(
       value: 'MISLEADING',
@@ -4300,8 +3649,7 @@ class _ReportPublicationSheetState
     ),
   ];
 
-  final TextEditingController _details =
-      TextEditingController();
+  final TextEditingController _details = TextEditingController();
 
   String _reason = 'MISLEADING';
 
@@ -4323,12 +3671,9 @@ class _ReportPublicationSheetState
       return;
     }
 
-    Navigator.of(context).pop(
-      (
-        reason: _reason,
-        details: details.isEmpty ? null : details,
-      ),
-    );
+    Navigator.of(
+      context,
+    ).pop((reason: _reason, details: details.isEmpty ? null : details));
   }
 
   @override
@@ -4394,8 +3739,7 @@ class _ReportPublicationSheetState
 
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final width =
-                        (constraints.maxWidth - 7) / 2;
+                    final width = (constraints.maxWidth - 7) / 2;
 
                     return Wrap(
                       spacing: 7,
@@ -4406,12 +3750,9 @@ class _ReportPublicationSheetState
                               width: width,
                               child: _ReportReasonCard(
                                 option: option,
-                                selected:
-                                    _reason == option.value,
+                                selected: _reason == option.value,
                                 onTap: () {
-                                  setState(
-                                    () => _reason = option.value,
-                                  );
+                                  setState(() => _reason = option.value);
                                 },
                               ),
                             ),
@@ -4459,10 +3800,7 @@ class _ReportPublicationSheetState
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: _submit,
-                    icon: const Icon(
-                      Icons.shield_outlined,
-                      size: 14,
-                    ),
+                    icon: const Icon(Icons.shield_outlined, size: 14),
                     label: const Text('Send private report'),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(44),
@@ -4484,10 +3822,7 @@ class _ReportPublicationSheetState
                   child: Text(
                     'The publisher is not shown who submitted the report.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 7.2,
-                    ),
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 7.2),
                   ),
                 ),
               ],
@@ -4533,24 +3868,17 @@ class _ReportReasonCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          constraints: const BoxConstraints(
-            minHeight: 88,
-          ),
+          constraints: const BoxConstraints(minHeight: 88),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             gradient: selected
                 ? const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFFFFF2F5),
-                      Color(0xFFEAF6F3),
-                    ],
+                    colors: [Color(0xFFFFF2F5), Color(0xFFEAF6F3)],
                   )
                 : null,
-            color: selected
-                ? null
-                : Colors.white.withValues(alpha: .68),
+            color: selected ? null : Colors.white.withValues(alpha: .68),
             borderRadius: BorderRadius.circular(15),
             border: Border.all(
               color: selected
@@ -4599,13 +3927,9 @@ class _ReportReasonCard extends StatelessWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: selected
-                          ? AppColors.primary
-                          : Colors.transparent,
+                      color: selected ? AppColors.primary : Colors.transparent,
                       border: Border.all(
-                        color: selected
-                            ? AppColors.primary
-                            : AppColors.silver,
+                        color: selected ? AppColors.primary : AppColors.silver,
                       ),
                     ),
                     child: selected
@@ -4645,8 +3969,6 @@ class _ReportReasonCard extends StatelessWidget {
     );
   }
 }
-
-
 
 class _RichPublicContent extends StatelessWidget {
   const _RichPublicContent({
@@ -4732,13 +4054,8 @@ class _RichPublicContent extends StatelessWidget {
   }
 }
 
-
-
 class _Reveal extends StatelessWidget {
-  const _Reveal({
-    required this.child,
-    required this.delay,
-  });
+  const _Reveal({required this.child, required this.delay});
 
   final Widget child;
   final int delay;
@@ -4746,26 +4063,19 @@ class _Reveal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(
-        begin: 0,
-        end: 1,
-      ),
-      duration: Duration(
-        milliseconds: 500 + delay,
-      ),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: Duration(milliseconds: 500 + delay),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
-        final normalized =
-            ((value * (500 + delay) - delay) / 500)
-                .clamp(0.0, 1.0);
+        final normalized = ((value * (500 + delay) - delay) / 500).clamp(
+          0.0,
+          1.0,
+        );
 
         return Opacity(
           opacity: normalized,
           child: Transform.translate(
-            offset: Offset(
-              0,
-              16 * (1 - normalized),
-            ),
+            offset: Offset(0, 16 * (1 - normalized)),
             child: child,
           ),
         );
@@ -4775,9 +4085,7 @@ class _Reveal extends StatelessWidget {
   }
 }
 
-List<String> _contentItems(
-  dynamic value,
-) {
+List<String> _contentItems(dynamic value) {
   if (value == null) return const [];
 
   if (value is List) {
@@ -4789,10 +4097,7 @@ List<String> _contentItems(
 
   if (value is Map) {
     return value.entries
-        .map(
-          (entry) =>
-              '${_humanize(entry.key.toString())}: ${entry.value}',
-        )
+        .map((entry) => '${_humanize(entry.key.toString())}: ${entry.value}')
         .where((item) => item.trim().isNotEmpty)
         .toList();
   }
@@ -4808,11 +4113,7 @@ List<String> _contentItems(
       .replaceAll('"', '');
 
   final parts = cleaned
-      .split(
-        RegExp(
-          r'\r?\n|(?:^|\s)[•*-]\s+|;(?=\s*[A-Z])',
-        ),
-      )
+      .split(RegExp(r'\r?\n|(?:^|\s)[•*-]\s+|;(?=\s*[A-Z])'))
       .map((item) => item.trim())
       .where((item) => item.isNotEmpty)
       .toList();
@@ -4820,9 +4121,7 @@ List<String> _contentItems(
   return parts.isEmpty ? [raw] : parts;
 }
 
-String _initials(
-  String value,
-) {
+String _initials(String value) {
   final parts = value
       .trim()
       .split(RegExp(r'\s+'))
@@ -4832,22 +4131,278 @@ String _initials(
 
   if (parts.isEmpty) return 'VX';
 
-  return parts
-      .map((part) => part[0])
-      .join()
-      .toUpperCase();
+  return parts.map((part) => part[0]).join().toUpperCase();
 }
 
-String _humanize(
-  String value,
-) {
+String _humanize(String value) {
   return value
-      .replaceAll(
-        RegExp(r'[-_]+'),
-        ' ',
-      )
+      .replaceAll(RegExp(r'[-_]+'), ' ')
       .replaceAllMapped(
         RegExp(r'([a-z0-9])([A-Z])'),
         (match) => '${match[1]} ${match[2]}',
       );
 }
+
+class _PublicationLoadingState extends StatefulWidget {
+  const _PublicationLoadingState();
+
+  @override
+  State<_PublicationLoadingState> createState() =>
+      _PublicationLoadingStateState();
+}
+
+class _PublicationLoadingStateState extends State<_PublicationLoadingState>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final wave = (math.sin(_controller.value * math.pi * 2) + 1) / 2;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFFFFFDFC),
+                    Color(0xFFF3FAF8),
+                    Color(0xFFFFF7F9),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: .10),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: .05),
+                    blurRadius: 22,
+                    offset: const Offset(0, 9),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 54,
+                    height: 54,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 48 + (wave * 4),
+                          height: 48 + (wave * 4),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.primarySoft.withValues(
+                              alpha: .58 + (wave * .18),
+                            ),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: .12),
+                            ),
+                          ),
+                        ),
+                        Transform.rotate(
+                          angle: _controller.value * math.pi * 2,
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: AppColors.primaryDark,
+                            size: 23,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Reading community signals',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -.2,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Bringing the opportunity, creator context and engagement together.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 8.9,
+                            height: 1.42,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: List.generate(3, (index) {
+                            final phase = (_controller.value + index * .18) *
+                                math.pi *
+                                2;
+                            final value = (math.sin(phase) + 1) / 2;
+
+                            return Container(
+                              width: 17 + (value * 8),
+                              height: 4.5,
+                              margin: const EdgeInsets.only(right: 5),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(99),
+                                color: index == 1
+                                    ? AppColors.pink.withValues(
+                                        alpha: .20 + (value * .28),
+                                      )
+                                    : AppColors.primary.withValues(
+                                        alpha: .28 + (value * .38),
+                                      ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 13),
+            const _PublicationLoadingCard(
+              icon: Icons.campaign_outlined,
+              titleWidth: .74,
+              lines: [.94, .86, .66],
+              height: 154,
+            ),
+            const SizedBox(height: 11),
+            const _PublicationLoadingCard(
+              icon: Icons.groups_2_outlined,
+              titleWidth: .58,
+              lines: [.88, .70],
+              height: 118,
+            ),
+            const SizedBox(height: 11),
+            const _PublicationLoadingCard(
+              icon: Icons.insights_outlined,
+              titleWidth: .64,
+              lines: [.92, .77, .52],
+              height: 134,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PublicationLoadingCard extends StatelessWidget {
+  const _PublicationLoadingCard({
+    required this.icon,
+    required this.titleWidth,
+    required this.lines,
+    required this.height,
+  });
+
+  final IconData icon;
+  final double titleWidth;
+  final List<double> lines;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: height,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .78),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: .82),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 31,
+                height: 31,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft.withValues(alpha: .72),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  size: 15,
+                  color: AppColors.primaryDark.withValues(alpha: .66),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: titleWidth,
+                  child: const _PublicationLoadingBar(height: 9),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...lines.map(
+            (width) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: width,
+                child: const _PublicationLoadingBar(height: 7),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PublicationLoadingBar extends StatelessWidget {
+  const _PublicationLoadingBar({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.mint.withValues(alpha: .52),
+            AppColors.primarySoft.withValues(alpha: .78),
+            AppColors.surfaceRose.withValues(alpha: .54),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+  }
+}
+

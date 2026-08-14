@@ -1,8 +1,8 @@
-// Four-step Voxidence idea-generation flow for authenticated mobile users.
-// Content and behavior mirror the normal-user web wizard while the layout is
-// rebuilt for compact, touch-first mobile interaction.
 //
-// @author  Malak
+// Preserves the web generation behavior while presenting Signal, domain
+// Focus, local Grounding, and Launch review as a polished touch-first flow.
+//
+// @author Eman
 
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -13,16 +13,17 @@ import '../../../core/theme/app_theme.dart';
 import '../api/user_api.dart';
 import '../state/user_session_controller.dart';
 import '../widgets/user_ui.dart';
-import 'generation_progress_page.dart';
 
 class GenerateIdeaPage extends StatefulWidget {
   const GenerateIdeaPage({
     super.key,
     this.onGenerationStarted,
+    this.onExit,
     this.initialProblem,
   });
 
   final VoidCallback? onGenerationStarted;
+  final VoidCallback? onExit;
   final String? initialProblem;
 
   @override
@@ -77,18 +78,35 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   @override
   void initState() {
     super.initState();
+
     final incoming = widget.initialProblem?.trim();
+
     if (incoming != null && incoming.isNotEmpty) {
-      _description.text = incoming.substring(0, incoming.length.clamp(0, _maxSignal).toInt());
+      _description.text = incoming.substring(
+        0,
+        incoming.length.clamp(0, _maxSignal).toInt(),
+      );
     }
+
     _description.addListener(_refresh);
-    _load();
+    _session.addListener(_handleSessionChanged);
+
+    // UserSessionController notifies listeners while refreshing the summary.
+    // Starting that refresh synchronously from initState can notify an
+    // AnimatedBuilder while Flutter is still building the first frame.
+    // Defer the initial load until the first frame has completed.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _load(force: true);
+    });
+
     _initSpeech();
   }
 
   @override
   void dispose() {
     _speech.cancel();
+    _session.removeListener(_handleSessionChanged);
     _description
       ..removeListener(_refresh)
       ..dispose();
@@ -102,31 +120,46 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     if (mounted) setState(() {});
   }
 
+  void _handleSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _load({bool force = false}) async {
     if (mounted) {
       setState(() {
         _loading = true;
+        _checkingEntitlement = true;
         _error = '';
       });
     }
 
     try {
+      // Entitlement is the source of truth for whether generation is allowed.
+      // Refresh it first so a cached zero cannot lock a user who still has
+      // free generations remaining.
+      await _session.load(force: true);
+
+      if (!mounted) return;
+      setState(() => _checkingEntitlement = false);
+
       final results = await Future.wait<dynamic>([
         UserApi.instance.getDomains(force: force),
         UserApi.instance.getPricing(),
       ]);
+
       if (!mounted) return;
       setState(() {
-        _domains = (results[0] as List<Map<String, dynamic>>);
+        _domains = results[0] as List<Map<String, dynamic>>;
         _pricing = Map<String, dynamic>.from(results[1] as Map);
       });
-      await _session.load(force: force);
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Could not load generation options. Please try again.');
+      setState(() {
+        _error = 'Could not refresh generation options. Please try again.';
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -142,14 +175,17 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       final ready = await _speech.initialize(
         onStatus: (status) {
           if (!mounted) return;
-          setState(() => _listening = status.toLowerCase().contains('listening'));
+          setState(
+            () => _listening = status.toLowerCase().contains('listening'),
+          );
         },
         onError: (error) {
           if (!mounted) return;
           final raw = error.errorMsg.toLowerCase();
           setState(() {
             _listening = false;
-            _voiceError = raw.contains('permission') || raw.contains('not-allowed')
+            _voiceError =
+                raw.contains('permission') || raw.contains('not-allowed')
                 ? 'Allow microphone access to use voice typing.'
                 : 'Voice typing stopped. Please try again.';
           });
@@ -160,7 +196,8 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       if (mounted) {
         setState(() {
           _speechReady = false;
-          _voiceError = 'Voice typing is not available here. You can still type normally.';
+          _voiceError =
+              'Voice typing is not available here. You can still type normally.';
         });
       }
     }
@@ -180,7 +217,9 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     if (prefix.isEmpty) return null;
     try {
       for (final locale in await _speech.locales()) {
-        if (locale.localeId.toLowerCase().startsWith(prefix)) return locale.localeId;
+        if (locale.localeId.toLowerCase().startsWith(prefix)) {
+          return locale.localeId;
+        }
       }
     } catch (_) {}
     return null;
@@ -211,7 +250,8 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       if (mounted) {
         setState(() {
           _listening = false;
-          _voiceError = 'The microphone could not start. Check permission and try again.';
+          _voiceError =
+              'The microphone could not start. Check permission and try again.';
         });
       }
     }
@@ -220,10 +260,15 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   void _onSpeechResult(SpeechRecognitionResult result) {
     final spoken = result.recognizedWords.trim();
     if (spoken.isEmpty) return;
-    final next = [_voiceBase, spoken].where((value) => value.trim().isNotEmpty).join(' ').trim();
+    final next = [
+      _voiceBase,
+      spoken,
+    ].where((value) => value.trim().isNotEmpty).join(' ').trim();
     _description.value = TextEditingValue(
       text: next.length > _maxSignal ? next.substring(0, _maxSignal) : next,
-      selection: TextSelection.collapsed(offset: next.length.clamp(0, _maxSignal).toInt()),
+      selection: TextSelection.collapsed(
+        offset: next.length.clamp(0, _maxSignal).toInt(),
+      ),
     );
     if (mounted && result.finalResult) setState(() => _listening = false);
   }
@@ -231,13 +276,29 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   bool get _hasSignal => _description.text.trim().length >= _minSignal;
   bool get _isPremium => _session.summary?.isPremium == true;
   int get _creditBalance => _session.summary?.creditBalance ?? 0;
-  int get _freeRemaining => _session.summary?.remainingFreeGenerations ?? 0;
   int get _premiumCost => _asInt(_pricing['premiumIdeaCreditCost']);
 
   bool get _blocked {
-    if (_checkingEntitlement) return false;
-    if (_isPremium) return _premiumCost <= 0 || _creditBalance < _premiumCost;
-    return _freeRemaining <= 0;
+    final summary = _session.summary;
+
+    // Never render a false "completed" state while account data is loading
+    // or unavailable. The backend still validates entitlement on submit.
+    if (_checkingEntitlement || _session.loading || summary == null) {
+      return false;
+    }
+
+    if (_session.error != null && _session.usingCachedSnapshot) {
+      return false;
+    }
+
+    if (summary.isPremium) {
+      // If pricing is still being refreshed, keep the generation flow open
+      // rather than incorrectly treating an unknown cost as insufficient.
+      if (_premiumCost <= 0) return false;
+      return summary.creditBalance < _premiumCost;
+    }
+
+    return summary.remainingFreeGenerations <= 0;
   }
 
   bool get _canContinue {
@@ -284,15 +345,24 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     setState(() => _error = '');
 
     if (_step == 0 && !_hasSignal) {
-      setState(() => _error = 'Describe the problem with at least $_minSignal characters, or choose domains instead.');
+      setState(
+        () => _error =
+            'Describe the problem with at least $_minSignal characters, or choose domains instead.',
+      );
       return;
     }
     if (_step == 1 && !_canContinue) {
-      setState(() => _error = 'Choose one to three domains, use personalized discovery, or go back and add a problem signal.');
+      setState(
+        () => _error =
+            'Choose one to three domains, use personalized discovery, or go back and add a problem signal.',
+      );
       return;
     }
     if (_step == 2 && _country.text.trim().isEmpty) {
-      setState(() => _error = 'Country is required so Voxidence can ground the evidence.');
+      setState(
+        () => _error =
+            'Country is required so Voxidence can ground the evidence.',
+      );
       return;
     }
     if (_step < 3) setState(() => _step += 1);
@@ -303,6 +373,29 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     setState(() {
       _error = '';
       _step = 1;
+    });
+  }
+
+  Future<void> _openLanguagePicker() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.primaryDeep.withValues(alpha: .18),
+      builder: (_) => _LanguagePickerSheet(
+        selectedValue: _language,
+        options: _languages,
+      ),
+    );
+
+    if (!mounted || selected == null || selected == _language) return;
+
+    setState(() {
+      _language = selected;
     });
   }
 
@@ -333,16 +426,16 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
 
       final response = await UserApi.instance.startGeneration(payload);
       final runId = _readRunId(response);
-      if (runId.isEmpty) throw const ApiException('Generation started without a run identifier.');
+      if (runId.isEmpty) {
+        throw const ApiException(
+          'Generation started without a run identifier.',
+        );
+      }
 
+      _resetWizardForNextRun();
       widget.onGenerationStarted?.call();
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => GenerationProgressPage(runId: runId),
-          settings: RouteSettings(name: '/normal/generation/$runId'),
-        ),
-      );
+      await Navigator.of(context).pushNamed('/normal/generation/$runId');
     } on ApiException catch (error) {
       if (!mounted) return;
       if ((error.statusCode == 403 || error.statusCode == 409) &&
@@ -351,10 +444,32 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       }
       setState(() => _error = error.message);
     } catch (_) {
-      if (mounted) setState(() => _error = 'Idea generation could not be started.');
+      if (mounted) {
+        setState(() => _error = 'Idea generation could not be started.');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _resetWizardForNextRun() {
+    _speech.stop();
+    _description.clear();
+    _country.text = 'Palestine';
+    _city.clear();
+    _region.clear();
+
+    setState(() {
+      _step = 0;
+      _forceRefresh = false;
+      _personalized = false;
+      _listening = false;
+      _language = 'ANY';
+      _error = '';
+      _voiceError = '';
+      _voiceBase = '';
+      _selectedDomainIds.clear();
+    });
   }
 
   String _readRunId(Map<String, dynamic> response) {
@@ -377,25 +492,44 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
         child: SafeArea(
           child: Column(
             children: [
-              _TopBar(
-                isPremium: _isPremium,
-                onBack: _step == 0 ? null : () => setState(() => _step -= 1),
-              ),
+              const _TopBar(),
               Expanded(
                 child: SingleChildScrollView(
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 118),
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 104),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _GenerationIntro(
+                        step: _step,
+                        isPremium: _isPremium,
+                      ),
+                      const SizedBox(height: 11),
                       _StepRail(step: _step),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 13),
                       AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 260),
+                        duration: const Duration(milliseconds: 300),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
-                        child: KeyedSubtree(key: ValueKey(_step), child: _stepBody()),
+                        transitionBuilder: (child, animation) {
+                          final slide = Tween<Offset>(
+                            begin: const Offset(.035, .015),
+                            end: Offset.zero,
+                          ).animate(animation);
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: slide,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: KeyedSubtree(
+                          key: ValueKey(_step),
+                          child: _stepBody(),
+                        ),
                       ),
                       if (_error.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -413,51 +547,110 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
           ),
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: .96),
-            border: const Border(top: BorderSide(color: AppColors.border)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primaryDeep.withValues(alpha: .06),
-                blurRadius: 22,
-                offset: const Offset(0, -8),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 8),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFEFD).withValues(alpha: .985),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: .95),
+                width: 1.2,
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              if (_step > 0)
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDeep.withValues(alpha: .12),
+                  blurRadius: 30,
+                  offset: const Offset(0, 11),
+                ),
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: .06),
+                  blurRadius: 0,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                if (_step > 0)
+                  SizedBox(
+                    width: 94,
+                    child: OutlinedButton.icon(
+                      onPressed: _submitting
+                          ? null
+                          : () => setState(() => _step -= 1),
+                      icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                      label: const Text('Back'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(40),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 10.2,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        backgroundColor: AppColors.surface,
+                      ),
+                    ),
+                  ),
+                if (_step > 0) const SizedBox(width: 8),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _submitting ? null : () => setState(() => _step -= 1),
-                    icon: const Icon(Icons.arrow_back_rounded, size: 17),
-                    label: const Text('Back'),
+                  child: FilledButton.icon(
+                    onPressed: _submitting || !_canContinue
+                        ? null
+                        : _step == 3
+                            ? _submit
+                            : _next,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            _step == 3
+                                ? Icons.auto_awesome_rounded
+                                : Icons.arrow_forward_rounded,
+                            size: 16,
+                          ),
+                    label: Text(
+                      _submitting
+                          ? 'Preparing discovery...'
+                          : _step == 3
+                              ? 'Generate idea'
+                              : 'Continue',
+                    ),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(40),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      disabledBackgroundColor:
+                          AppColors.silver.withValues(alpha: .36),
+                      disabledForegroundColor:
+                          AppColors.textMuted.withValues(alpha: .72),
+                    ),
                   ),
                 ),
-              if (_step > 0) const SizedBox(width: 10),
-              Expanded(
-                flex: _step > 0 ? 2 : 1,
-                child: FilledButton.icon(
-                  onPressed: _submitting || !_canContinue
-                      ? null
-                      : _step == 3
-                          ? _submit
-                          : _next,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 17,
-                          height: 17,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Icon(_step == 3 ? Icons.auto_awesome_rounded : Icons.arrow_forward_rounded),
-                  label: Text(_submitting ? 'Starting...' : _step == 3 ? 'Generate idea' : 'Continue'),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -475,63 +668,189 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
 
   Widget _signalStep() {
     final count = _description.text.length;
-    return VoxCard(
-      padding: const EdgeInsets.fromLTRB(18, 19, 18, 18),
+    final progress = (count / _minSignal).clamp(0.0, 1.0).toDouble();
+
+    return _GenerationPanel(
+      accent: AppColors.pink,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Kicker(icon: Icons.auto_awesome_rounded, text: 'Tell us what you noticed'),
-          const SizedBox(height: 10),
-          Text('What real problem should Voxidence investigate?', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 6),
-          const Text(
-            'Describe the frustration, who experiences it, and why current solutions are not enough.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 11.3, height: 1.48),
+          const _PanelHeading(
+            index: '01',
+            icon: Icons.graphic_eq_rounded,
+            eyebrow: 'REAL-WORLD SIGNAL',
+            title: 'What problem keeps repeating?',
+            subtitle:
+                'Give Voxidence the human signal first: who feels the pain, what keeps failing, and why the current workaround is not enough.',
           ),
-          const SizedBox(height: 15),
-          Container(
+          const SizedBox(height: 18),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .86),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _listening ? AppColors.primary : AppColors.border, width: _listening ? 1.5 : 1),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: .98),
+                  AppColors.surfaceRose.withValues(alpha: .70),
+                  AppColors.primarySoft.withValues(alpha: .34),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(23),
+              border: Border.all(
+                color: _listening ? AppColors.primary : AppColors.borderStrong,
+                width: _listening ? 1.5 : 1,
+              ),
+              boxShadow: _listening
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: .12),
+                        blurRadius: 0,
+                        spreadRadius: 5,
+                      ),
+                    ]
+                  : null,
             ),
             child: Column(
               children: [
                 TextField(
                   controller: _description,
-                  minLines: 5,
-                  maxLines: 8,
+                  minLines: 6,
+                  maxLines: 9,
                   maxLength: _maxSignal,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 12.4,
+                    height: 1.56,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  cursorColor: AppColors.primaryDark,
                   decoration: const InputDecoration(
-                    hintText: 'Example: Students in Nablus struggle to coordinate shared transport because schedules change and there is no trusted real-time matching system…',
+                    hintText:
+                        'Example: Students in Nablus struggle to coordinate shared transport because schedules change constantly and there is no trusted real-time matching system…',
+                    filled: false,
+                    fillColor: Colors.transparent,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
                     counterText: '',
-                    contentPadding: EdgeInsets.fromLTRB(15, 15, 15, 8),
+                    contentPadding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 2, 10, 10),
+                  padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
                   child: Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _toggleVoice,
                           style: OutlinedButton.styleFrom(
-                            backgroundColor: _listening ? AppColors.primarySoft : Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+                            minimumSize: const Size.fromHeight(42),
+                            backgroundColor: _listening
+                                ? AppColors.primarySoft
+                                : Colors.white.withValues(alpha: .92),
+                            side: BorderSide(
+                              color: _listening
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
                           ),
-                          icon: Icon(_listening ? Icons.mic_off_rounded : Icons.mic_none_rounded, size: 17),
-                          label: Text(_listening ? 'Listening…' : 'Speak to type'),
+                          icon: Icon(
+                            _listening
+                                ? Icons.mic_off_rounded
+                                : Icons.mic_none_rounded,
+                            size: 17,
+                          ),
+                          label: Text(
+                            _listening ? 'Listening…' : 'Speak to type',
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: TextButton.icon(
-                          onPressed: _chooseDomainsInstead,
-                          icon: const Icon(Icons.layers_outlined, size: 17),
-                          label: const Text('Choose domains instead'),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _chooseDomainsInstead,
+                            borderRadius: BorderRadius.circular(15),
+                            child: Ink(
+                              height: 42,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    AppColors.primarySoft.withValues(
+                                      alpha: .72,
+                                    ),
+                                    Colors.white.withValues(alpha: .94),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(
+                                  color: AppColors.primary.withValues(
+                                    alpha: .22,
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: .90,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.layers_outlined,
+                                      size: 14,
+                                      color: AppColors.primaryDark,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  const Flexible(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Choose domains',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: AppColors.primaryDeep,
+                                            fontSize: 9.2,
+                                            height: 1.05,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'instead',
+                                          style: TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 7.7,
+                                            height: 1,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -540,32 +859,95 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
               ],
             ),
           ),
+          const SizedBox(height: 11),
           Row(
             children: [
-              Text(
-                _hasSignal ? 'Enough detail to continue.' : 'At least $_minSignal characters to use this signal.',
-                style: TextStyle(
-                  color: _hasSignal ? AppColors.primaryDark : AppColors.textMuted,
-                  fontSize: 9.4,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    minHeight: 5,
+                    value: progress,
+                    backgroundColor: AppColors.border,
+                    color: _hasSignal ? AppColors.success : AppColors.primary,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Text('$count/$_maxSignal', style: const TextStyle(color: AppColors.textMuted, fontSize: 9.2, fontWeight: FontWeight.w800)),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _hasSignal
+                      ? AppColors.primarySoft
+                      : AppColors.surfaceMuted,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  '$count/$_maxSignal',
+                  style: TextStyle(
+                    color: _hasSignal
+                        ? AppColors.primaryDeep
+                        : AppColors.textMuted,
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Icon(
+                _hasSignal
+                    ? Icons.check_circle_rounded
+                    : Icons.info_outline_rounded,
+                size: 13,
+                color: _hasSignal ? AppColors.success : AppColors.textMuted,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  _hasSignal
+                      ? 'Signal ready. You can refine the direction in the next step.'
+                      : 'Add at least $_minSignal characters, or continue by choosing domains instead.',
+                  style: TextStyle(
+                    color: _hasSignal
+                        ? AppColors.primaryDark
+                        : AppColors.textMuted,
+                    fontSize: 8.9,
+                    height: 1.34,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
           if (_voiceError.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(_voiceError, style: const TextStyle(color: AppColors.pinkDeep, fontSize: 9.8, height: 1.35)),
+            const SizedBox(height: 9),
+            InlineNotice(
+              icon: Icons.mic_off_rounded,
+              message: _voiceError,
+              error: true,
+            ),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 15),
           const Wrap(
             spacing: 7,
             runSpacing: 7,
             children: [
-              _Tip(text: 'Include who is affected'),
-              _Tip(text: 'Explain the repeated pain'),
-              _Tip(text: 'Mention the location when relevant'),
+              _Tip(
+                icon: Icons.groups_2_outlined,
+                text: 'Who is affected?',
+              ),
+              _Tip(
+                icon: Icons.repeat_rounded,
+                text: 'What repeats?',
+              ),
+              _Tip(
+                icon: Icons.place_outlined,
+                text: 'Where does it happen?',
+              ),
             ],
           ),
         ],
@@ -574,77 +956,154 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   Widget _focusStep() {
-    final autoSelected = _hasSignal && _selectedDomainIds.isEmpty && !_personalized;
+    final autoSelected =
+        _hasSignal && _selectedDomainIds.isEmpty && !_personalized;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        VoxCard(
+        _GenerationPanel(
+          accent: AppColors.primary,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _Kicker(icon: Icons.public_rounded, text: 'Opportunity focus'),
-              const SizedBox(height: 10),
-              Text('Blend domains into one stronger opportunity.', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text(
-                _hasSignal
-                    ? 'Your description remains the primary signal. Select up to three domains so Voxidence can combine related pains, evidence, and business opportunities.'
-                    : 'Select one to three domains. Voxidence will search for a meaningful cross-domain problem and generate one coherent business idea.',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.1, height: 1.46),
+              const _PanelHeading(
+                index: '02',
+                icon: Icons.hub_outlined,
+                eyebrow: 'OPPORTUNITY FOCUS',
+                title: 'Shape the strongest domain blend.',
+                subtitle:
+                    'Keep the signal as the anchor, then let Voxidence combine up to three complementary software domains around it.',
               ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _personalized ? 'Personalized discovery selected' : '${_selectedDomainIds.length} of $_maxDomains domains selected',
-                          style: const TextStyle(color: AppColors.primaryDeep, fontSize: 11.2, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _personalized
-                              ? 'Voxidence will use your saved interests, preferences, favorites, accepted ideas, and idea history.'
-                              : 'Choose complementary areas rather than unrelated categories.',
-                          style: const TextStyle(color: AppColors.textMuted, fontSize: 9.5, height: 1.35),
-                        ),
-                      ],
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft.withValues(alpha: .58),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 35,
+                      height: 35,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .85),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        _personalized
+                            ? Icons.auto_awesome_rounded
+                            : Icons.layers_outlined,
+                        size: 17,
+                        color: AppColors.primaryDark,
+                      ),
                     ),
-                  ),
-                  if (_selectedDomainIds.isNotEmpty || _personalized)
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _selectedDomainIds.clear();
-                        _personalized = false;
-                      }),
-                      child: const Text('Clear'),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _personalized
+                                ? 'Personalized discovery'
+                                : '${_selectedDomainIds.length} of $_maxDomains selected',
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 10.8,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _personalized
+                                ? 'Using interests, preferences, favorites and idea history.'
+                                : autoSelected
+                                    ? 'Automatic matching is ready from your signal.'
+                                    : 'Choose related areas rather than unrelated categories.',
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 8.7,
+                              height: 1.3,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                ],
+                    if (_selectedDomainIds.isNotEmpty || _personalized)
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _selectedDomainIds.clear();
+                          _personalized = false;
+                        }),
+                        child: const Text('Clear'),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 10),
         _ModeCard(
-          selected: _personalized,
-          icon: Icons.auto_awesome_rounded,
-          title: 'I don’t have an idea yet',
-          subtitle: 'Build a direction around my interests and preferences',
-          onTap: _togglePersonalized,
+          selected: autoSelected,
+          disabled: !_hasSignal,
+          icon: Icons.auto_fix_high_rounded,
+          title: 'Let Voxidence resolve the blend',
+          subtitle: _hasSignal
+              ? 'Recommended from your signal · automatic domain matching'
+              : 'Add a problem signal first to unlock automatic matching',
+          badge: 'RECOMMENDED',
+          onTap: _selectAuto,
         ),
         const SizedBox(height: 8),
         _ModeCard(
-          selected: autoSelected,
-          disabled: !_hasSignal,
-          icon: Icons.hub_outlined,
-          title: 'Auto-detect the best domain blend',
-          subtitle: _hasSignal
-              ? 'Recommended · Voxidence resolves the strongest combination from your signal'
-              : 'Add a description first to use automatic detection',
-          onTap: _selectAuto,
+          selected: _personalized,
+          icon: Icons.person_search_outlined,
+          title: 'Discover around my workspace',
+          subtitle:
+              'Use my interests, preferences, accepted ideas and previous activity',
+          badge: 'PERSONALIZED',
+          rose: true,
+          onTap: _togglePersonalized,
         ),
+        if (_selectedDomains.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: _selectedDomains
+                .map((domain) {
+                  final id = '${domain['id'] ?? ''}';
+                  final name =
+                      '${domain['name'] ?? domain['displayName'] ?? 'Domain'}';
+                  return InputChip(
+                    label: Text(name),
+                    avatar: const Icon(
+                      Icons.check_rounded,
+                      size: 13,
+                      color: AppColors.primaryDark,
+                    ),
+                    onDeleted: () => _toggleDomain(id),
+                    deleteIcon: const Icon(Icons.close_rounded, size: 13),
+                    side: const BorderSide(color: AppColors.borderStrong),
+                    backgroundColor: AppColors.primarySoft,
+                    labelStyle: const TextStyle(
+                      color: AppColors.primaryDeep,
+                      fontSize: 8.8,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  );
+                })
+                .toList(growable: false),
+          ),
+        ],
         const SizedBox(height: 12),
         if (_loading)
           const LoadingList(count: 5)
@@ -660,60 +1119,171 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
             ),
           )
         else
-          ..._domains.map((domain) {
-            final id = '${domain['id'] ?? ''}';
-            final selected = _selectedDomainIds.contains(id);
-            final blocked = !selected && _selectedDomainIds.length >= _maxDomains;
-            final name = '${domain['name'] ?? domain['displayName'] ?? 'Software domain'}';
-            final description = '${domain['description'] ?? 'Software opportunity domain'}';
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _DomainCard(
-                selected: selected,
-                disabled: blocked,
-                icon: _domainIcon(name),
-                title: name,
-                subtitle: description,
-                onTap: () => _toggleDomain(id),
-              ),
-            );
-          }),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final singleColumn = constraints.maxWidth < 350;
+              final width = singleColumn
+                  ? constraints.maxWidth
+                  : (constraints.maxWidth - 9) / 2;
+
+              return Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                children: _domains
+                    .map((domain) {
+                      final id = '${domain['id'] ?? ''}';
+                      final selected = _selectedDomainIds.contains(id);
+                      final blocked =
+                          !selected && _selectedDomainIds.length >= _maxDomains;
+                      final name =
+                          '${domain['name'] ?? domain['displayName'] ?? 'Software domain'}';
+                      final description =
+                          '${domain['description'] ?? 'Software opportunity domain'}';
+
+                      return SizedBox(
+                        width: width,
+                        child: _DomainCard(
+                          selected: selected,
+                          disabled: blocked,
+                          icon: _domainIcon(name),
+                          title: name,
+                          subtitle: description,
+                          onTap: () => _toggleDomain(id),
+                        ),
+                      );
+                    })
+                    .toList(growable: false),
+              );
+            },
+          ),
       ],
     );
   }
 
   Widget _groundStep() {
-    return VoxCard(
+    final selectedLanguage = _languages
+        .firstWhere((item) => item.value == _language)
+        .label;
+
+    return _GenerationPanel(
+      accent: AppColors.primary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Kicker(icon: Icons.location_on_outlined, text: 'Local intelligence'),
+          const _PanelHeading(
+            index: '03',
+            icon: Icons.travel_explore_rounded,
+            eyebrow: 'LOCAL GROUNDING',
+            title: 'Give the discovery a real place.',
+            subtitle:
+                'Location and language help Voxidence prioritize evidence that feels relevant to the people and context you care about.',
+          ),
+          const SizedBox(height: 17),
+          _Field(
+            controller: _country,
+            label: 'Country',
+            hint: 'Palestine',
+            icon: Icons.flag_outlined,
+            requiredField: true,
+          ),
           const SizedBox(height: 10),
-          Text('Where should the solution create impact?', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 6),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 360) {
+                return Column(
+                  children: [
+                    _Field(
+                      controller: _city,
+                      label: 'City',
+                      hint: 'Nablus',
+                      icon: Icons.location_city_outlined,
+                    ),
+                    const SizedBox(height: 10),
+                    _Field(
+                      controller: _region,
+                      label: 'Region',
+                      hint: 'West Bank',
+                      icon: Icons.map_outlined,
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _Field(
+                      controller: _city,
+                      label: 'City',
+                      hint: 'Nablus',
+                      icon: Icons.location_city_outlined,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: _Field(
+                      controller: _region,
+                      label: 'Region',
+                      hint: 'West Bank',
+                      icon: Icons.map_outlined,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
           const Text(
-            'Location helps Voxidence prioritize locally relevant evidence while source selection stays automatic.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 11.1, height: 1.45),
+            'Community language',
+            style: TextStyle(
+              color: AppColors.primaryDeep,
+              fontSize: 9.3,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .25,
+            ),
           ),
-          const SizedBox(height: 16),
-          _Field(controller: _country, label: 'Country *', hint: 'Palestine', icon: Icons.flag_outlined),
-          const SizedBox(height: 11),
-          _Field(controller: _city, label: 'City', hint: 'Nablus', icon: Icons.location_city_outlined),
-          const SizedBox(height: 11),
-          _Field(controller: _region, label: 'Region', hint: 'West Bank', icon: Icons.map_outlined),
-          const SizedBox(height: 11),
-          const Text('Community language', style: TextStyle(color: AppColors.primaryDeep, fontSize: 10.2, fontWeight: FontWeight.w900)),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: _language,
-            items: _languages.map((item) => DropdownMenuItem(value: item.value, child: Text(item.label))).toList(),
-            onChanged: (value) => setState(() => _language = value ?? 'ANY'),
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.translate_rounded, size: 18)),
+          _LanguageSelector(
+            value: _language,
+            label: selectedLanguage,
+            onTap: _openLanguagePicker,
           ),
-          const SizedBox(height: 13),
-          const InlineNotice(
-            icon: Icons.auto_fix_high_rounded,
-            message: 'No manual data-source selection. Voxidence chooses active sources automatically using domain, language, location, availability, and evidence quality.',
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primarySoft.withValues(alpha: .72),
+                  AppColors.surfaceRose.withValues(alpha: .48),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.auto_fix_high_rounded,
+                  size: 17,
+                  color: AppColors.primaryDark,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Voxidence chooses the strongest public sources automatically using domain, language, location, availability, and evidence quality.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 8.9,
+                      height: 1.38,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -721,13 +1291,27 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 
   Widget _reviewStep() {
-    final location = [_city.text.trim(), _region.text.trim(), _country.text.trim()].where((part) => part.isNotEmpty).join(', ');
+    final location = [
+      _city.text.trim(),
+      _region.text.trim(),
+      _country.text.trim(),
+    ].where((part) => part.isNotEmpty).join(', ');
+
     final domainBlend = _personalized
         ? 'Personalized by Voxidence'
         : _selectedDomains.isNotEmpty
-            ? _selectedDomains.map((item) => '${item['name'] ?? item['displayName'] ?? 'Domain'}').join(' + ')
+            ? _selectedDomains
+                .map(
+                  (item) =>
+                      '${item['name'] ?? item['displayName'] ?? 'Domain'}',
+                )
+                .join(' + ')
             : 'Auto-detected by Voxidence';
-    final language = _languages.firstWhere((item) => item.value == _language).label;
+
+    final language = _languages
+        .firstWhere((item) => item.value == _language)
+        .label;
+
     final discoveryInput = _personalized
         ? 'Personalized discovery based on your interests, preferences, favorites, accepted ideas, and idea history.'
         : _description.text.trim().isNotEmpty
@@ -737,70 +1321,256 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        VoxCard(
+        _GenerationPanel(
+          accent: AppColors.primary,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _Kicker(icon: Icons.auto_awesome_rounded, text: 'Ready to discover'),
-              const SizedBox(height: 10),
-              Text('Review the signal before launching.', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 13),
+              const _PanelHeading(
+                index: '04',
+                icon: Icons.rocket_launch_outlined,
+                eyebrow: 'LAUNCH REVIEW',
+                title: 'Everything is ready for discovery.',
+                subtitle:
+                    'Review the signal and context once more. Voxidence will resolve sources, rank opportunities, generate candidates, validate quality, and save the strongest idea.',
+              ),
+              const SizedBox(height: 17),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.primarySoft.withValues(alpha: .52),
-                  borderRadius: BorderRadius.circular(18),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primarySoft.withValues(alpha: .78),
+                      Colors.white.withValues(alpha: .88),
+                      AppColors.surfaceRose.withValues(alpha: .56),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('DISCOVERY INPUT', style: TextStyle(color: AppColors.primaryDark, fontSize: 8.7, fontWeight: FontWeight.w900, letterSpacing: .8)),
-                    const SizedBox(height: 6),
-                    Text(discoveryInput, style: const TextStyle(color: AppColors.textPrimary, fontSize: 11.2, height: 1.48, fontWeight: FontWeight.w700)),
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .88),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.format_quote_rounded,
+                            color: AppColors.primaryDark,
+                            size: 17,
+                          ),
+                        ),
+                        const SizedBox(width: 9),
+                        const Expanded(
+                          child: Text(
+                            'DISCOVERY INPUT',
+                            style: TextStyle(
+                              color: AppColors.primaryDark,
+                              fontSize: 8.4,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .8,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      discoveryInput,
+                      maxLines: 7,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 10.8,
+                        height: 1.48,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 10),
-              _ReviewFact(label: 'Domain blend', value: domainBlend, icon: Icons.layers_outlined),
-              _ReviewFact(label: 'Location', value: location, icon: Icons.location_on_outlined),
-              _ReviewFact(label: 'Language', value: language, icon: Icons.translate_rounded),
-              const _ReviewFact(label: 'Source strategy', value: 'Backend intelligence', icon: Icons.hub_outlined),
+              const SizedBox(height: 11),
+              _ReviewFact(
+                label: 'Domain blend',
+                value: domainBlend,
+                icon: Icons.layers_outlined,
+              ),
+              _ReviewFact(
+                label: 'Location',
+                value: location.isEmpty ? 'Not specified' : location,
+                icon: Icons.location_on_outlined,
+              ),
+              _ReviewFact(
+                label: 'Language',
+                value: language,
+                icon: Icons.translate_rounded,
+              ),
+              const _ReviewFact(
+                label: 'Source strategy',
+                value: 'Automatic evidence intelligence',
+                icon: Icons.hub_outlined,
+              ),
             ],
           ),
         ),
         const SizedBox(height: 10),
-        VoxCard(
-          tint: _forceRefresh ? AppColors.primarySoft.withValues(alpha: .68) : null,
-          child: SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            value: _forceRefresh,
-            onChanged: (value) => setState(() => _forceRefresh = value),
-            title: const Text('Collect fresh evidence', style: TextStyle(color: AppColors.textPrimary, fontSize: 11.6, fontWeight: FontWeight.w900)),
-            subtitle: const Text('Turn this on only when you do not want to reuse a recent matching collection.', style: TextStyle(color: AppColors.textSecondary, fontSize: 9.6, height: 1.35)),
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                _forceRefresh = !_forceRefresh;
+              });
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+              decoration: BoxDecoration(
+                color: _forceRefresh
+                    ? AppColors.primarySoft.withValues(alpha: .78)
+                    : Colors.white.withValues(alpha: .88),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color:
+                      _forceRefresh ? AppColors.primary : AppColors.border,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .86),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.refresh_rounded,
+                      size: 18,
+                      color: AppColors.primaryDark,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Collect fresh evidence',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 10.8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Skip recent reusable collections and start a fresh evidence pass.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 8.7,
+                            height: 1.32,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Switch.adaptive(
+                    value: _forceRefresh,
+                    onChanged: (value) {
+                      setState(() {
+                        _forceRefresh = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 10),
-        VoxCard(
-          tint: _isPremium ? AppColors.primarySoft.withValues(alpha: .72) : AppColors.pinkSoft.withValues(alpha: .45),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: _isPremium
+                  ? [
+                      const Color(0xFFE6F5F2),
+                      Colors.white,
+                      const Color(0xFFFFF4F7),
+                    ]
+                  : [
+                      Colors.white,
+                      AppColors.surfaceRose.withValues(alpha: .70),
+                    ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.border),
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SoftIconBadge(icon: _isPremium ? Icons.bolt_rounded : Icons.eco_outlined, size: 40, rose: !_isPremium),
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _isPremium
+                        ? [AppColors.primary, AppColors.primaryDark]
+                        : [AppColors.pinkLight, AppColors.pink],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  _isPremium
+                      ? Icons.auto_awesome_rounded
+                      : Icons.lightbulb_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isPremium ? 'Premium idea generation' : 'Normal idea generation',
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 11.5, fontWeight: FontWeight.w900),
+                      _isPremium
+                          ? 'Complete premium generation'
+                          : 'Normal validated generation',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       _isPremium
-                          ? 'This generation uses ${_premiumCost > 0 ? _premiumCost : '…'} of your $_creditBalance credits and creates the complete advanced workspace immediately.'
-                          : 'Your available free generation creates the core validated idea. After it is ready, you can open it first and choose Direct Unlock only when you want the advanced workspace.',
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 9.8, height: 1.42),
+                          ? 'Uses ${_premiumCost > 0 ? _premiumCost : '…'} credits from your $_creditBalance-credit balance and prepares the advanced workspace immediately.'
+                          : 'Creates the validated core idea first. Advanced outputs remain optional after the idea is saved.',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 8.9,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -818,53 +1588,135 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
       backgroundColor: Colors.transparent,
       body: WorkspaceBackground(
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: VoxCard(
-                  padding: const EdgeInsets.all(22),
-                  child: Column(
-                    children: [
-                      SoftIconBadge(icon: premium ? Icons.bolt_rounded : Icons.lock_outline_rounded, size: 58, rose: !premium),
-                      const SizedBox(height: 15),
-                      Text('Generation access', style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
-                      const SizedBox(height: 8),
-                      Text(
-                        premium
-                            ? 'Premium generation needs $_premiumCost credits. Your current balance is $_creditBalance.'
-                            : 'You have used your available free discoveries. Your existing ideas stay safe and available in My Ideas.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11.1, height: 1.48),
-                      ),
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () => Navigator.pushNamed(context, premium ? '/normal/credits' : '/normal/credits'),
-                          icon: Icon(premium ? Icons.add_card_rounded : Icons.workspace_premium_outlined),
-                          label: Text(premium ? 'Buy more credits' : 'Upgrade workspace'),
+          bottom: false,
+          child: Column(
+            children: [
+              const _TopBar(),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 110),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 460),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.surface,
+                              premium
+                                  ? AppColors.primarySoft.withValues(alpha: .68)
+                                  : AppColors.surfaceRose.withValues(
+                                      alpha: .72,
+                                    ),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(28),
+                          border: Border.all(color: Colors.white),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryDeep.withValues(
+                                alpha: .09,
+                              ),
+                              blurRadius: 34,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            SoftIconBadge(
+                              icon: premium
+                                  ? Icons.bolt_rounded
+                                  : Icons.lock_outline_rounded,
+                              size: 62,
+                              rose: !premium,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'GENERATION ACCESS',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppColors.primaryDark,
+                                fontSize: 8.7,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .9,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              premium
+                                  ? 'Add credits to keep creating complete ideas.'
+                                  : 'Your free discoveries are complete.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 21,
+                                height: 1.08,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -.5,
+                              ),
+                            ),
+                            const SizedBox(height: 9),
+                            Text(
+                              premium
+                                  ? 'Premium generation needs $_premiumCost credits. Your current balance is $_creditBalance credits.'
+                                  : 'Your existing ideas stay safe in My Ideas. Add credits whenever you want to continue generating.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 10.7,
+                                height: 1.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 19),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () => Navigator.pushNamed(
+                                  context,
+                                  '/normal/credits',
+                                ),
+                                icon: Icon(
+                                  premium
+                                      ? Icons.add_card_rounded
+                                      : Icons.workspace_premium_outlined,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  premium
+                                      ? 'Buy more credits'
+                                      : 'View credits & Premium',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 9),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () => Navigator.pushNamed(
+                                  context,
+                                  '/normal/ideas',
+                                ),
+                                icon: const Icon(
+                                  Icons.lightbulb_outline_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text('View my ideas'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => Navigator.pushNamed(context, '/normal/ideas'),
-                          icon: const Icon(Icons.lightbulb_outline_rounded),
-                          label: const Text('View my ideas'),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pushNamed(context, '/normal/dashboard'),
-                        child: const Text('Back to dashboard'),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -875,7 +1727,9 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
     final value = name.toLowerCase();
     if (value.contains('education')) return Icons.school_outlined;
     if (value.contains('health')) return Icons.favorite_border_rounded;
-    if (value.contains('finance') || value.contains('business')) return Icons.business_center_outlined;
+    if (value.contains('finance') || value.contains('business')) {
+      return Icons.business_center_outlined;
+    }
     if (value.contains('environment')) return Icons.eco_outlined;
     if (value.contains('community')) return Icons.groups_2_outlined;
     if (value.contains('transport')) return Icons.route_outlined;
@@ -890,34 +1744,351 @@ class _GenerateIdeaPageState extends State<GenerateIdeaPage> {
   }
 }
 
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.isPremium, this.onBack});
+class _GenerationIntro extends StatelessWidget {
+  const _GenerationIntro({
+    required this.step,
+    required this.isPremium,
+  });
 
+  final int step;
   final bool isPremium;
-  final VoidCallback? onBack;
+
+  static const _titles = <String>[
+    'From a real signal to a software opportunity.',
+    'Blend context without losing the original pain.',
+    'Ground the discovery in the right community.',
+    'Launch an evidence-backed generation run.',
+  ];
+
+  static const _subtitles = <String>[
+    'Start with the problem. Voxidence will do the source discovery, opportunity ranking and candidate validation.',
+    'Use automatic matching, your workspace context, or up to three domains to shape the search.',
+    'Location and language make the evidence more relevant without forcing manual source selection.',
+    'One review before the intelligence pipeline starts collecting, ranking and validating.',
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Row(
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(15, 14, 14, 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: .96)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFFFFEFD),
+            Color(0xFFF0F9F7),
+            Color(0xFFFFF7F9),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .055),
+            blurRadius: 25,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Stack(
         children: [
-          if (onBack != null)
-            IconButton.filledTonal(onPressed: onBack, icon: const Icon(Icons.arrow_back_rounded, size: 18))
-          else
-            const SoftIconBadge(icon: Icons.auto_awesome_rounded, size: 40),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Generate an idea', style: TextStyle(color: AppColors.textPrimary, fontSize: 16.4, fontWeight: FontWeight.w900)),
-                SizedBox(height: 2),
-                Text('Evidence-led discovery', style: TextStyle(color: AppColors.textMuted, fontSize: 9.2, fontWeight: FontWeight.w700)),
-              ],
+          Positioned(
+            right: -26,
+            top: -34,
+            child: Container(
+              width: 104,
+              height: 104,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: .07),
+              ),
             ),
           ),
-          AccountTierBadge(isPremium: isPremium),
+          Positioned(
+            right: 20,
+            bottom: -42,
+            child: Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.pink.withValues(alpha: .055),
+              ),
+            ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF6FC7C1), Color(0xFF459A93)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: .20),
+                      blurRadius: 18,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  step == 3
+                      ? Icons.rocket_launch_rounded
+                      : Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'EVIDENCE-LED IDEATION',
+                          style: TextStyle(
+                            color: AppColors.primaryDark,
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .95,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isPremium
+                                ? AppColors.primarySoft
+                                : AppColors.surfaceRose,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            isPremium ? 'ADVANCED' : 'VALIDATED',
+                            style: TextStyle(
+                              color: isPremium
+                                  ? AppColors.primaryDeep
+                                  : AppColors.pinkDeep,
+                              fontSize: 6.8,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .55,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _titles[step],
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16.8,
+                        height: 1.08,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -.35,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _subtitles[step],
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 8.8,
+                        height: 1.38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GenerationPanel extends StatelessWidget {
+  const _GenerationPanel({
+    required this.child,
+    this.accent = AppColors.primary,
+  });
+
+  final Widget child;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 17, 16, 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(27),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: .96),
+            AppColors.surface.withValues(alpha: .94),
+            accent.withValues(alpha: .035),
+          ],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: .95)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .06),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _PanelHeading extends StatelessWidget {
+  const _PanelHeading({
+    required this.index,
+    required this.icon,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String index;
+  final IconData icon;
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft.withValues(alpha: .82),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, color: AppColors.primaryDark, size: 20),
+              Positioned(
+                right: 5,
+                bottom: 4,
+                child: Text(
+                  index,
+                  style: const TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 6.2,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                eyebrow,
+                style: const TextStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 7.4,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .95,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18.2,
+                  height: 1.08,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -.42,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 9.3,
+                  height: 1.42,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: .94),
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.border.withValues(alpha: .66),
+          ),
+        ),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Generate an idea',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17.2,
+              height: 1.04,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -.36,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Evidence-led discovery studio',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 8.8,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );
@@ -931,76 +2102,192 @@ class _StepRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return VoxCard(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
-      child: Row(
-        children: List.generate(_GenerateIdeaPageState._steps.length, (index) {
-          final current = index == step;
-          final complete = index < step;
-          final item = _GenerateIdeaPageState._steps[index];
-          return Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: current ? AppColors.primarySoft : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
+    final item = _GenerateIdeaPageState._steps[step];
+    final progress = (step + 1) / _GenerateIdeaPageState._steps.length;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .90),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDeep.withValues(alpha: .04),
+            blurRadius: 18,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'STEP ${step + 1} OF ${_GenerateIdeaPageState._steps.length}',
+                      style: const TextStyle(
+                        color: AppColors.primaryDark,
+                        fontSize: 7.8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .72,
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 29,
-                          height: 29,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: current || complete ? AppColors.primary : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: current || complete ? AppColors.primary : AppColors.border),
-                          ),
-                          child: complete
-                              ? const Icon(Icons.check_rounded, color: Colors.white, size: 15)
-                              : Text('${index + 1}', style: TextStyle(color: current ? Colors.white : AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w900)),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: current ? AppColors.primaryDeep : AppColors.textMuted, fontSize: 8.4, fontWeight: FontWeight.w900)),
-                      ],
+                    const SizedBox(height: 3),
+                    Text(
+                      '${item.label} · ${item.subtitle}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 9.9,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  '${(progress * 100).round()}%',
+                  style: const TextStyle(
+                    color: AppColors.primaryDeep,
+                    fontSize: 8.4,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                if (index < 3)
-                  Container(width: 8, height: 1, color: complete ? AppColors.primary : AppColors.border),
-              ],
-            ),
-          );
-        }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: List.generate(_GenerateIdeaPageState._steps.length, (
+              index,
+            ) {
+              final current = index == step;
+              final complete = index < step;
+
+              return Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: current || complete
+                                  ? const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(0xFF69C6C0),
+                                        Color(0xFF4B9D96),
+                                      ],
+                                    )
+                                  : null,
+                              color: current || complete
+                                  ? null
+                                  : AppColors.surfaceMuted,
+                              border: Border.all(
+                                color: current || complete
+                                    ? Colors.transparent
+                                    : AppColors.borderStrong,
+                              ),
+                              boxShadow: current
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withValues(
+                                          alpha: .16,
+                                        ),
+                                        blurRadius: 0,
+                                        spreadRadius: 5,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: complete
+                                ? const Icon(
+                                    Icons.check_rounded,
+                                    color: Colors.white,
+                                    size: 16,
+                                  )
+                                : Icon(
+                                    switch (index) {
+                                      0 => Icons.graphic_eq_rounded,
+                                      1 => Icons.hub_outlined,
+                                      2 => Icons.place_outlined,
+                                      _ => Icons.rocket_launch_outlined,
+                                    },
+                                    color: current
+                                        ? Colors.white
+                                        : AppColors.textMuted,
+                                    size: 16,
+                                  ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _GenerateIdeaPageState._steps[index].label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: current || complete
+                                  ? AppColors.primaryDeep
+                                  : AppColors.textMuted,
+                              fontSize: 7.4,
+                              fontWeight: current
+                                  ? FontWeight.w900
+                                  : FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (index < _GenerateIdeaPageState._steps.length - 1)
+                      Expanded(
+                        child: Container(
+                          height: 2,
+                          margin: const EdgeInsets.only(bottom: 18),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(99),
+                            color: complete
+                                ? AppColors.primary
+                                : AppColors.border,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _Kicker extends StatelessWidget {
-  const _Kicker({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: AppColors.primaryDark),
-        const SizedBox(width: 6),
-        Text(text.toUpperCase(), style: const TextStyle(color: AppColors.primaryDark, fontSize: 8.8, fontWeight: FontWeight.w900, letterSpacing: .8)),
-      ],
-    );
-  }
-}
 
 class _Tip extends StatelessWidget {
-  const _Tip({required this.text});
+  const _Tip({
+    required this.icon,
+    required this.text,
+  });
+
+  final IconData icon;
   final String text;
 
   @override
@@ -1008,16 +2295,23 @@ class _Tip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
       decoration: BoxDecoration(
-        color: AppColors.surfaceMuted.withValues(alpha: .7),
+        color: Colors.white.withValues(alpha: .84),
         borderRadius: BorderRadius.circular(99),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_circle_outline_rounded, size: 13, color: AppColors.primaryDark),
+          Icon(icon, size: 12, color: AppColors.primaryDark),
           const SizedBox(width: 5),
-          Text(text, style: const TextStyle(color: AppColors.textSecondary, fontSize: 8.9, fontWeight: FontWeight.w700)),
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 8.3,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
@@ -1032,6 +2326,8 @@ class _ModeCard extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.disabled = false,
+    this.badge,
+    this.rose = false,
   });
 
   final bool selected;
@@ -1040,30 +2336,131 @@ class _ModeCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final String? badge;
+  final bool rose;
 
   @override
   Widget build(BuildContext context) {
+    final accent = rose ? AppColors.pink : AppColors.primary;
+    final accentDark = rose ? AppColors.pinkDeep : AppColors.primaryDark;
+
     return Opacity(
-      opacity: disabled ? .48 : 1,
-      child: VoxCard(
-        onTap: disabled ? null : onTap,
-        tint: selected ? AppColors.primarySoft.withValues(alpha: .78) : null,
-        child: Row(
-          children: [
-            SoftIconBadge(icon: icon, size: 39),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 11.2, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 3),
-                  Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 9.3, height: 1.34)),
-                ],
+      opacity: disabled ? .46 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled ? null : onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 210),
+            padding: const EdgeInsets.fromLTRB(12, 11, 11, 11),
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        accent.withValues(alpha: .14),
+                        Colors.white.withValues(alpha: .94),
+                      ],
+                    )
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: .94),
+                        AppColors.surface.withValues(alpha: .86),
+                      ],
+                    ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected ? accent.withValues(alpha: .62) : AppColors.border,
+                width: selected ? 1.35 : 1,
               ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: accent.withValues(alpha: .10),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ]
+                  : null,
             ),
-            Icon(selected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded, color: selected ? AppColors.primary : AppColors.textMuted, size: selected ? 20 : 14),
-          ],
+            child: Row(
+              children: [
+                Container(
+                  width: 43,
+                  height: 43,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? accent.withValues(alpha: .14)
+                        : AppColors.primarySoft.withValues(alpha: .70),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: accentDark, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (badge != null) ...[
+                        Text(
+                          badge!,
+                          style: TextStyle(
+                            color: accentDark,
+                            fontSize: 6.8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .65,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                      ],
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 10.8,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 8.6,
+                          height: 1.34,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 30,
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: selected ? accent : Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? accent : AppColors.borderStrong,
+                    ),
+                  ),
+                  child: Icon(
+                    selected ? Icons.check_rounded : Icons.arrow_forward_rounded,
+                    color: selected ? Colors.white : AppColors.textMuted,
+                    size: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1090,60 +2487,562 @@ class _DomainCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Opacity(
-      opacity: disabled ? .44 : 1,
-      child: VoxCard(
-        onTap: disabled ? null : onTap,
-        padding: const EdgeInsets.all(13),
-        tint: selected ? AppColors.primarySoft.withValues(alpha: .74) : null,
-        child: Row(
-          children: [
-            SoftIconBadge(icon: icon, size: 39),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 11.2, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 3),
-                  Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textSecondary, fontSize: 9.1, height: 1.34)),
-                ],
+      opacity: disabled ? .40 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled ? null : onTap,
+          borderRadius: BorderRadius.circular(17),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 210),
+            curve: Curves.easeOutCubic,
+            constraints: const BoxConstraints(minHeight: 108),
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            decoration: BoxDecoration(
+              gradient: selected
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primarySoft,
+                        Colors.white.withValues(alpha: .94),
+                        AppColors.surfaceRose.withValues(alpha: .52),
+                      ],
+                    )
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: .95),
+                        AppColors.surfaceMuted.withValues(alpha: .34),
+                      ],
+                    ),
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.border,
+                width: selected ? 1.4 : 1,
               ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primaryDeep.withValues(alpha: .085),
+                        blurRadius: 18,
+                        offset: const Offset(0, 7),
+                      ),
+                    ]
+                  : null,
             ),
-            Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: selected ? AppColors.primary : Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: selected ? AppColors.primary : AppColors.border),
-              ),
-              child: selected ? const Icon(Icons.check_rounded, color: Colors.white, size: 15) : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .88),
+                        borderRadius: BorderRadius.circular(11),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Icon(icon, color: AppColors.primaryDark, size: 16),
+                    ),
+                    const Spacer(),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.primary : Colors.white,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : AppColors.borderStrong,
+                        ),
+                      ),
+                      child: Icon(
+                        selected ? Icons.check_rounded : Icons.add_rounded,
+                        color: selected ? Colors.white : AppColors.textMuted,
+                        size: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 9.8,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 7.6,
+                    height: 1.28,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
+class _LanguageSelector extends StatelessWidget {
+  const _LanguageSelector({
+    required this.value,
+    required this.label,
+    required this.onTap,
+  });
+
+  final String value;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(11, 9, 10, 9),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: .94),
+                AppColors.primarySoft.withValues(alpha: .42),
+                AppColors.surfaceRose.withValues(alpha: .30),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: AppColors.borderStrong.withValues(alpha: .80),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .88),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: .12),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.translate_rounded,
+                  size: 17,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'DISCOVERY LANGUAGE',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 6.8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .70,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _languageHint(value),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 7.7,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft.withValues(alpha: .68),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 19,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguagePickerSheet extends StatelessWidget {
+  const _LanguagePickerSheet({
+    required this.selectedValue,
+    required this.options,
+  });
+
+  final String selectedValue;
+  final List<({String value, String label})> options;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(30),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(15, 10, 15, 17),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.silver.withValues(alpha: .78),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 15),
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFDCF1ED),
+                          Color(0xFFFFF4F6),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.language_rounded,
+                      size: 20,
+                      color: AppColors.primaryDark,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Choose discovery language',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15.6,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -.24,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Use the language that best matches the community evidence you want to prioritize.',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 8.3,
+                            height: 1.32,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Material(
+                    color: AppColors.primarySoft.withValues(alpha: .56),
+                    borderRadius: BorderRadius.circular(11),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      borderRadius: BorderRadius.circular(11),
+                      child: const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 17,
+                          color: AppColors.primaryDark,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 13),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * .58,
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: options
+                        .map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: _LanguageOptionTile(
+                              value: item.value,
+                              label: item.label,
+                              selected: item.value == selectedValue,
+                              onTap: () =>
+                                  Navigator.of(context).pop(item.value),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguageOptionTile extends StatelessWidget {
+  const _LanguageOptionTile({
+    required this.value,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String value;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final code = value == 'ANY' ? 'ALL' : value;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(17),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primarySoft.withValues(alpha: .76)
+                : Colors.white.withValues(alpha: .86),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(
+              color: selected
+                  ? AppColors.primary.withValues(alpha: .42)
+                  : AppColors.border.withValues(alpha: .92),
+              width: selected ? 1.2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: .88)
+                      : AppColors.surfaceMuted.withValues(alpha: .70),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  code,
+                  style: TextStyle(
+                    color: selected
+                        ? AppColors.primaryDeep
+                        : AppColors.textSecondary,
+                    fontSize: 7.6,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .35,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: selected
+                            ? AppColors.primaryDeep
+                            : AppColors.textPrimary,
+                        fontSize: 10.6,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _languageHint(value),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 7.6,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 27,
+                height: 27,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.primary
+                        : AppColors.silver.withValues(alpha: .72),
+                  ),
+                ),
+                child: Icon(
+                  selected ? Icons.check_rounded : Icons.arrow_forward_rounded,
+                  size: 14,
+                  color: selected ? Colors.white : AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _languageHint(String value) {
+  return switch (value) {
+    'EN' => 'Prioritize English-language community evidence',
+    'AR' => 'Prioritize Arabic-language community evidence',
+    'FR' => 'Prioritize French-language community evidence',
+    'ES' => 'Prioritize Spanish-language community evidence',
+    'DE' => 'Prioritize German-language community evidence',
+    'TR' => 'Prioritize Turkish-language community evidence',
+    _ => 'Let Voxidence use the strongest language match automatically',
+  };
+}
+
 class _Field extends StatelessWidget {
-  const _Field({required this.controller, required this.label, required this.hint, required this.icon});
+  const _Field({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    this.requiredField = false,
+  });
+
   final TextEditingController controller;
   final String label;
   final String hint;
   final IconData icon;
+  final bool requiredField;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.primaryDeep, fontSize: 10.2, fontWeight: FontWeight.w900)),
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.primaryDeep,
+                fontSize: 9.2,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (requiredField) ...[
+              const SizedBox(width: 4),
+              const Text(
+                'REQUIRED',
+                style: TextStyle(
+                  color: AppColors.pinkDeep,
+                  fontSize: 6.4,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .45,
+                ),
+              ),
+            ],
+          ],
+        ),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
-          decoration: InputDecoration(hintText: hint, prefixIcon: Icon(icon, size: 18)),
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 10.8,
+            fontWeight: FontWeight.w700,
+          ),
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: Icon(icon, size: 18),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: .88),
+          ),
         ),
       ],
     );
@@ -1151,7 +3050,12 @@ class _Field extends StatelessWidget {
 }
 
 class _ReviewFact extends StatelessWidget {
-  const _ReviewFact({required this.label, required this.value, required this.icon});
+  const _ReviewFact({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
   final String label;
   final String value;
   final IconData icon;
@@ -1161,23 +3065,48 @@ class _ReviewFact extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
-        padding: const EdgeInsets.all(11),
+        padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .66),
+          color: Colors.white.withValues(alpha: .72),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 17, color: AppColors.primaryDark),
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft.withValues(alpha: .74),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, size: 16, color: AppColors.primaryDark),
+            ),
             const SizedBox(width: 9),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label.toUpperCase(), style: const TextStyle(color: AppColors.textMuted, fontSize: 8.2, fontWeight: FontWeight.w900, letterSpacing: .5)),
+                  Text(
+                    label.toUpperCase(),
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 7.2,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .55,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 9.8,
+                      height: 1.3,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
             ),

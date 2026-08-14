@@ -197,7 +197,26 @@ export default function NormalDashboardPage() {
       <motion.section className="normal-dashboard-latest" {...reveal}>
         <div className="normal-section-heading"><div><span className="normal-eyebrow">Continue building</span><h2>Your latest workspace</h2></div><button className="normal-text-button" type="button" onClick={() => navigate('/normal/ideas')}>View all ideas <ArrowRight size={17} /></button></div>
         <LatestIdeaCard idea={summary?.latestIdea ?? null} />
-        {isPremium && summary?.latestIdea?.isUnlocked ? <button className="normal-text-button" type="button" onClick={() => navigate(`/normal/ideas/${summary.latestIdea.id}/chat`)}><Bot size={17} />Open AI Chat for this idea</button> : null}
+        {isPremium && summary?.latestIdea?.isUnlocked ? (
+          <button
+            className="normal-text-button"
+            type="button"
+            onClick={() =>
+              navigate(`/normal/ideas/${summary.latestIdea.id}/chat`, {
+                state: {
+                  chatOrigin: 'owned-idea',
+                  returnTo: '/normal/dashboard',
+                  returnLabel: 'Home',
+                  ideaTitle: summary.latestIdea.title,
+                  ideaSeed: summary.latestIdea,
+                },
+              })
+            }
+          >
+            <Bot size={17} />
+            Open AI Chat for this idea
+          </button>
+        ) : null}
       </motion.section>
 
       <motion.div {...reveal}>

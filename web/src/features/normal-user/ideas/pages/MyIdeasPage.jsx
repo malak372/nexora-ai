@@ -32,7 +32,10 @@ import {
 } from '../api/userIdeasApi';
 import IdeaLibraryCard from '../components/IdeaLibraryCard';
 import { warmIdeaWorkspace } from '../../idea-workspace/api/ideaWorkspaceApi';
-import { preloadDiscoveryDetail } from '../../../../routes/routePreloaders';
+import {
+  preloadDiscoveryDetail,
+  preloadIdeaWorkspace,
+} from '../../../../routes/routePreloaders';
 import '../styles/ideas.css';
 
 const PAGE_SIZE = 9;
@@ -700,7 +703,10 @@ export default function MyIdeasPage() {
     if (ACTIVE_RUN_STATUSES.has(runStatus)) return;
 
     const ideaId = idea?.publication?.ideaId ?? idea?.id;
-    if (ideaId) warmIdeaWorkspace(ideaId);
+    if (ideaId) {
+      warmIdeaWorkspace(ideaId);
+      preloadIdeaWorkspace(ideaId);
+    }
   }
 
   /**
@@ -721,6 +727,12 @@ export default function MyIdeasPage() {
           idea?.hasAdvancedAccess
             ? `/normal/accepted/${publicationId}/workspace`
             : `/normal/discover/${publicationId}`,
+          {
+            state: {
+              publicationSeed: idea?.publication ?? null,
+              acceptanceSeed: idea?.acceptance ?? null,
+            },
+          },
         );
       }
 
@@ -745,6 +757,10 @@ export default function MyIdeasPage() {
             state: {
               returnTo: '/normal/ideas',
               returnLabel: 'My ideas',
+              ideaSeed: {
+                ...idea,
+                id: ideaId,
+              },
             },
           },
         );
@@ -777,6 +793,7 @@ export default function MyIdeasPage() {
         state: {
           returnTo: '/normal/ideas',
           returnLabel: 'My ideas',
+          ideaSeed: idea,
         },
       },
     );

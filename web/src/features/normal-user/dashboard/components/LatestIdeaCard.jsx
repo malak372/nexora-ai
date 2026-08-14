@@ -96,7 +96,16 @@ export default function LatestIdeaCard({ idea }) {
             className="normal-work-card__open"
             onMouseEnter={() => warmIdeaWorkspace(idea.id)}
             onFocus={() => warmIdeaWorkspace(idea.id)}
-            onClick={() => navigate(`/normal/ideas/${idea.id}`)}
+            onPointerDown={() => warmIdeaWorkspace(idea.id)}
+            onClick={() =>
+              navigate(`/normal/ideas/${idea.id}`, {
+                state: {
+                  returnTo: '/normal/dashboard',
+                  returnLabel: 'Home',
+                  ideaSeed: idea,
+                },
+              })
+            }
             whileHover={{ x: 2 }}
             whileTap={{ scale: 0.98 }}
           >

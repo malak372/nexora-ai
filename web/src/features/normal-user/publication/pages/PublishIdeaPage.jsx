@@ -19,7 +19,7 @@ import {
   Vote,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import {
@@ -60,24 +60,96 @@ function extractGeneratedAbstract(result) {
   return result?.description ?? result?.publicAbstract ?? result?.abstract ?? result?.text ?? '';
 }
 
+
+function buildPublicationForm(value) {
+  const publication = value?.publication ?? {};
+  const selectedUserTypes = (publication.audiences ?? [])
+    .filter((audience) => audience.audienceType === 'user-type')
+    .map((audience) => audience.audienceValue);
+
+  return {
+    visibility: publication.visibility ?? 'PUBLIC',
+    publicTitle: publication.publicTitle ?? value?.title ?? '',
+    publicAbstract:
+      publication.publicAbstract ??
+      value?.fullAbstract ??
+      value?.partialAbstract ??
+      value?.limitedAbstract ??
+      '',
+    publicProblem:
+      publication.publicProblem ??
+      value?.problemStatement ??
+      '',
+    publicObjectives:
+      publication.publicObjectives ??
+      toEditableText(value?.objectives),
+    publicTargetUsers:
+      publication.publicTargetUsers ??
+      toEditableText(value?.targetUsers, ', '),
+    allowRatings: publication.allowRatings ?? true,
+    allowFeedback: publication.allowFeedback ?? true,
+    allowVoting: publication.allowVoting ?? true,
+    allowAdoption: publication.allowAdoption ?? true,
+    selectedUserTypes,
+  };
+}
+
+function buildIdeaSeed(ideaId, publicationSeed) {
+  if (!publicationSeed) return null;
+
+  return {
+    id: publicationSeed.ideaId ?? ideaId,
+    title: publicationSeed.publicTitle ?? 'Published idea',
+    fullAbstract: publicationSeed.publicAbstract ?? '',
+    problemStatement: publicationSeed.publicProblem ?? '',
+    objectives: publicationSeed.publicObjectives ?? '',
+    targetUsers: publicationSeed.publicTargetUsers ?? '',
+    publication: publicationSeed,
+  };
+}
+
 export default function PublishIdeaPage() {
   const shouldReduceMotion = useReducedMotion();
   const { ideaId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const returnTo =
-    location.state?.returnTo === '/normal/published'
-      ? '/normal/published'
-      : '/normal/ideas';
-  const returnLabel =
-    returnTo === '/normal/published' ? 'Published' : 'My ideas';
+  const openedFromPublished =
+    location.state?.returnTo === '/normal/published' ||
+    location.state?.publicationOrigin === 'published';
+
+  const returnTo = openedFromPublished
+    ? '/normal/published'
+    : `/normal/ideas/${ideaId}`;
+
+  const returnLabel = openedFromPublished
+    ? 'Published'
+    : 'Idea workspace';
 
   function handleReturn() {
-    navigate(returnTo);
+    navigate(returnTo, {
+      state: openedFromPublished
+        ? undefined
+        : {
+            returnTo: location.state?.workspaceReturnTo || '/normal/ideas',
+            returnLabel: location.state?.workspaceReturnLabel || 'My ideas',
+            ideaSeed: location.state?.ideaSeed || undefined,
+          },
+    });
   }
-  const [idea, setIdea] = useState(null);
-  const [form, setForm] = useState(INITIAL_FORM);
+
+  const publicationSeed = location.state?.publicationSeed ?? null;
+  const routeIdeaSeed = location.state?.ideaSeed ?? null;
+  const initialIdea = useMemo(
+    () => routeIdeaSeed ?? buildIdeaSeed(ideaId, publicationSeed),
+    [ideaId, publicationSeed, routeIdeaSeed],
+  );
+  const hasEditedRef = useRef(false);
+
+  const [idea, setIdea] = useState(() => initialIdea);
+  const [form, setForm] = useState(() =>
+    initialIdea ? buildPublicationForm(initialIdea) : INITIAL_FORM,
+  );
   const [busyAction, setBusyAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -92,39 +164,39 @@ export default function PublishIdeaPage() {
         const value = await getIdeaForPublication(ideaId);
         if (!active) return;
 
-        const publication = value?.publication ?? {};
-        const selectedUserTypes = (publication.audiences ?? [])
-          .filter((audience) => audience.audienceType === 'user-type')
-          .map((audience) => audience.audienceValue);
-
         setIdea(value);
-        setForm({
-          visibility: publication.visibility ?? 'PUBLIC',
-          publicTitle: publication.publicTitle ?? value?.title ?? '',
-          publicAbstract: publication.publicAbstract ?? value?.fullAbstract ?? value?.partialAbstract ?? value?.limitedAbstract ?? '',
-          publicProblem: publication.publicProblem ?? value?.problemStatement ?? '',
-          publicObjectives: publication.publicObjectives ?? toEditableText(value?.objectives),
-          publicTargetUsers: publication.publicTargetUsers ?? toEditableText(value?.targetUsers, ', '),
-          allowRatings: publication.allowRatings ?? true,
-          allowFeedback: publication.allowFeedback ?? true,
-          allowVoting: publication.allowVoting ?? true,
-          allowAdoption: publication.allowAdoption ?? true,
-          selectedUserTypes,
-        });
+
+        if (!hasEditedRef.current) {
+          setForm(buildPublicationForm(value));
+        }
       } catch (requestError) {
-        if (active) setError(requestError.message);
+        if (!active) return;
+
+        if (initialIdea) {
+          setNotice(
+            'Showing your saved publication immediately. Fresh workspace details will be loaded the next time they are available.',
+          );
+          return;
+        }
+
+        setError(requestError.message);
       }
     }
 
     void loadIdea();
-    return () => { active = false; };
-  }, [ideaId]);
+
+    return () => {
+      active = false;
+    };
+  }, [ideaId, initialIdea]);
 
   function updateField(key, value) {
+    hasEditedRef.current = true;
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   function toggleUserType(value) {
+    hasEditedRef.current = true;
     setForm((current) => ({
       ...current,
       selectedUserTypes: current.selectedUserTypes.includes(value)
@@ -214,8 +286,8 @@ export default function PublishIdeaPage() {
           : 'Your idea is now published.',
       );
       window.setTimeout(
-        () => navigate(isAlreadyPublished ? returnTo : '/normal/published'),
-        650,
+        () => handleReturn(),
+        450,
       );
     } catch (requestError) {
       setError(requestError.message);

@@ -19,6 +19,8 @@ import {
 const PRICING_TTL_MS = 10 * 60 * 1000;
 const unwrap = (response) => extractApiData(response);
 
+const reconcileRequests = new Map();
+
 export async function getPaymentPricing(creditsQuantity = 1, { force = false } = {}) {
   const normalizedQuantity = Math.max(1, Number(creditsQuantity) || 1);
   const cacheKey = createRequestCacheKey('payment-pricing', {
@@ -57,7 +59,7 @@ export async function getPaymentState(id, { force = false } = {}) {
       cacheKey,
       async () => unwrap(
         await normalUserApi.get(`/users/payments/${id}/status`, {
-          timeout: 4000,
+          timeout: 2500,
         }),
       ),
       {
@@ -76,25 +78,42 @@ export async function getPaymentState(id, { force = false } = {}) {
 }
 
 export async function reconcilePayment(id) {
-  try {
-    const result = unwrap(
-      await normalUserApi.post(
-        `/users/payments/${id}/reconcile`,
-        undefined,
-        { timeout: 5000 },
-      ),
-    );
-
-    // A successful reconciliation may change account status, credit balance,
-    // activation-fee applicability and therefore pricing.
-    invalidatePaymentPricingCache();
-    return result;
-  } catch (error) {
-    throw new Error(
-      getApiErrorMessage(
-        error,
-        'Payment confirmation could not be verified.',
-      ),
-    );
+  if (!id) {
+    throw new Error('A payment identifier is required.');
   }
+
+  const existingRequest = reconcileRequests.get(id);
+
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const request = (async () => {
+    try {
+      const result = unwrap(
+        await normalUserApi.post(
+          `/users/payments/${id}/reconcile`,
+          undefined,
+          { timeout: 3000 },
+        ),
+      );
+
+      // A successful reconciliation may change account status, credit balance,
+      // activation-fee applicability and therefore pricing.
+      invalidatePaymentPricingCache();
+      return result;
+    } catch (error) {
+      throw new Error(
+        getApiErrorMessage(
+          error,
+          'Payment confirmation could not be verified.',
+        ),
+      );
+    } finally {
+      reconcileRequests.delete(id);
+    }
+  })();
+
+  reconcileRequests.set(id, request);
+  return request;
 }

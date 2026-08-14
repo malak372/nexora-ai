@@ -305,6 +305,15 @@ export class DataCollectionService {
     let fastPersistedPosts = 0;
     let fastPersistedComments = 0;
 
+    /*
+     * FAST_GENERATION source-status rows are operational/audit metadata.
+     * Collected posts/comments are already durably persisted before a source is
+     * considered successful. Keep these per-source status writes out of the
+     * user-facing critical path and flush them only after the parent collection
+     * job has been completed.
+     */
+    const deferredFastSourceCheckpoints: Array<() => Promise<unknown>> = [];
+
     try {
       const sourceResults = await Promise.all(
         dataSources.map(async (dataSource) => {
@@ -464,12 +473,25 @@ export class DataCollectionService {
               );
             }
 
-            await this.collectionJobService.markSourceCompleted(
-              jobForSource.id,
-              dataSource.id,
-              totals,
-              collectionMode === 'FAST_GENERATION' ? sourceStartedAt : undefined,
-            );
+            if (collectionMode === 'FAST_GENERATION') {
+              const completedJobId = jobForSource.id;
+              const completedDataSourceId = dataSource.id;
+              const completedTotals = { ...totals };
+              deferredFastSourceCheckpoints.push(() =>
+                this.collectionJobService.markSourceCompleted(
+                  completedJobId,
+                  completedDataSourceId,
+                  completedTotals,
+                  sourceStartedAt,
+                ),
+              );
+            } else {
+              await this.collectionJobService.markSourceCompleted(
+                jobForSource.id,
+                dataSource.id,
+                totals,
+              );
+            }
 
             return 'COMPLETED' as const;
           } catch (error: unknown) {
@@ -589,6 +611,30 @@ export class DataCollectionService {
               `contains ${authoritativeTotals.totalPosts} post(s) and ` +
               `${authoritativeTotals.totalComments} comment(s), but no fast NLP inputs were built.`,
           );
+        }
+
+        /*
+         * Start operational source checkpoints on the next event-loop turn so
+         * the collection resolver can immediately continue into NLP. Failures
+         * are logged but cannot invalidate already persisted evidence or the
+         * completed parent job.
+         */
+        if (deferredFastSourceCheckpoints.length > 0) {
+          setImmediate(() => {
+            void Promise.allSettled(
+              deferredFastSourceCheckpoints.map((checkpoint) => checkpoint()),
+            ).then((results) => {
+              const rejected = results.filter(
+                (result) => result.status === 'rejected',
+              );
+
+              if (rejected.length > 0) {
+                this.logger.warn(
+                  `FAST_GENERATION deferred source checkpoint failures for job ${job.id}: ${rejected.length}/${results.length}.`,
+                );
+              }
+            });
+          });
         }
       }
 

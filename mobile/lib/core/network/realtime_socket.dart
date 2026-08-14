@@ -1,7 +1,10 @@
 // Shared authenticated Socket.IO factory for Voxidence realtime features.
+// Reuses warm native connections so opening Premium AI Chat does not pay a
+// fresh WebSocket handshake every time.
 //
-// @author  Malak
+// @author Eman
 
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../storage/session_store.dart';
@@ -10,6 +13,9 @@ import 'api_config.dart';
 
 class RealtimeSocket {
   const RealtimeSocket._();
+
+  static final Map<String, io.Socket> _pool = <String, io.Socket>{};
+  static final Map<String, String> _poolTokens = <String, String>{};
 
   static Future<io.Socket> connect(String namespace) async {
     final token = await SessionStore.instance.getAccessToken();
@@ -21,19 +27,67 @@ class RealtimeSocket {
         ? namespace
         : '/$namespace';
 
+    final existing = _pool[normalizedNamespace];
+    final existingToken = _poolTokens[normalizedNamespace];
+
+    if (existing != null && existingToken == token) {
+      return existing;
+    }
+
+    if (existing != null) {
+      existing.dispose();
+      _pool.remove(normalizedNamespace);
+      _poolTokens.remove(normalizedNamespace);
+    }
+
     final socket = io.io(
       '${ApiConfig.socketBaseUrl}$normalizedNamespace',
       <String, dynamic>{
-        'transports': <String>['websocket'],
+        'transports': kIsWeb
+            ? <String>['polling', 'websocket']
+            : <String>['websocket'],
         'autoConnect': false,
+        'forceNew': false,
+        'multiplex': true,
         'reconnection': true,
-        'reconnectionAttempts': 6,
-        'reconnectionDelay': 800,
-        'timeout': 10000,
+        'reconnectionAttempts': 999999,
+        'reconnectionDelay': 180,
+        'reconnectionDelayMax': 1200,
+        'timeout': 5000,
         'auth': <String, dynamic>{'token': token},
       },
     );
 
+    _pool[normalizedNamespace] = socket;
+    _poolTokens[normalizedNamespace] = token;
+
     return socket;
+  }
+
+  static Future<void> warm(String namespace) async {
+    try {
+      final socket = await connect(namespace);
+      if (!socket.connected) {
+        socket.connect();
+      }
+    } catch (_) {
+      // Warm-up is best effort. The page retries normally when opened.
+    }
+  }
+
+  static void disposeNamespace(String namespace) {
+    final normalizedNamespace = namespace.startsWith('/')
+        ? namespace
+        : '/$namespace';
+    _pool.remove(normalizedNamespace)?.dispose();
+    _poolTokens.remove(normalizedNamespace);
+  }
+
+  static void disposeAll() {
+    for (final socket in _pool.values) {
+      socket.dispose();
+    }
+    _pool.clear();
+    _poolTokens.clear();
   }
 }

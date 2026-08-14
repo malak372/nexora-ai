@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'core/navigation/app_navigator.dart';
@@ -23,6 +24,7 @@ import 'features/guest_idea/pages/guest_generate_idea_page.dart';
 
 import 'features/home/pages/home_page.dart';
 import 'features/home/pages/public_publication_details_page.dart';
+import 'features/splash/pages/app_launch_experience.dart';
 
 import 'features/user/pages/accepted_idea_workspace_page.dart';
 import 'features/user/pages/billing_page.dart';
@@ -41,6 +43,27 @@ import 'features/user/pages/publication_page.dart';
 import 'features/user/pages/publish_idea_page.dart';
 import 'features/user/pages/published_page.dart';
 import 'features/user/pages/user_shell.dart';
+import 'features/user/widgets/workspace_navigation.dart';
+
+Future<void> _appEnvironmentReady = Future<void>.value();
+bool _environmentLoadStarted = false;
+
+Future<void> _loadAppEnvironment() async {
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // Development builds remain usable when .env is not bundled.
+    // ApiConfig provides platform-safe development defaults.
+  }
+}
+
+Future<void> _ensureAppEnvironmentLoaded() {
+  if (!_environmentLoadStarted) {
+    _environmentLoadStarted = true;
+    _appEnvironmentReady = _loadAppEnvironment();
+  }
+  return _appEnvironmentReady;
+}
 
 /// Application entry point.
 ///
@@ -51,15 +74,12 @@ import 'features/user/pages/user_shell.dart';
 /// already has an authenticated mobile session.
 ///
 /// @author Eman
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (_) {
-    // Keep development builds usable when .env is not bundled.
-    // ApiConfig provides safe development defaults.
-  }
+  // Do not touch plugins, secure storage, .env, deep links, or platform
+  // channels before runApp(). On slower Android devices those calls can delay
+  // Flutter's very first frame and leave the Android starting window visible.
 
   runApp(const VoxidenceApp());
 }
@@ -98,26 +118,57 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
   void initState() {
     super.initState();
 
-    _configureDeepLinks();
+    // Let the startup loader paint first. Only after Flutter has produced the
+    // first frame do we perform platform-channel work such as app_links and
+    // system UI updates.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Color(0xFFEDF7F3),
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: Color(0xFFEDF7F3),
+          systemNavigationBarIconBrightness: Brightness.dark,
+          systemNavigationBarDividerColor: Color(0xFFEDF7F3),
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+      );
+
+      unawaited(_ensureAppEnvironmentLoaded());
+      unawaited(_configureDeepLinks());
+    });
   }
 
   Future<void> _configureDeepLinks() async {
-    try {
-      final initialUri = await _appLinks.getInitialLink();
-
-      if (initialUri != null) {
-        _handleIncomingLink(initialUri);
-      }
-    } catch (_) {
-      // The app can continue normally when no initial link exists.
-    }
-
+    /*
+     * Listen first so a link received while the app is finishing its cold
+     * startup cannot fall into the gap between getInitialLink() and stream
+     * subscription.
+     */
     _linkSubscription = _appLinks.uriLinkStream.listen(
       _handleIncomingLink,
       onError: (_) {
         // Invalid external links must not interrupt app navigation.
       },
     );
+
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+
+      if (initialUri != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _handleIncomingLink(initialUri);
+        });
+
+      }
+    } catch (_) {
+      // The app can continue normally when no initial link exists.
+    }
+
   }
 
   @override
@@ -127,29 +178,143 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
     super.dispose();
   }
 
+  /// Handles external links received by the application.
+  ///
+  /// Password-reset links may arrive as:
+  ///
+  /// voxidence://reset-password?token=...
+  ///
+  /// or using a path containing `/reset-password`.
   void _handleIncomingLink(Uri uri) {
+    final isPaymentSuccess =
+        uri.path == '/mobile/payments/success' ||
+        (uri.host == 'payment' && uri.path == '/success') ||
+        uri.host == 'payment-success';
+
+    if (isPaymentSuccess) {
+      final paymentId = uri.queryParameters['paymentId']?.trim() ?? '';
+      if (paymentId.isEmpty) return;
+
+      final target = Uri(
+        path: '/normal/payments/success',
+        queryParameters: <String, String>{
+          'paymentId': paymentId,
+          if ((uri.queryParameters['ideaId']?.trim() ?? '').isNotEmpty)
+            'ideaId': uri.queryParameters['ideaId']!.trim(),
+          if ((uri.queryParameters['publicationId']?.trim() ?? '').isNotEmpty)
+            'publicationId': uri.queryParameters['publicationId']!.trim(),
+        },
+      );
+
+
+      _runWhenNavigatorReady(
+        () => AppNavigator.navigatorKey.currentState!.pushNamed(
+          target.toString(),
+        ),
+      );
+      return;
+    }
+
     final isResetLink =
         uri.path == '/reset-password' || uri.host == 'reset-password';
 
-    if (!isResetLink) {
-      return;
-    }
+
+    if (!isResetLink) return;
 
     final token = uri.queryParameters['token']?.trim() ?? '';
-
-    if (token.isEmpty) {
-      return;
-    }
+    if (token.isEmpty) return;
 
     final encodedToken = Uri.encodeQueryComponent(token);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppNavigator.navigatorKey.currentState?.pushNamedAndRemoveUntil(
+    _runWhenNavigatorReady(
+      () => AppNavigator.navigatorKey.currentState!.pushNamedAndRemoveUntil(
         '/reset-password?token=$encodedToken',
         (_) => false,
+      ),
+    );
+  }
+
+  /// Runs navigation after MaterialApp has attached the global navigator.
+  ///
+  /// Cold-start custom-scheme links may arrive before the first frame. A small
+  /// bounded retry avoids silently losing password-reset/payment links.
+  void _runWhenNavigatorReady(
+    VoidCallback navigation, {
+    int attempt = 0,
+    bool environmentReady = false,
+  }) {
+    if (!mounted) return;
+
+    if (!environmentReady) {
+      unawaited(
+        _ensureAppEnvironmentLoaded().whenComplete(() {
+          if (!mounted) return;
+          _runWhenNavigatorReady(
+            navigation,
+            attempt: attempt,
+            environmentReady: true,
+          );
+        }),
+      );
+      return;
+    }
+
+    if (AppNavigator.navigatorKey.currentState != null) {
+      navigation();
+      return;
+    }
+
+    if (attempt >= 100) return;
+
+    Future<void>.delayed(const Duration(milliseconds: 50), () {
+      if (!mounted) return;
+      _runWhenNavigatorReady(
+        navigation,
+        attempt: attempt + 1,
+        environmentReady: true,
       );
     });
   }
+
+  /// Resolves the persistent mobile workspace tab for a standalone route.
+  WorkspaceSection? _workspaceSectionFor(Uri uri) {
+    final segments = uri.pathSegments;
+    if (segments.length < 2 || segments.first != 'normal') return null;
+
+    if (segments[1] == 'payments') {
+      final hasIdeaContext =
+          (uri.queryParameters['ideaId']?.trim() ?? '').isNotEmpty;
+      final hasPublicationContext =
+          (uri.queryParameters['publicationId']?.trim() ?? '').isNotEmpty;
+
+      return hasIdeaContext || hasPublicationContext
+          ? WorkspaceSection.ideas
+          : WorkspaceSection.profile;
+    }
+
+    return switch (segments[1]) {
+      'discover' => WorkspaceSection.discover,
+      'generation' => WorkspaceSection.generate,
+      'ideas' || 'accepted' || 'published' => WorkspaceSection.ideas,
+      'profile' ||
+      'settings' ||
+      'preferences' ||
+      'notifications' ||
+      'billing' ||
+      'credits' ||
+      'compliance' ||
+      'support' => WorkspaceSection.profile,
+      _ => null,
+    };
+  }
+
+  bool _shouldWrapWorkspaceRoute(Uri uri, Widget page) {
+    return uri.pathSegments.isNotEmpty &&
+        uri.pathSegments.first == 'normal' &&
+        page is! UserShell;
+  }
+
+  /// Generates dynamic routes containing query parameters and resource IDs.
 
   Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
     final rawName = settings.name;
@@ -168,28 +333,27 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
     Widget? page;
 
-    // ------------------------------------------------------------
     // Password reset
     // /reset-password?token=...
-    // ------------------------------------------------------------
+
 
     if (uri.path == '/reset-password') {
       page = ResetPasswordPage(token: uri.queryParameters['token'] ?? '');
     }
 
-    // ------------------------------------------------------------
+    
     // Email verification
     // /verify-email?email=...
-    // ------------------------------------------------------------
+    
 
     if (page == null && segments.length == 1 && segments[0] == 'verify-email') {
       page = VerifyEmailPage(email: uri.queryParameters['email'] ?? '');
     }
 
-    // ------------------------------------------------------------
+    
     // Public publication
     // /publications/:publicationId
-    // ------------------------------------------------------------
+    
 
     if (page == null && segments.length == 2 && segments[0] == 'publications') {
       final publicationId = segments[1].trim();
@@ -199,9 +363,9 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       }
     }
 
-    // ------------------------------------------------------------
+    
     // Normal-user static routes with optional query parameters.
-    // ------------------------------------------------------------
+    
 
     if (page == null && segments.length == 2 && segments[0] == 'normal') {
       switch (segments[1]) {
@@ -211,6 +375,11 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
         case 'discover':
           page = const UserShell(initialIndex: 1);
+          break;
+
+        case 'profile':
+          page = const UserShell(initialIndex: 4);
+
           break;
 
         case 'generate':
@@ -268,10 +437,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       }
     }
 
-    // ------------------------------------------------------------
+    
     // Profile settings
     // /normal/settings/profile
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 3 &&
@@ -281,10 +450,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = const ProfileSettingsPage();
     }
 
-    // ------------------------------------------------------------
+    
     // Generation progress
     // /normal/generation/:runId
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 3 &&
@@ -293,10 +462,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = GenerationProgressPage(runId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Idea workspace
     // /normal/ideas/:ideaId
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 3 &&
@@ -305,10 +474,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = IdeaWorkspacePage(ideaId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Business model
     // /normal/ideas/:ideaId/business-model
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 4 &&
@@ -318,10 +487,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = BusinessModelPage(ideaId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Premium AI chat
     // /normal/ideas/:ideaId/chat
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 4 &&
@@ -331,10 +500,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = PremiumChatPage(ideaId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Direct idea unlock
     // /normal/ideas/:ideaId/unlock
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 4 &&
@@ -344,23 +513,34 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = DirectUnlockPage(ideaId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Publish idea
     // /normal/ideas/:ideaId/publish
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 4 &&
         segments[0] == 'normal' &&
         segments[1] == 'ideas' &&
         segments[3] == 'publish') {
-      page = PublishIdeaPage(ideaId: segments[2]);
+      final routeArgs = settings.arguments is Map
+          ? Map<String, dynamic>.from(settings.arguments as Map)
+          : const <String, dynamic>{};
+      final returnTitle = routeArgs['returnTitle']?.toString().trim();
+
+      page = PublishIdeaPage(
+        ideaId: segments[2],
+        returnTitle: returnTitle == null || returnTitle.isEmpty
+            ? 'My ideas'
+            : returnTitle,
+      );
+
     }
 
-    // ------------------------------------------------------------
+    
     // Discover publication
     // /normal/discover/:publicationId
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 3 &&
@@ -369,10 +549,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = PublicationPage(publicationId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Accepted publication workspace
     // /normal/accepted/:publicationId/workspace
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 4 &&
@@ -382,10 +562,10 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
       page = AcceptedIdeaWorkspacePage(publicationId: segments[2]);
     }
 
-    // ------------------------------------------------------------
+    
     // Payment result
     // /normal/payments/success
-    // ------------------------------------------------------------
+    
 
     if (page == null &&
         segments.length == 3 &&
@@ -401,6 +581,13 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
     if (page == null) {
       return null;
+    }
+
+    if (_shouldWrapWorkspaceRoute(uri, page)) {
+      page = WorkspaceRouteFrame(
+        selected: _workspaceSectionFor(uri),
+        child: page,
+      );
     }
 
     return MaterialPageRoute<dynamic>(
@@ -458,33 +645,66 @@ class _VoxidenceAppState extends State<VoxidenceApp> {
 
         '/normal/ideas': (_) => const UserShell(initialIndex: 3),
 
+        '/normal/profile': (_) => const UserShell(initialIndex: 4),
+
+
         '/normal/accepted': (_) =>
             const UserShell(initialIndex: 3, initialLibraryTab: 4),
 
         '/normal/favorites': (_) =>
             const UserShell(initialIndex: 3, initialLibraryTab: 5),
 
-        '/normal/settings/profile': (_) => const ProfileSettingsPage(),
+        '/normal/settings/profile': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: ProfileSettingsPage(),
+        ),
 
-        '/normal/preferences': (_) => const PreferencesPage(),
+        '/normal/preferences': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: PreferencesPage(),
+        ),
 
-        '/normal/notifications': (_) => const NotificationsPage(),
+        '/normal/notifications': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: NotificationsPage(),
+        ),
 
-        '/normal/billing': (_) => const BillingPage(),
+        '/normal/billing': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: BillingPage(),
+        ),
 
-        '/normal/credits': (_) => const CreditsPage(),
+        '/normal/credits': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: CreditsPage(),
+        ),
 
-        '/normal/compliance': (_) => const CompliancePage(),
+        '/normal/compliance': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: CompliancePage(),
+        ),
 
-        '/normal/support': (_) => const CompliancePage(),
+        '/normal/support': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: CompliancePage(),
+        ),
 
-        '/normal/published': (_) => const PublishedPage(),
+        '/normal/published': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.ideas,
+          child: PublishedPage(),
+        ),
 
         '/premium/dashboard': (_) => const UserShell(initialIndex: 0),
 
-        '/premium/credits': (_) => const CreditsPage(),
+        '/premium/credits': (_) => const WorkspaceRouteFrame(
+          selected: WorkspaceSection.profile,
+          child: CreditsPage(),
+        ),
       },
+
       onGenerateRoute: _onGenerateRoute,
+
+
       onUnknownRoute: (settings) => MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const HomePage(),
@@ -508,17 +728,60 @@ class _AppBootstrap extends StatefulWidget {
 }
 
 class _AppBootstrapState extends State<_AppBootstrap> {
-  late final Future<String> _target = _resolveTarget();
+  final Completer<String> _bootstrapCompleter = Completer<String>();
 
-  Future<String> _resolveTarget() async {
-    final hasToken = await SessionStore.instance.hasAccessToken();
+  bool _bootstrapStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Paint the launch experience before touching secure storage, .env, or any
+    // plugin-backed platform channel. This keeps the Android first frame fast.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startBootstrap();
+    });
+  }
+
+  void _startBootstrap() {
+    if (_bootstrapStarted) return;
+
+    _bootstrapStarted = true;
+
+    unawaited(() async {
+      try {
+        final target = await _resolveBootstrapTarget();
+
+        if (!_bootstrapCompleter.isCompleted) {
+          _bootstrapCompleter.complete(target);
+        }
+      } catch (_) {
+        if (!_bootstrapCompleter.isCompleted) {
+          _bootstrapCompleter.complete('home');
+        }
+      }
+    }());
+  }
+
+  /// Resolves the first workspace only after the first Flutter frame.
+  ///
+  /// Environment loading and secure-storage token lookup run in parallel.
+  /// Authenticated administrators enter the mobile admin workspace, normal
+  /// users enter the user workspace, and guests return to the public home page.
+  Future<String> _resolveBootstrapTarget() async {
+    final results = await Future.wait<dynamic>([
+      _ensureAppEnvironmentLoaded(),
+      SessionStore.instance.hasAccessToken(),
+    ]);
+
+    final hasToken = results[1] == true;
 
     if (!hasToken) {
       return 'home';
     }
 
     final user = await SessionStore.instance.readUser();
-
     final role = user?['role']?.toString().trim().toUpperCase() ?? '';
 
     return role == 'ADMIN' ? 'admin' : 'user';
@@ -527,26 +790,28 @@ class _AppBootstrapState extends State<_AppBootstrap> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String>(
-      future: _target,
+      future: _bootstrapCompleter.future,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Scaffold(
-            backgroundColor: AppColors.background,
-            body: Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
-          );
+          return const AppLaunchExperience();
         }
 
-        if (snapshot.data == 'admin') {
-          return const AdminShell();
-        }
+        switch (snapshot.data) {
+          case 'admin':
+            return const AdminShell(
+              key: ValueKey('authenticated-admin-workspace'),
+            );
 
-        if (snapshot.data == 'user') {
-          return const UserShell();
-        }
+          case 'user':
+            return const UserShell(
+              key: ValueKey('authenticated-user-workspace'),
+            );
 
-        return const HomePage();
+          default:
+            return const HomePage(
+              key: ValueKey('guest-home'),
+            );
+        }
       },
     );
   }
